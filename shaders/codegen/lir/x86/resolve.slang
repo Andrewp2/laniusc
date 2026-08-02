@@ -61,6 +61,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else if (core.op == X86_LIR_OP_FIELD_LOAD)
         operands.a = target_value(operands.a, total);
+    else if (core.op == X86_LIR_OP_INDEX_STORE)
+    {
+        operands.a = target_value(operands.a, total);
+        operands.b = target_value(operands.b, total);
+        operands.c = target_value(operands.c, total);
+    }
+    else if (core.op == X86_LIR_OP_FIELD_STORE)
+    {
+        operands.a = target_value(operands.a, total);
+        operands.c = target_value(operands.c, total);
+    }
     if (core.op == X86_LIR_OP_BRANCH)
     {
         operands.a = target_value(operands.a, total);

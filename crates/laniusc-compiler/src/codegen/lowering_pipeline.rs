@@ -126,7 +126,8 @@ const DEBUG_SEMANTIC_OPERANDS_OFFSET: u64 = DEBUG_SEMANTIC_CORE_OFFSET + DEBUG_H
 const DEBUG_HIR_COUNT_OFFSET: u64 = DEBUG_SEMANTIC_OPERANDS_OFFSET + DEBUG_HIR_ROWS * 16;
 const DEBUG_TARGET_CORE_OFFSET: u64 = DEBUG_HIR_COUNT_OFFSET + 16;
 const DEBUG_TARGET_OPERANDS_OFFSET: u64 = DEBUG_TARGET_CORE_OFFSET + DEBUG_HIR_ROWS * 16;
-const DEBUG_TARGET_COUNT_OFFSET: u64 = DEBUG_TARGET_OPERANDS_OFFSET + DEBUG_HIR_ROWS * 16;
+const DEBUG_TARGET_LOCATIONS_OFFSET: u64 = DEBUG_TARGET_OPERANDS_OFFSET + DEBUG_HIR_ROWS * 16;
+const DEBUG_TARGET_COUNT_OFFSET: u64 = DEBUG_TARGET_LOCATIONS_OFFSET + DEBUG_HIR_ROWS * 16;
 const DEBUG_READBACK_BYTES: usize = (DEBUG_TARGET_COUNT_OFFSET + 16) as usize;
 
 impl GpuLoweringPipeline {
@@ -161,7 +162,9 @@ impl GpuLoweringPipeline {
             )?),
         };
         let status_readback = readback_bytes(device, "lowering.status.readback", 16, 16);
-        let debug_lowering_readback = std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").map(|_| {
+        let debug_lowering_readback = (std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some()
+            || std::env::var_os("LANIUS_DEBUG_LOWERING_ROWS").is_some())
+        .then(|| {
             readback_bytes(
                 device,
                 "lowering.debug.readback",
@@ -201,14 +204,12 @@ impl GpuLoweringPipeline {
         self.target.record_before_target_pages(encoder)?;
         for page_id in 0..self.target.target_page_count() {
             self.target.record_measure_page(encoder, page_id)?;
-            if page_id == 0 {
-                self.record_debug_target(encoder);
-            }
         }
         self.target.record_between_target_pages(encoder, object)?;
         for page_id in 0..self.target.target_page_count() {
             self.target.record_emit_page(encoder, page_id)?;
         }
+        self.record_debug_target(encoder);
         self.target.record_after_target_pages(encoder, object)
     }
 
@@ -222,6 +223,7 @@ impl GpuLoweringPipeline {
         for (source, offset) in [
             (&target.core.buffer, DEBUG_TARGET_CORE_OFFSET),
             (&target.operands.buffer, DEBUG_TARGET_OPERANDS_OFFSET),
+            (&target.locations.buffer, DEBUG_TARGET_LOCATIONS_OFFSET),
         ] {
             encoder.copy_buffer_to_buffer(
                 source,
@@ -418,6 +420,9 @@ impl GpuLoweringPipeline {
             );
             self.print_debug_lowering_rows(device, status.first_unsupported_hir)?;
         }
+        if std::env::var_os("LANIUS_DEBUG_LOWERING_ROWS").is_some() {
+            self.print_debug_lowering_rows(device, u32::MAX)?;
+        }
         Ok(status)
     }
 
@@ -471,8 +476,12 @@ impl GpuLoweringPipeline {
             let core = [0, 1, 2, 3].map(|field| word(DEBUG_TARGET_CORE_OFFSET, row * 4 + field));
             let operands =
                 [0, 1, 2, 3].map(|field| word(DEBUG_TARGET_OPERANDS_OFFSET, row * 4 + field));
+            let locations =
+                [0, 1, 2, 3].map(|field| word(DEBUG_TARGET_LOCATIONS_OFFSET, row * 4 + field));
             if focused(core[0]) {
-                eprintln!("target LIR {row}: core={core:?}, operands={operands:?}");
+                eprintln!(
+                    "target LIR {row}: core={core:?}, operands={operands:?}, locations={locations:?}"
+                );
             }
         }
         drop(mapped);

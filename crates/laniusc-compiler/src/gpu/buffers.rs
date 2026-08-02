@@ -1,5 +1,6 @@
 use std::{
-    collections::HashMap,
+    cell::RefCell,
+    collections::{HashMap, HashSet},
     ops::Deref,
     sync::{
         Arc,
@@ -8,6 +9,58 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
+
+thread_local! {
+    static RESETTABLE_BUFFER_COLLECTOR: RefCell<Option<Vec<ResettableBuffer>>> = const { RefCell::new(None) };
+}
+
+#[derive(Clone)]
+pub(crate) struct ResettableBuffer {
+    pub(crate) buffer: wgpu::Buffer,
+    pub(crate) byte_size: u64,
+    pub(crate) allocation_id: u64,
+}
+
+/// Collects writable allocations created while `build` runs. This lets an
+/// owning workspace reset each unique physical allocation without manually
+/// listing every logical or aliased field.
+pub(crate) fn collect_resettable_buffers<T>(
+    build: impl FnOnce() -> T,
+) -> (T, Vec<ResettableBuffer>) {
+    RESETTABLE_BUFFER_COLLECTOR.with(|collector| {
+        assert!(
+            collector.borrow().is_none(),
+            "nested resettable-buffer collection"
+        );
+        *collector.borrow_mut() = Some(Vec::new());
+    });
+    let value = build();
+    let mut buffers = RESETTABLE_BUFFER_COLLECTOR.with(|collector| {
+        collector
+            .borrow_mut()
+            .take()
+            .expect("resettable-buffer collection disappeared")
+    });
+    let mut unique_allocations = HashSet::with_capacity(buffers.len());
+    buffers.retain(|buffer| unique_allocations.insert(buffer.allocation_id));
+    (value, buffers)
+}
+
+pub(crate) fn register_resettable_buffer<T>(buffer: &LaniusBuffer<T>) {
+    RESETTABLE_BUFFER_COLLECTOR.with(|collector| {
+        let mut collector = collector.borrow_mut();
+        let Some(buffers) = collector.as_mut() else {
+            return;
+        };
+        buffers.push(ResettableBuffer {
+            buffer: buffer.buffer.clone(),
+            byte_size: buffer.byte_size as u64,
+            allocation_id: buffer
+                .allocation_id()
+                .expect("resettable buffers must have tracked allocation identities"),
+        });
+    });
+}
 
 static LIVE_BUFFER_ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static LIVE_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
@@ -508,7 +561,9 @@ where
             | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new_labeled((raw, total as u64), count, label)
+    let buffer = LaniusBuffer::new_labeled((raw, total as u64), count, label);
+    register_resettable_buffer(&buffer);
+    buffer
 }
 
 /// Create a STORAGE buffer (read/write) with an explicit byte size. Element type is `u8`.
@@ -527,7 +582,9 @@ pub fn storage_rw_uninit_bytes(
             | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new_labeled((raw, byte_size as u64), count, label)
+    let buffer = LaniusBuffer::new_labeled((raw, byte_size as u64), count, label);
+    register_resettable_buffer(&buffer);
+    buffer
 }
 
 #[cfg(test)]

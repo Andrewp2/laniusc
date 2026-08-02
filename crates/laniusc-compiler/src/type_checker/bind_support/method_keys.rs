@@ -42,33 +42,31 @@ impl MethodKeyPipeline {
             &[("gParams", seed_params.as_entire_binding())],
         )?;
 
-        let sort = RadixSortOperation::new(
+        let sort = compiler_graph::METHOD_KEY_RADIX_SORT.operation(
             device,
             passes,
             resources,
-            compiler_graph::METHOD_KEY_RADIX_SORT.plan(
-                capacity,
-                METHOD_KEY_SMALL_SORT_CAPACITY,
-                METHOD_KEY_RADIX_STEPS,
-                RadixSortDispatch {
-                    small: RadixDispatchDomain::Indirect(buffer_from_resources(
-                        resources,
-                        "method_radix_bases_dispatch_args",
-                    )?),
-                    rows: RadixDispatchDomain::Indirect(buffer_from_resources(
-                        resources,
-                        "method_token_dispatch_args",
-                    )?),
-                    bucket_prefix: RadixDispatchDomain::Indirect(buffer_from_resources(
-                        resources,
-                        "method_radix_prefix_dispatch_args",
-                    )?),
-                    bucket_bases: RadixDispatchDomain::Indirect(buffer_from_resources(
-                        resources,
-                        "method_radix_bases_dispatch_args",
-                    )?),
-                },
-            ),
+            capacity,
+            METHOD_KEY_SMALL_SORT_CAPACITY,
+            METHOD_KEY_RADIX_STEPS,
+            RadixSortDispatch {
+                small: RadixDispatchDomain::Indirect(buffer_from_resources(
+                    resources,
+                    "method_radix_bases_dispatch_args",
+                )?),
+                rows: RadixDispatchDomain::Indirect(buffer_from_resources(
+                    resources,
+                    "method_token_dispatch_args",
+                )?),
+                bucket_prefix: RadixDispatchDomain::Indirect(buffer_from_resources(
+                    resources,
+                    "method_radix_prefix_dispatch_args",
+                )?),
+                bucket_bases: RadixDispatchDomain::Indirect(buffer_from_resources(
+                    resources,
+                    "method_radix_bases_dispatch_args",
+                )?),
+            },
             params,
         )?;
 

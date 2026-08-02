@@ -276,6 +276,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // semantic LIR carries only the canonical field ordinal.
         c = 8u;
     }
+    else if (op == X86_LIR_OP_INDEX_STORE)
+    {
+        a = args.a;
+        b = args.b;
+        c = args.c;
+    }
+    else if (op == X86_LIR_OP_FIELD_STORE)
+    {
+        a = args.a;
+        b = args.b;
+        c = args.c;
+        metadata = (metadata & 0x00ffffffu) | (8u << 24u);
+    }
     else if (op == X86_LIR_OP_BINARY) { c = args.b; b = args.a; a = x86_binary_payload(source); }
     else if (op == X86_LIR_OP_COMPARE) { c = args.b; b = args.a; a = args.c; }
     else if (op == X86_LIR_OP_UNARY)

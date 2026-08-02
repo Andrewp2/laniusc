@@ -18,7 +18,7 @@ impl GenericParameterSorts {
     pub(in crate::type_checker) fn new(
         device: &wgpu::Device,
         passes: &TypeCheckPasses,
-        resources: &HashMap<String, wgpu::BindingResource<'_>>,
+        resources: &ResourceMap<'_>,
         capacity: u32,
         n_blocks: u32,
         radix_bytes: u32,
@@ -70,11 +70,12 @@ impl GenericParameterSorts {
             });
         }
 
-        let key = RadixSortOperation::new(
-            device,
-            passes,
-            resources,
-            compiler_graph::GENERIC_PARAMETER_RADIX_SORTS.key.plan(
+        let key = compiler_graph::GENERIC_PARAMETER_RADIX_SORTS
+            .key
+            .operation(
+                device,
+                passes,
+                resources,
                 capacity,
                 0,
                 radix_steps,
@@ -86,14 +87,14 @@ impl GenericParameterSorts {
                     ),
                     bucket_bases: RadixDispatchDomain::Direct(256),
                 },
-            ),
-            make_params,
-        )?;
-        let slot = RadixSortOperation::new(
-            device,
-            passes,
-            resources,
-            compiler_graph::GENERIC_PARAMETER_RADIX_SORTS.slot.plan(
+                make_params,
+            )?;
+        let slot = compiler_graph::GENERIC_PARAMETER_RADIX_SORTS
+            .slot
+            .operation(
+                device,
+                passes,
+                resources,
                 capacity,
                 0,
                 radix_steps,
@@ -105,9 +106,8 @@ impl GenericParameterSorts {
                     ),
                     bucket_bases: RadixDispatchDomain::Direct(256),
                 },
-            ),
-            make_params,
-        )?;
+                make_params,
+            )?;
         Ok(Self {
             _dispatch_params: dispatch_params,
             dispatch,

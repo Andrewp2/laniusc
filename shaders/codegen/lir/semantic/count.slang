@@ -11,6 +11,7 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_expr_parent;
 StructuredBuffer<uint> semantic_function_id;
 StructuredBuffer<uint> semantic_array_length;
+StructuredBuffer<uint> semantic_iterable_kind;
 RWStructuredBuffer<uint> semantic_lir_count;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -47,11 +48,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             (core.kind == HIR_STMT && payload.a == HIR_STMT_FOR);
         uint iterable_form = range_for && payload.c < count
             ? compact_hir_payload[payload.c].a : 0u;
+        uint iterable_kind = range_for ? semantic_iterable_kind[node] : 0u;
         uint array_length = range_for && payload.c < count
             ? semantic_array_length[payload.c] : 0xffffffffu;
         rows = owned_syntax ? 0u : range_for
             ? (iterable_form == HIR_EXPR_RANGE || iterable_form == HIR_EXPR_RANGE_INCLUSIVE
-                ? 17u : array_length != 0xffffffffu ? 21u : 1u)
+                ? 17u : (iterable_kind == 1u || iterable_kind == 2u)
+                    ? 21u : iterable_kind == 3u || array_length != 0xffffffffu ? 21u : 1u)
             : semantic_lir_row_count(core, payload);
     }
     semantic_lir_count[node] = rows;

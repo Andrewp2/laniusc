@@ -429,7 +429,7 @@ pub(in crate::type_checker) fn create_with_passes(
         .hierarchy
         .alias(record_n_blocks as usize);
 
-    let mut scan_resources = ResourceMap::new();
+    let mut scan_resources = module_resources.clone();
     scan_resources.buffers([
         ("decl_count_out", &decl_count_out),
         (

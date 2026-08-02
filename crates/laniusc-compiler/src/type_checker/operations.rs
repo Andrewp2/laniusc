@@ -168,7 +168,7 @@ impl SemanticFeaturesOperation {
         resources: &ResourceMap<'_>,
         hir_dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
-        graph.validate_registered_pass_bindings(compiler_graph::FEATURES_CLEAR_PASS, resources)?;
+        resources.validate_graph_pass(compiler_graph::FEATURES_CLEAR_PASS, &[])?;
         Ok(Self {
             flags: graph.u32_buffer("semantic_feature_flags")?,
             collect: ComputeOperation::indirect(

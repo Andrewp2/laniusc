@@ -39,7 +39,7 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint ERR_CALL_MISMATCH = 10u;
-static const uint LANGUAGE_SYMBOL_COUNT = 63u;
+static const uint LANGUAGE_SYMBOL_COUNT = 67u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }

@@ -48,7 +48,7 @@ pub(in crate::type_checker) struct CallClaimKeyBuild<'a> {
     pub token_capacity: u32,
     pub claim_capacity: u32,
     pub dispatch_args: &'a wgpu::Buffer,
-    pub resources: &'a HashMap<String, wgpu::BindingResource<'a>>,
+    pub resources: &'a ResourceMap<'a>,
 }
 
 pub(in crate::type_checker) struct CallClaimKeyPipeline {
@@ -84,7 +84,7 @@ impl CallClaimKeyPipeline {
                 ("call_generic_claim_slot", "call_const_claim_slot"),
                 ("call_generic_claim_type", "call_const_claim_len"),
             ] {
-                resources.insert(shader_name.into(), input.resources[resource_name].clone());
+                resources.alias(shader_name, resource_name)?;
             }
         }
         let dispatch_params = uniform_from_val(
@@ -107,21 +107,19 @@ impl CallClaimKeyPipeline {
             ],
         )?;
 
-        let sort = RadixSortOperation::new(
+        let sort = definition.operation(
             device,
             passes,
             &resources,
-            definition.plan(
-                input.claim_capacity,
-                0,
-                call_claim_radix_steps(input.token_capacity, input.claim_capacity),
-                RadixSortDispatch {
-                    small: RadixDispatchDomain::Direct(256),
-                    rows: RadixDispatchDomain::Indirect(input.dispatch_args),
-                    bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS * 256),
-                    bucket_bases: RadixDispatchDomain::Direct(256),
-                },
-            ),
+            input.claim_capacity,
+            0,
+            call_claim_radix_steps(input.token_capacity, input.claim_capacity),
+            RadixSortDispatch {
+                small: RadixDispatchDomain::Direct(256),
+                rows: RadixDispatchDomain::Indirect(input.dispatch_args),
+                bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS * 256),
+                bucket_bases: RadixDispatchDomain::Direct(256),
+            },
             params,
         )?;
 

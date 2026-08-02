@@ -1,0 +1,95 @@
+{
+  "rows": [
+    {
+      "lane": "debug",
+      "language": "c",
+      "lanius_runtime_ratio": 1.683027816626771,
+      "mad_ms": 0.1401690000000002,
+      "max_ms": 93.173814,
+      "median_ms": 55.280283,
+      "min_ms": 54.682204,
+      "samples": 20
+    },
+    {
+      "lane": "optimized",
+      "language": "c",
+      "lanius_runtime_ratio": 2.106914416431614,
+      "mad_ms": 0.3083129999999983,
+      "max_ms": 50.993683,
+      "median_ms": 44.158535,
+      "min_ms": 43.551227,
+      "samples": 20
+    },
+    {
+      "lane": "debug",
+      "language": "cpp",
+      "lanius_runtime_ratio": 1.685425679099671,
+      "mad_ms": 0.14182449999999847,
+      "max_ms": 82.99114,
+      "median_ms": 55.201635499999995,
+      "min_ms": 54.879647,
+      "samples": 20
+    },
+    {
+      "lane": "optimized",
+      "language": "cpp",
+      "lanius_runtime_ratio": 2.1067668042770795,
+      "mad_ms": 0.20651650000000288,
+      "max_ms": 51.163775,
+      "median_ms": 44.161629,
+      "min_ms": 43.658685,
+      "samples": 20
+    },
+    {
+      "lane": "debug",
+      "language": "rust",
+      "lanius_runtime_ratio": 1.2017754136562055,
+      "mad_ms": 0.3248390000000043,
+      "max_ms": 105.341281,
+      "median_ms": 77.4173385,
+      "min_ms": 77.028926,
+      "samples": 20
+    },
+    {
+      "lane": "optimized",
+      "language": "rust",
+      "lanius_runtime_ratio": 1.8199042797278233,
+      "mad_ms": 0.8533134999999987,
+      "max_ms": 60.403088,
+      "median_ms": 51.1226085,
+      "min_ms": 50.170474,
+      "samples": 20
+    },
+    {
+      "lane": "debug",
+      "language": "zig",
+      "lanius_runtime_ratio": 0.9237023614699438,
+      "mad_ms": 0.37374399999999497,
+      "max_ms": 133.817529,
+      "median_ms": 100.723196,
+      "min_ms": 100.01805,
+      "samples": 20
+    },
+    {
+      "lane": "optimized",
+      "language": "zig",
+      "lanius_runtime_ratio": 2.2074051457254606,
+      "mad_ms": 0.30097450000000237,
+      "max_ms": 51.025801,
+      "median_ms": 42.1482455,
+      "min_ms": 41.686364,
+      "samples": 20
+    },
+    {
+      "lane": "current",
+      "language": "lanius",
+      "lanius_runtime_ratio": 1.0,
+      "mad_ms": 0.5575949999999992,
+      "max_ms": 118.19929,
+      "median_ms": 93.038254,
+      "min_ms": 92.284989,
+      "samples": 20
+    }
+  ],
+  "schema": "lanius.runtime-comparison.v1"
+}

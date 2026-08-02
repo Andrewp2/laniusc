@@ -181,7 +181,7 @@ pub(in crate::type_checker) fn create_record_discovery(
             ),
         ],
     )?;
-    let mut scan_resources = ResourceMap::new();
+    let mut scan_resources = resources.clone();
     scan_resources.buffers([
         ("hir_active_count", inputs.hir_active_count_buf),
         ("hir_active_dispatch_args", inputs.hir_active_dispatch_args),

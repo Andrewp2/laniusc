@@ -10,9 +10,15 @@ pub(super) fn status_init_bytes() -> Vec<u8> {
 
 /// Encodes a `TypeCheckParams` uniform packet with the same layout shaders read.
 pub(super) fn type_check_params_bytes(params: &TypeCheckParams) -> Vec<u8> {
+    uniform_bytes(params)
+}
+
+pub(super) fn uniform_bytes<T>(value: &T) -> Vec<u8>
+where
+    T: encase::ShaderType + encase::internal::WriteInto,
+{
     let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
-    ub.write(params)
-        .expect("failed to encode type checker params");
+    ub.write(value).expect("failed to encode uniform value");
     ub.as_ref().to_vec()
 }
 
@@ -63,10 +69,15 @@ pub(super) fn typed_storage_u32_rw(
     let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: byte_size,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST
+            | extra_usage,
         mapped_at_creation: false,
     });
-    LaniusBuffer::new_labeled((raw, byte_size), count, label)
+    let buffer = LaniusBuffer::new_labeled((raw, byte_size), count, label);
+    crate::gpu::buffers::register_resettable_buffer(&buffer);
+    buffer
 }
 
 pub(super) trait ReusableStorageBuffer: Copy {

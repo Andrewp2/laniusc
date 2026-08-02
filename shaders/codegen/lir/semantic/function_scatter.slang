@@ -17,6 +17,7 @@ StructuredBuffer<uint> semantic_function_prefix;
 StructuredBuffer<uint> semantic_local_prefix;
 StructuredBuffer<uint> semantic_local_total;
 StructuredBuffer<uint> semantic_function_return_type_by_hir;
+StructuredBuffer<uint> semantic_function_result_word_count_by_hir;
 StructuredBuffer<uint> semantic_function_entrypoint_by_hir;
 StructuredBuffer<uint> semantic_function_host_service_by_hir;
 StructuredBuffer<uint> public_decl_index_by_hir;
@@ -53,8 +54,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     result.param_count = range.count;
     result.result_type = constant ? semantic_value_type_by_hir[hir]
         : semantic_function_return_type_by_hir[hir];
-    result.result_word_count = 0u;
-    if (result.result_type >= TY_STRUCT_BASE && result.result_type < TY_ENUM_BASE)
+    result.result_word_count = semantic_function_result_word_count_by_hir[hir];
+    if (result.result_word_count == 0u &&
+        result.result_type >= TY_STRUCT_BASE && result.result_type < TY_ENUM_BASE)
     {
         uint name_token = result.result_type - TY_STRUCT_BASE;
         uint struct_hir = valid_token(name_token)

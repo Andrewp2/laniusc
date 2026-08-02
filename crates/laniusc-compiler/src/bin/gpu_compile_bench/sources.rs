@@ -137,6 +137,70 @@ fn wrap_body_in_main(body: &str) -> String {
     src
 }
 
+struct EntrypointBatches {
+    prefix: &'static str,
+    statements_per_function: usize,
+    functions: String,
+    main: String,
+    pending: String,
+    function_index: usize,
+    statement_count: usize,
+}
+
+impl EntrypointBatches {
+    fn new(prefix: &'static str, statements_per_function: usize) -> Self {
+        Self {
+            prefix,
+            statements_per_function,
+            functions: String::new(),
+            main: String::new(),
+            pending: String::new(),
+            function_index: 0,
+            statement_count: 0,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.functions.len() + self.main.len() + self.pending.len()
+    }
+
+    fn push(&mut self, statement: &str) -> usize {
+        self.pending.push_str(statement);
+        self.statement_count += 1;
+        if self.statement_count == self.statements_per_function {
+            self.flush()
+        } else {
+            0
+        }
+    }
+
+    fn finish(mut self) -> (String, String, usize) {
+        let added_lines = self.flush();
+        (self.functions, self.main, added_lines)
+    }
+
+    fn flush(&mut self) -> usize {
+        if self.pending.is_empty() {
+            return 0;
+        }
+        let name = format!("{}{}", self.prefix, self.function_index);
+        self.functions.push_str("fn ");
+        self.functions.push_str(&name);
+        self.functions.push_str("() -> i32 {\n");
+        self.functions.push_str(&self.pending);
+        self.functions.push_str("    return 0;\n}\n");
+        self.main.push_str("    let ");
+        self.main.push_str(&name);
+        self.main.push_str("_result = ");
+        self.main.push_str(&name);
+        self.main.push_str("();\n");
+        self.pending.clear();
+        self.statement_count = 0;
+        self.function_index += 1;
+        4
+    }
+}
+
 fn make_simple_let_source(lines: usize, target_bytes: Option<usize>) -> String {
     if let Some(target_bytes) = target_bytes {
         let mut src = String::with_capacity(target_bytes.saturating_add(128));
@@ -307,7 +371,7 @@ fn make_call_graph_source_artifact(
     seed: u64,
 ) -> SourceArtifact {
     let mut functions = String::with_capacity(target_bytes.unwrap_or(lines.saturating_mul(64)));
-    let mut main_body = String::with_capacity(lines.saturating_mul(24).min(64 * 1024));
+    let mut entrypoint = EntrypointBatches::new("cg_entry_batch", 32);
     let mut rng = DeterministicRng::new(seed);
     let mut generated: Vec<GeneratedFunction> = Vec::new();
     let mut expected_stdout = String::new();
@@ -317,7 +381,7 @@ fn make_call_graph_source_artifact(
     loop {
         let projected_len = functions
             .len()
-            .saturating_add(main_body.len())
+            .saturating_add(entrypoint.len())
             .saturating_add(32);
         if target_bytes.is_some_and(|target| projected_len >= target)
             || target_bytes.is_none() && line_count >= lines
@@ -336,21 +400,16 @@ fn make_call_graph_source_artifact(
         let expected = call.eval(&[]);
         expected_stdout.push_str(&expected.to_string());
         expected_stdout.push('\n');
-        main_body.push_str("    print(");
-        main_body.push_str(&call.source(&[]));
-        main_body.push_str(");\n");
-        line_count += 1;
+        line_count += entrypoint.push(&format!("    print({});\n", call.source(&[]))) + 1;
         generated.push(function);
         chunk += 1;
     }
 
-    let mut src = String::with_capacity(
-        functions
-            .len()
-            .saturating_add(main_body.len())
-            .saturating_add(32),
-    );
+    let (entry_functions, main_body, _) = entrypoint.finish();
+    let mut src =
+        String::with_capacity(functions.len() + entry_functions.len() + main_body.len() + 32);
     src.push_str(&functions);
+    src.push_str(&entry_functions);
     src.push_str("fn main() {\n");
     src.push_str(&main_body);
     src.push_str("    return 0;\n");
@@ -612,26 +671,18 @@ fn make_expr_dense_source_artifact(
     target_bytes: Option<usize>,
     seed: u64,
 ) -> SourceArtifact {
-    const EXPR_DENSE_PRINTS_PER_BLOCK: usize = 32;
-
     let mut functions = String::with_capacity(target_bytes.unwrap_or(lines.saturating_mul(96)));
-    let mut main_body = String::with_capacity(lines.saturating_mul(32).min(96 * 1024));
-    let mut print_functions = String::new();
-    let mut print_block_body = String::new();
+    let mut entrypoint = EntrypointBatches::new("xd_print_block", 32);
     let mut rng = DeterministicRng::new(seed ^ 0x0e95_dede_5eed);
     let mut generated = Vec::<GeneratedFunction>::new();
     let mut expected_stdout = String::new();
     let mut line_count = 3usize;
     let mut chunk = 0usize;
-    let mut print_block_i = 0usize;
-    let mut prints_in_block = 0usize;
 
     loop {
         let projected_len = functions
             .len()
-            .saturating_add(print_functions.len())
-            .saturating_add(print_block_body.len())
-            .saturating_add(main_body.len())
+            .saturating_add(entrypoint.len())
             .saturating_add(32);
         if target_bytes.is_some_and(|target| projected_len >= target)
             || target_bytes.is_none() && line_count >= lines
@@ -649,34 +700,12 @@ fn make_expr_dense_source_artifact(
 
         let call = generated_call_expr(&function, chunk + 97, &mut rng);
         append_expected_print(&mut expected_stdout, call.eval(&[]));
-        print_block_body.push_str("    print(");
-        print_block_body.push_str(&call.source(&[]));
-        print_block_body.push_str(");\n");
-        line_count += 1;
-        prints_in_block += 1;
-
-        if prints_in_block == EXPR_DENSE_PRINTS_PER_BLOCK {
-            line_count += flush_expr_dense_print_block(
-                &mut print_functions,
-                &mut main_body,
-                &mut print_block_body,
-                print_block_i,
-            );
-            print_block_i += 1;
-            prints_in_block = 0;
-        }
+        line_count += entrypoint.push(&format!("    print({});\n", call.source(&[]))) + 1;
 
         generated.push(function);
         chunk += 1;
     }
-    if !print_block_body.is_empty() {
-        flush_expr_dense_print_block(
-            &mut print_functions,
-            &mut main_body,
-            &mut print_block_body,
-            print_block_i,
-        );
-    }
+    let (print_functions, main_body, _) = entrypoint.finish();
 
     let mut src = String::with_capacity(
         functions
@@ -692,32 +721,6 @@ fn make_expr_dense_source_artifact(
     src.push_str("    return 0;\n");
     src.push_str("}\n");
     SourceArtifact::single(src, Some(expected_stdout))
-}
-
-fn flush_expr_dense_print_block(
-    print_functions: &mut String,
-    main_body: &mut String,
-    print_block_body: &mut String,
-    block_i: usize,
-) -> usize {
-    if print_block_body.is_empty() {
-        return 0;
-    }
-
-    print_functions.push_str("fn xd_print_block");
-    print_functions.push_str(&block_i.to_string());
-    print_functions.push_str("() -> i32 {\n");
-    print_functions.push_str(print_block_body);
-    print_functions.push_str("    return 0;\n}\n");
-    print_block_body.clear();
-
-    main_body.push_str("    let xd_print_result");
-    main_body.push_str(&block_i.to_string());
-    main_body.push_str(" = xd_print_block");
-    main_body.push_str(&block_i.to_string());
-    main_body.push_str("();\n");
-
-    4
 }
 
 fn push_expr_dense_function(

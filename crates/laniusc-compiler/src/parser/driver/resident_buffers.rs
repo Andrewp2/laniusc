@@ -1,8 +1,28 @@
 use super::{GpuParser, ResidentParserBufferCache, support::table_fingerprint};
 use crate::{
+    gpu::buffers::collect_resettable_buffers,
     lexer::features::CONSERVATIVE_PARSER_FEATURES,
     parser::{buffers::ParserBuffers, tables::PrecomputedParseTables},
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ResidentParserAllocation {
+    token_capacity: u32,
+    source_capacity: u32,
+    tree_capacity: u32,
+    parser_feature_flags: u32,
+}
+
+impl ResidentParserAllocation {
+    fn grow_to_cover(self, required: Self) -> Self {
+        Self {
+            token_capacity: self.token_capacity.max(required.token_capacity),
+            source_capacity: self.source_capacity.max(required.source_capacity),
+            tree_capacity: self.tree_capacity.max(required.tree_capacity),
+            parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
+        }
+    }
+}
 
 impl GpuParser {
     /// Returns cached resident parser buffers sized for the current token/table pair.
@@ -123,14 +143,26 @@ impl GpuParser {
                     tables,
                 )
             });
-        let needs_allocate = slot.as_ref().is_none_or(|cached| {
-            cached.table_fingerprint != fingerprint
-                || cached.token_capacity != wanted_capacity
-                || cached.retain_debug_hir_buffers != retain_debug_hir_buffers
-                || cached.parser_feature_flags != parser_feature_flags
-                || cached.buffers.tree_capacity < wanted_tree_capacity
-                || cached.buffers.source_capacity < source_capacity.max(1)
+        let required = ResidentParserAllocation {
+            token_capacity: wanted_capacity,
+            source_capacity: source_capacity.max(1),
+            tree_capacity: wanted_tree_capacity,
+            parser_feature_flags,
+        };
+        let compatible = slot.as_ref().filter(|cached| {
+            cached.table_fingerprint == fingerprint
+                && cached.retain_debug_hir_buffers == retain_debug_hir_buffers
         });
+        let cached_allocation = compatible.map(|cached| ResidentParserAllocation {
+            token_capacity: cached.token_capacity,
+            source_capacity: cached.buffers.source_capacity,
+            tree_capacity: cached.buffers.tree_capacity,
+            parser_feature_flags: cached.parser_feature_flags,
+        });
+        let allocation = cached_allocation
+            .map(|cached| cached.grow_to_cover(required))
+            .unwrap_or(required);
+        let needs_allocate = cached_allocation != Some(allocation);
 
         if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
             if let Some(cached) = slot.as_ref() {
@@ -160,27 +192,27 @@ impl GpuParser {
                 .expect("parser.resident_token_kind_bind_groups poisoned") = None;
             let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
 
-            // Resident parser buffers dominate VRAM because tree/HIR scratch scales
-            // from token capacity. Allocate the exact required capacity instead of
-            // doubling across increasing benchmark sizes.
-            let allocated_capacity = wanted_capacity;
             let action_table_bytes = tables.to_action_header_grid_bytes();
-            *slot = Some(ResidentParserBufferCache {
-                token_capacity: allocated_capacity,
-                table_fingerprint: fingerprint,
-                retain_debug_hir_buffers,
-                parser_feature_flags,
-                buffers: ParserBuffers::new_resident_capacity_with_source_and_tree_capacity_debug_and_features(
+            let (mut buffers, resettable_buffers) = collect_resettable_buffers(|| {
+                ParserBuffers::new_resident_capacity_with_source_and_tree_capacity_debug_and_features(
                     &self.device,
-                    wanted_capacity,
-                    source_capacity,
+                    allocation.token_capacity,
+                    allocation.source_capacity,
                     tables.n_kinds,
                     &action_table_bytes,
                     tables,
-                    tree_capacity_override,
+                    Some(allocation.tree_capacity),
                     retain_debug_hir_buffers,
-                    parser_feature_flags,
-                ),
+                    allocation.parser_feature_flags,
+                )
+            });
+            buffers.resettable_buffers = resettable_buffers;
+            *slot = Some(ResidentParserBufferCache {
+                token_capacity: allocation.token_capacity,
+                table_fingerprint: fingerprint,
+                retain_debug_hir_buffers,
+                parser_feature_flags: allocation.parser_feature_flags,
+                buffers,
             });
             self.bg_cache
                 .lock()
@@ -191,5 +223,35 @@ impl GpuParser {
             .as_ref()
             .expect("resident parser buffers allocated")
             .buffers
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResidentParserAllocation;
+
+    #[test]
+    fn resident_allocation_grows_without_shrinking_any_capacity() {
+        let first = ResidentParserAllocation {
+            token_capacity: 300,
+            source_capacity: 1_000,
+            tree_capacity: 700,
+            parser_feature_flags: 0b0011,
+        };
+        let next = ResidentParserAllocation {
+            token_capacity: 320,
+            source_capacity: 900,
+            tree_capacity: 650,
+            parser_feature_flags: 0b1100,
+        };
+        assert_eq!(
+            first.grow_to_cover(next),
+            ResidentParserAllocation {
+                token_capacity: 320,
+                source_capacity: 1_000,
+                tree_capacity: 700,
+                parser_feature_flags: 0b1111,
+            }
+        );
     }
 }

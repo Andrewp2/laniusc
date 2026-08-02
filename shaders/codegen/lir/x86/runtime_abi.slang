@@ -6,8 +6,13 @@
 import codegen.lowering_ir;
 
 static const uint X86_RUNTIME_INVALID = 0xffffffffu;
-static const uint X86_RUNTIME_PRINT_I32_OFFSET = 78u;
-static const uint X86_RUNTIME_LENGTH = 162u;
+static const uint X86_RUNTIME_ARG_READ_OFFSET = 78u;
+static const uint X86_RUNTIME_ALLOC_OFFSET = 117u;
+static const uint X86_RUNTIME_DEALLOC_OFFSET = 149u;
+static const uint X86_RUNTIME_REALLOC_OFFSET = 157u;
+static const uint X86_RUNTIME_ALLOC_FAILED_OFFSET = 171u;
+static const uint X86_RUNTIME_PRINT_I32_OFFSET = 184u;
+static const uint X86_RUNTIME_LENGTH = 268u;
 
 uint x86_runtime_service_offset(uint service)
 {
@@ -19,6 +24,11 @@ uint x86_runtime_service_offset(uint service)
     if (service == HOST_SERVICE_WRITE_STDOUT) return 33u;
     if (service == HOST_SERVICE_WRITE_STDERR) return 50u;
     if (service == HOST_SERVICE_READ_STDIN) return 67u;
+    if (service == HOST_SERVICE_ARG_READ) return X86_RUNTIME_ARG_READ_OFFSET;
+    if (service == HOST_SERVICE_ALLOC) return X86_RUNTIME_ALLOC_OFFSET;
+    if (service == HOST_SERVICE_DEALLOC) return X86_RUNTIME_DEALLOC_OFFSET;
+    if (service == HOST_SERVICE_REALLOC) return X86_RUNTIME_REALLOC_OFFSET;
+    if (service == HOST_SERVICE_ALLOC_FAILED) return X86_RUNTIME_ALLOC_FAILED_OFFSET;
     return X86_RUNTIME_INVALID;
 }
 
@@ -29,7 +39,8 @@ bool x86_runtime_service_supported(uint service)
 
 bool x86_runtime_service_has_result(uint service)
 {
-    return service != HOST_SERVICE_EXIT;
+    return service != HOST_SERVICE_EXIT && service != HOST_SERVICE_DEALLOC &&
+        service != HOST_SERVICE_ALLOC_FAILED;
 }
 
 uint x86_runtime_byte(uint pos)
@@ -69,7 +80,53 @@ uint x86_runtime_byte(uint pos)
         0x89u, 0xf2u, 0x89u, 0xfeu, 0x31u, 0xffu,
         0x31u, 0xc0u, 0x0fu, 0x05u, 0xc3u
     };
-    if (pos < X86_RUNTIME_PRINT_I32_OFFSET) return stdin_bytes[pos - 67u];
+    if (pos < X86_RUNTIME_ARG_READ_OFFSET) return stdin_bytes[pos - 67u];
+
+    // Copy argv[index] into the caller's bounded u32-addressed allocation and
+    // return the number of bytes copied, excluding the terminating NUL.
+    static const uint arg_read_bytes[39] = {
+        0x41u, 0x89u, 0xf0u, 0x41u, 0x89u, 0xd1u, 0x89u, 0xf8u,
+        0xffu, 0xc0u, 0x49u, 0x8bu, 0x34u, 0xc7u, 0x31u, 0xc0u,
+        0x44u, 0x39u, 0xc8u, 0x73u, 0x11u, 0x80u, 0x3cu, 0x06u,
+        0u, 0x74u, 0x0bu, 0x8au, 0x0cu, 0x06u, 0x41u, 0x88u,
+        0x0cu, 0u, 0xffu, 0xc0u, 0xebu, 0xeau, 0xc3u
+    };
+    if (pos < X86_RUNTIME_ALLOC_OFFSET)
+        return arg_read_bytes[pos - X86_RUNTIME_ARG_READ_OFFSET];
+
+    // mmap(..., MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0) preserves the
+    // alpha runtime's u32 pointer ABI on x86_64 while returning page-aligned
+    // storage for every requested alignment supported by this milestone.
+    static const uint alloc_bytes[32] = {
+        0x89u, 0xfeu, 0x31u, 0xffu, 0xbau, 3u, 0u, 0u, 0u,
+        0x41u, 0xbau, 0x62u, 0u, 0u, 0u, 0x41u, 0xb8u, 0xffu, 0xffu,
+        0xffu, 0xffu, 0x45u, 0x31u, 0xc9u, 0xb8u, 9u, 0u, 0u, 0u,
+        0x0fu, 0x05u, 0xc3u
+    };
+    if (pos < X86_RUNTIME_DEALLOC_OFFSET)
+        return alloc_bytes[pos - X86_RUNTIME_ALLOC_OFFSET];
+
+    static const uint dealloc_bytes[8] =
+        {0xb8u, 11u, 0u, 0u, 0u, 0x0fu, 0x05u, 0xc3u};
+    if (pos < X86_RUNTIME_REALLOC_OFFSET)
+        return dealloc_bytes[pos - X86_RUNTIME_DEALLOC_OFFSET];
+
+    static const uint realloc_bytes[14] = {
+        0x41u, 0xbau, 1u, 0u, 0u, 0u, 0xb8u, 25u, 0u, 0u, 0u,
+        0x0fu, 0x05u, 0xc3u
+    };
+    if (pos < X86_RUNTIME_ALLOC_FAILED_OFFSET)
+        return realloc_bytes[pos - X86_RUNTIME_REALLOC_OFFSET];
+
+    // Allocation failure is a non-returning host ABI boundary. The size and
+    // alignment arguments arrive in EDI/ESI but Linux process exit needs only
+    // the stable failure status in EDI.
+    static const uint alloc_failed_bytes[13] = {
+        0xbfu, 1u, 0u, 0u, 0u, 0xb8u, 60u, 0u, 0u, 0u,
+        0x0fu, 0x05u, 0xc3u
+    };
+    if (pos < X86_RUNTIME_PRINT_I32_OFFSET)
+        return alloc_failed_bytes[pos - X86_RUNTIME_ALLOC_FAILED_OFFSET];
 
     // print_i32: one shared runtime routine, addressed by the explicit
     // X86_LIR_OP_PRINT_I32 target instruction. It accepts the value in EDI,

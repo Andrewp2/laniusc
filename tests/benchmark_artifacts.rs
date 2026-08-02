@@ -351,6 +351,137 @@ fn compile_scaling_1101000_artifacts_are_checked_and_reproducible() {
     }
 }
 
+#[test]
+fn runtime_integer_mix_artifacts_are_checked() {
+    let repo = repo_root();
+    let root = repo.join("benchmark_artifacts/runtime_integer_mix");
+    let config = read_json(root.join("config.json"));
+    assert_eq!(config["schema"], "lanius.runtime-comparison.v1");
+    assert_eq!(config["workload"], "integer_mix");
+    assert_eq!(config["base_iterations"], 25_000_000);
+    assert_eq!(config["warmups_per_language"], 3);
+    assert_eq!(config["samples_per_language"], 20);
+    assert_eq!(config["expected_stdout"], "0\n");
+    assert_eq!(
+        config["generator_sha256"],
+        sha256_file(&repo.join("tools/run_runtime_comparison.py"))
+    );
+
+    let commands = read_json(root.join("commands.json"));
+    let language_lanes = [
+        ("c", "debug"),
+        ("c", "optimized"),
+        ("cpp", "debug"),
+        ("cpp", "optimized"),
+        ("rust", "debug"),
+        ("rust", "optimized"),
+        ("zig", "debug"),
+        ("zig", "optimized"),
+        ("lanius", "current"),
+    ];
+    for (language, lane) in language_lanes {
+        let command = &commands["commands"][language][lane];
+        assert_command_array(command, "compile", language);
+        assert_command_array(command, "run", language);
+        assert_eq!(
+            fs::read_to_string(
+                root.join("outputs")
+                    .join(format!("{language}-{lane}.stdout"))
+            )
+            .unwrap(),
+            "0\n"
+        );
+    }
+    for language in ["c", "cpp"] {
+        let debug = &commands["commands"][language]["debug"]["compile"];
+        let optimized = &commands["commands"][language]["optimized"]["compile"];
+        assert!(debug.as_array().unwrap().iter().any(|arg| arg == "-O0"));
+        assert!(optimized.as_array().unwrap().iter().any(|arg| arg == "-O3"));
+    }
+    assert!(
+        commands["commands"]["rust"]["debug"]["compile"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "opt-level=0")
+    );
+    assert!(
+        commands["commands"]["rust"]["optimized"]["compile"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "opt-level=3")
+    );
+    assert!(
+        commands["commands"]["zig"]["debug"]["compile"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "Debug")
+    );
+    assert!(
+        commands["commands"]["zig"]["optimized"]["compile"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "ReleaseFast")
+    );
+
+    for language in LANGUAGES {
+        let source = root.join("src").join(match language {
+            "c" => "integer_mix.c",
+            "cpp" => "integer_mix.cpp",
+            "rust" => "integer_mix.rs",
+            "zig" => "integer_mix.zig",
+            "lanius" => "integer_mix.lani",
+            _ => unreachable!(),
+        });
+        assert!(source.is_file(), "missing {} source", source.display());
+    }
+
+    let samples = read_json(root.join("samples.json"));
+    let samples = samples["samples"].as_array().expect("runtime samples");
+    assert_eq!(samples.len(), language_lanes.len() * 20);
+    for (language, lane) in language_lanes {
+        let language_samples = samples
+            .iter()
+            .filter(|sample| sample["language"] == language && sample["lane"] == lane)
+            .collect::<Vec<_>>();
+        assert_eq!(language_samples.len(), 20);
+        assert!(
+            language_samples
+                .iter()
+                .all(|sample| sample["wall_ms"].as_f64().unwrap() > 0.0)
+        );
+    }
+
+    let summary = read_json(root.join("summary.json"));
+    let rows = summary["rows"].as_array().expect("summary rows");
+    assert_eq!(rows.len(), language_lanes.len());
+    for (language, lane) in language_lanes {
+        let row = rows
+            .iter()
+            .find(|row| row["language"] == language && row["lane"] == lane)
+            .expect("language lane summary");
+        assert_eq!(row["samples"], 20);
+        for field in [
+            "median_ms",
+            "mad_ms",
+            "min_ms",
+            "max_ms",
+            "lanius_runtime_ratio",
+        ] {
+            assert!(row[field].as_f64().unwrap() > 0.0, "invalid {field}");
+        }
+    }
+
+    let manifest = read_json(root.join("manifest.json"));
+    for file in manifest["files"].as_array().expect("manifest files") {
+        let relative = file["path"].as_str().unwrap();
+        assert_eq!(sha256_file(&root.join(relative)), file["sha256"]);
+    }
+}
+
 fn artifact_root() -> PathBuf {
     repo_root().join("benchmark_artifacts/grid_checksum")
 }

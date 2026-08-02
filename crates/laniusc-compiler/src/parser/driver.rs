@@ -482,6 +482,14 @@ impl GpuParser {
             "parser.resident.batch",
         );
 
+        bufs.clear_job_storage(encoder);
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            let (allocations, bytes) = bufs.resettable_storage_totals();
+            eprintln!(
+                "[gpu_compile_host_timer] parser.workspace_clear: allocations={allocations} bytes={bytes}"
+            );
+        }
+
         self.record_tokens_to_kinds_timed(
             encoder,
             token_capacity,

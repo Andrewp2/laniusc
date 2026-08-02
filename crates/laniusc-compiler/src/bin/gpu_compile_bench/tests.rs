@@ -159,6 +159,53 @@ fn generated_single_source_modes_honor_target_bytes() {
 }
 
 #[test]
+fn representative_modes_bound_function_size_independently_of_source_size() {
+    for mode in [
+        SourceMode::Mixed,
+        SourceMode::CallGraph,
+        SourceMode::ExprDense,
+        SourceMode::Varied,
+    ] {
+        let generated = make_source_artifact(mode, 0, Some(100_000), 67890);
+        assert!(
+            maximum_generated_function_lines(&generated.source) <= 96,
+            "{mode:?} should scale by adding bounded functions"
+        );
+    }
+
+    for mode in [SourceMode::SimpleLets, SourceMode::LongFunction] {
+        let generated = make_source_artifact(mode, 0, Some(100_000), 67890);
+        assert!(
+            maximum_generated_function_lines(&generated.source) > 1_000,
+            "{mode:?} should remain an explicit long-function stress workload"
+        );
+    }
+}
+
+fn maximum_generated_function_lines(source: &str) -> usize {
+    let mut maximum = 0usize;
+    let mut current = 0usize;
+    let mut depth = 0isize;
+    for line in source.lines() {
+        if current == 0 && line.trim_start().starts_with("fn ") {
+            current = 1;
+            depth = line.matches('{').count() as isize - line.matches('}').count() as isize;
+            continue;
+        }
+        if current == 0 {
+            continue;
+        }
+        current += 1;
+        depth += line.matches('{').count() as isize - line.matches('}').count() as isize;
+        if depth == 0 {
+            maximum = maximum.max(current);
+            current = 0;
+        }
+    }
+    maximum
+}
+
+#[test]
 fn cli_source_mode_selection_is_explicit() {
     assert_eq!(
         parse_source_mode(Some("all".to_string())).unwrap(),

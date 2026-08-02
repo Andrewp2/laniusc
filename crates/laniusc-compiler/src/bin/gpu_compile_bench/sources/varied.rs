@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use super::{
     DeterministicRng,
+    EntrypointBatches,
     GeneratedExpr,
     GeneratedFunction,
     GeneratedFunctionBody,
@@ -23,7 +24,7 @@ pub(super) fn make_varied_source_artifact(
     let mut rng = DeterministicRng::new(seed);
     let names = VariedNames::new(&mut rng);
     let mut functions = String::with_capacity(target_bytes.unwrap_or(lines.saturating_mul(80)));
-    let mut main_body = String::with_capacity(lines.saturating_mul(32).min(96 * 1024));
+    let mut entrypoint = EntrypointBatches::new("var_entry_batch", 32);
     let mut generated = Vec::<GeneratedFunction>::new();
     let mut expected_stdout = String::new();
 
@@ -33,7 +34,7 @@ pub(super) fn make_varied_source_artifact(
     loop {
         let projected_len = functions
             .len()
-            .saturating_add(main_body.len())
+            .saturating_add(entrypoint.len())
             .saturating_add(32);
         if target_bytes.is_some_and(|target| projected_len >= target)
             || target_bytes.is_none() && line_count >= lines
@@ -52,21 +53,16 @@ pub(super) fn make_varied_source_artifact(
         let expected = call.eval(&[]);
         expected_stdout.push_str(&expected.to_string());
         expected_stdout.push('\n');
-        main_body.push_str("    print(");
-        main_body.push_str(&call.source(&[]));
-        main_body.push_str(");\n");
-        line_count += 1;
+        line_count += entrypoint.push(&format!("    print({});\n", call.source(&[]))) + 1;
         generated.push(function);
         chunk += 1;
     }
 
-    let mut src = String::with_capacity(
-        functions
-            .len()
-            .saturating_add(main_body.len())
-            .saturating_add(32),
-    );
+    let (entry_functions, main_body, _) = entrypoint.finish();
+    let mut src =
+        String::with_capacity(functions.len() + entry_functions.len() + main_body.len() + 32);
     src.push_str(&functions);
+    src.push_str(&entry_functions);
     src.push_str("fn main() {\n");
     src.push_str(&main_body);
     src.push_str("    return 0;\n");

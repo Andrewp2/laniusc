@@ -13,6 +13,54 @@ VALUE_MASK = 4095
 
 
 @dataclass(frozen=True)
+class WorkloadProfile:
+    name: str
+    description: str
+    # Cumulative basis-point limit, inclusive operation-count range, and
+    # stable technical name for each function-size class.
+    operation_bands: tuple[tuple[int, int, int, str], ...]
+
+
+WORKLOAD_PROFILES = {
+    profile.name: profile
+    for profile in (
+        WorkloadProfile(
+            "typical",
+            "mostly short functions with a bounded medium-sized tail",
+            (
+                (8000, 2, 8, "short"),
+                (9700, 9, 24, "small"),
+                (9970, 25, 96, "medium"),
+                (10000, 97, 384, "large"),
+            ),
+        ),
+        WorkloadProfile(
+            "mixed",
+            "short ordinary functions plus rare large implementation functions",
+            (
+                (7200, 2, 10, "short"),
+                (9300, 11, 40, "small"),
+                (9880, 41, 160, "medium"),
+                (9995, 161, 640, "large"),
+                (10000, 1000, 2500, "very_large"),
+            ),
+        ),
+        WorkloadProfile(
+            "long-tail",
+            "heavy-tailed stress profile containing occasional multi-thousand-line functions",
+            (
+                (6500, 2, 12, "short"),
+                (9000, 13, 48, "small"),
+                (9800, 49, 192, "medium"),
+                (9975, 193, 768, "large"),
+                (10000, 2500, 5000, "very_large"),
+            ),
+        ),
+    )
+}
+
+
+@dataclass(frozen=True)
 class Operation:
     kind: str
     a: int
@@ -30,6 +78,7 @@ class Leaf:
     family_a: int
     family_b: int
     family_c: int
+    size_class: str
 
 
 @dataclass(frozen=True)
@@ -48,6 +97,7 @@ class Reducer:
 @dataclass(frozen=True)
 class Workload:
     seed: int
+    profile: str
     leaves: tuple[Leaf, ...]
     reducers: tuple[Reducer, ...]
     root: str
@@ -64,7 +114,14 @@ class Workload:
             for leaf in self.leaves
             for operation in leaf.operations
         )
+        size_classes = Counter(leaf.size_class for leaf in self.leaves)
+        body_lines = sorted(
+            [leaf_body_line_count(leaf) for leaf in self.leaves]
+            + [reducer_body_line_count() for _ in self.reducers]
+        )
         return {
+            "profile": self.profile,
+            "profile_description": WORKLOAD_PROFILES[self.profile].description,
             "leaf_function_count": len(self.leaves),
             "reduction_function_count": len(self.reducers),
             "reachable_function_count": self.function_count,
@@ -78,13 +135,17 @@ class Workload:
                 kind: operations[kind]
                 for kind in ["add", "mul", "xor", "shift", "branch"]
             },
+            "leaf_size_class_counts": dict(sorted(size_classes.items())),
+            "function_body_line_summary": summarize_counts(body_lines),
         }
 
 
-def build_workload(seed: int, leaf_count: int) -> Workload:
+def build_workload(seed: int, leaf_count: int, profile: str = "mixed") -> Workload:
     if leaf_count <= 0:
         raise ValueError("leaf_count must be positive")
-    leaves = tuple(build_leaf(seed, index) for index in range(leaf_count))
+    if profile not in WORKLOAD_PROFILES:
+        raise ValueError(f"unknown workload profile {profile!r}")
+    leaves = tuple(build_leaf(seed, index, profile) for index in range(leaf_count))
     reducers: list[Reducer] = []
     current = [leaf.name for leaf in leaves]
     level = 0
@@ -111,14 +172,17 @@ def build_workload(seed: int, leaf_count: int) -> Workload:
             following.append(reducer.name)
         current = following
         level += 1
-    return Workload(seed, leaves, tuple(reducers), current[0], level + 1)
+    return Workload(seed, profile, leaves, tuple(reducers), current[0], level + 1)
 
 
-def build_leaf(seed: int, index: int) -> Leaf:
+def build_leaf(seed: int, index: int, profile: str = "mixed") -> Leaf:
     rng = random.Random((seed << 32) ^ index ^ 0x5EED5EED)
     operations = []
     kinds = ("add", "mul", "xor", "shift", "branch")
-    for _ in range(6 + rng.randrange(7)):
+    operation_count, size_class = choose_operation_count(
+        rng, WORKLOAD_PROFILES[profile], index
+    )
+    for _ in range(operation_count):
         kind = rng.choice(kinds)
         if kind == "mul":
             a = rng.choice((3, 5, 7, 9, 11, 13))
@@ -139,7 +203,74 @@ def build_leaf(seed: int, index: int) -> Leaf:
         family_a=rng.randrange(1, 1024),
         family_b=rng.randrange(1, 1024),
         family_c=rng.randrange(1, 1024),
+        size_class=size_class,
     )
+
+
+def choose_operation_count(
+    rng: random.Random, profile: WorkloadProfile, index: int
+) -> tuple[int, str]:
+    # Large functions should be rare in a large project, not capable of
+    # dominating a tiny fixture merely because its seed selected the tail.
+    # Progressively unlock the profile's tail as the workload gains enough
+    # functions to contextualize it.
+    if profile.name == "typical":
+        limit = 9700 if index < 64 else 9970 if index < 256 else 10000
+    elif profile.name == "mixed":
+        limit = (
+            9300
+            if index < 64
+            else 9880
+            if index < 256
+            else 9995
+            if index < 1024
+            else 10000
+        )
+    elif profile.name == "long-tail":
+        limit = (
+            9000
+            if index < 64
+            else 9800
+            if index < 256
+            else 9975
+            if index < 1024
+            else 10000
+        )
+    else:
+        raise AssertionError(f"unknown workload profile {profile.name}")
+    selection = rng.randrange(limit)
+    for limit, minimum, maximum, size_class in profile.operation_bands:
+        if selection < limit:
+            return rng.randrange(minimum, maximum + 1), size_class
+    raise AssertionError(f"profile {profile.name} does not cover all basis points")
+
+
+def leaf_body_line_count(leaf: Leaf) -> int:
+    operation_lines = sum(5 if operation.kind == "branch" else 1 for operation in leaf.operations)
+    family_lines = (7, 6, 2, 8, 2)[leaf.family]
+    return 2 + operation_lines + family_lines
+
+
+def reducer_body_line_count() -> int:
+    return 7
+
+
+def summarize_counts(values: list[int]) -> dict[str, int | float]:
+    if not values:
+        return {"count": 0, "min": 0, "p50": 0, "p90": 0, "p99": 0, "max": 0, "mean": 0.0}
+
+    def percentile(percent: int) -> int:
+        return values[((len(values) - 1) * percent) // 100]
+
+    return {
+        "count": len(values),
+        "min": values[0],
+        "p50": percentile(50),
+        "p90": percentile(90),
+        "p99": percentile(99),
+        "max": values[-1],
+        "mean": sum(values) / len(values),
+    }
 
 
 def evaluate(workload: Workload, x: int = 7) -> int:
@@ -236,7 +367,7 @@ def header(language: str) -> str:
         "c": "#include <stdio.h>\n\ntypedef struct { int left; int right; } Pair;\n\n",
         "cpp": "#include <cstdio>\n\nstruct Pair { int left; int right; };\n\n",
         "zig": "const c = @cImport({ @cInclude(\"stdio.h\"); });\n\nconst Pair = struct { left: i32, right: i32 };\n\n",
-        "lanius": "module bench::scaling;\n\nimport std::io;\n\nstruct Pair {\n    left: i32,\n    right: i32,\n}\n\n",
+        "lanius": "module bench::scaling;\n\nstruct Pair {\n    left: i32,\n    right: i32,\n}\n\n",
     }[language]
 
 
@@ -411,7 +542,7 @@ def main_function(language: str, root: str) -> str:
         "cpp": f'int main() {{ std::printf("%d\\n", {root}(7)); return 0; }}\n',
         "zig": f'pub fn main() void {{ _ = c.printf("%d\\n", {root}(7)); }}\n',
         "lanius": f"""fn main() -> i32 {{
-    std::io::print_i32({root}(7));
+    print({root}(7));
     return 0;
 }}
 """,

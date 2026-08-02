@@ -1,0 +1,1445 @@
+{
+  "samples": [
+    {
+      "iteration": 16,
+      "lane": "optimized",
+      "language": "c",
+      "order": 0,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.551227
+    },
+    {
+      "iteration": 19,
+      "lane": "debug",
+      "language": "c",
+      "order": 1,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 54.682204
+    },
+    {
+      "iteration": 0,
+      "lane": "debug",
+      "language": "zig",
+      "order": 2,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.345087
+    },
+    {
+      "iteration": 3,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 3,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 54.879647
+    },
+    {
+      "iteration": 1,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 4,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.859075
+    },
+    {
+      "iteration": 8,
+      "lane": "debug",
+      "language": "zig",
+      "order": 5,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.353817
+    },
+    {
+      "iteration": 19,
+      "lane": "debug",
+      "language": "rust",
+      "order": 6,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.076883
+    },
+    {
+      "iteration": 6,
+      "lane": "debug",
+      "language": "c",
+      "order": 7,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 54.729963
+    },
+    {
+      "iteration": 16,
+      "lane": "debug",
+      "language": "zig",
+      "order": 8,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.140575
+    },
+    {
+      "iteration": 19,
+      "lane": "debug",
+      "language": "zig",
+      "order": 9,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.381866
+    },
+    {
+      "iteration": 19,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 10,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.99014
+    },
+    {
+      "iteration": 6,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 11,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.341687
+    },
+    {
+      "iteration": 7,
+      "lane": "current",
+      "language": "lanius",
+      "order": 12,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.284989
+    },
+    {
+      "iteration": 10,
+      "lane": "debug",
+      "language": "zig",
+      "order": 13,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.294
+    },
+    {
+      "iteration": 7,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 14,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.78695
+    },
+    {
+      "iteration": 13,
+      "lane": "debug",
+      "language": "zig",
+      "order": 15,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.418884
+    },
+    {
+      "iteration": 18,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 16,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.276558
+    },
+    {
+      "iteration": 10,
+      "lane": "current",
+      "language": "lanius",
+      "order": 17,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.323067
+    },
+    {
+      "iteration": 0,
+      "lane": "debug",
+      "language": "c",
+      "order": 18,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 54.953824
+    },
+    {
+      "iteration": 12,
+      "lane": "optimized",
+      "language": "c",
+      "order": 19,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 46.013069
+    },
+    {
+      "iteration": 5,
+      "lane": "debug",
+      "language": "zig",
+      "order": 20,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.01805
+    },
+    {
+      "iteration": 14,
+      "lane": "current",
+      "language": "lanius",
+      "order": 21,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 93.516379
+    },
+    {
+      "iteration": 2,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 22,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 54.907186
+    },
+    {
+      "iteration": 6,
+      "lane": "debug",
+      "language": "zig",
+      "order": 23,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.271471
+    },
+    {
+      "iteration": 2,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 24,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 52.762292
+    },
+    {
+      "iteration": 15,
+      "lane": "optimized",
+      "language": "c",
+      "order": 25,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.087806
+    },
+    {
+      "iteration": 9,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 26,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.196903
+    },
+    {
+      "iteration": 0,
+      "lane": "optimized",
+      "language": "c",
+      "order": 27,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.698171
+    },
+    {
+      "iteration": 17,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 28,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.170474
+    },
+    {
+      "iteration": 18,
+      "lane": "current",
+      "language": "lanius",
+      "order": 29,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 93.889225
+    },
+    {
+      "iteration": 9,
+      "lane": "current",
+      "language": "lanius",
+      "order": 30,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 94.434644
+    },
+    {
+      "iteration": 5,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 31,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 41.874784
+    },
+    {
+      "iteration": 17,
+      "lane": "debug",
+      "language": "c",
+      "order": 32,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 54.766651
+    },
+    {
+      "iteration": 18,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 33,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.607667
+    },
+    {
+      "iteration": 8,
+      "lane": "optimized",
+      "language": "c",
+      "order": 34,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.332387
+    },
+    {
+      "iteration": 4,
+      "lane": "debug",
+      "language": "zig",
+      "order": 35,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.707964
+    },
+    {
+      "iteration": 4,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 36,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 51.606207
+    },
+    {
+      "iteration": 10,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 37,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.101646
+    },
+    {
+      "iteration": 11,
+      "lane": "optimized",
+      "language": "c",
+      "order": 38,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.25796
+    },
+    {
+      "iteration": 4,
+      "lane": "debug",
+      "language": "rust",
+      "order": 39,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.469549
+    },
+    {
+      "iteration": 6,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 40,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.180972
+    },
+    {
+      "iteration": 2,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 41,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.374245
+    },
+    {
+      "iteration": 10,
+      "lane": "debug",
+      "language": "c",
+      "order": 42,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.30584
+    },
+    {
+      "iteration": 1,
+      "lane": "optimized",
+      "language": "c",
+      "order": 43,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.333057
+    },
+    {
+      "iteration": 12,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 44,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.287768
+    },
+    {
+      "iteration": 0,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 45,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.200885
+    },
+    {
+      "iteration": 15,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 46,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.226051
+    },
+    {
+      "iteration": 1,
+      "lane": "debug",
+      "language": "zig",
+      "order": 47,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.872148
+    },
+    {
+      "iteration": 8,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 48,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.150166
+    },
+    {
+      "iteration": 17,
+      "lane": "optimized",
+      "language": "c",
+      "order": 49,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.843716
+    },
+    {
+      "iteration": 19,
+      "lane": "optimized",
+      "language": "c",
+      "order": 50,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.586767
+    },
+    {
+      "iteration": 6,
+      "lane": "debug",
+      "language": "rust",
+      "order": 51,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.028926
+    },
+    {
+      "iteration": 3,
+      "lane": "debug",
+      "language": "c",
+      "order": 52,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 93.173814
+    },
+    {
+      "iteration": 9,
+      "lane": "debug",
+      "language": "zig",
+      "order": 53,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 130.567227
+    },
+    {
+      "iteration": 13,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 54,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 49.333277
+    },
+    {
+      "iteration": 13,
+      "lane": "debug",
+      "language": "rust",
+      "order": 55,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 105.341281
+    },
+    {
+      "iteration": 5,
+      "lane": "debug",
+      "language": "c",
+      "order": 56,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 85.615076
+    },
+    {
+      "iteration": 17,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 57,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 51.025801
+    },
+    {
+      "iteration": 9,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 58,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 51.163775
+    },
+    {
+      "iteration": 11,
+      "lane": "debug",
+      "language": "c",
+      "order": 59,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 82.515129
+    },
+    {
+      "iteration": 0,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 60,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.783401
+    },
+    {
+      "iteration": 6,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 61,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 49.580628
+    },
+    {
+      "iteration": 14,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 62,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.627117
+    },
+    {
+      "iteration": 13,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 63,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.730462
+    },
+    {
+      "iteration": 16,
+      "lane": "current",
+      "language": "lanius",
+      "order": 64,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 118.022316
+    },
+    {
+      "iteration": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 65,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 57.563811
+    },
+    {
+      "iteration": 15,
+      "lane": "debug",
+      "language": "rust",
+      "order": 66,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 104.536953
+    },
+    {
+      "iteration": 14,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 67,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 60.403088
+    },
+    {
+      "iteration": 17,
+      "lane": "debug",
+      "language": "zig",
+      "order": 68,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 133.817529
+    },
+    {
+      "iteration": 2,
+      "lane": "debug",
+      "language": "rust",
+      "order": 69,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 105.168319
+    },
+    {
+      "iteration": 0,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 70,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 58.617499
+    },
+    {
+      "iteration": 19,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 71,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 82.034878
+    },
+    {
+      "iteration": 7,
+      "lane": "optimized",
+      "language": "c",
+      "order": 72,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.993683
+    },
+    {
+      "iteration": 5,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 73,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 57.951836
+    },
+    {
+      "iteration": 16,
+      "lane": "debug",
+      "language": "c",
+      "order": 74,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 81.941381
+    },
+    {
+      "iteration": 2,
+      "lane": "current",
+      "language": "lanius",
+      "order": 75,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 118.19929
+    },
+    {
+      "iteration": 5,
+      "lane": "optimized",
+      "language": "c",
+      "order": 76,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.667385
+    },
+    {
+      "iteration": 11,
+      "lane": "current",
+      "language": "lanius",
+      "order": 77,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 117.558675
+    },
+    {
+      "iteration": 12,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 78,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 81.897463
+    },
+    {
+      "iteration": 17,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 79,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 82.99114
+    },
+    {
+      "iteration": 4,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 80,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 49.386006
+    },
+    {
+      "iteration": 15,
+      "lane": "debug",
+      "language": "c",
+      "order": 81,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 83.141904
+    },
+    {
+      "iteration": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 82,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 59.156528
+    },
+    {
+      "iteration": 10,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 83,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 80.674402
+    },
+    {
+      "iteration": 15,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 84,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 58.293942
+    },
+    {
+      "iteration": 8,
+      "lane": "debug",
+      "language": "rust",
+      "order": 85,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 104.616711
+    },
+    {
+      "iteration": 19,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 86,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 57.073651
+    },
+    {
+      "iteration": 4,
+      "lane": "optimized",
+      "language": "c",
+      "order": 87,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.02015
+    },
+    {
+      "iteration": 10,
+      "lane": "optimized",
+      "language": "c",
+      "order": 88,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.733441
+    },
+    {
+      "iteration": 8,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 89,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.443744
+    },
+    {
+      "iteration": 12,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 90,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.584419
+    },
+    {
+      "iteration": 1,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 91,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 41.803348
+    },
+    {
+      "iteration": 3,
+      "lane": "optimized",
+      "language": "c",
+      "order": 92,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.655185
+    },
+    {
+      "iteration": 11,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 93,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.132039
+    },
+    {
+      "iteration": 9,
+      "lane": "optimized",
+      "language": "c",
+      "order": 94,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.460342
+    },
+    {
+      "iteration": 17,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 95,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.819368
+    },
+    {
+      "iteration": 11,
+      "lane": "debug",
+      "language": "rust",
+      "order": 96,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.413943
+    },
+    {
+      "iteration": 14,
+      "lane": "debug",
+      "language": "rust",
+      "order": 97,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 78.015609
+    },
+    {
+      "iteration": 12,
+      "lane": "debug",
+      "language": "rust",
+      "order": 98,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.941582
+    },
+    {
+      "iteration": 5,
+      "lane": "current",
+      "language": "lanius",
+      "order": 99,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 93.277982
+    },
+    {
+      "iteration": 13,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 100,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.904676
+    },
+    {
+      "iteration": 7,
+      "lane": "debug",
+      "language": "zig",
+      "order": 101,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 101.046144
+    },
+    {
+      "iteration": 16,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 102,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 42.367826
+    },
+    {
+      "iteration": 15,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 103,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.202386
+    },
+    {
+      "iteration": 13,
+      "lane": "debug",
+      "language": "c",
+      "order": 104,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.400048
+    },
+    {
+      "iteration": 2,
+      "lane": "optimized",
+      "language": "c",
+      "order": 105,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.140395
+    },
+    {
+      "iteration": 18,
+      "lane": "debug",
+      "language": "rust",
+      "order": 106,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.205511
+    },
+    {
+      "iteration": 5,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 107,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.276773
+    },
+    {
+      "iteration": 11,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 108,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.748463
+    },
+    {
+      "iteration": 1,
+      "lane": "debug",
+      "language": "c",
+      "order": 109,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.209286
+    },
+    {
+      "iteration": 16,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 110,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.362046
+    },
+    {
+      "iteration": 11,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 111,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.7624
+    },
+    {
+      "iteration": 13,
+      "lane": "current",
+      "language": "lanius",
+      "order": 112,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.516662
+    },
+    {
+      "iteration": 3,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 113,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.658685
+    },
+    {
+      "iteration": 12,
+      "lane": "current",
+      "language": "lanius",
+      "order": 114,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.359539
+    },
+    {
+      "iteration": 2,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 115,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 41.77442
+    },
+    {
+      "iteration": 12,
+      "lane": "debug",
+      "language": "c",
+      "order": 116,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.277943
+    },
+    {
+      "iteration": 4,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 117,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.161248
+    },
+    {
+      "iteration": 14,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 118,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 41.951503
+    },
+    {
+      "iteration": 12,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 119,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 41.686364
+    },
+    {
+      "iteration": 9,
+      "lane": "debug",
+      "language": "rust",
+      "order": 120,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.108116
+    },
+    {
+      "iteration": 5,
+      "lane": "debug",
+      "language": "rust",
+      "order": 121,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.582697
+    },
+    {
+      "iteration": 18,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 122,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.352411
+    },
+    {
+      "iteration": 2,
+      "lane": "debug",
+      "language": "c",
+      "order": 123,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.219046
+    },
+    {
+      "iteration": 6,
+      "lane": "optimized",
+      "language": "c",
+      "order": 124,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.267991
+    },
+    {
+      "iteration": 13,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 125,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.137089
+    },
+    {
+      "iteration": 0,
+      "lane": "debug",
+      "language": "rust",
+      "order": 126,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.290888
+    },
+    {
+      "iteration": 14,
+      "lane": "optimized",
+      "language": "c",
+      "order": 127,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.176675
+    },
+    {
+      "iteration": 6,
+      "lane": "current",
+      "language": "lanius",
+      "order": 128,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.444656
+    },
+    {
+      "iteration": 15,
+      "lane": "current",
+      "language": "lanius",
+      "order": 129,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.560851
+    },
+    {
+      "iteration": 9,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 130,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 54.944386
+    },
+    {
+      "iteration": 15,
+      "lane": "debug",
+      "language": "zig",
+      "order": 131,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.963068
+    },
+    {
+      "iteration": 7,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 132,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 42.130426
+    },
+    {
+      "iteration": 16,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 133,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 50.684986
+    },
+    {
+      "iteration": 1,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 134,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.024924
+    },
+    {
+      "iteration": 3,
+      "lane": "current",
+      "language": "lanius",
+      "order": 135,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.841481
+    },
+    {
+      "iteration": 8,
+      "lane": "current",
+      "language": "lanius",
+      "order": 136,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.420777
+    },
+    {
+      "iteration": 1,
+      "lane": "current",
+      "language": "lanius",
+      "order": 137,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.550802
+    },
+    {
+      "iteration": 13,
+      "lane": "optimized",
+      "language": "c",
+      "order": 138,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.735332
+    },
+    {
+      "iteration": 8,
+      "lane": "debug",
+      "language": "c",
+      "order": 139,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.11971
+    },
+    {
+      "iteration": 15,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 140,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 42.144566
+    },
+    {
+      "iteration": 7,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 141,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.068762
+    },
+    {
+      "iteration": 4,
+      "lane": "debug",
+      "language": "c",
+      "order": 142,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.327651
+    },
+    {
+      "iteration": 16,
+      "lane": "debug",
+      "language": "rust",
+      "order": 143,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.458151
+    },
+    {
+      "iteration": 14,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 144,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.428318
+    },
+    {
+      "iteration": 9,
+      "lane": "debug",
+      "language": "c",
+      "order": 145,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.282623
+    },
+    {
+      "iteration": 7,
+      "lane": "debug",
+      "language": "c",
+      "order": 146,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.37167
+    },
+    {
+      "iteration": 11,
+      "lane": "debug",
+      "language": "zig",
+      "order": 147,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 101.321464
+    },
+    {
+      "iteration": 0,
+      "lane": "current",
+      "language": "lanius",
+      "order": 148,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 93.279074
+    },
+    {
+      "iteration": 3,
+      "lane": "debug",
+      "language": "rust",
+      "order": 149,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.420734
+    },
+    {
+      "iteration": 7,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 150,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.040531
+    },
+    {
+      "iteration": 18,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 151,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 41.910705
+    },
+    {
+      "iteration": 8,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 152,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 43.756731
+    },
+    {
+      "iteration": 19,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 153,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 41.819758
+    },
+    {
+      "iteration": 12,
+      "lane": "debug",
+      "language": "zig",
+      "order": 154,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.93168
+    },
+    {
+      "iteration": 4,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 155,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.142286
+    },
+    {
+      "iteration": 14,
+      "lane": "debug",
+      "language": "zig",
+      "order": 156,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 101.241158
+    },
+    {
+      "iteration": 19,
+      "lane": "current",
+      "language": "lanius",
+      "order": 157,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 93.192587
+    },
+    {
+      "iteration": 18,
+      "lane": "debug",
+      "language": "zig",
+      "order": 158,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 101.19893
+    },
+    {
+      "iteration": 17,
+      "lane": "current",
+      "language": "lanius",
+      "order": 159,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 93.078572
+    },
+    {
+      "iteration": 1,
+      "lane": "debug",
+      "language": "rust",
+      "order": 160,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.155575
+    },
+    {
+      "iteration": 10,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 161,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 42.396406
+    },
+    {
+      "iteration": 18,
+      "lane": "optimized",
+      "language": "c",
+      "order": 162,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.191065
+    },
+    {
+      "iteration": 3,
+      "lane": "optimized",
+      "language": "rust",
+      "order": 163,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 51.340541
+    },
+    {
+      "iteration": 5,
+      "lane": "optimized",
+      "language": "cpp",
+      "order": 164,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 44.029731
+    },
+    {
+      "iteration": 16,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 165,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.226306
+    },
+    {
+      "iteration": 17,
+      "lane": "debug",
+      "language": "rust",
+      "order": 166,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.300539
+    },
+    {
+      "iteration": 9,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 167,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 42.53395
+    },
+    {
+      "iteration": 14,
+      "lane": "debug",
+      "language": "c",
+      "order": 168,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.165898
+    },
+    {
+      "iteration": 8,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 169,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 42.313299
+    },
+    {
+      "iteration": 3,
+      "lane": "debug",
+      "language": "zig",
+      "order": 170,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.618123
+    },
+    {
+      "iteration": 0,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 171,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 42.151925
+    },
+    {
+      "iteration": 2,
+      "lane": "debug",
+      "language": "zig",
+      "order": 172,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 100.738428
+    },
+    {
+      "iteration": 3,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 173,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 42.171115
+    },
+    {
+      "iteration": 11,
+      "lane": "optimized",
+      "language": "zig",
+      "order": 174,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 41.773521
+    },
+    {
+      "iteration": 10,
+      "lane": "debug",
+      "language": "rust",
+      "order": 175,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.048529
+    },
+    {
+      "iteration": 18,
+      "lane": "debug",
+      "language": "c",
+      "order": 176,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.237926
+    },
+    {
+      "iteration": 7,
+      "lane": "debug",
+      "language": "rust",
+      "order": 177,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 77.071519
+    },
+    {
+      "iteration": 6,
+      "lane": "debug",
+      "language": "cpp",
+      "order": 178,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 55.276285
+    },
+    {
+      "iteration": 4,
+      "lane": "current",
+      "language": "lanius",
+      "order": 179,
+      "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "wall_ms": 92.997936
+    }
+  ],
+  "schema": "lanius.runtime-comparison.v1"
+}

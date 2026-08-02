@@ -102,10 +102,16 @@ impl HierarchicalRadixSortDefinition {
         self,
         graph: &mut CompilerGraphBuilder,
         digit_steps: u32,
-        keys: &[&str],
+        keys: &[&'static str],
     ) -> Result<(), String> {
-        let resources =
-            resolve_radix_sort_graph_resources(graph, self.resources, self.dispatch_args, keys)?;
+        let bindings = keys.iter().map(|&name| (name, name)).collect::<Vec<_>>();
+        let resources = resolve_radix_sort_graph_resources(
+            graph,
+            self.resources,
+            self.dispatch_args,
+            self.resources.count,
+            &bindings,
+        )?;
         graph.add_fragment(RadixSortGraph {
             phase: self.phase,
             dispatch_domain: self.dispatch_domain,

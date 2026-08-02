@@ -313,6 +313,7 @@ pub struct GpuHirView {
 /// This struct owns resident GPU storage and uniform buffers only; readback and
 /// staging buffers live in driver/result objects.
 pub struct ParserBuffers {
+    pub(crate) resettable_buffers: Vec<crate::gpu::buffers::ResettableBuffer>,
     pub source_capacity: u32,
     // sizes
     pub n_tokens: u32,

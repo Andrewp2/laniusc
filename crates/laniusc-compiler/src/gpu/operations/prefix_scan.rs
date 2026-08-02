@@ -63,6 +63,7 @@ impl PrefixScanOperation {
         resources: &ResourceMap<'_>,
         spec: PrefixScanPairSpec,
     ) -> Result<(Self, Self)> {
+        resources.validate_graph_passes_if_present(spec.passes.names())?;
         let passes = standard_passes(kernels);
         Ok((
             Self::from_resource_names_with_passes(
@@ -88,6 +89,7 @@ impl PrefixScanOperation {
         resources: &ResourceMap<'_>,
         spec: PrefixScanSpec,
     ) -> Result<Self> {
+        resources.validate_graph_passes_if_present(spec.passes.names())?;
         Self::from_resource_names_with_passes(
             device,
             spec.passes.local,

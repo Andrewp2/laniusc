@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.lir.x86.runtime_abi;
+import codegen.lir.x86.location_common;
 import gpu_index;
 
 struct Params
@@ -17,74 +18,137 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<X86LirCore> target_lir_core;
 StructuredBuffer<X86LirOperands> target_lir_operands;
+StructuredBuffer<X86LirLocations> target_lir_locations;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> target_function_count;
 StructuredBuffer<TargetLirFunction> target_functions;
 StructuredBuffer<uint> target_function_index_by_semantic;
 StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+StructuredBuffer<SemanticLirParam> semantic_lir_params;
+StructuredBuffer<uint> x86_decl_location_by_token;
+StructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 RWStructuredBuffer<uint> target_byte_length;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-uint param_store_bytes(uint count)
+uint argument_register(uint ordinal)
 {
-    // Every incoming GPR parameter is retained as a full machine word. This
-    // keeps aggregate references intact while scalar consumers continue to
-    // read the low dword from the same frame slot. Each emitted register-to-
-    // frame form is REX.W + opcode + ModRM + disp32: seven bytes, including
-    // the r8/r9 encodings used for ordinals four and five.
-    return min(count, 6u) * 7u;
+    static const uint registers[6] = {7u, 6u, 2u, 1u, 8u, 9u};
+    return registers[min(ordinal, 5u)];
 }
 
-uint instruction_bytes(X86LirCore core, X86LirOperands operands)
+uint declaration_location(uint token)
 {
-    if (core.op == X86_LIR_OP_IMM_I32) return 11u;
-    if (core.op == X86_LIR_OP_ALIAS) return 14u;
-    if (core.op == X86_LIR_OP_STORE_LOCAL) return 12u;
+    uint location = token < gParams.token_capacity
+        ? x86_decl_location_by_token[token] : X86_LOCATION_INVALID;
+    return location == X86_LOCATION_INVALID ? 0u : location;
+}
+
+uint param_store_bytes(SemanticLirFunction function, uint hidden_sret)
+{
+    uint bytes = hidden_sret != 0u ? 7u : 0u;
+    for (uint ordinal = 0u;
+         ordinal < min(function.param_count, 6u - hidden_sret); ordinal += 1u)
+    {
+        SemanticLirParam param = semantic_lir_params[function.param_start + ordinal];
+        bytes += x86_move64_from_fixed_bytes(argument_register(ordinal + hidden_sret),
+            declaration_location(param.declaration_id));
+    }
+    return bytes;
+}
+
+uint instruction_bytes(X86LirCore core, X86LirOperands operands,
+                       X86LirLocations locations, uint saved_mask)
+{
+    uint restore_bytes = x86_saved_gpr_count(saved_mask) * 7u;
+    if (core.op == X86_LIR_OP_IMM_I32)
+        return 5u + x86_move32_from_fixed_bytes(0u, locations.result);
+    if (core.op == X86_LIR_OP_ALIAS)
+    {
+        uint source = declaration_location(operands.a);
+        return x86_move64_to_fixed_bytes(source, 0u) +
+            x86_move64_from_fixed_bytes(0u, locations.result);
+    }
+    if (core.op == X86_LIR_OP_STORE_LOCAL)
+    {
+        uint destination = declaration_location(operands.a);
+        return (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u
+            ? x86_move64_to_fixed_bytes(locations.b, 0u) +
+              x86_move64_from_fixed_bytes(0u, destination)
+            : x86_move32_to_fixed_bytes(locations.b, 0u) +
+              x86_move32_from_fixed_bytes(0u, destination);
+    }
     if (core.op == X86_LIR_OP_BINARY)
     {
         if (operands.a >= X86_LIR_BINARY_ADD_F32 && operands.a <= X86_LIR_BINARY_DIV_F32)
             return 28u;
-        if (operands.a == X86_LIR_BINARY_MUL_I32) return 21u;
-        if (operands.a == X86_LIR_BINARY_DIV_I32) return 21u;
-        if (operands.a == X86_LIR_BINARY_REM_I32) return 23u;
-        return 20u;
+        return x86_move32_to_fixed_bytes(locations.b, 0u) +
+            x86_move32_to_fixed_bytes(locations.c, 1u) +
+            x86_binary_opcode_bytes(operands.a) +
+            x86_move32_from_fixed_bytes(0u, locations.result);
     }
     if (core.op == X86_LIR_OP_COMPARE)
-        return (operands.metadata & 0xffu) == 5u ? 31u : 26u;
+        return (operands.metadata & 0xffu) == 5u ? 31u :
+            x86_move32_to_fixed_bytes(locations.b, 0u) +
+            x86_move32_to_fixed_bytes(locations.c, 1u) + 8u +
+            x86_move32_from_fixed_bytes(0u, locations.result);
     if (core.op == X86_LIR_OP_UNARY)
-        return operands.a == X86_LIR_UNARY_NEG_I32 ? 14u
-             : operands.a == X86_LIR_UNARY_NOT_BOOL ? 21u
+        return operands.a == X86_LIR_UNARY_NEG_I32
+             ? x86_move32_to_fixed_bytes(locations.b, 0u) + 2u +
+               x86_move32_from_fixed_bytes(0u, locations.result)
+             : operands.a == X86_LIR_UNARY_NOT_BOOL
+             ? x86_move32_to_fixed_bytes(locations.b, 0u) + 9u +
+               x86_move32_from_fixed_bytes(0u, locations.result)
              : operands.a == X86_LIR_UNARY_NEG_F32 ? 17u : 0u;
     if (core.op == X86_LIR_OP_RETURN)
-        return (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u
-            ? operands.c > 2u ? 9u : 2u
-            : operands.a == INVALID ? 4u : 8u;
-    if (core.op == X86_LIR_OP_RETURN_VOID) return 4u;
+        return operands.c != 0u
+            ? (operands.c > 2u ? 7u : 0u) + restore_bytes + 2u
+            : (operands.a == INVALID ? 2u :
+               x86_move32_to_fixed_bytes(locations.a, 0u)) +
+              restore_bytes + 2u;
+    if (core.op == X86_LIR_OP_RETURN_VOID) return 4u + restore_bytes;
     if (core.op == X86_LIR_OP_CALL_ARG)
     {
         if (operands.b >= 6u) return 0u;
         bool wide = (operands.metadata &
             (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u;
-        return wide ? 10u : operands.b < 4u ? 8u : 9u;
+        return (wide ? x86_move64_to_fixed_bytes(locations.a, 0u)
+                     : x86_move32_to_fixed_bytes(locations.a, 0u)) +
+            (wide ? 3u : operands.b < 4u ? 2u : 3u);
     }
     if (core.op == X86_LIR_OP_CALL)
         return (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u
             ? operands.c == 0u ? 0u : operands.c > 2u ? 19u : 19u + operands.c * 7u
-            : 11u;
+            : 5u + x86_move32_from_fixed_bytes(0u, locations.result);
     if (core.op == X86_LIR_OP_CALL_SYMBOL)
-        return (operands.metadata & X86_LIR_METADATA_AGGREGATE) == 0u ? 11u : 0u;
+        return (operands.metadata & X86_LIR_METADATA_AGGREGATE) == 0u
+            ? 5u + x86_move32_from_fixed_bytes(0u, locations.result) : 0u;
     if (core.op == X86_LIR_OP_CALL_HOST && operands.a == HOST_SERVICE_I32_TO_F32) return 12u;
     if (core.op == X86_LIR_OP_CALL_HOST && x86_runtime_service_supported(operands.a))
-        return x86_runtime_service_has_result(operands.a) ? 11u : 5u;
+        return x86_runtime_service_has_result(operands.a)
+            ? 5u + x86_move32_from_fixed_bytes(0u, locations.result) : 5u;
     if (core.op == X86_LIR_OP_PRINT_I32 && operands.a == 1u) return 5u;
     if (core.op == X86_LIR_OP_ARRAY_ADDR) return 14u;
-    if (core.op == X86_LIR_OP_ARRAY_INIT) return 14u;
-    if (core.op == X86_LIR_OP_INDEX_LOAD) return 27u;
-    if (core.op == X86_LIR_OP_FIELD_LOAD) return 21u;
+    if (core.op == X86_LIR_OP_ARRAY_INIT)
+        return x86_move64_to_fixed_bytes(locations.a, 0u) +
+            x86_move64_from_fixed_bytes(0u, locations.c);
+    if (core.op == X86_LIR_OP_INDEX_LOAD)
+        return x86_move64_to_fixed_bytes(locations.a, 0u) +
+            x86_move32_to_fixed_bytes(locations.b, 1u) + 7u +
+            x86_move64_from_fixed_bytes(0u, locations.result);
+    if (core.op == X86_LIR_OP_FIELD_LOAD)
+        return x86_move64_to_fixed_bytes(locations.a, 0u) + 7u +
+            x86_move64_from_fixed_bytes(0u, locations.result);
+    if (core.op == X86_LIR_OP_INDEX_STORE)
+        return x86_move64_to_fixed_bytes(locations.a, 0u) +
+            x86_move32_to_fixed_bytes(locations.b, 1u) +
+            x86_move32_to_fixed_bytes(locations.c, 2u) + 7u;
+    if (core.op == X86_LIR_OP_FIELD_STORE)
+        return x86_move64_to_fixed_bytes(locations.a, 0u) +
+            x86_move32_to_fixed_bytes(locations.c, 1u) + 7u;
     if (core.op == X86_LIR_OP_AGGREGATE_RESULT_SLOT) return 0u;
     if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
         return operands.c > 2u
@@ -92,7 +156,8 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands)
             : operands.b == 0u ? 10u : 14u;
     if (core.op == X86_LIR_OP_STRING_ADDR) return 17u;
     if (core.op == X86_LIR_OP_STRING_LEN) return 11u;
-    if (core.op == X86_LIR_OP_BRANCH) return operands.a == INVALID ? 5u : 14u;
+    if (core.op == X86_LIR_OP_BRANCH) return operands.a == INVALID ? 5u :
+        x86_move32_to_fixed_bytes(locations.a, 0u) + 8u;
     if (core.op == X86_LIR_OP_LABEL) return 0u;
     return 0u;
 }
@@ -110,6 +175,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row >= total) return;
     X86LirCore core = target_lir_core[page_row];
     X86LirOperands operands = target_lir_operands[page_row];
+    X86LirLocations locations = target_lir_locations[page_row];
     uint function_id = semantic_function_id_by_hir[core.source_hir];
     uint function_count = min(gParams.function_capacity,
         min(target_function_count[0u], semantic_lir_function_total[0u]));
@@ -123,10 +189,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     TargetLirFunction function = target_functions[function_index];
     SemanticLirFunction semantic_function = semantic_lir_functions[function_id];
-    uint bytes = instruction_bytes(core, operands);
-    if (core.op == X86_LIR_OP_STORE_LOCAL &&
-        (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
-        bytes = 14u;
+    uint saved_mask = x86_saved_gpr_mask_by_function[function_id];
+    uint bytes = instruction_bytes(core, operands, locations, saved_mask);
     bool supported_zero = core.op == X86_LIR_OP_LABEL ||
         core.op == X86_LIR_OP_AGGREGATE_RESULT_SLOT;
     if (bytes == 0u && !supported_zero)
@@ -143,6 +207,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         (core.op == X86_LIR_OP_INDEX_LOAD &&
          (operands.a >= total || operands.b >= total)) ||
         (core.op == X86_LIR_OP_FIELD_LOAD && operands.a >= total))
+    {
+        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
+        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+    }
+    if ((core.op == X86_LIR_OP_INDEX_STORE &&
+         (operands.a >= total || operands.b >= total || operands.c >= total)) ||
+        (core.op == X86_LIR_OP_FIELD_STORE &&
+         (operands.a >= total || operands.c >= total)))
     {
         InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
         InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
@@ -173,8 +245,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
     }
     if (row == function.instruction_start)
-        bytes += 11u + param_store_bytes(semantic_function.param_count + hidden_sret);
+        bytes += 11u + x86_saved_gpr_count(saved_mask) * 7u +
+            param_store_bytes(semantic_function, hidden_sret);
     if (row + 1u == function.instruction_start + function.instruction_count)
-        bytes += 4u;
+        bytes += 4u + x86_saved_gpr_count(saved_mask) * 7u;
     target_byte_length[row] = bytes;
 }

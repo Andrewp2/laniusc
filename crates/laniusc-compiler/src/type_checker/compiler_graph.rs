@@ -470,8 +470,6 @@ pub(super) const PREDICATES_COLLECT_BOUND_ARG_FACTS_PASS: &str =
     "type_check.predicates.collect_bound_arg_facts";
 pub(super) const PREDICATES_COLLECT_METHOD_CONTRACTS_PASS: &str =
     "type_check.predicates.collect_method_contracts";
-pub(super) const PREDICATES_METHOD_CONTRACT_KEYS_PASS: &str =
-    "type_check.predicates.method_contract_keys";
 pub(super) const PREDICATES_BUILD_METHOD_OWNER_RANGES_PASS: &str =
     "type_check.predicates.build_method_owner_ranges";
 pub(super) const PREDICATES_COLLECT_PASS: &str = "type_check.predicates.collect";
@@ -486,9 +484,105 @@ pub(super) const PREDICATES_VALIDATE_METHOD_TYPE_ARG_ROWS_PASS: &str =
     "type_check.predicates.validate_method_type_arg_rows";
 pub(super) const PREDICATES_REDUCE_METHOD_VALIDATION_ERRORS_PASS: &str =
     "type_check.predicates.reduce_method_validation_errors";
-pub(super) const PREDICATES_OWNER_IMPL_KEYS_PASS: &str = "type_check.predicates.owner_impl_keys";
 pub(super) const PREDICATES_COUNT_OBLIGATION_PAIRS_PASS: &str =
     "type_check.predicates.count_obligation_pairs";
+
+macro_rules! predicate_key_definition {
+    ($name:ident, $label:literal, $mode:expr, $steps:expr, $order:literal, $temporary:literal) => {
+        pub(super) const $name: PredicateKeyDefinition = PredicateKeyDefinition {
+            label: $label,
+            mode: $mode,
+            steps: $steps,
+            seed_pass: concat!($label, ".seed"),
+            small_pass: concat!($label, ".small"),
+            sort: RadixSortDefinition {
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::HirNodes,
+                passes: RadixSortGraphPasses {
+                    order_to_temporary: RadixSortGraphStepPasses {
+                        histogram: concat!($label, ".radix.histogram.a"),
+                        bucket_prefix: concat!($label, ".radix.prefix.a"),
+                        bucket_bases: concat!($label, ".radix.bases.a"),
+                        scatter: concat!($label, ".radix.scatter.a"),
+                    },
+                    temporary_to_order: RadixSortGraphStepPasses {
+                        histogram: concat!($label, ".radix.histogram.b"),
+                        bucket_prefix: concat!($label, ".radix.prefix.b"),
+                        bucket_bases: concat!($label, ".radix.bases.b"),
+                        scatter: concat!($label, ".radix.scatter.b"),
+                    },
+                },
+                kernels: RadixSortKernels::new(
+                    "type_checker/predicates/01c_sort_keys",
+                    "type_checker/predicates/01d_sort_keys_scatter",
+                )
+                .with_small("type_checker/predicates/01b2_sort_keys_small"),
+                resources: RadixSortResources {
+                    count: "hir_active_count",
+                    order: $order,
+                    temporary_order: $temporary,
+                    histogram: "predicate_key_radix_block_histogram",
+                    bucket_prefix: "predicate_key_radix_block_bucket_prefix",
+                    bucket_total: "predicate_key_radix_bucket_total",
+                    bucket_base: "predicate_key_radix_bucket_base",
+                },
+                dispatch_args: "predicate_hir_dispatch_args",
+            },
+        };
+    };
+}
+
+predicate_key_definition!(
+    PREDICATE_METHOD_CONTRACT_KEYS,
+    "type_check.predicates.method_contract_keys",
+    PREDICATE_KEY_MODE_METHOD_CONTRACT,
+    PREDICATE_METHOD_CONTRACT_KEY_RADIX_STEPS,
+    "predicate_method_contract_key_order",
+    "predicate_method_contract_key_order_tmp"
+);
+predicate_key_definition!(
+    PREDICATE_METHOD_PARAM_KEYS,
+    "type_check.predicates.method_param_keys",
+    PREDICATE_KEY_MODE_METHOD_PARAM,
+    PREDICATE_METHOD_PARAM_KEY_RADIX_STEPS,
+    "predicate_method_param_key_order",
+    "predicate_method_param_key_order_tmp"
+);
+predicate_key_definition!(
+    PREDICATE_OWNER_KEYS,
+    "type_check.predicates.owner_keys",
+    PREDICATE_KEY_MODE_OWNER,
+    PREDICATE_OWNER_KEY_RADIX_STEPS,
+    "predicate_owner_key_order",
+    "predicate_owner_key_order_tmp"
+);
+predicate_key_definition!(
+    PREDICATE_IMPL_KEYS,
+    "type_check.predicates.impl_keys",
+    PREDICATE_KEY_MODE_IMPL,
+    PREDICATE_IMPL_KEY_RADIX_STEPS,
+    "predicate_impl_key_order",
+    "predicate_impl_key_order_tmp"
+);
+
+const PREDICATE_KEY_INPUTS: [&str; 16] = [
+    "hir_token_pos",
+    "visible_type",
+    "type_expr_ref_tag",
+    "type_expr_ref_payload",
+    "type_generic_param_slot_by_token",
+    "predicate_owner_node",
+    "predicate_subject_token",
+    "predicate_bound_decl_id",
+    "predicate_bound_arg_count",
+    "predicate_bound_first_arg_token",
+    "predicate_bound_second_arg_token",
+    "predicate_status",
+    "compact_param_count",
+    "compact_params",
+    "predicate_method_contract_owner_hir",
+    "predicate_method_contract_name_id",
+];
 pub(super) const PREDICATES_OBLIGATION_PAIR_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
     dispatch_domain: ResourceDomain::HirNodes,
@@ -526,11 +620,8 @@ pub(super) const REGISTERED_PREDICATE_DIRECT_PASSES: [&str; 14] = [
     PREDICATES_COUNT_OBLIGATION_PAIRS_PASS,
     PREDICATES_VALIDATE_OBLIGATION_PAIRS_PASS,
 ];
-pub(super) const REGISTERED_PREDICATE_LOGICAL_PASSES: [&str; 3] = [
-    PREDICATES_METHOD_CONTRACT_KEYS_PASS,
-    PREDICATES_OWNER_IMPL_KEYS_PASS,
-    PREDICATES_OBLIGATION_PAIR_DISPATCH_PASS,
-];
+pub(super) const REGISTERED_PREDICATE_LOGICAL_PASSES: [&str; 1] =
+    [PREDICATES_OBLIGATION_PAIR_DISPATCH_PASS];
 
 pub(super) const REGISTERED_VISIBLE_PASSES: [&str; 7] = [
     VISIBLE_CLEAR_PASS,
@@ -1191,10 +1282,11 @@ impl SemanticInterfaceScanGraph {
 
 impl TypeCheckCompilerGraph {
     pub(super) fn register_bindings<'a>(
-        &self,
+        &'a self,
         bindings: &'a CompilerGraphBindings,
         resources: &mut ResourceMap<'a>,
     ) {
+        resources.attach_graph(self.materialized.graph(), self.materialized.allocations());
         resources.register_graph_bindings(self.materialized.graph(), bindings);
     }
 
@@ -1210,44 +1302,10 @@ impl TypeCheckCompilerGraph {
         })
     }
 
-    /// Validates one recorded pass against the allocation identities retained
-    /// by the reflected resource map used to build its bind group.
-    pub(super) fn validate_registered_pass_bindings(
-        &self,
-        pass_name: &str,
-        resources: &ResourceMap<'_>,
-    ) -> Result<()> {
-        let graph = self.materialized.graph();
-        let bindings = resources.graph_bindings(graph, pass_name)?;
-        let pass = self
-            .materialized
-            .graph()
-            .pass_id(pass_name)
-            .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{pass_name}`"))?;
-        self.materialized
-            .allocations()
-            .validate_pass_bindings(graph, pass, &bindings)
-            .map_err(anyhow::Error::msg)
-    }
-
-    /// Validates the complete module prefix-scan schedule against the tracked
-    /// allocations used by its runtime bind groups. Optional hierarchy passes
-    /// are absent for one-level scans and are skipped.
-    pub(super) fn validate_module_prefix_scan_bindings(
-        &self,
-        resources: &ResourceMap<'_>,
-    ) -> Result<()> {
-        for passes in [
-            MODULE_RECORD_SCAN.passes,
-            IMPORT_RECORD_SCAN.passes,
-            DECL_RECORD_SCAN.passes,
-            DECL_NAMESPACE_SCAN.passes,
-            DECL_PUBLIC_SCAN.passes,
-            IMPORT_VISIBLE_SCAN.passes,
-        ] {
-            self.validate_prefix_scan_bindings(passes, resources)?;
-        }
-        for pass_name in [
+    /// Validates module passes that have not yet moved into self-validating
+    /// GPU operations.
+    pub(super) fn validate_module_pass_bindings(&self, resources: &ResourceMap<'_>) -> Result<()> {
+        resources.validate_graph_passes_if_present([
             MODULE_RECORDS_MARK.name,
             MODULE_RECORD_FLAG.name,
             MODULE_RECORDS_SCATTER.name,
@@ -1261,104 +1319,7 @@ impl TypeCheckCompilerGraph {
             DECL_PUBLIC_CONSUME_PASS,
             IMPORT_VISIBILITY_COUNT_PASS,
             IMPORT_VISIBLE_CONSUME_PASS,
-        ] {
-            if self.contains_pass(pass_name) {
-                self.validate_registered_pass_bindings(pass_name, resources)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Validates all graph passes generated by one prefix-scan operation.
-    /// Optional hierarchy passes are absent for one-level scans and skipped.
-    pub(super) fn validate_prefix_scan_bindings(
-        &self,
-        passes: PrefixScanGraphPasses,
-        resources: &ResourceMap<'_>,
-    ) -> Result<()> {
-        for pass_name in [
-            passes.local,
-            passes.hierarchy_up_first,
-            passes.hierarchy_up_rest,
-            passes.hierarchy_down,
-            passes.apply,
-        ] {
-            if self.contains_pass(pass_name) {
-                self.validate_registered_pass_bindings(pass_name, resources)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Validates a reflected pass whose binding names select explicit
-    /// ping-pong resources rather than same-named registry entries.
-    pub(super) fn validate_registered_pass_binding_aliases(
-        &self,
-        pass_name: &str,
-        resources: &ResourceMap<'_>,
-        aliases: &[(&str, &str)],
-    ) -> Result<()> {
-        let graph = self.materialized.graph();
-        let bindings = resources.graph_bindings_with_aliases(graph, pass_name, aliases)?;
-        let pass = self
-            .materialized
-            .graph()
-            .pass_id(pass_name)
-            .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{pass_name}`"))?;
-        self.materialized
-            .allocations()
-            .validate_pass_bindings(graph, pass, &bindings)
-            .map_err(anyhow::Error::msg)
-    }
-
-    fn validate_radix_sort_bindings(
-        &self,
-        sort: RadixSortDefinition,
-        resources: &ResourceMap<'_>,
-    ) -> Result<()> {
-        let r = sort.resources;
-        for (passes, input, output) in [
-            (sort.passes.order_to_temporary, r.order, r.temporary_order),
-            (sort.passes.temporary_to_order, r.temporary_order, r.order),
-        ] {
-            self.validate_registered_pass_binding_aliases(
-                passes.histogram,
-                resources,
-                &[
-                    ("radix_order_in", input),
-                    ("radix_block_histogram", r.histogram),
-                ],
-            )?;
-            self.validate_registered_pass_binding_aliases(
-                passes.bucket_prefix,
-                resources,
-                &[
-                    ("name_count_in", r.count),
-                    ("radix_block_histogram", r.histogram),
-                    ("radix_block_bucket_prefix", r.bucket_prefix),
-                    ("radix_bucket_total", r.bucket_total),
-                ],
-            )?;
-            self.validate_registered_pass_binding_aliases(
-                passes.bucket_bases,
-                resources,
-                &[
-                    ("radix_bucket_total", r.bucket_total),
-                    ("radix_bucket_base", r.bucket_base),
-                ],
-            )?;
-            self.validate_registered_pass_binding_aliases(
-                passes.scatter,
-                resources,
-                &[
-                    ("radix_order_in", input),
-                    ("radix_order_out", output),
-                    ("radix_bucket_base", r.bucket_base),
-                    ("radix_block_bucket_prefix", r.bucket_prefix),
-                ],
-            )?;
-        }
-        Ok(())
+        ])
     }
 
     /// Proves that the compact generic-parameter producer, both sort orders,
@@ -1369,10 +1330,9 @@ impl TypeCheckCompilerGraph {
         &self,
         resources: &ResourceMap<'_>,
     ) -> Result<()> {
-        self.validate_registered_pass_bindings(TYPE_INSTANCES_DECL_GENERIC_PARAMS_PASS, resources)?;
-        self.validate_registered_pass_binding_aliases(
+        resources.validate_graph_pass(TYPE_INSTANCES_DECL_GENERIC_PARAMS_PASS, &[])?;
+        resources.validate_graph_pass(
             TYPE_INSTANCES_GENERIC_PARAM_SORT_DISPATCH_PASS,
-            resources,
             &[
                 ("name_count_in", "generic_param_count_out"),
                 (
@@ -1388,19 +1348,10 @@ impl TypeCheckCompilerGraph {
             .pass_id(TYPE_INSTANCES_GENERIC_PARAM_SORT_SMALL_PASS)
             .is_some()
         {
-            self.validate_registered_pass_bindings(
-                TYPE_INSTANCES_GENERIC_PARAM_SORT_SMALL_PASS,
-                resources,
-            )?;
-        } else {
-            self.validate_radix_sort_bindings(GENERIC_PARAMETER_RADIX_SORTS.key, resources)?;
-            self.validate_radix_sort_bindings(GENERIC_PARAMETER_RADIX_SORTS.slot, resources)?;
+            resources.validate_graph_pass(TYPE_INSTANCES_GENERIC_PARAM_SORT_SMALL_PASS, &[])?;
         }
 
-        self.validate_registered_pass_bindings(
-            TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS,
-            resources,
-        )
+        resources.validate_graph_pass(TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS, &[])
     }
 
     pub(super) fn new(
@@ -1610,8 +1561,8 @@ fn build_graph(
         _compact_hir_links as "compact_hir_links" in HirNodes => hir_rows * 16;
         _compact_hir_payload as "compact_hir_payload" in HirNodes => hir_rows * 16;
         _compact_type_root_owner as "compact_type_root_owner" in HirNodes => hir_rows * 4;
-        compact_param_count in Declarations => 4;
-        compact_params in Declarations => hir_rows * 16;
+        _compact_param_count as "compact_param_count" in Declarations => 4;
+        _compact_params as "compact_params" in Declarations => hir_rows * 16;
         _compact_call_arg_count as "compact_call_arg_count" in CallArguments => 4;
         _compact_call_args as "compact_call_args" in CallArguments => hir_rows * 16;
         _compact_hir_expr_parent as "compact_hir_expr_parent" in HirNodes => hir_rows * 4;
@@ -1646,7 +1597,7 @@ fn build_graph(
         _module_value_path_associated_method_token as "module_value_path_associated_method_token" in Tokens => token_rows * 4;
         _token_count as "token_count" in Tokens => 4;
         _token_active_dispatch_args as "token_active_dispatch_args" in DispatchArguments => 12;
-        hir_active_count in HirNodes => 4;
+        _hir_active_count as "hir_active_count" in HirNodes => 4;
         _hir_active_dispatch_args as "hir_active_dispatch_args" in DispatchArguments => 12;
         _compact_method_count as "compact_method_count" in Declarations => 4;
         _compact_method_cores as "compact_method_cores" in Declarations => hir_rows * 16;
@@ -1680,12 +1631,12 @@ fn build_graph(
     });
     graph_resources!(graph, Workspace {
         predicate_syntax_token in Tokens => predicate_rows * 4;
-        type_expr_ref_tag in Tokens => token_rows * 4;
-        type_expr_ref_payload in Tokens => token_rows * 4;
+        _type_expr_ref_tag as "type_expr_ref_tag" in Tokens => token_rows * 4;
+        _type_expr_ref_payload as "type_expr_ref_payload" in Tokens => token_rows * 4;
         _external_type_library_id as "external_type_library_id" in Tokens => token_rows * 4;
         _external_type_unit_id as "external_type_unit_id" in Tokens => token_rows * 4;
         _external_type_local_index as "external_type_local_index" in Tokens => token_rows * 4;
-        type_generic_param_slot_by_token in Tokens => token_rows * 4;
+        _type_generic_param_slot_by_token as "type_generic_param_slot_by_token" in Tokens => token_rows * 4;
         _type_const_param_slot_by_token as "type_const_param_slot_by_token" in Tokens => token_rows * 4;
     });
     graph_resources!(graph, Input {
@@ -1710,7 +1661,7 @@ fn build_graph(
         _compact_predicates as "compact_predicates" in Declarations => hir_rows * 16;
         hir_status in HirNodes => 24;
         hir_kind in RawNodes => hir_rows * 4;
-        hir_token_pos in HirNodes => hir_rows * 4;
+        _hir_token_pos as "hir_token_pos" in HirNodes => hir_rows * 4;
         _hir_token_end as "hir_token_end" in HirNodes => hir_rows * 4;
         _hir_struct_lit_head_node as "hir_struct_lit_head_node" in RawNodes => hir_rows * 4;
         _hir_struct_lit_field_parent_lit as "hir_struct_lit_field_parent_lit" in RawNodes => hir_rows * 4;
@@ -2068,26 +2019,53 @@ fn build_graph(
         predicate_method_contract_return_type_node in HirNodes => predicate_rows * 4;
         predicate_method_contract_visibility in HirNodes => predicate_rows * 4;
         predicate_method_contract_param_type_node in HirNodes => predicate_rows * 4;
-        predicate_method_contract_key_order in HirNodes => predicate_rows * 4;
-        predicate_method_contract_key_order_tmp in HirNodes => predicate_rows * 4;
-        predicate_method_param_key_order in HirNodes => predicate_rows * 4;
-        predicate_method_param_key_order_tmp in HirNodes => predicate_rows * 4;
+        _predicate_method_contract_key_order as "predicate_method_contract_key_order" in HirNodes => predicate_rows * 4;
+        _predicate_method_param_key_order as "predicate_method_param_key_order" in HirNodes => predicate_rows * 4;
         predicate_method_contract_owner_range_first in HirNodes => predicate_rows * 4;
         predicate_method_contract_owner_range_count in HirNodes => predicate_rows * 4;
         predicate_method_validation_owner_node in HirNodes => predicate_rows * 4;
         predicate_method_validation_peer_node in HirNodes => predicate_rows * 4;
-        predicate_owner_key_order in HirNodes => predicate_rows * 4;
-        predicate_owner_key_order_tmp in HirNodes => predicate_rows * 4;
-        predicate_impl_key_order in HirNodes => predicate_rows * 4;
-        predicate_impl_key_order_tmp in HirNodes => predicate_rows * 4;
+        _predicate_owner_key_order as "predicate_owner_key_order" in HirNodes => predicate_rows * 4;
+        _predicate_impl_key_order as "predicate_impl_key_order" in HirNodes => predicate_rows * 4;
     });
-    let predicate_key_radix_rows = predicate_rows.div_ceil(256) * u64::from(NAME_RADIX_BUCKETS);
-    graph_resources!(graph, Workspace {
-        predicate_key_radix_block_histogram in HirNodes => predicate_key_radix_rows * 4;
-        predicate_key_radix_block_bucket_prefix in HirNodes => predicate_key_radix_rows * 4;
-        predicate_key_radix_bucket_total in HirNodes => u64::from(NAME_RADIX_BUCKETS) * 4;
-        predicate_key_radix_bucket_base in HirNodes => u64::from(NAME_RADIX_BUCKETS) * 4;
-    });
+    if predicate_capacity.max(1) > PREDICATE_KEY_SMALL_SORT_CAPACITY {
+        for name in [
+            "predicate_method_contract_key_order_tmp",
+            "predicate_method_param_key_order_tmp",
+            "predicate_owner_key_order_tmp",
+            "predicate_impl_key_order_tmp",
+        ] {
+            graph.add_storage(
+                name,
+                ResourceDomain::HirNodes,
+                ResourceClass::Workspace,
+                predicate_rows * 4,
+            )?;
+        }
+        let radix_rows = predicate_rows.div_ceil(256) * u64::from(NAME_RADIX_BUCKETS);
+        for name in [
+            "predicate_key_radix_block_histogram",
+            "predicate_key_radix_block_bucket_prefix",
+        ] {
+            graph.add_storage(
+                name,
+                ResourceDomain::HirNodes,
+                ResourceClass::Workspace,
+                radix_rows * 4,
+            )?;
+        }
+        for name in [
+            "predicate_key_radix_bucket_total",
+            "predicate_key_radix_bucket_base",
+        ] {
+            graph.add_storage(
+                name,
+                ResourceDomain::HirNodes,
+                ResourceClass::Workspace,
+                u64::from(NAME_RADIX_BUCKETS) * 4,
+            )?;
+        }
+    }
     graph_resources!(graph, Workspace {
         predicate_obligation_count_by_call in HirNodes => predicate_rows * 4;
         _predicate_obligation_prefix_by_call as "predicate_obligation_prefix_by_call" in HirNodes => predicate_rows * 4;
@@ -2110,6 +2088,9 @@ fn build_graph(
     graph_resources!(graph, External {
         _module_id_by_file_id as "module_id_by_file_id" in Declarations => u64::from(source_file_capacity.max(1)) * 4;
         _decl_module_id as "decl_module_id" in Declarations => hir_rows * 4;
+        _module_key_segment_count as "module_key_segment_count" in Declarations => module_rows * 4;
+        _module_key_segment_base as "module_key_segment_base" in Declarations => module_rows * 4;
+        _module_key_segment_name_id as "module_key_segment_name_id" in Tokens => token_rows * 4;
         _decl_type_key_to_decl_id as "decl_type_key_to_decl_id" in Declarations => hir_rows * 4;
         _decl_value_key_to_decl_id as "decl_value_key_to_decl_id" in Declarations => hir_rows * 4;
         _import_edge_key_order as "import_edge_key_order" in Declarations => hir_rows * 4;
@@ -2455,6 +2436,8 @@ fn build_graph(
         semantic_expr_ref_payload_by_hir in HirNodes => hir_rows * 4;
         semantic_array_length_by_hir in HirNodes => hir_rows * 4;
         semantic_member_field_ordinal_by_hir in HirNodes => hir_rows * 4;
+        semantic_iterable_kind_by_hir in HirNodes => hir_rows * 4;
+        semantic_function_result_word_count_by_hir in HirNodes => hir_rows * 4;
     });
     graph_resources!(graph, Workspace {
         _compact_predicate_diagnostic_facts as "compact_predicate_diagnostic_facts" in HirNodes => hir_rows * 32;
@@ -2867,14 +2850,6 @@ fn build_graph(
                 "generic_param_kind",
             ],
         )?;
-        for sort in [
-            GENERIC_PARAMETER_RADIX_SORTS.key,
-            GENERIC_PARAMETER_RADIX_SORTS.slot,
-        ] {
-            for pass in sort.passes.names() {
-                graph.require_complete_reflection(pass)?;
-            }
-        }
     }
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS,
@@ -3090,6 +3065,8 @@ fn build_graph(
                     "semantic_expr_ref_payload_by_hir" => semantic_expr_ref_payload_by_hir: Write,
                     "semantic_array_length_by_hir" => semantic_array_length_by_hir: Write,
                     "semantic_member_field_ordinal_by_hir" => semantic_member_field_ordinal_by_hir: Write,
+                    "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: Write,
+                    "semantic_function_result_word_count_by_hir" => semantic_function_result_word_count_by_hir: Write,
                 ],
             )?;
             graph.add_kernel_pass_by_name(
@@ -3106,7 +3083,10 @@ fn build_graph(
                 ResourceDomain::HirNodes,
                 kernels,
                 "type_checker/semantic/artifact/01b_array_index_refs",
-                &[],
+                reflected_bindings![
+                    "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: Write,
+                    "semantic_function_result_word_count_by_hir" => semantic_function_result_word_count_by_hir: Write,
+                ],
             )?;
             graph.add_kernel_pass_by_name(
                 CONDITIONS_COMPACT_EXPR_PASS,
@@ -3505,14 +3485,15 @@ fn build_graph(
             "radix_dispatch_args" => const_claim_radix_dispatch_args: Write,
         ],
     )?;
-    CONST_CLAIM_RADIX_SORT.register(
+    CONST_CLAIM_RADIX_SORT.register_with_bindings(
         &mut graph,
         call_claim_radix_steps(token_capacity, call_arg_capacity),
+        "call_generic_claim_count_out",
         &[
-            "call_const_claim_callee",
-            "call_const_claim_slot",
-            "call_const_claim_len",
-            "call_generic_claim_ref_tag",
+            ("call_generic_claim_callee", "call_const_claim_callee"),
+            ("call_generic_claim_slot", "call_const_claim_slot"),
+            ("call_generic_claim_type", "call_const_claim_len"),
+            ("call_generic_claim_ref_tag", "call_generic_claim_ref_tag"),
         ],
     )?;
     CALLS_CONST_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
@@ -3736,60 +3717,14 @@ fn build_graph(
             "type_checker/predicates/00c_collect_method_contracts",
             &[],
         )?;
-        graph.add_pass(PassDesc {
-            name: PREDICATES_METHOD_CONTRACT_KEYS_PASS,
-            phase: CompilerPhase::TypeCheck,
-            dispatch_domain: ResourceDomain::HirNodes,
-            accesses: vec![
-                PassAccess::read("hir_active_count", hir_active_count),
-                PassAccess::read("hir_token_pos", hir_token_pos),
-                PassAccess::read("name_id_by_token", name_id_by_token),
-                PassAccess::read(
-                    "predicate_method_contract_owner_hir",
-                    predicate_method_contract_owner_hir,
-                ),
-                PassAccess::read(
-                    "predicate_method_contract_name_id",
-                    predicate_method_contract_name_id,
-                ),
-                PassAccess::read(
-                    "predicate_method_contract_param_type_node",
-                    predicate_method_contract_param_type_node,
-                ),
-                PassAccess::write(
-                    "predicate_method_contract_key_order",
-                    predicate_method_contract_key_order,
-                ),
-                PassAccess::write(
-                    "predicate_method_contract_key_order_tmp",
-                    predicate_method_contract_key_order_tmp,
-                ),
-                PassAccess::write(
-                    "predicate_method_param_key_order",
-                    predicate_method_param_key_order,
-                ),
-                PassAccess::write(
-                    "predicate_method_param_key_order_tmp",
-                    predicate_method_param_key_order_tmp,
-                ),
-                PassAccess::write(
-                    "predicate_key_radix_block_histogram",
-                    predicate_key_radix_block_histogram,
-                ),
-                PassAccess::write(
-                    "predicate_key_radix_block_bucket_prefix",
-                    predicate_key_radix_block_bucket_prefix,
-                ),
-                PassAccess::write(
-                    "predicate_key_radix_bucket_total",
-                    predicate_key_radix_bucket_total,
-                ),
-                PassAccess::write(
-                    "predicate_key_radix_bucket_base",
-                    predicate_key_radix_bucket_base,
-                ),
-            ],
-        })?;
+        for definition in [PREDICATE_METHOD_CONTRACT_KEYS, PREDICATE_METHOD_PARAM_KEYS] {
+            definition.register(
+                &mut graph,
+                kernels,
+                predicate_capacity,
+                &PREDICATE_KEY_INPUTS,
+            )?;
+        }
         graph.add_kernel_pass_by_name(
             PREDICATES_BUILD_METHOD_OWNER_RANGES_PASS,
             CompilerPhase::TypeCheck,
@@ -3854,71 +3789,12 @@ fn build_graph(
             "type_checker/predicates/01g_reduce_method_validation_errors",
             &[],
         )?;
-        graph.add_pass(PassDesc {
-            name: PREDICATES_OWNER_IMPL_KEYS_PASS,
-            phase: CompilerPhase::TypeCheck,
-            dispatch_domain: ResourceDomain::HirNodes,
-            accesses: vec![
-                PassAccess::read("hir_active_count", hir_active_count),
-                PassAccess::read("hir_token_pos", hir_token_pos),
-                PassAccess::read("predicate_owner_node", predicate_owner_node),
-                PassAccess::read("predicate_subject_token", predicate_subject_token),
-                PassAccess::read("predicate_bound_decl_id", predicate_bound_decl_id),
-                PassAccess::read("predicate_status", predicate_status),
-                PassAccess::write("predicate_owner_key_order", predicate_owner_key_order),
-                PassAccess::write(
-                    "predicate_owner_key_order_tmp",
-                    predicate_owner_key_order_tmp,
-                ),
-                PassAccess::write("predicate_impl_key_order", predicate_impl_key_order),
-                PassAccess::write("predicate_impl_key_order_tmp", predicate_impl_key_order_tmp),
-                PassAccess::write(
-                    "predicate_key_radix_block_histogram",
-                    predicate_key_radix_block_histogram,
-                ),
-                PassAccess::write(
-                    "predicate_key_radix_block_bucket_prefix",
-                    predicate_key_radix_block_bucket_prefix,
-                ),
-                PassAccess::write(
-                    "predicate_key_radix_bucket_total",
-                    predicate_key_radix_bucket_total,
-                ),
-                PassAccess::write(
-                    "predicate_key_radix_bucket_base",
-                    predicate_key_radix_bucket_base,
-                ),
-            ],
-        })?;
-        // All four predicate-key sorts use the same runtime-mode kernels.
-        // Consequently every key-input column remains shader-visible while
-        // both the method-contract/parameter and owner/impl sorts are
-        // recorded, even when one mode does not dynamically read a column.
-        // Keep that common interface live as one operation boundary so graph
-        // coloring cannot alias an input with another mode's writable order.
-        for resource in [
-            hir_active_count,
-            hir_token_pos,
-            visible_type,
-            type_expr_ref_tag,
-            type_expr_ref_payload,
-            type_generic_param_slot_by_token,
-            predicate_owner_node,
-            predicate_subject_token,
-            predicate_bound_decl_id,
-            predicate_bound_arg_count,
-            predicate_bound_first_arg_token,
-            predicate_bound_second_arg_token,
-            predicate_status,
-            compact_param_count,
-            compact_params,
-            predicate_method_contract_owner_hir,
-            predicate_method_contract_name_id,
-        ] {
-            graph.fence_resource_lifetime(
-                resource,
-                PREDICATES_METHOD_CONTRACT_KEYS_PASS,
-                PREDICATES_OWNER_IMPL_KEYS_PASS,
+        for definition in [PREDICATE_OWNER_KEYS, PREDICATE_IMPL_KEYS] {
+            definition.register(
+                &mut graph,
+                kernels,
+                predicate_capacity,
+                &PREDICATE_KEY_INPUTS,
             )?;
         }
         graph.add_kernel_pass_by_name(
@@ -4219,7 +4095,7 @@ mod tests {
     fn typecheck_graph_colors_only_complete_workspace_intervals() {
         let kernels =
             crate::gpu::kernels::KernelCatalog::load_prefixes(&["type_checker", "scan"]).unwrap();
-        let graph = build_graph(1024, 4096, 4, 4096, 1024, 768, 768, 512, 10, &kernels).unwrap();
+        let graph = build_graph(1024, 4096, 4, 4096, 1024, 768, 768, 10_000, 10, &kernels).unwrap();
         graph.validate_assigned_pass_reflections(&kernels).unwrap();
         let resource = |name| {
             graph
@@ -4252,7 +4128,11 @@ mod tests {
             ),
             Some("type_checker/visible/03e_sort_hir_decl_keys"),
         );
-        assert_eq!(graph.repeated_regions().len(), 9);
+        assert_eq!(
+            graph.repeated_regions().len(),
+            13,
+            "each scalable radix sort and pointer jump must have an explicit repeated region",
+        );
         let generic_owner_region = graph
             .repeated_regions()
             .iter()
@@ -5691,6 +5571,27 @@ mod tests {
         );
         assert!(graph.resource_id("generic_param_key_order_tmp").is_none());
         assert!(graph.resource_id("generic_param_slot_order_tmp").is_none());
+        assert!(
+            graph
+                .pass_id(PREDICATE_METHOD_CONTRACT_KEYS.small_pass)
+                .is_some(),
+            "small predicate tables use the cooperative in-workgroup sort",
+        );
+        for name in [
+            "predicate_method_contract_key_order_tmp",
+            "predicate_method_param_key_order_tmp",
+            "predicate_owner_key_order_tmp",
+            "predicate_impl_key_order_tmp",
+            "predicate_key_radix_block_histogram",
+            "predicate_key_radix_block_bucket_prefix",
+            "predicate_key_radix_bucket_total",
+            "predicate_key_radix_bucket_base",
+        ] {
+            assert!(
+                graph.resource_id(name).is_none(),
+                "small predicate sorting should not allocate `{name}`",
+            );
+        }
         assert!(
             graph
                 .resource_id("generic_param_slot_radix_block_bucket_prefix")

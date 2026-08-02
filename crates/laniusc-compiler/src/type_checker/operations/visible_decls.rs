@@ -16,7 +16,7 @@ impl VisibleDeclSort {
     pub(in crate::type_checker) fn new(
         device: &wgpu::Device,
         passes: &TypeCheckPasses,
-        resources: &HashMap<String, wgpu::BindingResource<'_>>,
+        resources: &ResourceMap<'_>,
         capacity: u32,
         n_blocks: u32,
     ) -> Result<Self> {
@@ -56,21 +56,19 @@ impl VisibleDeclSort {
             resources,
             &[("gParams", dispatch_params.as_entire_binding())],
         )?;
-        let sort = RadixSortOperation::new(
+        let sort = compiler_graph::VISIBLE_RADIX_SORT.operation(
             device,
             passes,
             resources,
-            compiler_graph::VISIBLE_RADIX_SORT.plan(
-                capacity,
-                VISIBLE_DECL_SMALL_SORT_CAPACITY,
-                visible_decl_key_radix_steps(capacity),
-                RadixSortDispatch {
-                    small: RadixDispatchDomain::Direct(256),
-                    rows: RadixDispatchDomain::Indirect(dispatch_args),
-                    bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS * 256),
-                    bucket_bases: RadixDispatchDomain::Direct(256),
-                },
-            ),
+            capacity,
+            VISIBLE_DECL_SMALL_SORT_CAPACITY,
+            visible_decl_key_radix_steps(capacity),
+            RadixSortDispatch {
+                small: RadixDispatchDomain::Direct(256),
+                rows: RadixDispatchDomain::Indirect(dispatch_args),
+                bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS * 256),
+                bucket_bases: RadixDispatchDomain::Direct(256),
+            },
             params,
         )?;
 

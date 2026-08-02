@@ -61,6 +61,29 @@ use crate::gpu::buffers::{
 pub(crate) const POST_HIR_WORKSPACE_COUNT: usize = 19;
 
 impl ParserBuffers {
+    /// Restores writable job storage to the zeroed state guaranteed for a
+    /// fresh WGPU allocation. Logical aliases share an allocation identity,
+    /// so each physical buffer is cleared at most once.
+    pub(crate) fn clear_job_storage(&self, encoder: &mut wgpu::CommandEncoder) {
+        for buffer in &self.resettable_buffers {
+            if buffer.byte_size == 0 {
+                continue;
+            }
+            debug_assert_eq!(buffer.byte_size % wgpu::COPY_BUFFER_ALIGNMENT, 0);
+            encoder.clear_buffer(&buffer.buffer, 0, None);
+        }
+    }
+
+    pub(crate) fn resettable_storage_totals(&self) -> (usize, u64) {
+        (
+            self.resettable_buffers.len(),
+            self.resettable_buffers
+                .iter()
+                .map(|buffer| buffer.byte_size)
+                .sum(),
+        )
+    }
+
     /// Returns independently allocated parser storage whose contents are dead
     /// once the compact HIR has been materialized.
     pub(crate) fn post_hir_workspace(&self) -> [LaniusBuffer<u32>; POST_HIR_WORKSPACE_COUNT] {
@@ -2358,6 +2381,7 @@ impl ParserBuffers {
         );
 
         Self {
+            resettable_buffers: Vec::new(),
             source_capacity: source_capacity.max(1),
             n_tokens,
             n_kinds,

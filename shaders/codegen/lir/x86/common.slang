@@ -57,6 +57,12 @@ uint x86_lir_opcode(SemanticLirCore core)
     if (core.op == SEMANTIC_LIR_OP_CONST_I32 || core.op == SEMANTIC_LIR_OP_CONST_F32)
         return X86_LIR_OP_IMM_I32;
     if (core.op == SEMANTIC_LIR_OP_VALUE_GET) return X86_LIR_OP_ALIAS;
+    if (core.op == SEMANTIC_LIR_OP_STORE &&
+        (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
+        return X86_LIR_OP_INDEX_STORE;
+    if (core.op == SEMANTIC_LIR_OP_STORE &&
+        (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
+        return X86_LIR_OP_FIELD_STORE;
     if (core.op == SEMANTIC_LIR_OP_VALUE_SET || core.op == SEMANTIC_LIR_OP_STORE)
         return X86_LIR_OP_STORE_LOCAL;
     if ((core.op >= SEMANTIC_LIR_OP_ADD && core.op <= SEMANTIC_LIR_OP_SHIFT_RIGHT) ||

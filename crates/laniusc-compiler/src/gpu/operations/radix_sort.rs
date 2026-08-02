@@ -21,7 +21,7 @@ use crate::gpu::{
     },
     kernels::KernelRegistry,
     passes_core::{ComputePassBatch, PassData, count_recorded_compute_pass},
-    resource_registry::{buffer_from_resources, reflected_bind_group_with_overrides},
+    resource_registry::{ResourceMap, buffer_from_resources, reflected_bind_group_with_overrides},
 };
 
 /// Shader kernels implementing one stable radix-sort operation.
@@ -53,7 +53,8 @@ pub(super) fn resolve_radix_sort_graph_resources(
     graph: &CompilerGraphBuilder,
     resources: RadixSortResources,
     dispatch_args: &str,
-    keys: &[&str],
+    count_binding: &'static str,
+    keys: &[(&'static str, &'static str)],
 ) -> Result<RadixSortGraphResources, String> {
     let resource = |name: &str| {
         graph
@@ -62,9 +63,18 @@ pub(super) fn resolve_radix_sort_graph_resources(
     };
     Ok(RadixSortGraphResources {
         count: resource(resources.count)?,
+        count_binding,
         keys: keys
             .iter()
-            .map(|name| resource(name))
+            .map(|&(binding, name)| {
+                resource(name).map(|resource| {
+                    crate::gpu::compiler_graph::ReflectedResourceBinding {
+                        binding,
+                        resource,
+                        mode: None,
+                    }
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?,
         order: resource(resources.order)?,
         temporary_order: resource(resources.temporary_order)?,
@@ -113,21 +123,66 @@ impl RadixSortDefinition {
         }
     }
 
+    pub(crate) fn operation<P, F>(
+        self,
+        device: &wgpu::Device,
+        kernels: &KernelRegistry,
+        resources: &ResourceMap<'_>,
+        capacity: u32,
+        small_capacity: u32,
+        steps: u32,
+        dispatch: RadixSortDispatch<'_>,
+        make_params: F,
+    ) -> Result<RadixSortOperation<P>>
+    where
+        P: encase::ShaderType + encase::internal::WriteInto,
+        F: Fn(u32) -> P,
+    {
+        if small_capacity == 0 || capacity > small_capacity {
+            resources.validate_graph_passes(self.passes.names())?;
+        }
+        RadixSortOperation::new(
+            device,
+            kernels,
+            resources,
+            self.plan(capacity, small_capacity, steps, dispatch),
+            make_params,
+        )
+    }
+
     fn graph_resources(
         self,
         graph: &CompilerGraphBuilder,
-        keys: &[&str],
+        count_binding: &'static str,
+        keys: &[(&'static str, &'static str)],
     ) -> Result<RadixSortGraphResources, String> {
-        resolve_radix_sort_graph_resources(graph, self.resources, self.dispatch_args, keys)
+        resolve_radix_sort_graph_resources(
+            graph,
+            self.resources,
+            self.dispatch_args,
+            count_binding,
+            keys,
+        )
     }
 
     pub(crate) fn register(
         self,
         graph: &mut CompilerGraphBuilder,
         digit_steps: u32,
-        keys: &[&str],
+        keys: &[&'static str],
     ) -> Result<(), String> {
-        let resources = self.graph_resources(graph, keys)?;
+        let bindings = keys.iter().map(|&name| (name, name)).collect::<Vec<_>>();
+        self.register_with_bindings(graph, digit_steps, self.resources.count, &bindings)
+    }
+
+    pub(crate) fn register_with_bindings(
+        self,
+        graph: &mut CompilerGraphBuilder,
+        digit_steps: u32,
+        count_binding: &'static str,
+        keys: &[(&'static str, &'static str)],
+    ) -> Result<(), String> {
+        let resources = self.graph_resources(graph, count_binding, keys)?;
         graph.add_fragment(RadixSortGraph {
             phase: self.phase,
             dispatch_domain: self.dispatch_domain,
@@ -135,7 +190,11 @@ impl RadixSortDefinition {
             schedule: RadixSortGraphSchedule::Standard(self.passes),
             resources,
         })?;
-        self.kernels.assign(graph, self.passes)
+        self.kernels.assign(graph, self.passes)?;
+        for pass in self.passes.names() {
+            graph.require_complete_reflection(pass)?;
+        }
+        Ok(())
     }
 }
 
@@ -204,14 +263,26 @@ impl RadixSortPairDefinition {
         self,
         graph: &mut CompilerGraphBuilder,
         digit_steps: u32,
-        key_inputs: &[&str],
-        slot_inputs: &[&str],
+        key_inputs: &[&'static str],
+        slot_inputs: &[&'static str],
     ) -> Result<(), String> {
         if self.key.phase != self.slot.phase {
             return Err("paired radix sorts must belong to the same compiler phase".into());
         }
-        let key = self.key.graph_resources(graph, key_inputs)?;
-        let slot = self.slot.graph_resources(graph, slot_inputs)?;
+        let key_bindings = key_inputs
+            .iter()
+            .map(|&name| (name, name))
+            .collect::<Vec<_>>();
+        let slot_bindings = slot_inputs
+            .iter()
+            .map(|&name| (name, name))
+            .collect::<Vec<_>>();
+        let key = self
+            .key
+            .graph_resources(graph, self.key.resources.count, &key_bindings)?;
+        let slot = self
+            .slot
+            .graph_resources(graph, self.slot.resources.count, &slot_bindings)?;
         graph.add_fragment(RadixSortPairGraph {
             phase: self.key.phase,
             dispatch_domain: self.key.dispatch_domain,
@@ -412,13 +483,6 @@ where
     {
         let passes = plan.kernels.resolve(kernels);
         let order = buffer_from_resources(registry, plan.resources.order)?;
-        let temporary_order = buffer_from_resources(registry, plan.resources.temporary_order)?;
-        let count = buffer_from_resources(registry, plan.resources.count)?;
-        let histogram_rows = buffer_from_resources(registry, plan.resources.histogram)?;
-        let bucket_prefix_rows = buffer_from_resources(registry, plan.resources.bucket_prefix)?;
-        let bucket_total = buffer_from_resources(registry, plan.resources.bucket_total)?;
-        let bucket_base = buffer_from_resources(registry, plan.resources.bucket_base)?;
-
         let strategy = select_strategy(
             plan.label,
             plan.capacity,
@@ -460,6 +524,12 @@ where
         let RadixSortStrategy::Radix { steps } = strategy else {
             unreachable!("small strategy returned above")
         };
+        let temporary_order = buffer_from_resources(registry, plan.resources.temporary_order)?;
+        let count = buffer_from_resources(registry, plan.resources.count)?;
+        let histogram_rows = buffer_from_resources(registry, plan.resources.histogram)?;
+        let bucket_prefix_rows = buffer_from_resources(registry, plan.resources.bucket_prefix)?;
+        let bucket_total = buffer_from_resources(registry, plan.resources.bucket_total)?;
+        let bucket_base = buffer_from_resources(registry, plan.resources.bucket_base)?;
         let mut params = Vec::with_capacity(steps as usize);
         let mut histogram = Vec::with_capacity(steps as usize);
         let mut bucket_prefix = Vec::with_capacity(steps as usize);

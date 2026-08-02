@@ -315,6 +315,7 @@ struct TypeCheckSemanticDebugReadback {
 
 #[derive(Clone, Copy)]
 struct ResidentTypeCheckCacheKey {
+    source_byte_capacity: u32,
     source_file_capacity: u32,
     token_capacity: u32,
     hir_node_capacity: u32,
@@ -325,6 +326,48 @@ struct ResidentTypeCheckCacheKey {
     parser_feature_flags: u32,
     input_fingerprint: u64,
     uses_hir_items: bool,
+}
+
+impl ResidentTypeCheckCacheKey {
+    fn grow_to_cover(self, required: Self) -> Self {
+        debug_assert_eq!(self.uses_hir_items, required.uses_hir_items);
+        Self {
+            source_byte_capacity: self.source_byte_capacity.max(required.source_byte_capacity),
+            source_file_capacity: self.source_file_capacity.max(required.source_file_capacity),
+            token_capacity: self.token_capacity.max(required.token_capacity),
+            hir_node_capacity: self.hir_node_capacity.max(required.hir_node_capacity),
+            parser_hir_node_capacity: self
+                .parser_hir_node_capacity
+                .max(required.parser_hir_node_capacity),
+            module_record_capacity: self
+                .module_record_capacity
+                .max(required.module_record_capacity),
+            call_param_row_capacity: self
+                .call_param_row_capacity
+                .max(required.call_param_row_capacity),
+            call_arg_row_capacity: self
+                .call_arg_row_capacity
+                .max(required.call_arg_row_capacity),
+            parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
+            input_fingerprint: required.input_fingerprint,
+            uses_hir_items: required.uses_hir_items,
+        }
+    }
+
+    fn covers(self, required: Self) -> bool {
+        self.uses_hir_items == required.uses_hir_items
+            && self.input_fingerprint == required.input_fingerprint
+            && self.source_byte_capacity >= required.source_byte_capacity
+            && self.source_file_capacity >= required.source_file_capacity
+            && self.token_capacity >= required.token_capacity
+            && self.hir_node_capacity >= required.hir_node_capacity
+            && self.parser_hir_node_capacity >= required.parser_hir_node_capacity
+            && self.module_record_capacity >= required.module_record_capacity
+            && self.call_param_row_capacity >= required.call_param_row_capacity
+            && self.call_arg_row_capacity >= required.call_arg_row_capacity
+            && self.parser_feature_flags & required.parser_feature_flags
+                == required.parser_feature_flags
+    }
 }
 
 struct TypeSemanticBuffers {
@@ -355,6 +398,7 @@ type TypeCheckPasses = KernelRegistry;
 // resources stay alive across the retained pipeline even when a field is only
 // consumed indirectly by a reflected bind group.
 struct ResidentTypeCheckState {
+    resettable_buffers: Vec<crate::gpu::buffers::ResettableBuffer>,
     cache_key: ResidentTypeCheckCacheKey,
     typecheck_graph: compiler_graph::TypeCheckCompilerGraph,
     compact_expr_scalar_type: LaniusBuffer<u32>,
@@ -363,6 +407,8 @@ struct ResidentTypeCheckState {
     name_capacity: u32,
     if_depth_n_blocks: u32,
     fn_n_blocks: u32,
+    if_depth_params: LaniusBuffer<IfDepthParams>,
+    fn_params: LaniusBuffer<FnContextParams>,
     language_symbol_bytes: LaniusBuffer<u8>,
     name_order_in: LaniusBuffer<u32>,
     name_order_tmp: LaniusBuffer<u32>,
@@ -410,17 +456,18 @@ struct ResidentTypeCheckState {
 }
 
 impl ResidentTypeCheckState {
+    fn clear_job_storage(&self, encoder: &mut wgpu::CommandEncoder) {
+        for buffer in &self.resettable_buffers {
+            if buffer.byte_size == 0 {
+                continue;
+            }
+            debug_assert_eq!(buffer.byte_size % wgpu::COPY_BUFFER_ALIGNMENT, 0);
+            encoder.clear_buffer(&buffer.buffer, 0, None);
+        }
+    }
+
     fn can_reuse_for(&self, key: ResidentTypeCheckCacheKey) -> bool {
-        self.cache_key.source_file_capacity == key.source_file_capacity
-            && self.cache_key.token_capacity >= key.token_capacity
-            && self.cache_key.hir_node_capacity >= key.hir_node_capacity
-            && self.cache_key.parser_hir_node_capacity >= key.parser_hir_node_capacity
-            && self.cache_key.module_record_capacity >= key.module_record_capacity
-            && self.cache_key.call_param_row_capacity >= key.call_param_row_capacity
-            && self.cache_key.call_arg_row_capacity >= key.call_arg_row_capacity
-            && self.cache_key.parser_feature_flags == key.parser_feature_flags
-            && self.cache_key.input_fingerprint == key.input_fingerprint
-            && self.cache_key.uses_hir_items == key.uses_hir_items
+        self.cache_key.covers(key)
     }
 }
 
@@ -471,6 +518,10 @@ pub(crate) struct GpuCheckedSemanticArtifact<'a> {
     pub array_length_by_hir: &'a LaniusBuffer<u32>,
     /// Checked field ordinal keyed by dense member-expression HIR row.
     pub member_field_ordinal_by_hir: &'a LaniusBuffer<u32>,
+    /// Checked iteration representation keyed by dense for-statement HIR row.
+    pub iterable_kind_by_hir: &'a LaniusBuffer<u32>,
+    /// Checked target-word width keyed by dense function HIR row.
+    pub function_result_word_count_by_hir: &'a LaniusBuffer<u32>,
 }
 
 /// Typed allocation-preserving view used by the shared semantic lowering
@@ -505,6 +556,8 @@ pub(crate) struct OwnedGpuSemanticArtifact {
     expr_ref_payload_by_hir: LaniusBuffer<u32>,
     array_length_by_hir: LaniusBuffer<u32>,
     member_field_ordinal_by_hir: LaniusBuffer<u32>,
+    iterable_kind_by_hir: LaniusBuffer<u32>,
+    function_result_word_count_by_hir: LaniusBuffer<u32>,
     compact_expr_scalar_type: LaniusBuffer<u32>,
     public_decl_index_by_hir: LaniusBuffer<u32>,
     struct_init_field_ordinal_by_row: LaniusBuffer<u32>,
@@ -527,6 +580,8 @@ impl OwnedGpuSemanticArtifact {
                 expr_ref_payload_by_hir: &self.expr_ref_payload_by_hir,
                 array_length_by_hir: &self.array_length_by_hir,
                 member_field_ordinal_by_hir: &self.member_field_ordinal_by_hir,
+                iterable_kind_by_hir: &self.iterable_kind_by_hir,
+                function_result_word_count_by_hir: &self.function_result_word_count_by_hir,
             },
             compact_expr_scalar_type: &self.compact_expr_scalar_type,
             public_decl_index_by_hir: &self.public_decl_index_by_hir,
@@ -605,4 +660,56 @@ pub struct GpuSemanticInterfaceHirBuffers<'a> {
     pub compact_variant_payload_count: &'a wgpu::Buffer,
     pub compact_variant_payload_row_count: &'a wgpu::Buffer,
     pub compact_variant_payloads: &'a wgpu::Buffer,
+}
+
+#[cfg(test)]
+mod resident_cache_tests {
+    use super::ResidentTypeCheckCacheKey;
+
+    fn key() -> ResidentTypeCheckCacheKey {
+        ResidentTypeCheckCacheKey {
+            source_byte_capacity: 1_000,
+            source_file_capacity: 2,
+            token_capacity: 300,
+            hir_node_capacity: 500,
+            parser_hir_node_capacity: 700,
+            module_record_capacity: 80,
+            call_param_row_capacity: 90,
+            call_arg_row_capacity: 100,
+            parser_feature_flags: 0b0011,
+            input_fingerprint: 7,
+            uses_hir_items: true,
+        }
+    }
+
+    #[test]
+    fn resident_typecheck_allocation_grows_component_wise() {
+        let current = key();
+        let required = ResidentTypeCheckCacheKey {
+            source_byte_capacity: 900,
+            source_file_capacity: 3,
+            token_capacity: 320,
+            hir_node_capacity: 480,
+            parser_hir_node_capacity: 720,
+            module_record_capacity: 75,
+            call_param_row_capacity: 95,
+            call_arg_row_capacity: 90,
+            parser_feature_flags: 0b1100,
+            input_fingerprint: 8,
+            uses_hir_items: true,
+        };
+        let grown = current.grow_to_cover(required);
+
+        assert_eq!(grown.source_byte_capacity, 1_000);
+        assert_eq!(grown.source_file_capacity, 3);
+        assert_eq!(grown.token_capacity, 320);
+        assert_eq!(grown.hir_node_capacity, 500);
+        assert_eq!(grown.parser_hir_node_capacity, 720);
+        assert_eq!(grown.module_record_capacity, 80);
+        assert_eq!(grown.call_param_row_capacity, 95);
+        assert_eq!(grown.call_arg_row_capacity, 100);
+        assert_eq!(grown.parser_feature_flags, 0b1111);
+        assert_eq!(grown.input_fingerprint, 8);
+        assert!(grown.covers(required));
+    }
 }

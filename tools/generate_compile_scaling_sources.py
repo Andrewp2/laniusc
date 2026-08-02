@@ -6,7 +6,13 @@ import hashlib
 import json
 from pathlib import Path
 
-from compile_workload_model import LANGUAGES, build_workload, evaluate, render
+from compile_workload_model import (
+    LANGUAGES,
+    WORKLOAD_PROFILES,
+    build_workload,
+    evaluate,
+    render,
+)
 
 
 def main() -> int:
@@ -23,6 +29,12 @@ def main() -> int:
     )
     parser.add_argument("--seed", type=int, default=19)
     parser.add_argument(
+        "--profile",
+        choices=tuple(WORKLOAD_PROFILES),
+        default="mixed",
+        help="function-size distribution to generate",
+    )
+    parser.add_argument(
         "--functions",
         type=int,
         help="force the number of reachable leaf functions",
@@ -37,12 +49,14 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     source_sets = [
-        generate_source_set(out, target_bytes, args.seed, args.functions)
+        generate_source_set(out, target_bytes, args.seed, args.functions, args.profile)
         for target_bytes in sizes
     ]
     manifest = {
-        "schema": "lanius.compile-scaling-sources.v2",
+        "schema": "lanius.compile-scaling-sources.v3",
         "seed": args.seed,
+        "profile": args.profile,
+        "profile_description": WORKLOAD_PROFILES[args.profile].description,
         "source_sets": source_sets,
     }
     write_json(out / "manifest.json", manifest)
@@ -62,10 +76,15 @@ def parse_sizes(parser: argparse.ArgumentParser, raw: str) -> list[int]:
 
 
 def generate_source_set(
-    out: Path, target_bytes: int, seed: int, leaf_count: int | None
+    out: Path,
+    target_bytes: int,
+    seed: int,
+    leaf_count: int | None,
+    profile: str,
 ) -> dict[str, object]:
-    leaf_count = leaf_count or largest_workload_that_fits(seed, target_bytes)
-    workload = build_workload(seed, leaf_count)
+    leaf_count = leaf_count or largest_workload_that_fits(seed, target_bytes, profile)
+    workload = build_workload(seed, leaf_count, profile)
+    natural_lanius_bytes = len(render("lanius", workload).encode())
     lanius_source = render("lanius", workload, target_bytes)
     sources = {
         language: (
@@ -86,8 +105,11 @@ def generate_source_set(
     return {
         "target_lanius_bytes": target_bytes,
         "seed": seed,
+        "profile": profile,
         "expected_stdout": f"{expected}\n",
         "workload": structure,
+        "natural_lanius_bytes": natural_lanius_bytes,
+        "padding_bytes": target_bytes - natural_lanius_bytes,
         "sources": {
             language: {
                 "path": str(path.relative_to(out)),
@@ -99,23 +121,23 @@ def generate_source_set(
     }
 
 
-def largest_workload_that_fits(seed: int, target_bytes: int) -> int:
+def largest_workload_that_fits(seed: int, target_bytes: int, profile: str) -> int:
     low = 1
     high = 2
-    while source_size(seed, high) <= target_bytes:
+    while source_size(seed, high, profile) <= target_bytes:
         low = high
         high *= 2
     while low + 1 < high:
         middle = (low + high) // 2
-        if source_size(seed, middle) <= target_bytes:
+        if source_size(seed, middle, profile) <= target_bytes:
             low = middle
         else:
             high = middle
     return low
 
 
-def source_size(seed: int, leaf_count: int) -> int:
-    return len(render("lanius", build_workload(seed, leaf_count)).encode())
+def source_size(seed: int, leaf_count: int, profile: str) -> int:
+    return len(render("lanius", build_workload(seed, leaf_count, profile)).encode())
 
 
 def source_name(language: str) -> str:

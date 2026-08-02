@@ -1130,6 +1130,10 @@ impl GpuSemanticLoweringStage {
             "typecheck.semantic_array_lengths_by_hir",
             semantic.checked.array_length_by_hir
         );
+        graph_buffer!(
+            "typecheck.semantic_iterable_kinds_by_hir",
+            semantic.checked.iterable_kind_by_hir
+        );
         graph_buffer!("semantic.value_ids", &self.value_ids);
         graph_buffer!("semantic.value_types", &self.value_types);
         graph_buffer!("semantic.call_targets", &self.call_targets);
@@ -1435,6 +1439,11 @@ impl GpuSemanticLoweringStage {
                     semantic.checked.array_length_by_hir,
                 )?,
                 bound(
+                    "semantic_iterable_kind",
+                    resource("typecheck.semantic_iterable_kinds_by_hir"),
+                    semantic.checked.iterable_kind_by_hir,
+                )?,
+                bound(
                     "semantic_lir_count",
                     resource("lir.semantic.count_by_hir"),
                     &self.counts,
@@ -1458,6 +1467,10 @@ impl GpuSemanticLoweringStage {
                 (
                     "semantic_array_length",
                     semantic.checked.array_length_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_iterable_kind",
+                    semantic.checked.iterable_kind_by_hir.as_entire_binding(),
                 ),
                 ("semantic_lir_count", self.counts.as_entire_binding()),
             ],
@@ -1930,6 +1943,11 @@ impl GpuSemanticLoweringStage {
                     semantic.checked.function_return_type_by_hir,
                 )?,
                 bound(
+                    "semantic_function_result_word_count_by_hir",
+                    resource("typecheck.semantic_function_result_word_counts_by_hir"),
+                    semantic.checked.function_result_word_count_by_hir,
+                )?,
+                bound(
                     "semantic_function_entrypoint_by_hir",
                     resource("typecheck.semantic_function_entrypoints_by_hir"),
                     semantic.checked.function_entrypoint_by_hir,
@@ -2006,6 +2024,13 @@ impl GpuSemanticLoweringStage {
                     semantic
                         .checked
                         .function_return_type_by_hir
+                        .as_entire_binding(),
+                ),
+                (
+                    "semantic_function_result_word_count_by_hir",
+                    semantic
+                        .checked
+                        .function_result_word_count_by_hir
                         .as_entire_binding(),
                 ),
                 (
@@ -3619,6 +3644,8 @@ mod tests {
             ],
         );
         let visible = storage_ro_from_u32s(&gpu.device, "test.lir.visible", &[u32::MAX; 16]);
+        let checked_layout_facts =
+            storage_ro_from_u32s(&gpu.device, "test.lir.checked_layout_facts", &[0; 16]);
         let mut enclosing_fn = [0u32; 16];
         enclosing_fn[0] = 7;
         enclosing_fn[2] = 7;
@@ -3818,6 +3845,8 @@ mod tests {
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
                         array_length_by_hir: &semantic_array_lengths,
                         member_field_ordinal_by_hir: &visible,
+                        iterable_kind_by_hir: &checked_layout_facts,
+                        function_result_word_count_by_hir: &checked_layout_facts,
                     },
                     compact_expr_scalar_type: &expression_types,
                     public_decl_index_by_hir: &visible,
@@ -4027,7 +4056,7 @@ mod tests {
         let invalid_tokens =
             storage_ro_from_u32s(&gpu.device, "test.abi.invalid_tokens", &[u32::MAX; 12]);
         let _language_names =
-            storage_ro_from_u32s(&gpu.device, "test.abi.language_names", &[u32::MAX; 63]);
+            storage_ro_from_u32s(&gpu.device, "test.abi.language_names", &[u32::MAX; 67]);
         let mut enclosing_functions = vec![0; 12];
         enclosing_functions[8] = 1;
         enclosing_functions[9] = 1;
@@ -4138,6 +4167,8 @@ mod tests {
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
                         array_length_by_hir: &semantic_array_lengths,
                         member_field_ordinal_by_hir: &invalid_tokens,
+                        iterable_kind_by_hir: &zero_by_hir,
+                        function_result_word_count_by_hir: &zero_by_hir,
                     },
                     compact_expr_scalar_type: &expression_types,
                     public_decl_index_by_hir: &public_declarations,
@@ -4290,7 +4321,7 @@ mod tests {
         let types = storage_ro_from_u32s(&gpu.device, "test.family.types", &[3 << 28; 4]);
         let visible = storage_ro_from_u32s(&gpu.device, "test.family.visible", &[u32::MAX; 16]);
         let _language_names =
-            storage_ro_from_u32s(&gpu.device, "test.family.language_names", &[u32::MAX; 63]);
+            storage_ro_from_u32s(&gpu.device, "test.family.language_names", &[u32::MAX; 67]);
         let enclosing = storage_ro_from_u32s(&gpu.device, "test.family.enclosing", &[0; 16]);
         let checked_calls = checked_calls(
             &gpu.device,
@@ -4384,6 +4415,8 @@ mod tests {
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
                         array_length_by_hir: &semantic_array_lengths,
                         member_field_ordinal_by_hir: &visible,
+                        iterable_kind_by_hir: &enclosing,
+                        function_result_word_count_by_hir: &enclosing,
                     },
                     compact_expr_scalar_type: &types,
                     public_decl_index_by_hir: &visible,
@@ -4527,7 +4560,9 @@ mod tests {
         );
         let visible = storage_ro_from_u32s(&gpu.device, "test.control.visible", &[u32::MAX; 16]);
         let _language_names =
-            storage_ro_from_u32s(&gpu.device, "test.control.language_names", &[u32::MAX; 63]);
+            storage_ro_from_u32s(&gpu.device, "test.control.language_names", &[u32::MAX; 67]);
+        let checked_layout_facts =
+            storage_ro_from_u32s(&gpu.device, "test.control.checked_layout_facts", &[0; 16]);
         let mut enclosing_fn = vec![0; 16];
         enclosing_fn[..4].fill(5);
         let enclosing_fn =
@@ -4624,6 +4659,8 @@ mod tests {
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
                         array_length_by_hir: &semantic_array_lengths,
                         member_field_ordinal_by_hir: &visible,
+                        iterable_kind_by_hir: &checked_layout_facts,
+                        function_result_word_count_by_hir: &checked_layout_facts,
                     },
                     compact_expr_scalar_type: &expression_types,
                     public_decl_index_by_hir: &visible,

@@ -12,7 +12,8 @@ StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<uint> target_function_count;
 StructuredBuffer<TargetLirFunction> target_functions;
 StructuredBuffer<uint> target_function_index_by_semantic;
-RWStructuredBuffer<uint> x86_frame_slot_by_decl_token;
+RWStructuredBuffer<uint> x86_decl_location_by_token;
+RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -27,6 +28,24 @@ TargetLirFunction target_function_for(uint semantic_id)
     return target_functions[target_function_index_by_semantic[semantic_id]];
 }
 
+bool scalar_gpr_type(uint type_id)
+{
+    return type_id == 1u || type_id == 2u || type_id == 3u ||
+        type_id == 4u || type_id == 6u;
+}
+
+uint declaration_location(uint function_id, uint ordinal, uint type_id,
+                          uint stack_slot)
+{
+    if (!scalar_gpr_type(type_id) || ordinal >= 5u)
+        return stack_slot;
+    uint physical = ordinal == 0u ? 3u : 11u + ordinal;
+    uint ignored;
+    InterlockedOr(x86_saved_gpr_mask_by_function[function_id],
+        1u << physical, ignored);
+    return X86_LOCATION_REGISTER | physical;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -39,8 +58,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (param.declaration_id < gParams.token_capacity && valid_function(param.function_id))
         {
             TargetLirFunction function = target_function_for(param.function_id);
-            x86_frame_slot_by_decl_token[param.declaration_id] =
-                function.instruction_count + param.ordinal;
+            uint slot = function.instruction_count + param.ordinal;
+            x86_decl_location_by_token[param.declaration_id] =
+                declaration_location(param.function_id, param.ordinal,
+                    param.type_id, slot);
         }
     }
 
@@ -52,8 +73,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             TargetLirFunction function = target_function_for(local.function_id);
             SemanticLirFunction semantic_function = semantic_lir_functions[local.function_id];
-            x86_frame_slot_by_decl_token[local.declaration_id] =
-                function.instruction_count + semantic_function.param_count + local.ordinal;
+            uint ordinal = semantic_function.param_count + local.ordinal;
+            uint slot = function.instruction_count + ordinal;
+            x86_decl_location_by_token[local.declaration_id] =
+                declaration_location(local.function_id, ordinal,
+                    local.type_id, slot);
         }
     }
 }

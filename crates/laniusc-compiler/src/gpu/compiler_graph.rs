@@ -668,11 +668,13 @@ impl CompilerGraphWorkspace {
                     usage,
                     mapped_at_creation: false,
                 });
-                slots.push(LaniusBuffer::new_labeled(
+                let buffer = LaniusBuffer::new_labeled(
                     (raw, plan.bytes),
                     plan.bytes as usize,
                     format!("{label}.slot.{}", plan.slot),
-                ));
+                );
+                crate::gpu::buffers::register_resettable_buffer(&buffer);
+                slots.push(buffer);
             }
         }
         debug_assert!(imported_by_slot.is_empty());
@@ -845,10 +847,6 @@ impl MaterializedCompilerGraph {
             .resource_id(name)
             .map(|_| self.buffer(name))
             .transpose()
-    }
-
-    pub(crate) fn contains_pass(&self, name: &str) -> bool {
-        self.graph.pass_id(name).is_some()
     }
 }
 
@@ -1455,7 +1453,8 @@ impl RadixSortGraphPasses {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RadixSortGraphResources {
     pub count: ResourceId,
-    pub keys: Vec<ResourceId>,
+    pub count_binding: &'static str,
+    pub keys: Vec<ReflectedResourceBinding>,
     pub order: ResourceId,
     pub temporary_order: ResourceId,
     pub dispatch_args: ResourceId,
@@ -1504,19 +1503,19 @@ fn hierarchical_radix_sort_step_passes(
     let key_reads = || {
         r.keys
             .iter()
-            .map(|resource| PassAccess::read(name(*resource), *resource))
+            .map(|key| PassAccess::read(key.binding, key.resource))
             .collect::<Vec<_>>()
     };
     let mut histogram_accesses = key_reads();
     histogram_accesses.extend([
-        PassAccess::read(name(r.count), r.count),
+        PassAccess::read(r.count_binding, r.count),
         PassAccess::read("radix_order_in", input),
         PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
         PassAccess::write("radix_block_histogram", r.histogram),
     ]);
     let mut scatter_accesses = key_reads();
     scatter_accesses.extend([
-        PassAccess::read(name(r.count), r.count),
+        PassAccess::read(r.count_binding, r.count),
         PassAccess::read("radix_order_in", input),
         PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
         PassAccess::read("radix_block_bucket_prefix", r.bucket_prefix),
@@ -1596,7 +1595,7 @@ fn validate_radix_sort_resources(
         resources.bucket_base,
     ]
     .into_iter()
-    .chain(resources.keys.iter().copied())
+    .chain(resources.keys.iter().map(|key| key.resource))
     {
         let Some(desc) = graph.resources.get(resource.index()) else {
             return Err(format!(
@@ -1628,19 +1627,19 @@ fn radix_sort_step_passes(
     let key_reads = || {
         r.keys
             .iter()
-            .map(|resource| PassAccess::read(name(*resource), *resource))
+            .map(|key| PassAccess::read(key.binding, key.resource))
             .collect::<Vec<_>>()
     };
     let mut histogram_accesses = key_reads();
     histogram_accesses.extend([
-        PassAccess::read(name(r.count), r.count),
+        PassAccess::read(r.count_binding, r.count),
         PassAccess::read("radix_order_in", input),
         PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
         PassAccess::write("radix_block_histogram", r.histogram),
     ]);
     let mut scatter_accesses = key_reads();
     scatter_accesses.extend([
-        PassAccess::read(name(r.count), r.count),
+        PassAccess::read(r.count_binding, r.count),
         PassAccess::read("radix_order_in", input),
         PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
         PassAccess::read("radix_block_bucket_prefix", r.bucket_prefix),
@@ -2572,7 +2571,15 @@ impl CompilerGraphBuilder {
         )?;
         Ok(RadixSortGraphResources {
             count,
-            keys,
+            count_binding: self.resources[count.index()].name,
+            keys: keys
+                .into_iter()
+                .map(|resource| ReflectedResourceBinding {
+                    binding: self.resources[resource.index()].name,
+                    resource,
+                    mode: None,
+                })
+                .collect(),
             order,
             temporary_order,
             dispatch_args,
@@ -4225,7 +4232,12 @@ mod tests {
                 }),
                 resources: RadixSortGraphResources {
                     count,
-                    keys: vec![key],
+                    count_binding: "odd.count",
+                    keys: vec![ReflectedResourceBinding {
+                        binding: "odd.key",
+                        resource: key,
+                        mode: None,
+                    }],
                     order,
                     temporary_order,
                     dispatch_args,

@@ -25,3 +25,7 @@ Ok, let's work on that then. There are two tasks:
 2. A (two) GPU-oriented lowering IR(s) between semantic HIR and machine-byte emission that removes the combinatorial fragment explosion and instead makes it easy to emit final artifacts. I think your idea of having a first layer, then a second layer specialized to x86 and WASM is good.
 
 Continue to work until the compiler has been entirely moved over to this new method.
+
+---
+Our new goal is to simplify, desloppify, and reduce the # of lines of code in the codebase. Getting down to Pareas's 15k lines of source code is likely impossible, but I believe we could move far closer to that than the 500,000 thousand lines of rust/slang we currently have (at time of goal writing). While reaching this goal, it is important that we do not degrade the codebase or remove features, backends, or other such things. You may look at `./OLD_GOAL.md` to see the old goals. Pareas is at `~/code/pareas` if you want to look at that, and docs are in `./doc/papers`. The goal is really not just to simplify, but to simplify in such a way that it makes achieving those old goals easier/possible. This means graph-based construction, using slang reflection and more features in slang, and avoiding manual construction when possible. You can consider introducing some sort of internal-data-parallel-rust-embedded-functional-array-macro-language if that's necessary to simplify things enough.
+---

@@ -298,6 +298,12 @@ static const uint X86_LIR_OP_AGGREGATE_RETURN_WORD = 35u;
 static const uint X86_LIR_OP_STRING_ADDR = 36u;
 // IR_OPCODE
 static const uint X86_LIR_OP_STRING_LEN = 37u;
+// Store through an aggregate address. Operands are receiver, element/field,
+// and value; concrete stride belongs to target lowering.
+// IR_OPCODE
+static const uint X86_LIR_OP_INDEX_STORE = 40u;
+// IR_OPCODE
+static const uint X86_LIR_OP_FIELD_STORE = 41u;
 // Compiler intrinsic lowered to the native runtime's shared signed-decimal
 // printer. Its argument arrives through the ordinary CALL_ARG ABI rows.
 // IR_OPCODE
@@ -477,6 +483,23 @@ static const uint X86_LIR_METADATA_AGGREGATE = 0x80000000u;
 // machine word (for example the address half of a string pair).
 static const uint X86_LIR_METADATA_WIDE = 0x40000000u;
 
+// A value location is either a target-row stack home or a physical x86 GPR.
+// Stack payloads remain global target rows; the artifact emitter translates
+// them to function-relative frame slots after target paging has been replayed.
+// IR_OPCODE
+static const uint X86_LOCATION_REGISTER = 0x80000000u;
+// IR_OPCODE
+static const uint X86_LOCATION_PAYLOAD_MASK = 0x3fffffffu;
+// IR_OPCODE
+static const uint X86_LOCATION_INVALID = 0xffffffffu;
+
+// Allocatable caller-saved registers for short semantic value lifetimes.
+// Their cyclic assignment is sound for intervals shorter than this count.
+// IR_OPCODE
+static const uint X86_TEMP_REGISTER_COUNT = 4u;
+// IR_OPCODE
+static const uint X86_TEMP_REGISTER_FIRST = 8u;
+
 struct SemanticLirCore
 {
     uint op;
@@ -638,6 +661,16 @@ struct X86LirOperands
     uint b;
     uint c;
     uint metadata;
+};
+
+// Physical homes corresponding to result/a/b/c. Non-value operand fields use
+// X86_LOCATION_INVALID. This stays page-local alongside x86 target LIR.
+struct X86LirLocations
+{
+    uint result;
+    uint a;
+    uint b;
+    uint c;
 };
 
 struct WasmLirInstruction

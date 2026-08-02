@@ -22,10 +22,13 @@ LANES = ("o0", "optimized")
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="target/compile-scaling-matrix")
-    parser.add_argument("--size", type=int, default=1_101_000)
-    parser.add_argument("--seeds", default="20,21,22,23,24,25,26")
+    parser.add_argument("--size", type=int, default=1_000_000)
+    parser.add_argument("--seeds", default=",".join(str(seed) for seed in range(20, 40)))
     parser.add_argument("--warm-seed", type=int, default=19)
     parser.add_argument("--order-seed", type=int, default=0x1A91_05)
+    parser.add_argument(
+        "--profile", choices=("typical", "mixed", "long-tail"), default="mixed"
+    )
     args = parser.parse_args()
     seeds = [int(value) for value in args.seeds.split(",")]
     if args.size <= 0 or not seeds or len(set(seeds)) != len(seeds):
@@ -40,7 +43,7 @@ def main() -> int:
     source_root.mkdir(parents=True, exist_ok=True)
     bin_root.mkdir(parents=True, exist_ok=True)
     expected, source_variants = generate_sources(
-        repo, source_root, args.size, [args.warm_seed, *seeds]
+        repo, source_root, args.size, [args.warm_seed, *seeds], args.profile
     )
 
     command_templates = compiler_commands(repo)
@@ -95,16 +98,28 @@ def main() -> int:
                 f"capacity-warm-{seed}",
             )
             validate_executable(capacity_output, expected[seed])
+        # End capacity preparation on a source that is not part of the measured
+        # set. Otherwise the first randomized sample can accidentally measure
+        # an immediate same-project recompile while every later sample switches
+        # projects and rebuilds shape-dependent job resources.
+        variable_project_primer = bin_root / f"lanius-variable-primer-{args.warm_seed}"
+        compile_lanius(
+            daemon,
+            source_path(source_root, args.warm_seed, "lanius"),
+            variable_project_primer,
+            f"variable-primer-{args.warm_seed}",
+        )
+        validate_executable(variable_project_primer, expected[args.warm_seed])
         for seed in lanius_seeds:
-            output = bin_root / f"lanius-hot-daemon-{seed}"
+            output = bin_root / f"lanius-variable-project-{seed}"
             source = source_path(source_root, seed, "lanius")
             sample = compile_lanius(daemon, source, output, f"measure-{seed}")
             stdout = validate_executable(output, expected[seed])
             samples.append({
                 "order": len(samples),
-                "phase": "lanius_hot_daemon",
+                "phase": "lanius_hot_daemon_variable_project",
                 "language": "lanius",
-                "lane": "hot_daemon",
+                "lane": "hot_daemon_variable_project",
                 "seed": seed,
                 "source_bytes": source.stat().st_size,
                 "source_sha256": sha256_file(source),
@@ -122,17 +137,19 @@ def main() -> int:
         "seeds": seeds,
         "warm_seed": args.warm_seed,
         "order_seed": args.order_seed,
+        "workload_profile": args.profile,
         "timing_policy": "wall clock from request/process start through artifact write",
         "sample_policy": "all samples retained; median is primary, min/max/MAD are reported",
         "validation_policy": "every artifact must execute with exact model-derived stdout",
-        "daemon_warmup_policy": "one pipeline warmup seed; after CPU trials, one unmeasured capacity warmup per measured seed immediately precedes a contiguous randomized hot-daemon batch",
+        "daemon_warmup_policy": "one pipeline warmup seed; after CPU trials, one unmeasured capacity warmup per measured seed, then a different-source primer before the contiguous randomized variable-project hot-daemon batch",
         "debug_info": "disabled in every CPU lane",
     })
     write_json(out / "commands.json", command_templates)
     write_json(out / "source_manifest.json", {
-        "schema": "lanius.compile-scaling-source-manifest.v2",
+        "schema": "lanius.compile-scaling-source-manifest.v3",
         "generator_path": "tools/generate_compile_scaling_sources.py",
         "model_path": "tools/compile_workload_model.py",
+        "workload_profile": args.profile,
         "variants": source_variants,
     })
     outputs = out / "outputs"
@@ -148,14 +165,16 @@ def main() -> int:
     return 0
 
 
-def generate_sources(repo: Path, out: Path, size: int, seeds: list[int]):
+def generate_sources(
+    repo: Path, out: Path, size: int, seeds: list[int], profile: str
+):
     expected = {}
     variants = {}
     for seed in seeds:
         target = out / f"seed-{seed}"
         run = subprocess.run(
             ["python3", "tools/generate_compile_scaling_sources.py", "--out", str(target),
-             "--sizes", str(size), "--seed", str(seed)],
+             "--sizes", str(size), "--seed", str(seed), "--profile", profile],
             cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         if run.returncode != 0:

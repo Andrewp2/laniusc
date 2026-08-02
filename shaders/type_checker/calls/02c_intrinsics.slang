@@ -37,7 +37,7 @@ static const uint HIR_PATH_EXPR = 33u;
 static const uint TY_VOID = 1u;
 
 static const uint INTRINSIC_NONE = 0u;
-static const uint LANGUAGE_SYMBOL_COUNT = 63u;
+static const uint LANGUAGE_SYMBOL_COUNT = 67u;
 
 uint linear_thread_id(uint3 dtid)
 {

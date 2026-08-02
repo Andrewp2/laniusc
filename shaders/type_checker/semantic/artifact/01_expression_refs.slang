@@ -24,6 +24,8 @@ RWStructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 RWStructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 RWStructuredBuffer<uint> semantic_array_length_by_hir;
 RWStructuredBuffer<uint> semantic_member_field_ordinal_by_hir;
+RWStructuredBuffer<uint> semantic_iterable_kind_by_hir;
+RWStructuredBuffer<uint> semantic_function_result_word_count_by_hir;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
@@ -64,6 +66,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     if (node >= gParams.n_hir_nodes) return;
     semantic_member_field_ordinal_by_hir[node] = INVALID;
+    semantic_iterable_kind_by_hir[node] = 0u;
+    semantic_function_result_word_count_by_hir[node] = 0u;
 
     uint tag = TYPE_REF_INVALID;
     uint payload = INVALID;

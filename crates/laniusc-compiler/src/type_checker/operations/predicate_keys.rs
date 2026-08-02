@@ -9,50 +9,87 @@ pub(in crate::type_checker) enum PredicateKeyKind {
 }
 
 #[derive(Clone, Copy)]
-struct PredicateKeyConfig {
-    label: &'static str,
-    mode: u32,
-    steps: u32,
-    seed_label: &'static str,
-    order: &'static str,
-    temporary_order: &'static str,
+pub(in crate::type_checker) struct PredicateKeyDefinition {
+    pub label: &'static str,
+    pub mode: u32,
+    pub steps: u32,
+    pub seed_pass: &'static str,
+    pub small_pass: &'static str,
+    pub sort: RadixSortDefinition,
+}
+
+impl PredicateKeyDefinition {
+    pub(in crate::type_checker) fn register(
+        self,
+        graph: &mut crate::gpu::compiler_graph::CompilerGraphBuilder,
+        kernels: &impl crate::gpu::kernels::KernelReflections,
+        capacity: u32,
+        keys: &[&'static str],
+    ) -> Result<(), String> {
+        use crate::gpu::compiler_graph::{
+            AccessMode,
+            CompilerPhase,
+            ReflectedResourceBinding,
+            ResourceDomain,
+        };
+
+        let binding = |binding, resource, mode| -> std::result::Result<_, String> {
+            Ok(ReflectedResourceBinding {
+                binding,
+                resource: graph.resource_id(resource).ok_or_else(|| {
+                    format!("predicate key resource `{resource}` is not registered")
+                })?,
+                mode,
+            })
+        };
+        let r = self.sort.resources;
+        if capacity <= PREDICATE_KEY_SMALL_SORT_CAPACITY {
+            let overrides = [
+                binding("predicate_count_in", r.count, None)?,
+                binding("radix_order", r.order, Some(AccessMode::Write))?,
+            ];
+            graph.add_kernel_pass_by_name(
+                self.small_pass,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                kernels,
+                "type_checker/predicates/01b2_sort_keys_small",
+                &overrides,
+            )?;
+            graph.require_complete_reflection(self.small_pass)?;
+        } else {
+            let overrides = [
+                binding("predicate_count_in", r.count, None)?,
+                binding("predicate_key_order", r.order, Some(AccessMode::Write))?,
+            ];
+            graph.add_kernel_pass_by_name(
+                self.seed_pass,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                kernels,
+                "type_checker/predicates/01b_seed_key_order",
+                &overrides,
+            )?;
+            graph.require_complete_reflection(self.seed_pass)?;
+            let key_bindings = keys.iter().map(|&name| (name, name)).collect::<Vec<_>>();
+            self.sort.register_with_bindings(
+                graph,
+                self.steps,
+                "predicate_count_in",
+                &key_bindings,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 impl PredicateKeyKind {
-    fn config(self) -> PredicateKeyConfig {
+    fn definition(self) -> PredicateKeyDefinition {
         match self {
-            Self::MethodContract => PredicateKeyConfig {
-                label: "type_check.predicates.method_contract_keys",
-                mode: PREDICATE_KEY_MODE_METHOD_CONTRACT,
-                steps: PREDICATE_METHOD_CONTRACT_KEY_RADIX_STEPS,
-                seed_label: "type_check.predicates.seed_method_contract_key_order",
-                order: "predicate_method_contract_key_order",
-                temporary_order: "predicate_method_contract_key_order_tmp",
-            },
-            Self::MethodParam => PredicateKeyConfig {
-                label: "type_check.predicates.method_param_keys",
-                mode: PREDICATE_KEY_MODE_METHOD_PARAM,
-                steps: PREDICATE_METHOD_PARAM_KEY_RADIX_STEPS,
-                seed_label: "type_check.predicates.seed_method_param_key_order",
-                order: "predicate_method_param_key_order",
-                temporary_order: "predicate_method_param_key_order_tmp",
-            },
-            Self::Owner => PredicateKeyConfig {
-                label: "type_check.predicates.owner_keys",
-                mode: PREDICATE_KEY_MODE_OWNER,
-                steps: PREDICATE_OWNER_KEY_RADIX_STEPS,
-                seed_label: "type_check.predicates.seed_owner_key_order",
-                order: "predicate_owner_key_order",
-                temporary_order: "predicate_owner_key_order_tmp",
-            },
-            Self::Impl => PredicateKeyConfig {
-                label: "type_check.predicates.impl_keys",
-                mode: PREDICATE_KEY_MODE_IMPL,
-                steps: PREDICATE_IMPL_KEY_RADIX_STEPS,
-                seed_label: "type_check.predicates.seed_impl_key_order",
-                order: "predicate_impl_key_order",
-                temporary_order: "predicate_impl_key_order_tmp",
-            },
+            Self::MethodContract => compiler_graph::PREDICATE_METHOD_CONTRACT_KEYS,
+            Self::MethodParam => compiler_graph::PREDICATE_METHOD_PARAM_KEYS,
+            Self::Owner => compiler_graph::PREDICATE_OWNER_KEYS,
+            Self::Impl => compiler_graph::PREDICATE_IMPL_KEYS,
         }
     }
 }
@@ -62,11 +99,11 @@ pub(in crate::type_checker) struct PredicateKeyBuild<'a> {
     pub token_capacity: u32,
     pub predicate_capacity: u32,
     pub predicate_blocks: u32,
-    pub resources: &'a HashMap<String, wgpu::BindingResource<'a>>,
+    pub resources: &'a ResourceMap<'a>,
 }
 
 pub(in crate::type_checker) struct PredicateKeyPipeline {
-    config: PredicateKeyConfig,
+    definition: PredicateKeyDefinition,
     _seed_params: LaniusBuffer<PredicateKeyParams>,
     seed: wgpu::BindGroup,
     row_dispatch_args: wgpu::Buffer,
@@ -79,107 +116,75 @@ impl PredicateKeyPipeline {
         passes: &TypeCheckPasses,
         input: PredicateKeyBuild<'_>,
     ) -> Result<Self> {
-        let config = input.kind.config();
+        let definition = input.kind.definition();
         let params = |key_step| PredicateKeyParams {
             predicate_capacity: input.predicate_capacity,
             token_capacity: input.token_capacity,
             n_blocks: input.predicate_blocks,
             key_step,
-            mode: config.mode,
+            mode: definition.mode,
             reserved: 0,
         };
-        let seed_params =
-            uniform_from_val(device, &format!("{}.params.seed", config.label), &params(0));
+        let mut resources = input.resources.clone();
+        resources.alias("predicate_count_in", "hir_active_count")?;
+        let seed_params = uniform_from_val(
+            device,
+            &format!("{}.params.seed", definition.label),
+            &params(0),
+        );
         let seed = reflected_bind_group_with_overrides(
             device,
-            config.seed_label,
+            definition.seed_pass,
             &passes.kernel("type_checker/predicates/01b_seed_key_order"),
-            input.resources,
+            &resources,
             &[
                 ("gParams", seed_params.as_entire_binding()),
+                ("predicate_count_in", resources["hir_active_count"].clone()),
                 (
-                    "predicate_count_in",
-                    input.resources["hir_active_count"].clone(),
+                    "predicate_key_order",
+                    resources[definition.sort.resources.order].clone(),
                 ),
-                ("predicate_key_order", input.resources[config.order].clone()),
             ],
         )?;
 
-        let mut resources = input.resources.clone();
-        resources.insert(
-            "predicate_count_in".into(),
-            input.resources["hir_active_count"].clone(),
-        );
-        resources.insert(
-            "predicate_sort_order".into(),
-            input.resources[config.order].clone(),
-        );
-        resources.insert(
-            "predicate_sort_order_tmp".into(),
-            input.resources[config.temporary_order].clone(),
-        );
-        resources.insert(
-            "predicate_sort_histogram".into(),
-            input.resources["predicate_key_radix_block_histogram"].clone(),
-        );
-        resources.insert(
-            "predicate_sort_bucket_prefix".into(),
-            input.resources["predicate_key_radix_block_bucket_prefix"].clone(),
-        );
-        resources.insert(
-            "predicate_sort_bucket_total".into(),
-            input.resources["predicate_key_radix_bucket_total"].clone(),
-        );
-        resources.insert(
-            "predicate_sort_bucket_base".into(),
-            input.resources["predicate_key_radix_bucket_base"].clone(),
-        );
-        let sort = RadixSortOperation::new(
+        if input.predicate_capacity <= PREDICATE_KEY_SMALL_SORT_CAPACITY {
+            input
+                .resources
+                .validate_graph_pass(definition.small_pass, &[])?;
+        } else {
+            input
+                .resources
+                .validate_graph_pass(definition.seed_pass, &[])?;
+        }
+        let sort = definition.sort.operation(
             device,
             passes,
             &resources,
-            RadixSortPlan {
-                label: config.label,
-                capacity: input.predicate_capacity,
-                small_capacity: PREDICATE_KEY_SMALL_SORT_CAPACITY,
-                steps: config.steps,
-                kernels: RadixSortKernels::new(
-                    "type_checker/predicates/01c_sort_keys",
-                    "type_checker/predicates/01d_sort_keys_scatter",
-                )
-                .with_small("type_checker/predicates/01b2_sort_keys_small"),
-                dispatch: RadixSortDispatch {
-                    small: RadixDispatchDomain::Indirect(buffer_from_resources(
-                        input.resources,
-                        "predicate_radix_bases_dispatch_args",
-                    )?),
-                    rows: RadixDispatchDomain::Indirect(buffer_from_resources(
-                        input.resources,
-                        "predicate_hir_dispatch_args",
-                    )?),
-                    bucket_prefix: RadixDispatchDomain::Indirect(buffer_from_resources(
-                        input.resources,
-                        "predicate_radix_prefix_dispatch_args",
-                    )?),
-                    bucket_bases: RadixDispatchDomain::Indirect(buffer_from_resources(
-                        input.resources,
-                        "predicate_radix_bases_dispatch_args",
-                    )?),
-                },
-                resources: RadixSortResources {
-                    count: "predicate_count_in",
-                    order: "predicate_sort_order",
-                    temporary_order: "predicate_sort_order_tmp",
-                    histogram: "predicate_sort_histogram",
-                    bucket_prefix: "predicate_sort_bucket_prefix",
-                    bucket_total: "predicate_sort_bucket_total",
-                    bucket_base: "predicate_sort_bucket_base",
-                },
+            input.predicate_capacity,
+            PREDICATE_KEY_SMALL_SORT_CAPACITY,
+            definition.steps,
+            RadixSortDispatch {
+                small: RadixDispatchDomain::Indirect(buffer_from_resources(
+                    input.resources,
+                    "predicate_radix_bases_dispatch_args",
+                )?),
+                rows: RadixDispatchDomain::Indirect(buffer_from_resources(
+                    input.resources,
+                    "predicate_hir_dispatch_args",
+                )?),
+                bucket_prefix: RadixDispatchDomain::Indirect(buffer_from_resources(
+                    input.resources,
+                    "predicate_radix_prefix_dispatch_args",
+                )?),
+                bucket_bases: RadixDispatchDomain::Indirect(buffer_from_resources(
+                    input.resources,
+                    "predicate_radix_bases_dispatch_args",
+                )?),
             },
             params,
         )?;
         Ok(Self {
-            config,
+            definition,
             _seed_params: seed_params,
             seed,
             row_dispatch_args: buffer_from_resources(
@@ -201,7 +206,7 @@ impl PredicateKeyPipeline {
                 encoder,
                 &passes.kernel("type_checker/predicates/01b_seed_key_order"),
                 &self.seed,
-                self.config.seed_label,
+                self.definition.seed_pass,
                 &self.row_dispatch_args,
             )?;
         }

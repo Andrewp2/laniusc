@@ -514,6 +514,7 @@ impl GpuTypeChecker {
             .map(|items| items.parser_feature_flags)
             .unwrap_or(u32::MAX);
         let cache_key = ResidentTypeCheckCacheKey {
+            source_byte_capacity: source_len.max(1),
             source_file_capacity,
             token_capacity,
             hir_node_capacity,
@@ -536,6 +537,63 @@ impl GpuTypeChecker {
                 .as_ref()
                 .map(|state| !state.can_reuse_for(cache_key))
                 .unwrap_or(true);
+            let allocation = resident_state_guard
+                .as_ref()
+                .filter(|state| state.cache_key.uses_hir_items == cache_key.uses_hir_items)
+                .map(|state| state.cache_key.grow_to_cover(cache_key))
+                .unwrap_or(cache_key);
+            let resident_cache_trace =
+                crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false);
+            if (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
+                || resident_cache_trace)
+                && needs_rebuild
+            {
+                if let Some(previous) = resident_state_guard.as_ref() {
+                    eprintln!(
+                        "[gpu_compile_host_timer] typecheck.resident_cache_miss: input_fingerprint={:#018x}->{:#018x} token_capacity={}->{} hir_capacity={}->{} parser_hir_capacity={}->{} module_capacity={}->{} call_param_capacity={}->{} call_arg_capacity={}->{} features={:#010x}->{:#010x}",
+                        previous.cache_key.input_fingerprint,
+                        cache_key.input_fingerprint,
+                        previous.cache_key.token_capacity,
+                        cache_key.token_capacity,
+                        previous.cache_key.hir_node_capacity,
+                        cache_key.hir_node_capacity,
+                        previous.cache_key.parser_hir_node_capacity,
+                        cache_key.parser_hir_node_capacity,
+                        previous.cache_key.module_record_capacity,
+                        cache_key.module_record_capacity,
+                        previous.cache_key.call_param_row_capacity,
+                        cache_key.call_param_row_capacity,
+                        previous.cache_key.call_arg_row_capacity,
+                        cache_key.call_arg_row_capacity,
+                        previous.cache_key.parser_feature_flags,
+                        cache_key.parser_feature_flags,
+                    );
+                }
+            }
+            if resident_cache_trace {
+                eprintln!(
+                    "[typecheck.resident_cache] rebuild={needs_rebuild} source={} files={} tokens={} hir={} parser_hir={} modules={} call_params={} call_args={} features={:#010x} fingerprint={:#018x} allocation_source={} allocation_files={} allocation_tokens={} allocation_hir={} allocation_parser_hir={} allocation_modules={} allocation_call_params={} allocation_call_args={} allocation_features={:#010x}",
+                    cache_key.source_byte_capacity,
+                    cache_key.source_file_capacity,
+                    cache_key.token_capacity,
+                    cache_key.hir_node_capacity,
+                    cache_key.parser_hir_node_capacity,
+                    cache_key.module_record_capacity,
+                    cache_key.call_param_row_capacity,
+                    cache_key.call_arg_row_capacity,
+                    cache_key.parser_feature_flags,
+                    cache_key.input_fingerprint,
+                    allocation.source_byte_capacity,
+                    allocation.source_file_capacity,
+                    allocation.token_capacity,
+                    allocation.hir_node_capacity,
+                    allocation.parser_hir_node_capacity,
+                    allocation.module_record_capacity,
+                    allocation.call_param_row_capacity,
+                    allocation.call_arg_row_capacity,
+                    allocation.parser_feature_flags,
+                );
+            }
             let rebuilt = needs_rebuild;
             if needs_rebuild {
                 // A cache miss changes bound allocation identities, so none of
@@ -544,28 +602,28 @@ impl GpuTypeChecker {
                 // replacement directly would transiently retain both complete
                 // type-check workspaces at a compilation-unit boundary.
                 resident_state_guard.take();
-                *resident_state_guard = Some(self.create_resident_state(
-                    device,
-                    source_len,
-                    source_file_capacity,
-                    token_capacity,
-                    token_buf,
-                    token_count_buf,
-                    token_file_id_buf,
-                    source_buf,
-                    hir_node_capacity,
-                    parser_hir_node_capacity,
-                    hir_kind_buf,
-                    hir_token_pos_buf,
-                    hir_token_end_buf,
-                    hir_token_file_id_buf,
-                    hir_status_buf,
-                    hir_items,
-                    &self.passes,
-                    input_fingerprint,
-                    uses_hir_items,
-                    dependency_interfaces,
-                )?);
+                let (state, resettable_buffers) =
+                    crate::gpu::buffers::collect_resettable_buffers(|| {
+                        self.create_resident_state(
+                            device,
+                            allocation,
+                            token_buf,
+                            token_count_buf,
+                            token_file_id_buf,
+                            source_buf,
+                            hir_kind_buf,
+                            hir_token_pos_buf,
+                            hir_token_end_buf,
+                            hir_token_file_id_buf,
+                            hir_status_buf,
+                            hir_items,
+                            &self.passes,
+                            dependency_interfaces,
+                        )
+                    });
+                let mut state = state?;
+                state.resettable_buffers = resettable_buffers;
+                *resident_state_guard = Some(state);
             }
             host_timer.stamp(if rebuilt {
                 "resident_state_rebuilt"
@@ -575,6 +633,27 @@ impl GpuTypeChecker {
             let bind_groups = resident_state_guard
                 .as_ref()
                 .expect("resident type-check state must exist");
+            bind_groups.clear_job_storage(encoder);
+            queue.write_buffer(
+                &bind_groups.if_depth_params,
+                0,
+                &uniform_bytes(&IfDepthParams {
+                    n_tokens: token_capacity,
+                    n_hir_nodes: hir_node_capacity,
+                    n_blocks: bind_groups.if_depth_n_blocks,
+                    scan_step: 0,
+                }),
+            );
+            queue.write_buffer(
+                &bind_groups.fn_params,
+                0,
+                &uniform_bytes(&FnContextParams {
+                    n_tokens: token_capacity,
+                    n_hir_nodes: hir_node_capacity,
+                    n_blocks: bind_groups.fn_n_blocks,
+                    scan_step: 0,
+                }),
+            );
             let predicate_hir_dispatch_args = bind_groups
                 .typecheck_graph
                 .u32_buffer("predicate_hir_dispatch_args")?;
@@ -1729,17 +1808,15 @@ impl GpuTypeChecker {
                 "type_check.semantic_artifact.struct_literal_refs",
                 hir_node_capacity,
             )?;
-            if arrays_required {
-                record_compute(
-                    encoder,
-                    &self
-                        .passes
-                        .kernel("type_checker/semantic/artifact/01b_array_index_refs"),
-                    &bind_groups.semantic_array_index_refs_project,
-                    "type_check.semantic_artifact.array_index_refs",
-                    hir_node_capacity,
-                )?;
-            }
+            record_compute(
+                encoder,
+                &self
+                    .passes
+                    .kernel("type_checker/semantic/artifact/01b_array_index_refs"),
+                &bind_groups.semantic_array_index_refs_project,
+                "type_check.semantic_artifact.array_index_refs",
+                hir_node_capacity,
+            )?;
             record_compute(
                 encoder,
                 &self.passes.kernel("type_checker/conditions/compact_expr"),
@@ -2060,6 +2137,14 @@ impl GpuTypeChecker {
             member_field_ordinal_by_hir: state
                 .typecheck_graph
                 .buffer("semantic_member_field_ordinal_by_hir")
+                .ok()?,
+            iterable_kind_by_hir: state
+                .typecheck_graph
+                .buffer("semantic_iterable_kind_by_hir")
+                .ok()?,
+            function_result_word_count_by_hir: state
+                .typecheck_graph
+                .buffer("semantic_function_result_word_count_by_hir")
                 .ok()?,
             compact_expr_scalar_type: state.compact_expr_scalar_type.clone(),
             public_decl_index_by_hir: module_path.interface_public_decl_index_by_hir.clone(),

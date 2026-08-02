@@ -6,7 +6,13 @@ use anyhow::Result;
 
 use super::{
     buffers::{LaniusBuffer, TrackedBufferView},
-    compiler_graph::{BoundGraphResource, CompilerGraph, CompilerGraphBindings, ResourceId},
+    compiler_graph::{
+        BoundGraphResource,
+        CompilerGraph,
+        CompilerGraphAllocations,
+        CompilerGraphBindings,
+        ResourceId,
+    },
     passes_core::{PassData, bind_group},
 };
 
@@ -100,11 +106,18 @@ struct GraphResourceIdentity {
     logical_byte_size: u64,
 }
 
+#[derive(Clone, Copy)]
+struct GraphContext<'a> {
+    graph: &'a CompilerGraph,
+    allocations: &'a CompilerGraphAllocations,
+}
+
 /// Name-keyed binding resource map used by reflection-based bind-group builders.
 #[derive(Clone)]
 pub(crate) struct ResourceMap<'a> {
     resources: HashMap<String, wgpu::BindingResource<'a>>,
     graph_identities: HashMap<String, GraphResourceIdentity>,
+    graph_context: Option<GraphContext<'a>>,
 }
 
 impl<'a> ResourceMap<'a> {
@@ -113,7 +126,18 @@ impl<'a> ResourceMap<'a> {
         Self {
             resources: HashMap::new(),
             graph_identities: HashMap::new(),
+            graph_context: None,
         }
+    }
+
+    /// Associates this registry with the graph that owns its logical buffers.
+    /// Cloned operation-local registries retain this contract automatically.
+    pub(crate) fn attach_graph(
+        &mut self,
+        graph: &'a CompilerGraph,
+        allocations: &'a CompilerGraphAllocations,
+    ) {
+        self.graph_context = Some(GraphContext { graph, allocations });
     }
 
     /// Clones the lightweight binding views for an operation that needs a
@@ -356,6 +380,55 @@ impl<'a> ResourceMap<'a> {
             }
         }
         Ok(bindings)
+    }
+
+    /// Validates one operation pass against the graph attached to this
+    /// registry. Operation constructors call this while creating bind groups,
+    /// so callers do not maintain a second pass-by-pass validation schedule.
+    pub(crate) fn validate_graph_pass(
+        &self,
+        pass_name: &str,
+        aliases: &[(&str, &str)],
+    ) -> Result<()> {
+        let context = self.graph_context.ok_or_else(|| {
+            anyhow::anyhow!(
+                "GPU resource registry has no compiler graph while validating `{pass_name}`"
+            )
+        })?;
+        let pass = context
+            .graph
+            .pass_id(pass_name)
+            .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{pass_name}`"))?;
+        let bindings = self.graph_bindings_with_aliases(context.graph, pass_name, aliases)?;
+        context
+            .allocations
+            .validate_pass_bindings(context.graph, pass, &bindings)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub(crate) fn validate_graph_passes<'b>(
+        &self,
+        passes: impl IntoIterator<Item = &'b str>,
+    ) -> Result<()> {
+        for pass in passes {
+            self.validate_graph_pass(pass, &[])?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate_graph_passes_if_present<'b>(
+        &self,
+        passes: impl IntoIterator<Item = &'b str>,
+    ) -> Result<()> {
+        let context = self.graph_context.ok_or_else(|| {
+            anyhow::anyhow!("GPU resource registry has no attached compiler graph")
+        })?;
+        for pass in passes {
+            if context.graph.pass_id(pass).is_some() {
+                self.validate_graph_pass(pass, &[])?;
+            }
+        }
+        Ok(())
     }
 }
 

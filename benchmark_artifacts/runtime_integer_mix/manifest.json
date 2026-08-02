@@ -1,0 +1,123 @@
+{
+  "files": [
+    {
+      "path": "commands.json",
+      "sha256": "ef9028ddcd5ba9b2ad6df58c6def29bbf6358b72f6acbb10b3423e5fea57f97a"
+    },
+    {
+      "path": "config.json",
+      "sha256": "4a1dc7088f017d339e9b1c50f32b02607a90d2c536f46debdcf21117c15f0aeb"
+    },
+    {
+      "path": "machine_info.json",
+      "sha256": "bf0cb015c92f77c179af60b7fefd745d0b009c81f8e4bac34278bd501652277a"
+    },
+    {
+      "path": "outputs/c-debug.stdout",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "outputs/c-optimized.stdout",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "outputs/cpp-debug.stdout",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "outputs/cpp-optimized.stdout",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "outputs/lanius-current.stdout",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "outputs/rust-debug.stdout",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "outputs/rust-optimized.stdout",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "outputs/zig-debug.stdout",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "outputs/zig-optimized.stdout",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "results.tsv",
+      "sha256": "1f1cf3da29c0e33a2db013eb992ca0f9d3f0ebc00b10379d36eb137cfcf29679"
+    },
+    {
+      "path": "samples.json",
+      "sha256": "5f18cebc796c60f5f096f300b831ae598092624b5d50521e111243d3fbef833b"
+    },
+    {
+      "path": "src/integer_mix.c",
+      "sha256": "59d48db675bb277cfec6435a769d8b1140bd1f4dcf85203014cbfcb7519ccd39"
+    },
+    {
+      "path": "src/integer_mix.cpp",
+      "sha256": "f8d3a7b13263f356e374c2afef4a099961148a005dab42e83b24c1459c07f8bd"
+    },
+    {
+      "path": "src/integer_mix.lani",
+      "sha256": "5bbd1154db4ab03486652029113c87e5d7a01aea4b8548d4d71611bc88572984"
+    },
+    {
+      "path": "src/integer_mix.rs",
+      "sha256": "02511ebb8a9d22d8f5ce40f447cf3cb0fac61eaa4522163dfa9dbbec7f07f87a"
+    },
+    {
+      "path": "src/integer_mix.zig",
+      "sha256": "4b9c671fb787beea0510365acfbb41b2c49a8d94d006770224ac8f067c7524f2"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "b5292b8c67f12d3a8773c6b47b690a077acae497e8e5ec01da00ad8fed9d2c5e"
+    }
+  ],
+  "language_lanes": [
+    {
+      "lane": "debug",
+      "language": "c"
+    },
+    {
+      "lane": "optimized",
+      "language": "c"
+    },
+    {
+      "lane": "debug",
+      "language": "cpp"
+    },
+    {
+      "lane": "optimized",
+      "language": "cpp"
+    },
+    {
+      "lane": "debug",
+      "language": "rust"
+    },
+    {
+      "lane": "optimized",
+      "language": "rust"
+    },
+    {
+      "lane": "debug",
+      "language": "zig"
+    },
+    {
+      "lane": "optimized",
+      "language": "zig"
+    },
+    {
+      "lane": "current",
+      "language": "lanius"
+    }
+  ],
+  "schema": "lanius.runtime-comparison.v1"
+}

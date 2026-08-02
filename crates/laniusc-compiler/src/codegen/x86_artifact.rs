@@ -10,6 +10,7 @@ use super::{
         TARGET_LIR_PAGE_ROWS,
         X86ArtifactLayout,
         X86LirCore,
+        X86LirLocations,
         X86LirOperands,
     },
     scan::{GpuResidentExclusiveScan, GraphScanContract},
@@ -49,6 +50,7 @@ pub(crate) struct GpuX86ArtifactStage {
     layout_op: ComputeOperation,
     clear: ComputeOperation,
     emits: Vec<ComputeOperation>,
+    runtime_emit: ComputeOperation,
     byte_scan: GpuResidentExclusiveScan,
     _params: Vec<LaniusBuffer<X86ArtifactParams>>,
     _byte_lengths: LaniusBuffer<u32>,
@@ -73,6 +75,7 @@ impl GpuX86ArtifactStage {
         total: &LaniusBuffer<u32>,
         core: &LaniusBuffer<X86LirCore>,
         operands: &LaniusBuffer<X86LirOperands>,
+        locations: &LaniusBuffer<X86LirLocations>,
         semantic_origins: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         let resource = |name: &str| {
@@ -147,6 +150,11 @@ impl GpuX86ArtifactStage {
             "codegen/lir/x86/artifact_clear",
         )?;
         let emit_pass = load(device, "lir.x86.emit", "codegen/lir/x86/emit")?;
+        let runtime_emit_pass = load(
+            device,
+            "lir.x86.runtime.emit",
+            "codegen/lir/x86/runtime_emit",
+        )?;
         let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
         let mut resources = ResourceMap::new();
         resources.register_graph_bindings(graph, &graph_bindings);
@@ -154,6 +162,7 @@ impl GpuX86ArtifactStage {
         resources.graph_buffer(graph, "lir.x86.total", total)?;
         resources.graph_buffer(graph, "lir.x86.core", core)?;
         resources.graph_buffer(graph, "lir.x86.operands", operands)?;
+        resources.graph_buffer(graph, "lir.x86.locations", locations)?;
         resources.graph_buffer(graph, "lir.x86.semantic_origins", semantic_origins)?;
         let context = (graph, allocations);
         let byte_counts = params
@@ -253,6 +262,15 @@ impl GpuX86ArtifactStage {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
+        let runtime_emit = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.x86.runtime.emit",
+            &runtime_emit_pass,
+            fixed_params,
+            512,
+        )?;
 
         let length_readback = readback_bytes(device, "artifact.x86.length.readback", 4, 4);
         let output_readback = PagedReadback::new(
@@ -268,6 +286,7 @@ impl GpuX86ArtifactStage {
             layout_op,
             clear,
             emits,
+            runtime_emit,
             byte_scan,
             _params: params,
             _byte_lengths: byte_lengths,
@@ -326,6 +345,7 @@ impl GpuX86ArtifactStage {
         for emit in &self.emits[first_page..] {
             emit.record(encoder)?;
         }
+        self.runtime_emit.record(encoder)?;
         Ok(())
     }
 
@@ -397,6 +417,7 @@ mod tests {
                 SemanticLirString,
                 TargetLirFunction,
                 X86LirCore,
+                X86LirLocations,
                 X86LirOperands,
                 lowering_compiler_graph,
                 opcode,
@@ -466,6 +487,11 @@ mod tests {
         );
         let no_call_counts =
             storage_ro_from_u32s(&gpu.device, "test.x86_artifact.no_call_counts", &[0; 12]);
+        let function_ids = storage_ro_from_u32s(
+            &gpu.device,
+            "test.x86_artifact.function_ids",
+            &[0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
+        );
         let aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
             "test.x86_artifact.sem.aggregate",
@@ -509,7 +535,7 @@ mod tests {
             operands: &semantic_operands,
             owner_by_instruction: &no_call_counts,
             op_by_instruction: &no_call_counts,
-            function_id_by_hir: &no_call_counts,
+            function_id_by_hir: &function_ids,
             call_args: &semantic_call_args,
             call_arg_start_by_hir: &no_call_starts,
             call_arg_count_by_hir: &no_call_counts,
@@ -538,6 +564,9 @@ mod tests {
             .unwrap();
         let operands = workspace
             .alias::<X86LirOperands>(&graph, graph.resource_id("lir.x86.operands").unwrap(), 12)
+            .unwrap();
+        let locations = workspace
+            .alias::<X86LirLocations>(&graph, graph.resource_id("lir.x86.locations").unwrap(), 12)
             .unwrap();
         let semantic_origins = workspace
             .alias::<u32>(
@@ -569,13 +598,20 @@ mod tests {
                 2,
             )
             .unwrap();
-        let frame_slots = workspace
+        let declaration_locations = workspace
+            .alias::<u32>(
+                &graph,
+                graph.resource_id("lir.x86.decl_location_by_token").unwrap(),
+                8,
+            )
+            .unwrap();
+        let saved_masks = workspace
             .alias::<u32>(
                 &graph,
                 graph
-                    .resource_id("lir.x86.frame_slot_by_decl_token")
+                    .resource_id("lir.x86.saved_gpr_mask_by_function")
                     .unwrap(),
-                8,
+                2,
             )
             .unwrap();
         gpu.queue
@@ -617,6 +653,24 @@ mod tests {
             ]),
         );
         gpu.queue.write_buffer(
+            &locations.buffer,
+            0,
+            &records(&[
+                [0, 0, 0, 0],
+                [1, 0, 0, 0],
+                [2, 0, 1, 0],
+                [3, 0, 0, 0],
+                [4, 0, 2, 3],
+                [u32::MAX, 4, 0, 0],
+                [6, 0, 0, 0],
+                [u32::MAX, 6, 0, 0],
+                [8, 0, 0, 0],
+                [u32::MAX, 8, 0, 0],
+                [10, 0, 0, 0],
+                [u32::MAX, 10, 0, 0],
+            ]),
+        );
+        gpu.queue.write_buffer(
             &semantic_origins.buffer,
             0,
             &records(&[[0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11]]),
@@ -630,8 +684,22 @@ mod tests {
         );
         gpu.queue
             .write_buffer(&function_index_by_semantic.buffer, 0, &records(&[[0], [1]]));
+        gpu.queue.write_buffer(
+            &declaration_locations.buffer,
+            0,
+            &records(&[
+                [6],
+                [u32::MAX],
+                [u32::MAX],
+                [u32::MAX],
+                [u32::MAX],
+                [u32::MAX],
+                [u32::MAX],
+                [u32::MAX],
+            ]),
+        );
         gpu.queue
-            .write_buffer(&frame_slots.buffer, 0, &records(&[[u32::MAX]; 8]));
+            .write_buffer(&saved_masks.buffer, 0, &records(&[[0], [0]]));
 
         let stage = GpuX86ArtifactStage::new(
             &gpu.device,
@@ -643,6 +711,7 @@ mod tests {
             &total,
             &core,
             &operands,
+            &locations,
             &semantic_origins,
         )
         .unwrap();
