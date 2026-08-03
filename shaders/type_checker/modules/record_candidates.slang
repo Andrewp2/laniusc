@@ -1,7 +1,5 @@
 // Shared semantic classification for dense canonical HIR item rows.
 
-static const uint MODULE_RECORD_INVALID = 0xffffffffu;
-
 static const uint MODULE_HIR_ITEM = 2u;
 static const uint MODULE_HIR_FN = 3u;
 static const uint MODULE_HIR_CONST_ITEM = 25u;
@@ -19,7 +17,6 @@ static const uint MODULE_ITEM_EXTERN_FN = 5u;
 static const uint MODULE_ITEM_STRUCT = 6u;
 static const uint MODULE_ITEM_ENUM = 7u;
 static const uint MODULE_ITEM_TYPE_ALIAS = 8u;
-static const uint MODULE_ITEM_ENUM_VARIANT = 9u;
 static const uint MODULE_ITEM_TRAIT = 10u;
 
 static const uint MODULE_NAMESPACE_VALUE = 2u;

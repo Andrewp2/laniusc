@@ -121,14 +121,6 @@ uint table_load(uint slot)
                : name_hash_table_b[slot - gParams.table_half_capacity];
 }
 
-void table_store_invalid(uint slot)
-{
-    if (slot < gParams.table_half_capacity)
-        name_hash_table_a[slot] = INVALID;
-    else
-        name_hash_table_b[slot - gParams.table_half_capacity] = INVALID;
-}
-
 uint table_claim(uint slot, uint name_i)
 {
     return slot < gParams.table_half_capacity

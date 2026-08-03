@@ -4,7 +4,6 @@
 // scalar type codes are the stable language type codes shared by typecheck and
 // codegen.
 
-public static const uint HIR_SEM_EXPR_NAME = 2u;
 public static const uint HIR_SEM_EXPR_INT = 3u;
 public static const uint HIR_SEM_EXPR_TRUE = 4u;
 public static const uint HIR_SEM_EXPR_FALSE = 5u;

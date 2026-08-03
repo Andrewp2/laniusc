@@ -1,6 +1,3 @@
-// src/parser/debug.rs
-#![allow(dead_code)]
-
 use crate::gpu::debug::DebugBuffer;
 
 /// GPU-side debug snapshots for parser passes.

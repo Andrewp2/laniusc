@@ -14,14 +14,6 @@ bool x86_semantic_type_is_aggregate(SemanticLirCore core)
         (core.type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u);
 }
 
-bool x86_semantic_type_is_string(SemanticLirCore core)
-{
-    return (core.type_ref_tag == SEMANTIC_TYPE_REF_SCALAR &&
-            core.type_ref_payload == 7u) ||
-        (core.type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id == 7u);
-}
-
-static const uint X86_LIR_INVALID = 0xffffffffu;
 static const uint X86_LIR_TY_FLOAT = 5u;
 
 uint x86_lir_count(SemanticLirCore core, SemanticLirOperands operands)

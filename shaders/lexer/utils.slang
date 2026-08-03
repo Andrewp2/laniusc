@@ -26,30 +26,6 @@ public uint load_u16_packed(StructuredBuffer<uint> buf, uint idx)
     return (idx & 1u) == 0u ? unpack_u16_pair_low(w) : unpack_u16_pair_high(w);
 }
 
-// Load two consecutive u16 values starting at idx (may cross u32 word boundary).
-// Returns: low16 = value at idx, high16 = value at idx+1.
-public uint load_u32_two_u16(StructuredBuffer<uint> buf, uint idx)
-{
-    const uint w0 = buf[idx >> 1];
-    const uint is_odd = idx & 1u;
-    if (is_odd == 0u)
-    {
-        // Both halves live in the same 32-bit word.
-        return w0;
-    }
-    else
-    {
-        // Crosses boundary: hi16 comes from next word's low16.
-        const uint w1 = buf[(idx >> 1) + 1u];
-        return pack_u16_pair(unpack_u16_pair_high(w0), unpack_u16_pair_low(w1));
-    }
-}
-
-public bool is_last(uint i, uint n)
-{
-    return (i + 1u == n);
-}
-
 public uint2 seeds_from_flags(uint f)
 {
     uint emit = (f & PF_EMIT) != 0u ? 1u : 0u;
@@ -73,24 +49,4 @@ public uint kept_any_from_flags(uint f)
     uint emit_kept = ((f & PF_EMIT) != 0u && (f & PF_KEEP_EMIT) != 0u) ? 1u : 0u;
     uint eof_kept = ((f & PF_EOF) != 0u && (f & PF_KEEP_EOF) != 0u) ? 1u : 0u;
     return (emit_kept | eof_kept);
-}
-
-public uint linearize2D(uint x, uint y, uint nx)
-{
-    return y * nx + x;
-}
-
-public uint linearize_dispatch_2d_to_1d(uint3 dispatchTid, uint nx)
-{
-    return dispatchTid.y * nx + dispatchTid.x;
-}
-
-public uint linearize_group_2d_to_1d(
-    uint3 groupID, uint3 groupThreadID,
-    uint groupsX, uint tgsX, uint tgsY)
-{
-    const uint global_x = groupID.x * tgsX + groupThreadID.x;
-    const uint global_y = groupID.y * tgsY + groupThreadID.y;
-    const uint nx = groupsX * tgsX;
-    return global_y * nx + global_x;
 }

@@ -34,19 +34,6 @@ public struct RangeSearchI32AtLeast : IRangeSearchPredicate<int, int>
     }
 }
 
-public struct RangeSearchU32BitsetIntersects : IRangeSearchPredicate<uint, uint>
-{
-    public static bool aggregate_may_match(uint aggregate, uint query)
-    {
-        return (aggregate & query) != 0u;
-    }
-
-    public static bool leaf_matches(uint leaf, uint query)
-    {
-        return (leaf & query) != 0u;
-    }
-}
-
 static const int RANGE_SEARCH_TREE_SEARCH_STACK = 64;
 // Local helper budgets: callers must bound tree frames by the fixed stack and
 // row scans by one published row block before using these loops.

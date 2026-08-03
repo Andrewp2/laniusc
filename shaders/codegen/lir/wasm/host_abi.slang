@@ -55,12 +55,6 @@ uint wasm_host_type_result_count(uint type_i)
     return type_i >= 1u && type_i <= 5u ? 1u : 0u;
 }
 
-uint wasm_host_type_entry_length(uint type_i)
-{
-    return 11u + wasm_host_type_param_count(type_i) +
-        wasm_host_type_result_count(type_i);
-}
-
 uint wasm_host_type_entry_offset(uint type_i)
 {
     static const uint offsets[11] =

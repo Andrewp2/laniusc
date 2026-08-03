@@ -59,7 +59,6 @@ RWStructuredBuffer<uint> status;
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
 static const uint TYPE_WORDS = 9u;
-static const uint EXPR_WORDS = 4u;
 static const uint INTERFACE_TYPE_SCALAR = 1u;
 static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;

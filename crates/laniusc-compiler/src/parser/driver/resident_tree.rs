@@ -72,8 +72,6 @@ impl U32Readback {
 
 struct ResidentTreeReadbacks {
     status: U32Readback,
-    emit: U32Readback,
-    emit_pos: U32Readback,
     node_kind: U32Readback,
     parent: U32Readback,
     first_child: U32Readback,
@@ -218,16 +216,6 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.status",
                 bufs.ll1_status.byte_size,
-            ),
-            emit: rb(
-                device,
-                "rb.parser.resident_tree.ll1_emit",
-                bufs.ll1_emit.byte_size,
-            ),
-            emit_pos: rb(
-                device,
-                "rb.parser.resident_tree.ll1_emit_pos",
-                bufs.ll1_emit_pos.byte_size,
             ),
             node_kind: rb(
                 device,
@@ -910,13 +898,6 @@ impl ResidentTreeReadbacks {
     fn encode_copies(&self, encoder: &mut wgpu::CommandEncoder, bufs: &ParserBuffers) {
         self.status
             .copy_from(encoder, &bufs.ll1_status, bufs.ll1_status.byte_size as u64);
-        self.emit
-            .copy_from(encoder, &bufs.ll1_emit, bufs.ll1_emit.byte_size as u64);
-        self.emit_pos.copy_from(
-            encoder,
-            &bufs.ll1_emit_pos,
-            bufs.ll1_emit_pos.byte_size as u64,
-        );
         self.node_kind
             .copy_from(encoder, &bufs.node_kind, bufs.node_kind.byte_size as u64);
         self.parent
@@ -1587,8 +1568,6 @@ impl ResidentTreeReadbacks {
 
     fn map_all(&self) {
         self.status.map();
-        self.emit.map();
-        self.emit_pos.map();
         self.node_kind.map();
         self.parent.map();
         self.first_child.map();
@@ -2066,8 +2045,6 @@ impl ResidentTreeReadbacks {
                 steps: ll1_words[4],
                 emit_len: ll1_words[5],
             },
-            ll1_emit_stream: Vec::new(),
-            ll1_emit_token_pos: Vec::new(),
             node_kind: self.node_kind.read_words(tree_len)?,
             parent: self.parent.read_words(tree_len)?,
             first_child: self.first_child.read_words(tree_len)?,

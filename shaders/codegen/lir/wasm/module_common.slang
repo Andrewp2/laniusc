@@ -1,7 +1,6 @@
 import codegen.lowering_ir;
 import codegen.lir.wasm.host_abi;
 
-static const uint WASM_MODULE_INVALID = 0xffffffffu;
 static const uint WASM_MODULE_I32 = 0x7fu;
 static const uint WASM_MODULE_F32 = 0x7du;
 static const uint WASM_MODULE_TY_FLOAT = 5u;

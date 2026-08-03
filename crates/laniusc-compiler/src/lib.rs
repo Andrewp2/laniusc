@@ -36,7 +36,6 @@ pub mod parser;
 pub mod reflection;
 
 /// Generated shader artifact catalog used by runtime pass construction.
-#[allow(dead_code)]
 pub(crate) mod shader_artifacts;
 
 /// Resident GPU type checking and retained semantic metadata for codegen.

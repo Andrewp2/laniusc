@@ -1,7 +1,5 @@
 //! GPU debugging utilities
 
-#![allow(dead_code)]
-
 use wgpu;
 
 /// Host-side holder for a staged GPU buffer.
@@ -16,31 +14,6 @@ pub struct DebugBuffer {
 }
 
 impl DebugBuffer {
-    /// Returns true if the buffer is present
-    pub fn is_some(&self) -> bool {
-        self.buffer.is_some()
-    }
-
-    /// Reads the buffer contents as raw bytes
-    pub fn read_bytes(&self) -> Option<Vec<u8>> {
-        let buf = self.buffer.as_ref()?;
-        let view = buf.slice(..).get_mapped_range();
-        Some(view.to_vec())
-    }
-
-    /// Reads the buffer contents as a vector of u32 values
-    pub fn read_u32s(&self) -> Option<Vec<u32>> {
-        self.read_bytes().map(|v| {
-            let mut out = Vec::with_capacity(v.len() / 4);
-            for chunk in v.chunks_exact(4) {
-                out.push(u32::from_le_bytes(
-                    chunk.try_into().expect("chunk size mismatch"),
-                ));
-            }
-            out
-        })
-    }
-
     /// Allocates a staging buffer and records a copy from `src` into it.
     pub fn set_from_copy(
         &mut self,

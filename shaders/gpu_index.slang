@@ -13,80 +13,9 @@ public uint linear_group_id_2d(uint3 gid, uint max_groups_x)
     return gid.x + gid.y * max_groups_x;
 }
 
-public bool index_in_bounds(uint index, uint count)
-{
-    return index < count;
-}
-
-public bool valid_index_or_invalid(uint index, uint count, uint invalid_value)
-{
-    return index != invalid_value && index < count;
-}
-
-public uint4 uint4_fill(uint value)
-{
-    return uint4(value, value, value, value);
-}
-
-public bool uint4_any_not_equal(uint4 value, uint sentinel)
-{
-    return value.x != sentinel ||
-           value.y != sentinel ||
-           value.z != sentinel ||
-           value.w != sentinel;
-}
-
-public bool uint4_all_equal(uint4 value, uint sentinel)
-{
-    return value.x == sentinel &&
-           value.y == sentinel &&
-           value.z == sentinel &&
-           value.w == sentinel;
-}
-
-public uint active_count_from_status(
-    uint requested_count,
-    StructuredBuffer<uint> status,
-    uint count_slot)
-{
-    return requested_count == 0u ? 0u : min(requested_count, status[count_slot]);
-}
-
-public uint active_count_from_rw_status(
-    uint requested_count,
-    RWStructuredBuffer<uint> status,
-    uint count_slot)
-{
-    return requested_count == 0u ? 0u : min(requested_count, status[count_slot]);
-}
-
 public uint row_major_slot(uint row, uint stride, uint column)
 {
     return row * stride + column;
-}
-
-public T row_major_load<T>(
-    StructuredBuffer<T> input,
-    uint row,
-    uint stride,
-    uint column,
-    T fallback)
-{
-    if (!row_major_column_in_bounds(column, stride))
-        return fallback;
-    return input[row_major_slot(row, stride, column)];
-}
-
-public T row_major_load_rw<T>(
-    RWStructuredBuffer<T> input,
-    uint row,
-    uint stride,
-    uint column,
-    T fallback)
-{
-    if (!row_major_column_in_bounds(column, stride))
-        return fallback;
-    return input[row_major_slot(row, stride, column)];
 }
 
 public bool row_major_store<T>(
@@ -105,16 +34,6 @@ public bool row_major_store<T>(
 public bool row_major_column_in_bounds(uint column, uint stride)
 {
     return column < stride;
-}
-
-public bool row_major_slot_in_bounds(
-    uint row,
-    uint stride,
-    uint column,
-    uint capacity)
-{
-    return row_major_column_in_bounds(column, stride) &&
-           row_major_slot(row, stride, column) < capacity;
 }
 
 public uint encode_nullable_id(uint value, uint invalid_value)

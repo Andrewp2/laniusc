@@ -202,8 +202,6 @@ mod tests {
 /// Full one-shot parser debug readback result.
 pub struct ParseResult {
     pub ll1: Ll1AcceptResult,
-    pub ll1_emit_stream: Vec<u32>,
-    pub ll1_emit_token_pos: Vec<u32>,
     pub headers: Vec<ActionHeader>,
     pub sc_stream: Vec<u32>,
     pub emit_stream: Vec<u32>,
@@ -303,8 +301,6 @@ pub struct ParseResult {
 /// Resident parser debug readback result from compiler-owned token buffers.
 pub struct ResidentParseResult {
     pub ll1: Ll1AcceptResult,
-    pub ll1_emit_stream: Vec<u32>,
-    pub ll1_emit_token_pos: Vec<u32>,
     pub node_kind: Vec<u32>,
     pub parent: Vec<u32>,
     pub first_child: Vec<u32>,

@@ -1,10 +1,5 @@
 import atomics;
 
-public uint open_address_capacity(uint item_count, uint load_factor)
-{
-    return max(item_count * load_factor, 1u);
-}
-
 public interface IOpenAddressKeyOps<TKey>
 {
     static bool valid(TKey key);
@@ -35,11 +30,6 @@ public uint open_address_probe_hash(uint hash, uint capacity, uint probe)
     if (capacity == 0u)
         return 0u;
     return ((hash % capacity) + probe) % capacity;
-}
-
-public uint open_address_probe_slot(uint key, uint capacity, uint probe)
-{
-    return open_address_probe_hash(key, capacity, probe);
 }
 
 public bool open_address_publish_min_u32_buffer<

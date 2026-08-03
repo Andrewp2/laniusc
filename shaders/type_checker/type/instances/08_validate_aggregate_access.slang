@@ -46,7 +46,6 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
-static const uint ERR_CONDITION_TYPE = 5u;
 static const uint ERR_LOOP_CONTROL = 7u;
 static const uint ERR_INVALID_MEMBER_ACCESS = 8u;
 static const uint ERR_CALL_MISMATCH = 10u;

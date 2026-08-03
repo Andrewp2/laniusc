@@ -475,24 +475,6 @@ uint substituted_receiver_return_token(
     return fallback_token;
 }
 
-uint receiver_arg_ref_tag_key(uint receiver_tag, uint receiver_payload, uint slot)
-{
-    uint tag;
-    uint payload;
-    return receiver_arg_ref(receiver_tag, receiver_payload, slot, tag, payload)
-        ? tag
-        : TYPE_REF_INVALID;
-}
-
-uint receiver_arg_ref_payload_key(uint receiver_tag, uint receiver_payload, uint slot)
-{
-    uint tag;
-    uint payload;
-    if (!receiver_arg_ref(receiver_tag, receiver_payload, slot, tag, payload))
-        return INVALID;
-    return type_ref_payload_key(tag, payload);
-}
-
 public struct MethodLookupKey
 {
     uint module_id;
@@ -584,17 +566,6 @@ public struct MethodFixedKey : IFixedU32RowKey<MethodLookupKey>
         if (lane == 4u)
             return fixed_key_encode_nullable_u32(key.name_id, INVALID);
         return fixed_key_encode_nullable_u32(key.module_id, INVALID);
-    }
-}
-
-public struct MethodKeyCompare : IRowQueryCompare<MethodLookupKey>
-{
-    public static int compare(uint row, MethodLookupKey key)
-    {
-        return fixed_u32_row_key_compare<MethodLookupKey, MethodFixedKey>(
-            row,
-            key,
-            6u);
     }
 }
 

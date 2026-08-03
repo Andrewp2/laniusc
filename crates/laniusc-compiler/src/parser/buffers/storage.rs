@@ -33,32 +33,6 @@ pub(super) fn reuse_or_allocate_u32_workspace(
     }
 }
 
-/// Reuses a phase-dead storage allocation for a later typed workspace when it
-/// is large enough. The allocation identity stays stable, which lets resident
-/// bind groups describe the complete phase schedule without retaining a
-/// separate physical buffer for every logical array.
-#[allow(dead_code)]
-pub(super) fn reuse_or_allocate_workspace<T, U>(
-    device: &wgpu::Device,
-    label: &str,
-    count: usize,
-    reusable: &LaniusBuffer<U>,
-) -> LaniusBuffer<T>
-where
-    T: Default + encase::ShaderType + encase::internal::WriteInto,
-{
-    let mut layout = encase::StorageBuffer::new(Vec::<u8>::new());
-    layout
-        .write(&T::default())
-        .expect("failed to measure storage workspace element");
-    let required_bytes = count.saturating_mul(layout.as_ref().len());
-    if reusable.byte_size >= required_bytes {
-        reusable.alias(count)
-    } else {
-        storage_rw_for_array::<T>(device, label, count)
-    }
-}
-
 /// Allocates a three-word dispatch-argument buffer usable for compute indirect dispatches.
 pub(super) fn dispatch_args_buffer(device: &wgpu::Device, label: &str) -> LaniusBuffer<u32> {
     dispatch_args_schedule_buffer(device, label, 1)

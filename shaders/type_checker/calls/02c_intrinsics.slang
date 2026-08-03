@@ -1,5 +1,4 @@
 import hir_records;
-import gpu_index;
 
 struct Params
 {

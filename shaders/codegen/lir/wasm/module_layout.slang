@@ -1,4 +1,3 @@
-import codegen.lir.wasm.module_common;
 import codegen.lir.wasm.host_abi;
 import codegen.lowering_ir;
 

@@ -8,11 +8,6 @@ public bool fixed_stack_full<let CAPACITY: int>(uint top)
     return top >= uint(CAPACITY);
 }
 
-public uint fixed_stack_frame(uint top)
-{
-    return top == 0u ? 0u : top - 1u;
-}
-
 public bool fixed_stack_push<T, let CAPACITY: int>(
     inout uint top,
     inout T values[CAPACITY],
@@ -37,14 +32,4 @@ public bool fixed_stack_pop<T, let CAPACITY: int>(
     top -= 1u;
     value = values[top];
     return true;
-}
-
-public T fixed_stack_peek_or<T, let CAPACITY: int>(
-    uint top,
-    inout T values[CAPACITY],
-    T invalid)
-{
-    if (fixed_stack_empty(top))
-        return invalid;
-    return values[fixed_stack_frame(top)];
 }

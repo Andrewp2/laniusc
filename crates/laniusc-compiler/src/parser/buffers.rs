@@ -238,38 +238,6 @@ impl ParserBuffers {
         let token_input_capacity = n_tokens.saturating_sub(2).max(1);
         let token_delimiter_n_blocks = token_input_capacity.div_ceil(256).max(1);
         let pair_capacity = n_pairs.max(1);
-        let ll1_stack_capacity = 1;
-        let empty = [0u32];
-        let ll1_predict_src = if tables.ll1_predict.is_empty() {
-            &empty[..]
-        } else {
-            &tables.ll1_predict
-        };
-        let ll1_rhs_off_src = if tables.prod_rhs_off.is_empty() {
-            &empty[..]
-        } else {
-            &tables.prod_rhs_off
-        };
-        let ll1_rhs_len_src = if tables.prod_rhs_len.is_empty() {
-            &empty[..]
-        } else {
-            &tables.prod_rhs_len
-        };
-        let ll1_rhs_src = if tables.prod_rhs.is_empty() {
-            &empty[..]
-        } else {
-            &tables.prod_rhs
-        };
-        let ll1_predict = storage_ro_from_u32s(device, "parser.ll1_predict", ll1_predict_src);
-        let ll1_prod_rhs_off =
-            storage_ro_from_u32s(device, "parser.ll1_prod_rhs_off", ll1_rhs_off_src);
-        let ll1_prod_rhs_len =
-            storage_ro_from_u32s(device, "parser.ll1_prod_rhs_len", ll1_rhs_len_src);
-        let ll1_prod_rhs = storage_ro_from_u32s(device, "parser.ll1_prod_rhs", ll1_rhs_src);
-        let ll1_emit =
-            storage_rw_for_array::<u32>(device, "parser.ll1_emit", ll1_stack_capacity as usize);
-        let ll1_emit_pos =
-            storage_rw_for_array::<u32>(device, "parser.ll1_emit_pos", ll1_stack_capacity as usize);
         let ll1_status = storage_rw_for_array::<u32>(device, "parser.ll1_status", 6);
 
         let stream_has_soi = token_kinds_u32
@@ -1583,18 +1551,12 @@ impl ParserBuffers {
             optional_invalid_row(method_required, "parser.hir_method_impl_receiver_type_node");
         let hir_param_owner_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_param_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
         let hir_param_link_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_param_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
         let hir_param_rank_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
         let hir_param_rank_b =
             alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let hir_param_previous =
-            alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
         // Absent enum/match families still have source-node-addressed consumers
         // in type checking and codegen, so use the common optional sentinels.
         let hir_variant_parent_enum =
@@ -1857,13 +1819,6 @@ impl ParserBuffers {
             alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
         let hir_array_element_previous =
             alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
-        let hir_expr_form = storage_rw_for_array::<u32>(device, "parser.hir_expr_form", 1);
-        let hir_expr_left_node =
-            storage_rw_for_array::<u32>(device, "parser.hir_expr_left_node", 1);
-        let hir_expr_right_node =
-            storage_rw_for_array::<u32>(device, "parser.hir_expr_right_node", 1);
-        let hir_expr_value_token =
-            storage_rw_for_array::<u32>(device, "parser.hir_expr_value_token", 1);
         let hir_expr_record = storage_rw_for_array::<u32>(
             device,
             "parser.hir_expr_record",
@@ -2516,12 +2471,6 @@ impl ParserBuffers {
             hir_struct_capacity: family_capacities.structs,
             hir_canonical_capacity,
 
-            ll1_predict,
-            ll1_prod_rhs_off,
-            ll1_prod_rhs_len,
-            ll1_prod_rhs,
-            ll1_emit,
-            ll1_emit_pos,
             ll1_status,
             params_llp,
             semantic_token_kinds,
@@ -2648,7 +2597,6 @@ impl ParserBuffers {
             tree_prefix_params,
             tree_prefix_scan_steps,
             tree_n_node_blocks,
-            tree_n_prefix_blocks,
             tree_active_dispatch_args,
             tree_enum_dispatch_args,
             tree_match_dispatch_args,
@@ -2664,7 +2612,6 @@ impl ParserBuffers {
             tree_block_prefix,
             tree_prefix,
             tree_prefix_block_max,
-            tree_prefix_block_max_tree_base,
             tree_prefix_block_max_tree,
             tree_prefix_max_build_steps,
             tree_params,
@@ -2866,12 +2813,9 @@ impl ParserBuffers {
             hir_method_signature_flags,
             hir_method_impl_receiver_type_node,
             hir_param_owner_a,
-            hir_param_owner_b,
             hir_param_link_a,
-            hir_param_link_b,
             hir_param_rank_a,
             hir_param_rank_b,
-            hir_param_previous,
             hir_variant_parent_enum,
             hir_variant_ordinal,
             hir_variant_payload_start,
@@ -2966,10 +2910,6 @@ impl ParserBuffers {
             hir_array_element_rank_a,
             hir_array_element_rank_b,
             hir_array_element_previous,
-            hir_expr_form,
-            hir_expr_left_node,
-            hir_expr_right_node,
-            hir_expr_value_token,
             hir_expr_record,
             hir_expr_name_role,
             hir_expr_result_node,

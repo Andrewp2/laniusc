@@ -552,25 +552,14 @@ async fn run_source(
             );
         }
 
-        match (test_cpu_ll1, res.ll1.accepted) {
-            (Ok(expected), true) => {
-                if !res.ll1_emit_stream.is_empty() && res.ll1_emit_stream != expected {
-                    anyhow::bail!(
-                        "LL(1) production stream mismatch for {}: GPU len={} test CPU oracle len={}",
-                        label,
-                        res.ll1_emit_stream.len(),
-                        expected.len()
-                    );
-                }
-            }
-            (Err(err), true) => {
+        if res.ll1.accepted {
+            if let Err(err) = test_cpu_ll1 {
                 anyhow::bail!(
                     "GPU accepted a test-CPU-oracle-rejected LL(1) parse for {}: {}",
                     label,
                     err
                 );
             }
-            _ => {}
         }
     }
     // core invariants on the GPU output itself
@@ -633,13 +622,12 @@ async fn run_source(
     }
 
     println!(
-        "[ok] {} (ll1={}, pairs={}, stack_changes={}, partial_parse_emits={}, ll1_emits={}, nodes={})",
+        "[ok] {} (ll1={}, pairs={}, stack_changes={}, partial_parse_emits={}, nodes={})",
         label,
         res.ll1.accepted,
         res.headers.len(),
         res.sc_stream.len(),
         res.emit_stream.len(),
-        res.ll1_emit_stream.len(),
         res.node_kind.len()
     );
     Ok(())

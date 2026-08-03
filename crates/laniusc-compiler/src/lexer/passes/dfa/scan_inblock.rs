@@ -52,20 +52,4 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa01ScanInblock
             ),
         ])
     }
-
-    // fn record_debug(
-    //     &self,
-    //     device: &wgpu::Device,
-    //     encoder: &mut wgpu::CommandEncoder,
-    //     bufs: &GpuBuffers,
-    //     dbg: &mut DebugOutput,
-    // ) {
-    //     dbg.gpu.block_summaries.set_from_copy(
-    //         device,
-    //         encoder,
-    //         &bufs.block_summaries,
-    //         "dbg.block_summaries",
-    //         bufs.block_summaries.byte_size,
-    //     );
-    // }
 }

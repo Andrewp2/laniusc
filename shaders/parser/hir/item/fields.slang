@@ -98,15 +98,6 @@ uint parent_kind(uint i)
     return p == INVALID || p >= active_node_count() ? INVALID : node_kind[p];
 }
 
-uint grandparent_kind(uint i)
-{
-    uint p = parent[i];
-    if (p == INVALID || p >= active_node_count())
-        return INVALID;
-    uint gp = parent[p];
-    return gp == INVALID || gp >= active_node_count() ? INVALID : node_kind[gp];
-}
-
 bool is_public_wrapper(uint kind)
 {
     return kind == PROD_PUB_FN || kind == PROD_PUB_EXTERN_FN || kind == PROD_PUB_CONST ||

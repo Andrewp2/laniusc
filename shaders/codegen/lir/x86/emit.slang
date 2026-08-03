@@ -121,46 +121,9 @@ void store_stack64(inout uint cursor, uint source, uint slot)
     emit_u32(cursor, displacement(slot));
 }
 
-void load_eax(inout uint cursor, uint slot)
-{
-    emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x85u); emit_u32(cursor, displacement(slot));
-}
-void load_ecx(inout uint cursor, uint slot)
-{
-    emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x8du); emit_u32(cursor, displacement(slot));
-}
 void store_eax(inout uint cursor, uint slot)
 {
     emit_u8(cursor, 0x89u); emit_u8(cursor, 0x85u); emit_u32(cursor, displacement(slot));
-}
-void load_rax(inout uint cursor, uint slot)
-{
-    emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x85u);
-    emit_u32(cursor, displacement(slot));
-}
-void load_rcx(inout uint cursor, uint slot)
-{
-    emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x8du);
-    emit_u32(cursor, displacement(slot));
-}
-void store_rax(inout uint cursor, uint slot)
-{
-    emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x85u);
-    emit_u32(cursor, displacement(slot));
-}
-void store_edx(inout uint cursor, uint slot)
-{
-    emit_u8(cursor, 0x89u); emit_u8(cursor, 0x95u); emit_u32(cursor, displacement(slot));
-}
-void store_rdx(inout uint cursor, uint slot)
-{
-    emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x95u);
-    emit_u32(cursor, displacement(slot));
-}
-void load_r10(inout uint cursor, uint slot)
-{
-    emit_u8(cursor, 0x4cu); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x95u);
-    emit_u32(cursor, displacement(slot));
 }
 void load_xmm0(inout uint cursor, uint slot)
 {
@@ -272,13 +235,6 @@ void store_value64(inout uint cursor, uint source, uint location,
     if (x86_location_is_register(location))
         move64_register(cursor, source, x86_location_payload(location));
     else store_stack64(cursor, source, value_slot(x86_location_payload(location), function));
-}
-
-void load_declaration32(inout uint cursor, uint location, uint destination)
-{
-    if (x86_location_is_register(location))
-        move32_register(cursor, x86_location_payload(location), destination);
-    else load_stack32(cursor, x86_location_payload(location), destination);
 }
 
 void store_declaration32(inout uint cursor, uint source, uint location)

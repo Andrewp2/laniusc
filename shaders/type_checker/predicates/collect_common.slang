@@ -178,7 +178,6 @@ static const uint TY_ENUM_BASE = 6144u;
 static const uint PREDICATE_STATUS_OK = 0u;
 static const uint PREDICATE_STATUS_INVALID_SUBJECT = 1u;
 static const uint PREDICATE_STATUS_BOUND_NOT_TRAIT = 2u;
-static const uint PREDICATE_STATUS_UNSUPPORTED = 3u;
 static const uint PREDICATE_STATUS_INVALID_ARG = 4u;
 static const uint PREDICATE_STATUS_INVALID_TARGET = 5u;
 static const uint PREDICATE_STATUS_MISSING_METHOD = 6u;
@@ -610,16 +609,6 @@ bool bound_ident_has_direct_arg_list(uint expr_node)
     return false;
 }
 
-bool bound_path_container(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_BOUND_TYPE_PATH ||
-           kind == PROD_BOUND_TYPE_PATH_MORE ||
-           kind == PROD_PATH_MORE;
-}
-
 bool bound_path_segment_node(uint node)
 {
     if (!valid_node(node))
@@ -892,18 +881,6 @@ uint type_decl_for_bound_path(uint expr_node, uint owner_decl_node)
     return decl_visible_from_module(owner_module, decl_i) ? decl_i : INVALID;
 }
 
-bool type_decl_exists_for_bound_path(uint expr_node, uint owner_decl_node)
-{
-    return type_decl_for_bound_path(expr_node, owner_decl_node) != INVALID;
-}
-
-bool trait_decl_exists_for_bound_path(uint expr_node, uint owner_decl_node)
-{
-    uint decl_i = type_decl_for_bound_path(expr_node, owner_decl_node);
-    return decl_i != INVALID &&
-           decl_kind[decl_i] == HIR_ITEM_KIND_TRAIT &&
-           decl_namespace[decl_i] == HIR_ITEM_NAMESPACE_TYPE;
-}
 #endif
 
 #if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
@@ -1135,28 +1112,6 @@ uint encoded_language_type_arg_for_token(uint token)
 }
 
 #if PREDICATE_BOUND_ARGUMENT_VALIDATION
-uint encoded_alias_type_arg_for_bound(uint owner_decl_node, uint arg_node)
-{
-    uint decl_i = type_decl_for_bound_path(arg_node, owner_decl_node);
-    return encoded_type_code(alias_type_code_for_decl(decl_i));
-}
-#endif
-
-#if PREDICATE_COLLECT_IMPL_RECORDS
-uint encoded_alias_type_arg_for_type_node(uint arg_node)
-{
-    uint decl_i = type_decl_for_type_path(arg_node);
-    return encoded_type_code(alias_type_code_for_decl(decl_i));
-}
-
-uint encoded_alias_type_arg_for_type_token(uint owner_type_node, uint token)
-{
-    uint decl_i = type_decl_for_type_arg_token(token);
-    return encoded_type_code(alias_type_code_for_decl(decl_i));
-}
-#endif
-
-#if PREDICATE_BOUND_ARGUMENT_VALIDATION
 uint encoded_concrete_type_arg_for_bound(uint owner_decl_node, uint arg_node)
 {
     uint encoded_language = encoded_language_type_arg_for_token(bound_path_leaf_token(arg_node));
@@ -1360,19 +1315,6 @@ uint validate_trait_impl_scalar_arg_token(
 #endif
 
 #if PREDICATE_COLLECT_METHOD_RECORDS
-bool trait_method_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_TRAIT_METHOD || kind == PROD_TRAIT_METHOD_PUB;
-}
-
-bool impl_method_node(uint node)
-{
-    return valid_node(node) && node_kind[node] == PROD_IMPL_FN;
-}
-
 uint method_contract_name_token(uint method_node)
 {
     if (!valid_node(method_node))
@@ -1508,11 +1450,6 @@ bool method_contract_range_matches_owner(uint owner_node, QueryRange range)
 
     return method_contract_order_row_matches_owner(range.begin, owner_node) &&
            method_contract_order_row_matches_owner(range.end - 1u, owner_node);
-}
-
-uint method_contract_range_count(QueryRange range)
-{
-    return range.end >= range.begin ? range.end - range.begin : INVALID;
 }
 
 bool method_contract_range_matches_owner_name(
@@ -1716,34 +1653,6 @@ uint validate_inherent_impl_target_type(uint impl_node, uint expr_node)
 
     return PREDICATE_STATUS_OK;
 }
-
-#if PREDICATE_COLLECT_METHOD_RECORDS
-uint trait_owner_node_for_method(uint method_node)
-{
-    uint owner = valid_node(method_node)
-        ? predicate_method_contract_owner_node[method_node]
-        : INVALID;
-    return valid_node(owner) && compact_item_kind_for_raw(owner) == HIR_ITEM_KIND_TRAIT
-        ? owner
-        : INVALID;
-}
-
-bool duplicate_trait_method_node(uint method_node)
-{
-    uint trait_node = trait_owner_node_for_method(method_node);
-    uint name_id = method_contract_name_id(method_node);
-    if (!valid_node(trait_node) || name_id == INVALID)
-        return false;
-
-    QueryRange range = method_contract_range_for_owner_name(trait_node, name_id);
-    if (range.end <= range.begin + 1u)
-        return false;
-
-    uint first_method = predicate_method_contract_key_order[range.begin];
-    return method_contract_node_matches_owner_name(first_method, trait_node, name_id) &&
-           first_method != method_node;
-}
-#endif
 
 bool trait_impl_header_is_public(uint impl_node)
 {
@@ -2106,59 +2015,6 @@ void validate_inherent_impl_header_node(uint node)
     mark_direct_type_arg_syntax_tokens(
         receiver_type_node,
         direct_type_arg_count(receiver_type_node));
-}
-#endif
-
-#if PREDICATE_COLLECT_METHOD_RECORDS
-void validate_trait_method_contract_node(uint node)
-{
-    if (!trait_method_node(node))
-        return;
-
-    uint method_status = method_unsupported_contract_status(node);
-    if (method_status == PREDICATE_STATUS_OK && duplicate_trait_method_node(node))
-        method_status = PREDICATE_STATUS_DUPLICATE_TRAIT_METHOD;
-    if (method_status == PREDICATE_STATUS_OK)
-        return;
-
-    uint name_token = method_contract_name_token(node);
-    uint diagnostic_token = valid_token(name_token) ? name_token : hir_token_pos[node];
-    predicate_owner_node[node] = node;
-    predicate_bound_token[node] = diagnostic_token;
-    predicate_bound_first_arg_token[node] = diagnostic_token;
-    predicate_status[node] = method_status;
-}
-
-void validate_impl_method_contract_record_node(uint node)
-{
-    if (!impl_method_node(node))
-        return;
-
-    uint name_token = method_contract_name_token(node);
-    uint diagnostic_token = valid_token(name_token) ? name_token : hir_token_pos[node];
-    uint owner_node = predicate_method_contract_owner_node[node];
-    bool inherent_impl_method =
-        valid_node(owner_node) && node_kind[owner_node] == PROD_IMPL_INHERENT;
-
-    uint method_status = method_unsupported_contract_status(node);
-    if (inherent_impl_method && method_status != PREDICATE_STATUS_OK)
-    {
-        predicate_owner_node[node] = node;
-        predicate_bound_token[node] = diagnostic_token;
-        predicate_bound_first_arg_token[node] = diagnostic_token;
-        predicate_status[node] = method_status;
-        return;
-    }
-
-    if (method_contract_lookup_row_valid(node))
-        return;
-
-    predicate_owner_node[node] = node;
-    predicate_bound_token[node] = diagnostic_token;
-    predicate_bound_first_arg_token[node] = diagnostic_token;
-    if (inherent_impl_method)
-        return;
-    predicate_status[node] = PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
 }
 #endif
 

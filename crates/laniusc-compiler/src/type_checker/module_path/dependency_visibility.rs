@@ -4,7 +4,6 @@ use super::{super::*, buffers::Buffers, inputs::CreateInputs, layout::Layout};
 /// import graph. Local and dependency declaration identities intentionally use
 /// separate outputs so downstream passes cannot interpret a persisted identity
 /// as a local HIR row.
-#[allow(dead_code)]
 pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) visible_capacity: u32,
     pub(in crate::type_checker) lookup_capacity: u32,
@@ -52,7 +51,6 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) _call_compare_dispatch_params: LaniusBuffer<CountDispatchParams>,
 }
 
-#[allow(dead_code)]
 pub(in crate::type_checker) struct DependencyCanonicalTypeSubtreeState {
     pub(in crate::type_checker) init_group: wgpu::BindGroup,
     pub(in crate::type_checker) jump_a_to_b_group: wgpu::BindGroup,
@@ -693,7 +691,10 @@ pub(in crate::type_checker) fn create(
         &passes.kernel("type_checker/dependencies/15_project_methods"),
         &[
             ("gParams", value_params.as_entire_binding()),
-            ("canonical_type_roots", canonical_type_roots.as_entire_binding()),
+            (
+                "canonical_type_roots",
+                canonical_type_roots.as_entire_binding(),
+            ),
         ],
     )?;
     let project_calls_group = resources.reflected_bind_group_with_overrides(

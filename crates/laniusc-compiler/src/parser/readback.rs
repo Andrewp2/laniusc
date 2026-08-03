@@ -154,8 +154,6 @@ pub use hir_item_readbacks::*;
 /// Staging buffers for parser readbacks.
 pub struct ParserReadbacks {
     pub ll1_status: wgpu::Buffer,
-    pub ll1_emit: wgpu::Buffer,
-    pub ll1_emit_pos: wgpu::Buffer,
     pub headers: wgpu::Buffer,
     pub sc: wgpu::Buffer,
     pub emit: wgpu::Buffer,
@@ -261,8 +259,6 @@ impl ParserReadbacks {
         };
 
         let ll1_status = mk("rb.parser.ll1_status", bufs.ll1_status.byte_size as u64);
-        let ll1_emit = mk("rb.parser.ll1_emit", bufs.ll1_emit.byte_size as u64);
-        let ll1_emit_pos = mk("rb.parser.ll1_emit_pos", bufs.ll1_emit_pos.byte_size as u64);
         let headers = mk("rb.parser.out_headers", bufs.out_headers.byte_size as u64);
         let sc_bytes = (bufs.total_sc.max(1) * 4) as u64;
         let emit_bytes = (bufs.total_emit.max(1) * 4) as u64;
@@ -589,8 +585,6 @@ impl ParserReadbacks {
 
         Self {
             ll1_status,
-            ll1_emit,
-            ll1_emit_pos,
             headers,
             sc,
             emit,
@@ -693,21 +687,6 @@ impl ParserReadbacks {
             0,
             bufs.ll1_status.byte_size as u64,
         );
-        encoder.copy_buffer_to_buffer(
-            &bufs.ll1_emit,
-            0,
-            &self.ll1_emit,
-            0,
-            bufs.ll1_emit.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.ll1_emit_pos,
-            0,
-            &self.ll1_emit_pos,
-            0,
-            bufs.ll1_emit_pos.byte_size as u64,
-        );
-
         // out_headers
         encoder.copy_buffer_to_buffer(
             &bufs.out_headers,
@@ -1329,8 +1308,6 @@ impl ParserReadbacks {
 /// Decoded full parser debug readback data.
 pub struct DecodedParserReadbacks {
     pub ll1_status: [u32; 6],
-    pub ll1_emit_stream: Vec<u32>,
-    pub ll1_emit_token_pos: Vec<u32>,
     pub headers: Vec<ActionHeader>,
     pub sc_stream: Vec<u32>,
     pub emit_stream: Vec<u32>,
@@ -1442,8 +1419,6 @@ impl DecodedParserReadbacks {
         };
         map("headers", &rb.headers);
         map("ll1_status", &rb.ll1_status);
-        map("ll1_emit", &rb.ll1_emit);
-        map("ll1_emit_pos", &rb.ll1_emit_pos);
         map("sc", &rb.sc);
         map("emit", &rb.emit);
         map("match_idx", &rb.match_idx);
@@ -1582,8 +1557,6 @@ impl DecodedParserReadbacks {
         );
 
         let ll1_status = read_u32_array::<6>(&rb.ll1_status, "ll1_status")?;
-        let ll1_emit_stream = Vec::new();
-        let ll1_emit_token_pos = Vec::new();
         let tree_len = active_tree_readback_len(
             "readback.tree",
             bufs.tree_count_uses_status,
@@ -1715,8 +1688,6 @@ impl DecodedParserReadbacks {
 
         let decoded = Self {
             ll1_status,
-            ll1_emit_stream,
-            ll1_emit_token_pos,
             headers,
             sc_stream,
             emit_stream,

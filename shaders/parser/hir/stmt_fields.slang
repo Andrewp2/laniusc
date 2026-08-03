@@ -227,21 +227,6 @@ bool is_hir_expression_kind(uint kind)
            kind == HIR_MATCH_EXPR;
 }
 
-uint expr_record_form(uint node)
-{
-    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + HIR_EXPR_RECORD_FORM] : 0u;
-}
-
-bool is_range_expr_form(uint form)
-{
-    return form == HIR_EXPR_RANGE ||
-           form == HIR_EXPR_RANGE_FROM ||
-           form == HIR_EXPR_RANGE_TO ||
-           form == HIR_EXPR_RANGE_FULL ||
-           form == HIR_EXPR_RANGE_INCLUSIVE ||
-           form == HIR_EXPR_RANGE_TO_INCLUSIVE;
-}
-
 uint direct_expr_child(uint node)
 {
     uint child = direct_child_or_invalid(node);
@@ -334,11 +319,6 @@ uint return_value_child(uint node)
 uint block_child(uint node)
 {
     return child_if_production(node, PROD_BLOCK);
-}
-
-uint if_block_child(uint node)
-{
-    return child_if_production(node, PROD_IF_BLOCK);
 }
 
 uint lexical_statement_list_scope_end(uint node)

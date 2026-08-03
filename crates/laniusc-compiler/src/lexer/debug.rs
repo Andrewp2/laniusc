@@ -1,6 +1,4 @@
-// src/lexer/debug.rs
-#![allow(dead_code)]
-
+#[cfg(feature = "gpu-debug")]
 use wgpu::BufferUsages;
 
 use crate::gpu::debug::DebugBuffer;
@@ -11,27 +9,18 @@ pub struct DebugGpuBuffers {
     /// Source byte snapshot.
     pub in_bytes: DebugBuffer,
 
-    /// DFA block summaries.
-    pub block_summaries: DebugBuffer,
     /// DFA/pair ping scratch snapshot.
     pub block_ping: DebugBuffer,
     /// DFA/pair pong scratch snapshot.
     pub block_pong: DebugBuffer,
     /// Applied DFA block-prefix snapshot.
     pub block_prefix: DebugBuffer,
-    /// Final DFA state snapshot.
-    pub f_final: DebugBuffer,
-
     /// Raw token kinds by byte boundary.
     pub tok_types: DebugBuffer,
-    /// Legacy end-position tap retained for debug consumers.
-    pub end_excl_by_i: DebugBuffer,
 
     /// Single packed boundary/keep flags buffer.
     pub flags_packed: DebugBuffer,
 
-    /// Pair-scan per-block totals.
-    pub block_totals_pair: DebugBuffer,
     /// Pair-scan ping snapshot.
     pub block_pair_ping: DebugBuffer,
     /// Pair-scan pong snapshot.
@@ -73,6 +62,7 @@ pub struct DebugOutput {
 }
 
 /// Creates a map-readable staging buffer for lexer debug snapshots.
+#[cfg(feature = "gpu-debug")]
 pub(crate) fn make_staging(
     device: &wgpu::Device,
     label: &'static str,

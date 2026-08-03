@@ -2,7 +2,6 @@
 // Each import probes the GPU-built module table independently.
 
 import dependency_interface;
-import atomics;
 import byte_packing;
 import gpu_index;
 import status;

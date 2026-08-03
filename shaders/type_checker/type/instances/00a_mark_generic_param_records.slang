@@ -79,11 +79,6 @@ bool generic_decl_item_kind(uint item_kind)
            item_kind == HIR_ITEM_KIND_TRAIT;
 }
 
-bool impl_node_kind(uint kind)
-{
-    return kind == PROD_IMPL_INHERENT || kind == PROD_IMPL_TRAIT;
-}
-
 bool generic_decl_item_production(uint prod)
 {
     return prod == PROD_FN || prod == PROD_EXTERN_FN ||

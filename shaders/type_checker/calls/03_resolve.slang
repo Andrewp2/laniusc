@@ -177,11 +177,6 @@ uint path_id_for_call(uint call_node)
     return path_i < gParams.n_hir_nodes ? path_i : INVALID;
 }
 
-bool path_is_qualified(uint path_i)
-{
-    return path_i != INVALID && path_i < gParams.n_hir_nodes && path_segment_count[path_i] > 1u;
-}
-
 uint resolved_function_for_call_path(uint call_node)
 {
     uint path_i = path_id_for_call(call_node);

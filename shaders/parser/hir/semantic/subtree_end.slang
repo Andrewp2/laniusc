@@ -5,8 +5,6 @@
 // one-past-end row for each semantic HIR row from the prefix count produced by
 // hir_semantic_compact_scatter.
 
-import gpu_index;
-
 struct Params
 {
     uint n;

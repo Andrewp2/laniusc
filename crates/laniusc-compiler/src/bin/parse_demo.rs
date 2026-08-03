@@ -207,24 +207,6 @@ async fn main() -> Result<()> {
         res.ll1.steps,
         res.ll1.emit_len
     );
-    if res.ll1_emit_stream.is_empty() {
-        println!("ll1_emit_stream: not recorded by current readback");
-    } else {
-        let ll1_to_show = res.ll1_emit_stream.len().min(32);
-        print!("ll1_emit_stream[0..{}] = [", ll1_to_show);
-        for i in 0..ll1_to_show {
-            if i > 0 {
-                print!(", ");
-            }
-            print!("{}", res.ll1_emit_stream[i]);
-        }
-        println!("]");
-        println!(
-            "llp_matches_ll1 = {}",
-            res.emit_stream == res.ll1_emit_stream
-        );
-    }
-
     // LLP partial-parse stream; for covered valid inputs this should match LL(1).
     let to_show = res.emit_stream.len().min(32);
     print!("emit_stream[0..{}] = [", to_show);

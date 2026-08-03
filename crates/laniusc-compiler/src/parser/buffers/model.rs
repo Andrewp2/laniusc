@@ -333,13 +333,9 @@ pub struct ParserBuffers {
     pub hir_struct_capacity: u32,
     pub hir_canonical_capacity: u32,
 
-    // canonical LL(1) parser tables and outputs
-    pub ll1_predict: LaniusBuffer<u32>,
-    pub ll1_prod_rhs_off: LaniusBuffer<u32>,
-    pub ll1_prod_rhs_len: LaniusBuffer<u32>,
-    pub ll1_prod_rhs: LaniusBuffer<u32>,
-    pub ll1_emit: LaniusBuffer<u32>,
-    pub ll1_emit_pos: LaniusBuffer<u32>,
+    // The active parser uses the adjacent-pair production stream; this status
+    // buffer is shared by parser validation and tree/HIR passes. Host LL(1)
+    // tables remain in `PrecomputedParseTables` for diagnostics and tests.
     pub ll1_status: LaniusBuffer<u32>,
 
     // pair-to-header
@@ -475,7 +471,6 @@ pub struct ParserBuffers {
     pub tree_prefix_params: LaniusBuffer<super::super::passes::tree::prefix::local::Params>,
     pub tree_prefix_scan_steps: Vec<TreePrefixScanStep>,
     pub tree_n_node_blocks: u32,
-    pub tree_n_prefix_blocks: u32,
     pub tree_active_dispatch_args: LaniusBuffer<u32>,
     pub tree_enum_dispatch_args: LaniusBuffer<u32>,
     pub tree_match_dispatch_args: LaniusBuffer<u32>,
@@ -491,7 +486,6 @@ pub struct ParserBuffers {
     pub tree_block_prefix: LaniusBuffer<i32>,
     pub tree_prefix: LaniusBuffer<i32>,
     pub tree_prefix_block_max: LaniusBuffer<i32>,
-    pub tree_prefix_block_max_tree_base: u32,
     pub tree_prefix_block_max_tree: LaniusBuffer<i32>,
     pub tree_prefix_max_build_steps: Vec<TreePrefixMaxBuildStep>,
     pub tree_params: LaniusBuffer<super::super::passes::tree::parent::Params>,
@@ -705,12 +699,9 @@ pub struct ParserBuffers {
     pub hir_method_signature_flags: LaniusBuffer<u32>,
     pub hir_method_impl_receiver_type_node: LaniusBuffer<u32>,
     pub hir_param_owner_a: LaniusBuffer<u32>,
-    pub hir_param_owner_b: LaniusBuffer<u32>,
     pub hir_param_link_a: LaniusBuffer<u32>,
-    pub hir_param_link_b: LaniusBuffer<u32>,
     pub hir_param_rank_a: LaniusBuffer<u32>,
     pub hir_param_rank_b: LaniusBuffer<u32>,
-    pub hir_param_previous: LaniusBuffer<u32>,
     pub hir_variant_parent_enum: LaniusBuffer<u32>,
     pub hir_variant_ordinal: LaniusBuffer<u32>,
     pub hir_variant_payload_start: LaniusBuffer<u32>,
@@ -805,13 +796,6 @@ pub struct ParserBuffers {
     pub hir_array_element_rank_a: LaniusBuffer<u32>,
     pub hir_array_element_rank_b: LaniusBuffer<u32>,
     pub hir_array_element_previous: LaniusBuffer<u32>,
-    // Compatibility-sized dummies. `hir_expr_record` is the authoritative
-    // expression metadata buffer; these are kept at one word until older
-    // host-facing debug surfaces are fully removed.
-    pub hir_expr_form: LaniusBuffer<u32>,
-    pub hir_expr_left_node: LaniusBuffer<u32>,
-    pub hir_expr_right_node: LaniusBuffer<u32>,
-    pub hir_expr_value_token: LaniusBuffer<u32>,
     pub hir_expr_record: LaniusBuffer<u32>,
     pub hir_expr_name_role: LaniusBuffer<u32>,
     pub hir_expr_result_node: LaniusBuffer<u32>,

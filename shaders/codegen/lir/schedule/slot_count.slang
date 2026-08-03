@@ -1,5 +1,3 @@
-import gpu_index;
-
 struct Params { uint target_capacity; uint max_blocks; uint reserved0; uint reserved1; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;

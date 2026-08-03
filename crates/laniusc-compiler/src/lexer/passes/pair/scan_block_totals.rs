@@ -212,6 +212,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, &bg, &[]);
                 pass.dispatch_workgroups(gx, gy, gz);
+                drop(pass);
 
                 retained_scan_params.push(scan_params);
                 retained_bind_groups.push(bg);

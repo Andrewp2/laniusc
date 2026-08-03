@@ -102,18 +102,14 @@ pub(in crate::type_checker) struct BindGroups {
 /// The state owns module/import/declaration/path tables, lookup scratch, radix
 /// scratch, projection outputs, retained uniforms, and the bind groups that
 /// keep those buffers alive across recorded checks.
-#[allow(dead_code)]
 pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) n_blocks: u32,
     pub(in crate::type_checker) parser_hir_n_blocks: u32,
-    pub(in crate::type_checker) record_n_blocks: u32,
     pub(in crate::type_checker) module_n_blocks: u32,
     pub(in crate::type_checker) token_capacity: u32,
     pub(in crate::type_checker) resources: Buffers,
     pub(in crate::type_checker) dependency_interfaces: Option<GpuDependencyInterfaceState>,
     pub(in crate::type_checker) dependency_visibility: Option<Box<DependencyVisibilityState>>,
-    pub(in crate::type_checker) dependency_module_params:
-        Option<LaniusBuffer<DependencyInterfaceModuleParams>>,
     pub(in crate::type_checker) _extract_module_record_flag_params:
         LaniusBuffer<RecordFamilyFlagParams>,
     pub(in crate::type_checker) _extract_import_record_flag_params:

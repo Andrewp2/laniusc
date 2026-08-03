@@ -47,7 +47,6 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint ERR_UNEXPECTED_TOKEN = 1u;
 static const uint ERR_EXPECTED_TOKEN = 2u;
 static const uint ERR_MISSING_SEMICOLON = 3u;
-static const uint ERR_STMT_OVERLAP = 4u;
 static const uint ERR_UNBALANCED_DELIMITER = 5u;
 
 static const uint IMPL_HEADER_CONTEXT = 1u;
@@ -239,18 +238,6 @@ bool is_stmt_keyword(uint kind)
            kind == TK_IMPL || kind == TK_TRAIT || kind == TK_EXTERN;
 }
 
-bool is_stmt_boundary(uint kind)
-{
-    return kind == TK_SEMICOLON || kind == TK_TYPE_SEMICOLON ||
-           kind == TK_TRAIT_METHOD_SEMICOLON || kind == TK_MODULE_SEMICOLON ||
-           kind == TK_EXTERN_SEMICOLON || kind == TK_TYPE_ALIAS_SEMICOLON ||
-           kind == TK_CONST_SEMICOLON || kind == TK_LET_SEMICOLON ||
-           kind == TK_RETURN_SEMICOLON || kind == TK_EXPR_SEMICOLON ||
-           kind == TK_BREAK_SEMICOLON || kind == TK_CONTINUE_SEMICOLON ||
-           kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_ELSE ||
-           is_stmt_keyword(kind);
-}
-
 bool is_type_start(uint kind)
 {
     return kind == TK_TYPE_IDENT || kind == TK_IDENT || kind == TK_TYPE_ARRAY_LBRACKET ||
@@ -272,17 +259,6 @@ bool is_binary_operator(uint kind)
            kind == TK_LE || kind == TK_GE || kind == TK_EQEQ || kind == TK_NOT_EQUAL ||
            kind == TK_ANDAND || kind == TK_OROR || kind == TK_AMPERSAND || kind == TK_PIPE ||
            kind == TK_CARET || kind == TK_SHL || kind == TK_SHR;
-}
-
-bool is_semicolon_kind(uint kind)
-{
-    return kind == TK_SEMICOLON || kind == TK_TYPE_SEMICOLON ||
-           kind == TK_TRAIT_METHOD_SEMICOLON || kind == TK_IMPORT_SEMICOLON ||
-           kind == TK_MODULE_SEMICOLON || kind == TK_EXTERN_SEMICOLON ||
-           kind == TK_TYPE_ALIAS_SEMICOLON || kind == TK_CONST_SEMICOLON ||
-           kind == TK_LET_SEMICOLON || kind == TK_RETURN_SEMICOLON ||
-           kind == TK_EXPR_SEMICOLON || kind == TK_BREAK_SEMICOLON ||
-           kind == TK_CONTINUE_SEMICOLON;
 }
 
 bool is_statement_semicolon_kind(uint kind)
@@ -427,17 +403,6 @@ bool can_start_generic_angle_list(uint lt_i)
            before == TK_ARRAY_LBRACKET || before == TK_AMPERSAND || before == TK_WHERE;
 }
 
-bool is_generic_angle_boundary(uint kind)
-{
-    return is_semicolon_kind(kind) || is_lbrace_kind(kind) ||
-           kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_FN ||
-           kind == TK_LET || kind == TK_RETURN || kind == TK_IF || kind == TK_ELSE ||
-           kind == TK_WHILE || kind == TK_FOR ||
-           kind == TK_BREAK || kind == TK_CONTINUE || kind == TK_ENUM ||
-           kind == TK_STRUCT || kind == TK_TYPE || kind == TK_IMPORT || kind == TK_MODULE ||
-           kind == TK_IMPL || kind == TK_TRAIT || kind == TK_EXTERN || kind == TK_WHERE;
-}
-
 uint generic_angle_list_end(uint open_i)
 {
     uint close_i = matching_close_angle_after(open_i);
@@ -473,17 +438,6 @@ uint statement_context_token_kind(uint context)
     return kind == STATEMENT_CONTEXT_TYPE_ALIAS_RHS ? TK_TYPE : kind;
 }
 
-uint assignment_event_before_semicolon(uint semi, uint rhs_context)
-{
-    if (semi >= gParams.n_tokens)
-        return INVALID;
-    uint event = statement_context_kind[semi];
-    if ((event & 0xffu) != rhs_context)
-        return INVALID;
-    uint encoded_token = event >> 8u;
-    return encoded_token == 0u ? INVALID : encoded_token - 1u;
-}
-
 uint statement_event_token(uint event)
 {
     uint encoded_token = event >> 8u;
@@ -515,17 +469,6 @@ uint statement_context_owner_token(uint event)
     if (context == STATEMENT_CONTEXT_FOR_IN)
         return owner_statement_before_rhs_event(event_i, TK_FOR);
     return event_i;
-}
-
-bool latest_statement_keyword_overlaps(uint semi, uint statement_i)
-{
-    if (semi >= gParams.n_tokens)
-        return false;
-    uint event = statement_context_kind[semi];
-    uint event_i = statement_event_token(event);
-    if (event_i == INVALID || event_i <= statement_i)
-        return false;
-    return same_delimiter_depth_before(statement_i, event_i) && is_stmt_keyword(event & 0xffu);
 }
 
 uint for_in_event_before_or_at(uint token_i, uint for_i)
@@ -783,14 +726,6 @@ uint find_fn_param_open(uint fn_i)
     return generic_open == TK_PARAM_LPAREN || generic_open == TK_LPAREN
         ? generic_end
         : INVALID;
-}
-
-bool is_trait_method_fn(uint fn_i)
-{
-    return fn_i < active_token_count() &&
-           fn_i < gParams.n_tokens &&
-           brace_depth_before(fn_i) == 1 &&
-           (trait_context_event[fn_i] & 0xffu) == TRAIT_BODY_CONTEXT;
 }
 
 uint delimiter_class(uint kind)

@@ -5,8 +5,6 @@
 // span can include the body opener. This pass consumes expression/root records
 // and already-widened postfix spans instead of rediscovering token shape.
 
-import generated_parse_production_ids;
-
 struct Params
 {
     uint n;

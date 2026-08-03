@@ -18,8 +18,6 @@ pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) module_key_radix_dispatch: wgpu::BindGroup,
     pub(in crate::type_checker) sort_module_keys: RadixSortOperation<ModuleKeyRadixParams>,
     pub(in crate::type_checker) validate_modules: wgpu::BindGroup,
-    pub(in crate::type_checker) dependency_module_params:
-        Option<LaniusBuffer<DependencyInterfaceModuleParams>>,
     pub(in crate::type_checker) clear_dependency_module_lookup: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) build_dependency_module_lookup: Option<wgpu::BindGroup>,
     pub(in crate::type_checker) resolve_dependency_imports: Option<wgpu::BindGroup>,
@@ -556,7 +554,6 @@ pub(in crate::type_checker) fn create_module_index(
         module_key_radix_dispatch,
         sort_module_keys,
         validate_modules,
-        dependency_module_params,
         clear_dependency_module_lookup,
         build_dependency_module_lookup,
         resolve_dependency_imports,

@@ -207,15 +207,11 @@ static const uint SEMANTIC_LIR_FLAG_FIELD = 64u;
 // Canonical type-reference tags shared with checked semantic artifacts.
 static const uint SEMANTIC_TYPE_REF_INVALID = 0u;
 static const uint SEMANTIC_TYPE_REF_SCALAR = 1u;
-static const uint SEMANTIC_TYPE_REF_GENERIC_PARAM = 2u;
 static const uint SEMANTIC_TYPE_REF_INSTANCE = 3u;
-static const uint SEMANTIC_TYPE_REF_ERROR = 4u;
 
 // Function ABI flags are separate from instruction flags.
 // IR_OPCODE
 static const uint SEMANTIC_FUNCTION_FLAG_ENTRYPOINT = 1u;
-// IR_OPCODE
-static const uint SEMANTIC_FUNCTION_FLAG_PUBLIC = 2u;
 
 // IR_OPCODE
 static const uint LOWERING_STATUS_SEMANTIC_CAPACITY = 1u;
@@ -240,8 +236,6 @@ static const uint LOWERING_STATUS_MISSING_ENTRYPOINT = 256u;
 // IR_OPCODE
 static const uint X86_LIR_OP_IMM_I32 = 1u;
 // IR_OPCODE
-static const uint X86_LIR_OP_PARAM = 2u;
-// IR_OPCODE
 static const uint X86_LIR_OP_UNARY = 3u;
 // IR_OPCODE
 static const uint X86_LIR_OP_BINARY = 4u;
@@ -253,8 +247,6 @@ static const uint X86_LIR_OP_ALIAS = 8u;
 static const uint X86_LIR_OP_RETURN = 9u;
 // IR_OPCODE
 static const uint X86_LIR_OP_BRANCH = 10u;
-// IR_OPCODE
-static const uint X86_LIR_OP_LOOP = 11u;
 // IR_OPCODE
 static const uint X86_LIR_OP_STORE_LOCAL = 14u;
 // IR_OPCODE
