@@ -1297,7 +1297,7 @@ void collect_row_argument(uint row)
                 return;
             uint arg_ty = expr_type_no_nested_call(arg_node);
             if (arg_ty != TY_UNKNOWN && !assignable(param_ty, arg_ty))
-                record_error(arg_token, ERR_ASSIGN_MISMATCH, param_ty * 256u + arg_ty);
+            record_error(arg_token, ERR_ASSIGN_MISMATCH, param_ty * 256u + arg_ty);
             return;
         }
     }

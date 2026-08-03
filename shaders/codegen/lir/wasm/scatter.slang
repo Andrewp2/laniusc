@@ -83,6 +83,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             SemanticLirString string = semantic_lir_strings[operands.a];
             opcode = WASM_LIR_OP_I32_CONST;
             immediate = local_row == 0u ? string.data_offset : string.decoded_len;
+            if (local_row == 0u)
+                flags |= TARGET_LIR_FLAG_DATA_RELOCATION;
         }
         else flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     }
@@ -139,6 +141,35 @@ void main(uint3 dtid: SV_DispatchThreadID)
         immediate = local_row == 0u ? operands.b
             : local_row == 1u ? 4u : 0u;
     }
+    else if (core.op == SEMANTIC_LIR_OP_STORE &&
+             (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
+    {
+        uint receiver_declaration = WASM_LIR_INVALID;
+        if (operands.a < semantic_count)
+            receiver_declaration = semantic_lir_operands[operands.a].a;
+        uint temporary = core.type_id == TY_FLOAT
+            ? WASM_SYNTHETIC_F32_TEMP : WASM_SYNTHETIC_I32_TEMP;
+        opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
+            : local_row == 1u ? WASM_LIR_OP_LOCAL_GET
+            : local_row == 2u ? WASM_LIR_OP_I32_CONST
+            : local_row == 3u ? WASM_LIR_OP_I32_CONST
+            : local_row == 4u ? WASM_LIR_OP_I32_MUL
+            : local_row == 5u ? WASM_LIR_OP_I32_ADD
+            : local_row == 6u ? WASM_LIR_OP_LOCAL_GET
+            : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
+        immediate = local_row == 0u || local_row == 6u ? temporary
+            : local_row == 1u ? receiver_declaration
+            : local_row == 2u ? operands.b
+            : local_row == 3u ? 4u : 0u;
+    }
+    else if ((core.op == SEMANTIC_LIR_OP_VALUE_GET ||
+              core.op == SEMANTIC_LIR_OP_VALUE_SET) &&
+             core.type_id == 7u)
+    {
+        opcode = core.op == SEMANTIC_LIR_OP_VALUE_GET
+            ? WASM_LIR_OP_LOCAL_GET : WASM_LIR_OP_LOCAL_SET;
+        immediate = operands.a;
+    }
     else if (core.op == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT)
     {
         opcode = local_row == 0u ? WASM_LIR_OP_I32_CONST : WASM_LIR_OP_I32_MUL;
@@ -156,6 +187,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         opcode = local_row == 0u
             ? WASM_LIR_OP_I64_EXTEND_I32_S : WASM_LIR_OP_CALL;
         immediate = 0u;
+    }
+    else if (core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+             operands.a == HOST_SERVICE_I32_ARRAY_DATA_PTR)
+    {
+        // Aggregate values are represented by their linear-memory pointer on
+        // the Wasm value stack.  The compiler-only projection must preserve
+        // that pointer without calling the source-level placeholder body.
+        opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET : WASM_LIR_OP_LOCAL_GET;
+        immediate = WASM_SYNTHETIC_I32_TEMP;
     }
     else if (core.op == SEMANTIC_LIR_OP_BRANCH_IF &&
              (core.flags & SEMANTIC_LIR_FLAG_BRANCH_FALSE) != 0u)
@@ -193,5 +233,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     target_operands.b = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.b : 0u;
     target_operands.c = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.c : 0u;
     target_operands.metadata = core.type_id;
+    if ((core.op == SEMANTIC_LIR_OP_VALUE_GET ||
+         core.op == SEMANTIC_LIR_OP_VALUE_SET) && core.type_id == 7u)
+    {
+        target_operands.a = operands.a;
+        // local.set consumes the top stack value. Assign a two-word string
+        // in reverse component order so `(data_ptr, byte_len)` remains the
+        // ordered local pair after the stores.
+        target_operands.c = core.op == SEMANTIC_LIR_OP_VALUE_SET
+            ? 1u - local_row : local_row;
+    }
     target_lir_operands[page_row] = target_operands;
 }

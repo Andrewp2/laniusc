@@ -39,6 +39,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             parser_feature_flags: parse.parser_feature_flags,
             parser_emit_len: parse.ll1.emit_len,
             semantic_hir_count: parse.semantic_hir_count,
+            canonical_hir_count: parse.canonical_hir_count,
         })
     }
     /// Record and run lexing plus parser LL/HIR construction for a source

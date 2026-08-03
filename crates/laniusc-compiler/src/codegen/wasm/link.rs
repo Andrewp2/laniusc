@@ -40,6 +40,7 @@ pub(crate) struct GpuWasmLinkInput {
     pub(super) function_count: usize,
     type_bytes: GpuLinkByteSource,
     body_bytes: GpuLinkByteSource,
+    data_bytes: GpuLinkByteSource,
     pub(super) relocations: Vec<GpuWasmLinkRelocationRecord>,
     pub(super) symbols: Vec<GpuWasmLinkSymbolRecord>,
     pub(super) entry_function: u32,
@@ -54,13 +55,16 @@ impl GpuWasmLinkInput {
         let mut result = Self::empty(
             GpuLinkByteSource::resident("Wasm link type bytes", Vec::new()),
             GpuLinkByteSource::resident("Wasm link body bytes", Vec::new()),
+            GpuLinkByteSource::resident("Wasm link data bytes", Vec::new()),
         );
         for (object_index, object) in objects.iter().enumerate() {
             result.append_object(object_index, object)?;
             result.type_bytes.extend_resident(&object.type_bytes);
             result.body_bytes.extend_resident(&object.body_bytes);
+            result.data_bytes.extend_resident(&object.data_bytes);
             checked_u32("type byte", result.type_byte_len())?;
             checked_u32("body byte", result.body_byte_len())?;
+            checked_u32("data byte", result.data_byte_len())?;
         }
         result.finish_validation()?;
         if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
@@ -99,6 +103,7 @@ impl GpuWasmLinkInput {
         let mut result = Self::empty(
             GpuLinkByteSource::file_segments("Wasm link type bytes"),
             GpuLinkByteSource::file_segments("Wasm link body bytes"),
+            GpuLinkByteSource::file_segments("Wasm link data bytes"),
         );
         let mut object_count = 0usize;
         for (object_index, (path, layout)) in files.into_iter().enumerate() {
@@ -116,13 +121,17 @@ impl GpuWasmLinkInput {
                 ));
             }
             result.append_object(object_index, &object)?;
-            let (type_range, body_range) = layout.payload_byte_ranges()?;
+            let (type_range, body_range, data_range) = layout.payload_byte_ranges()?;
             result
                 .type_bytes
                 .push_file_segment(path.clone(), type_range)?;
-            result.body_bytes.push_file_segment(path, body_range)?;
+            result
+                .body_bytes
+                .push_file_segment(path.clone(), body_range)?;
+            result.data_bytes.push_file_segment(path, data_range)?;
             checked_u32("type byte", result.type_byte_len())?;
             checked_u32("body byte", result.body_byte_len())?;
+            checked_u32("data byte", result.data_byte_len())?;
             object_count += 1;
         }
         if object_count == 0 {
@@ -132,11 +141,16 @@ impl GpuWasmLinkInput {
         Ok(result)
     }
 
-    fn empty(type_bytes: GpuLinkByteSource, body_bytes: GpuLinkByteSource) -> Self {
+    fn empty(
+        type_bytes: GpuLinkByteSource,
+        body_bytes: GpuLinkByteSource,
+        data_bytes: GpuLinkByteSource,
+    ) -> Self {
         Self {
             function_count: 0,
             type_bytes,
             body_bytes,
+            data_bytes,
             relocations: Vec::new(),
             symbols: Vec::new(),
             entry_function: u32::MAX,
@@ -151,6 +165,7 @@ impl GpuWasmLinkInput {
         object.validate()?;
         let function_base = checked_u32("function", self.function_count)?;
         let body_base = checked_u32("body byte", self.body_byte_len())?;
+        let data_base = checked_u32("data byte", self.data_byte_len())?;
         if let Some(entry) = object.entry_function {
             if self.entry_function != u32::MAX {
                 return Err(format!(
@@ -179,6 +194,12 @@ impl GpuWasmLinkInput {
                     let symbol = &object.symbols[relocation.target_index as usize];
                     (0, symbol_identity(object, symbol))
                 }
+                GpuWasmRelocationTargetKind::DataOffset => (
+                    data_base
+                        .checked_add(relocation.target_index)
+                        .ok_or_else(|| "Wasm relocation data offset overflows".to_string())?,
+                    [0; 3],
+                ),
             };
             self.relocations.push(GpuWasmLinkRelocationRecord {
                 body_offset: body_base
@@ -223,12 +244,20 @@ impl GpuWasmLinkInput {
         self.body_bytes.len()
     }
 
+    pub(super) fn data_byte_len(&self) -> usize {
+        self.data_bytes.len()
+    }
+
     pub(super) fn read_type_range(&self, range: std::ops::Range<usize>) -> Result<Vec<u8>, String> {
         self.type_bytes.read_range(range)
     }
 
     pub(super) fn read_body_range(&self, range: std::ops::Range<usize>) -> Result<Vec<u8>, String> {
         self.body_bytes.read_range(range)
+    }
+
+    pub(super) fn read_data_range(&self, range: std::ops::Range<usize>) -> Result<Vec<u8>, String> {
+        self.data_bytes.read_range(range)
     }
 }
 
@@ -290,6 +319,7 @@ mod tests {
             },
             type_bytes: if defined { vec![0x60, 0, 0] } else { vec![] },
             body_bytes: if defined { body_bytes } else { vec![] },
+            data_bytes: vec![],
             relocations: vec![],
             symbols: vec![GpuWasmObjectSymbolRecord {
                 identity_hash_lo: hash.0,
@@ -476,6 +506,7 @@ mod tests {
             }],
             type_bytes: vec![0x60, 0, 1, 0x7f],
             body_bytes: app_body,
+            data_bytes: vec![],
             relocations: vec![GpuWasmRelocationRecord {
                 body_byte_offset: 7,
                 target_kind: GpuWasmRelocationTargetKind::Symbol,
@@ -505,6 +536,7 @@ mod tests {
             }],
             type_bytes: vec![0x60, 0, 1, 0x7f],
             body_bytes: dep_body,
+            data_bytes: vec![],
             relocations: vec![],
             symbols: vec![symbol(&dep_identity, GpuWasmSymbolKind::Function, 0, 9, 0)],
             identity_bytes: dep_identity,

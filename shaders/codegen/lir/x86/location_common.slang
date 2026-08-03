@@ -49,6 +49,8 @@ uint x86_binary_opcode_bytes(uint operation)
 
 uint x86_saved_gpr_count(uint mask)
 {
+    // R15 is reserved for the process initial-stack pointer used by the
+    // native host-runtime ABI. It must never become a user value location.
     return countbits(mask & ((1u << 3u) | (1u << 12u) |
-        (1u << 13u) | (1u << 14u) | (1u << 15u)));
+        (1u << 13u) | (1u << 14u)));
 }

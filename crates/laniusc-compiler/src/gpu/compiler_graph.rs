@@ -4427,7 +4427,16 @@ mod tests {
                 .iter()
                 .filter(|access| access.resource == count)
                 .count(),
-            1,
+            2,
+        );
+        assert_eq!(
+            local
+                .accesses
+                .iter()
+                .filter(|access| access.resource == count)
+                .map(|access| access.invocation)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([0, 1]),
         );
         let slot = |resource| {
             let name = graph.resource(resource).unwrap().name;

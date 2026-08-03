@@ -96,6 +96,7 @@ fn resolve_partition(
         0,
         0,
         0,
+        0,
     )?;
     let params = input_u32(
         device,
@@ -221,6 +222,7 @@ fn resolve_partition(
                 0,
                 0,
                 0,
+                0,
             )?;
             let relocation_words = relocation_words(input, batch)?;
             queue.write_buffer(&params, 0, bytemuck_words(&params_words));
@@ -292,7 +294,8 @@ fn partition_params_words(
     output_page_len: u32,
     type_input_base: u32,
     body_input_base: u32,
-) -> Result<[u32; 12]> {
+    data_input_base: u32,
+) -> Result<[u32; 14]> {
     let mut words = link_params_words(
         input,
         relocation_count,
@@ -302,6 +305,7 @@ fn partition_params_words(
         output_page_len,
         type_input_base,
         body_input_base,
+        data_input_base,
     )?;
     words[4] = u32::try_from(definition_count)
         .map_err(|_| anyhow!("Wasm partition definition count exceeds u32"))?;

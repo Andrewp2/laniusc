@@ -226,16 +226,10 @@ impl GpuSemanticInterfaceArtifact {
         checked_u32_len("name byte", self.name_bytes.len())?;
 
         self.validate_identities()?;
-        if self
-            .declarations
-            .windows(2)
-            .any(|pair| pair[0].module > pair[1].module)
-        {
-            return Err(
-                "semantic-interface declarations are not grouped in canonical module order"
-                    .to_string(),
-            );
-        }
+        // Declaration local indices are assigned by the GPU public-declaration
+        // compaction pass.  That order is the stable identity order consumed
+        // by dependency lookup; it need not be grouped by module because every
+        // record carries its explicit module index and lookup hashes that key.
         for (index, declaration) in self.declarations.iter().enumerate() {
             validate_optional_index(
                 "declaration signature type",

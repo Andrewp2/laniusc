@@ -5,6 +5,8 @@ import token_features;
 struct Params
 {
     uint token_capacity;
+    uint match_tree_n_blocks;
+    uint match_tree_leaf_base;
 };
 
 ConstantBuffer<Params> gParams;
@@ -225,13 +227,15 @@ static const uint DEPTH_MODE_ANGLE = 3u;
 
 uint depth_search_n_blocks()
 {
-    return gParams.token_capacity == 0u ? 1u : (gParams.token_capacity + WG_SIZE - 1u) / WG_SIZE;
+    return gParams.match_tree_n_blocks == 0u ? 1u : gParams.match_tree_n_blocks;
 }
 
 uint depth_search_leaf_base()
 {
     uint n_blocks = depth_search_n_blocks();
-    uint base = max(n_blocks, 1u) - 1u;
+    uint base = gParams.match_tree_leaf_base > 0u
+        ? gParams.match_tree_leaf_base - 1u
+        : max(n_blocks, 1u) - 1u;
     base |= base >> 1u;
     base |= base >> 2u;
     base |= base >> 4u;

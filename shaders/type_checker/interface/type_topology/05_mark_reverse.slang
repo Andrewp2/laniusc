@@ -13,6 +13,7 @@ RWStructuredBuffer<uint> interface_type_reverse_flag;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_TYPE = 5u;
+static const uint HIR_IMPL = 35u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
@@ -29,6 +30,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint root = node < active && compact_hir_core[node].kind == HIR_TYPE
                     ? interface_type_root_owner[node]
                     : INVALID;
+    uint root_parent = root < active ? compact_hir_core[root].parent : INVALID;
+    bool impl_receiver_root = root_parent < active &&
+        compact_hir_core[root_parent].kind == HIR_IMPL;
     interface_type_reverse_flag[reverse_row] =
-        root < active && interface_type_seed_owner[root] < gParams.decl_capacity ? 1u : 0u;
+        root < active && !impl_receiver_root &&
+        interface_type_seed_owner[root] < gParams.decl_capacity ? 1u : 0u;
 }

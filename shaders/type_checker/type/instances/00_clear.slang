@@ -47,6 +47,7 @@ RWStructuredBuffer<uint> external_type_local_index;
 RWStructuredBuffer<uint> call_dependency_library_id;
 RWStructuredBuffer<uint> call_dependency_unit_id;
 RWStructuredBuffer<uint> call_dependency_local_index;
+RWStructuredBuffer<uint> call_dependency_host_service;
 RWStructuredBuffer<uint> fn_return_ref_tag;
 RWStructuredBuffer<uint> fn_return_ref_payload;
 RWStructuredBuffer<uint> decl_type_ref_tag;
@@ -126,6 +127,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     call_dependency_library_id[i] = INVALID;
     call_dependency_unit_id[i] = INVALID;
     call_dependency_local_index[i] = INVALID;
+    call_dependency_host_service[i] = INVALID;
     fn_return_ref_tag[i] = TYPE_REF_INVALID;
     fn_return_ref_payload[i] = INVALID;
     decl_type_ref_tag[i] = TYPE_REF_INVALID;

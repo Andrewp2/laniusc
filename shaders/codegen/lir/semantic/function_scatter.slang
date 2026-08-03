@@ -12,6 +12,9 @@ StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<HirRange> compact_param_ranges;
 StructuredBuffer<uint> compact_const_value;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<HirMethodCore> compact_method_cores;
+StructuredBuffer<HirMethodSignature> compact_method_signatures;
 StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<uint> semantic_function_prefix;
 StructuredBuffer<uint> semantic_local_prefix;
@@ -33,6 +36,23 @@ static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 1048576u;
 
 bool valid_token(uint token) { return token != LIR_INVALID && token < gParams.n_tokens; }
+
+uint public_impl_method_symbol(uint hir, uint hir_count)
+{
+    uint method_count = min(compact_method_count[0u], hir_count);
+    for (uint row = 0u; row < method_count; row += 1u)
+    {
+        HirMethodCore method = compact_method_cores[row];
+        HirMethodSignature signature = compact_method_signatures[row];
+        // Method symbols share the object identity namespace with public
+        // declarations, using a disjoint high-bit namespace.  Trait contracts
+        // have no implementation node and therefore produce no definition.
+        if (method.node == hir && method.impl_node != LIR_INVALID &&
+            (signature.metadata & 0xffffu) == 1u)
+            return 0x80000000u | hir;
+    }
+    return LIR_INVALID;
+}
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -73,7 +93,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         : semantic_local_total[0u];
     result.local_start = local_start;
     result.local_count = local_end - local_start;
-    result.symbol_local_index = constant ? LIR_INVALID : public_decl_index_by_hir[hir];
+    uint symbol_local_index = constant ? LIR_INVALID : public_decl_index_by_hir[hir];
+    if (!constant && symbol_local_index == LIR_INVALID)
+        symbol_local_index = public_impl_method_symbol(hir, hir_count);
+    result.symbol_local_index = symbol_local_index;
     result.symbol_flags = 0u;
     result.host_service = semantic_function_host_service_by_hir[hir];
     semantic_lir_functions[function_id] = result;

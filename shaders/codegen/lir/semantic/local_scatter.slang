@@ -26,7 +26,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint function_id = semantic_function_id[hir];
     if (function_id == LIR_INVALID) return;
     uint row = semantic_local_prefix[hir];
-    HirPayload payload = compact_hir_payload[hir];
     SemanticLirFunction function = semantic_lir_functions[function_id];
     uint width = semantic_local_flag[hir];
     if (row + width > gParams.local_capacity) return;
@@ -36,7 +35,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         result.function_id = function_id;
         // Value ids below n_tokens retain source declaration identity. The
         // disjoint n_tokens + HIR domain names compiler-generated slots.
-        result.declaration_id = local == 0u ? payload.b : gParams.n_tokens + hir;
+        result.declaration_id = local == 0u ? compact_hir_payload[hir].b
+            : gParams.n_tokens + hir;
         result.ordinal = row + local - function.local_start;
         result.type_id = local == 0u ? semantic_value_type_by_hir[hir] : 3u;
         semantic_lir_locals[row + local] = result;

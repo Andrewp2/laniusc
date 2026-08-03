@@ -3,17 +3,12 @@
 use anyhow::{Context, Result};
 use encase::ShaderType;
 
+#[cfg(test)]
+use super::lowering_ir::{X86LirCore, X86LirLocations, X86LirOperands};
 use super::{
     functions::GpuTargetFunctionTable,
     lowering::{GpuSemanticLirView, target_lowering_allocations},
-    lowering_ir::{
-        LoweringCapacities,
-        SEMANTIC_LIR_PAGE_ROWS,
-        TARGET_LIR_PAGE_ROWS,
-        X86LirCore,
-        X86LirLocations,
-        X86LirOperands,
-    },
+    lowering_ir::{LoweringCapacities, SEMANTIC_LIR_PAGE_ROWS, TARGET_LIR_PAGE_ROWS},
     scan::{GpuResidentExclusiveScan, GraphScanContract},
     target_pages::GpuTargetPagePlanner,
     x86_artifact::GpuX86ArtifactStage,
@@ -63,6 +58,7 @@ struct LifetimeParams {
     reserved: u32,
 }
 
+#[cfg(test)]
 pub(crate) struct GpuX86LirView<'a> {
     pub total: &'a LaniusBuffer<u32>,
     pub core: &'a LaniusBuffer<X86LirCore>,
@@ -90,9 +86,13 @@ pub(crate) struct GpuX86LirStage {
     _lifetime_params: LaniusBuffer<LifetimeParams>,
     _counts: LaniusBuffer<u32>,
     _offsets: LaniusBuffer<u32>,
+    #[cfg(test)]
     total: LaniusBuffer<u32>,
+    #[cfg(test)]
     core: LaniusBuffer<X86LirCore>,
+    #[cfg(test)]
     operands: LaniusBuffer<X86LirOperands>,
+    #[cfg(test)]
     locations: LaniusBuffer<X86LirLocations>,
     #[cfg(test)]
     decl_location_by_token: LaniusBuffer<u32>,
@@ -527,9 +527,13 @@ impl GpuX86LirStage {
             _lifetime_params: lifetime_params,
             _counts: counts,
             _offsets: offsets,
+            #[cfg(test)]
             total,
+            #[cfg(test)]
             core,
+            #[cfg(test)]
             operands,
+            #[cfg(test)]
             locations,
             #[cfg(test)]
             decl_location_by_token,
@@ -540,6 +544,7 @@ impl GpuX86LirStage {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn output(&self) -> GpuX86LirView<'_> {
         GpuX86LirView {
             total: &self.total,
@@ -1005,12 +1010,11 @@ mod tests {
             &[opcode::X86_LIR_BINARY_ADD_I32, 0, 1]
         );
         let location_words = read_words(&gpu.device, &locations_rb);
-        assert_eq!(location_words[0], opcode::X86_LOCATION_REGISTER | 8);
+        // The current correctness baseline keeps semantic values in their
+        // stack homes; register assignment is a later optimization pass.
+        assert_eq!(location_words[0], 0);
         assert_eq!(location_words[4], 1);
-        assert_eq!(
-            &location_words[8..12],
-            &[2, u32::MAX, opcode::X86_LOCATION_REGISTER | 8, 1]
-        );
+        assert_eq!(&location_words[8..12], &[2, u32::MAX, 0, 1]);
         assert_eq!(read_words(&gpu.device, &function_count_rb)[0], 1);
         assert_eq!(&operand_words[32..36], &[u32::MAX, 7, 0, 0]);
         assert_eq!(&operand_words[36..39], &[7, 11, 23]);

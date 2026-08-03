@@ -31,6 +31,7 @@ static const uint SEMANTIC_FEATURE_PREDICATES = 1u << 1u;
 static const uint SEMANTIC_FEATURE_MATCH = 1u << 2u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_IMPL = 35u;
+static const uint HIR_MEMBER_EXPR = 21u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -62,6 +63,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         flags |= SEMANTIC_FEATURE_MATCH;
     if (compact_hir_core[node].kind == HIR_IMPL)
         flags |= SEMANTIC_FEATURE_PREDICATES;
+    // A source unit may contain only calls to methods declared in an
+    // imported interface.  Such a unit has no local compact method rows, but
+    // it still needs the method key and resolution passes for its member-call
+    // HIR nodes.
+    if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
+        flags |= SEMANTIC_FEATURE_METHODS;
     if (flags != 0u)
         atomic_u32_or(semantic_feature_flags, 0u, flags);
 }

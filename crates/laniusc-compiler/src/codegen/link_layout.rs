@@ -331,6 +331,7 @@ mod tests {
             function_count: 2,
             type_byte_len: 6,
             body_byte_len: 20,
+            data_byte_len: 0,
             relocation_count: 1,
             symbol_count: 2,
             identity_byte_len: 24,

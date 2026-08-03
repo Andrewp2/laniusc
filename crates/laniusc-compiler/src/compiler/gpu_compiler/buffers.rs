@@ -61,9 +61,9 @@ impl OwnedTypecheckParserBuffers {
             // These compact families contain source-anchored semantic rows,
             // never grammar scaffolding. Their worst-case capacity is the
             // canonical token bound, not the raw production-tree bound.
-            module_record_capacity: bufs.hir_canonical_capacity,
-            call_param_row_capacity: bufs.hir_canonical_capacity,
-            call_arg_row_capacity: bufs.hir_canonical_capacity,
+            module_record_capacity: bufs.n_tokens.saturating_sub(2).max(1),
+            call_param_row_capacity: bufs.n_tokens.saturating_sub(2).max(1),
+            call_arg_row_capacity: bufs.n_tokens.saturating_sub(2).max(1),
             ll1_status: bufs.ll1_status.clone(),
             node_kind: bufs.node_kind.clone(),
             parent: bufs.parent.clone(),
@@ -170,9 +170,11 @@ impl OwnedTypecheckParserBuffers {
         &self,
     ) -> gpu_type_checker::GpuSemanticInterfaceHirBuffers<'_> {
         gpu_type_checker::GpuSemanticInterfaceHirBuffers {
+            compact_hir_capacity: u32::try_from(self.hir.core.count).unwrap_or(u32::MAX),
             compact_hir_count: &self.hir.count,
             compact_hir_core: &self.hir.core,
             compact_hir_payload: &self.hir.payload,
+            compact_const_value: &self.hir.const_value,
             compact_fn_return_type: &self.hir.fn_return_type,
             compact_type_alias_target: &self.hir.type_alias_target,
             compact_const_type: &self.hir.const_type,
@@ -189,6 +191,9 @@ impl OwnedTypecheckParserBuffers {
             compact_variant_payload_count: &self.hir.variant_payload_count,
             compact_variant_payload_row_count: &self.hir.variant_payload_row_count,
             compact_variant_payloads: &self.hir.variant_payloads,
+            compact_method_count: &self.hir.method_count,
+            compact_method_cores: &self.hir.method_cores,
+            compact_method_signatures: &self.hir.method_signatures,
         }
     }
 }

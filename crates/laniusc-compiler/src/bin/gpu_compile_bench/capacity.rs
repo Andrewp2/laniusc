@@ -473,11 +473,15 @@ pub(super) fn print_live_capacity_estimate(
         tables,
     );
     println!(
-        "estimate_live lines={source_lines} source_bytes={source_bytes} gpu_token_count={} token_capacity={token_capacity} parser_feature_flags=0x{:08x} parser_emit_len={} semantic_hir_count={}",
-        live.token_count, live.parser_feature_flags, live.parser_emit_len, live.semantic_hir_count
+        "estimate_live lines={source_lines} source_bytes={source_bytes} gpu_token_count={} token_capacity={token_capacity} parser_feature_flags=0x{:08x} parser_emit_len={} semantic_hir_count={} canonical_hir_count={}",
+        live.token_count,
+        live.parser_feature_flags,
+        live.parser_emit_len,
+        live.semantic_hir_count,
+        live.canonical_hir_count,
     );
     let x86_hir_words = (live.parser_emit_len as usize).max(1);
-    let semantic_hir_words = (live.semantic_hir_count as usize).max(1);
+    let semantic_hir_words = (live.canonical_hir_count as usize).max(1);
     print_capacity_floors(
         source_bytes,
         token_capacity,
@@ -547,8 +551,8 @@ pub(super) fn print_capacity_floors(
         x86_words_override.unwrap_or((parse_capacity.tree_capacity, parse_capacity.tree_capacity));
     let compact_hir_words = compact_hir_words.max(1);
     let x86_hir_basis = match x86_words_override {
-        Some(_) if compact_hir_words < raw_hir_words => "semantic_hir_count",
-        Some(_) => "semantic_hir_count_equal_to_parser_emit",
+        Some(_) if compact_hir_words < raw_hir_words => "canonical_hir_count",
+        Some(_) => "canonical_hir_count_equal_to_parser_emit",
         None => "parser_tree_capacity_upper_bound",
     };
     let x86_capacity = x86_graph_capacity_estimate(source_bytes, token_capacity, compact_hir_words);

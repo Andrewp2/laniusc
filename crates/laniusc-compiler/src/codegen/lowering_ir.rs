@@ -208,6 +208,7 @@ struct WasmObjectGraphResources {
     definitions: ResourceId,
     type_bytes: ResourceId,
     body_bytes: ResourceId,
+    data_bytes: ResourceId,
 }
 
 #[derive(Clone, Copy)]
@@ -944,6 +945,16 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
+    let checked_value_consts = graph.add_resource(input(
+        "typecheck.semantic_value_consts_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let checked_value_const_present = graph.add_resource(input(
+        "typecheck.semantic_value_const_present_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
     let checked_param_types = graph.add_resource(input(
         "typecheck.semantic_param_types_by_row",
         ResourceDomain::Declarations,
@@ -1125,6 +1136,21 @@ fn build_lowering_compiler_graph(
         "hir.param_ranges",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<crate::parser::buffers::HirRange>(capacities.hir_nodes),
+    ))?;
+    let hir_method_count = graph.add_resource(input(
+        "hir.method_count",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(1),
+    ))?;
+    let hir_method_cores = graph.add_resource(input(
+        "hir.method_cores",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<crate::parser::buffers::HirMethodCore>(capacities.hir_nodes),
+    ))?;
+    let hir_method_signatures = graph.add_resource(input(
+        "hir.method_signatures",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<crate::parser::buffers::HirMethodSignature>(capacities.hir_nodes),
     ))?;
     let hir_field_count = graph.add_resource(input(
         "hir.field_count",
@@ -1587,6 +1613,9 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_const_value", hir_const_value),
             PassAccess::read("compact_param_ranges", hir_param_ranges),
+            PassAccess::read("compact_method_count", hir_method_count),
+            PassAccess::read("compact_method_cores", hir_method_cores),
+            PassAccess::read("compact_method_signatures", hir_method_signatures),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
             PassAccess::read("semantic_function_prefix", semantic_function_prefix),
             PassAccess::read("semantic_local_prefix", semantic_local_prefix),
@@ -1874,6 +1903,11 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_iterable_kind", semantic_iterable_kinds),
             PassAccess::read("semantic_value_id", semantic_value_ids),
             PassAccess::read("semantic_value_type", semantic_value_types),
+            PassAccess::read("semantic_value_const_by_hir", checked_value_consts),
+            PassAccess::read(
+                "semantic_value_const_present_by_hir",
+                checked_value_const_present,
+            ),
             PassAccess::read("semantic_call_target", semantic_call_targets),
             PassAccess::read("semantic_call_kind", semantic_call_kinds),
             PassAccess::read("semantic_call_result_type", semantic_call_result_types),
@@ -1890,6 +1924,7 @@ fn build_lowering_compiler_graph(
                 semantic_call_symbol_local_indices,
             ),
             PassAccess::read("semantic_function_id", semantic_function_ids),
+            PassAccess::read("semantic_function_id_by_token", semantic_function_id_by_token),
             PassAccess::read("semantic_lir_functions", semantic_functions),
             PassAccess::read("semantic_control_depth_by_hir", semantic_control_depths),
             PassAccess::read("semantic_member_field_ordinal", member_field_ordinals),
@@ -2869,6 +2904,13 @@ fn build_lowering_compiler_graph(
                 bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
                 usage: WorkspaceUsageClass::Storage,
             })?,
+            data_bytes: graph.add_resource(ResourceDesc {
+                name: "artifact.wasm.object.data_bytes",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
         })
     } else {
         None
@@ -2932,6 +2974,7 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("semantic_lir_total", semantic_total),
                 PassAccess::read("semantic_lir_core", semantic_core),
                 PassAccess::read("semantic_lir_operands", semantic_operands),
+                PassAccess::read("semantic_lir_strings", semantic_strings),
                 PassAccess::read("semantic_schedule_order", schedule_order),
                 PassAccess::write(
                     "x86_position_by_semantic",
@@ -3543,8 +3586,10 @@ fn build_lowering_compiler_graph(
                     PassAccess::read("target_lir_total", target_total),
                     PassAccess::read("wasm_local_index_by_decl_token", wasm.local_index_by_token),
                     PassAccess::read("semantic_owner_by_instruction", semantic_owner),
+                    PassAccess::read("semantic_lir_core", semantic_core),
                     PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                     PassAccess::read("wasm_lir_functions", wasm.functions),
+                    PassAccess::read("target_lir_operands", target_operands.unwrap()),
                     PassAccess::read_write("target_lir_core", target_core),
                 ],
             })?;
@@ -3732,10 +3777,15 @@ fn build_lowering_compiler_graph(
                     wasm_abi.expect("Wasm ABI resources").local_index_by_token,
                 ),
                 PassAccess::read("semantic_owner_by_instruction", semantic_owner),
+                PassAccess::read("semantic_lir_core", semantic_core),
                 PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 PassAccess::read(
                     "wasm_lir_functions",
                     wasm_abi.expect("Wasm ABI resources").functions,
+                ),
+                PassAccess::read(
+                    "target_lir_operands",
+                    target_operands.expect("Wasm operand resource"),
                 ),
                 PassAccess::read_write("target_lir_core", target_core),
             ],
@@ -4452,6 +4502,7 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("target_lir_total", target_total),
                 PassAccess::read("semantic_lir_core", semantic_core),
                 PassAccess::read("semantic_lir_operands", semantic_operands),
+                PassAccess::read("semantic_lir_strings", semantic_strings),
                 PassAccess::read("semantic_lir_total", semantic_total),
                 PassAccess::read("semantic_schedule_order", schedule_order),
                 PassAccess::read("semantic_owner_by_instruction", semantic_owner),
@@ -4494,8 +4545,11 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("wasm_code_entries_length", module.code_total),
                 PassAccess::read("wasm_module_layout", module.layout),
                 PassAccess::read("wasm_module_bytes", module.module_bytes),
+                PassAccess::read("semantic_lir_string_pool_len", semantic_string_pool_len),
+                PassAccess::read("semantic_lir_string_data", semantic_string_data),
                 PassAccess::write("wasm_object_type_bytes", object.type_bytes),
                 PassAccess::write("wasm_object_body_bytes", object.body_bytes),
+                PassAccess::write("wasm_object_data_bytes", object.data_bytes),
             ],
         })?;
     }

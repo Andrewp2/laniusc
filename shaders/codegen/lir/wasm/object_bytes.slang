@@ -9,8 +9,11 @@ StructuredBuffer<uint> wasm_type_entries_length;
 StructuredBuffer<uint> wasm_code_entries_length;
 StructuredBuffer<WasmModuleLayout> wasm_module_layout;
 StructuredBuffer<uint> wasm_module_bytes;
+StructuredBuffer<uint> semantic_lir_string_pool_len;
+StructuredBuffer<uint> semantic_lir_string_data;
 RWStructuredBuffer<uint> wasm_object_type_bytes;
 RWStructuredBuffer<uint> wasm_object_body_bytes;
+RWStructuredBuffer<uint> wasm_object_data_bytes;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -34,5 +37,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint source = layout.code_entries_start + byte_i;
         wasm_module_store_byte(wasm_object_body_bytes, gParams.artifact_capacity, byte_i,
             wasm_module_load_byte(wasm_module_bytes, source));
+    }
+    uint data_len = min(semantic_lir_string_pool_len[0u], gParams.artifact_capacity);
+    if (byte_i < data_len)
+    {
+        uint value = semantic_lir_string_data[byte_i >> 2u] >> ((byte_i & 3u) * 8u);
+        wasm_module_store_byte(wasm_object_data_bytes, gParams.artifact_capacity, byte_i, value);
     }
 }

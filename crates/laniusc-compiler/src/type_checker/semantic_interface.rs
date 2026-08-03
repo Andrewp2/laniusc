@@ -105,6 +105,7 @@ struct RecordedSemanticInterfaceTypeTopology {
     _member_count: LaniusBuffer<u32>,
     _member_prefix: LaniusBuffer<u32>,
     _member_total: LaniusBuffer<u32>,
+    _member_cursor: LaniusBuffer<u32>,
     _members: LaniusBuffer<u32>,
     _member_name_id: LaniusBuffer<u32>,
     _member_index_by_generic_row: LaniusBuffer<u32>,
@@ -198,8 +199,18 @@ impl GpuTypeChecker {
             state
                 .typecheck_graph
                 .u32_buffer("external_type_local_index")?,
+            state
+                .typecheck_graph
+                .u32_buffer("semantic_function_host_service_by_hir")?,
         ];
         let inputs = GpuSemanticInterfaceIdentityBuffers {
+            name_capacity: state.name_capacity,
+            module_capacity: u32::try_from(module_path.module_key_segment_count.count)
+                .unwrap_or(u32::MAX),
+            declaration_capacity: u32::try_from(module_path.interface_public_decl_local_id.count)
+                .unwrap_or(u32::MAX),
+            module_segment_capacity: u32::try_from(module_path.module_key_segment_name_id.count)
+                .unwrap_or(u32::MAX),
             name_count_out: &name_scan_total,
             name_spans: &name_spans,
             name_hash_lo: &state.name_order_in,
@@ -218,6 +229,7 @@ impl GpuTypeChecker {
             decl_visibility: &module_path.decl_visibility,
             decl_parent_type_decl: &module_path.decl_parent_type_decl,
             decl_hir_node: &module_path.decl_hir_node,
+            function_host_service_by_hir: &graph_buffers[14],
             public_decl_count: &module_path.interface_public_decl_count,
             public_decl_local_id: &module_path.interface_public_decl_local_id,
             public_decl_index_by_local: &module_path.interface_public_decl_index_by_local,
@@ -269,39 +281,20 @@ impl GpuTypeChecker {
         inputs: GpuSemanticInterfaceIdentityBuffers<'_>,
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
     ) -> Result<RecordedSemanticInterface> {
-        let name_capacity = u32_capacity(inputs.name_spans, 4, "name spans")?;
-        let module_capacity = u32_capacity(
-            inputs.module_key_segment_count,
-            1,
-            "module key segment counts",
-        )?;
-        let decl_storage_capacity = u32_capacity(
-            inputs.public_decl_local_id,
-            1,
-            "persisted public declarations",
-        )?;
+        let name_capacity = inputs.name_capacity;
+        let module_capacity = inputs.module_capacity;
+        let decl_storage_capacity = inputs.declaration_capacity;
         let decl_capacity = decl_storage_capacity.min(token_capacity).max(1);
-        if u32_capacity(
-            inputs.public_decl_index_by_local,
-            1,
-            "local-to-persisted public declarations",
-        )? < decl_capacity
-        {
+        if inputs.declaration_capacity < decl_capacity {
             return Err(anyhow::anyhow!(
                 "semantic-interface public declaration map is shorter than its token-bounded domain"
             ));
         }
-        let module_segment_capacity = u32_capacity(
-            inputs.module_key_segment_name_id,
-            1,
-            "module key segment names",
-        )?;
-        let semantic_hir_capacity =
-            u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?
-                .min(token_capacity)
-                .max(1);
+        let module_segment_capacity = inputs.module_segment_capacity;
+        let semantic_hir_capacity = hir.compact_hir_capacity.min(token_capacity).max(1);
         let member_capacity = semantic_hir_capacity
-            .checked_add(token_capacity)
+            .checked_mul(2)
+            .and_then(|value| value.checked_add(token_capacity))
             .ok_or_else(|| anyhow::anyhow!("semantic-interface member capacity overflows u32"))?;
         let name_ref_count = module_segment_capacity
             .checked_add(decl_capacity)
@@ -497,6 +490,14 @@ impl GpuTypeChecker {
         identity_resources.buffer("decl_namespace", inputs.decl_namespace);
         identity_resources.buffer("decl_kind", inputs.decl_kind);
         identity_resources.buffer("decl_parent_type_decl", inputs.decl_parent_type_decl);
+        identity_resources.buffer("decl_hir_node", inputs.decl_hir_node);
+        identity_resources.buffer("compact_const_value", hir.compact_const_value);
+        identity_resources.buffer("compact_hir_core", hir.compact_hir_core);
+        identity_resources.buffer("compact_hir_payload", hir.compact_hir_payload);
+        identity_resources.buffer(
+            "semantic_function_host_service_by_hir",
+            inputs.function_host_service_by_hir,
+        );
         identity_resources.buffer("interface_name_ref_len", &name_ref_len);
         identity_resources.buffer("interface_name_ref_prefix", &name_ref_prefix);
         identity_resources.buffer(
@@ -550,6 +551,7 @@ impl GpuTypeChecker {
                 module_index_capacity: module_capacity,
                 name_byte_capacity,
                 member_capacity,
+                hir_capacity: semantic_hir_capacity,
             },
         );
         let record_bind_group = identity_resources.reflected_bind_group_with_overrides(
@@ -741,7 +743,6 @@ impl GpuTypeChecker {
             4,
             16,
         );
-
         Ok(RecordedSemanticInterface {
             expected_library_id: library_id,
             expected_unit_id: unit_id,
@@ -781,15 +782,11 @@ impl GpuTypeChecker {
         scan_scratch: PrefixScanWorkspace<&LaniusBuffer<u32>>,
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
     ) -> Result<RecordedSemanticInterfaceTypeTopology> {
-        let hir_storage_capacity =
-            u32_capacity(hir.compact_hir_core, 4, "semantic-interface compact HIR")?;
-        let decl_capacity = u32_capacity(
-            inputs.public_decl_local_id,
-            1,
-            "semantic-interface public declarations",
-        )?
-        .min(token_capacity)
-        .max(1);
+        let hir_storage_capacity = hir.compact_hir_capacity;
+        let decl_capacity = inputs
+            .declaration_capacity
+            .min(token_capacity)
+            .max(1);
         // Canonical HIR assigns every durable row a unique token/file anchor;
         // parser storage capacity is therefore not the semantic row domain.
         // The same token bound is used by the resident type-check shaders.
@@ -1008,7 +1005,8 @@ impl GpuTypeChecker {
             wgpu::BufferUsages::STORAGE,
         );
         let member_capacity = capacity
-            .checked_add(token_capacity)
+            .checked_mul(2)
+            .and_then(|value| value.checked_add(token_capacity))
             .ok_or_else(|| anyhow::anyhow!("semantic-interface member capacity overflows u32"))?;
         let variant_count_by_hir = typed_storage_u32_rw(
             device,
@@ -1037,6 +1035,12 @@ impl GpuTypeChecker {
         let member_count = typed_storage_u32_rw(
             device,
             "type_check.interface.members.count",
+            signature_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let member_cursor = typed_storage_u32_rw(
+            device,
+            "type_check.interface.members.cursor",
             signature_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
@@ -1228,6 +1232,9 @@ impl GpuTypeChecker {
             "compact_variant_payload_count" => hir.compact_variant_payload_count,
             "compact_variant_payload_row_count" => hir.compact_variant_payload_row_count,
             "compact_variant_payloads" => hir.compact_variant_payloads,
+            "compact_method_count" => hir.compact_method_count,
+            "compact_method_cores" => hir.compact_method_cores,
+            "compact_method_signatures" => hir.compact_method_signatures,
             "compact_variants" => hir.compact_variants,
             "decl_hir_node" => inputs.decl_hir_node,
             "decl_id_by_name_token" => inputs.decl_id_by_name_token,
@@ -1260,6 +1267,7 @@ impl GpuTypeChecker {
             "interface_generic_const_count_by_decl" => generic_const_count_by_decl,
             "interface_generic_type_count_by_decl" => generic_type_count_by_decl,
             "interface_member_count" => member_count,
+            "interface_member_cursor" => member_cursor,
             "interface_member_index_by_generic_row" => member_index_by_generic_row,
             "interface_member_name_id" => member_name_id,
             "interface_member_prefix" => member_prefix,
@@ -1460,6 +1468,10 @@ impl GpuTypeChecker {
         let members_counts = bind_topology!(
             "type_check.interface.members.counts",
             "type_checker/interface/members/01_counts"
+        )?;
+        let members_method_counts = bind_topology!(
+            "type_check.interface.members.method_counts",
+            "type_checker/interface/members/00c_method_counts"
         )?;
         let members_scatter_hir = bind_topology!(
             "type_check.interface.members.scatter_hir",
@@ -1729,6 +1741,15 @@ impl GpuTypeChecker {
             "type_check.interface.members.counts",
             signature_capacity,
         )?;
+        record_compute(
+            encoder,
+            &self
+                .passes
+                .kernel("type_checker/interface/members/00c_method_counts"),
+            &members_method_counts,
+            "type_check.interface.members.method_counts",
+            capacity,
+        )?;
         member_scan.record(encoder)?;
         record_compute(
             encoder,
@@ -1803,6 +1824,7 @@ impl GpuTypeChecker {
             _member_count: member_count,
             _member_prefix: member_prefix,
             _member_total: member_total,
+            _member_cursor: member_cursor,
             _members: members,
             _member_name_id: member_name_id,
             _member_index_by_generic_row: member_index_by_generic_row,
@@ -1906,20 +1928,6 @@ fn semantic_interface_artifact_capacity(
         )
         .and_then(|bytes| bytes.checked_add(name_byte_capacity as usize))
         .ok_or_else(|| anyhow::anyhow!("semantic-interface artifact capacity overflows"))
-}
-
-fn u32_capacity(buffer: &wgpu::Buffer, words_per_row: u64, label: &str) -> Result<u32> {
-    let row_bytes = words_per_row
-        .checked_mul(4)
-        .ok_or_else(|| anyhow::anyhow!("{label} row size overflows"))?;
-    if buffer.size() % row_bytes != 0 {
-        return Err(anyhow::anyhow!(
-            "{label} buffer has {} bytes, which is not divisible by row size {row_bytes}",
-            buffer.size()
-        ));
-    }
-    u32::try_from(buffer.size() / row_bytes)
-        .map_err(|_| anyhow::anyhow!("{label} capacity exceeds u32"))
 }
 
 fn initialized_u32_buffer(

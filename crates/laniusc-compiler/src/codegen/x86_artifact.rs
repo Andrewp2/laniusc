@@ -269,7 +269,7 @@ impl GpuX86ArtifactStage {
             "lir.x86.runtime.emit",
             &runtime_emit_pass,
             fixed_params,
-            512,
+            2048,
         )?;
 
         let length_readback = readback_bytes(device, "artifact.x86.length.readback", 4, 4);

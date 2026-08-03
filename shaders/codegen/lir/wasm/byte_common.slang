@@ -44,6 +44,8 @@ uint wasm_lir_byte_len(WasmLirInstruction inst)
     if (inst.opcode == WASM_LIR_OP_CALL ||
         inst.opcode == WASM_LIR_OP_CALL_SYMBOL) return 6u;
     if (inst.opcode == WASM_LIR_OP_I32_CONST)
+        if ((inst.flags & TARGET_LIR_FLAG_DATA_RELOCATION) != 0u) return 6u;
+    if (inst.opcode == WASM_LIR_OP_I32_CONST)
         return 1u + wasm_i32_leb_len(inst.immediate);
     if (inst.opcode == WASM_LIR_OP_F32_CONST) return 5u;
     if (inst.opcode == WASM_LIR_OP_I32_LOAD || inst.opcode == WASM_LIR_OP_F32_LOAD ||
@@ -86,6 +88,13 @@ uint wasm_lir_byte(WasmLirInstruction inst, uint byte_i)
     }
     if (byte_i == 0u) return inst.opcode;
     uint immediate_i = byte_i - 1u;
+    if (inst.opcode == WASM_LIR_OP_I32_CONST)
+        if ((inst.flags & TARGET_LIR_FLAG_DATA_RELOCATION) != 0u)
+        {
+            uint value = inst.immediate >> (immediate_i * 7u);
+            uint byte_value = value & 0x7fu;
+            return immediate_i < 4u ? byte_value | 0x80u : byte_value;
+        }
     if (inst.opcode == WASM_LIR_OP_I32_CONST)
         return wasm_i32_leb_byte(inst.immediate, immediate_i);
     if (inst.opcode == WASM_LIR_OP_F32_CONST)

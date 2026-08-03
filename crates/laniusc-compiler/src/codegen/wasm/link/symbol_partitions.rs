@@ -137,6 +137,7 @@ mod tests {
             function_count: definitions.len(),
             type_bytes: GpuLinkByteSource::resident("test Wasm types", Vec::new()),
             body_bytes: GpuLinkByteSource::resident("test Wasm bodies", Vec::new()),
+            data_bytes: GpuLinkByteSource::resident("test Wasm data", Vec::new()),
             relocations: relocation_identities
                 .iter()
                 .copied()

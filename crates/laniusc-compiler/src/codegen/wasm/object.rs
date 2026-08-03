@@ -6,9 +6,9 @@
 
 use crate::compiler::stable_name_hash;
 
-pub const GPU_WASM_OBJECT_VERSION: u32 = 2;
+pub const GPU_WASM_OBJECT_VERSION: u32 = 3;
 const GPU_WASM_OBJECT_MAGIC: [u8; 8] = *b"LNWASMOB";
-const HEADER_U32S: usize = 10;
+const HEADER_U32S: usize = 11;
 const FUNCTION_U32S: usize = 6;
 const RELOCATION_U32S: usize = 4;
 const SYMBOL_U32S: usize = 8;
@@ -24,6 +24,7 @@ pub(crate) struct GpuWasmRelocatableObjectLayout {
     pub function_count: u32,
     pub type_byte_len: u32,
     pub body_byte_len: u32,
+    pub data_byte_len: u32,
     pub relocation_count: u32,
     pub symbol_count: u32,
     pub identity_byte_len: u32,
@@ -51,6 +52,7 @@ impl GpuWasmRelocatableObjectLayout {
         let function_count = read_u32(bytes, &mut cursor)?;
         let type_byte_len = read_u32(bytes, &mut cursor)?;
         let body_byte_len = read_u32(bytes, &mut cursor)?;
+        let data_byte_len = read_u32(bytes, &mut cursor)?;
         let relocation_count = read_u32(bytes, &mut cursor)?;
         let symbol_count = read_u32(bytes, &mut cursor)?;
         let identity_byte_len = read_u32(bytes, &mut cursor)?;
@@ -64,6 +66,7 @@ impl GpuWasmRelocatableObjectLayout {
             .checked_add(function_count as u64 * FUNCTION_U32S as u64 * 4)
             .and_then(|len| len.checked_add(type_byte_len as u64))
             .and_then(|len| len.checked_add(body_byte_len as u64))
+            .and_then(|len| len.checked_add(data_byte_len as u64))
             .and_then(|len| len.checked_add(relocation_count as u64 * RELOCATION_U32S as u64 * 4))
             .and_then(|len| len.checked_add(symbol_count as u64 * SYMBOL_U32S as u64 * 4))
             .and_then(|len| len.checked_add(identity_byte_len as u64))
@@ -76,6 +79,7 @@ impl GpuWasmRelocatableObjectLayout {
             function_count,
             type_byte_len,
             body_byte_len,
+            data_byte_len,
             relocation_count,
             symbol_count,
             identity_byte_len,
@@ -83,10 +87,17 @@ impl GpuWasmRelocatableObjectLayout {
         })
     }
 
-    /// Byte ranges of the variable-sized type and body payload columns.
+    /// Byte ranges of the variable-sized type, body, and data payload columns.
     pub(crate) fn payload_byte_ranges(
         &self,
-    ) -> Result<(std::ops::Range<u64>, std::ops::Range<u64>), String> {
+    ) -> Result<
+        (
+            std::ops::Range<u64>,
+            std::ops::Range<u64>,
+            std::ops::Range<u64>,
+        ),
+        String,
+    > {
         let function_bytes = self.function_count as u64 * FUNCTION_U32S as u64 * 4;
         let type_start = (GPU_WASM_OBJECT_HEADER_BYTES as u64)
             .checked_add(function_bytes)
@@ -97,7 +108,10 @@ impl GpuWasmRelocatableObjectLayout {
         let body_end = type_end
             .checked_add(self.body_byte_len as u64)
             .ok_or_else(|| "Wasm object body payload end overflows u64".to_string())?;
-        Ok((type_start..type_end, type_end..body_end))
+        let data_end = body_end
+            .checked_add(self.data_byte_len as u64)
+            .ok_or_else(|| "Wasm object data payload end overflows u64".to_string())?;
+        Ok((type_start..type_end, type_end..body_end, body_end..data_end))
     }
 }
 
@@ -135,6 +149,7 @@ pub struct GpuWasmFunctionRecord {
 pub enum GpuWasmRelocationTargetKind {
     LocalFunction = 1,
     Symbol = 2,
+    DataOffset = 3,
 }
 
 impl GpuWasmRelocationTargetKind {
@@ -142,6 +157,7 @@ impl GpuWasmRelocationTargetKind {
         match value {
             1 => Ok(Self::LocalFunction),
             2 => Ok(Self::Symbol),
+            3 => Ok(Self::DataOffset),
             _ => Err(format!(
                 "Wasm object relocation target kind {value} is invalid"
             )),
@@ -180,6 +196,7 @@ pub struct GpuWasmRelocatableObject {
     pub functions: Vec<GpuWasmFunctionRecord>,
     pub type_bytes: Vec<u8>,
     pub body_bytes: Vec<u8>,
+    pub data_bytes: Vec<u8>,
     pub relocations: Vec<GpuWasmRelocationRecord>,
     pub symbols: Vec<GpuWasmObjectSymbolRecord>,
     pub identity_bytes: Vec<u8>,
@@ -197,6 +214,7 @@ impl GpuWasmRelocatableObject {
             ("function", self.functions.len()),
             ("type byte", self.type_bytes.len()),
             ("body byte", self.body_bytes.len()),
+            ("data byte", self.data_bytes.len()),
             ("relocation", self.relocations.len()),
             ("symbol", self.symbols.len()),
             ("identity byte", self.identity_bytes.len()),
@@ -308,6 +326,13 @@ impl GpuWasmRelocatableObject {
                         ));
                     }
                 }
+                GpuWasmRelocationTargetKind::DataOffset => {
+                    if relocation.target_index as usize > self.data_bytes.len() {
+                        return Err(format!(
+                            "Wasm object relocation {index} data offset is out of range"
+                        ));
+                    }
+                }
             }
         }
         for (index, symbol) in self.symbols.iter().enumerate() {
@@ -363,6 +388,7 @@ impl GpuWasmRelocatableObject {
             self.functions.len() as u32,
             self.type_bytes.len() as u32,
             self.body_bytes.len() as u32,
+            self.data_bytes.len() as u32,
             self.relocations.len() as u32,
             self.symbols.len() as u32,
             self.identity_bytes.len() as u32,
@@ -383,6 +409,7 @@ impl GpuWasmRelocatableObject {
         }
         out.extend_from_slice(&self.type_bytes);
         out.extend_from_slice(&self.body_bytes);
+        out.extend_from_slice(&self.data_bytes);
         for relocation in &self.relocations {
             for word in [
                 relocation.body_byte_offset,
@@ -435,8 +462,9 @@ impl GpuWasmRelocatableObject {
         }
         let type_bytes = take_bytes(bytes, &mut cursor, header[5] as usize)?.to_vec();
         let body_bytes = take_bytes(bytes, &mut cursor, header[6] as usize)?.to_vec();
-        let mut relocations = Vec::with_capacity(header[7] as usize);
-        for _ in 0..header[7] {
+        let data_bytes = take_bytes(bytes, &mut cursor, header[7] as usize)?.to_vec();
+        let mut relocations = Vec::with_capacity(header[8] as usize);
+        for _ in 0..header[8] {
             let w: Vec<u32> = (0..RELOCATION_U32S)
                 .map(|_| read_u32(bytes, &mut cursor))
                 .collect::<Result<_, _>>()?;
@@ -447,8 +475,8 @@ impl GpuWasmRelocatableObject {
                 addend: w[3] as i32,
             });
         }
-        let mut symbols = Vec::with_capacity(header[8] as usize);
-        for _ in 0..header[8] {
+        let mut symbols = Vec::with_capacity(header[9] as usize);
+        for _ in 0..header[9] {
             let w: Vec<u32> = (0..SYMBOL_U32S)
                 .map(|_| read_u32(bytes, &mut cursor))
                 .collect::<Result<_, _>>()?;
@@ -463,7 +491,7 @@ impl GpuWasmRelocatableObject {
                 flags: w[7],
             });
         }
-        let identity_bytes = take_bytes(bytes, &mut cursor, header[9] as usize)?.to_vec();
+        let identity_bytes = take_bytes(bytes, &mut cursor, header[10] as usize)?.to_vec();
         if cursor != bytes.len() {
             return Err("Wasm object has trailing bytes".into());
         }
@@ -475,6 +503,7 @@ impl GpuWasmRelocatableObject {
             functions,
             type_bytes,
             body_bytes,
+            data_bytes,
             relocations,
             symbols,
             identity_bytes,
@@ -575,6 +604,7 @@ mod tests {
             }],
             type_bytes: vec![0x60, 0, 0],
             body_bytes,
+            data_bytes: Vec::new(),
             relocations: vec![GpuWasmRelocationRecord {
                 body_byte_offset: 7,
                 target_kind: GpuWasmRelocationTargetKind::Symbol,

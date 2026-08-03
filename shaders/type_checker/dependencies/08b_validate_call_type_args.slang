@@ -73,6 +73,7 @@ static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
+static const uint TYPE_LEN_CONST_PARAM = 2u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -272,8 +273,9 @@ bool node_matches(uint expected_row, uint local_row, uint callee)
     if (kind == INTERFACE_TYPE_ARRAY)
         return form == HIR_TYPE_FORM_ARRAY && type_instance_kind[payload] == TYPE_INSTANCE_ARRAY &&
                edge_count == 1u &&
-               type_instance_len_kind[payload] == dependency_type_word(base + 5u) &&
-               type_instance_len_payload[payload] == dependency_type_word(base + 6u);
+               (dependency_type_word(base + 5u) == TYPE_LEN_CONST_PARAM ||
+                (type_instance_len_kind[payload] == dependency_type_word(base + 5u) &&
+                 type_instance_len_payload[payload] == dependency_type_word(base + 6u)));
     if (kind == INTERFACE_TYPE_SLICE)
         return form == HIR_TYPE_FORM_SLICE && type_instance_kind[payload] == TYPE_INSTANCE_SLICE &&
                edge_count == 1u;

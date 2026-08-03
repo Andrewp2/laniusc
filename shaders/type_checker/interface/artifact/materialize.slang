@@ -100,6 +100,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (row == 0u)
         {
             atomic_u32_or(interface_status, 0u, 0x80000000u);
+            interface_status[1u] = (module_count > gParams.module_capacity ? 1u : 0u) |
+                (module_segment_count > gParams.module_segment_capacity ? 2u : 0u) |
+                (declaration_count > gParams.declaration_capacity ? 4u : 0u) |
+                (type_count > gParams.type_capacity ? 8u : 0u) |
+                (edge_count > gParams.edge_capacity ? 16u : 0u) |
+                (member_count > gParams.member_capacity ? 32u : 0u) |
+                (name_byte_count > gParams.name_byte_capacity ? 64u : 0u) |
+                (artifact_words > gParams.artifact_word_capacity ? 128u : 0u);
             interface_artifact_length[0u] = 0u;
         }
         return;

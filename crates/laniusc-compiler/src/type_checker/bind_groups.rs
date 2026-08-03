@@ -327,6 +327,13 @@ impl GpuTypeChecker {
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
+        let call_dependency_host_service = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.call_dependency_host_service",
+            token_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
         let method_module_id_by_file_id_implicit_root = typed_storage_u32_fill_rw(
             device,
             "type_check.resident.method_module_id_by_file_id_implicit_root",
@@ -450,6 +457,11 @@ impl GpuTypeChecker {
         allocation_stamp!("buffers");
         let empty_hir = EmptyHirBindings::new(device, uses_hir_items, hir_node_capacity);
         let graph_bindings = typecheck_graph.bindings()?;
+        let dependency_words_fallback = if dependency_interfaces.is_none() {
+            Some(typecheck_graph.u32_buffer("external_type_library_id")?)
+        } else {
+            None
+        };
         let mut resources = ResourceMap::new();
         typecheck_graph.register_bindings(&graph_bindings, &mut resources);
         resources.buffer("gParams", &self.params_buf);
@@ -505,6 +517,10 @@ impl GpuTypeChecker {
         resources.buffer("call_dependency_library_id", &call_dependency_library_id);
         resources.buffer("call_dependency_unit_id", &call_dependency_unit_id);
         resources.buffer("call_dependency_local_index", &call_dependency_local_index);
+        resources.buffer(
+            "call_dependency_host_service",
+            &call_dependency_host_service,
+        );
         resources.buffer("name_id_by_token", &name_id_by_token);
         resources.buffer("language_name_id", &language_name_id);
         resources.buffer("language_decl_symbol_slot", &language_decl_symbol_slot);
@@ -605,6 +621,8 @@ impl GpuTypeChecker {
         resources.buffer("decl_type_ref_payload", &decl_type_ref_payload);
         if let Some(dependencies) = dependency_interfaces {
             resources.buffer("dependency_words", &dependencies.words);
+        } else if let Some(fallback) = &dependency_words_fallback {
+            resources.buffer("dependency_words", fallback);
         }
         allocation_stamp!("resources");
         let hir_active_dispatch = reflected_bind_group_from_resources(
@@ -695,7 +713,7 @@ impl GpuTypeChecker {
             None
         };
         allocation_stamp!("module_path");
-        register_module_path_resources(&mut resources, module_path.as_ref());
+        register_module_path_resources(&mut resources, module_path.as_ref())?;
         typecheck_graph.validate_module_pass_bindings(&resources)?;
         resources.validate_graph_pass(compiler_graph::MODULE_DECL_ROWS_MATERIALIZE_PASS, &[])?;
         resources.buffer("module_value_path_call_open", &module_value_path_call_open);
@@ -1142,6 +1160,7 @@ impl GpuTypeChecker {
             if_depth_params,
             fn_params,
             language_symbol_bytes,
+            _language_name_id: language_name_id,
             name_order_in,
             name_order_tmp,
             name_id_by_token,
@@ -1157,6 +1176,7 @@ impl GpuTypeChecker {
             _call_dependency_library_id: call_dependency_library_id,
             _call_dependency_unit_id: call_dependency_unit_id,
             _call_dependency_local_index: call_dependency_local_index,
+            _call_dependency_host_service: call_dependency_host_service,
             type_subtree_compare_buffers,
             name_bind_groups,
             language_name_bind_groups,

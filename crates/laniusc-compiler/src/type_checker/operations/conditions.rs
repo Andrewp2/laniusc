@@ -3,7 +3,11 @@ use crate::gpu::compiler_graph::{CompilerGraphBuilder, ReflectedComputeSpec};
 
 pub(in crate::type_checker) const CONDITIONS_CALLS: ReflectedComputeSpec = typecheck_operation!(
     "type_check.conditions.compact_calls", HirNodes, "type_checker/conditions/compact_calls";
-    resources [typecheck_resource!("call_fn_index" => "backend_call_fn_index")]
+    resources [
+        typecheck_resource!("call_fn_index" => "backend_call_fn_index"),
+        typecheck_resource!("call_dependency_library_id" => "call_dependency_library_id", Read),
+        typecheck_resource!("module_value_path_associated_method_token" => "module_value_path_associated_method_token", Read),
+    ]
 );
 pub(in crate::type_checker) const CONDITIONS_TYPES: ReflectedComputeSpec = typecheck_pass!(
     "type_check.conditions.compact_types",

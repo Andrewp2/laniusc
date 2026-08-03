@@ -17,6 +17,7 @@ pub(super) struct GpuWasmOutputPage {
     pub output_len: u32,
     pub type_input: Range<usize>,
     pub body_input: Range<usize>,
+    pub data_input: Range<usize>,
     pub relocation_indices: Vec<usize>,
 }
 
@@ -25,6 +26,7 @@ pub(super) struct GpuWasmPagedExecutablePlan {
     pub output_len: usize,
     pub type_data_start: usize,
     pub body_data_start: usize,
+    pub data_data_start: usize,
     pub pages: Vec<GpuWasmOutputPage>,
 }
 
@@ -65,12 +67,25 @@ impl GpuWasmPagedExecutablePlan {
             .ok_or_else(|| "Wasm body start overflows".to_string())?;
         let output_len = body_data_start
             .checked_add(input.body_byte_len())
+            .and_then(|end| {
+                end.checked_add(if input.data_byte_len() == 0 {
+                    0
+                } else {
+                    24 + input.data_byte_len()
+                })
+            })
             .ok_or_else(|| "Wasm output length overflows".to_string())?;
         u32::try_from(output_len)
             .map_err(|_| format!("Wasm output length {output_len} exceeds u32"))?;
 
         let type_output = type_data_start..type_data_end;
-        let body_output = body_data_start..output_len;
+        let body_output = body_data_start..body_data_start + input.body_byte_len();
+        let data_data_start = body_data_start + input.body_byte_len();
+        let data_output = if input.data_byte_len() == 0 {
+            data_data_start..data_data_start
+        } else {
+            data_data_start + 24..output_len
+        };
         let page_count = output_len.div_ceil(page_capacity);
         let mut pages = Vec::with_capacity(page_count);
         for page_index in 0..page_count {
@@ -81,6 +96,7 @@ impl GpuWasmPagedExecutablePlan {
                 output_len: (output_end - output_start) as u32,
                 type_input: translated_intersection(output_start..output_end, type_output.clone()),
                 body_input: translated_intersection(output_start..output_end, body_output.clone()),
+                data_input: translated_intersection(output_start..output_end, data_output.clone()),
                 relocation_indices: Vec::new(),
             });
         }
@@ -110,6 +126,7 @@ impl GpuWasmPagedExecutablePlan {
             output_len,
             type_data_start,
             body_data_start,
+            data_data_start,
             pages,
         })
     }
@@ -140,6 +157,7 @@ mod tests {
                 "test Wasm bodies",
                 vec![0; body_len],
             ),
+            data_bytes: crate::codegen::GpuLinkByteSource::resident("test Wasm data", Vec::new()),
             relocations: relocation_offsets
                 .iter()
                 .copied()

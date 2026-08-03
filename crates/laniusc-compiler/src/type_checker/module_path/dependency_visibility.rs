@@ -11,6 +11,12 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) canonical_type_count: u32,
     pub(in crate::type_checker) canonical_declaration_count: u32,
     pub(in crate::type_checker) canonical_member_count: u32,
+    /// Stable dependency identity for each resolved value path. These rows
+    /// remain valid after dependency pages are replaced, unlike page-local
+    /// declaration indices.
+    pub(in crate::type_checker) resolved_dependency_library_id: LaniusBuffer<u32>,
+    pub(in crate::type_checker) resolved_dependency_unit_id: LaniusBuffer<u32>,
+    pub(in crate::type_checker) resolved_dependency_local_index: LaniusBuffer<u32>,
     pub(in crate::type_checker) call_compare_scan_input: LaniusBuffer<u32>,
     pub(in crate::type_checker) call_compare_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) canonical_type_subtree: Box<DependencyCanonicalTypeSubtreeState>,
@@ -38,6 +44,7 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) clear_declaration_generic_arity_group: wgpu::BindGroup,
     pub(in crate::type_checker) count_declaration_generic_arity_group: wgpu::BindGroup,
     pub(in crate::type_checker) project_type_instances_group: wgpu::BindGroup,
+    pub(in crate::type_checker) project_methods_group: wgpu::BindGroup,
     pub(in crate::type_checker) _params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _type_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _value_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
@@ -680,6 +687,15 @@ pub(in crate::type_checker) fn create(
             ),
         ],
     )?;
+    let project_methods_group = resources.reflected_bind_group_with_overrides(
+        device,
+        "type_check_dependencies_15_project_methods",
+        &passes.kernel("type_checker/dependencies/15_project_methods"),
+        &[
+            ("gParams", value_params.as_entire_binding()),
+            ("canonical_type_roots", canonical_type_roots.as_entire_binding()),
+        ],
+    )?;
     let project_calls_group = resources.reflected_bind_group_with_overrides(
         device,
         "type_check_dependencies_07_project_calls",
@@ -841,6 +857,9 @@ pub(in crate::type_checker) fn create(
         canonical_type_count: dependencies.type_count,
         canonical_declaration_count: dependencies.declaration_count,
         canonical_member_count: dependencies.member_count,
+        resolved_dependency_library_id,
+        resolved_dependency_unit_id,
+        resolved_dependency_local_index,
         call_compare_scan_input,
         call_compare_dispatch_args,
         canonical_type_subtree: Box::new(DependencyCanonicalTypeSubtreeState {
@@ -857,9 +876,6 @@ pub(in crate::type_checker) fn create(
             lookup,
             resolved_type_decl,
             resolved_value_decl,
-            resolved_dependency_library_id,
-            resolved_dependency_unit_id,
-            resolved_dependency_local_index,
             call_compare_prefix,
             call_compare_total,
             call_compare_expected_type,
@@ -893,6 +909,7 @@ pub(in crate::type_checker) fn create(
         clear_declaration_generic_arity_group,
         count_declaration_generic_arity_group,
         project_type_instances_group,
+        project_methods_group,
         _params: params,
         _type_params: type_params,
         _value_params: value_params,

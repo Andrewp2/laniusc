@@ -73,6 +73,9 @@ impl GpuX86Linker {
         consume_page: impl FnMut(u32, &[u8]) -> Result<()>,
     ) -> Result<usize> {
         let resolved_relocations = self.resolve_symbol_relocations(device, queue, input)?;
+        if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
+            eprintln!("[x86_object_identity] resolved_relocations={resolved_relocations:?}");
+        }
         let output_plan = GpuX86PagedExecutablePlan::new(
             input,
             device.limits().max_storage_buffer_binding_size as u64,
@@ -397,6 +400,16 @@ pub(super) fn relocation_words(
             target_section,
             relocation.target_offset,
         )?;
+        if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
+            eprintln!(
+                "[x86_object_identity] relocation index={index} site={} target={} kind={} target_kind={} addend={}",
+                site_file,
+                target_file,
+                relocation.kind,
+                relocation.target_kind,
+                relocation.addend_lo,
+            );
+        }
         a.extend_from_slice(&[site_file, relocation.kind, 0, 0]);
         b.extend_from_slice(&[target_file, relocation.target_kind, 0, relocation.addend_lo]);
         c.extend_from_slice(&[relocation.addend_hi, 0, 0, 0]);

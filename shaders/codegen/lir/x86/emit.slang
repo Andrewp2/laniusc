@@ -214,7 +214,7 @@ void move_rax_to_argument(inout uint cursor, uint ordinal)
 uint base_frame_slots(TargetLirFunction function, SemanticLirFunction semantic_function)
 {
     return function.instruction_count + semantic_function.param_count +
-        semantic_function.local_count + (semantic_function.result_word_count > 2u ? 1u : 0u);
+        semantic_function.local_count;
 }
 
 uint frame_size(TargetLirFunction function, SemanticLirFunction semantic_function,
@@ -341,18 +341,11 @@ void emit_prologue(inout uint cursor, TargetLirFunction function,
     emit_u32(cursor, frame_size(function, semantic_function, saved_mask));
     uint first_saved_slot = base_frame_slots(function, semantic_function);
     save_registers(cursor, saved_mask, first_saved_slot);
-    uint sret_shift = semantic_function.result_word_count > 2u ? 1u : 0u;
-    if (sret_shift != 0u)
-    {
-        uint sret_slot = function.instruction_count + semantic_function.param_count +
-            semantic_function.local_count;
-        store_stack64(cursor, argument_register(0u), sret_slot);
-    }
     for (uint ordinal = 0u;
-         ordinal < min(semantic_function.param_count, 6u - sret_shift); ordinal += 1u)
+         ordinal < min(semantic_function.param_count, 6u); ordinal += 1u)
     {
         SemanticLirParam param = semantic_lir_params[semantic_function.param_start + ordinal];
-        store_declaration64(cursor, argument_register(ordinal + sret_shift),
+        store_declaration64(cursor, argument_register(ordinal),
             declaration_location(param.declaration_id));
     }
 }
@@ -422,7 +415,17 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
         if (aggregate_reference)
         {
+            // Aggregate variables have value semantics. The source points at
+            // a runtime-owned object whose count header is at [ptr - 8]; the
+            // shared clone helper copies the complete object before storing
+            // the new declaration pointer.
             load_value64(cursor, locations.b, 0u, function);
+            move_rax_to_argument(cursor, 0u);
+            uint clone_target = layout.runtime_offset +
+                X86_RUNTIME_AGGREGATE_CLONE_OFFSET;
+            uint clone_next = cursor + 5u;
+            emit_u8(cursor, 0xe8u);
+            emit_u32(cursor, clone_target - clone_next);
             store_declaration64(cursor, 0u, declaration_location(operands.a));
         }
         else
@@ -433,23 +436,40 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     }
     else if (core.op == X86_LIR_OP_ARRAY_ADDR)
     {
-        uint first_element_slot = value_slot(operands.a, function);
-        emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du); emit_u8(cursor, 0x85u);
-        emit_u32(cursor, displacement(first_element_slot));
+        // Allocate aggregate storage outside the current function frame.
+        // Nested aggregate fields therefore remain valid after a callee
+        // returns instead of dangling into its stack frame.
+        emit_u8(cursor, 0xbfu); // mov edi, imm32
+        emit_u32(cursor, (operands.b + 1u) * 8u);
+        uint target = layout.runtime_offset + X86_RUNTIME_ALLOC_OFFSET;
+        uint next = cursor + 5u;
+        emit_u8(cursor, 0xe8u);
+        emit_u32(cursor, target - next);
+        // The count header is outside the public object pointer. It lets
+        // aggregate assignment clone values without recovering source type
+        // metadata in the native emitter.
+        emit_u8(cursor, 0xc7u); emit_u8(cursor, 0x00u);
+        emit_u32(cursor, operands.b);
+        emit_u8(cursor, 0x48u); emit_u8(cursor, 0x83u);
+        emit_u8(cursor, 0xc0u); emit_u8(cursor, 0x08u);
         store_value64(cursor, 0u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_ARRAY_INIT)
     {
-        // Aggregate storage is uniformly machine-word sized. Scalars occupy
-        // the low dword; references require the full pointer width.
-        load_value64(cursor, locations.a, 0u, function);
-        store_value64(cursor, 0u, locations.c, function);
+        // Store one field/element into the owning aggregate allocation.
+        load_value64(cursor, locations.c, 0u, function);
+        load_value64(cursor, locations.a, 1u, function);
+        emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x88u);
+        emit_u32(cursor, operands.b * 8u);
     }
     else if (core.op == X86_LIR_OP_INDEX_LOAD)
     {
         load_value64(cursor, locations.a, 0u, function);
         load_value32(cursor, locations.b, 1u, function);
-        emit_u8(cursor, 0x48u); emit_u8(cursor, 0xf7u); emit_u8(cursor, 0xd9u);
+        // Aggregate storage uses ascending eight-byte slots.  The old stack
+        // representation addressed fields below the base and negated the
+        // index here; heap-backed aggregates must use the ordinary positive
+        // scaled index instead.
         emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
         emit_u8(cursor, 0x04u); emit_u8(cursor, 0xc8u);
         store_value64(cursor, 0u, locations.result, function);
@@ -458,7 +478,7 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     {
         load_value64(cursor, locations.a, 0u, function);
         emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x80u);
-        emit_u32(cursor, 0u - operands.b * operands.c);
+        emit_u32(cursor, operands.b * operands.c);
         store_value64(cursor, 0u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_INDEX_STORE)
@@ -466,7 +486,6 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         load_value64(cursor, locations.a, 0u, function);
         load_value32(cursor, locations.b, 1u, function);
         load_value32(cursor, locations.c, 2u, function);
-        emit_u8(cursor, 0x48u); emit_u8(cursor, 0xf7u); emit_u8(cursor, 0xd9u);
         emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u);
         emit_u8(cursor, 0x14u); emit_u8(cursor, 0xc8u);
     }
@@ -476,7 +495,7 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         load_value32(cursor, locations.c, 1u, function);
         uint stride = operands.metadata >> 24u;
         emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x88u);
-        emit_u32(cursor, 0u - operands.b * stride);
+        emit_u32(cursor, operands.b * stride);
     }
     else if (core.op == X86_LIR_OP_BINARY)
     {
@@ -557,12 +576,7 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     {
         if (operands.c != 0u)
         {
-            if (operands.c > 2u)
-            {
-                uint sret_slot = function.instruction_count + semantic_function.param_count +
-                    semantic_function.local_count;
-                load_rax(cursor, sret_slot);
-            }
+            load_value64(cursor, locations.a, 0u, function);
         }
         else if (operands.a == INVALID || core.op == X86_LIR_OP_RETURN_VOID)
         { emit_u8(cursor, 0x31u); emit_u8(cursor, 0xc0u); }
@@ -592,25 +606,11 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         if (callee_index >= target_function_count[0u]) return;
         TargetLirFunction callee = target_functions[callee_index];
         uint target = layout.body_offset + target_byte_offset[callee.instruction_start];
-        uint storage_slot = value_slot(core.result_or_target + 1u, function);
-        if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u && operands.c > 2u)
-        {
-            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du); emit_u8(cursor, 0xbdu);
-            emit_u32(cursor, displacement(storage_slot));
-        }
         uint next = cursor + 5u;
         emit_u8(cursor, 0xe8u); emit_u32(cursor, target - next);
         if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
         {
-            if (operands.c <= 2u)
-            {
-                store_rax(cursor, storage_slot);
-                if (operands.c > 1u) store_rdx(cursor, storage_slot + 1u);
-                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du); emit_u8(cursor, 0x85u);
-                emit_u32(cursor, displacement(storage_slot));
-                store_value64(cursor, 0u, locations.result, function);
-            }
-            else store_value64(cursor, 0u, locations.result, function);
+            store_value64(cursor, 0u, locations.result, function);
         }
         else store_value32(cursor, 0u, locations.result, function);
     }
@@ -621,7 +621,10 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         // dependencies, so no symbol policy is hidden in this emitter.
         emit_u8(cursor, 0xe8u);
         emit_u32(cursor, 0u);
-        store_value32(cursor, 0u, locations.result, function);
+        if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
+            store_value64(cursor, 0u, locations.result, function);
+        else
+            store_value32(cursor, 0u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_CALL_HOST && operands.a == HOST_SERVICE_I32_TO_F32)
     {
@@ -633,42 +636,9 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     }
     else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
     {
-        if (operands.c <= 2u)
-        {
-            if (operands.b == 0u)
-            {
-                load_value64(cursor, locations.a, 0u, function);
-                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x00u);
-            }
-            else
-            {
-                // RAX already contains return word zero. Use a non-return
-                // register for the aggregate address so emitting word one
-                // cannot replace RAX with the aggregate pointer.
-                load_value64(cursor, locations.a, 1u, function);
-                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x91u);
-                emit_u32(cursor, 0u - operands.b * 8u);
-            }
-        }
-        else
-        {
-            load_value64(cursor, locations.a, 0u, function);
-            uint sret_slot = function.instruction_count + semantic_function.param_count +
-                semantic_function.local_count;
-            load_r10(cursor, sret_slot);
-            if (operands.b == 0u)
-            {
-                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x08u);
-                emit_u8(cursor, 0x49u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x0au);
-            }
-            else
-            {
-                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x88u);
-                emit_u32(cursor, 0u - operands.b * 8u);
-                emit_u8(cursor, 0x49u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x8au);
-                emit_u32(cursor, 0u - operands.b * 8u);
-            }
-        }
+        // Aggregate returns are pointer-valued. The actual RETURN row loads
+        // the object pointer into RAX; these legacy expansion rows are kept
+        // in the target stream for stable scheduling but emit no bytes.
     }
     else if (core.op == X86_LIR_OP_CALL_HOST && x86_runtime_service_supported(operands.a))
     {

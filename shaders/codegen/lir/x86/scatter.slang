@@ -85,13 +85,15 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint abi_row,
     }
     X86LirCore core;
     core.source_hir = source.source_hir;
-    uint sret_shift = call_result_words > 2u ? 1u : 0u;
-    core.local_ordinal = abi_ordinal + sret_shift;
+    // Aggregate values are pointers to stable runtime-owned objects. The
+    // pointer itself is the ordinary return value, so no hidden sret ABI
+    // argument shifts user parameters.
+    core.local_ordinal = abi_ordinal;
     core.op = X86_LIR_OP_CALL_ARG;
     core.result_or_target = INVALID;
     X86LirOperands operands;
     operands.a = argument.value_instruction;
-    operands.b = abi_ordinal + sret_shift;
+    operands.b = abi_ordinal;
     operands.c = component;
     // Carry the checked semantic value type through target resolution. The
     // emitter uses this target-IR fact to choose word- versus dword-sized ABI
@@ -103,13 +105,16 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint abi_row,
             ? X86_LIR_METADATA_AGGREGATE : 0u) |
         ((argument.value_metadata & SEMANTIC_LIR_VALUE_STRING) != 0u &&
          component == 0u
-            ? X86_LIR_METADATA_WIDE : 0u);
+            ? X86_LIR_METADATA_WIDE :
+         (argument.value_metadata & SEMANTIC_LIR_VALUE_STRING) != 0u &&
+         component == 1u
+            ? X86_LIR_METADATA_STRING_LEN : 0u);
     target_lir_core[page_row] = core;
     target_lir_operands[page_row] = operands;
     target_semantic_origin[page_row] = semantic_row;
     target_lir_flags[page_row] = argument.call_instruction == semantic_row &&
         argument.value_instruction < gParams.semantic_capacity &&
-        abi_ordinal + sret_shift < 6u
+        abi_ordinal < 6u
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
 }
 
@@ -129,7 +134,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint semantic_row = semantic_schedule_order[scheduled_row];
     uint target_start = target_lir_offset[scheduled_row];
     SemanticLirCore source = semantic_lir_core[semantic_row];
-    uint argument_count = semantic_lir_call_arg_count_by_hir[source.source_hir];
+    // Call-argument rows are an ABI expansion of call instructions only. A
+    // loop or control row may share a HIR-indexed workspace slot with a prior
+    // call, so do not let stale/non-call metadata manufacture CALL_ARG rows.
+    bool is_call = source.op == SEMANTIC_LIR_OP_CALL ||
+        source.op == SEMANTIC_LIR_OP_CALL_SYMBOL ||
+        source.op == SEMANTIC_LIR_OP_CALL_HOST ||
+        source.op == SEMANTIC_LIR_OP_CALL_INTRINSIC;
+    uint argument_count = is_call
+        ? semantic_lir_call_arg_count_by_hir[source.source_hir] : 0u;
     uint argument_start = semantic_lir_call_arg_start_by_hir[source.source_hir];
     uint argument_rows = call_abi_argument_count(argument_start, argument_count);
     SemanticLirOperands args = semantic_lir_operands[semantic_row];
@@ -209,7 +222,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         X86LirOperands operands;
         operands.a = element.value_instruction;
         operands.b = element.ordinal;
-        operands.c = target_start + 1u + element.ordinal;
+        // The aggregate result row is the owning allocation pointer. The
+        // element ordinal selects the ascending field slot in that object.
+        operands.c = target_start;
         operands.metadata = source.type_id;
         target_lir_core[page_row] = core;
         target_lir_operands[page_row] = operands;
@@ -257,7 +272,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (op == X86_LIR_OP_IMM_I32) { a = args.a; b = 0u; c = 0u; }
     else if (op == X86_LIR_OP_ARRAY_ADDR)
     {
-        a = target_start + 1u;
+        // ARRAY_ADDR returns a runtime-owned object pointer. `b` is the
+        // number of eight-byte fields/elements to allocate.
+        a = target_start;
         b = args.b;
         c = 0u;
     }
@@ -300,7 +317,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else if (op == X86_LIR_OP_RETURN)
     {
-        result = INVALID; a = return_words == 0u ? args.a : INVALID;
+        result = INVALID; a = args.a;
         b = 0u; c = return_words;
         if (a == INVALID) op = X86_LIR_OP_RETURN_VOID;
         if (return_words != 0u) op = X86_LIR_OP_RETURN;
@@ -323,16 +340,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         c = call_result_words;
     }
-    else if (op == X86_LIR_OP_CALL &&
-             (metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
-        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     if (op == X86_LIR_OP_BRANCH && b == INVALID) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
 
     X86LirCore core;
     core.source_hir = source.source_hir;
     core.local_ordinal = 0u;
     core.op = op;
-    core.result_or_target = result;
+    // `result` is a semantic instruction identity. The target stream may
+    // have inserted CALL_ARG rows before this operation, so machine emission
+    // must address the concrete target row for the result value and any
+    // caller-owned aggregate storage derived from it.
+    core.result_or_target = result == INVALID ? INVALID : row;
     X86LirOperands operands;
     operands.a = a;
     operands.b = b;

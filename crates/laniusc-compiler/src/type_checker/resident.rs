@@ -527,7 +527,6 @@ impl GpuTypeChecker {
             uses_hir_items,
         };
 
-        let mut debug_semantic_rows = None;
         {
             let mut resident_state_guard = self
                 .resident_state
@@ -537,11 +536,12 @@ impl GpuTypeChecker {
                 .as_ref()
                 .map(|state| !state.can_reuse_for(cache_key))
                 .unwrap_or(true);
-            let allocation = resident_state_guard
-                .as_ref()
-                .filter(|state| state.cache_key.uses_hir_items == cache_key.uses_hir_items)
-                .map(|state| state.cache_key.grow_to_cover(cache_key))
-                .unwrap_or(cache_key);
+            // The semantic input fingerprint changes for every compilation
+            // unit, so a resident state is rebuilt at the current unit's
+            // logical capacities. Retaining a larger prior layout without
+            // rewriting every pass parameter makes stale domain sizes look
+            // like live module/HIR rows to subsequent jobs.
+            let allocation = cache_key;
             let resident_cache_trace =
                 crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false);
             if (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
@@ -758,20 +758,30 @@ impl GpuTypeChecker {
                 // The shared type-instance clear resets token-indexed refs.
                 // Re-publish canonical dependency refs before collection so
                 // imported nominal types cannot be reclassified as unresolved
-                // local generic parameters.
-                record_compute_indirect(
-                    encoder,
-                    &self
-                        .passes
-                        .kernel("type_checker/dependencies/11_project_types"),
-                    &dependency_visibility.project_types_group,
-                    "type_check.dependencies.project_types.after_type_clear",
-                    &bind_groups
-                        .module_path
-                        .as_ref()
-                        .expect("dependency visibility requires module paths")
-                        .path_dispatch_args,
-                )?;
+                // local generic parameters.  The dependency interface slot is
+                // paged, so replay the projection for every page rather than
+                // leaving only the final page's declarations visible.
+                let module_path = bind_groups
+                    .module_path
+                    .as_ref()
+                    .expect("dependency visibility requires module paths");
+                let project_types = |encoder: &mut wgpu::CommandEncoder| {
+                    record_dependency_type_index(&self.passes, encoder, module_path)?;
+                    record_compute_indirect(
+                        encoder,
+                        &self
+                            .passes
+                            .kernel("type_checker/dependencies/11_project_types"),
+                        &dependency_visibility.project_types_group,
+                        "type_check.dependencies.project_types.after_type_clear",
+                        &module_path.path_dispatch_args,
+                    )
+                };
+                if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                    record_each_dependency_page(device, queue, encoder, pages, project_types)?;
+                } else {
+                    project_types(encoder)?;
+                }
             }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances.clear.done");
@@ -1257,6 +1267,26 @@ impl GpuTypeChecker {
             }
             if methods_required {
                 bind_groups.methods.mark_call_keys.record(encoder)?;
+                if let Some(module_path) = &bind_groups.module_path {
+                    if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                        record_each_dependency_page(device, queue, encoder, pages, |encoder| {
+                            record_dependency_type_index(&self.passes, encoder, module_path)?;
+                            record_dependency_methods(
+                                &self.passes,
+                                encoder,
+                                module_path,
+                                &bind_groups.hir_active_dispatch_args,
+                            )
+                        })?;
+                    } else {
+                        record_dependency_methods(
+                            &self.passes,
+                            encoder,
+                            module_path,
+                            &bind_groups.hir_active_dispatch_args,
+                        )?;
+                    }
+                }
             }
             if let Some(module_path) = &bind_groups.module_path {
                 record_compute_indirect(
@@ -1861,6 +1891,13 @@ impl GpuTypeChecker {
                 )?;
                 record_type_subtree_comparison_passes(&self.passes, encoder, bind_groups)?;
             }
+            if methods_required {
+                // Re-publish method keys after all late call/type projections
+                // have completed, immediately before condition reduction.
+                // This also keeps the final condition pass independent of
+                // temporary workspace reuse in preceding phases.
+                bind_groups.methods.mark_call_keys.record(encoder)?;
+            }
             bind_groups.condition_finalization.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.expression_types.done");
@@ -1877,64 +1914,6 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.semantic_artifact.done");
             }
-            if std::env::var_os("LANIUS_DEBUG_SEMANTIC_ROWS").is_some()
-                && let Some(items) = hir_items
-            {
-                let semantic_calls_by_hir = bind_groups
-                    .typecheck_graph
-                    .buffer::<GpuCheckedCallArtifact>("semantic_calls_by_hir")?;
-                let call_fn_index = bind_groups.typecheck_graph.u32_buffer("call_fn_index")?;
-                let backend_call_fn_index = bind_groups
-                    .typecheck_graph
-                    .u32_buffer("backend_call_fn_index")?;
-                let call_return_type =
-                    bind_groups.typecheck_graph.u32_buffer("call_return_type")?;
-                let call_words = std::mem::size_of::<GpuCheckedCallArtifact>() as u64 / 4;
-                let hir_rows = hir_node_capacity
-                    .min((items.hir.core.size() / 16) as u32)
-                    .min((items.hir.payload.size() / 16) as u32)
-                    .min((bind_groups.compact_expr_scalar_type.size() / 4) as u32)
-                    .min((semantic_calls_by_hir.size() / (call_words * 4)) as u32)
-                    .min(256);
-                let token_rows = token_capacity
-                    .min((call_fn_index.size() / 4) as u32)
-                    .min((backend_call_fn_index.size() / 4) as u32)
-                    .min((call_return_type.size() / 4) as u32)
-                    .min(256);
-                let hir_words = hir_rows as u64 * (9 + call_words);
-                let total_words = hir_words + token_rows as u64 * 4;
-                let buffer = readback_u32s(
-                    device,
-                    "rb.type_check.semantic_rows",
-                    total_words.max(1) as usize,
-                );
-                let mut word_offset = 0u64;
-                let mut copy_words = |source: &wgpu::Buffer, words: u64| {
-                    if words != 0 {
-                        encoder.copy_buffer_to_buffer(
-                            source,
-                            0,
-                            &buffer,
-                            word_offset * 4,
-                            words * 4,
-                        );
-                    }
-                    word_offset += words;
-                };
-                copy_words(&items.hir.core, hir_rows as u64 * 4);
-                copy_words(&items.hir.payload, hir_rows as u64 * 4);
-                copy_words(&bind_groups.compact_expr_scalar_type, hir_rows as u64);
-                copy_words(&semantic_calls_by_hir, hir_rows as u64 * call_words);
-                copy_words(&call_fn_index, token_rows as u64);
-                copy_words(&backend_call_fn_index, token_rows as u64);
-                copy_words(&call_return_type, token_rows as u64);
-                copy_words(&bind_groups.name_id_by_token, token_rows as u64);
-                debug_semantic_rows = Some(TypeCheckSemanticDebugReadback {
-                    buffer,
-                    hir_rows,
-                    token_rows,
-                });
-            }
             host_timer.stamp("aggregate_conditions_control");
         }
         record_typecheck_copy_buffer_to_buffer(
@@ -1946,9 +1925,7 @@ impl GpuTypeChecker {
             16,
         );
         host_timer.stamp("status_readback_recorded");
-        Ok(RecordedTypeCheck {
-            debug_semantic_rows,
-        })
+        Ok(RecordedTypeCheck {})
     }
 
     /// Reads the recorded status buffer and converts GPU status words to an
@@ -1956,7 +1933,7 @@ impl GpuTypeChecker {
     pub fn finish_recorded_check(
         &self,
         device: &wgpu::Device,
-        recorded: &RecordedTypeCheck,
+        _recorded: &RecordedTypeCheck,
     ) -> Result<(), GpuTypeCheckError> {
         let slice = self.status_readback.slice(..);
         crate::gpu::passes_core::map_readback_blocking(device, &slice, "type_check.status")?;
@@ -1964,66 +1941,6 @@ impl GpuTypeChecker {
         let words = read_status_words(&mapped)?;
         drop(mapped);
         self.status_readback.unmap();
-
-        if let Some(debug) = &recorded.debug_semantic_rows {
-            let slice = debug.buffer.slice(..);
-            crate::gpu::passes_core::map_readback_blocking(
-                device,
-                &slice,
-                "type_check.semantic_rows",
-            )?;
-            let mapped = slice.get_mapped_range();
-            let values = mapped
-                .chunks_exact(4)
-                .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("u32 word")))
-                .collect::<Vec<_>>();
-            let hir = debug.hir_rows as usize;
-            let core_base = 0;
-            let payload_base = hir * 4;
-            let scalar_base = payload_base + hir * 4;
-            let call_base = scalar_base + hir;
-            let call_words = std::mem::size_of::<GpuCheckedCallArtifact>() / 4;
-            eprintln!("[typecheck.semantic_rows] hir_rows={hir}");
-            for row in 0..hir {
-                let core = &values[core_base + row * 4..core_base + row * 4 + 4];
-                if core[0] == 0 || core[0] == u32::MAX {
-                    continue;
-                }
-                let payload = &values[payload_base + row * 4..payload_base + row * 4 + 4];
-                let call = &values
-                    [call_base + row * call_words..call_base + row * call_words + call_words];
-                eprintln!(
-                    "[typecheck.semantic_rows] hir[{row}] core={core:?} payload={payload:?} scalar={:#010x} call={call:?}",
-                    values[scalar_base + row],
-                );
-            }
-            let token_base = call_base + hir * call_words;
-            let tokens = debug.token_rows as usize;
-            let backend_base = token_base + tokens;
-            let return_base = backend_base + tokens;
-            let name_base = return_base + tokens;
-            for token in 0..tokens {
-                let semantic_target = values[token_base + token];
-                let backend_target = values[backend_base + token];
-                let return_type = values[return_base + token];
-                let name_id = values[name_base + token];
-                if semantic_target != u32::MAX
-                    || backend_target != u32::MAX
-                    || return_type != 0
-                    || name_id != u32::MAX
-                {
-                    eprintln!(
-                        "[typecheck.semantic_rows] token[{token}] name_id={name_id} semantic_target={semantic_target} backend_target={backend_target} return_type={return_type}"
-                    );
-                }
-            }
-            drop(mapped);
-            debug.buffer.unmap();
-        }
-
-        if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
-            eprintln!("GPU type-check status words: {words:?}");
-        }
 
         if words[0] != 0 {
             return Ok(());
@@ -2096,6 +2013,14 @@ impl GpuTypeChecker {
             value_type_by_hir: state
                 .typecheck_graph
                 .buffer("semantic_value_type_by_hir")
+                .ok()?,
+            value_const_by_hir: state
+                .typecheck_graph
+                .buffer("semantic_value_const_by_hir")
+                .ok()?,
+            value_const_present_by_hir: state
+                .typecheck_graph
+                .buffer("semantic_value_const_present_by_hir")
                 .ok()?,
             param_type_by_row: state
                 .typecheck_graph
@@ -2222,7 +2147,18 @@ impl GpuTypeChecker {
             .typecheck_graph
             .u32_buffer("external_type_local_index")
             .ok()?;
+        let function_host_service_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_function_host_service_by_hir")
+            .ok()?;
         Some(consume(GpuSemanticInterfaceIdentityBuffers {
+            name_capacity: state.name_capacity,
+            module_capacity: u32::try_from(module_path.module_key_segment_count.count)
+                .unwrap_or(u32::MAX),
+            declaration_capacity: u32::try_from(module_path.interface_public_decl_local_id.count)
+                .unwrap_or(u32::MAX),
+            module_segment_capacity: u32::try_from(module_path.module_key_segment_name_id.count)
+                .unwrap_or(u32::MAX),
             name_count_out: &name_scan_total,
             name_spans: &name_spans,
             // The exact-name hash passes intentionally retain their outputs in
@@ -2243,6 +2179,7 @@ impl GpuTypeChecker {
             decl_visibility: &module_path.decl_visibility,
             decl_parent_type_decl: &module_path.decl_parent_type_decl,
             decl_hir_node: &module_path.decl_hir_node,
+            function_host_service_by_hir: &function_host_service_by_hir,
             public_decl_count: &module_path.interface_public_decl_count,
             public_decl_local_id: &module_path.interface_public_decl_local_id,
             public_decl_index_by_local: &module_path.interface_public_decl_index_by_local,

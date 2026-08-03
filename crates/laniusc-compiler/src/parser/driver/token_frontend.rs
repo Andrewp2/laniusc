@@ -23,6 +23,8 @@ use crate::{
 /// Uniform parameters for token-to-parser-kind frontend passes.
 pub(super) struct TokensToKindsParams {
     token_capacity: u32,
+    match_tree_n_blocks: u32,
+    match_tree_leaf_base: u32,
 }
 
 /// Cached bind groups for token-kind and identifier-kind frontend passes.
@@ -110,7 +112,11 @@ impl GpuParser {
         write_uniform(
             &self.queue,
             &bind_groups.tokens_to_kinds_params,
-            &TokensToKindsParams { token_capacity },
+            &TokensToKindsParams {
+                token_capacity,
+                match_tree_n_blocks: bufs.token_brace_match_block_min.count.max(1) as u32,
+                match_tree_leaf_base: bufs.token_brace_match_min_tree_base,
+            },
         );
 
         record_parser_compute(
@@ -2186,7 +2192,11 @@ impl GpuParser {
         let tokens_to_kinds_params = uniform_from_val(
             &self.device,
             "parser.tokens_to_kinds.params",
-            &TokensToKindsParams { token_capacity: 0 },
+            &TokensToKindsParams {
+                token_capacity: 0,
+                match_tree_n_blocks: 1,
+                match_tree_leaf_base: 1,
+            },
         );
 
         let tokens_to_kinds_resources: HashMap<String, wgpu::BindingResource<'_>> =

@@ -8,6 +8,7 @@ struct CheckedCallArtifact
     uint dependency_library_id;
     uint dependency_unit_id;
     uint dependency_local_index;
+    uint dependency_host_service;
     uint intrinsic_tag;
     uint return_type;
     uint receiver_hir;

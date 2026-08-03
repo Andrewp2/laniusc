@@ -224,6 +224,28 @@ pub(in crate::type_checker) fn record_dependency_type_index(
     )
 }
 
+/// Projects direct member calls against the dependency page currently loaded
+/// in the shared interface slot.  The projection runs before local method
+/// resolution so imported methods are treated as resolved call targets rather
+/// than being rejected by the local method table.
+pub(in crate::type_checker) fn record_dependency_methods(
+    passes: &TypeCheckPasses,
+    encoder: &mut wgpu::CommandEncoder,
+    state: &ModulePathState,
+    hir_active_dispatch_args: &wgpu::Buffer,
+) -> Result<()> {
+    let Some(visibility) = &state.dependency_visibility else {
+        return Ok(());
+    };
+    record_compute_indirect(
+        encoder,
+        &passes.kernel("type_checker/dependencies/15_project_methods"),
+        &visibility.project_methods_group,
+        "type_check.dependencies.project_methods",
+        hir_active_dispatch_args,
+    )
+}
+
 /// Validates calls whose stable declaration identities belong to the active
 /// dependency page. Compound comparison requests are produced, scanned, and
 /// consumed before the page slot may be overwritten.

@@ -95,9 +95,11 @@ pub(crate) struct GpuWasmObjectStage {
     definitions: LaniusBuffer<WasmObjectDefinitionRow>,
     type_words: LaniusBuffer<u32>,
     body_words: LaniusBuffer<u32>,
+    data_words: LaniusBuffer<u32>,
     function_count: LaniusBuffer<u32>,
     type_total: LaniusBuffer<u32>,
     code_total: LaniusBuffer<u32>,
+    string_pool_len: LaniusBuffer<u32>,
     layout: LaniusBuffer<WasmModuleLayout>,
     metadata_readback: LaniusBuffer<u8>,
     payload_readback: PagedReadback,
@@ -170,6 +172,10 @@ impl GpuWasmObjectStage {
         )?;
         let body_words = alias_u32(
             "artifact.wasm.object.body_bytes",
+            artifact_capacity.div_ceil(4),
+        )?;
+        let data_words = alias_u32(
+            "artifact.wasm.object.data_bytes",
             artifact_capacity.div_ceil(4),
         )?;
         let metadata_readback =
@@ -343,9 +349,11 @@ impl GpuWasmObjectStage {
             definitions,
             type_words,
             body_words,
+            data_words,
             function_count: semantic.function_count.clone(),
             type_total: module.type_total.clone(),
             code_total: module.code_total.clone(),
+            string_pool_len: semantic.string_pool_len.clone(),
             layout: module.layout.clone(),
             metadata_readback,
             payload_readback,
@@ -402,6 +410,13 @@ impl GpuWasmObjectStage {
             );
         }
         encoder.copy_buffer_to_buffer(
+            &self.string_pool_len.buffer,
+            0,
+            &self.metadata_readback.buffer,
+            24,
+            4,
+        );
+        encoder.copy_buffer_to_buffer(
             &self.layout.buffer,
             0,
             &self.metadata_readback.buffer,
@@ -430,6 +445,7 @@ impl GpuWasmObjectStage {
         let relocation_count = word(3) as usize;
         let symbol_count = word(4) as usize;
         let definition_count = word(5) as usize;
+        let data_len = word(6) as usize;
         let layout_words = (8..24).map(word).collect::<Vec<_>>();
         drop(metadata);
         self.metadata_readback.unmap();
@@ -439,6 +455,7 @@ impl GpuWasmObjectStage {
             || definition_count > self.function_capacity as usize
             || type_len > self.artifact_capacity as usize
             || body_len > self.artifact_capacity as usize
+            || data_len > self.artifact_capacity as usize
         {
             anyhow::bail!(
                 "GPU Wasm object metadata exceeds resident capacity: functions={function_count}/{}, relocations={relocation_count}/{}, symbols={symbol_count}, definitions={definition_count}/{}, type={type_len}/{}, body={body_len}/{}",
@@ -487,6 +504,11 @@ impl GpuWasmObjectStage {
             body_len,
             "Wasm object body readback",
         )?;
+        let data_bytes = read(
+            &self.data_words.buffer,
+            data_len,
+            "Wasm object data readback",
+        )?;
 
         let functions = function_words
             .chunks_exact(6)
@@ -505,6 +527,7 @@ impl GpuWasmObjectStage {
             let target_kind = match row[1] {
                 1 => GpuWasmRelocationTargetKind::LocalFunction,
                 2 => GpuWasmRelocationTargetKind::Symbol,
+                3 => GpuWasmRelocationTargetKind::DataOffset,
                 value => {
                     anyhow::bail!("GPU Wasm object relocation {index} has target kind {value}")
                 }
@@ -566,6 +589,7 @@ impl GpuWasmObjectStage {
             functions,
             type_bytes,
             body_bytes,
+            data_bytes,
             relocations,
             symbols,
             identity_bytes,

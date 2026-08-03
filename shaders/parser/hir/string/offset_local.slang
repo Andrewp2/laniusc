@@ -4,6 +4,7 @@ import prefix_scan;
 struct Params { uint n; uint uses_status_count; };
 ConstantBuffer<Params> gHirString;
 StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_string_len;
 RWStructuredBuffer<uint> hir_list_rank_local_prefix;
 RWStructuredBuffer<uint> hir_list_rank_block_sum;
@@ -19,7 +20,8 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint block = linear_group_id(gid);
     uint node = block * WG_SIZE + ltid.x;
-    uint len = node < active_node_count() ? hir_expr_string_len[node] : 0u;
+    bool is_string = node < active_node_count() && hir_expr_record[node * 4u] == 28u;
+    uint len = is_string ? hir_expr_string_len[node] + 1u : 0u;
     uint inclusive = prefix_scan_u32_256(ltid.x, len);
     if (node < gHirString.n)
         hir_list_rank_local_prefix[node] = inclusive - len;

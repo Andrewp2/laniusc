@@ -317,8 +317,11 @@ pub struct GpuLiveCapacityEstimateResult {
     pub parser_feature_flags: u32,
     /// Parser emit stream length used while sizing HIR construction.
     pub parser_emit_len: u32,
-    /// Number of semantic HIR nodes expected after compaction.
+    /// Number of semantic parser candidate rows before canonical compaction.
     pub semantic_hir_count: u32,
+    /// Number of dense, token-anchored HIR rows retained after grammar
+    /// forwarding layers are removed.
+    pub canonical_hir_count: u32,
 }
 
 mod gpu_compiler;

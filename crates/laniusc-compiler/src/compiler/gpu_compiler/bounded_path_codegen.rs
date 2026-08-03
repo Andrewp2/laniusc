@@ -41,7 +41,22 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: SourcePackArtifactTarget,
     ) -> Result<Vec<u8>, CompileError> {
         let limits = resident_source_unit_limits();
-        let bounded = source_pack.requires_bounded_compilation_with_limits(limits);
+        // A manifest with multiple libraries must retain its dependency graph
+        // even when the aggregate source fits the resident unit.  Flattening
+        // such a manifest into one ordinary source-pack job erases library
+        // identity and makes backend lowering observe declarations from the
+        // wrong unit.  Use the same bounded-unit executor for this case; it is
+        // still capacity-bounded and is the only path that persists semantic
+        // interfaces between libraries.
+        let has_multiple_libraries = source_pack
+            .files
+            .iter()
+            .map(|file| file.library_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            > 1;
+        let bounded =
+            has_multiple_libraries || source_pack.requires_bounded_compilation_with_limits(limits);
         let report_memory = crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false);
         if report_memory {
             crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
@@ -146,10 +161,39 @@ impl<'gpu> GpuCompiler<'gpu> {
             }
         };
 
-        fs::read(&linked_output_path).map_err(|err| {
+        // The descriptor work queue returns the linked-output *contract*;
+        // its emitted-byte record points at the concrete target artifact.
+        // Return those bytes to the public compile API rather than exposing
+        // the JSON descriptor itself.
+        let descriptor_bytes = fs::read(&linked_output_path).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "read bounded source-pack linked-output descriptor {}: {err}",
+                linked_output_path.display()
+            ))
+        })?;
+        let descriptor: GpuSourcePackArtifactDescriptor = serde_json::from_slice(&descriptor_bytes)
+            .map_err(|err| {
+                source_pack_artifact_store_error(format!(
+                    "parse bounded source-pack linked-output descriptor {}: {err}",
+                    linked_output_path.display()
+                ))
+            })?;
+        let storage_key = descriptor
+            .output_record_arrays
+            .iter()
+            .chain(descriptor.record_arrays.iter())
+            .find(|array| array.name == "emitted_byte_records")
+            .and_then(|array| array.storage_key.as_deref())
+            .ok_or_else(|| {
+                source_pack_artifact_store_error(
+                    "bounded source-pack linked-output descriptor has no emitted-byte artifact",
+                )
+            })?;
+        let artifact_path = artifact_path(artifact_root.path(), storage_key)?;
+        fs::read(&artifact_path).map_err(|err| {
             source_pack_artifact_store_error(format!(
                 "read bounded source-pack linked output {}: {err}",
-                linked_output_path.display()
+                artifact_path.display()
             ))
         })
     }

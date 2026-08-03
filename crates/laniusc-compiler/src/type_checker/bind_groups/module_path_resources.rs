@@ -4,9 +4,30 @@ use super::super::*;
 pub(super) fn register_module_path_resources<'a>(
     resources: &mut ResourceMap<'a>,
     module_path: Option<&'a ModulePathState>,
-) {
+) -> Result<()> {
     if let Some(module_path) = module_path {
         module_path.resources.register_resources(resources);
+        if let Some(dependency_visibility) = module_path.dependency_visibility.as_ref() {
+            resources.buffer(
+                "resolved_dependency_library_id",
+                &dependency_visibility.resolved_dependency_library_id,
+            );
+            resources.buffer(
+                "resolved_dependency_unit_id",
+                &dependency_visibility.resolved_dependency_unit_id,
+            );
+            resources.buffer(
+                "resolved_dependency_local_index",
+                &dependency_visibility.resolved_dependency_local_index,
+            );
+        } else {
+            // Keep the reflected semantic projection bindable for local-only
+            // units. The aliases are never consumed because all dependency
+            // identity columns remain INVALID in this mode.
+            resources.alias("resolved_dependency_library_id", "resolved_value_decl")?;
+            resources.alias("resolved_dependency_unit_id", "resolved_value_decl")?;
+            resources.alias("resolved_dependency_local_index", "resolved_value_decl")?;
+        }
         resources.buffer("module_record_count_out", &module_path.module_count_out);
         resources.buffer("import_record_count_out", &module_path.import_count_out);
         resources.buffer("decl_type_public_prefix", &module_path.decl_status);
@@ -15,7 +36,7 @@ pub(super) fn register_module_path_resources<'a>(
             &module_path.module_key_to_module_id,
         );
         resources.buffer("path_prefix_id", &module_path.path_prefix_id_a);
-        return;
+        return Ok(());
     }
 
     for name in [
@@ -37,6 +58,9 @@ pub(super) fn register_module_path_resources<'a>(
         "resolved_type_status",
         "resolved_value_decl",
         "resolved_value_status",
+        "resolved_dependency_library_id",
+        "resolved_dependency_unit_id",
+        "resolved_dependency_local_index",
         "decl_token_start",
         "decl_hir_node",
         "decl_type_key_to_decl_id",
@@ -89,4 +113,5 @@ pub(super) fn register_module_path_resources<'a>(
         "path_owner_module_id",
         resources["module_value_path_status"].clone(),
     );
+    Ok(())
 }

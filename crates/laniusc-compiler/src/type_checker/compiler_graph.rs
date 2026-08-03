@@ -1022,6 +1022,8 @@ pub(super) const DEPENDENCY_CALL_COMPARE_DISPATCH_PASS: &str =
     "type_check.dependencies.call_compare.dispatch";
 pub(super) const DEPENDENCY_CALL_TYPE_ARGS_VALIDATE_PASS: &str =
     "type_check.dependencies.call_type_args.validate";
+pub(super) const DEPENDENCY_METHODS_PROJECT_PASS: &str =
+    "type_check.dependencies.methods.project";
 
 /// Graph-owned storage and ownership contract for type checking. Logical
 /// resources are recovered from the graph by name; the workspace is their
@@ -1590,6 +1592,7 @@ fn build_graph(
         _call_dependency_library_id as "call_dependency_library_id" in Tokens => token_rows * 4;
         _call_dependency_unit_id as "call_dependency_unit_id" in Tokens => token_rows * 4;
         _call_dependency_local_index as "call_dependency_local_index" in Tokens => token_rows * 4;
+        _call_dependency_host_service as "call_dependency_host_service" in Tokens => token_rows * 4;
     });
     graph_resources!(graph, Input {
         _module_type_path_status as "module_type_path_status" in Tokens => token_rows * 4;
@@ -2116,7 +2119,6 @@ fn build_graph(
             u64::from(module_record_capacity.max(1)) * 4,
         ),
         ("dependency_visible_total", ResourceDomain::Declarations, 4),
-        ("dependency_words", ResourceDomain::Declarations, 4),
         ("canonical_type_roots", ResourceDomain::Declarations, 4),
         (
             "canonical_type_subtree_start",
@@ -2152,6 +2154,30 @@ fn build_graph(
     ] {
         graph.add_storage(name, domain, ResourceClass::External, bytes)?;
     }
+    let dependency_words = graph.add_storage(
+        "dependency_words",
+        ResourceDomain::Declarations,
+        ResourceClass::External,
+        4,
+    )?;
+    let resolved_dependency_library_id = graph.add_storage(
+        "resolved_dependency_library_id",
+        ResourceDomain::Declarations,
+        ResourceClass::External,
+        token_rows * 4,
+    )?;
+    let resolved_dependency_unit_id = graph.add_storage(
+        "resolved_dependency_unit_id",
+        ResourceDomain::Declarations,
+        ResourceClass::External,
+        token_rows * 4,
+    )?;
+    let resolved_dependency_local_index = graph.add_storage(
+        "resolved_dependency_local_index",
+        ResourceDomain::Declarations,
+        ResourceClass::External,
+        token_rows * 4,
+    )?;
     graph_resources!(graph, Workspace {
         hir_value_decl_name_present in Declarations => (token_rows + u64::from(LANGUAGE_SYMBOL_COUNT)) * 4;
     });
@@ -2425,6 +2451,8 @@ fn build_graph(
         generic_claim_count_out as "call_generic_claim_count_out" in CallArguments => 4;
         semantic_value_decl_by_hir in HirNodes => hir_rows * 4;
         semantic_value_type_by_hir in HirNodes => hir_rows * 4;
+        semantic_value_const_by_hir in HirNodes => hir_rows * 4;
+        semantic_value_const_present_by_hir in HirNodes => hir_rows * 4;
         semantic_param_type_by_row in Declarations => hir_rows * 4;
         semantic_enclosing_fn_by_hir in HirNodes => hir_rows * 4;
         semantic_function_return_type_by_hir in HirNodes => hir_rows * 4;
@@ -3834,6 +3862,9 @@ fn build_graph(
     let dependency_call_compare_scan_input = graph
         .resource_id("dependency_call_compare_scan_input")
         .ok_or("dependency call comparison requires its scan input")?;
+    let call_result_instance = graph
+        .resource_id("call_result_instance")
+        .ok_or("dependency call results require call result instances")?;
     graph.add_pass(PassDesc {
         name: DEPENDENCY_CALL_COMPARE_CLEAR_PASS,
         phase: CompilerPhase::TypeCheck,
@@ -3857,7 +3888,9 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/dependencies/08a_validate_call_results",
-        &[],
+        reflected_bindings![
+            "call_result_instance" => call_result_instance: Write,
+        ],
     )?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_CALL_RESULTS_VALIDATE_PASS,
@@ -3865,7 +3898,9 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/dependencies/08a_validate_call_results",
-        &[],
+        reflected_bindings![
+            "call_result_instance" => call_result_instance: Write,
+        ],
     )?;
     DEPENDENCY_CALL_COMPARE_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(hir_blocks))?;
     let dependency_call_compare_total = graph
@@ -3888,6 +3923,14 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/dependencies/08b_validate_call_type_args",
+        &[],
+    )?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_METHODS_PROJECT_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/dependencies/15_project_methods",
         &[],
     )?;
     graph.add_kernel_pass_by_name(
@@ -3958,8 +4001,15 @@ fn build_graph(
         kernels,
         "type_checker/semantic/artifact/00_project",
         reflected_bindings![
+            "dependency_words" => dependency_words: Read,
+            "path_id_by_owner_hir" => _path_id_by_owner_hir: Read,
+            "resolved_dependency_library_id" => resolved_dependency_library_id: Read,
+            "resolved_dependency_unit_id" => resolved_dependency_unit_id: Read,
+            "resolved_dependency_local_index" => resolved_dependency_local_index: Read,
             "semantic_value_decl_by_hir" => semantic_value_decl_by_hir: Write,
             "semantic_value_type_by_hir" => semantic_value_type_by_hir: Write,
+            "semantic_value_const_by_hir" => semantic_value_const_by_hir: Write,
+            "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: Write,
             "semantic_param_type_by_row" => semantic_param_type_by_row: Write,
             "semantic_enclosing_fn_by_hir" => semantic_enclosing_fn_by_hir: Write,
             "semantic_function_return_type_by_hir" => semantic_function_return_type_by_hir: Write,
@@ -5418,6 +5468,8 @@ mod tests {
         for resource in [
             resource("semantic_value_decl_by_hir"),
             resource("semantic_value_type_by_hir"),
+            resource("semantic_value_const_by_hir"),
+            resource("semantic_value_const_present_by_hir"),
             resource("semantic_param_type_by_row"),
             resource("semantic_enclosing_fn_by_hir"),
             resource("semantic_function_return_type_by_hir"),

@@ -94,7 +94,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint external_token = INVALID;
     if (tag == TYPE_REF_EXTERNAL_CANONICAL)
         external_token = token;
-    else if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+    else if (tag == TYPE_REF_INSTANCE && valid_token(payload) &&
+             external_type_identity_valid(payload))
         external_token = payload;
     if (external_token != INVALID)
     {
@@ -113,7 +114,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint persisted = public_decl_index_by_local[local];
         if (persisted >= gParams.decl_capacity)
         {
-            fail(node);
+            // A private declaration can occur in a unit-local type forest
+            // while collecting implementation details, but it is not part of
+            // the exported interface artifact. Keep the classification empty
+            // rather than treating that private path as a malformed public
+            // declaration.
+            interface_type_path_classification[node] = uint4(0u, 0u, 0u, 0u);
             return;
         }
         interface_type_path_classification[node] =

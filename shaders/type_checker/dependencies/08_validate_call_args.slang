@@ -34,6 +34,7 @@ StructuredBuffer<uint> call_dependency_unit_id;
 StructuredBuffer<uint> call_dependency_local_index;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> external_type_library_id;
@@ -70,6 +71,12 @@ static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
+static const uint TYPE_LEN_CONST_PARAM = 2u;
+static const uint TY_UNKNOWN = 0u;
+static const uint TY_INT = 3u;
+static const uint TY_UINT = 4u;
+static const uint TY_FLOAT = 5u;
+static const uint TY_CHAR = 6u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -92,6 +99,40 @@ uint callee_token(uint call)
     uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
     if (token >= gParams.visible_capacity) token = core.token_start;
     return token < gParams.visible_capacity ? token : INVALID;
+}
+
+uint scalar_type_for_argument(uint node, uint token)
+{
+    if (!valid_hir(node))
+        return HIR_SEM_TY_UNKNOWN;
+    HirCore core = compact_hir_core[node];
+    HirPayload payload = compact_hir_payload[node];
+    uint scalar = hir_scalar_type_for_expr_form(payload.a);
+    if (scalar != HIR_SEM_TY_UNKNOWN)
+        return scalar;
+    if (core.kind == HIR_CALL_EXPR)
+    {
+        uint callee = callee_token(node);
+        if (callee != INVALID && callee < gParams.visible_capacity)
+            return call_return_type[callee];
+    }
+    return token < gParams.visible_capacity ? visible_type[token] : HIR_SEM_TY_UNKNOWN;
+}
+
+// Dependency calls use the same implicit scalar conversions as local calls.
+// In particular, an unsuffixed integer literal is initially typed as i32 but
+// is valid when the imported signature expects u32/usize (and vice versa).
+bool assignable(uint expected, uint actual)
+{
+    if (expected == TY_UNKNOWN || actual == TY_UNKNOWN || expected == actual)
+        return true;
+    if (expected == TY_INT)
+        return actual == TY_UINT || actual == TY_CHAR;
+    if (expected == TY_UINT)
+        return actual == TY_INT || actual == TY_CHAR;
+    if (expected == TY_FLOAT)
+        return actual == TY_INT || actual == TY_UINT || actual == TY_CHAR;
+    return false;
 }
 
 bool stable_nominal_matches(uint expected_type_i, uint actual_token)
@@ -175,9 +216,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint expr_node = arg_node;
-    uint form = compact_hir_payload[expr_node].a;
-    uint actual = hir_scalar_type_for_expr_form(form);
     uint arg_token = compact_hir_core[expr_node].token_start;
+    uint actual = scalar_type_for_argument(expr_node, arg_token);
     if (expected_kind != INTERFACE_TYPE_SCALAR)
     {
         uint actual_ref_token = arg_token;
@@ -229,7 +269,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : TYPE_INSTANCE_SLICE;
             matches = type_instance_kind[actual_payload] == expected_instance_kind &&
                       expected_count == 1u;
-            if (matches && expected_kind == INTERFACE_TYPE_ARRAY)
+            // A dependency interface preserves a const-generic array length
+            // as TYPE_LEN_CONST_PARAM. Its concrete value is inferred from
+            // the argument; only literal-length parameters require an exact
+            // equality at this stage.
+            bool generic_length = expected_kind == INTERFACE_TYPE_ARRAY &&
+                dependency_type_word(expected_base + 5u) == TYPE_LEN_CONST_PARAM;
+            if (matches && expected_kind == INTERFACE_TYPE_ARRAY && !generic_length)
                 matches = type_instance_len_kind[actual_payload] ==
                               dependency_type_word(expected_base + 5u) &&
                           type_instance_len_payload[actual_payload] ==
@@ -260,7 +306,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint expected = dependency_type_word(expected_base + 1u);
     if (actual == HIR_SEM_TY_UNKNOWN && arg_token < gParams.visible_capacity)
         actual = visible_type[arg_token];
-    if (actual != expected)
+    if (!assignable(expected, actual))
         record_min_token_error(
             status,
             arg_token < gParams.visible_capacity ? arg_token : callee,

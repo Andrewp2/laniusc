@@ -4,6 +4,7 @@ static const uint WASM_LIR_INVALID = 0xffffffffu;
 static const uint TY_FLOAT = 5u;
 static const uint TY_UINT = 4u;
 static const uint TY_CHAR = 6u;
+static const uint TY_STRING = 7u;
 
 uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands)
 {
@@ -16,18 +17,32 @@ uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands)
     if (core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
         return operands.b * 6u + 5u;
     if (core.op == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
+    // Strings are represented by the Wasm ABI as `(data_ptr, byte_len)`.
+    // A semantic value operation still names one source value, so target
+    // lowering expands its local access to the two ABI stack values here.
+    if ((core.op == SEMANTIC_LIR_OP_VALUE_GET ||
+         core.op == SEMANTIC_LIR_OP_VALUE_SET) && core.type_id == TY_STRING)
+        return 2u;
     if (core.op == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
         return 4u;
     if (core.op == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
         return 5u;
+    // A field store consumes the RHS value already on the stack. Save it in
+    // the target-private temporary, reconstruct the receiver address from its
+    // checked local declaration, and then perform the typed memory store.
+    if (core.op == SEMANTIC_LIR_OP_STORE &&
+        (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
+        return 8u;
     // The language print intrinsic accepts an i32, while the stable Wasm
     // runtime boundary accepts i64. Keep that ABI choice in target lowering:
     // one row widens the checked value and one row calls import zero.
     if (core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == 1u)
         return 2u;
-    return (core.op == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT) || false_branch
+    return (core.op == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT) || false_branch ||
+        (core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+         operands.a == HOST_SERVICE_I32_ARRAY_DATA_PTR)
         ? 2u : 1u;
 }
 
@@ -106,7 +121,8 @@ bool wasm_lir_supported(SemanticLirCore core)
         op == SEMANTIC_LIR_OP_STORE ||
         (op >= SEMANTIC_LIR_OP_ADD && op <= SEMANTIC_LIR_OP_LOGICAL_NOT) ||
         op == SEMANTIC_LIR_OP_LOGICAL_AND || op == SEMANTIC_LIR_OP_LOGICAL_OR ||
-        op == SEMANTIC_LIR_OP_CALL || op == SEMANTIC_LIR_OP_CALL_SYMBOL ||
+        op == SEMANTIC_LIR_OP_CALL || op == SEMANTIC_LIR_OP_CALL_INTRINSIC ||
+        op == SEMANTIC_LIR_OP_CALL_SYMBOL ||
         op == SEMANTIC_LIR_OP_BLOCK_BEGIN || op == SEMANTIC_LIR_OP_LOOP_BEGIN ||
         op == SEMANTIC_LIR_OP_IF_BEGIN ||
         op == SEMANTIC_LIR_OP_ELSE || op == SEMANTIC_LIR_OP_CONTROL_END ||

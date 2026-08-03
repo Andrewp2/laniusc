@@ -196,11 +196,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint lhs_row = semantic_row_at(type_subtree_compare_left_root[request], relative);
     uint rhs_row = semantic_row_at(type_subtree_compare_right_root[request], relative);
     if (!same_type_node(lhs_row, rhs_row))
-    {
         record_min_token_error(
             status,
             type_subtree_compare_error_token[request],
             ERR_ASSIGN_MISMATCH,
             type_subtree_compare_error_detail[request]);
-    }
 }

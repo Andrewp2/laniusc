@@ -37,7 +37,7 @@ bool scalar_gpr_type(uint type_id)
 uint declaration_location(uint function_id, uint ordinal, uint type_id,
                           uint stack_slot)
 {
-    if (!scalar_gpr_type(type_id) || ordinal >= 5u)
+    if (!scalar_gpr_type(type_id) || ordinal >= 4u)
         return stack_slot;
     uint physical = ordinal == 0u ? 3u : 11u + ordinal;
     uint ignored;

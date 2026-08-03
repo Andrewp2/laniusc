@@ -96,6 +96,7 @@ pub(in crate::type_checker) struct SemanticInterfaceIdentityRecordParams {
     pub(in crate::type_checker) module_index_capacity: u32,
     pub(in crate::type_checker) name_byte_capacity: u32,
     pub(in crate::type_checker) member_capacity: u32,
+    pub(in crate::type_checker) hir_capacity: u32,
 }
 
 /// Capacity packet for canonical interface-name byte scatter.
@@ -412,16 +413,21 @@ pub(in crate::type_checker) const LANGUAGE_SYMBOL_LENS: &[u32] = &[
     10, 6, 14, 11, 12, 7, 12, 4, 5, 5, 14,
 ];
 /// Number of language declarations materialized from builtin symbols.
-pub(in crate::type_checker) const LANGUAGE_DECL_COUNT: u32 = 19;
+pub(in crate::type_checker) const LANGUAGE_DECL_COUNT: u32 = 20;
 const LANGUAGE_DECL_KIND_ENTRYPOINT: u32 = 1;
 const LANGUAGE_DECL_KIND_INTRINSIC: u32 = 2;
 const LANGUAGE_DECL_KIND_PRIMITIVE_TYPE: u32 = 3;
 const LANGUAGE_DECL_TAG_MAIN: u32 = 1;
 const LANGUAGE_DECL_TAG_PRINT: u32 = 1;
 const LANGUAGE_DECL_TAG_ASSERT: u32 = 2;
+/// Compiler-only intrinsic projecting an i32 aggregate value to its data
+/// pointer.  It is represented as a language declaration so both targets
+/// receive the same checked call artifact; the Wasm backend preserves the
+/// aggregate pointer already on the value stack.
+const LANGUAGE_DECL_TAG_I32_ARRAY_DATA_PTR: u32 = 52;
 /// Builtin symbol slots that become materialized language declarations.
 pub(in crate::type_checker) const LANGUAGE_DECL_SYMBOL_SLOTS: &[u32] = &[
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 52,
 ];
 /// Declaration kind table parallel to `LANGUAGE_DECL_SYMBOL_SLOTS`.
 pub(in crate::type_checker) const LANGUAGE_DECL_KINDS: &[u32] = &[
@@ -443,6 +449,7 @@ pub(in crate::type_checker) const LANGUAGE_DECL_KINDS: &[u32] = &[
     LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
     LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
     LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
+    LANGUAGE_DECL_KIND_INTRINSIC,
     LANGUAGE_DECL_KIND_INTRINSIC,
 ];
 /// Declaration tag table parallel to `LANGUAGE_DECL_SYMBOL_SLOTS`.
@@ -466,6 +473,7 @@ pub(in crate::type_checker) const LANGUAGE_DECL_TAGS: &[u32] = &[
     6, // char
     7, // str
     LANGUAGE_DECL_TAG_PRINT,
+    LANGUAGE_DECL_TAG_I32_ARRAY_DATA_PTR,
 ];
 /// Full byte-step count for exact canonical module-prefix ids.
 pub(in crate::type_checker) const MODULE_KEY_RADIX_STEPS: u32 = 4;

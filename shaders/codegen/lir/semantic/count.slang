@@ -30,6 +30,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // scheduled as top-level machine instructions.
     if (node < count && semantic_function_id[node] != LIR_INVALID)
     {
+        HirCore core = compact_hir_core[node];
+        HirPayload payload = compact_hir_payload[node];
         uint parent = compact_expr_parent[node];
         bool owned_syntax = parent < count &&
             ((compact_hir_core[parent].kind == HIR_CALL_EXPR &&
@@ -39,11 +41,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
               compact_hir_payload[parent].a == HIR_STMT_ASSIGN &&
               compact_hir_payload[parent].b == node) ||
              ((compact_hir_core[parent].kind == HIR_FOR_STMT ||
-               (compact_hir_core[parent].kind == HIR_STMT &&
-                compact_hir_payload[parent].a == HIR_STMT_FOR)) &&
+              (compact_hir_core[parent].kind == HIR_STMT &&
+               compact_hir_payload[parent].a == HIR_STMT_FOR)) &&
               compact_hir_payload[parent].c == node));
-        HirCore core = compact_hir_core[node];
-        HirPayload payload = compact_hir_payload[node];
         bool range_for = core.kind == HIR_FOR_STMT ||
             (core.kind == HIR_STMT && payload.a == HIR_STMT_FOR);
         uint iterable_form = range_for && payload.c < count

@@ -16,6 +16,8 @@ StructuredBuffer<uint> semantic_array_length;
 StructuredBuffer<uint> semantic_iterable_kind;
 StructuredBuffer<uint> semantic_value_id;
 StructuredBuffer<uint> semantic_value_type;
+StructuredBuffer<uint> semantic_value_const_by_hir;
+StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<uint> semantic_call_target;
 StructuredBuffer<uint> semantic_call_kind;
 StructuredBuffer<uint> semantic_call_result_type;
@@ -23,6 +25,7 @@ StructuredBuffer<uint> semantic_call_symbol_library_id;
 StructuredBuffer<uint> semantic_call_symbol_unit_id;
 StructuredBuffer<uint> semantic_call_symbol_local_index;
 StructuredBuffer<uint> semantic_function_id;
+StructuredBuffer<uint> semantic_function_id_by_token;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<uint> semantic_control_depth_by_hir;
 StructuredBuffer<uint> semantic_member_field_ordinal;
@@ -75,6 +78,28 @@ void semantic_type_ref_for_hir(uint node, uint hir_count,
     payload = semantic_expr_ref_payload[node];
 }
 
+// A path expression can name either a callable or a constant. Callable paths
+// are syntax owned by their call expression, while constant paths are actual
+// value-producing rows and must be materialized as literal instructions.
+uint constant_reference_for_hir(uint node, uint hir_count)
+{
+    if (node == LIR_INVALID || node >= hir_count ||
+        compact_hir_core[node].kind != HIR_PATH_EXPR ||
+        semantic_value_id[node] >= gParams.n_tokens)
+        return LIR_INVALID;
+    uint function_id = semantic_function_id_by_token[semantic_value_id[node]];
+    if (function_id >= gParams.n_hir_nodes) return LIR_INVALID;
+    uint target_hir = semantic_lir_functions[function_id].hir_function;
+    return target_hir < hir_count &&
+        compact_hir_core[target_hir].kind == HIR_CONST_ITEM
+        ? target_hir : LIR_INVALID;
+}
+
+bool imported_constant_for_hir(uint node, uint hir_count)
+{
+    return node < hir_count && semantic_value_const_present_by_hir[node] != 0u;
+}
+
 SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_count,
                                       uint hir_count, HirCore hir, HirLinks links,
                                       HirPayload payload)
@@ -115,7 +140,12 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
             return schedule;
         }
         else
-            schedule.execution_region = hir.token_end;
+            // Loop-body rows must sort strictly before a statement beginning
+            // at the loop's half-open end token. Keeping the closing region
+            // on the final token inside the loop prevents a following call
+            // such as `print(total)` from being emitted in the loop body.
+            schedule.execution_region = hir.token_end > hir.token_start
+                ? hir.token_end - 1u : hir.token_end;
         schedule.execution_rank = 0xffffffffu;
         schedule.execution_tie = local_row;
         return schedule;
@@ -295,13 +325,22 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
 
     uint row = first_row + local_row;
     uint op = semantic_lir_local_op(hir, payload, local_row, local_count);
+    uint constant_reference_hir = constant_reference_for_hir(node, hir_count);
+    bool imported_constant = imported_constant_for_hir(node, hir_count);
+    if (constant_reference_hir != LIR_INVALID || imported_constant)
+    {
+        uint constant_type = semantic_value_type[node];
+        op = constant_type == 5u
+            ? SEMANTIC_LIR_OP_CONST_F32 : SEMANTIC_LIR_OP_CONST_I32;
+    }
     // Compound assignment reads an addressable lhs through the same semantic
     // LOAD contract as an ordinary member/index expression. It is not a
     // declaration lookup: fields and elements have no declaration value ID.
     if (compound_assignment && local_row == 0u &&
         (assignment_field || assignment_indexed))
         op = SEMANTIC_LIR_OP_LOAD;
-    if (op == SEMANTIC_LIR_OP_VALUE_GET && semantic_call_kind[node] == 1u)
+    if (op == SEMANTIC_LIR_OP_VALUE_GET && hir.kind == HIR_CALL_EXPR &&
+        semantic_call_kind[node] == 1u)
         op = SEMANTIC_LIR_OP_CALL;
     if (range_value_for)
     {
@@ -440,7 +479,8 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     core.source_hir = node;
     core.flags = 0u;
     if ((op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_STORE) &&
-        (hir.kind == HIR_INDEX_EXPR || assignment_indexed || array_for))
+        (hir.kind == HIR_INDEX_EXPR || assignment_indexed ||
+         (array_for && local_row == 11u)))
         core.flags |= SEMANTIC_LIR_FLAG_INDEXED;
     if ((op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_STORE) &&
         (hir.kind == HIR_MEMBER_EXPR || assignment_field ||
@@ -649,7 +689,17 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     else if (op == SEMANTIC_LIR_OP_CONST_I32 || op == SEMANTIC_LIR_OP_CONST_F32 ||
         op == SEMANTIC_LIR_OP_CONST_STRING)
     {
-        operands.a = payload.b;
+        uint local_constant_value = payload.b;
+        if (constant_reference_hir != LIR_INVALID)
+        {
+            uint initializer = compact_const_value[constant_reference_hir];
+            if (initializer < hir_count)
+                local_constant_value = compact_hir_payload[initializer].b;
+        }
+        operands.a = imported_constant
+            ? semantic_value_const_by_hir[node]
+            : constant_reference_hir != LIR_INVALID
+                ? local_constant_value : payload.b;
         if (op == SEMANTIC_LIR_OP_CONST_I32 && payload.a == HIR_EXPR_TRUE)
             operands.a = 1u;
         else if (op == SEMANTIC_LIR_OP_CONST_I32 && payload.a == HIR_EXPR_FALSE)

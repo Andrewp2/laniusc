@@ -1,5 +1,6 @@
 import hir_records;
 import gpu_index;
+import dependency_interface;
 
 struct Params
 {
@@ -12,6 +13,10 @@ struct Params
 
 
 ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> resolved_dependency_library_id;
+StructuredBuffer<uint> resolved_dependency_unit_id;
+StructuredBuffer<uint> resolved_dependency_local_index;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
@@ -27,6 +32,8 @@ StructuredBuffer<uint> language_name_id;
 StructuredBuffer<int> if_depth;
 RWStructuredBuffer<uint> semantic_value_decl_by_hir;
 RWStructuredBuffer<uint> semantic_value_type_by_hir;
+RWStructuredBuffer<uint> semantic_value_const_by_hir;
+RWStructuredBuffer<uint> semantic_value_const_present_by_hir;
 RWStructuredBuffer<uint> semantic_param_type_by_row;
 RWStructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 RWStructuredBuffer<uint> semantic_function_return_type_by_hir;
@@ -38,6 +45,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_CONST = 4u;
@@ -47,6 +55,8 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint HOST_SERVICE_FIRST = 20u;
 static const uint HOST_SERVICE_END = 63u;
 static const uint HOST_SERVICE_I32_ARRAY_DATA_PTR = 52u;
+static const uint HIR_ITEM_KIND_CONST = 3u;
+static const uint DECL_WORDS = 14u;
 
 bool valid_token(uint token)
 {
@@ -75,6 +85,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint declaration = INVALID;
         uint type_id = 0u;
+        uint const_value = 0u;
+        uint const_present = 0u;
         if (row < hir_count)
         {
             HirCore core = compact_hir_core[row];
@@ -98,9 +110,33 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 declaration = payload.b;
                 type_id = visible_type[payload.b];
             }
+            if (core.kind == HIR_PATH_EXPR)
+            {
+                uint path = path_id_by_owner_hir[row];
+                if (path != INVALID &&
+                    resolved_dependency_library_id[path] != INVALID &&
+                    resolved_dependency_unit_id[path] != INVALID &&
+                    resolved_dependency_local_index[path] != INVALID)
+                {
+                    uint dependency_decl = dependency_find_declaration(
+                        resolved_dependency_library_id[path],
+                        resolved_dependency_unit_id[path],
+                        resolved_dependency_local_index[path]);
+                    if (dependency_decl != INVALID &&
+                        dependency_declaration_word(dependency_decl * DECL_WORDS + 6u) ==
+                            HIR_ITEM_KIND_CONST)
+                    {
+                        const_value = dependency_declaration_word(
+                            dependency_decl * DECL_WORDS + 13u);
+                        const_present = 1u;
+                    }
+                }
+            }
         }
         semantic_value_decl_by_hir[row] = declaration;
         semantic_value_type_by_hir[row] = type_id;
+        semantic_value_const_by_hir[row] = const_value;
+        semantic_value_const_present_by_hir[row] = const_present;
         uint token = row < hir_count ? compact_hir_core[row].token_start : INVALID;
         semantic_enclosing_fn_by_hir[row] = valid_token(token) ? enclosing_fn[token] : 0u;
         semantic_function_return_type_by_hir[row] = valid_token(token) ? call_return_type[token] : 0u;

@@ -31,6 +31,7 @@ StructuredBuffer<uint> method_decl_signature_flags;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_call_name_id;
+StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> method_call_receiver_ref_tag;
 StructuredBuffer<uint> method_call_receiver_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
@@ -539,6 +540,12 @@ void resolve_method_call(uint call_hir, uint member_hir)
         return;
 
     if (method_call_name_id[method_i] == INVALID)
+        return;
+    // Imported member methods are projected from the active semantic
+    // interface page before this local-table resolver runs.  Their stable
+    // dependency identity is authoritative; do not report a local-table
+    // mismatch for a call already resolved by that projection.
+    if (call_dependency_library_id[method_i] != INVALID)
         return;
 
     uint fn_i = call_fn_index[method_i];

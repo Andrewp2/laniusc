@@ -348,6 +348,9 @@ impl GpuX86ObjectStage {
     }
 
     pub(crate) fn set_identity(&self, queue: &wgpu::Queue, library_id: u32, unit_id: u32) {
+        if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
+            eprintln!("[x86_object_identity] set library={library_id} unit={unit_id}");
+        }
         let value = X86ObjectIdentity {
             library_id,
             unit_id,
@@ -356,6 +359,9 @@ impl GpuX86ObjectStage {
         };
         let mut bytes = encase::UniformBuffer::new(Vec::new());
         bytes.write(&value).expect("x86 object identity encodes");
+        if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
+            eprintln!("[x86_object_identity] bytes={:?}", bytes.as_ref());
+        }
         queue.write_buffer(&self.identity.buffer, 0, bytes.as_ref());
     }
 
@@ -405,6 +411,9 @@ impl GpuX86ObjectStage {
         library_id: u32,
         unit_id: u32,
     ) -> Result<GpuX86RelocatableObject> {
+        if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
+            eprintln!("[x86_object_identity] finish requested library={library_id} unit={unit_id}");
+        }
         let metadata_slice = self.metadata_readback.slice(..);
         map_readback_blocking(device, &metadata_slice, "x86 object metadata readback")?;
         let metadata = metadata_slice.get_mapped_range();
@@ -414,6 +423,11 @@ impl GpuX86ObjectStage {
         let relocation_count = word(1) as usize;
         let symbol_count = word(2) as usize;
         let definition_count = word(3) as usize;
+        if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
+            eprintln!(
+                "[x86_object_identity] counts relocations={relocation_count} symbols={symbol_count} definitions={definition_count}"
+            );
+        }
         let layout = (4..16).map(word).collect::<Vec<_>>();
         drop(metadata);
         self.metadata_readback.unmap();
@@ -468,6 +482,15 @@ impl GpuX86ObjectStage {
             definition_count * 32,
             "x86 object definition readback",
         )?);
+        if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
+            let identities = definition_words
+                .chunks_exact(8)
+                .map(|row| [row[0], row[1], row[2]])
+                .collect::<Vec<_>>();
+            eprintln!("[x86_object_identity] definition_identities={identities:?}");
+            eprintln!("[x86_object_identity] relocation_words={relocation_words:?}");
+            eprintln!("[x86_object_identity] undefined_words={undefined_words:?}");
+        }
         let text = read(
             &self.text_words.buffer,
             text_len,

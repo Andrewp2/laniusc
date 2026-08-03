@@ -35,6 +35,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStringOffsetL
                 },
             ),
             (
+                "hir_expr_record".into(),
+                b.hir_expr_record.as_entire_binding(),
+            ),
+            (
                 "hir_expr_string_len".into(),
                 b.hir_expr_string_len.as_entire_binding(),
             ),

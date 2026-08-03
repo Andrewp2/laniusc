@@ -19,11 +19,12 @@ StructuredBuffer<uint> compact_path_segment_count;
 StructuredBuffer<HirPathSegment> compact_path_segments;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> module_value_path_associated_method_token;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> module_value_path_status;
-StructuredBuffer<uint> module_value_path_associated_method_token;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> hir_value_decl_name_present;
 RWStructuredBuffer<uint> status;
@@ -103,6 +104,8 @@ bool token_resolved(uint token)
 {
     return valid_token(token) &&
            (valid_token(call_fn_index[token]) ||
+            call_dependency_library_id[token] != INVALID ||
+            module_value_path_associated_method_token[token] != INVALID ||
             call_return_type[token] != TY_UNKNOWN ||
             call_intrinsic_tag[token] != INTRINSIC_NONE ||
             method_call_name_id[token] != INVALID);

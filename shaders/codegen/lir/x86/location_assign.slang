@@ -29,9 +29,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint last = x86_last_use_by_semantic[row];
     if (first >= total || last <= first || last - first >= X86_TEMP_REGISTER_COUNT ||
         !scalar_gpr_type(semantic_lir_core[row].type_id)) return;
+    // Keep the stack-home path as the correctness baseline while the
+    // interference graph is assembled. A value may be consumed by a later
+    // target expansion row than the semantic row that names it, so a local
+    // row-order comparison cannot prove non-overlap. Stack homes are already
+    // part of the ABI and preserve every value without aliasing.
+    return;
+    // Register assignment is only valid when this interval does not overlap
+    // another value assigned to the same lane. The previous first-position
+    // modulo heuristic ignored interference between adjacent field loads, so
+    // expressions such as `oc.y * ray.direction.y` silently overwrote one
+    // operand. Keep the decision deterministic and parallel: a row claims a
+    // lane only when no earlier value with the same lane has an overlapping
+    // lifetime. Values that cannot claim a lane remain in their stack homes.
+    uint candidate = first % X86_TEMP_REGISTER_COUNT;
+    for (uint other = 0u; other < row; ++other)
+    {
+        uint other_first = x86_position_by_semantic[other];
+        uint other_last = x86_last_use_by_semantic[other];
+        if (other_first >= total || other_last <= other_first ||
+            other_first % X86_TEMP_REGISTER_COUNT != candidate)
+            continue;
+        if (other_first <= last && first <= other_last)
+            return;
+    }
     for (uint position = first + 1u; position <= last; ++position)
         if (x86_clobber_by_position[position] != 0u) return;
-    uint physical = X86_TEMP_REGISTER_FIRST +
-        (first % X86_TEMP_REGISTER_COUNT);
+    uint physical = X86_TEMP_REGISTER_FIRST + candidate;
     x86_location_by_semantic[row] = X86_LOCATION_REGISTER | physical;
 }

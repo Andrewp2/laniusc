@@ -401,6 +401,9 @@ pub(crate) struct GpuSemanticHirInputs<'a> {
     pub param_count: &'a LaniusBuffer<u32>,
     pub params: &'a LaniusBuffer<crate::parser::buffers::HirParam>,
     pub param_ranges: &'a LaniusBuffer<crate::parser::buffers::HirRange>,
+    pub method_count: &'a LaniusBuffer<u32>,
+    pub method_cores: &'a LaniusBuffer<crate::parser::buffers::HirMethodCore>,
+    pub method_signatures: &'a LaniusBuffer<crate::parser::buffers::HirMethodSignature>,
 }
 
 impl<'a> From<&'a GpuHirView> for GpuSemanticHirInputs<'a> {
@@ -429,6 +432,9 @@ impl<'a> From<&'a GpuHirView> for GpuSemanticHirInputs<'a> {
             param_count: &hir.param_count,
             params: &hir.params,
             param_ranges: &hir.param_ranges,
+            method_count: &hir.method_count,
+            method_cores: &hir.method_cores,
+            method_signatures: &hir.method_signatures,
         }
     }
 }
@@ -1098,6 +1104,7 @@ impl GpuSemanticLoweringStage {
         &self.status
     }
 
+
     fn materializer_resources<'a>(
         &'a self,
         hir: GpuSemanticHirInputs<'a>,
@@ -1136,6 +1143,14 @@ impl GpuSemanticLoweringStage {
         );
         graph_buffer!("semantic.value_ids", &self.value_ids);
         graph_buffer!("semantic.value_types", &self.value_types);
+        graph_buffer!(
+            "typecheck.semantic_value_consts_by_hir",
+            semantic.checked.value_const_by_hir
+        );
+        graph_buffer!(
+            "typecheck.semantic_value_const_present_by_hir",
+            semantic.checked.value_const_present_by_hir
+        );
         graph_buffer!("semantic.call_targets", &self.call_targets);
         graph_buffer!("semantic.call_kinds", &self.call_kinds);
         graph_buffer!("semantic.call_result_types", &self.call_result_types);
@@ -1149,6 +1164,10 @@ impl GpuSemanticLoweringStage {
             &self.call_symbol_local_indices
         );
         graph_buffer!("semantic.function_ids", &self.function_ids);
+        graph_buffer!(
+            "lir.semantic.function_id_by_token",
+            &self.function_id_by_token
+        );
         graph_buffer!("lir.semantic.functions", &self.functions);
         graph_buffer!(
             "typecheck.semantic_control_depths_by_hir",
@@ -1918,6 +1937,21 @@ impl GpuSemanticLoweringStage {
                     hir.param_ranges,
                 )?,
                 bound(
+                    "compact_method_count",
+                    resource("hir.method_count"),
+                    hir.method_count,
+                )?,
+                bound(
+                    "compact_method_cores",
+                    resource("hir.method_cores"),
+                    hir.method_cores,
+                )?,
+                bound(
+                    "compact_method_signatures",
+                    resource("hir.method_signatures"),
+                    hir.method_signatures,
+                )?,
+                bound(
                     "semantic_function_flag",
                     resource("lir.semantic.function_flags"),
                     &self.function_flags,
@@ -2006,6 +2040,12 @@ impl GpuSemanticLoweringStage {
                 ("compact_hir_payload", hir.payload.as_entire_binding()),
                 ("compact_const_value", hir.const_value.as_entire_binding()),
                 ("compact_param_ranges", hir.param_ranges.as_entire_binding()),
+                ("compact_method_count", hir.method_count.as_entire_binding()),
+                ("compact_method_cores", hir.method_cores.as_entire_binding()),
+                (
+                    "compact_method_signatures",
+                    hir.method_signatures.as_entire_binding(),
+                ),
                 (
                     "semantic_function_flag",
                     self.function_flags.as_entire_binding(),
@@ -3834,6 +3874,8 @@ mod tests {
                     checked: GpuCheckedSemanticArtifact {
                         value_decl_by_hir: &visible,
                         value_type_by_hir: &enclosing_fn,
+                        value_const_by_hir: &checked_layout_facts,
+                        value_const_present_by_hir: &checked_layout_facts,
                         param_type_by_row: &visible,
                         enclosing_fn_by_hir: &checked_enclosing_fn,
                         function_return_type_by_hir: &enclosing_fn,
@@ -4156,6 +4198,8 @@ mod tests {
                     checked: GpuCheckedSemanticArtifact {
                         value_decl_by_hir: &checked_value_decls,
                         value_type_by_hir: &checked_value_types,
+                        value_const_by_hir: &zero_by_hir,
+                        value_const_present_by_hir: &zero_by_hir,
                         param_type_by_row: &checked_param_types,
                         enclosing_fn_by_hir: &checked_enclosing_functions,
                         function_return_type_by_hir: &return_types,
@@ -4404,6 +4448,8 @@ mod tests {
                     checked: GpuCheckedSemanticArtifact {
                         value_decl_by_hir: &visible,
                         value_type_by_hir: &enclosing,
+                        value_const_by_hir: &family_by_hir,
+                        value_const_present_by_hir: &family_by_hir,
                         param_type_by_row: &visible,
                         enclosing_fn_by_hir: &enclosing,
                         function_return_type_by_hir: &enclosing,
@@ -4648,6 +4694,8 @@ mod tests {
                     checked: GpuCheckedSemanticArtifact {
                         value_decl_by_hir: &visible,
                         value_type_by_hir: &enclosing_fn,
+                        value_const_by_hir: &family_by_hir,
+                        value_const_present_by_hir: &family_by_hir,
                         param_type_by_row: &visible,
                         enclosing_fn_by_hir: &enclosing_fn,
                         function_return_type_by_hir: &enclosing_fn,

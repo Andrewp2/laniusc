@@ -303,15 +303,7 @@ pub struct GpuTypeChecker {
 
 /// Marker returned when type-check work has been recorded into a command
 /// encoder and must still be submitted/read back by the caller.
-pub struct RecordedTypeCheck {
-    debug_semantic_rows: Option<TypeCheckSemanticDebugReadback>,
-}
-
-struct TypeCheckSemanticDebugReadback {
-    buffer: wgpu::Buffer,
-    hir_rows: u32,
-    token_rows: u32,
-}
+pub struct RecordedTypeCheck {}
 
 #[derive(Clone, Copy)]
 struct ResidentTypeCheckCacheKey {
@@ -329,31 +321,6 @@ struct ResidentTypeCheckCacheKey {
 }
 
 impl ResidentTypeCheckCacheKey {
-    fn grow_to_cover(self, required: Self) -> Self {
-        debug_assert_eq!(self.uses_hir_items, required.uses_hir_items);
-        Self {
-            source_byte_capacity: self.source_byte_capacity.max(required.source_byte_capacity),
-            source_file_capacity: self.source_file_capacity.max(required.source_file_capacity),
-            token_capacity: self.token_capacity.max(required.token_capacity),
-            hir_node_capacity: self.hir_node_capacity.max(required.hir_node_capacity),
-            parser_hir_node_capacity: self
-                .parser_hir_node_capacity
-                .max(required.parser_hir_node_capacity),
-            module_record_capacity: self
-                .module_record_capacity
-                .max(required.module_record_capacity),
-            call_param_row_capacity: self
-                .call_param_row_capacity
-                .max(required.call_param_row_capacity),
-            call_arg_row_capacity: self
-                .call_arg_row_capacity
-                .max(required.call_arg_row_capacity),
-            parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
-            input_fingerprint: required.input_fingerprint,
-            uses_hir_items: required.uses_hir_items,
-        }
-    }
-
     fn covers(self, required: Self) -> bool {
         self.uses_hir_items == required.uses_hir_items
             && self.input_fingerprint == required.input_fingerprint
@@ -410,6 +377,7 @@ struct ResidentTypeCheckState {
     if_depth_params: LaniusBuffer<IfDepthParams>,
     fn_params: LaniusBuffer<FnContextParams>,
     language_symbol_bytes: LaniusBuffer<u8>,
+    _language_name_id: LaniusBuffer<u32>,
     name_order_in: LaniusBuffer<u32>,
     name_order_tmp: LaniusBuffer<u32>,
     name_id_by_token: LaniusBuffer<u32>,
@@ -425,6 +393,7 @@ struct ResidentTypeCheckState {
     _call_dependency_library_id: LaniusBuffer<u32>,
     _call_dependency_unit_id: LaniusBuffer<u32>,
     _call_dependency_local_index: LaniusBuffer<u32>,
+    _call_dependency_host_service: LaniusBuffer<u32>,
     type_subtree_compare_buffers: Box<TypeSubtreeCompareBuffers>,
     name_bind_groups: NameBindGroups,
     language_name_bind_groups: LanguageNameBindGroups,
@@ -482,6 +451,7 @@ pub(crate) struct GpuCheckedCallArtifact {
     pub dependency_library_id: u32,
     pub dependency_unit_id: u32,
     pub dependency_local_index: u32,
+    pub dependency_host_service: u32,
     pub intrinsic_tag: u32,
     pub return_type: u32,
     pub receiver_hir: u32,
@@ -496,6 +466,10 @@ pub(crate) struct GpuCheckedSemanticArtifact<'a> {
     pub value_decl_by_hir: &'a LaniusBuffer<u32>,
     /// Resolved type identity for each compact HIR value row.
     pub value_type_by_hir: &'a LaniusBuffer<u32>,
+    /// Literal value bits for imported constant paths, keyed by dense HIR row.
+    pub value_const_by_hir: &'a LaniusBuffer<u32>,
+    /// Nonzero when the corresponding row names an imported constant.
+    pub value_const_present_by_hir: &'a LaniusBuffer<u32>,
     /// Resolved type identity for each compact parameter row.
     pub param_type_by_row: &'a LaniusBuffer<u32>,
     /// Encoded enclosing compact-HIR function identity for each HIR row.
@@ -545,6 +519,8 @@ pub(crate) struct GpuSemanticLoweringBuffers<'a> {
 pub(crate) struct OwnedGpuSemanticArtifact {
     value_decl_by_hir: LaniusBuffer<u32>,
     value_type_by_hir: LaniusBuffer<u32>,
+    value_const_by_hir: LaniusBuffer<u32>,
+    value_const_present_by_hir: LaniusBuffer<u32>,
     param_type_by_row: LaniusBuffer<u32>,
     enclosing_fn_by_hir: LaniusBuffer<u32>,
     function_return_type_by_hir: LaniusBuffer<u32>,
@@ -569,6 +545,8 @@ impl OwnedGpuSemanticArtifact {
             checked: GpuCheckedSemanticArtifact {
                 value_decl_by_hir: &self.value_decl_by_hir,
                 value_type_by_hir: &self.value_type_by_hir,
+                value_const_by_hir: &self.value_const_by_hir,
+                value_const_present_by_hir: &self.value_const_present_by_hir,
                 param_type_by_row: &self.param_type_by_row,
                 enclosing_fn_by_hir: &self.enclosing_fn_by_hir,
                 function_return_type_by_hir: &self.function_return_type_by_hir,
@@ -595,6 +573,14 @@ impl OwnedGpuSemanticArtifact {
 /// are supplied separately by the compiler orchestration layer.
 #[derive(Clone, Copy)]
 pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
+    /// Logical row capacities are kept separately from the physical WGPU
+    /// buffers.  A graph workspace may alias a larger dead allocation for a
+    /// smaller logical resource, so `wgpu::Buffer::size()` is not a valid
+    /// source of semantic-domain bounds.
+    pub name_capacity: u32,
+    pub module_capacity: u32,
+    pub declaration_capacity: u32,
+    pub module_segment_capacity: u32,
     pub name_count_out: &'a wgpu::Buffer,
     pub name_spans: &'a wgpu::Buffer,
     pub name_hash_lo: &'a wgpu::Buffer,
@@ -613,6 +599,9 @@ pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
     pub decl_visibility: &'a wgpu::Buffer,
     pub decl_parent_type_decl: &'a wgpu::Buffer,
     pub decl_hir_node: &'a wgpu::Buffer,
+    /// Runtime host-service identity for an extern function declaration,
+    /// keyed by its dense HIR row. Non-host declarations carry `u32::MAX`.
+    pub function_host_service_by_hir: &'a wgpu::Buffer,
     pub public_decl_count: &'a wgpu::Buffer,
     pub public_decl_local_id: &'a wgpu::Buffer,
     pub public_decl_index_by_local: &'a wgpu::Buffer,
@@ -641,9 +630,13 @@ pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
 /// type forest without inspecting source text or function bodies.
 #[derive(Clone, Copy)]
 pub struct GpuSemanticInterfaceHirBuffers<'a> {
+    /// Dense HIR capacity is a logical view over the parser-owned buffer;
+    /// the physical allocation can be larger when workspace slots are reused.
+    pub compact_hir_capacity: u32,
     pub compact_hir_count: &'a wgpu::Buffer,
     pub compact_hir_core: &'a wgpu::Buffer,
     pub compact_hir_payload: &'a wgpu::Buffer,
+    pub compact_const_value: &'a wgpu::Buffer,
     pub compact_fn_return_type: &'a wgpu::Buffer,
     pub compact_type_alias_target: &'a wgpu::Buffer,
     pub compact_const_type: &'a wgpu::Buffer,
@@ -660,56 +653,7 @@ pub struct GpuSemanticInterfaceHirBuffers<'a> {
     pub compact_variant_payload_count: &'a wgpu::Buffer,
     pub compact_variant_payload_row_count: &'a wgpu::Buffer,
     pub compact_variant_payloads: &'a wgpu::Buffer,
-}
-
-#[cfg(test)]
-mod resident_cache_tests {
-    use super::ResidentTypeCheckCacheKey;
-
-    fn key() -> ResidentTypeCheckCacheKey {
-        ResidentTypeCheckCacheKey {
-            source_byte_capacity: 1_000,
-            source_file_capacity: 2,
-            token_capacity: 300,
-            hir_node_capacity: 500,
-            parser_hir_node_capacity: 700,
-            module_record_capacity: 80,
-            call_param_row_capacity: 90,
-            call_arg_row_capacity: 100,
-            parser_feature_flags: 0b0011,
-            input_fingerprint: 7,
-            uses_hir_items: true,
-        }
-    }
-
-    #[test]
-    fn resident_typecheck_allocation_grows_component_wise() {
-        let current = key();
-        let required = ResidentTypeCheckCacheKey {
-            source_byte_capacity: 900,
-            source_file_capacity: 3,
-            token_capacity: 320,
-            hir_node_capacity: 480,
-            parser_hir_node_capacity: 720,
-            module_record_capacity: 75,
-            call_param_row_capacity: 95,
-            call_arg_row_capacity: 90,
-            parser_feature_flags: 0b1100,
-            input_fingerprint: 8,
-            uses_hir_items: true,
-        };
-        let grown = current.grow_to_cover(required);
-
-        assert_eq!(grown.source_byte_capacity, 1_000);
-        assert_eq!(grown.source_file_capacity, 3);
-        assert_eq!(grown.token_capacity, 320);
-        assert_eq!(grown.hir_node_capacity, 500);
-        assert_eq!(grown.parser_hir_node_capacity, 720);
-        assert_eq!(grown.module_record_capacity, 80);
-        assert_eq!(grown.call_param_row_capacity, 95);
-        assert_eq!(grown.call_arg_row_capacity, 100);
-        assert_eq!(grown.parser_feature_flags, 0b1111);
-        assert_eq!(grown.input_fingerprint, 8);
-        assert!(grown.covers(required));
-    }
+    pub compact_method_count: &'a wgpu::Buffer,
+    pub compact_method_cores: &'a wgpu::Buffer,
+    pub compact_method_signatures: &'a wgpu::Buffer,
 }

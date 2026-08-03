@@ -72,7 +72,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
         locations.a = value_location(operands.a, total);
     else if (core.op == X86_LIR_OP_CALL_ARG)
-        locations.a = value_location(operands.a, total);
+    {
+        if ((operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u)
+        {
+            uint string_start = operands.a < gParams.semantic_capacity
+                ? semantic_to_target_start[operands.a] : X86_LOCATION_INVALID;
+            locations.a = string_start + 1u < total
+                ? stack_location(string_start + 1u) : X86_LOCATION_INVALID;
+        }
+        else locations.a = value_location(operands.a, total);
+    }
     else if (core.op == X86_LIR_OP_ARRAY_INIT)
     {
         locations.a = value_location(operands.a, total);

@@ -6,6 +6,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<SemanticLirCore> semantic_lir_core;
 StructuredBuffer<SemanticLirOperands> semantic_lir_operands;
+StructuredBuffer<SemanticLirString> semantic_lir_strings;
 StructuredBuffer<uint> semantic_lir_total;
 StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<uint> semantic_owner_by_instruction;
@@ -50,9 +51,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // the call opcode.
     relocation.body_byte_offset = wasm_code_entry_offset[function_id] + 22u +
         function.local_count * 6u + relative_instruction_byte + 1u;
+    bool data = instruction.op == SEMANTIC_LIR_OP_CONST_STRING;
     bool symbolic = instruction.op == SEMANTIC_LIR_OP_CALL_SYMBOL;
-    relocation.target_kind = symbolic ? RELOCATION_SYMBOL : RELOCATION_LOCAL_FUNCTION;
-    relocation.target_index = symbolic ? wasm_object_symbol_prefix[row] : operands.a;
+    relocation.target_kind = data ? 3u : symbolic ? RELOCATION_SYMBOL : RELOCATION_LOCAL_FUNCTION;
+    relocation.target_index = data ? semantic_lir_strings[operands.a].data_offset
+        : symbolic ? wasm_object_symbol_prefix[row] : operands.a;
     relocation.addend = 0u;
     relocation.library_id = symbolic ? operands.a : 0u;
     relocation.unit_id = symbolic ? operands.b : 0u;

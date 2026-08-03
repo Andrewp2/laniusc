@@ -110,10 +110,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     checked.dependency_unit_id != INVALID &&
                     checked.dependency_local_index != INVALID)
                 {
-                    semantic_call_kind[node] = SEMANTIC_CALL_SYMBOL;
-                    semantic_call_symbol_library_id[node] = checked.dependency_library_id;
-                    semantic_call_symbol_unit_id[node] = checked.dependency_unit_id;
-                    semantic_call_symbol_local_index[node] = checked.dependency_local_index;
+                    if (checked.dependency_host_service != INVALID)
+                    {
+                        semantic_call_kind[node] = SEMANTIC_CALL_HOST;
+                        semantic_call_target[node] = checked.dependency_host_service;
+                    }
+                    else
+                    {
+                        semantic_call_kind[node] = SEMANTIC_CALL_SYMBOL;
+                        semantic_call_symbol_library_id[node] = checked.dependency_library_id;
+                        semantic_call_symbol_unit_id[node] = checked.dependency_unit_id;
+                        semantic_call_symbol_local_index[node] = checked.dependency_local_index;
+                    }
                     semantic_call_result_type[node] = checked.return_type;
                     semantic_call_receiver[node] = checked.receiver_hir;
                 }

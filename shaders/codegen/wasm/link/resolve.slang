@@ -15,6 +15,11 @@ void main(uint3 tid: SV_DispatchThreadID)
         link_resolved_target[i] = row.target_index;
         return;
     }
+    if (row.target_kind == 3u)
+    {
+        link_resolved_target[i] = row.target_index;
+        return;
+    }
     if (row.target_kind != 2u)
     {
         fail(7u, i);

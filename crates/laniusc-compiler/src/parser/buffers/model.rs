@@ -320,6 +320,10 @@ pub struct ParserBuffers {
     pub n_kinds: u32,
     pub total_sc: u32,
     pub total_emit: u32,
+    /// Per-pair resident table widths used to restore logical pack totals
+    /// when a larger physical parser allocation is reused by a smaller job.
+    pub resident_sc_width: u32,
+    pub resident_emit_width: u32,
     pub tree_count_uses_status: bool,
     pub tree_capacity: u32,
     /// Conservative GPU-lexer feature summary used to size optional HIR families.

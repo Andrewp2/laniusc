@@ -57,7 +57,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (function_index >= function_count) return;
     TargetLirFunction function = target_functions[function_index];
 
-    uint instruction_bytes = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? 11u : 17u;
+    bool aggregate_symbol = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL &&
+        (core.type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
+         (core.type_ref_tag == SEMANTIC_TYPE_REF_SCALAR && core.type_ref_payload >= 128u) ||
+         (core.type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u));
+    uint instruction_bytes = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL
+        ? (aggregate_symbol ? 12u : 11u) : 17u;
     uint footer_bytes = target_row + 1u == function.instruction_start + function.instruction_count
         ? 4u : 0u;
     uint row_bytes = target_byte_length[target_row];

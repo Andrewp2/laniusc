@@ -34,6 +34,7 @@ StructuredBuffer<uint> module_value_path_call_open;
 RWStructuredBuffer<uint> call_dependency_library_id;
 RWStructuredBuffer<uint> call_dependency_unit_id;
 RWStructuredBuffer<uint> call_dependency_local_index;
+RWStructuredBuffer<uint> call_dependency_host_service;
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> call_param_count;
 RWStructuredBuffer<uint> call_return_type;
@@ -79,6 +80,8 @@ void publish_call(
         dependency_declaration_unit_id(declaration_i);
     call_dependency_local_index[token] =
         dependency_declaration_local_index(declaration_i);
+    call_dependency_host_service[token] = dependency_declaration_word(
+        declaration_i * DECL_WORDS + 12u);
     call_fn_index[token] = token;
     call_param_count[token] = edge_count - 1u;
     call_return_type[token] = return_type;

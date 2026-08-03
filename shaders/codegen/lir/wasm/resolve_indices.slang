@@ -18,6 +18,7 @@ StructuredBuffer<uint> wasm_local_index_by_decl_token;
 StructuredBuffer<uint> semantic_owner_by_instruction;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<WasmLirFunction> wasm_lir_functions;
+StructuredBuffer<WasmLirOperands> target_lir_operands;
 RWStructuredBuffer<WasmLirInstruction> target_lir_core;
 
 static const uint INVALID = 0xffffffffu;
@@ -51,7 +52,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else
             inst.immediate = declaration != INVALID && declaration < gParams.n_tokens
                 ? wasm_local_index_by_decl_token[declaration] : INVALID;
-        if (inst.immediate == INVALID) inst.flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+        if (inst.immediate != INVALID &&
+            target_lir_operands[page_row].metadata == 7u)
+            inst.immediate += target_lir_operands[page_row].c;
+        if (inst.immediate == INVALID)
+            inst.flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     }
     target_lir_core[page_row] = inst;
 }

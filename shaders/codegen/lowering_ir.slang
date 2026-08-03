@@ -475,6 +475,10 @@ static const uint WASM_LIR_OP_F32_CONVERT_I32_S = 0xb2u;
 
 // IR_OPCODE
 static const uint TARGET_LIR_FLAG_UNSUPPORTED = 1u;
+// The instruction carries a five-byte linear-memory data relocation rather
+// than a function-index relocation. The linker rewrites its immediate after
+// concatenating unit string pools.
+static const uint TARGET_LIR_FLAG_DATA_RELOCATION = 2u;
 // x86 operand metadata: the value uses the aggregate-reference ABI. This is
 // derived from the full checked type before scalar type IDs are compacted.
 // IR_OPCODE
@@ -482,6 +486,10 @@ static const uint X86_LIR_METADATA_AGGREGATE = 0x80000000u;
 // The value occupies one ABI register, but that register carries a full
 // machine word (for example the address half of a string pair).
 static const uint X86_LIR_METADATA_WIDE = 0x40000000u;
+// The second machine word of a string value is its decoded byte length. It
+// has a separate target-row home from the pointer word and is passed as a
+// normal 32-bit ABI argument.
+static const uint X86_LIR_METADATA_STRING_LEN = 0x20000000u;
 
 // A value location is either a target-row stack home or a physical x86 GPR.
 // Stack payloads remain global target rows; the artifact emitter translates

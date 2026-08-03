@@ -114,6 +114,7 @@ impl GpuWasmLinker {
                 page.output_len,
                 page.type_input.start as u32,
                 page.body_input.start as u32,
+                page.data_input.start as u32,
             )?;
             let params = input_u32(
                 device,
@@ -129,6 +130,10 @@ impl GpuWasmLinker {
                 .read_body_range(page.body_input.clone())
                 .map_err(anyhow::Error::msg)?;
             let bodies = input_bytes(device, "codegen.wasm.link.page.bodies", &body_page);
+            let data_page = input
+                .read_data_range(page.data_input.clone())
+                .map_err(anyhow::Error::msg)?;
+            let data = input_bytes(device, "codegen.wasm.link.page.data", &data_page);
             let relocations = rw_u32(
                 device,
                 "codegen.wasm.link.page.relocations",
@@ -151,6 +156,7 @@ impl GpuWasmLinker {
                     ("gLink", params.as_entire_binding()),
                     ("link_type_bytes", types.as_entire_binding()),
                     ("link_body_bytes", bodies.as_entire_binding()),
+                    ("link_data_bytes", data.as_entire_binding()),
                     ("out_words", output.as_entire_binding()),
                 ],
             )?;
@@ -199,6 +205,7 @@ impl GpuWasmLinker {
                         page.output_len,
                         page.type_input.start as u32,
                         page.body_input.start as u32,
+                        page.data_input.start as u32,
                     )?;
                     let relocation_words = page_relocation_words(&resolved_relocations, batch);
                     queue.write_buffer(&params, 0, bytemuck_words(&batch_params));
@@ -272,7 +279,8 @@ pub(super) fn link_params_words(
     output_page_len: u32,
     type_input_base: u32,
     body_input_base: u32,
-) -> Result<[u32; 12]> {
+    data_input_base: u32,
+) -> Result<[u32; 14]> {
     Ok([
         u32::try_from(input.function_count)
             .map_err(|_| anyhow!("Wasm function count exceeds u32"))?,
@@ -287,6 +295,8 @@ pub(super) fn link_params_words(
         output_page_len,
         type_input_base,
         body_input_base,
+        u32::try_from(input.data_byte_len()).map_err(|_| anyhow!("Wasm data bytes exceed u32"))?,
+        data_input_base,
     ])
 }
 

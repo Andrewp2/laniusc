@@ -15,11 +15,37 @@ struct ResidentParserAllocation {
 
 impl ResidentParserAllocation {
     fn grow_to_cover(self, required: Self) -> Self {
+        let same_feature_shape = self.parser_feature_flags == required.parser_feature_flags;
         Self {
-            token_capacity: self.token_capacity.max(required.token_capacity),
-            source_capacity: self.source_capacity.max(required.source_capacity),
-            tree_capacity: self.tree_capacity.max(required.tree_capacity),
-            parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
+            // A feature-shape transition changes which optional HIR families
+            // are real storage versus sentinels.  Do not retain the previous
+            // unit's larger physical shape across that boundary: rebuilding at
+            // the current unit's dimensions prevents stale family rows from
+            // being addressed by the new parser.  For an unchanged shape the
+            // resident workspace remains capacity-reusable and grows only as
+            // required.
+            token_capacity: if same_feature_shape {
+                self.token_capacity.max(required.token_capacity)
+            } else {
+                required.token_capacity
+            },
+            source_capacity: if same_feature_shape {
+                self.source_capacity.max(required.source_capacity)
+            } else {
+                required.source_capacity
+            },
+            tree_capacity: if same_feature_shape {
+                self.tree_capacity.max(required.tree_capacity)
+            } else {
+                required.tree_capacity
+            },
+            // Feature flags select which optional HIR families are allocated and
+            // which parser-family passes are valid for the current source unit.
+            // They are not a monotonic capacity dimension: carrying a previous
+            // unit's bits into this allocation makes absent families look
+            // present after a cache transition.  The capacities themselves stay
+            // monotonic; the feature mask is exactly the current requirement.
+            parser_feature_flags: required.parser_feature_flags,
         }
     }
 }
@@ -219,10 +245,19 @@ impl GpuParser {
                 .expect("parser.bg_cache poisoned")
                 .clear();
         }
-        &slot
-            .as_ref()
-            .expect("resident parser buffers allocated")
+        let cached = slot.as_mut().expect("resident parser buffers allocated");
+        cached
             .buffers
+            .set_active_token_capacity(&self.queue, wanted_capacity);
+        // Allocation capacity is intentionally monotonic, but feature
+        // dispatch is a property of the current source unit.  A larger
+        // preceding job may have caused the resident allocation to retain
+        // optional-family storage; carrying its feature mask into the next
+        // HIR view would make absent families appear present and would cause
+        // type-check passes to consume stale rows.  Keep the physical
+        // capacities monotonic while publishing the current unit's mask.
+        cached.buffers.parser_feature_flags = parser_feature_flags;
+        &cached.buffers
     }
 }
 
@@ -248,9 +283,34 @@ mod tests {
             first.grow_to_cover(next),
             ResidentParserAllocation {
                 token_capacity: 320,
+                source_capacity: 900,
+                tree_capacity: 650,
+                parser_feature_flags: 0b1100,
+            }
+        );
+    }
+
+    #[test]
+    fn resident_allocation_grows_for_same_feature_shape() {
+        let first = ResidentParserAllocation {
+            token_capacity: 300,
+            source_capacity: 1_000,
+            tree_capacity: 700,
+            parser_feature_flags: 0b0011,
+        };
+        let next = ResidentParserAllocation {
+            token_capacity: 320,
+            source_capacity: 900,
+            tree_capacity: 650,
+            parser_feature_flags: 0b0011,
+        };
+        assert_eq!(
+            first.grow_to_cover(next),
+            ResidentParserAllocation {
+                token_capacity: 320,
                 source_capacity: 1_000,
                 tree_capacity: 700,
-                parser_feature_flags: 0b1111,
+                parser_feature_flags: 0b0011,
             }
         );
     }

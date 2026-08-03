@@ -273,6 +273,15 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 peak.bytes,
             );
         }
+        if std::env::var_os("LANIUS_DEBUG_SOURCE_PACK_FILES").is_some() {
+            eprintln!(
+                "[source-pack-debug] job={} library={} unit={} files={:?}",
+                handle.job.job_index,
+                handle.job.library_id,
+                handle.job.phase_unit_index,
+                handle.source_files.iter().map(|file| file.path.clone()).collect::<Vec<_>>(),
+            );
+        }
         let interface_bytes = interface.to_bytes().map_err(|reason| {
             source_pack_artifact_store_error(format!(
                 "serialize source-pack semantic interface for job {}: {reason}",

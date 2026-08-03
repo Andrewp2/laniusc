@@ -7,6 +7,7 @@
 
 import hir_records;
 import gpu_index;
+import dependency_interface;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
@@ -40,6 +41,11 @@ StructuredBuffer<uint> module_key_segment_count;
 StructuredBuffer<uint> module_key_segment_base;
 StructuredBuffer<uint> module_key_segment_name_id;
 StructuredBuffer<uint> language_name_id;
+StructuredBuffer<uint> name_hash_lo;
+StructuredBuffer<uint> name_hash_hi;
+StructuredBuffer<uint> external_type_library_id;
+StructuredBuffer<uint> external_type_unit_id;
+StructuredBuffer<uint> external_type_local_index;
 RWStructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 RWStructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 RWStructuredBuffer<uint> semantic_array_length_by_hir;
@@ -50,7 +56,9 @@ static const uint INVALID = 0xffffffffu;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_STMT = 7u;
 static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_STMT_FOR = 7u;
 static const uint HIR_FN = 3u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_INSTANCE = 3u;
@@ -130,9 +138,44 @@ uint named_iterable_kind(uint instance)
         payload = type_instance_arg_ref_payload[row];
     }
     if (tag != TYPE_REF_SCALAR || payload != TYPE_I32) return 0u;
+
+    uint library_id = external_type_library_id[instance];
+    uint unit_id = external_type_unit_id[instance];
+    uint local_id = external_type_local_index[instance];
+    if (library_id != INVALID && unit_id != INVALID && local_id != INVALID)
+    {
+        uint dependency_decl = dependency_find_declaration(library_id, unit_id, local_id);
+        if (dependency_decl == INVALID) return 0u;
+        uint decl_base = dependency_decl * 14u;
+        uint module = dependency_declaration_word(decl_base + 0u);
+        if (module >= dependency_module_count()) return 0u;
+        uint module_base = module * 2u;
+        uint segment_base = dependency_module_word(module_base + 0u);
+        uint segment_count = dependency_module_word(module_base + 1u);
+        if (segment_count != 2u) return 0u;
+        uint segment_words = segment_base * 4u;
+        uint core_id = language_name_id[LANGUAGE_SYMBOL_CORE];
+        uint range_module_id = language_name_id[LANGUAGE_SYMBOL_RANGE_MODULE];
+        if (dependency_module_segment_word(segment_words + 0u) != name_hash_lo[core_id] ||
+            dependency_module_segment_word(segment_words + 1u) != name_hash_hi[core_id] ||
+            dependency_module_segment_word(segment_words + 4u) != name_hash_lo[range_module_id] ||
+            dependency_module_segment_word(segment_words + 5u) != name_hash_hi[range_module_id])
+            return 0u;
+        uint name_lo = dependency_declaration_word(decl_base + 1u);
+        uint name_hi = dependency_declaration_word(decl_base + 2u);
+        uint range_id = language_name_id[LANGUAGE_SYMBOL_RANGE_TYPE];
+        if (name_lo == name_hash_lo[range_id] && name_hi == name_hash_hi[range_id])
+            return ITERABLE_EXCLUSIVE_RANGE;
+        uint inclusive_id = language_name_id[LANGUAGE_SYMBOL_RANGE_INCLUSIVE_TYPE];
+        if (name_lo == name_hash_lo[inclusive_id] && name_hi == name_hash_hi[inclusive_id])
+            return ITERABLE_INCLUSIVE_RANGE;
+        return 0u;
+    }
+
     uint decl_token = type_instance_decl_token[instance];
-    uint decl = valid_token(decl_token) ? decl_id_by_name_token[decl_token] : INVALID;
-    if (decl >= gParams.n_hir_nodes) return 0u;
+    if (!valid_token(decl_token)) return 0u;
+    uint decl = decl_id_by_name_token[decl_token];
+    if (decl == INVALID || decl >= gParams.n_hir_nodes) return 0u;
     uint module_id = decl_module_id[decl];
     if (module_id >= gParams.n_hir_nodes || module_key_segment_count[module_id] != 2u)
         return 0u;
@@ -170,7 +213,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_function_result_word_count_by_hir[node] = aggregate_word_count(
             fn_return_ref_tag[payload.b], fn_return_ref_payload[payload.b]);
     uint index_node = core.kind == HIR_INDEX_EXPR ? node : INVALID;
-    bool for_node = core.kind == HIR_FOR_STMT;
+    bool for_node = core.kind == HIR_FOR_STMT ||
+        (core.kind == HIR_STMT && payload.a == HIR_STMT_FOR);
     uint base_node = index_node != INVALID
         ? payload.b
         : for_node ? payload.c : node;

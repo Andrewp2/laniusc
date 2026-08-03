@@ -58,9 +58,118 @@ use crate::gpu::buffers::{
     uniform_from_val,
 };
 
+fn write_uniform<T>(queue: &wgpu::Queue, buffer: &LaniusBuffer<T>, value: &T)
+where
+    T: encase::ShaderType + encase::internal::WriteInto,
+{
+    let mut bytes = encase::UniformBuffer::new(Vec::<u8>::new());
+    bytes
+        .write(value)
+        .expect("failed to encode active parser parameters");
+    queue.write_buffer(&buffer.buffer, 0, bytes.as_ref());
+}
+
 pub(crate) const POST_HIR_WORKSPACE_COUNT: usize = 19;
 
 impl ParserBuffers {
+    /// Updates the logical token dimensions for a reused resident allocation.
+    /// Physical storage may be larger, but parser dispatches and token-boundary
+    /// uniforms must describe only the current job.
+    pub(crate) fn set_active_token_capacity(&mut self, queue: &wgpu::Queue, token_capacity: u32) {
+        let token_capacity = token_capacity.max(1);
+        let n_tokens = token_capacity.saturating_add(2);
+        self.n_tokens = n_tokens;
+        self.token_input_capacity = token_capacity;
+        self.token_delimiter_n_blocks = self.token_input_capacity.div_ceil(256).max(1);
+        let n_pairs = n_tokens.saturating_sub(1);
+        self.total_sc = n_pairs.saturating_mul(self.resident_sc_width);
+        self.total_emit = n_pairs.saturating_mul(self.resident_emit_width);
+        write_uniform(
+            queue,
+            &self.params_llp,
+            &super::passes::llp_pairs::LLPParams {
+                n_tokens,
+                n_kinds: self.n_kinds,
+            },
+        );
+        // PackParams contains table-blob offsets that are resident-allocation
+        // specific. Rewrite only the logical fields and the physical output
+        // capacities; leave the six table offsets resident.
+        let pack_prefix = [
+            n_tokens,
+            self.n_kinds,
+            self.total_sc,
+            self.total_emit,
+            self.out_sc.count as u32,
+            self.out_emit.count as u32,
+        ];
+        let mut pack_bytes = [0u8; 24];
+        for (index, value) in pack_prefix.into_iter().enumerate() {
+            pack_bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        queue.write_buffer(&self.params_pack.buffer, 0, &pack_bytes);
+        write_uniform(
+            queue,
+            &self.token_delimiter_params,
+            &TokenDelimiterParams {
+                n_tokens: self.token_input_capacity,
+                n_blocks: self.token_delimiter_n_blocks,
+                scan_step: 0,
+            },
+        );
+        write_uniform(
+            queue,
+            &self.token_brace_match_params,
+            &TokenBraceMatchParams {
+                n_tokens: self.token_input_capacity,
+            },
+        );
+        write_uniform(
+            queue,
+            &self.source_file_token_end_params,
+            &super::passes::source_file_token_end::Params { token_capacity },
+        );
+        // Bracket scratch is allocated to the resident maximum, but the
+        // current packed stream may be smaller. Keep the per-pass logical
+        // stream bound in sync while retaining the physical block tree: the
+        // latter is deliberately reused across jobs and its zeroed tail is
+        // part of the stable workspace contract.
+        write_uniform(
+            queue,
+            &self.b01_params,
+            &super::passes::brackets::scan_inblock::Params {
+                n_sc: self.total_sc,
+                wg_size: 256,
+            },
+        );
+        write_uniform(
+            queue,
+            &self.b03_params,
+            &super::passes::brackets::apply_prefix::Params {
+                n_sc: self.total_sc,
+                wg_size: 256,
+            },
+        );
+        write_uniform(
+            queue,
+            &self.b07_params,
+            &super::passes::brackets::pse_pair::Params {
+                n_sc: self.total_sc,
+                n_blocks: self.b_n_blocks,
+                leaf_base: self.b_min_tree_base,
+                typed_check: 1,
+                emit_matches: u32::from(self.emit_stack_matches),
+            },
+        );
+        write_uniform(
+            queue,
+            &self.b_clear_matches_params,
+            &super::passes::brackets::clear_matches::Params {
+                n_sc: self.total_sc,
+            },
+        );
+    }
+
     /// Restores writable job storage to the zeroed state guaranteed for a
     /// fresh WGPU allocation. Logical aliases share an allocation identity,
     /// so each physical buffer is cleared at most once.
@@ -550,6 +659,16 @@ impl ParserBuffers {
         }
         let total_sc = acc_sc;
         let total_emit = acc_emit;
+        let resident_sc_width = if resident_partial_parse_capacity {
+            resident_virtual_pair_width(&tables.sc_len, n_kinds)
+        } else {
+            0
+        };
+        let resident_emit_width = if resident_partial_parse_capacity {
+            resident_virtual_pair_width(&tables.pp_len, n_kinds)
+        } else {
+            0
+        };
         let tree_count_uses_status = true;
         let tree_capacity = tree_capacity_override
             .unwrap_or_else(|| {
@@ -2387,6 +2506,8 @@ impl ParserBuffers {
             n_kinds,
             total_sc,
             total_emit,
+            resident_sc_width,
+            resident_emit_width,
             tree_count_uses_status,
             tree_capacity,
             parser_feature_flags,

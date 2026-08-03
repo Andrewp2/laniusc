@@ -110,5 +110,8 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         else { scatter_byte(pool_base + out_i, b); out_i += 1u; }
     }
     if (ltid.x == WG_SIZE - 1u)
+    {
         hir_string_decoded_len[node] = scan_count0[WG_SIZE - 1u];
+        scatter_byte(pool_base + scan_count0[WG_SIZE - 1u], 0u);
+    }
 }

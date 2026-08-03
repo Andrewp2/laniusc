@@ -3,6 +3,7 @@
 
 import gpu_index;
 import atomics;
+import hir_records;
 
 struct Params
 {
@@ -14,6 +15,7 @@ struct Params
     uint module_index_capacity;
     uint name_byte_capacity;
     uint member_capacity;
+    uint hir_capacity;
 };
 
 struct NameSpan
@@ -57,6 +59,11 @@ StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_parent_type_decl;
+StructuredBuffer<uint> decl_hir_node;
+StructuredBuffer<uint> compact_const_value;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> semantic_function_host_service_by_hir;
 StructuredBuffer<uint> interface_name_ref_len;
 StructuredBuffer<uint> interface_name_ref_prefix;
 StructuredBuffer<uint> interface_signature_type_by_decl;
@@ -168,9 +175,13 @@ void write_decl(uint dst, uint decl, uint name_ref)
         atomic_u32_min(interface_status, 1u, name_ref);
     }
     interface_declaration_words[base + 10u] = persisted_owner;
+    uint hir = decl_hir_node[decl];
     interface_declaration_words[base + 11u] = 0u;
-    interface_declaration_words[base + 12u] = 0u;
-    interface_declaration_words[base + 13u] = 0u;
+    interface_declaration_words[base + 12u] = semantic_function_host_service_by_hir[hir];
+    uint value_hir = hir != INVALID ? compact_const_value[hir] : INVALID;
+    interface_declaration_words[base + 13u] =
+        decl_kind[decl] == 3u && value_hir < gParams.hir_capacity
+            ? compact_hir_payload[value_hir].b : 0u;
 }
 
 [shader("compute")]

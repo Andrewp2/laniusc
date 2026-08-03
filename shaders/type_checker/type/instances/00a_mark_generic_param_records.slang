@@ -133,11 +133,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     generic_decl_parent_jump_a[node] = valid_node(parent[node]) ? parent[node] : INVALID;
 
     uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (node < compact_count)
+    uint dense = node < gParams.n_hir_nodes ? raw_to_compact_hir[node] : INVALID;
+    // The dispatch domain is the raw parser tree. A dense HIR row can be
+    // mapped from several raw rows, and some semantic rows have no winning
+    // raw owner after canonicalization. The first compact rows therefore also
+    // visit the dense domain directly so every declaration anchor is covered.
+    if (dense >= compact_count && node < compact_count)
+        dense = node;
+    if (dense < compact_count)
     {
-        HirPayload payload = compact_hir_payload[node];
+        HirPayload payload = compact_hir_payload[dense];
         uint name_token = payload.b;
         if (generic_decl_item_kind(payload.a) && valid_token(name_token))
-            type_decl_hir_node_by_token[name_token] = node;
+            type_decl_hir_node_by_token[name_token] = dense;
     }
 }

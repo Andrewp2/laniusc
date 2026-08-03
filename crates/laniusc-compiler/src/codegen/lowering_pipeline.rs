@@ -115,20 +115,7 @@ pub(crate) struct GpuLoweringPipeline {
     semantic: GpuSemanticLoweringStage,
     target: TargetStage,
     status_readback: LaniusBuffer<u8>,
-    debug_lowering_readback: Option<LaniusBuffer<u8>>,
 }
-
-const DEBUG_HIR_ROWS: u64 = 65_536;
-const DEBUG_HIR_CORE_OFFSET: u64 = 0;
-const DEBUG_HIR_PAYLOAD_OFFSET: u64 = DEBUG_HIR_CORE_OFFSET + DEBUG_HIR_ROWS * 16;
-const DEBUG_SEMANTIC_CORE_OFFSET: u64 = DEBUG_HIR_PAYLOAD_OFFSET + DEBUG_HIR_ROWS * 16;
-const DEBUG_SEMANTIC_OPERANDS_OFFSET: u64 = DEBUG_SEMANTIC_CORE_OFFSET + DEBUG_HIR_ROWS * 24;
-const DEBUG_HIR_COUNT_OFFSET: u64 = DEBUG_SEMANTIC_OPERANDS_OFFSET + DEBUG_HIR_ROWS * 16;
-const DEBUG_TARGET_CORE_OFFSET: u64 = DEBUG_HIR_COUNT_OFFSET + 16;
-const DEBUG_TARGET_OPERANDS_OFFSET: u64 = DEBUG_TARGET_CORE_OFFSET + DEBUG_HIR_ROWS * 16;
-const DEBUG_TARGET_LOCATIONS_OFFSET: u64 = DEBUG_TARGET_OPERANDS_OFFSET + DEBUG_HIR_ROWS * 16;
-const DEBUG_TARGET_COUNT_OFFSET: u64 = DEBUG_TARGET_LOCATIONS_OFFSET + DEBUG_HIR_ROWS * 16;
-const DEBUG_READBACK_BYTES: usize = (DEBUG_TARGET_COUNT_OFFSET + 16) as usize;
 
 impl GpuLoweringPipeline {
     pub(crate) fn new(
@@ -162,23 +149,12 @@ impl GpuLoweringPipeline {
             )?),
         };
         let status_readback = readback_bytes(device, "lowering.status.readback", 16, 16);
-        let debug_lowering_readback = (std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some()
-            || std::env::var_os("LANIUS_DEBUG_LOWERING_ROWS").is_some())
-        .then(|| {
-            readback_bytes(
-                device,
-                "lowering.debug.readback",
-                DEBUG_READBACK_BYTES,
-                DEBUG_READBACK_BYTES,
-            )
-        });
         Ok(Self {
             capacities,
             _workspace: workspace,
             semantic,
             target,
             status_readback,
-            debug_lowering_readback,
         })
     }
 
@@ -209,37 +185,7 @@ impl GpuLoweringPipeline {
         for page_id in 0..self.target.target_page_count() {
             self.target.record_emit_page(encoder, page_id)?;
         }
-        self.record_debug_target(encoder);
         self.target.record_after_target_pages(encoder, object)
-    }
-
-    fn record_debug_target(&self, encoder: &mut wgpu::CommandEncoder) {
-        let (Some(readback), TargetStage::X86_64(stage)) =
-            (&self.debug_lowering_readback, &self.target)
-        else {
-            return;
-        };
-        let target = stage.output();
-        for (source, offset) in [
-            (&target.core.buffer, DEBUG_TARGET_CORE_OFFSET),
-            (&target.operands.buffer, DEBUG_TARGET_OPERANDS_OFFSET),
-            (&target.locations.buffer, DEBUG_TARGET_LOCATIONS_OFFSET),
-        ] {
-            encoder.copy_buffer_to_buffer(
-                source,
-                0,
-                &readback.buffer,
-                offset,
-                (source.size()).min(DEBUG_HIR_ROWS * 16),
-            );
-        }
-        encoder.copy_buffer_to_buffer(
-            &target.total.buffer,
-            0,
-            &readback.buffer,
-            DEBUG_TARGET_COUNT_OFFSET,
-            4,
-        );
     }
 
     pub(crate) fn record(
@@ -251,50 +197,6 @@ impl GpuLoweringPipeline {
     ) -> Result<()> {
         self.semantic
             .record(device, encoder, hir, semantic_inputs)?;
-        if let Some(readback) = &self.debug_lowering_readback {
-            encoder.copy_buffer_to_buffer(
-                &hir.core.buffer,
-                0,
-                &readback.buffer,
-                DEBUG_HIR_CORE_OFFSET,
-                (hir.core.byte_size as u64).min(DEBUG_HIR_ROWS * 16),
-            );
-            encoder.copy_buffer_to_buffer(
-                &hir.payload.buffer,
-                0,
-                &readback.buffer,
-                DEBUG_HIR_PAYLOAD_OFFSET,
-                (hir.payload.byte_size as u64).min(DEBUG_HIR_ROWS * 16),
-            );
-            encoder.copy_buffer_to_buffer(
-                &self.semantic.output().core.buffer,
-                0,
-                &readback.buffer,
-                DEBUG_SEMANTIC_CORE_OFFSET,
-                (self.semantic.output().core.byte_size as u64).min(DEBUG_HIR_ROWS * 24),
-            );
-            encoder.copy_buffer_to_buffer(
-                &self.semantic.output().operands.buffer,
-                0,
-                &readback.buffer,
-                DEBUG_SEMANTIC_OPERANDS_OFFSET,
-                (self.semantic.output().operands.byte_size as u64).min(DEBUG_HIR_ROWS * 16),
-            );
-            encoder.copy_buffer_to_buffer(
-                &hir.count.buffer,
-                0,
-                &readback.buffer,
-                DEBUG_HIR_COUNT_OFFSET,
-                4,
-            );
-            encoder.copy_buffer_to_buffer(
-                &self.semantic.output().count.buffer,
-                0,
-                &readback.buffer,
-                DEBUG_HIR_COUNT_OFFSET + 4,
-                4,
-            );
-        }
         for page_id in 0..self.target.count_page_count() {
             self.target.record_count_page(encoder, page_id)?;
         }
@@ -410,19 +312,6 @@ impl GpuLoweringPipeline {
         };
         drop(mapped);
         self.status_readback.unmap();
-        if status.flags != 0 && std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
-            eprintln!(
-                "GPU lowering status: flags=0x{:x}, first HIR={}, required capacity={}, available capacity={}",
-                status.flags,
-                status.first_unsupported_hir,
-                status.required_capacity,
-                status.available_capacity,
-            );
-            self.print_debug_lowering_rows(device, status.first_unsupported_hir)?;
-        }
-        if std::env::var_os("LANIUS_DEBUG_LOWERING_ROWS").is_some() {
-            self.print_debug_lowering_rows(device, u32::MAX)?;
-        }
         Ok(status)
     }
 
@@ -437,55 +326,6 @@ impl GpuLoweringPipeline {
                 status.available_capacity,
             );
         }
-        Ok(())
-    }
-
-    fn print_debug_lowering_rows(&self, device: &wgpu::Device, focus_hir: u32) -> Result<()> {
-        let Some(readback) = &self.debug_lowering_readback else {
-            return Ok(());
-        };
-        let slice = readback.slice(..);
-        map_readback_blocking(device, &slice, "lowering debug readback")?;
-        let mapped = slice.get_mapped_range();
-        let word = |offset: u64, index: usize| {
-            let start = offset as usize + index * 4;
-            u32::from_le_bytes(mapped[start..start + 4].try_into().unwrap())
-        };
-        let hir_count = word(DEBUG_HIR_COUNT_OFFSET, 0).min(DEBUG_HIR_ROWS as u32);
-        let focused = |hir: u32| focus_hir == u32::MAX || hir.abs_diff(focus_hir) <= 2;
-        for row in 0..hir_count as usize {
-            if !focused(row as u32) {
-                continue;
-            }
-            let core = [0, 1, 2, 3].map(|field| word(DEBUG_HIR_CORE_OFFSET, row * 4 + field));
-            let payload = [0, 1, 2, 3].map(|field| word(DEBUG_HIR_PAYLOAD_OFFSET, row * 4 + field));
-            eprintln!("compact HIR {row}: core={core:?}, payload={payload:?}");
-        }
-        let semantic_total = word(DEBUG_HIR_COUNT_OFFSET, 1).min(DEBUG_HIR_ROWS as u32) as usize;
-        for row in 0..semantic_total {
-            let core =
-                [0, 1, 2, 3, 4, 5].map(|field| word(DEBUG_SEMANTIC_CORE_OFFSET, row * 6 + field));
-            let operands =
-                [0, 1, 2, 3].map(|field| word(DEBUG_SEMANTIC_OPERANDS_OFFSET, row * 4 + field));
-            if focused(core[4]) {
-                eprintln!("semantic LIR {row}: core={core:?}, operands={operands:?}");
-            }
-        }
-        let target_count = word(DEBUG_TARGET_COUNT_OFFSET, 0).min(DEBUG_HIR_ROWS as u32);
-        for row in 0..target_count as usize {
-            let core = [0, 1, 2, 3].map(|field| word(DEBUG_TARGET_CORE_OFFSET, row * 4 + field));
-            let operands =
-                [0, 1, 2, 3].map(|field| word(DEBUG_TARGET_OPERANDS_OFFSET, row * 4 + field));
-            let locations =
-                [0, 1, 2, 3].map(|field| word(DEBUG_TARGET_LOCATIONS_OFFSET, row * 4 + field));
-            if focused(core[0]) {
-                eprintln!(
-                    "target LIR {row}: core={core:?}, operands={operands:?}, locations={locations:?}"
-                );
-            }
-        }
-        drop(mapped);
-        readback.unmap();
         Ok(())
     }
 }

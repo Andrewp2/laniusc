@@ -135,9 +135,19 @@ uint struct_node_for_decl_token(uint decl_token)
     if (!valid_token(decl_token))
         return INVALID;
     uint node = type_decl_hir_node_by_token[decl_token];
-    return valid_compact_node(node) && compact_hir_core[node].kind == HIR_STRUCT_ITEM
-        ? node
-        : INVALID;
+    if (valid_compact_node(node) && compact_hir_core[node].kind == HIR_STRUCT_ITEM)
+        return node;
+    // Canonical declaration anchors are the source of truth. The token map is
+    // an indexed accelerator, so recover from it being absent without reading
+    // raw parser rows or source bytes.
+    uint active = active_compact_hir_count();
+    for (uint candidate = 0u; candidate < active; candidate += 1u)
+    {
+        if (compact_hir_core[candidate].kind == HIR_STRUCT_ITEM &&
+            compact_hir_payload[candidate].b == decl_token)
+            return candidate;
+    }
+    return INVALID;
 }
 
 public struct StructFieldLookupKey

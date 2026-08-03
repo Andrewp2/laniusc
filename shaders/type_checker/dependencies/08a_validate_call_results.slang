@@ -31,6 +31,9 @@ StructuredBuffer<uint> call_dependency_unit_id;
 StructuredBuffer<uint> call_dependency_local_index;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> external_type_library_id;
 StructuredBuffer<uint> external_type_unit_id;
 StructuredBuffer<uint> external_type_local_index;
@@ -53,6 +56,7 @@ StructuredBuffer<uint> call_generic_claim_ref_payload;
 StructuredBuffer<uint> call_generic_claim_order;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
+RWStructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<uint> aggregate_compare_scan_input;
@@ -69,6 +73,10 @@ RWStructuredBuffer<uint> status;
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_WORDS = 9u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
+static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
+static const uint HIR_RETURN_STMT = 9u;
+static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
@@ -81,6 +89,10 @@ static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
+static const uint HIR_STMT_LET = 1u;
+static const uint HIR_STMT_RETURN = 2u;
+static const uint HIR_STMT_CONST = 4u;
+static const uint HIR_STMT_ASSIGN = 5u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
@@ -111,6 +123,91 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.visible_capacity;
+}
+
+uint dependency_call_token(uint call)
+{
+    if (!valid_node(call) || compact_hir_core[call].kind != HIR_CALL_EXPR)
+        return INVALID;
+    uint callee_node = compact_hir_payload[call].a;
+    if (!valid_node(callee_node))
+        return INVALID;
+    HirCore callee_core = compact_hir_core[callee_node];
+    HirPayload callee_payload = compact_hir_payload[callee_node];
+    uint token = callee_core.kind == HIR_MEMBER_EXPR
+        ? callee_payload.c
+        : callee_payload.d;
+    if (!valid_token(token)) token = callee_core.token_start;
+    return valid_token(token) &&
+                   call_dependency_library_id[token] != INVALID &&
+                   dependency_find_declaration(
+                       call_dependency_library_id[token],
+                       call_dependency_unit_id[token],
+                       call_dependency_local_index[token]) != INVALID
+               ? token
+               : INVALID;
+}
+
+void declaration_ref(uint token, out uint tag, out uint payload)
+{
+    tag = 0u;
+    payload = INVALID;
+    if (!valid_token(token)) return;
+    uint declaration = visible_decl[token];
+    if (!valid_token(declaration)) declaration = token;
+    tag = decl_type_ref_tag[declaration];
+    payload = decl_type_ref_payload[declaration];
+}
+
+void expected_ref_for_statement(
+    uint node,
+    out uint expression,
+    out uint tag,
+    out uint payload,
+    out uint enclosing_function)
+{
+    expression = INVALID;
+    tag = 0u;
+    payload = INVALID;
+    enclosing_function = INVALID;
+    if (!valid_node(node)) return;
+    HirCore core = compact_hir_core[node];
+    HirPayload statement = compact_hir_payload[node];
+    if (statement.a == HIR_STMT_LET ||
+        (core.kind == HIR_STMT && statement.a == HIR_STMT_CONST))
+    {
+        expression = statement.c;
+        if (valid_node(statement.d))
+        {
+            uint token = compact_hir_core[statement.d].token_start;
+            if (valid_token(token))
+            {
+                tag = type_expr_ref_tag[token];
+                payload = type_expr_ref_payload[token];
+            }
+        }
+        if (tag == 0u)
+            declaration_ref(compact_hir_core[node].token_start, tag, payload);
+        if (tag == 0u)
+            declaration_ref(statement.b, tag, payload);
+    }
+    else if (statement.a == HIR_STMT_ASSIGN)
+    {
+        expression = statement.c;
+        if (valid_node(statement.b))
+            declaration_ref(compact_hir_core[statement.b].token_start, tag, payload);
+    }
+    else if (statement.a == HIR_STMT_RETURN || core.kind == HIR_RETURN_STMT)
+    {
+        expression = statement.b;
+        if (valid_token(core.token_start))
+            enclosing_function = enclosing_function_decl_token(core.token_start);
+        if (valid_token(enclosing_function))
+        {
+            tag = fn_return_ref_tag[enclosing_function];
+            payload = fn_return_ref_payload[enclosing_function];
+        }
+    }
 }
 
 bool dependency_nominal_matches_token(uint expected_type_i, uint token)
@@ -249,49 +346,17 @@ void substitute_direct_generic_call(uint call_node)
     }
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void validate_dependency_result(
+    uint statement_node,
+    uint call_node,
+    uint callee_token,
+    uint expected_tag,
+    uint expected_payload,
+    uint expected_external_token)
 {
-    uint node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (valid_node(node) && compact_hir_core[node].kind == HIR_CALL_EXPR)
-    {
-        substitute_direct_generic_call(node);
-        return;
-    }
-    if (!valid_node(node) ||
-        compact_hir_payload[node].a != STMT_RECORD_KIND_RETURN)
-        return;
-    uint expr = compact_hir_payload[node].b;
-    if (!valid_node(expr))
-        return;
-    uint root = expr;
-    if (compact_hir_core[root].kind != HIR_CALL_EXPR)
-        return;
-    uint callee_node = compact_hir_payload[root].a;
-    if (!valid_node(callee_node))
-        return;
-    HirCore callee_core = compact_hir_core[callee_node];
-    HirPayload callee_payload = compact_hir_payload[callee_node];
-    uint callee_token = callee_core.kind == HIR_MEMBER_EXPR
-        ? callee_payload.c
-        : callee_payload.d;
-    if (!valid_token(callee_token)) callee_token = callee_core.token_start;
-    if (!valid_token(callee_token) ||
-        dependency_find_declaration(
-            call_dependency_library_id[callee_token],
-            call_dependency_unit_id[callee_token],
-            call_dependency_local_index[callee_token]) == INVALID)
-        return;
+    if (!valid_token(callee_token)) return;
     uint actual_tag = decl_type_ref_tag[callee_token];
     uint actual_payload = decl_type_ref_payload[callee_token];
-    uint return_token = compact_hir_core[node].token_start;
-    uint fn_token = enclosing_function_decl_token(return_token);
-    if (!valid_token(fn_token))
-        return;
-
-    uint expected_tag = fn_return_ref_tag[fn_token];
-    uint expected_payload = fn_return_ref_payload[fn_token];
     if (actual_tag == TYPE_REF_INSTANCE && valid_token(actual_payload))
     {
         if (expected_tag != TYPE_REF_INSTANCE || !valid_token(expected_payload))
@@ -306,13 +371,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             mismatch(callee_token);
             return;
         }
+        call_result_instance[call_node] = expected_payload;
         if (child_count != 0u)
         {
-            aggregate_compare_scan_input[node] = child_count;
-            aggregate_compare_expected_instance[node] = expected_payload;
-            aggregate_compare_actual_instance[node] = actual_payload;
-            aggregate_compare_error_token[node] = callee_token;
-            aggregate_compare_error_detail[node] = 0u;
+            aggregate_compare_scan_input[statement_node] = child_count;
+            aggregate_compare_expected_instance[statement_node] = expected_payload;
+            aggregate_compare_actual_instance[statement_node] = actual_payload;
+            aggregate_compare_error_token[statement_node] = callee_token;
+            aggregate_compare_error_detail[statement_node] = 0u;
         }
         return;
     }
@@ -329,16 +395,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint actual_root = canonical_type_roots[actual_canonical];
     uint actual_base = actual_root * TYPE_WORDS;
     // The same pass first substitutes call nodes and is dispatched again after
-    // a storage barrier for return validation. A return lane may observe the
-    // pre-substitution generic root during the first dispatch; defer it rather
-    // than racing the call lane and recording a false mismatch.
+    // a storage barrier for result validation. A statement lane may observe
+    // the pre-substitution generic root during the first dispatch; defer it
+    // rather than racing the call lane and recording a false mismatch.
     if (dependency_type_word(actual_base) == INTERFACE_TYPE_GENERIC_PARAMETER)
         return;
     uint actual_count = dependency_type_word(actual_base + 4u);
     if (expected_tag == TYPE_REF_EXTERNAL_CANONICAL)
     {
-        bool matches = dependency_nominal_matches_token(actual_root, fn_token) &&
-            actual_count == 0u;
+        bool matches = expected_payload < type_count &&
+            canonical_type_roots[expected_payload] == actual_root;
+        if (!matches && valid_token(expected_external_token))
+            matches = dependency_nominal_matches_token(actual_root, expected_external_token);
         if (!matches || actual_count != 0u)
             mismatch(callee_token);
         return;
@@ -369,6 +437,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         mismatch(callee_token);
         return;
     }
+    // The canonical result has the same nominal identity and arity as the
+    // local instance. Publish the local instance for downstream expression
+    // artifacts; child arguments are still checked through the dependency
+    // comparison relation below.
+    call_result_instance[call_node] = expected_payload;
     if (actual_count != 0u)
     {
         uint actual_subtree_count = canonical_subtree_count(actual_root);
@@ -378,9 +451,52 @@ void main(uint3 dtid: SV_DispatchThreadID)
             mismatch(callee_token);
             return;
         }
-        dependency_call_compare_scan_input[node] = actual_subtree_count;
-        dependency_call_compare_expected_type[node] = actual_root;
-        dependency_call_compare_actual_instance[node] = expected_payload;
-        dependency_call_compare_error_token[node] = callee_token;
+        dependency_call_compare_scan_input[statement_node] = actual_subtree_count;
+        dependency_call_compare_expected_type[statement_node] = actual_root;
+        dependency_call_compare_actual_instance[statement_node] = expected_payload;
+        dependency_call_compare_error_token[statement_node] = callee_token;
     }
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
+    if (valid_node(node) && compact_hir_core[node].kind == HIR_CALL_EXPR)
+    {
+        substitute_direct_generic_call(node);
+        return;
+    }
+    if (!valid_node(node))
+        return;
+    HirCore statement_core = compact_hir_core[node];
+    HirPayload statement = compact_hir_payload[node];
+    if (statement_core.kind != HIR_STMT &&
+        statement_core.kind != HIR_LET_STMT &&
+        statement_core.kind != HIR_RETURN_STMT &&
+        statement_core.kind != HIR_ASSIGN_EXPR)
+        return;
+    uint expr = INVALID;
+    uint expected_tag = 0u;
+    uint expected_payload = INVALID;
+    uint enclosing_function = INVALID;
+    expected_ref_for_statement(
+        node,
+        expr,
+        expected_tag,
+        expected_payload,
+        enclosing_function);
+    if (!valid_node(expr) || compact_hir_core[expr].kind != HIR_CALL_EXPR)
+        return;
+    uint callee_token = dependency_call_token(expr);
+    if (!valid_token(callee_token))
+        return;
+    validate_dependency_result(
+        node,
+        expr,
+        callee_token,
+        expected_tag,
+        expected_payload,
+        enclosing_function);
 }
