@@ -37,6 +37,37 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalVali
                 "canonical_count".into(),
                 b.hir_canonical_count.as_entire_binding(),
             ),
+            (
+                "canonical_anchor_owner".into(),
+                b.hir_canonical_anchor_owner.as_entire_binding(),
+            ),
+            (
+                "canonical_raw_to_dense".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
+            ),
+            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
+            ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
+            (
+                "hir_stmt_record".into(),
+                b.hir_stmt_record.as_entire_binding(),
+            ),
+            (
+                "hir_expr_record".into(),
+                b.hir_expr_record.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_dense_node".into(),
+                b.hir_semantic_dense_node.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_count".into(),
+                b.hir_semantic_count.as_entire_binding(),
+            ),
+            (
+                "hir_call_callee_node".into(),
+                b.hir_call_callee_node.as_entire_binding(),
+            ),
             ("hir_core".into(), b.hir_core.as_entire_binding()),
             ("hir_links".into(), b.hir_links.as_entire_binding()),
             ("hir_payload".into(), b.hir_payload.as_entire_binding()),
@@ -203,6 +234,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalVali
             (
                 "hir_expr_forest_status".into(),
                 b.hir_canonical_expr_forest_status.as_entire_binding(),
+            ),
+            (
+                "semantic_to_compact_hir".into(),
+                b.hir_canonical_prefix_before_raw.as_entire_binding(),
+            ),
+            (
+                "compact_semantic_dense_node".into(),
+                b.hir_canonical_semantic_dense_node.as_entire_binding(),
             ),
             (
                 "canonical_status".into(),

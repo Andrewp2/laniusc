@@ -5208,7 +5208,9 @@ fn second() -> str { return "xy"; }
     assert_eq!(parsed.hir_compact_string_node.len(), 2);
     assert_eq!(parsed.hir_compact_string_decoded_len, vec![5, 2]);
     assert_eq!(parsed.hir_compact_string_file_id, vec![0, 0]);
-    assert_eq!(parsed.hir_compact_string_data_offset, vec![0, 5]);
+    // Each packed string reserves its trailing NUL, so the second string
+    // begins after the five payload bytes plus the first terminator.
+    assert_eq!(parsed.hir_compact_string_data_offset, vec![0, 6]);
     for dense in &parsed.hir_compact_string_node {
         assert_ne!(*dense, INVALID, "compact string owner must be dense");
         assert!(

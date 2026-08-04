@@ -107,7 +107,7 @@ pub(super) fn register_module_path_resources<'a>(
         "path_id_by_owner_token",
         "path_prefix_id",
     ] {
-        resources.add(name, resources["parent"].clone());
+        resources.add(name, resources["compact_hir_expr_parent"].clone());
     }
     resources.add(
         "path_owner_module_id",

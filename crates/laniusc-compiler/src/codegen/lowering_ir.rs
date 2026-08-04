@@ -1150,7 +1150,9 @@ fn build_lowering_compiler_graph(
     let hir_method_signatures = graph.add_resource(input(
         "hir.method_signatures",
         ResourceDomain::Declarations,
-        LoweringCapacities::bytes::<crate::parser::buffers::HirMethodSignature>(capacities.hir_nodes),
+        LoweringCapacities::bytes::<crate::parser::buffers::HirMethodSignature>(
+            capacities.hir_nodes,
+        ),
     ))?;
     let hir_field_count = graph.add_resource(input(
         "hir.field_count",
@@ -1924,7 +1926,10 @@ fn build_lowering_compiler_graph(
                 semantic_call_symbol_local_indices,
             ),
             PassAccess::read("semantic_function_id", semantic_function_ids),
-            PassAccess::read("semantic_function_id_by_token", semantic_function_id_by_token),
+            PassAccess::read(
+                "semantic_function_id_by_token",
+                semantic_function_id_by_token,
+            ),
             PassAccess::read("semantic_lir_functions", semantic_functions),
             PassAccess::read("semantic_control_depth_by_hir", semantic_control_depths),
             PassAccess::read("semantic_member_field_ordinal", member_field_ordinals),

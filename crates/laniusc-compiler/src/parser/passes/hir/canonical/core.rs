@@ -114,6 +114,30 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 b.hir_type_alias_target_node.as_entire_binding(),
             ),
             (
+                "hir_type_path_leaf_node".into(),
+                b.hir_type_path_leaf_node.as_entire_binding(),
+            ),
+            (
+                "hir_bound_path_owner_by_leaf".into(),
+                b.hir_bound_path_owner_by_leaf.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_start".into(),
+                b.hir_type_arg_start.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_count".into(),
+                b.hir_type_arg_count.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_next".into(),
+                b.hir_type_arg_next.as_entire_binding(),
+            ),
+            (
+                "hir_method_impl_receiver_type_node".into(),
+                b.hir_method_impl_receiver_type_node.as_entire_binding(),
+            ),
+            (
                 "hir_param_record".into(),
                 b.hir_param_record.as_entire_binding(),
             ),
@@ -148,6 +172,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             (
                 "hir_expr_result_root_node".into(),
                 b.hir_expr_result_root_node.as_entire_binding(),
+            ),
+            (
+                "hir_struct_lit_head_node".into(),
+                b.hir_struct_lit_head_node.as_entire_binding(),
             ),
             (
                 "hir_call_callee_node".into(),
@@ -204,6 +232,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             ("hir_core".into(), b.hir_core.as_entire_binding()),
             ("hir_links".into(), b.hir_links.as_entire_binding()),
             ("hir_payload".into(), b.hir_payload.as_entire_binding()),
+            (
+                "hir_canonical_predicate_facts".into(),
+                b.hir_canonical_predicate_facts.as_entire_binding(),
+            ),
             (
                 "hir_canonical_scope_end".into(),
                 b.hir_canonical_scope_end.as_entire_binding(),

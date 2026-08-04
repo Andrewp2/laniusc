@@ -30,7 +30,8 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> predicate_count_in;
-StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
@@ -139,7 +140,8 @@ bool valid_owner_predicate(uint pred)
     if (!valid_node(pred) || predicate_status[pred] != PREDICATE_STATUS_OK)
         return false;
     uint owner = predicate_owner_node[pred];
-    return valid_node(owner) && owner != pred && valid_token(hir_token_pos[owner]);
+    return valid_node(owner) && owner != pred &&
+           valid_token(compact_hir_core[owner].token_start);
 }
 
 bool valid_impl_predicate(uint pred)
@@ -175,7 +177,9 @@ uint owner_key_field(uint pred, uint field_i)
         return 0u;
     if (field_i == 0u)
         return encode_key_value(pred, INVALID);
-    return encode_key_value(hir_token_pos[predicate_owner_node[pred]], INVALID);
+    return encode_key_value(
+        compact_hir_core[predicate_owner_node[pred]].token_start,
+        INVALID);
 }
 
 uint impl_key_lane(uint pred, uint lane)

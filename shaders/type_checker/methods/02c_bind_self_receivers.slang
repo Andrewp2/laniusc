@@ -19,15 +19,10 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_name_role;
-StructuredBuffer<uint> hir_member_receiver_node;
-StructuredBuffer<uint> hir_member_receiver_token;
-StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
@@ -54,7 +49,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -107,15 +102,16 @@ void bind_self_token(uint self_token)
 
 void bind_self_receiver_for_member(uint member_node)
 {
-    if (hir_kind[member_node] != HIR_MEMBER_EXPR)
+    if (compact_hir_core[member_node].kind != HIR_MEMBER_EXPR)
         return;
 
-    uint receiver_node = hir_member_receiver_node[member_node];
+    uint receiver_node = compact_hir_payload[member_node].b;
     if (!valid_node(receiver_node) ||
-        hir_expr_name_role[receiver_node] != HIR_EXPR_NAME_ROLE_SELF)
+        compact_hir_core[receiver_node].kind != 22u ||
+        compact_hir_payload[receiver_node].b != HIR_EXPR_NAME_ROLE_SELF)
         return;
 
-    uint self_token = hir_member_receiver_token[member_node];
+    uint self_token = compact_hir_payload[member_node].d;
     bind_self_token(self_token);
 }
 
@@ -127,8 +123,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    if (hir_expr_name_role[node] == HIR_EXPR_NAME_ROLE_SELF)
-        bind_self_token(hir_token_pos[node]);
+    if (compact_hir_core[node].kind == 22u &&
+        compact_hir_payload[node].b == HIR_EXPR_NAME_ROLE_SELF)
+        bind_self_token(compact_hir_core[node].token_start);
 
     bind_self_receiver_for_member(node);
 }

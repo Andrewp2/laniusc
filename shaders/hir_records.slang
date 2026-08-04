@@ -158,3 +158,25 @@ public struct HirPredicate
     public uint bound;
     public uint metadata;
 }
+
+/// Dense facts recovered from temporary predicate grammar productions.
+///
+/// The canonical HIR keeps only semantic nodes.  These fields preserve the
+/// relationships that predicate collection needs without retaining the raw
+/// parser tree: the owning predicate, its subject, and the compact side-table
+/// references for paths and arguments.
+public struct HirPredicateFacts
+{
+    public uint production;
+    public uint token_start;
+    public uint type_path_leaf;
+    public uint type_arg_start;
+    public uint type_arg_count;
+    public uint type_arg_next;
+    public uint method_impl_receiver_type;
+    public uint expr_result_root;
+    public uint struct_lit_head;
+    public uint bound_path_owner;
+    public uint predicate_owner;
+    public uint predicate_subject;
+}

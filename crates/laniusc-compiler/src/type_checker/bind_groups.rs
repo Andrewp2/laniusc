@@ -21,11 +21,6 @@ impl GpuTypeChecker {
         token_count_buf: &wgpu::Buffer,
         token_file_id_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
-        hir_kind_buf: &wgpu::Buffer,
-        hir_token_pos_buf: &wgpu::Buffer,
-        hir_token_end_buf: &wgpu::Buffer,
-        hir_token_file_id_buf: &wgpu::Buffer,
-        hir_status_buf: &wgpu::Buffer,
         hir_items: Option<GpuTypeCheckHirItemBuffers<'_>>,
         passes: &TypeCheckPasses,
         dependency_interfaces: Option<&GpuDependencyInterfaceState>,
@@ -469,11 +464,6 @@ impl GpuTypeChecker {
         resources.buffer("token_count", &token_count_buf);
         resources.buffer("token_file_id", &token_file_id_buf);
         resources.buffer("source_bytes", &source_buf);
-        resources.buffer("hir_kind", &hir_kind_buf);
-        resources.buffer("hir_token_pos", &hir_token_pos_buf);
-        resources.buffer("hir_token_end", &hir_token_end_buf);
-        resources.buffer("hir_token_file_id", &hir_token_file_id_buf);
-        resources.buffer("hir_status", &hir_status_buf);
         resources.buffer("token_active_dispatch_args", &token_active_dispatch_args);
         resources.buffer("hir_active_dispatch_args", &hir_active_dispatch_args);
         resources.buffer(
@@ -484,7 +474,7 @@ impl GpuTypeChecker {
         if let Some(hir_items) = hir_items {
             register_hir_item_resources(&mut resources, hir_items);
         } else {
-            register_empty_hir_resources(&mut resources, &empty_hir, &hir_active_count);
+            register_empty_hir_resources(&mut resources, &empty_hir);
         }
         resources.buffer("status", &self.status_buf);
         resources.buffer("visible_decl", &visible_decl);

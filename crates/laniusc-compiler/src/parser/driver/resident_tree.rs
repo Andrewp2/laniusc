@@ -46,14 +46,32 @@ impl U32Readback {
 
     fn read_words(&self, count: usize) -> Result<Vec<u32>> {
         let mapped = self.buffer.slice(..).get_mapped_range();
-        let words = read_u32_words(&mapped, count)?;
+        let words = read_u32_words(&mapped, count).map_err(|err| {
+            anyhow::anyhow!(
+                "{}: expected {} u32 words from {} mapped bytes: {err}",
+                self.label,
+                count,
+                mapped.len()
+            )
+        })?;
         drop(mapped);
         self.buffer.unmap();
         Ok(words)
     }
 
     fn read_words_padded(&self, count: usize, fill: u32) -> Result<Vec<u32>> {
-        let mut words = self.read_words(count)?;
+        let mapped = self.buffer.slice(..).get_mapped_range();
+        let available = (mapped.len() / std::mem::size_of::<u32>()).min(count);
+        let mut words = read_u32_words(&mapped, available).map_err(|err| {
+            anyhow::anyhow!(
+                "{}: expected up to {} u32 words from {} mapped bytes: {err}",
+                self.label,
+                count,
+                mapped.len()
+            )
+        })?;
+        drop(mapped);
+        self.buffer.unmap();
         words.resize(count, fill);
         Ok(words)
     }
@@ -2082,15 +2100,25 @@ impl ResidentTreeReadbacks {
             hir_stmt_record_operand2,
             hir_stmt_scope_end: self.hir_stmt_scope_end.read_words(tree_len)?,
             hir_item_kind: self.hir_item_kind.read_words(tree_len)?,
-            hir_item_name_token: self.hir_item_name_token.read_words(tree_len)?,
+            hir_item_name_token: self
+                .hir_item_name_token
+                .read_words_padded(tree_len, u32::MAX)?,
             hir_item_decl_token: self.hir_item_decl_token.read_words(tree_len)?,
-            hir_item_namespace: self.hir_item_namespace.read_words(tree_len)?,
-            hir_item_visibility: self.hir_item_visibility.read_words(tree_len)?,
-            hir_item_path_start: self.hir_item_path_start.read_words(tree_len)?,
-            hir_item_path_end: self.hir_item_path_end.read_words(tree_len)?,
-            hir_item_path_node: self.hir_item_path_node.read_words(tree_len)?,
+            hir_item_namespace: self.hir_item_namespace.read_words_padded(tree_len, 0)?,
+            hir_item_visibility: self.hir_item_visibility.read_words_padded(tree_len, 0)?,
+            hir_item_path_start: self
+                .hir_item_path_start
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_item_path_end: self
+                .hir_item_path_end
+                .read_words_padded(tree_len, u32::MAX)?,
+            hir_item_path_node: self
+                .hir_item_path_node
+                .read_words_padded(tree_len, u32::MAX)?,
             hir_item_file_id: self.hir_item_file_id.read_words(tree_len)?,
-            hir_item_import_target_kind: self.hir_item_import_target_kind.read_words(tree_len)?,
+            hir_item_import_target_kind: self
+                .hir_item_import_target_kind
+                .read_words_padded(tree_len, 0)?,
             hir_variant_parent_enum: self
                 .hir_variant_parent_enum
                 .read_words_padded(tree_len, u32::MAX)?,

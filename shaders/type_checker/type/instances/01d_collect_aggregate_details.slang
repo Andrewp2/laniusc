@@ -62,14 +62,9 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_hir_node_count()
+uint active_compact_hir_count()
 {
     return min(gParams.n_hir_nodes, compact_hir_count[0u]);
-}
-
-bool valid_node(uint node)
-{
-    return node != INVALID && node < active_hir_node_count();
 }
 
 bool valid_token(uint token)
@@ -79,7 +74,7 @@ bool valid_token(uint token)
 
 uint projected_type_for_type_node(uint node)
 {
-    if (!valid_node(node))
+    if (node >= active_compact_hir_count())
         return TY_UNKNOWN;
 
     uint token = compact_hir_core[node].token_start;
@@ -108,8 +103,8 @@ uint projected_type_for_type_node(uint node)
 bool child_ref(uint node, out uint tag, out uint payload)
 {
     tag = TYPE_REF_ERROR;
-    payload = valid_node(node) ? compact_hir_core[node].token_start : INVALID;
-    if (!valid_node(node))
+    payload = node < active_compact_hir_count() ? compact_hir_core[node].token_start : INVALID;
+    if (node >= active_compact_hir_count())
         return false;
     uint token = compact_hir_core[node].token_start;
     if (!valid_token(token))
@@ -169,7 +164,9 @@ void publish_array_or_slice_details(uint node, uint token, bool is_array)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!valid_node(node) || compact_hir_core[node].kind != HIR_TYPE)
+    if (node >= active_compact_hir_count())
+        return;
+    if (compact_hir_core[node].kind != HIR_TYPE)
         return;
 
     uint token = compact_hir_core[node].token_start;

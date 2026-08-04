@@ -228,6 +228,36 @@ pub struct HirPredicate {
     pub metadata: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
+/// Dense, phase-boundary facts used by predicate validation.
+///
+/// These are not parser rows: every node reference has already been translated
+/// to a canonical HIR id by the canonical HIR core pass. The production tag is
+/// retained only for validating the small grammar-specific predicate surface;
+/// all ordinary semantic consumers use `HirCore`, `HirLinks`, and the compact
+/// family tables instead.
+pub struct HirPredicateFacts {
+    pub production: u32,
+    pub token_start: u32,
+    pub type_path_leaf: u32,
+    pub type_arg_start: u32,
+    pub type_arg_count: u32,
+    pub type_arg_next: u32,
+    pub method_impl_receiver_type: u32,
+    pub expr_result_root: u32,
+    pub struct_lit_head: u32,
+    /// Dense owner of a bound-path segment, when the parser's bound-path
+    /// relation identified one.  This keeps the grammar-specific relation at
+    /// the compact HIR boundary instead of exposing the raw row map.
+    pub bound_path_owner: u32,
+    /// Dense generic-declaration or impl owner for this predicate bound.
+    pub predicate_owner: u32,
+    /// Dense target type for an impl predicate, or the subject token for a
+    /// generic bound. The interpretation follows the predicate family row.
+    pub predicate_subject: u32,
+}
+
 /// Allocation-free handle set for the compact parser phase artifact.
 ///
 /// Cloning this view only clones `wgpu::Buffer` handles. It deliberately does
@@ -306,6 +336,7 @@ pub struct GpuHirView {
     pub method_signatures: LaniusBuffer<HirMethodSignature>,
     pub predicate_count: LaniusBuffer<u32>,
     pub predicates: LaniusBuffer<HirPredicate>,
+    pub predicate_facts: LaniusBuffer<HirPredicateFacts>,
 }
 
 /// All GPU-side buffers for the parser pipeline.
@@ -554,12 +585,20 @@ pub struct ParserBuffers {
     pub hir_canonical_anchor_owner: LaniusBuffer<u32>,
     /// Prefix-before value for every raw parse node. It is a dense id only
     /// when `hir_semantic_flag[raw]` is set by the canonical mark pass.
+    /// Raw-row prefix storage used during canonical construction. After the
+    /// final canonical validation pass, the same allocation is republished as
+    /// the semantic raw-row to dense-HIR alias map consumed by type checking.
     pub hir_canonical_prefix_before_raw: LaniusBuffer<u32>,
     pub hir_canonical_dense_to_raw: LaniusBuffer<u32>,
     pub hir_canonical_raw_to_dense: LaniusBuffer<u32>,
     pub hir_core: LaniusBuffer<HirCore>,
     pub hir_links: LaniusBuffer<HirLinks>,
     pub hir_payload: LaniusBuffer<HirPayload>,
+    pub hir_canonical_predicate_facts: LaniusBuffer<HirPredicateFacts>,
+    /// Dense HIR ids corresponding to the semantic preorder rows. This is a
+    /// phase-boundary projection; the raw parser relation remains parser
+    /// workspace and is not registered with type-check passes.
+    pub hir_canonical_semantic_dense_node: LaniusBuffer<u32>,
     pub hir_canonical_scope_end: LaniusBuffer<u32>,
     pub hir_canonical_nearest_loop: LaniusBuffer<u32>,
     pub hir_canonical_nearest_block: LaniusBuffer<u32>,
@@ -942,6 +981,7 @@ impl GpuHirView {
             method_signatures: buffers.hir_method_signature_rows.clone(),
             predicate_count: buffers.hir_predicate_table_count.clone(),
             predicates: buffers.hir_predicate_rows.clone(),
+            predicate_facts: buffers.hir_canonical_predicate_facts.clone(),
         }
     }
 }

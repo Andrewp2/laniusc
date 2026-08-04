@@ -29,6 +29,12 @@ StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_type_root_owner;
 StructuredBuffer<uint> hir_method_impl_receiver_type;
 StructuredBuffer<uint> hir_type_alias_target_node;
+StructuredBuffer<uint> hir_type_path_leaf_node;
+StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
+StructuredBuffer<uint> hir_type_arg_start;
+StructuredBuffer<uint> hir_type_arg_count;
+StructuredBuffer<uint> hir_type_arg_next;
+StructuredBuffer<uint> hir_method_impl_receiver_type_node;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_param_type_node;
 StructuredBuffer<uint> hir_stmt_record;
@@ -38,6 +44,7 @@ StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_expr_float_bits;
 StructuredBuffer<uint> hir_expr_name_role;
 StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_call_context_stmt_node;
@@ -54,6 +61,7 @@ StructuredBuffer<uint> hir_nearest_fn_node;
 RWStructuredBuffer<HirCore> hir_core;
 RWStructuredBuffer<HirLinks> hir_links;
 RWStructuredBuffer<HirPayload> hir_payload;
+RWStructuredBuffer<HirPredicateFacts> hir_canonical_predicate_facts;
 RWStructuredBuffer<uint> hir_canonical_scope_end;
 RWStructuredBuffer<uint> hir_canonical_nearest_loop;
 RWStructuredBuffer<uint> hir_canonical_nearest_block;
@@ -79,6 +87,8 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_MODULE_ITEM = 31u;
+static const uint HIR_IMPORT_ITEM = 32u;
 static const uint HIR_FILE = 1u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_EXPR = 14u;
@@ -157,7 +167,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         core.kind = 29u;
     else if (item_kind == 9u || item_kind == 10u)
         core.kind = 2u;
-    core.parent = dense_id(parent_value[raw]);
+    // Parent-init pointer jumping already publishes the nearest canonical
+    // ancestor as a dense HIR id. Preserve that identity directly; applying
+    // raw_to_dense a second time would reinterpret dense rows as raw nodes.
+    core.parent = parent_value[raw];
     core.token_start = hir_token_pos[raw];
     core.token_end = hir_token_end[raw];
 
@@ -328,6 +341,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_core[row] = core;
     hir_links[row] = links;
     hir_payload[row] = payload;
+    HirPredicateFacts predicate_facts;
+    predicate_facts.production = production;
+    predicate_facts.token_start = hir_token_pos[raw];
+    predicate_facts.type_path_leaf = dense_id(hir_type_path_leaf_node[raw]);
+    predicate_facts.type_arg_start = dense_id(hir_type_arg_start[raw]);
+    predicate_facts.type_arg_count = hir_type_arg_count[raw];
+    predicate_facts.type_arg_next = dense_id(hir_type_arg_next[raw]);
+    predicate_facts.method_impl_receiver_type =
+        dense_id(hir_method_impl_receiver_type_node[raw]);
+    predicate_facts.expr_result_root = dense_id(hir_expr_result_root_node[raw]);
+    predicate_facts.struct_lit_head = dense_id(hir_struct_lit_head_node[raw]);
+    predicate_facts.bound_path_owner = dense_id(hir_bound_path_owner_by_leaf[raw]);
+    predicate_facts.predicate_owner = INVALID;
+    predicate_facts.predicate_subject = INVALID;
+    hir_canonical_predicate_facts[row] = predicate_facts;
     hir_canonical_scope_end[row] = hir_stmt_scope_end[raw];
     hir_canonical_nearest_loop[row] = dense_id(hir_nearest_loop_node[raw]);
     hir_canonical_nearest_block[row] = dense_id(hir_nearest_block_node[raw]);

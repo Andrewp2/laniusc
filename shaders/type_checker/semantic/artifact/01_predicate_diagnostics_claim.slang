@@ -23,8 +23,6 @@ struct PredicateDiagnosticFact
     uint winner_raw;
 };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<uint> predicate_status;
 RWStructuredBuffer<PredicateDiagnosticFact> compact_predicate_diagnostic_facts;
@@ -33,9 +31,9 @@ static const uint PARSER_FEATURE_TYPE_ARGS = 0x00000001u;
 static const uint PARSER_FEATURE_PREDICATES = 0x00000020u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-uint active_raw_count()
+uint active_compact_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 bool error_status(uint value) { return value != INVALID && value != 0u; }
 
@@ -43,17 +41,15 @@ bool error_status(uint value) { return value != INVALID && value != 0u; }
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint raw = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    if (raw >= active_raw_count() ||
+    uint dense = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (dense >= active_compact_count() ||
         (gParams.parser_feature_flags &
          (PARSER_FEATURE_TYPE_ARGS | PARSER_FEATURE_PREDICATES)) == 0u)
         return;
-    uint dense = raw_to_compact_hir[raw];
-    if (dense == INVALID || dense >= min(gParams.n_hir_nodes, compact_hir_count[0u])) return;
 
-    bool carries_error = error_status(predicate_status[raw]);
+    bool carries_error = error_status(predicate_status[dense]);
     if (!carries_error) return;
 
     uint ignored;
-    InterlockedMin(compact_predicate_diagnostic_facts[dense].winner_raw, raw, ignored);
+    InterlockedMin(compact_predicate_diagnostic_facts[dense].winner_raw, dense, ignored);
 }

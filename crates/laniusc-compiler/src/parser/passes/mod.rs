@@ -1377,7 +1377,11 @@ pub fn record_canonical_hir(
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     p.hir_canonical_validate
-        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+        // The validation rows are canonical-HIR bounded, but the same pass
+        // also publishes the raw semantic-row alias map. Dispatch across the
+        // raw capacity so every parser row receives an explicit dense-ID
+        // result before the type checker starts.
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     crate::gpu::buffers::record_tracked_buffer_phase_snapshot("compact_hir_materialized");
     Ok(())
 }

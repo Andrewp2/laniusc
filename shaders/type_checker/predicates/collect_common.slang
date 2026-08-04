@@ -36,33 +36,18 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-#if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;
-#endif
+StructuredBuffer<HirPredicateFacts> compact_hir_predicate_facts;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-#if PREDICATE_BOUND_PATH_RESOLUTION
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
-StructuredBuffer<uint> subtree_end;
-#endif
-StructuredBuffer<uint> hir_token_pos;
-#if PREDICATE_COLLECT_IMPL_RECORDS
-StructuredBuffer<uint> hir_type_path_leaf_node;
-#endif
-#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
-StructuredBuffer<uint> hir_type_arg_start;
-StructuredBuffer<uint> hir_type_arg_count;
+#if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
+StructuredBuffer<uint> compact_type_arg_count;
+StructuredBuffer<HirTypeArg> compact_type_args;
+StructuredBuffer<HirRange> compact_type_arg_ranges;
 #endif
 #if PREDICATE_COLLECT_IMPL_RECORDS
-StructuredBuffer<uint> hir_type_arg_next;
-#endif
-#if PREDICATE_COLLECT_IMPL_RECORDS
-StructuredBuffer<uint> hir_method_impl_receiver_type_node;
 StructuredBuffer<uint> predicate_trait_impl_trait_type_node;
 #endif
 StructuredBuffer<uint> name_id_by_token;
@@ -107,7 +92,6 @@ StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_prefix_id;
 #endif
 #if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
-StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
@@ -213,7 +197,9 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u
+        ? 0u
+        : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -233,7 +219,7 @@ bool valid_token(uint token)
 
 uint parent_node(uint node)
 {
-    return valid_node(node) ? parent[node] : INVALID;
+    return valid_node(node) ? compact_hir_core[node].parent : INVALID;
 }
 
 #if PREDICATE_BOUND_PATH_RESOLUTION
@@ -241,7 +227,7 @@ uint first_child_node(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint child = first_child[node];
+    uint child = compact_hir_links[node].first_child;
     return valid_node(child) && parent_node(child) == node && child > node
         ? child
         : INVALID;
@@ -251,7 +237,7 @@ uint next_sibling_node(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint sibling = next_sibling[node];
+    uint sibling = compact_hir_links[node].next_sibling;
     uint owner = parent_node(node);
     return valid_node(owner) &&
            valid_node(sibling) &&
@@ -279,13 +265,12 @@ bool callable_generic_decl_item_kind(uint item_kind)
            item_kind == HIR_ITEM_KIND_EXTERN_FN;
 }
 
-uint compact_item_kind_for_raw(uint node)
+uint compact_item_kind_for_node(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint dense = raw_to_compact_hir[node];
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    return dense < count ? compact_hir_payload[dense].a : INVALID;
+    return node < count ? compact_hir_payload[node].a : INVALID;
 }
 
 uint generic_decl_owner_for_node(uint node)
@@ -296,7 +281,7 @@ uint generic_decl_owner_for_node(uint node)
     uint owner = generic_decl_owner_by_node[node];
     // Owner records also include impl headers; this pass only supports item-style
     // generic owners for bound predicates, so impl-bound predicates fail closed.
-    return valid_node(owner) && generic_decl_item_kind(compact_item_kind_for_raw(owner))
+    return valid_node(owner) && generic_decl_item_kind(compact_item_kind_for_node(owner))
         ? owner
         : INVALID;
 }
@@ -311,12 +296,11 @@ uint generic_owner_token_for_decl(uint decl_node)
 {
     if (!valid_node(decl_node))
         return INVALID;
-    uint dense = raw_to_compact_hir[decl_node];
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense >= count)
-        return hir_token_pos[decl_node];
-    uint name_token = compact_hir_payload[dense].b;
-    return valid_token(name_token) ? name_token : compact_hir_core[dense].token_start;
+    if (decl_node >= count)
+        return INVALID;
+    uint name_token = compact_hir_payload[decl_node].b;
+    return valid_token(name_token) ? name_token : compact_hir_core[decl_node].token_start;
 }
 
 #if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
@@ -466,84 +450,29 @@ uint generic_param_slot_for_name(uint decl_node, uint name_token)
 #if PREDICATE_BOUND_DECL_RESOLUTION
 uint predicate_list_for_direct_bound(uint node)
 {
-    if (!valid_node(node))
-        return INVALID;
-
-    uint parent0 = parent_node(node);
-    if (!valid_node(parent0))
-        return INVALID;
-
-    uint kind0 = node_kind[parent0];
-    if (kind0 == PROD_TYPE_PARAM_BOUND_LIST)
-        return parent0;
-    if (kind0 != PROD_TYPE_PARAM_BOUND_MORE)
-        return INVALID;
-
-    uint direct_list = parent_node(parent0);
-    if (valid_node(direct_list) && node_kind[direct_list] == PROD_TYPE_PARAM_BOUND_LIST)
-        return direct_list;
-
-    uint list_node = predicate_bound_list_by_node[node];
-    if (!valid_node(list_node) || node_kind[list_node] != PROD_TYPE_PARAM_BOUND_LIST)
-        return INVALID;
-
-    uint owner = parent_node(list_node);
-    if (valid_node(owner) && node_kind[owner] == PROD_TYPE_PARAM_BOUND)
-        return INVALID;
-
-    return list_node;
+    return valid_node(node) && compact_hir_predicate_facts[node].predicate_owner != INVALID
+        ? node
+        : INVALID;
 }
 
 bool unsupported_direct_bound_list_relation(uint node)
 {
-    if (!valid_node(node))
-        return false;
-
-    uint parent0 = parent_node(node);
-    if (!valid_node(parent0) || node_kind[parent0] != PROD_TYPE_PARAM_BOUND_MORE)
-        return false;
-
-    uint parent1 = parent_node(parent0);
-    if (!valid_node(parent1) || node_kind[parent1] != PROD_TYPE_PARAM_BOUND_MORE)
-        return false;
-
-    uint list_node = predicate_bound_list_by_node[node];
-    uint owner = valid_node(list_node) && node_kind[list_node] == PROD_TYPE_PARAM_BOUND_LIST
-        ? parent_node(list_node)
-        : INVALID;
-    return valid_node(owner) && node_kind[owner] == PROD_TYPE_PARAM_BOUND;
+    return valid_node(node) &&
+           compact_hir_predicate_facts[node].predicate_owner == INVALID &&
+           (compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT ||
+            compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_REF);
 }
 
 bool direct_type_param_bound_list(uint list_node)
 {
-    if (!valid_node(list_node))
-        return false;
-
-    uint owner = parent_node(list_node);
-    return valid_node(owner) && node_kind[owner] == PROD_TYPE_PARAM_BOUND;
+    return false;
 }
 
 uint predicate_subject_token_for_list(uint list_node)
 {
-    if (!valid_node(list_node))
-        return INVALID;
-
-    uint owner = parent_node(list_node);
-    if (!valid_node(owner))
-        return INVALID;
-
-    if (node_kind[owner] == PROD_WHERE_TYPE_BOUND)
-        return hir_token_pos[owner];
-
-    if (node_kind[owner] == PROD_TYPE_PARAM_BOUND)
-    {
-        uint param_node = parent_node(owner);
-        return valid_node(param_node) && node_kind[param_node] == PROD_ENUM_TYPE_PARAM
-            ? hir_token_pos[param_node]
-            : INVALID;
-    }
-
-    return INVALID;
+    return valid_node(list_node)
+        ? compact_hir_predicate_facts[list_node].predicate_subject
+        : INVALID;
 }
 #endif
 
@@ -577,62 +506,28 @@ uint import_visible_type_record_count()
 
 uint bound_path_node(uint expr_node)
 {
-    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+    if (!valid_node(expr_node) ||
+        compact_hir_predicate_facts[expr_node].production != PROD_BOUND_TYPE_IDENT)
         return INVALID;
-
-    uint child = first_child[expr_node];
-    return valid_node(child) && node_kind[child] == PROD_BOUND_TYPE_PATH
-        ? child
-        : INVALID;
+    return expr_node;
 }
 
 bool bound_ident_has_direct_arg_list(uint expr_node)
 {
-    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+    if (!valid_node(expr_node) ||
+        compact_hir_predicate_facts[expr_node].production != PROD_BOUND_TYPE_IDENT)
         return false;
-
-    uint child = first_child_node(expr_node);
-    // A bound identifier has a grammar-fixed path/argument child shape. Probe
-    // the bounded local shape and fail closed instead of walking an arbitrary
-    // sibling list.
-    for (uint step = 0u; step < 3u; step += 1u)
-    {
-        if (!valid_node(child))
-            return false;
-        uint kind = node_kind[child];
-        if (kind == PROD_BOUND_TYPE_ARGS_SOME)
-            return true;
-        if (kind == PROD_BOUND_TYPE_ARGS_NONE)
-            return false;
-        child = next_sibling_node(child);
-    }
-    return false;
-}
-
-bool bound_path_segment_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_BOUND_TYPE_PATH_IDENT ||
-           kind == PROD_PATH_IDENT ||
-           kind == PROD_PATH_IDENT_ARGS;
-}
-
-bool bound_path_tail_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_BOUND_TYPE_PATH_MORE || kind == PROD_PATH_MORE;
+    HirRange range = compact_type_arg_ranges[expr_node];
+    uint count = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
+    return range.start <= count && range.count <= count - range.start && range.count != 0u;
 }
 
 uint bound_path_record_id(uint expr_node)
 {
-    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+    if (!valid_node(expr_node) ||
+        compact_hir_predicate_facts[expr_node].production != PROD_BOUND_TYPE_IDENT)
         return INVALID;
-    uint owner = raw_to_compact_hir[expr_node];
-    uint path_i = valid_compact_hir(owner) ? path_id_by_owner_hir[owner] : INVALID;
+    uint path_i = valid_compact_hir(expr_node) ? path_id_by_owner_hir[expr_node] : INVALID;
     return path_i < path_record_count() ? path_i : INVALID;
 }
 
@@ -828,9 +723,8 @@ uint owner_module_for_decl_node(uint owner_decl_node)
     if (!valid_node(owner_decl_node))
         return INVALID;
 
-    uint dense = raw_to_compact_hir[owner_decl_node];
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    uint name_token = dense < count ? compact_hir_payload[dense].b : INVALID;
+    uint name_token = owner_decl_node < count ? compact_hir_payload[owner_decl_node].b : INVALID;
     if (!valid_token(name_token))
         return INVALID;
 
@@ -906,11 +800,11 @@ bool language_type_exists_by_name(uint name_id)
 #if PREDICATE_COLLECT_IMPL_RECORDS
 uint type_path_record_id(uint expr_node)
 {
-    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_TYPE_IDENT)
+    if (!valid_node(expr_node) ||
+        compact_hir_predicate_facts[expr_node].production != PROD_TYPE_IDENT)
         return INVALID;
 
-    uint owner = raw_to_compact_hir[expr_node];
-    uint path_i = valid_compact_hir(owner) ? path_id_by_owner_hir[owner] : INVALID;
+    uint path_i = valid_compact_hir(expr_node) ? path_id_by_owner_hir[expr_node] : INVALID;
     return path_i != INVALID && path_i < path_record_count() ? path_i : INVALID;
 }
 
@@ -923,8 +817,9 @@ bool type_path_scan_supported(uint expr_node)
         return count != 0u && path_segment_base[path_i] + count <= gParams.n_tokens;
     }
 
-    uint token = valid_node(expr_node) && node_kind[expr_node] == PROD_TYPE_IDENT
-        ? hir_token_pos[expr_node]
+    uint token = valid_node(expr_node) &&
+            compact_hir_predicate_facts[expr_node].production == PROD_TYPE_IDENT
+        ? compact_hir_core[expr_node].token_start
         : INVALID;
     return valid_token(token) && name_id_by_token[token] != INVALID;
 }
@@ -934,8 +829,9 @@ uint type_path_segment_count(uint expr_node)
     uint path_i = type_path_record_id(expr_node);
     if (path_i == INVALID)
     {
-        uint token = valid_node(expr_node) && node_kind[expr_node] == PROD_TYPE_IDENT
-            ? hir_token_pos[expr_node]
+        uint token = valid_node(expr_node) &&
+                compact_hir_predicate_facts[expr_node].production == PROD_TYPE_IDENT
+            ? compact_hir_core[expr_node].token_start
             : INVALID;
         return valid_token(token) && name_id_by_token[token] != INVALID ? 1u : 0u;
     }
@@ -950,8 +846,9 @@ uint type_path_segment_token(uint expr_node, uint segment_i)
     uint count = path_i != INVALID ? path_segment_count[path_i] : 0u;
     if (path_i == INVALID)
     {
-        uint token = valid_node(expr_node) && node_kind[expr_node] == PROD_TYPE_IDENT
-            ? hir_token_pos[expr_node]
+        uint token = valid_node(expr_node) &&
+                compact_hir_predicate_facts[expr_node].production == PROD_TYPE_IDENT
+            ? compact_hir_core[expr_node].token_start
             : INVALID;
         return segment_i == 0u && valid_token(token) && name_id_by_token[token] != INVALID
             ? token
@@ -991,7 +888,9 @@ uint validate_trait_impl_target_type(uint expr_node)
 
     uint leaf_token = type_path_leaf_token(expr_node);
     uint leaf_name_id = valid_token(leaf_token) ? name_id_by_token[leaf_token] : INVALID;
-    uint arg_count = valid_node(expr_node) ? hir_type_arg_count[expr_node] : 0u;
+    uint arg_count = valid_node(expr_node)
+        ? compact_type_arg_ranges[expr_node].count
+        : 0u;
     if (segment_count == 1u && language_type_exists_by_name(leaf_name_id))
         return arg_count == 0u
             ? PREDICATE_STATUS_OK
@@ -1124,6 +1023,34 @@ uint encoded_concrete_type_arg_for_bound(uint owner_decl_node, uint arg_node)
 #endif
 #endif
 
+#if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
+uint direct_type_arg_count(uint owner_type_node)
+{
+    if (!valid_node(owner_type_node))
+        return 0u;
+    uint count = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
+    HirRange range = compact_type_arg_ranges[owner_type_node];
+    return range.start <= count && range.count <= count - range.start ? range.count : 0u;
+}
+
+uint direct_type_arg_node(uint owner_type_node, uint ordinal)
+{
+    if (!valid_node(owner_type_node))
+        return INVALID;
+
+    uint count = direct_type_arg_count(owner_type_node);
+    if (ordinal >= count || ordinal >= 2u)
+        return INVALID;
+
+    HirRange range = compact_type_arg_ranges[owner_type_node];
+    uint total = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
+    if (range.start > total || range.count > total - range.start)
+        return INVALID;
+    uint row = range.start + ordinal;
+    return compact_type_args[row].value;
+}
+#endif
+
 #if PREDICATE_COLLECT_IMPL_RECORDS
 uint encoded_concrete_type_arg_for_type_node(uint arg_node)
 {
@@ -1193,8 +1120,8 @@ uint direct_type_arg_scalar_token(uint owner_type_node, uint ordinal)
     if (!valid_node(owner_type_node))
         return INVALID;
 
-    uint leaf = hir_type_path_leaf_node[owner_type_node];
-    uint leaf_token = valid_node(leaf) ? hir_token_pos[leaf] : INVALID;
+    uint leaf = compact_hir_predicate_facts[owner_type_node].type_path_leaf;
+    uint leaf_token = valid_node(leaf) ? compact_hir_core[leaf].token_start : INVALID;
     if (!valid_token(leaf_token))
         return INVALID;
     uint max_token_before_arg_offset = 0xffffffffu - 2u;
@@ -1279,7 +1206,7 @@ bool trait_impl_type_arg_token_is_header_generic(uint impl_node, uint token)
 bool trait_impl_type_arg_is_header_generic(uint impl_node, uint arg_node)
 {
     if (!valid_node(arg_node) ||
-        node_kind[arg_node] != PROD_TYPE_IDENT ||
+        compact_hir_predicate_facts[arg_node].production != PROD_TYPE_IDENT ||
         direct_type_arg_count(arg_node) != 0u ||
         type_path_segment_count(arg_node) != 1u)
         return false;
@@ -1496,41 +1423,16 @@ bool duplicate_method_contract_for_owner_name(uint owner_node, uint name_id)
 #endif
 
 #if PREDICATE_COLLECT_IMPL_RECORDS
-uint direct_type_arg_count(uint owner_type_node)
-{
-    if (!valid_node(owner_type_node))
-        return 0u;
-
-    return hir_type_arg_count[owner_type_node];
-}
-
-uint direct_type_arg_node(uint owner_type_node, uint ordinal)
-{
-    if (!valid_node(owner_type_node))
-        return INVALID;
-
-    uint count = direct_type_arg_count(owner_type_node);
-    if (ordinal >= count || ordinal >= 2u)
-        return INVALID;
-
-    uint node = hir_type_arg_start[owner_type_node];
-    if (!valid_node(node) || ordinal == 0u)
-        return valid_node(node) ? node : INVALID;
-
-    uint next_node = hir_type_arg_next[node];
-    return valid_node(next_node) && next_node > node ? next_node : INVALID;
-}
-
 bool inherent_impl_target_arg_supported(uint impl_node, uint arg_node)
 {
     if (!valid_node(arg_node))
         return false;
 
-    uint source_token = hir_token_pos[arg_node];
+    uint source_token = compact_hir_core[arg_node].token_start;
     if (trait_impl_type_arg_token_is_header_generic(impl_node, source_token))
         return true;
 
-    if (node_kind[arg_node] != PROD_TYPE_IDENT)
+    if (compact_hir_predicate_facts[arg_node].production != PROD_TYPE_IDENT)
         return false;
     if (!type_path_scan_supported(arg_node))
         return false;
@@ -1571,49 +1473,30 @@ bool inherent_impl_target_arg_token_supported(uint impl_node, uint owner_type_no
 
 bool inherent_impl_target_args_supported(uint impl_node, uint expr_node, uint arg_count)
 {
-    uint arg_node = valid_node(expr_node) ? hir_type_arg_start[expr_node] : INVALID;
-
     for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
     {
+        uint arg_node = direct_type_arg_node(expr_node, ordinal);
         bool supported = valid_node(arg_node)
             ? inherent_impl_target_arg_supported(impl_node, arg_node)
             : inherent_impl_target_arg_token_supported(impl_node, expr_node, ordinal);
         if (!supported)
             return false;
-
-        if (valid_node(arg_node))
-        {
-            uint next_node = hir_type_arg_next[arg_node];
-            if (ordinal + 1u < arg_count &&
-                (!valid_node(next_node) || next_node <= arg_node))
-                return false;
-            arg_node = next_node;
-        }
     }
     return true;
 }
 
 void mark_direct_type_arg_syntax_tokens(uint expr_node, uint arg_count)
 {
-    uint arg_node = valid_node(expr_node) ? hir_type_arg_start[expr_node] : INVALID;
-
     for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
     {
+        uint arg_node = direct_type_arg_node(expr_node, ordinal);
         uint token = valid_node(arg_node) ? type_path_leaf_token(arg_node) : INVALID;
         if (!valid_token(token) && valid_node(arg_node))
-            token = hir_token_pos[arg_node];
+            token = compact_hir_core[arg_node].token_start;
         if (!valid_token(token))
             token = direct_type_arg_scalar_token(expr_node, ordinal);
         mark_predicate_syntax_token(token);
 
-        if (valid_node(arg_node))
-        {
-            uint next_node = hir_type_arg_next[arg_node];
-            if (ordinal + 1u < arg_count &&
-                (!valid_node(next_node) || next_node <= arg_node))
-                return;
-            arg_node = next_node;
-        }
     }
 }
 
@@ -1658,17 +1541,13 @@ bool trait_impl_header_is_public(uint impl_node)
 {
     if (!valid_node(impl_node))
         return false;
-    uint dense = raw_to_compact_hir[impl_node];
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense < count && compact_hir_payload[dense].d == HIR_ITEM_VIS_PUBLIC)
+    if (impl_node < count && compact_hir_payload[impl_node].d == HIR_ITEM_VIS_PUBLIC)
         return true;
 
     uint parent_i = parent_node(impl_node);
-    if (valid_node(parent_i) && node_kind[parent_i] == PROD_PUB_IMPL)
-        return true;
-
-    uint grandparent_i = parent_node(parent_i);
-    return valid_node(grandparent_i) && node_kind[grandparent_i] == PROD_PUB_IMPL;
+    return valid_node(parent_i) &&
+           compact_hir_predicate_facts[parent_i].production == PROD_PUB_IMPL;
 }
 
 bool trait_impl_header_visibility_matches_trait(uint trait_decl_i, uint impl_node)
@@ -1694,17 +1573,19 @@ uint method_unsupported_contract_status(uint method_node)
 uint impl_receiver_type_node(uint impl_node)
 {
     uint type_node = valid_node(impl_node)
-        ? hir_method_impl_receiver_type_node[impl_node]
+        ? compact_hir_predicate_facts[impl_node].method_impl_receiver_type
         : INVALID;
     return valid_node(type_node) ? type_node : INVALID;
 }
 
 uint direct_type_expr_child(uint node, uint ordinal)
 {
-    if (!valid_node(node) || ordinal != 0u || node_kind[node] != PROD_IMPL_TRAIT)
+    if (!valid_node(node) || ordinal != 0u ||
+        compact_hir_predicate_facts[node].production != PROD_IMPL_TRAIT)
         return INVALID;
     uint trait_type = predicate_trait_impl_trait_type_node[node];
-    return valid_node(trait_type) && node_kind[trait_type] == PROD_TYPE_IDENT
+    return valid_node(trait_type) &&
+           compact_hir_predicate_facts[trait_type].production == PROD_TYPE_IDENT
         ? trait_type
         : INVALID;
 }
@@ -1758,9 +1639,9 @@ uint validate_trait_impl_type_args(
             continue;
         }
 
-        if (node_kind[arg_node] != PROD_TYPE_IDENT)
+        if (compact_hir_predicate_facts[arg_node].production != PROD_TYPE_IDENT)
         {
-            uint token = hir_token_pos[arg_node];
+            uint token = compact_hir_core[arg_node].token_start;
             if (ordinal == 0u)
                 first_arg_token = token;
             else
@@ -1805,7 +1686,7 @@ uint validate_trait_impl_type_args(
         {
             uint token = type_path_leaf_token(arg_node);
             if (!valid_token(token))
-                token = hir_token_pos[arg_node];
+                token = compact_hir_core[arg_node].token_start;
             if (ordinal == 0u)
                 first_arg_token = token;
             else
@@ -2021,7 +1902,8 @@ void validate_inherent_impl_header_node(uint node)
 #if PREDICATE_BOUND_ARGUMENT_VALIDATION
 bool valid_bound_type_arg(uint owner_decl_node, uint expr_node)
 {
-    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+    if (!valid_node(expr_node) ||
+        compact_hir_predicate_facts[expr_node].production != PROD_BOUND_TYPE_IDENT)
         return false;
     if (!bound_path_shape_supported(expr_node))
         return false;
@@ -2049,7 +1931,8 @@ bool valid_bound_type_arg(uint owner_decl_node, uint expr_node)
 
 bool bound_type_arg_shape_supported(uint owner_decl_node, uint expr_node)
 {
-    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+    if (!valid_node(expr_node) ||
+        compact_hir_predicate_facts[expr_node].production != PROD_BOUND_TYPE_IDENT)
         return false;
     if (!bound_path_shape_supported(expr_node))
         return false;
@@ -2077,7 +1960,8 @@ bool bound_type_arg_shape_supported(uint owner_decl_node, uint expr_node)
 
 bool bound_arg_requires_instance_args(uint owner_decl_node, uint expr_node)
 {
-    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+    if (!valid_node(expr_node) ||
+        compact_hir_predicate_facts[expr_node].production != PROD_BOUND_TYPE_IDENT)
         return false;
     if (!bound_path_shape_supported(expr_node))
         return true;
@@ -2112,10 +1996,10 @@ bool bound_arg_requires_instance_args(uint owner_decl_node, uint expr_node)
 
 uint predicate_bound_arg_record_value(uint owner_decl_node, uint arg_node)
 {
-    uint kind = node_kind[arg_node];
+    uint kind = compact_hir_predicate_facts[arg_node].production;
     uint token = kind == PROD_BOUND_TYPE_IDENT
         ? bound_path_leaf_token(arg_node)
-        : hir_token_pos[arg_node];
+        : compact_hir_core[arg_node].token_start;
     if (!valid_token(token))
         return INVALID;
 
@@ -2147,22 +2031,21 @@ uint predicate_bound_arg_diagnostic_token(uint arg_node)
 {
     if (!valid_node(arg_node))
         return INVALID;
-    uint token = node_kind[arg_node] == PROD_BOUND_TYPE_IDENT
+    uint token = compact_hir_predicate_facts[arg_node].production == PROD_BOUND_TYPE_IDENT
         ? bound_path_leaf_token(arg_node)
-        : hir_token_pos[arg_node];
+        : compact_hir_core[arg_node].token_start;
     if (valid_token(token))
         return token;
-    token = hir_token_pos[arg_node];
+    token = compact_hir_core[arg_node].token_start;
     return valid_token(token) ? token : INVALID;
 }
 
 uint first_direct_bound_arg_node(uint expr_node)
 {
-    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+    if (!valid_node(expr_node) ||
+        compact_hir_predicate_facts[expr_node].production != PROD_BOUND_TYPE_IDENT)
         return INVALID;
-
-    uint arg = hir_type_arg_start[expr_node];
-    return valid_node(arg) && hir_type_arg_count[expr_node] != 0u ? arg : INVALID;
+    return direct_type_arg_node(expr_node, 0u);
 }
 
 uint first_direct_bound_arg_diagnostic_token(uint expr_node)
@@ -2171,7 +2054,7 @@ uint first_direct_bound_arg_diagnostic_token(uint expr_node)
     if (valid_token(token))
         return token;
     token = bound_path_leaf_token(expr_node);
-    return valid_token(token) ? token : hir_token_pos[expr_node];
+    return valid_token(token) ? token : compact_hir_core[expr_node].token_start;
 }
 
 uint bound_arg_diagnostic_token_for(uint predicate_expr_node, uint arg_node)
@@ -2260,7 +2143,8 @@ uint validate_bound_type_args(
             break;
 
         uint node = predicate_bound_arg_node(predicate_expr_node, ordinal);
-        if (!valid_node(node) || node_kind[node] != PROD_BOUND_TYPE_IDENT)
+        if (!valid_node(node) ||
+            compact_hir_predicate_facts[node].production != PROD_BOUND_TYPE_IDENT)
         {
             set_bound_arg_diagnostic_token(
                 ordinal,
@@ -2338,7 +2222,7 @@ void mark_predicate_syntax_token(uint token_i)
 #if PREDICATE_BOUND_DECL_RESOLUTION
 void mark_direct_bound_syntax_tokens(uint node)
 {
-    if (node_kind[node] == PROD_BOUND_TYPE_IDENT)
+    if (compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT)
     {
         mark_predicate_syntax_token(bound_path_leaf_token(node));
         mark_predicate_syntax_token(predicate_bound_first_arg_token[node]);
@@ -2346,7 +2230,7 @@ void mark_direct_bound_syntax_tokens(uint node)
         return;
     }
 
-    if (node_kind[node] == PROD_BOUND_TYPE_REF)
-        mark_predicate_syntax_token(hir_token_pos[node]);
+    if (compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_REF)
+        mark_predicate_syntax_token(compact_hir_core[node].token_start);
 }
 #endif

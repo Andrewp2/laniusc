@@ -49,13 +49,8 @@ StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_ref_payload;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_type_arg_start;
-StructuredBuffer<uint> hir_type_arg_count;
-StructuredBuffer<uint> hir_type_arg_next;
+StructuredBuffer<HirRange> compact_type_arg_ranges;
+StructuredBuffer<HirTypeArg> compact_type_args;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> path_count_out;
@@ -159,7 +154,7 @@ uint active_token_count()
 
 uint active_hir_node_count()
 {
-    return min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint active_compact_hir_count()
@@ -706,17 +701,23 @@ uint type_node_for_instance_token(uint instance_i)
     if (!valid_path(path_i))
         return INVALID;
     uint node = path_owner_hir[path_i];
-    return valid_node(node) && hir_kind[node] == HIR_TYPE ? node : INVALID;
+    return valid_node(node) && compact_hir_core[node].kind == HIR_TYPE ? node : INVALID;
 }
 
-bool publish_type_arg_node_ref(uint instance_i, uint slot, uint node, out uint next_node)
+bool publish_type_arg_node_ref(uint instance_i, uint slot, uint type_node, uint ordinal)
 {
-    next_node = INVALID;
-    if (!valid_node(node))
+    if (!valid_node(type_node))
         return false;
-    bool ok = publish_type_arg_ref(instance_i, slot, hir_token_pos[node]);
-    next_node = hir_type_arg_next[node];
-    return ok;
+    HirRange range = compact_type_arg_ranges[type_node];
+    if (range.start == INVALID || ordinal >= range.count)
+        return false;
+    uint row = range.start + ordinal;
+    if (row >= gParams.n_hir_nodes)
+        return false;
+    uint value = compact_type_args[row].value;
+    if (!valid_node(value))
+        return false;
+    return publish_type_arg_ref(instance_i, slot, compact_hir_core[value].token_start);
 }
 
 bool compact_type_arg_rows_valid(uint instance_i, uint arg_count)
@@ -967,39 +968,18 @@ uint publish_path_type_args(uint instance_i)
         return compact_arg_count;
     }
 
-    uint arg_count = hir_type_arg_count[type_node];
+    uint arg_count = compact_type_arg_ranges[type_node].count;
 
     bool unsupported = false;
-    uint slot = 0u;
-    uint node = valid_node(type_node) ? hir_type_arg_start[type_node] : INVALID;
-    uint next_node = INVALID;
-    if (arg_count > 0u)
+    uint slot = min(arg_count, TYPE_INSTANCE_ARG_REF_STRIDE);
+    for (uint ordinal = 0u; ordinal < TYPE_INSTANCE_ARG_REF_STRIDE; ordinal += 1u)
     {
-        unsupported = unsupported || !publish_type_arg_node_ref(instance_i, 0u, node, next_node);
-        slot += 1u;
-        node = next_node;
-    }
-    if (arg_count > 1u)
-    {
-        unsupported = unsupported || !publish_type_arg_node_ref(instance_i, 1u, node, next_node);
-        slot += 1u;
-        node = next_node;
-    }
-    if (arg_count > 2u)
-    {
-        unsupported = unsupported || !publish_type_arg_node_ref(instance_i, 2u, node, next_node);
-        slot += 1u;
-        node = next_node;
-    }
-    if (arg_count > 3u)
-    {
-        unsupported = unsupported || !publish_type_arg_node_ref(instance_i, 3u, node, next_node);
-        slot += 1u;
-        node = next_node;
+        if (ordinal < arg_count)
+            unsupported = unsupported ||
+                !publish_type_arg_node_ref(instance_i, ordinal, type_node, ordinal);
     }
 
-    bool short_list_mismatch = arg_count <= TYPE_INSTANCE_ARG_REF_STRIDE &&
-                               (slot != arg_count || valid_node(node));
+    bool short_list_mismatch = arg_count <= TYPE_INSTANCE_ARG_REF_STRIDE && slot != arg_count;
     if (unsupported || short_list_mismatch || !compact_type_arg_rows_valid(instance_i, arg_count))
     {
         type_instance_state[instance_i] = TYPE_INSTANCE_UNSUPPORTED;

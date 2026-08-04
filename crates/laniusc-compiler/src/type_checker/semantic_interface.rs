@@ -783,10 +783,7 @@ impl GpuTypeChecker {
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
     ) -> Result<RecordedSemanticInterfaceTypeTopology> {
         let hir_storage_capacity = hir.compact_hir_capacity;
-        let decl_capacity = inputs
-            .declaration_capacity
-            .min(token_capacity)
-            .max(1);
+        let decl_capacity = inputs.declaration_capacity.min(token_capacity).max(1);
         // Canonical HIR assigns every durable row a unique token/file anchor;
         // parser storage capacity is therefore not the semantic row domain.
         // The same token bound is used by the resident type-check shaders.

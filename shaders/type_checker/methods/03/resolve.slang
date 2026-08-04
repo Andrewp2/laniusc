@@ -18,9 +18,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
@@ -108,11 +105,6 @@ uint active_token_count()
     return gParams.n_tokens;
 }
 
-uint active_hir_node_count()
-{
-    return min(gParams.n_hir_nodes, hir_status[5u]);
-}
-
 uint active_compact_hir_count()
 {
     return min(gParams.n_hir_nodes, compact_hir_count[0u]);
@@ -121,11 +113,6 @@ uint active_compact_hir_count()
 uint active_path_count()
 {
     return min(path_count_out[0], gParams.n_hir_nodes);
-}
-
-bool valid_node(uint i)
-{
-    return i != INVALID && i < active_hir_node_count();
 }
 
 bool valid_dense(uint i)

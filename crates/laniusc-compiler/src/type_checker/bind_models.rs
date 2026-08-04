@@ -31,16 +31,16 @@ pub(in crate::type_checker) struct FnContextBindGroups {
 
 /// Bind groups for HIR-visible declaration collection and lexical lookup.
 pub(in crate::type_checker) struct VisibleBindGroups {
-    pub(in crate::type_checker) hir_semantic_dispatch_args: LaniusBuffer<u32>,
+    pub(in crate::type_checker) compact_hir_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) match_payload_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) clear: wgpu::BindGroup,
-    pub(in crate::type_checker) hir_semantic_dispatch: wgpu::BindGroup,
+    pub(in crate::type_checker) compact_hir_dispatch: wgpu::BindGroup,
     pub(in crate::type_checker) hir_declarations: CompactionOperation,
     pub(in crate::type_checker) match_payload_dispatch: wgpu::BindGroup,
     pub(in crate::type_checker) scatter_match_payload_decls: wgpu::BindGroup,
     pub(in crate::type_checker) finalize_decl_count: wgpu::BindGroup,
     pub(in crate::type_checker) declarations: VisibleDeclSort,
-    pub(in crate::type_checker) _hir_semantic_dispatch_params: LaniusBuffer<CountDispatchParams>,
+    pub(in crate::type_checker) _compact_hir_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) _hir_decl_scope_leaf_params: LaniusBuffer<VisibleDeclTreeParams>,
     pub(in crate::type_checker) build_hir_decl_scope_leaves: wgpu::BindGroup,
     pub(in crate::type_checker) hir_decl_scope_leaf_work_items: u32,

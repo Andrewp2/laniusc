@@ -22,9 +22,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -36,7 +33,6 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
-StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
@@ -76,16 +72,6 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_hir_node_count()
-{
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
-}
-
-bool valid_node(uint node)
-{
-    return node != INVALID && node < active_hir_node_count();
-}
-
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
@@ -107,23 +93,14 @@ uint active_compact_hir_count()
     return min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
-uint compact_node_for_raw(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint dense = raw_to_compact_hir[node];
-    return dense < active_compact_hir_count() ? dense : INVALID;
-}
-
 HirPayload stmt_payload(uint node)
 {
-    uint dense = compact_node_for_raw(node);
     HirPayload payload;
     payload.a = 0u;
     payload.b = INVALID;
     payload.c = INVALID;
     payload.d = INVALID;
-    return dense < active_compact_hir_count() ? compact_hir_payload[dense] : payload;
+    return node < active_compact_hir_count() ? compact_hir_payload[node] : payload;
 }
 
 uint name_token_for_expr(uint node)
@@ -198,7 +175,9 @@ bool same_bounded_array_instance(uint lhs, uint rhs)
 
 uint function_return_array_instance(uint return_node)
 {
-    uint return_token = hir_token_pos[return_node];
+    uint return_token = return_node < active_compact_hir_count()
+        ? compact_hir_core[return_node].token_start
+        : INVALID;
     if (!valid_token(return_token))
         return INVALID;
 
@@ -302,10 +281,12 @@ uint returned_call_arg_array_instance(uint return_node)
 void publish_identifier_array_return(uint return_node)
 {
     HirPayload stmt = stmt_payload(return_node);
-    if (hir_kind[return_node] != HIR_RETURN_STMT || stmt.a != STMT_RECORD_KIND_RETURN)
+    if (return_node >= active_compact_hir_count() ||
+        compact_hir_core[return_node].kind != HIR_RETURN_STMT ||
+        stmt.a != STMT_RECORD_KIND_RETURN)
         return;
 
-    uint return_token = hir_token_pos[return_node];
+    uint return_token = compact_hir_core[return_node].token_start;
     if (!valid_token(return_token))
         return;
 
@@ -323,11 +304,12 @@ void publish_identifier_array_return(uint return_node)
 
 void publish_call_array_return(uint return_node)
 {
-    if (hir_kind[return_node] != HIR_RETURN_STMT ||
+    if (return_node >= active_compact_hir_count() ||
+        compact_hir_core[return_node].kind != HIR_RETURN_STMT ||
         stmt_payload(return_node).a != STMT_RECORD_KIND_RETURN)
         return;
 
-    uint return_token = hir_token_pos[return_node];
+    uint return_token = compact_hir_core[return_node].token_start;
     if (!valid_token(return_token))
         return;
 
@@ -351,7 +333,7 @@ void publish_call_array_return(uint return_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!valid_node(node))
+    if (node >= active_compact_hir_count())
         return;
 
     publish_identifier_array_return(node);

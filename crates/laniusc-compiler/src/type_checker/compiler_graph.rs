@@ -196,7 +196,7 @@ pub(super) const TYPE_SEMANTIC_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::HirNodes,
     passes: prefix_scan_graph_passes!("type_check.type_semantic.scan"),
     resources: PrefixScanResources {
-        count: "hir_semantic_count",
+        count: "compact_hir_count",
         input: "type_semantic_scan_input",
         output_prefix: "type_semantic_prefix",
         total: "type_semantic_count_out",
@@ -429,7 +429,7 @@ pub(super) const VISIBLE_SCAN: PrefixScanSpec = PrefixScanSpec {
         input: "hir_visible_decl_flag",
         output_prefix: "hir_visible_decl_prefix",
         total: "hir_visible_decl_count_out",
-        dispatch_args: "hir_semantic_dispatch_args",
+        dispatch_args: "compact_hir_dispatch_args",
         local_prefix: "hir_visible_decl_scan_local_prefix",
         block_sum: "hir_visible_decl_scan_block_sum",
         block_prefix: "hir_visible_decl_scan_prefix_a",
@@ -565,8 +565,9 @@ predicate_key_definition!(
     "predicate_impl_key_order_tmp"
 );
 
-const PREDICATE_KEY_INPUTS: [&str; 16] = [
-    "hir_token_pos",
+const PREDICATE_KEY_INPUTS: [&str; 17] = [
+    "compact_hir_count",
+    "compact_hir_core",
     "visible_type",
     "type_expr_ref_tag",
     "type_expr_ref_payload",
@@ -1022,8 +1023,7 @@ pub(super) const DEPENDENCY_CALL_COMPARE_DISPATCH_PASS: &str =
     "type_check.dependencies.call_compare.dispatch";
 pub(super) const DEPENDENCY_CALL_TYPE_ARGS_VALIDATE_PASS: &str =
     "type_check.dependencies.call_type_args.validate";
-pub(super) const DEPENDENCY_METHODS_PROJECT_PASS: &str =
-    "type_check.dependencies.methods.project";
+pub(super) const DEPENDENCY_METHODS_PROJECT_PASS: &str = "type_check.dependencies.methods.project";
 
 /// Graph-owned storage and ownership contract for type checking. Logical
 /// resources are recovered from the graph by name; the workspace is their
@@ -1488,6 +1488,9 @@ fn add_type_subtree_passes(
     let right_root = resource("type_subtree_compare_right_root")?;
     let error_token = resource("type_subtree_compare_error_token")?;
     let error_detail = resource("type_subtree_compare_error_detail")?;
+    let compact_hir_count = resource("compact_hir_count")?;
+    let compact_hir_core = resource("compact_hir_core")?;
+    let compact_hir_payload = resource("compact_hir_payload")?;
     let status = resource("status")?;
     let scan_resources = graph.resolve_prefix_scan_resources(TYPE_SUBTREE_SCAN_RESOURCES)?;
     graph.add_fragment(PrefixScanGraph {
@@ -1517,6 +1520,9 @@ fn add_type_subtree_passes(
             PassAccess::read("type_subtree_compare_error_token", error_token),
             PassAccess::read("type_subtree_compare_error_detail", error_detail),
             PassAccess::read("type_subtree_compare_dispatch_args", dispatch_args),
+            PassAccess::read("compact_hir_count", compact_hir_count),
+            PassAccess::read("compact_hir_core", compact_hir_core),
+            PassAccess::read("compact_hir_payload", compact_hir_payload),
             PassAccess::read_write("status", status),
         ],
     })?;
@@ -1562,12 +1568,14 @@ fn build_graph(
         compact_hir_core in HirNodes => hir_rows * 16;
         _compact_hir_links as "compact_hir_links" in HirNodes => hir_rows * 16;
         _compact_hir_payload as "compact_hir_payload" in HirNodes => hir_rows * 16;
+        _compact_hir_predicate_facts as "compact_hir_predicate_facts" in HirNodes => hir_rows * 48;
         _compact_type_root_owner as "compact_type_root_owner" in HirNodes => hir_rows * 4;
         _compact_param_count as "compact_param_count" in Declarations => 4;
         _compact_params as "compact_params" in Declarations => hir_rows * 16;
         _compact_call_arg_count as "compact_call_arg_count" in CallArguments => 4;
         _compact_call_args as "compact_call_args" in CallArguments => hir_rows * 16;
         _compact_hir_expr_parent as "compact_hir_expr_parent" in HirNodes => hir_rows * 4;
+        _compact_hir_expr_root as "compact_hir_expr_root" in HirNodes => hir_rows * 4;
         _compact_hir_nearest_loop as "compact_hir_nearest_loop" in HirNodes => hir_rows * 4;
         _compact_hir_nearest_block as "compact_hir_nearest_block" in HirNodes => hir_rows * 4;
         _compact_hir_nearest_control as "compact_hir_nearest_control" in HirNodes => hir_rows * 4;
@@ -1576,6 +1584,10 @@ fn build_graph(
         _compact_paths as "compact_paths" in HirNodes => hir_rows * 16;
         _compact_path_segment_count as "compact_path_segment_count" in Tokens => 4;
         _compact_path_segments as "compact_path_segments" in Tokens => token_rows * 16;
+        _compact_array_element_start as "compact_array_element_start" in HirNodes => hir_rows * 4;
+        _compact_array_element_count as "compact_array_element_count" in HirNodes => hir_rows * 4;
+        _compact_array_element_row_count as "compact_array_element_row_count" in Declarations => 4;
+        _compact_array_elements as "compact_array_elements" in Declarations => hir_rows * 16;
     });
 
     // Function return references are initialized by the physical type-instance
@@ -1662,27 +1674,12 @@ fn build_graph(
     graph_resources!(graph, Input {
         _compact_predicate_count as "compact_predicate_count" in Declarations => 4;
         _compact_predicates as "compact_predicates" in Declarations => hir_rows * 16;
-        hir_status in HirNodes => 24;
-        hir_kind in RawNodes => hir_rows * 4;
-        _hir_token_pos as "hir_token_pos" in HirNodes => hir_rows * 4;
-        _hir_token_end as "hir_token_end" in HirNodes => hir_rows * 4;
-        _hir_struct_lit_head_node as "hir_struct_lit_head_node" in RawNodes => hir_rows * 4;
-        _hir_struct_lit_field_parent_lit as "hir_struct_lit_field_parent_lit" in RawNodes => hir_rows * 4;
-        _hir_struct_lit_field_value_node as "hir_struct_lit_field_value_node" in RawNodes => hir_rows * 4;
-        _hir_array_element_parent_lit as "hir_array_element_parent_lit" in RawNodes => hir_rows * 4;
-        _hir_nearest_array_element_node as "hir_nearest_array_element_node" in RawNodes => hir_rows * 4;
-        _hir_expr_result_root_node as "hir_expr_result_root_node" in RawNodes => hir_rows * 4;
-        _hir_expr_name_role as "hir_expr_name_role" in RawNodes => hir_rows * 4;
-        _hir_member_receiver_node as "hir_member_receiver_node" in RawNodes => hir_rows * 4;
-        _hir_member_receiver_token as "hir_member_receiver_token" in RawNodes => hir_rows * 4;
-        _hir_member_name_token as "hir_member_name_token" in RawNodes => hir_rows * 4;
         _module_type_path_type as "module_type_path_type" in Tokens => token_rows * 4;
         _token_file_id as "token_file_id" in Tokens => token_rows * 4;
         _module_value_path_call_open as "module_value_path_call_open" in Tokens => token_rows * 4;
         _module_value_path_call_path_id as "module_value_path_call_path_id" in Tokens => token_rows * 4;
         _module_value_path_associated_receiver_token as "module_value_path_associated_receiver_token" in Tokens => token_rows * 4;
         _module_count_out as "module_count_out" in Declarations => 4;
-        raw_to_compact_hir in HirNodes => hir_rows * 4;
         compact_field_count in Declarations => 4;
         compact_fields in Declarations => hir_rows * 16;
     });
@@ -1864,18 +1861,12 @@ fn build_graph(
         struct_init_field_expected_ref_tag in Tokens => token_rows * 4;
         struct_init_field_expected_ref_payload in Tokens => token_rows * 4;
         struct_init_field_ordinal in Tokens => token_rows * 4;
-        struct_init_field_ordinal_by_node in RawNodes => hir_rows * 4;
-        struct_init_field_decl_node_by_node in RawNodes => hir_rows * 4;
     });
     graph_resources!(graph, Output {
         struct_init_field_ordinal_by_row in Declarations => hir_rows * 4;
     });
     graph_resources!(graph, Workspace {
         struct_init_field_decl_token_by_row in Declarations => hir_rows * 4;
-    });
-    graph_resources!(graph, Input {
-        _node_kind as "node_kind" in HirNodes => hir_rows * 4;
-        _parent as "parent" in HirNodes => hir_rows * 4;
     });
     graph_resources!(graph, Workspace {
         generic_decl_owner_by_node_a as "generic_decl_owner_by_node" in HirNodes => hir_rows * 4;
@@ -1963,18 +1954,8 @@ fn build_graph(
         _compact_variants as "compact_variants" in HirNodes => token_rows * 16;
         _compact_variant_payload_row_count as "compact_variant_payload_row_count" in HirNodes => 4;
         _compact_variant_payloads as "compact_variant_payloads" in HirNodes => token_rows * 16;
-        _hir_type_len_token as "hir_type_len_token" in HirNodes => hir_rows * 4;
-        _hir_nearest_fn_node as "hir_nearest_fn_node" in HirNodes => hir_rows * 4;
     });
     for name in [
-        "first_child",
-        "next_sibling",
-        "subtree_end",
-        "hir_bound_path_owner_by_leaf",
-        "hir_type_arg_start",
-        "hir_type_arg_count",
-        "hir_type_arg_next",
-        "hir_method_impl_receiver_type_node",
         "module_table_count_out",
         "sorted_module_key_order",
         "module_key_canonical_id",
@@ -2267,7 +2248,7 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         _hir_visible_decl_flag as "hir_visible_decl_flag" in HirNodes => hir_rows * 4;
         _hir_visible_decl_prefix as "hir_visible_decl_prefix" in HirNodes => hir_rows * 4;
-        hir_semantic_dispatch_args in DispatchArguments [StorageIndirect] => 12;
+        compact_hir_dispatch_args in DispatchArguments [StorageIndirect] => 12;
         _hir_visible_decl_scan_local_prefix as "hir_visible_decl_scan_local_prefix" in HirNodes => hir_rows * 4;
         _hir_visible_decl_scan_block_sum as "hir_visible_decl_scan_block_sum" in HirNodes => hir_blocks * 4;
         _hir_visible_decl_scan_prefix_a as "hir_visible_decl_scan_prefix_a" in HirNodes => hir_blocks * 4;
@@ -2490,13 +2471,6 @@ fn build_graph(
         _aggregate_compare_scan_prefix_a as "aggregate_compare_scan_prefix_a" in HirNodes => aggregate_blocks * 4;
         _aggregate_compare_scan_prefix_b as "aggregate_compare_scan_prefix_b" in HirNodes => aggregate_blocks * 4;
         aggregate_compare_dispatch_args in HirNodes [StorageIndirect] => 12;
-    });
-    graph_resources!(graph, Input {
-        _hir_semantic_count as "hir_semantic_count" in HirNodes => 4;
-        _hir_type_form as "hir_type_form" in HirNodes => hir_rows * 4;
-        _hir_type_path_leaf_node as "hir_type_path_leaf_node" in HirNodes => hir_rows * 4;
-        _hir_semantic_dense_node as "hir_semantic_dense_node" in HirNodes => hir_rows * 4;
-        _hir_semantic_subtree_end as "hir_semantic_subtree_end" in HirNodes => 4;
     });
     graph_resources!(graph, Workspace {
         type_semantic_row_by_token in Tokens => (token_capacity.max(1) as u64) * 4;
@@ -2794,7 +2768,7 @@ fn build_graph(
             vec![
                 generic_owner_propagation_pass(
                     TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_A_TO_B_PASS,
-                    hir_status,
+                    compact_hir_count,
                     generic_decl_owner_by_node_a,
                     predicate_bound_list_by_node_a,
                     generic_decl_parent_jump_a,
@@ -2804,7 +2778,7 @@ fn build_graph(
                 ),
                 generic_owner_propagation_pass(
                     TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_B_TO_A_PASS,
-                    hir_status,
+                    compact_hir_count,
                     generic_decl_owner_by_node_b,
                     predicate_bound_list_by_node_b,
                     generic_decl_parent_jump_b,
@@ -3380,7 +3354,6 @@ fn build_graph(
             "struct_init_field_ordinal" => struct_init_field_ordinal: Write,
             "struct_lit_context_decl_token" => struct_lit_context_decl_token: Write,
             "struct_lit_context_instance" => struct_lit_context_instance: Write,
-            "struct_init_field_decl_node_by_node" => struct_init_field_decl_node_by_node: Write,
             "struct_init_field_ordinal_by_row" => struct_init_field_ordinal_by_row: Write,
             "struct_init_field_decl_token_by_row" => struct_init_field_decl_token_by_row: Write,
         ],
@@ -3396,12 +3369,10 @@ fn build_graph(
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_STRUCT_INIT_FIELDS_PASS,
         CompilerPhase::TypeCheck,
-        ResourceDomain::RawNodes,
+        ResourceDomain::HirNodes,
         kernels,
         "type_checker/type/instances/04_struct_init_fields",
-        reflected_bindings![
-            "struct_init_field_ordinal_by_node" => struct_init_field_ordinal_by_node: Write,
-        ],
+        &[],
     )?;
     graph.add_pass(PassDesc {
         name: SEMANTIC_STRUCT_LITERAL_REFS_EARLY_CLEAR_PASS,
@@ -3418,11 +3389,10 @@ fn build_graph(
     graph.add_pass(PassDesc {
         name: SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS,
         phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::RawNodes,
+        dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
-            PassAccess::read("raw_to_compact_hir", raw_to_compact_hir),
-            PassAccess::read("hir_kind", hir_kind),
-            PassAccess::read("hir_member_name_token", _hir_member_name_token),
+            PassAccess::read("compact_hir_core", compact_hir_core),
+            PassAccess::read("compact_hir_payload", _compact_hir_payload),
             PassAccess::read(
                 "struct_lit_context_decl_token",
                 struct_lit_context_decl_token,
@@ -3595,7 +3565,7 @@ fn build_graph(
         "type_checker/count/dispatch_args",
         reflected_bindings![
             "count_in" => compact_hir_count,
-            "dispatch_args" => hir_semantic_dispatch_args: Write,
+            "dispatch_args" => compact_hir_dispatch_args: Write,
         ],
     )?;
     VISIBLE_DECL_COMPACTION.register(
@@ -3981,8 +3951,6 @@ fn build_graph(
         struct_init_field_expected_ref_tag,
         struct_init_field_expected_ref_payload,
         struct_init_field_ordinal,
-        struct_init_field_ordinal_by_node,
-        struct_init_field_decl_node_by_node,
         struct_init_field_ordinal_by_row,
         struct_init_field_decl_token_by_row,
         struct_lit_context_decl_token,
@@ -4113,7 +4081,7 @@ fn step_pass(
 #[allow(clippy::too_many_arguments)]
 fn generic_owner_propagation_pass(
     name: &'static str,
-    hir_status: ResourceId,
+    compact_hir_count: ResourceId,
     owner_in: ResourceId,
     bound_list_in: ResourceId,
     jump_in: ResourceId,
@@ -4126,7 +4094,7 @@ fn generic_owner_propagation_pass(
         phase: CompilerPhase::TypeCheck,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
-            PassAccess::read("hir_status", hir_status),
+            PassAccess::read("compact_hir_count", compact_hir_count),
             PassAccess::read("generic_decl_owner_by_node_in", owner_in),
             PassAccess::read("predicate_bound_list_by_node_in", bound_list_in),
             PassAccess::read("generic_decl_parent_jump_in", jump_in),
@@ -4848,8 +4816,6 @@ mod tests {
             resource("struct_init_field_expected_ref_tag"),
             resource("struct_init_field_expected_ref_payload"),
             resource("struct_init_field_ordinal"),
-            resource("struct_init_field_ordinal_by_node"),
-            resource("struct_init_field_decl_node_by_node"),
             resource("struct_init_field_decl_token_by_row"),
             resource("struct_lit_context_decl_token"),
             resource("struct_lit_context_instance"),

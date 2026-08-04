@@ -272,11 +272,6 @@ impl GpuTypeChecker {
         token_file_id_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
         hir_node_capacity: u32,
-        hir_kind_buf: &wgpu::Buffer,
-        hir_token_pos_buf: &wgpu::Buffer,
-        hir_token_end_buf: &wgpu::Buffer,
-        hir_token_file_id_buf: &wgpu::Buffer,
-        hir_status_buf: &wgpu::Buffer,
     ) -> Result<(), GpuTypeCheckError> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("type_check.resident.encoder"),
@@ -293,11 +288,6 @@ impl GpuTypeChecker {
             token_file_id_buf,
             source_buf,
             hir_node_capacity,
-            hir_kind_buf,
-            hir_token_pos_buf,
-            hir_token_end_buf,
-            hir_token_file_id_buf,
-            hir_status_buf,
             None,
         )?;
         crate::gpu::passes_core::submit_with_progress(
@@ -325,11 +315,6 @@ impl GpuTypeChecker {
         source_buf: &wgpu::Buffer,
         hir_node_capacity: u32,
         parser_hir_node_capacity: u32,
-        hir_kind_buf: &wgpu::Buffer,
-        hir_token_pos_buf: &wgpu::Buffer,
-        hir_token_end_buf: &wgpu::Buffer,
-        hir_token_file_id_buf: &wgpu::Buffer,
-        hir_status_buf: &wgpu::Buffer,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         dependency_pages: Option<&GpuDependencyInterfacePages>,
         timer: Option<&mut crate::gpu::timer::GpuTimer>,
@@ -347,11 +332,6 @@ impl GpuTypeChecker {
             source_buf,
             hir_node_capacity,
             parser_hir_node_capacity,
-            hir_kind_buf,
-            hir_token_pos_buf,
-            hir_token_end_buf,
-            hir_token_file_id_buf,
-            hir_status_buf,
             Some(hir_items),
             dependency_pages,
             timer,
@@ -375,11 +355,6 @@ impl GpuTypeChecker {
         token_file_id_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
         hir_node_capacity: u32,
-        hir_kind_buf: &wgpu::Buffer,
-        hir_token_pos_buf: &wgpu::Buffer,
-        hir_token_end_buf: &wgpu::Buffer,
-        hir_token_file_id_buf: &wgpu::Buffer,
-        hir_status_buf: &wgpu::Buffer,
         timer: Option<&mut crate::gpu::timer::GpuTimer>,
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
         self.record_resident_token_buffer_with_hir_impl_on_gpu(
@@ -395,11 +370,6 @@ impl GpuTypeChecker {
             source_buf,
             hir_node_capacity,
             hir_node_capacity,
-            hir_kind_buf,
-            hir_token_pos_buf,
-            hir_token_end_buf,
-            hir_token_file_id_buf,
-            hir_status_buf,
             None,
             None,
             timer,
@@ -421,11 +391,6 @@ impl GpuTypeChecker {
         source_buf: &wgpu::Buffer,
         hir_node_capacity: u32,
         parser_hir_node_capacity: u32,
-        hir_kind_buf: &wgpu::Buffer,
-        hir_token_pos_buf: &wgpu::Buffer,
-        hir_token_end_buf: &wgpu::Buffer,
-        hir_token_file_id_buf: &wgpu::Buffer,
-        hir_status_buf: &wgpu::Buffer,
         hir_items: Option<GpuTypeCheckHirItemBuffers<'_>>,
         dependency_pages: Option<&GpuDependencyInterfacePages>,
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
@@ -454,17 +419,8 @@ impl GpuTypeChecker {
         host_timer.stamp("params");
 
         let uses_hir_items = hir_items.is_some();
-        let mut fingerprint_buffers = vec![
-            token_buf,
-            token_count_buf,
-            token_file_id_buf,
-            source_buf,
-            hir_kind_buf,
-            hir_token_pos_buf,
-            hir_token_end_buf,
-            hir_token_file_id_buf,
-            hir_status_buf,
-        ];
+        let mut fingerprint_buffers =
+            vec![token_buf, token_count_buf, token_file_id_buf, source_buf];
         if let Some(items) = hir_items {
             fingerprint_buffers.push(&items.hir.count);
             fingerprint_buffers.push(&items.hir.core);
@@ -489,9 +445,6 @@ impl GpuTypeChecker {
             for workspace in items.upstream_workspace {
                 fingerprint_buffers.push(workspace.buffer);
             }
-            fingerprint_buffers.push(items.semantic_dense_node);
-            fingerprint_buffers.push(items.semantic_count);
-            fingerprint_buffers.push(items.semantic_subtree_end);
         }
         if let Some(dependencies) = dependency_interfaces {
             fingerprint_buffers.push(&dependencies.words);
@@ -611,11 +564,6 @@ impl GpuTypeChecker {
                             token_count_buf,
                             token_file_id_buf,
                             source_buf,
-                            hir_kind_buf,
-                            hir_token_pos_buf,
-                            hir_token_end_buf,
-                            hir_token_file_id_buf,
-                            hir_status_buf,
                             hir_items,
                             &self.passes,
                             dependency_interfaces,

@@ -2,7 +2,7 @@ mod common;
 
 use laniusc_compiler::{
     codegen::unit::{
-        CodegenUnitLimits,
+        CompilationUnitLimits,
         SourcePackArtifactKind,
         SourcePackArtifactRef,
         SourcePackArtifactTarget,
@@ -135,7 +135,7 @@ fn explicit_source_pack_library_ids_are_planning_boundaries_not_package_boundari
         }
     );
 
-    let schedule = pack.bounded_frontend_job_schedule(CodegenUnitLimits {
+    let schedule = pack.bounded_frontend_job_schedule(CompilationUnitLimits {
         max_source_bytes: 1024,
         max_source_files: 1,
     });
@@ -185,7 +185,7 @@ fn source_pack_batch_dependencies_cover_split_frontend_library_dependencies() {
     ])
     .expect("create explicit source pack with a split library dependency");
 
-    let schedule = pack.bounded_frontend_job_schedule(CodegenUnitLimits {
+    let schedule = pack.bounded_frontend_job_schedule(CompilationUnitLimits {
         max_source_bytes: 1024,
         max_source_files: 1,
     });
@@ -386,7 +386,7 @@ fn source_pack_path_manifest_rejects_frontend_source_range_overlap() {
             dependency_library_ids: Vec::new(),
         }])
         .expect("create explicit package path manifest");
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 1024,
         max_source_files: 1,
     };
@@ -637,7 +637,7 @@ fn source_pack_artifact_manifest_rejects_link_records_that_omit_codegen_object()
     }])
     .expect("create explicit package source pack");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })
@@ -713,7 +713,7 @@ fn source_pack_artifact_manifest_rejects_partial_explicit_link_dependencies() {
     }])
     .expect("create explicit package source pack");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })
@@ -788,7 +788,7 @@ fn source_pack_artifact_manifest_rejects_non_dependency_interface_inputs() {
     ])
     .expect("create explicit source pack with independent libraries");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })
@@ -878,7 +878,7 @@ fn source_pack_artifact_manifest_rejects_dangling_dependency_range_rows() {
     }])
     .expect("create explicit package source pack");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })
@@ -929,7 +929,7 @@ fn source_pack_artifact_manifest_rejects_frontend_codegen_object_inputs() {
     }])
     .expect("create explicit package source pack");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })
@@ -1006,7 +1006,7 @@ fn source_pack_artifact_manifest_rejects_forged_linked_output_key_identity() {
     }])
     .expect("create explicit package source pack");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })
@@ -1097,7 +1097,7 @@ fn source_pack_artifact_manifest_rejects_cross_library_codegen_artifact_provenan
     ])
     .expect("create explicit package source pack");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })
@@ -1186,7 +1186,7 @@ fn source_pack_artifact_manifest_rejects_unsorted_link_object_batch_inputs() {
     }])
     .expect("create explicit package source pack");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })
@@ -1231,7 +1231,7 @@ fn source_pack_artifact_manifest_rejects_stale_link_object_batch_source_lines() 
     }])
     .expect("create explicit package source pack");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })
@@ -1277,7 +1277,7 @@ fn source_pack_artifact_manifest_rejects_empty_inline_link_object_batches() {
     }])
     .expect("create explicit package source pack");
     let manifest = pack
-        .bounded_frontend_build_plan(CodegenUnitLimits {
+        .bounded_frontend_build_plan(CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         })

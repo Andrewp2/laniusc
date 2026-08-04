@@ -6,6 +6,7 @@
 
 import dependency_interface;
 import gpu_index;
+import hir_records;
 import status;
 
 struct Params
@@ -21,11 +22,9 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_semantic_count;
-StructuredBuffer<uint> hir_semantic_dense_node;
-StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> dependency_call_compare_scan_input;
 StructuredBuffer<uint> dependency_call_compare_prefix;
 StructuredBuffer<uint> dependency_call_compare_total;
@@ -81,7 +80,27 @@ static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
 
 uint active_hir_count()
 {
-    return gParams.hir_capacity == 0u ? 0u : min(gParams.hir_capacity, hir_status[5u]);
+    return gParams.hir_capacity == 0u ? 0u : min(gParams.hir_capacity, compact_hir_count[0u]);
+}
+
+uint active_compact_hir_count()
+{
+    return min(gParams.hir_capacity, compact_hir_count[0u]);
+}
+
+void local_type_metadata(uint local_row, out uint form, out uint token)
+{
+    form = 0u;
+    token = INVALID;
+    uint dense = local_row < gParams.hir_capacity ? local_row : INVALID;
+    if (dense >= active_hir_count())
+        return;
+    if (compact_hir_core[dense].kind == 5u)
+    {
+        form = compact_hir_payload[dense].a;
+        token = compact_hir_core[dense].token_start;
+        return;
+    }
 }
 
 uint saturating_add(uint lhs, uint rhs)
@@ -116,7 +135,7 @@ uint local_semantic_row(uint instance, uint relative_ordinal)
     if (instance >= gParams.visible_capacity)
         return INVALID;
     uint root = type_semantic_row_by_token[instance];
-    uint semantic_count = min(hir_semantic_count[0u], active_hir_count());
+    uint semantic_count = active_hir_count();
     if (root >= semantic_count)
         return INVALID;
     uint ordinal = saturating_add(type_semantic_prefix[root], relative_ordinal);
@@ -228,22 +247,23 @@ bool generic_claim_matches(uint callee, uint slot, uint form, uint tag, uint pay
 bool node_matches(uint expected_row, uint local_row, uint callee)
 {
     uint type_count = dependency_count(4u);
-    uint semantic_count = min(hir_semantic_count[0u], active_hir_count());
+    uint semantic_count = active_hir_count();
     if (expected_row >= type_count || local_row >= semantic_count)
         return false;
     uint expected = canonical_type_roots[expected_row];
     if (expected >= type_count)
         return false;
-    uint local_node = hir_semantic_dense_node[local_row];
+    uint local_node = local_row;
     if (local_node >= active_hir_count())
         return false;
-    uint token = hir_token_pos[local_node];
+    uint form;
+    uint token;
+    local_type_metadata(local_row, form, token);
     if (token >= gParams.visible_capacity)
         return false;
     uint base = expected * TYPE_WORDS;
     uint kind = dependency_type_word(base);
     uint edge_count = dependency_type_word(base + 4u);
-    uint form = hir_type_form[local_node];
     uint tag = type_expr_ref_tag[token];
     uint payload = type_expr_ref_payload[token];
     if (kind == INTERFACE_TYPE_GENERIC_PARAMETER)

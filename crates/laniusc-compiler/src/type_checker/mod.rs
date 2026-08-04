@@ -172,11 +172,11 @@ pub enum GpuTypeCheckError {
     Gpu(anyhow::Error),
 }
 
-/// Parser HIR buffers consumed by type-check recording.
+/// Compact HIR plus the explicitly scoped upstream workspace consumed by the
+/// current type-check recording path.
 ///
-/// These are borrowed for the duration of a recorded check. Any value required
-/// after parser resident buffers are released must be cloned into an owned
-/// retained wrapper before this struct is constructed.
+/// This value is borrowed for the duration of a recorded check. Anything
+/// needed after parser resident buffers are released must be read from `hir`.
 #[derive(Clone, Copy)]
 pub struct GpuTypeCheckHirItemBuffers<'a> {
     /// Host-visible semantic feature summary measured by the GPU parser.
@@ -196,39 +196,6 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     /// Dead parser-phase storage available to the type-check graph's slot
     /// allocator. These buffers contain no semantic input at this boundary.
     pub upstream_workspace: &'a [crate::gpu::buffers::TrackedBufferView<'a>],
-    /// Raw-parser to dense-HIR projection. This remains a typed allocation
-    /// view so compiler-graph alias validation sees the parser workspace slot
-    /// that physically backs it.
-    pub raw_to_compact_hir: &'a LaniusBuffer<u32>,
-    pub node_kind: &'a LaniusBuffer<u32>,
-    pub parent: &'a LaniusBuffer<u32>,
-    pub first_child: &'a LaniusBuffer<u32>,
-    pub next_sibling: &'a LaniusBuffer<u32>,
-    pub subtree_end: &'a LaniusBuffer<u32>,
-    pub type_form: &'a LaniusBuffer<u32>,
-    pub type_len_token: &'a LaniusBuffer<u32>,
-    pub type_path_leaf_node: &'a LaniusBuffer<u32>,
-    pub bound_path_owner_by_leaf: &'a LaniusBuffer<u32>,
-    pub type_arg_start: &'a LaniusBuffer<u32>,
-    pub type_arg_count: &'a LaniusBuffer<u32>,
-    pub type_arg_next: &'a LaniusBuffer<u32>,
-    pub method_impl_receiver_type_node: &'a LaniusBuffer<u32>,
-    pub expr_name_role: &'a LaniusBuffer<u32>,
-    pub expr_result_root_node: &'a LaniusBuffer<u32>,
-    pub member_receiver_node: &'a LaniusBuffer<u32>,
-    pub member_receiver_token: &'a LaniusBuffer<u32>,
-    pub member_name_token: &'a LaniusBuffer<u32>,
-    pub nearest_fn_node: &'a LaniusBuffer<u32>,
-    pub array_element_parent_lit: &'a LaniusBuffer<u32>,
-    pub nearest_array_element_node: &'a LaniusBuffer<u32>,
-    pub struct_lit_head_node: &'a LaniusBuffer<u32>,
-    pub struct_lit_field_parent_lit: &'a LaniusBuffer<u32>,
-    pub struct_lit_field_value_node: &'a LaniusBuffer<u32>,
-    pub semantic_dense_node: &'a LaniusBuffer<u32>,
-    /// Compact semantic row count and navigation retain their allocation
-    /// identities across the parser/typecheck phase boundary.
-    pub semantic_count: &'a LaniusBuffer<u32>,
-    pub semantic_subtree_end: &'a LaniusBuffer<u32>,
 }
 
 impl std::fmt::Display for GpuTypeCheckError {

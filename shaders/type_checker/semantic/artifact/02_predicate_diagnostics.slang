@@ -3,6 +3,7 @@
 // even when grammar forwarding rows share the same semantic dense node.
 
 import gpu_index;
+import hir_records;
 
 struct Params
 {
@@ -28,10 +29,8 @@ struct PredicateDiagnosticFact
 struct TokenIn { uint kind; uint start; uint len; };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> predicate_bound_first_arg_token;
 StructuredBuffer<uint> predicate_bound_second_arg_token;
@@ -50,14 +49,9 @@ static const uint PARSER_FEATURE_TYPE_ARGS = 0x00000001u;
 static const uint PARSER_FEATURE_PREDICATES = 0x00000020u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-uint active_raw_count()
-{
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
-}
-
 uint active_compact_count()
 {
-    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_token(uint token)
@@ -65,9 +59,11 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint fallback_bound_arg_token(uint raw)
+uint fallback_bound_arg_token(uint dense)
 {
-    uint bound_token = hir_token_pos[raw];
+    uint bound_token = dense < active_compact_count()
+        ? compact_hir_core[dense].token_start
+        : INVALID;
     if (!valid_token(bound_token)) return INVALID;
 
     [unroll]
@@ -95,19 +91,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool has_predicate_storage =
         (gParams.parser_feature_flags &
          (PARSER_FEATURE_TYPE_ARGS | PARSER_FEATURE_PREDICATES)) != 0u;
-    if (has_predicate_storage && row < active_raw_count())
+    if (has_predicate_storage && row < compact_count)
     {
-        uint dense = raw_to_compact_hir[row];
+        uint dense = row;
         if (dense < compact_count &&
-            compact_predicate_diagnostic_facts[dense].winner_raw == row)
+            compact_predicate_diagnostic_facts[dense].winner_raw == dense)
         {
-            compact_predicate_diagnostic_facts[dense].status = predicate_status[row];
+            compact_predicate_diagnostic_facts[dense].status = predicate_status[dense];
             compact_predicate_diagnostic_facts[dense].first_arg_token =
-                predicate_bound_first_arg_token[row];
+                predicate_bound_first_arg_token[dense];
             compact_predicate_diagnostic_facts[dense].second_arg_token =
-                predicate_bound_second_arg_token[row];
+                predicate_bound_second_arg_token[dense];
             compact_predicate_diagnostic_facts[dense].fallback_arg_token =
-                fallback_bound_arg_token(row);
+                fallback_bound_arg_token(dense);
         }
     }
 

@@ -75,7 +75,6 @@ use crate::{
         driver::{GpuLexer, ResidentLexerParserInputs},
     },
     parser::{
-        buffers::ParserBuffers,
         driver::{GpuParser, Ll1AcceptResult},
         tables::PrecomputedParseTables,
     },

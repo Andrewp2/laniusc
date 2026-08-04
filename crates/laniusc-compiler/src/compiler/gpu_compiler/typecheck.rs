@@ -331,30 +331,42 @@ impl<'gpu> GpuCompiler<'gpu> {
                     }
                     let active_tree_capacity =
                         hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
-                    let typecheck_parse = self
+                    let (typecheck_hir, type_check) = self
                         .parser
                         .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
                             &self.parse_tables,
                             parser_tree_capacity,
                             parser_feature_flags,
-                            OwnedTypecheckParserBuffers::from_parser_buffers,
-                        );
-                    let type_check = self.record_typecheck_from_parse_buffers(
-                        device,
-                        queue,
-                        encoder,
-                        bufs.n,
-                        1,
-                        token_capacity,
-                        bufs,
-                        &typecheck_parse,
-                        active_tree_capacity,
-                        parser_tree_capacity,
-                        None,
-                        timer.as_deref_mut(),
-                        |err| type_check_execution_failed_for_source(&diagnostic_path, src, err),
-                    )?;
+                            |parse_bufs| {
+                                let hir = crate::parser::buffers::GpuHirView::from_parser_buffers(
+                                    parse_bufs,
+                                );
+                                let type_check = self.record_typecheck_from_parse_buffers(
+                                    device,
+                                    queue,
+                                    encoder,
+                                    bufs.n,
+                                    1,
+                                    token_capacity,
+                                    bufs,
+                                    parse_bufs,
+                                    &hir,
+                                    active_tree_capacity,
+                                    parser_tree_capacity,
+                                    None,
+                                    timer.as_deref_mut(),
+                                    |err| {
+                                        type_check_execution_failed_for_source(
+                                            &diagnostic_path,
+                                            src,
+                                            err,
+                                        )
+                                    },
+                                )?;
+                                Ok::<_, CompileError>((hir, type_check))
+                            },
+                        )?;
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
                     }
@@ -366,7 +378,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             .ensure_frontend_capacity(
                                 bufs.n,
                                 token_capacity,
-                                typecheck_parse.hir.capacity,
+                                typecheck_hir.capacity,
                             )
                             .map_err(CompileError::GpuCodegen)?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
@@ -375,12 +387,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         })?;
                         pipeline
-                            .record_checked_hir(
-                                device,
-                                encoder,
-                                &typecheck_parse.hir,
-                                semantic.view(),
-                            )
+                            .record_checked_hir(device, encoder, &typecheck_hir, semantic.view())
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
                     Ok(type_check)
@@ -650,30 +657,41 @@ impl<'gpu> GpuCompiler<'gpu> {
                     }
                     let active_tree_capacity =
                         hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
-                    let typecheck_parse = self
+                    let (typecheck_hir, type_check) = self
                         .parser
                         .with_current_resident_buffers_with_tree_capacity_and_features(
                             token_capacity,
                             &self.parse_tables,
                             parser_tree_capacity,
                             parser_feature_flags,
-                            OwnedTypecheckParserBuffers::from_parser_buffers,
-                        );
-                    let type_check = self.record_typecheck_from_parse_buffers(
-                        device,
-                        queue,
-                        encoder,
-                        bufs.n,
-                        diagnostic_files.len().max(1) as u32,
-                        token_capacity,
-                        bufs,
-                        &typecheck_parse,
-                        active_tree_capacity,
-                        parser_tree_capacity,
-                        dependency_pages.as_ref(),
-                        timer.as_deref_mut(),
-                        |err| type_check_execution_failed_for_source_pack(&diagnostic_files, err),
-                    )?;
+                            |parse_bufs| {
+                                let hir = crate::parser::buffers::GpuHirView::from_parser_buffers(
+                                    parse_bufs,
+                                );
+                                let type_check = self.record_typecheck_from_parse_buffers(
+                                    device,
+                                    queue,
+                                    encoder,
+                                    bufs.n,
+                                    diagnostic_files.len().max(1) as u32,
+                                    token_capacity,
+                                    bufs,
+                                    parse_bufs,
+                                    &hir,
+                                    active_tree_capacity,
+                                    parser_tree_capacity,
+                                    dependency_pages.as_ref(),
+                                    timer.as_deref_mut(),
+                                    |err| {
+                                        type_check_execution_failed_for_source_pack(
+                                            &diagnostic_files,
+                                            err,
+                                        )
+                                    },
+                                )?;
+                                Ok::<_, CompileError>((hir, type_check))
+                            },
+                        )?;
                     record_host_timer.stamp("typecheck");
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
@@ -691,7 +709,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     bufs.n,
                                     token_capacity,
                                     &bufs.in_bytes,
-                                    typecheck_parse.semantic_interface_hir_buffers(),
+                                    buffers::semantic_interface_hir_buffers(&typecheck_hir),
                                 )
                                 .map_err(|err| {
                                     CompileError::GpuFrontend(format!(
@@ -715,7 +733,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             .ensure_frontend_capacity(
                                 bufs.n,
                                 token_capacity,
-                                typecheck_parse.hir.capacity,
+                                typecheck_hir.capacity,
                             )
                             .map_err(CompileError::GpuCodegen)?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
@@ -724,12 +742,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         })?;
                         pipeline
-                            .record_checked_hir(
-                                device,
-                                encoder,
-                                &typecheck_parse.hir,
-                                semantic.view(),
-                            )
+                            .record_checked_hir(device, encoder, &typecheck_hir, semantic.view())
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
                     if let Some(request) = object_request {
@@ -740,7 +753,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             .ensure_frontend_capacity(
                                 bufs.n,
                                 token_capacity,
-                                typecheck_parse.hir.capacity,
+                                typecheck_hir.capacity,
                             )
                             .map_err(CompileError::GpuCodegen)?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
@@ -754,7 +767,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 device,
                                 queue,
                                 encoder,
-                                &typecheck_parse.hir,
+                                &typecheck_hir,
                                 semantic.view(),
                                 library_id,
                                 unit_id,
@@ -859,14 +872,24 @@ impl<'gpu> GpuCompiler<'gpu> {
         source_file_capacity: u32,
         token_capacity: u32,
         lexer_bufs: &crate::lexer::buffers::GpuBuffers,
-        parse_bufs: &OwnedTypecheckParserBuffers,
+        parse_bufs: &crate::parser::buffers::ParserBuffers,
+        hir: &crate::parser::buffers::GpuHirView,
         hir_node_capacity: u32,
         parser_hir_node_capacity: u32,
         dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
         timer: Option<&mut GpuTimer>,
         map_execution_error: impl FnOnce(GpuTypeCheckError) -> CompileError,
     ) -> Result<gpu_type_checker::RecordedTypeCheck, CompileError> {
-        let upstream_workspace = parse_bufs.typecheck_workspace(lexer_bufs);
+        let phase_workspace = parse_bufs.post_hir_workspace();
+        let upstream_workspace = buffers::typecheck_workspace(&phase_workspace, lexer_bufs);
+        let hir_items = buffers::typecheck_hir_item_buffers(
+            hir,
+            &upstream_workspace,
+            parse_bufs.parser_feature_flags,
+            parse_bufs.n_tokens.saturating_sub(2).max(1),
+            parse_bufs.n_tokens.saturating_sub(2).max(1),
+            parse_bufs.n_tokens.saturating_sub(2).max(1),
+        );
         self.type_checker
             .record_resident_token_buffer_with_hir_items_on_gpu(
                 device,
@@ -881,12 +904,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 &lexer_bufs.in_bytes,
                 hir_node_capacity,
                 parser_hir_node_capacity,
-                &parse_bufs.hir_kind,
-                &parse_bufs.hir_token_pos,
-                &parse_bufs.hir_token_end,
-                &parse_bufs.hir_token_file_id,
-                &parse_bufs.ll1_status,
-                parse_bufs.hir_item_buffers(&upstream_workspace),
+                hir_items,
                 dependency_pages,
                 timer,
             )

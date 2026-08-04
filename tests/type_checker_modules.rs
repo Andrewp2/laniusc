@@ -3,7 +3,7 @@ mod common;
 use laniusc_compiler::{
     codegen::{
         unit::{
-            CodegenUnitLimits,
+            CompilationUnitLimits,
             SourcePackArtifactTarget,
             SourcePackBuildShardLimits,
             SourcePackJob,
@@ -1003,7 +1003,7 @@ pub fn answer() -> i32 { return 42; }
                     dependency_library_ids: Vec::new(),
                 }],
                 &worker_root,
-                CodegenUnitLimits::default(),
+                CompilationUnitLimits::default(),
                 SourcePackJobBatchLimits::default(),
                 SourcePackBuildShardLimits::default(),
                 "bounded-work-queue-test-worker",
@@ -1567,7 +1567,7 @@ fn main() -> i32 { return 0; }
                     dependency_library_ids: Vec::new(),
                 }],
                 &worker_root,
-                CodegenUnitLimits::default(),
+                CompilationUnitLimits::default(),
                 SourcePackJobBatchLimits::default(),
                 SourcePackBuildShardLimits::default(),
                 "bounded-x86-queue-test-worker",

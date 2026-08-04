@@ -3,13 +3,13 @@
 // consumers never index parser rows.
 
 import gpu_index;
+import hir_records;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> raw_to_compact_hir;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_member_name_token;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> struct_lit_context_decl_token;
 StructuredBuffer<uint> struct_lit_context_instance;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -35,22 +35,21 @@ bool valid_token(uint token)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint raw = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    if (raw >= gParams.n_hir_nodes) return;
-    uint dense = raw_to_compact_hir[raw];
-    if (dense == INVALID || dense >= gParams.n_hir_nodes) return;
+    uint dense = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (dense >= gParams.n_hir_nodes) return;
 
-    if (hir_kind[raw] == HIR_MEMBER_EXPR)
+    uint kind = compact_hir_core[dense].kind;
+    if (kind == HIR_MEMBER_EXPR)
     {
-        uint member_token = hir_member_name_token[raw];
+        uint member_token = compact_hir_payload[dense].c;
         if (valid_token(member_token))
             semantic_member_field_ordinal_by_hir[dense] =
                 member_result_field_ordinal[member_token];
         return;
     }
-    if (hir_kind[raw] != HIR_STRUCT_LITERAL_EXPR) return;
+    if (kind != HIR_STRUCT_LITERAL_EXPR) return;
 
-    uint instance = struct_lit_context_instance[raw];
+    uint instance = struct_lit_context_instance[dense];
     if (valid_token(instance))
     {
         semantic_expr_ref_tag_by_hir[dense] = TYPE_REF_INSTANCE;
@@ -58,7 +57,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint decl = struct_lit_context_decl_token[raw];
+    uint decl = struct_lit_context_decl_token[dense];
     if (!valid_token(decl)) return;
     uint tag = decl_type_ref_tag[decl];
     if (tag == TYPE_REF_INVALID) return;

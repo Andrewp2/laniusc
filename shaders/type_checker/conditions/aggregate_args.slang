@@ -6,6 +6,7 @@
 // one lane per argument pair and maps the row back to its request with a
 // logarithmic prefix search.
 
+import hir_records;
 import status;
 
 struct Params
@@ -17,9 +18,8 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_semantic_count;
-StructuredBuffer<uint> hir_semantic_subtree_end;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<uint> aggregate_compare_scan_input;
 StructuredBuffer<uint> aggregate_compare_prefix;
 StructuredBuffer<uint> aggregate_compare_count_out;
@@ -63,7 +63,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint active_compare_count()
@@ -169,10 +169,10 @@ bool same_leaf_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_p
 
 uint semantic_type_subtree_count(uint root)
 {
-    uint semantic_count = min(hir_semantic_count[0u], gParams.n_hir_nodes);
+    uint semantic_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     if (root >= semantic_count || type_semantic_scan_input[root] == 0u)
         return INVALID;
-    uint end = hir_semantic_subtree_end[root];
+    uint end = compact_hir_links[root].subtree_end;
     if (end <= root || end > semantic_count)
         return INVALID;
     uint begin_ordinal = type_semantic_prefix[root];

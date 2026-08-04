@@ -19,9 +19,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_array_element_parent_lit;
-StructuredBuffer<uint> hir_nearest_array_element_node;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_kind;
@@ -34,7 +31,9 @@ StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_array_element_start;
+StructuredBuffer<uint> compact_array_element_count;
+StructuredBuffer<HirArrayElement> compact_array_elements;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_len;
 StructuredBuffer<uint> path_segment_base;
@@ -73,7 +72,7 @@ uint active_token_count()
 
 uint active_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_token(uint i)
@@ -100,14 +99,6 @@ uint enclosing_function_decl_token(uint token)
 uint active_compact_hir_count()
 {
     return min(compact_hir_count[0u], gParams.n_hir_nodes);
-}
-
-uint compact_node_for_raw(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint dense = raw_to_compact_hir[node];
-    return dense < active_compact_hir_count() ? dense : INVALID;
 }
 
 HirPayload stmt_payload(uint node)
@@ -185,9 +176,8 @@ bool context_for_compact_type_node(uint type_node, out uint decl_token, out uint
 
 bool is_struct_literal(uint node)
 {
-    uint dense = compact_node_for_raw(node);
-    return dense < active_compact_hir_count() &&
-           compact_hir_core[dense].kind == HIR_STRUCT_LITERAL_EXPR;
+    return node < active_compact_hir_count() &&
+           compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR;
 }
 
 void publish_context(uint literal_node, uint decl_token, uint instance_i)
@@ -278,26 +268,49 @@ uint array_instance_for_context_stmt(uint stmt_node)
     return INVALID;
 }
 
-uint enclosing_array_element_node(uint literal_node)
+bool enclosing_array_element_node(uint literal_node, out uint array_node)
 {
+    array_node = INVALID;
     if (!valid_node(literal_node))
-        return INVALID;
-    uint element = hir_nearest_array_element_node[literal_node];
-    return valid_node(element) && valid_node(hir_array_element_parent_lit[element])
-        ? element
-        : INVALID;
+        return false;
+    uint node = literal_node;
+    for (uint step = 0u; step < 256u; step += 1u)
+    {
+        if (!valid_node(node))
+            return false;
+        uint parent = compact_hir_core[node].parent;
+        if (!valid_node(parent))
+            return false;
+        if (compact_hir_core[parent].kind == 24u)
+        {
+            uint start = compact_array_element_start[parent];
+            uint count = compact_array_element_count[parent];
+            uint total = min(gParams.n_hir_nodes, compact_hir_count[0u]);
+            if (start != INVALID && start < total && count <= total - start)
+            {
+                for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+                {
+                    HirArrayElement element = compact_array_elements[start + ordinal];
+                    if (element.value == literal_node)
+                    {
+                        array_node = parent;
+                        return true;
+                    }
+                }
+            }
+        }
+        node = parent;
+    }
+    return false;
 }
 
 bool publish_array_element_context(uint literal_node, uint stmt_node)
 {
-    uint element_node = enclosing_array_element_node(literal_node);
-    if (!valid_node(element_node))
+    uint array_node;
+    if (!enclosing_array_element_node(literal_node, array_node))
         return false;
-
-    uint array_node = hir_array_element_parent_lit[element_node];
-    uint array = compact_node_for_raw(array_node);
-    uint array_stmt = array < active_compact_hir_count()
-        ? compact_hir_payload[array].d
+    uint array_stmt = array_node < active_compact_hir_count()
+        ? compact_hir_payload[array_node].d
         : INVALID;
     if (!valid_node(array_node) || array_stmt != stmt_node)
         return false;
@@ -331,7 +344,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!is_struct_literal(i))
         return;
 
-    uint literal = compact_node_for_raw(i);
+    uint literal = i;
     uint stmt_node = literal < active_compact_hir_count()
         ? compact_hir_payload[literal].d
         : INVALID;

@@ -22,8 +22,8 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
     record_compute(
         encoder,
         &passes.kernel("type_checker/count/dispatch_args"),
-        &groups.hir_semantic_dispatch,
-        "type_check.visible.hir_semantic_dispatch_args",
+        &groups.compact_hir_dispatch,
+        "type_check.visible.compact_hir_dispatch_args",
         1,
     )?;
     groups
@@ -96,7 +96,7 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
         &passes.kernel("type_checker/visible/04_hir_names"),
         &groups.hir_names,
         "type_check.visible.hir_names",
-        &groups.hir_semantic_dispatch_args,
+        &groups.compact_hir_dispatch_args,
     )?;
     stamp_typecheck_timer(&mut timer, encoder, "typecheck.visible.hir_names.done");
     Ok(())

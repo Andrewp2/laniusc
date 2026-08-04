@@ -5,6 +5,7 @@
 
 import external_type_identity;
 import gpu_index;
+import hir_records;
 import status;
 
 struct Params
@@ -16,10 +17,10 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> aggregate_compare_count_out;
-StructuredBuffer<uint> hir_semantic_count;
-StructuredBuffer<uint> hir_semantic_dense_node;
-StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> type_subtree_compare_scan_input;
 StructuredBuffer<uint> type_subtree_compare_prefix;
 StructuredBuffer<uint> type_subtree_compare_count_out;
@@ -93,7 +94,7 @@ uint request_for_compare_row(uint row)
 
 uint semantic_row_at(uint root, uint relative_ordinal)
 {
-    uint semantic_count = min(hir_semantic_count[0u], gParams.n_hir_nodes);
+    uint semantic_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     if (root >= semantic_count)
         return INVALID;
     uint ordinal = saturating_add(type_semantic_prefix[root], relative_ordinal);
@@ -157,16 +158,19 @@ bool same_instance(uint lhs, uint rhs)
 
 bool same_type_node(uint lhs_row, uint rhs_row)
 {
-    uint semantic_count = min(hir_semantic_count[0u], gParams.n_hir_nodes);
+    uint semantic_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     if (lhs_row >= semantic_count || rhs_row >= semantic_count)
         return false;
-    uint lhs_node = hir_semantic_dense_node[lhs_row];
-    uint rhs_node = hir_semantic_dense_node[rhs_row];
-    if (lhs_node >= gParams.n_hir_nodes || rhs_node >= gParams.n_hir_nodes ||
-        hir_type_form[lhs_node] != hir_type_form[rhs_node])
+    uint lhs_node = lhs_row;
+    uint rhs_node = rhs_row;
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (lhs_node >= hir_count || rhs_node >= hir_count)
         return false;
-    uint lhs_token = hir_token_pos[lhs_node];
-    uint rhs_token = hir_token_pos[rhs_node];
+    if (lhs_node >= hir_count || rhs_node >= hir_count ||
+        compact_hir_payload[lhs_node].a != compact_hir_payload[rhs_node].a)
+        return false;
+    uint lhs_token = compact_hir_core[lhs_node].token_start;
+    uint rhs_token = compact_hir_core[rhs_node].token_start;
     if (!valid_token(lhs_token) || !valid_token(rhs_token))
         return false;
     uint lhs_tag = type_expr_ref_tag[lhs_token];

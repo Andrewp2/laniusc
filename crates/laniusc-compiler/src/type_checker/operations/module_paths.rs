@@ -274,7 +274,7 @@ macro_rules! record_compaction {
             HirNodes,
             $kernel
         )
-        .with_modes(&[$(($output, AccessMode::Write)),+])
+            .with_modes(&[$(($output, AccessMode::Write)),+])
         .with_aliases($aliases);
         pub(in crate::type_checker) const $operation: CompactionSpec = CompactionSpec {
             mark: $flag,

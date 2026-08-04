@@ -19,17 +19,11 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
-StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_hir_expr_parent;
-StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<uint> compact_hir_expr_root;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> visible_decl;
@@ -102,7 +96,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -120,17 +114,9 @@ bool valid_compact_node(uint node)
     return node != INVALID && node < active_compact_hir_count();
 }
 
-uint compact_node_for_raw(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint compact = raw_to_compact_hir[node];
-    return valid_compact_node(compact) ? compact : INVALID;
-}
-
 uint active_compact_hir_count()
 {
-    return min(compact_hir_count[0u], gParams.n_tokens);
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
 uint active_compact_field_count()
@@ -225,10 +211,10 @@ uint visible_type_for_token(uint token_i)
 
 uint compact_expr_for_raw(uint node)
 {
-    if (!valid_node(node))
+    if (!valid_compact_node(node))
         return INVALID;
-    uint root = hir_expr_result_root_node[node];
-    return compact_node_for_raw(valid_node(root) ? root : node);
+    uint root = compact_hir_expr_root[node];
+    return valid_compact_node(root) ? root : node;
 }
 
 uint compact_expr_form(uint node)
@@ -264,7 +250,7 @@ uint direct_arithmetic_operand_type(uint node)
 
 uint call_callee_token(uint call_node)
 {
-    uint call = compact_node_for_raw(call_node);
+    uint call = call_node;
     if (!valid_compact_node(call) || compact_hir_core[call].kind != HIR_CALL_EXPR)
         return INVALID;
 
@@ -344,20 +330,17 @@ uint direct_value_type(uint node)
     if (lit != TY_UNKNOWN)
         return lit;
 
-    uint token_i = hir_token_pos[node];
-    if (hir_kind[node] == HIR_NAME_EXPR)
+    uint token_i = compact_hir_core[node].token_start;
+    if (compact_hir_core[node].kind == HIR_NAME_EXPR)
         return visible_type_for_token(token_i);
 
-    if (hir_kind[node] == HIR_MEMBER_EXPR)
+    if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
     {
-        uint member = compact_node_for_raw(node);
-        uint member_token = valid_compact_node(member)
-            ? compact_hir_payload[member].c
-            : INVALID;
+        uint member_token = compact_hir_payload[node].c;
         return visible_type_for_token(member_token);
     }
 
-    if (hir_kind[node] == HIR_CALL_EXPR)
+    if (compact_hir_core[node].kind == HIR_CALL_EXPR)
     {
         uint callee_token = call_callee_token(node);
         return valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
@@ -373,30 +356,33 @@ uint first_value_type_from_node(uint root, out uint value_token)
         return TY_UNKNOWN;
 
     uint expr = compact_expr_for_raw(root);
-    uint node = valid_node(hir_expr_result_root_node[root])
-        ? hir_expr_result_root_node[root]
+    uint node = valid_compact_node(compact_hir_expr_root[root])
+        ? compact_hir_expr_root[root]
         : root;
     uint ty = direct_value_type(node);
     if (ty != TY_UNKNOWN)
     {
         uint token_i = compact_expr_value_token(expr);
         if (!valid_token(token_i))
-            token_i = hir_token_pos[node];
+            token_i = compact_hir_core[node].token_start;
         value_token = valid_token(token_i) ? token_i : INVALID;
         return ty;
     }
     return TY_UNKNOWN;
 }
 
-void validate_struct_literal_field_node(uint node)
+void validate_struct_literal_field_row(uint field_row)
 {
-    uint field_token = hir_token_pos[node];
+    if (!valid_compact_field(field_row))
+        return;
+    HirField field = compact_fields[field_row];
+    uint field_token = field.name_token;
     if (!valid_token(field_token))
         return;
 
-    uint value_root = hir_struct_lit_field_value_node[node];
-    uint literal_node = hir_struct_lit_field_parent_lit[node];
-    if (!valid_node(literal_node) || !valid_node(value_root))
+    uint value_root = field.value;
+    uint literal_node = field.owner;
+    if (!valid_compact_node(literal_node) || !valid_compact_node(value_root))
         return;
     if (!valid_token(struct_lit_context_decl_token[literal_node]))
         return;
@@ -429,22 +415,18 @@ void validate_struct_literal_field_node(uint node)
 
 bool member_expr_is_call_callee(uint node)
 {
-    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+    if (!valid_compact_node(node) || compact_hir_core[node].kind != HIR_MEMBER_EXPR)
         return false;
-    uint member = compact_node_for_raw(node);
-    if (!valid_compact_node(member))
-        return false;
-    uint call = compact_hir_expr_parent[member];
+    uint call = compact_hir_expr_parent[node];
     return valid_compact_node(call) &&
            compact_hir_core[call].kind == HIR_CALL_EXPR &&
-           compact_hir_payload[call].a == member;
+           compact_hir_payload[call].a == node;
 }
 
 void validate_member_expr_node(uint node)
 {
-    uint member = compact_node_for_raw(node);
-    uint member_token = valid_compact_node(member)
-        ? compact_hir_payload[member].c
+    uint member_token = valid_compact_node(node)
+        ? compact_hir_payload[node].c
         : INVALID;
     if (!valid_token(member_token))
         return;
@@ -473,9 +455,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     validate_sorted_struct_field_key_row(node);
 
-    if (hir_kind[node] == HIR_MEMBER_EXPR)
+    if (valid_compact_node(node) && compact_hir_core[node].kind == HIR_MEMBER_EXPR)
         validate_member_expr_node(node);
-    else if (valid_node(hir_struct_lit_field_parent_lit[node]) &&
-             hir_kind[hir_struct_lit_field_parent_lit[node]] == HIR_STRUCT_LITERAL_EXPR)
-        validate_struct_literal_field_node(node);
+    if (node < active_compact_field_count())
+        validate_struct_literal_field_row(node);
 }

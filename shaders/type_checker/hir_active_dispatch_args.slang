@@ -15,7 +15,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
-StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> compact_hir_count;
 RWStructuredBuffer<uint> token_active_dispatch_args;
 RWStructuredBuffer<uint> hir_active_dispatch_args;
 RWStructuredBuffer<uint> token_hir_active_dispatch_args;
@@ -26,14 +26,14 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint active_hir_node_count()
 {
-    return hir_status[0u] == 0u || gParams.n_hir_nodes == 0u
+    return gParams.n_hir_nodes == 0u
         ? 0u
-        : min(gParams.n_hir_nodes, hir_status[5u]);
+        : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint active_token_count()
 {
-    return hir_status[0u] == 0u ? 0u : min(gParams.n_tokens, token_count[0u]);
+    return min(gParams.n_tokens, token_count[0u]);
 }
 
 void write_dispatch_args(RWStructuredBuffer<uint> args, uint active_records)

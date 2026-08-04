@@ -22,23 +22,16 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<CompactMethodCore> compact_method_cores;
-StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_row_count;
 StructuredBuffer<HirVariantPayload> compact_variant_payloads;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_type_len_token;
-StructuredBuffer<uint> hir_nearest_fn_node;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
-StructuredBuffer<uint> generic_decl_owner_by_node;
 StructuredBuffer<uint> generic_param_count_out;
 StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
@@ -75,7 +68,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 uint active_generic_param_count()
@@ -102,12 +95,8 @@ uint generic_owner_token(uint decl_node)
 {
     if (!valid_node(decl_node))
         return INVALID;
-    uint dense = raw_to_compact_hir[decl_node];
-    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense >= hir_count)
-        return hir_token_pos[decl_node];
-    uint name_token = compact_hir_payload[dense].b;
-    return valid_token(name_token) ? name_token : compact_hir_core[dense].token_start;
+    uint name_token = compact_hir_payload[decl_node].b;
+    return valid_token(name_token) ? name_token : compact_hir_core[decl_node].token_start;
 }
 
 bool owner_has_generic_params(uint owner_token)
@@ -117,21 +106,18 @@ bool owner_has_generic_params(uint owner_token)
             type_decl_const_param_count_by_owner_token[owner_token] != 0u);
 }
 
-uint compact_impl_owner_token(uint fn_node)
+uint compact_impl_owner_token(uint fn_dense)
 {
-    if (!valid_node(fn_node))
-        return INVALID;
-    uint dense = raw_to_compact_hir[fn_node];
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense >= hir_count)
+    if (fn_dense == INVALID || fn_dense >= hir_count)
         return INVALID;
     uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
     uint row = compact_method_row_for_hir(
-        compact_method_cores, method_count, dense);
+        compact_method_cores, method_count, fn_dense);
     if (row >= method_count)
         return INVALID;
     CompactMethodCore method = compact_method_cores[row];
-    if (method.node != dense || method.impl_node >= hir_count)
+    if (method.node != fn_dense || method.impl_node >= hir_count)
         return INVALID;
     uint token = compact_hir_core[method.impl_node].token_start;
     return valid_token(token) ? token : INVALID;
@@ -139,14 +125,26 @@ uint compact_impl_owner_token(uint fn_node)
 
 uint generic_decl_scope_token_for_type_node(uint node)
 {
-    uint decl_node = generic_decl_owner_by_node[node];
-    uint owner_token = generic_owner_token(decl_node);
-    if (owner_has_generic_params(owner_token))
-        return owner_token;
+    uint fallback_owner_token = INVALID;
+    uint current = node;
+    for (uint hop = 0u; hop < 256u; hop += 1u)
+    {
+        if (!valid_node(current))
+            break;
+        uint owner_token = generic_owner_token(current);
+        if (fallback_owner_token == INVALID)
+            fallback_owner_token = owner_token;
+        if (owner_has_generic_params(owner_token))
+            return owner_token;
+        uint parent = compact_hir_core[current].parent;
+        if (parent == current || parent == INVALID)
+            break;
+        current = parent;
+    }
 
-    uint fn_node = valid_node(node) ? hir_nearest_fn_node[node] : INVALID;
-    uint impl_token = compact_impl_owner_token(fn_node);
-    return owner_has_generic_params(impl_token) ? impl_token : owner_token;
+    uint fn_dense = valid_node(node) ? compact_hir_nearest_fn[node] : INVALID;
+    uint impl_token = compact_impl_owner_token(fn_dense);
+    return owner_has_generic_params(impl_token) ? impl_token : fallback_owner_token;
 }
 
 bool generic_param_key_less(uint row, uint owner, uint name_id)
@@ -393,11 +391,15 @@ uint generic_param_row_for_name(uint owner_token, uint name_token, uint kind)
 
 void publish_const_len_use_slot(uint node)
 {
-    if (!valid_node(node) || hir_kind[node] != HIR_TYPE ||
-        hir_type_form[node] != HIR_TYPE_FORM_ARRAY)
+    if (!valid_node(node))
         return;
 
-    uint token = hir_type_len_token[node];
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (node >= hir_count || compact_hir_core[node].kind != HIR_TYPE ||
+        compact_hir_payload[node].a != HIR_TYPE_FORM_ARRAY)
+        return;
+
+    uint token = compact_hir_payload[node].c;
     if (!valid_token(token))
         return;
 
@@ -425,11 +427,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     publish_const_len_use_slot(node);
     publish_compact_variant_payload_use_slot(node);
 
-    if (!valid_node(node) || hir_kind[node] != HIR_TYPE ||
-        hir_type_form[node] != HIR_TYPE_FORM_PATH)
+    if (!valid_node(node))
         return;
 
-    uint token = hir_token_pos[node];
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (node >= hir_count || compact_hir_core[node].kind != HIR_TYPE ||
+        compact_hir_payload[node].a != HIR_TYPE_FORM_PATH)
+        return;
+
+    uint token = compact_hir_core[node].token_start;
     if (!valid_token(token))
         return;
 

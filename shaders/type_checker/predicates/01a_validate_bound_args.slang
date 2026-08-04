@@ -12,7 +12,8 @@
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!valid_node(node) || node_kind[node] != PROD_BOUND_TYPE_IDENT)
+    if (!valid_node(node) ||
+        compact_hir_predicate_facts[node].production != PROD_BOUND_TYPE_IDENT)
         return;
 
     uint owner_decl = predicate_owner_node[node];

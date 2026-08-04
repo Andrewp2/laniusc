@@ -2,11 +2,6 @@ use super::super::*;
 
 /// Minimal HIR buffers used when type checking runs without parser item tables.
 pub(super) struct EmptyHirBindings {
-    node_kind: LaniusBuffer<u32>,
-    parent: LaniusBuffer<u32>,
-    first_child: LaniusBuffer<u32>,
-    next_sibling: LaniusBuffer<u32>,
-    semantic_dense_node: LaniusBuffer<u32>,
     compact_param_count: LaniusBuffer<u32>,
     compact_params: LaniusBuffer<u32>,
     compact_param_ranges: LaniusBuffer<u32>,
@@ -22,37 +17,7 @@ pub(super) struct EmptyHirBindings {
 impl EmptyHirBindings {
     /// Creates placeholder HIR resources that satisfy every reflected binding.
     pub(super) fn new(device: &wgpu::Device, uses_hir_items: bool, hir_node_capacity: u32) -> Self {
-        let empty_hir_len = if uses_hir_items {
-            1
-        } else {
-            hir_node_capacity.max(1) as usize
-        };
-        let invalid_node = vec![u32::MAX; empty_hir_len];
-        let zero_node = vec![0u32; empty_hir_len];
-        let identity_node: Vec<u32> = if uses_hir_items {
-            vec![0]
-        } else {
-            (0..empty_hir_len as u32).collect()
-        };
-        let node_kind =
-            storage_ro_from_u32s(device, "type_check.resident.node_kind.empty", &zero_node);
-        let parent =
-            storage_ro_from_u32s(device, "type_check.resident.parent.empty", &invalid_node);
-        let first_child = storage_ro_from_u32s(
-            device,
-            "type_check.resident.first_child.empty",
-            &invalid_node,
-        );
-        let next_sibling = storage_ro_from_u32s(
-            device,
-            "type_check.resident.next_sibling.empty",
-            &invalid_node,
-        );
-        let semantic_dense_node = storage_ro_from_u32s(
-            device,
-            "type_check.resident.hir_semantic_dense_node.identity",
-            &identity_node,
-        );
+        let _ = (uses_hir_items, hir_node_capacity);
         let compact_generic_param_count = storage_ro_from_u32s(
             device,
             "type_check.resident.compact_generic_param_count.empty",
@@ -102,11 +67,6 @@ impl EmptyHirBindings {
         );
 
         Self {
-            node_kind,
-            parent,
-            first_child,
-            next_sibling,
-            semantic_dense_node,
             compact_param_count,
             compact_params,
             compact_param_ranges,
@@ -128,9 +88,12 @@ pub(super) fn register_hir_item_resources<'a>(
 ) {
     resources.buffer("compact_hir_count", &hir_items.hir.count);
     resources.buffer("compact_hir_core", &hir_items.hir.core);
-    resources.buffer("raw_to_compact_hir", hir_items.raw_to_compact_hir);
     resources.buffer("compact_hir_links", &hir_items.hir.links);
     resources.buffer("compact_hir_payload", &hir_items.hir.payload);
+    resources.buffer(
+        "compact_hir_predicate_facts",
+        &hir_items.hir.predicate_facts,
+    );
     resources.buffer("compact_hir_scope_end", &hir_items.hir.scope_end);
     resources.buffer("compact_hir_nearest_loop", &hir_items.hir.nearest_loop);
     resources.buffer("compact_hir_nearest_block", &hir_items.hir.nearest_block);
@@ -140,6 +103,7 @@ pub(super) fn register_hir_item_resources<'a>(
     );
     resources.buffer("compact_hir_nearest_fn", &hir_items.hir.nearest_fn);
     resources.buffer("compact_hir_expr_parent", &hir_items.hir.expr_parent);
+    resources.buffer("compact_hir_expr_root", &hir_items.hir.expr_root);
     resources.buffer("compact_call_arg_count", &hir_items.hir.call_arg_count);
     resources.buffer("compact_call_args", &hir_items.hir.call_args);
     resources.buffer("compact_fn_return_type", &hir_items.hir.fn_return_type);
@@ -224,82 +188,34 @@ pub(super) fn register_hir_item_resources<'a>(
         &hir_items.hir.array_element_row_count,
     );
     resources.buffer("compact_array_elements", &hir_items.hir.array_elements);
-    resources.buffer("node_kind", &hir_items.node_kind);
-    resources.buffer("parent", &hir_items.parent);
-    resources.buffer("first_child", &hir_items.first_child);
-    resources.buffer("next_sibling", &hir_items.next_sibling);
-    resources.buffer("subtree_end", &hir_items.subtree_end);
-    resources.buffer("hir_type_form", &hir_items.type_form);
-    resources.buffer("hir_type_len_token", &hir_items.type_len_token);
-    resources.buffer("hir_type_path_leaf_node", &hir_items.type_path_leaf_node);
-    resources.buffer(
-        "hir_bound_path_owner_by_leaf",
-        &hir_items.bound_path_owner_by_leaf,
-    );
-    resources.buffer("hir_type_arg_start", &hir_items.type_arg_start);
-    resources.buffer("hir_type_arg_count", &hir_items.type_arg_count);
-    resources.buffer("hir_type_arg_next", &hir_items.type_arg_next);
-    resources.buffer(
-        "hir_method_impl_receiver_type_node",
-        &hir_items.method_impl_receiver_type_node,
-    );
-    resources.buffer("hir_expr_name_role", &hir_items.expr_name_role);
-    resources.buffer(
-        "hir_expr_result_root_node",
-        &hir_items.expr_result_root_node,
-    );
-    resources.buffer("hir_member_receiver_node", &hir_items.member_receiver_node);
-    resources.buffer(
-        "hir_member_receiver_token",
-        &hir_items.member_receiver_token,
-    );
-    resources.buffer("hir_member_name_token", &hir_items.member_name_token);
-    resources.buffer("hir_nearest_fn_node", &hir_items.nearest_fn_node);
-    resources.buffer(
-        "hir_array_element_parent_lit",
-        &hir_items.array_element_parent_lit,
-    );
-    resources.buffer(
-        "hir_nearest_array_element_node",
-        &hir_items.nearest_array_element_node,
-    );
-    resources.buffer("hir_struct_lit_head_node", &hir_items.struct_lit_head_node);
-    resources.buffer(
-        "hir_struct_lit_field_parent_lit",
-        &hir_items.struct_lit_field_parent_lit,
-    );
-    resources.buffer(
-        "hir_struct_lit_field_value_node",
-        &hir_items.struct_lit_field_value_node,
-    );
-    resources.buffer("hir_semantic_dense_node", &hir_items.semantic_dense_node);
-    resources.buffer("hir_semantic_count", hir_items.semantic_count);
-    resources.buffer("hir_semantic_subtree_end", hir_items.semantic_subtree_end);
 }
 
 /// Registers placeholder HIR resources for modes without parser item metadata.
 pub(super) fn register_empty_hir_resources<'a>(
     resources: &mut ResourceMap<'a>,
     empty_hir: &'a EmptyHirBindings,
-    hir_active_count: &'a wgpu::Buffer,
 ) {
     resources.buffer("compact_hir_count", &empty_hir.compact_generic_param_count);
     resources.buffer("compact_hir_core", &empty_hir.compact_generic_params);
-    resources.buffer("raw_to_compact_hir", &empty_hir.parent);
     resources.buffer("compact_hir_links", &empty_hir.compact_generic_params);
     resources.buffer("compact_hir_payload", &empty_hir.compact_generic_params);
-    resources.buffer("compact_hir_scope_end", &empty_hir.parent);
-    resources.buffer("compact_hir_nearest_loop", &empty_hir.parent);
-    resources.buffer("compact_hir_nearest_block", &empty_hir.parent);
-    resources.buffer("compact_hir_nearest_control", &empty_hir.parent);
-    resources.buffer("compact_hir_nearest_fn", &empty_hir.parent);
-    resources.buffer("compact_hir_expr_parent", &empty_hir.parent);
+    resources.buffer(
+        "compact_hir_predicate_facts",
+        &empty_hir.compact_generic_params,
+    );
+    resources.buffer("compact_hir_scope_end", &empty_hir.compact_params);
+    resources.buffer("compact_hir_nearest_loop", &empty_hir.compact_params);
+    resources.buffer("compact_hir_nearest_block", &empty_hir.compact_params);
+    resources.buffer("compact_hir_nearest_control", &empty_hir.compact_params);
+    resources.buffer("compact_hir_nearest_fn", &empty_hir.compact_params);
+    resources.buffer("compact_hir_expr_parent", &empty_hir.compact_params);
+    resources.buffer("compact_hir_expr_root", &empty_hir.compact_params);
     resources.buffer("compact_call_arg_count", &empty_hir.compact_param_count);
     resources.buffer("compact_call_args", &empty_hir.compact_params);
-    resources.buffer("compact_fn_return_type", &empty_hir.parent);
-    resources.buffer("compact_type_root_owner", &empty_hir.parent);
-    resources.buffer("compact_type_alias_target", &empty_hir.parent);
-    resources.buffer("compact_const_type", &empty_hir.parent);
+    resources.buffer("compact_fn_return_type", &empty_hir.compact_params);
+    resources.buffer("compact_type_root_owner", &empty_hir.compact_params);
+    resources.buffer("compact_type_alias_target", &empty_hir.compact_params);
+    resources.buffer("compact_const_type", &empty_hir.compact_params);
     resources.buffer("compact_param_count", &empty_hir.compact_param_count);
     resources.buffer("compact_params", &empty_hir.compact_params);
     resources.buffer("compact_param_ranges", &empty_hir.compact_param_ranges);
@@ -384,34 +300,4 @@ pub(super) fn register_empty_hir_resources<'a>(
         &empty_hir.compact_generic_param_count,
     );
     resources.buffer("compact_array_elements", &empty_hir.compact_generic_params);
-    resources.buffer("node_kind", &empty_hir.node_kind);
-    resources.buffer("parent", &empty_hir.parent);
-    resources.buffer("first_child", &empty_hir.first_child);
-    resources.buffer("next_sibling", &empty_hir.next_sibling);
-    resources.buffer("subtree_end", &empty_hir.node_kind);
-    resources.buffer("hir_type_form", &empty_hir.node_kind);
-    resources.buffer("hir_type_len_token", &empty_hir.parent);
-    resources.buffer("hir_type_path_leaf_node", &empty_hir.parent);
-    resources.buffer("hir_bound_path_owner_by_leaf", &empty_hir.parent);
-    resources.buffer("hir_type_arg_start", &empty_hir.parent);
-    resources.buffer("hir_type_arg_count", &empty_hir.node_kind);
-    resources.buffer("hir_type_arg_next", &empty_hir.parent);
-    resources.buffer("hir_type_arg_owner", &empty_hir.parent);
-    resources.buffer("hir_type_arg_rank", &empty_hir.node_kind);
-    resources.buffer("hir_type_alias_target_node", &empty_hir.parent);
-    resources.buffer("hir_method_impl_receiver_type_node", &empty_hir.parent);
-    resources.buffer("hir_expr_name_role", &empty_hir.node_kind);
-    resources.buffer("hir_expr_result_root_node", &empty_hir.parent);
-    resources.buffer("hir_member_receiver_node", &empty_hir.parent);
-    resources.buffer("hir_member_receiver_token", &empty_hir.parent);
-    resources.buffer("hir_member_name_token", &empty_hir.parent);
-    resources.buffer("hir_nearest_fn_node", &empty_hir.parent);
-    resources.buffer("hir_array_element_parent_lit", &empty_hir.parent);
-    resources.buffer("hir_nearest_array_element_node", &empty_hir.parent);
-    resources.buffer("hir_struct_lit_head_node", &empty_hir.parent);
-    resources.buffer("hir_struct_lit_field_parent_lit", &empty_hir.parent);
-    resources.buffer("hir_struct_lit_field_value_node", &empty_hir.parent);
-    resources.buffer("hir_semantic_dense_node", &empty_hir.semantic_dense_node);
-    resources.buffer("hir_semantic_count", hir_active_count);
-    resources.buffer("hir_semantic_subtree_end", &empty_hir.node_kind);
 }

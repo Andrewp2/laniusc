@@ -23,14 +23,12 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> raw_to_compact_hir;
+StructuredBuffer<HirPredicateFacts> compact_hir_predicate_facts;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<CompactMethodCore> compact_method_cores;
 StructuredBuffer<HirMethodSignature> compact_method_signatures;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
 
 RWStructuredBuffer<uint> generic_decl_owner_by_node_a;
 RWStructuredBuffer<uint> predicate_bound_list_by_node_a;
@@ -56,7 +54,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -86,29 +84,30 @@ bool generic_decl_item_production(uint prod)
            prod == PROD_TYPE_ALIAS || prod == PROD_TRAIT;
 }
 
-uint compact_method_signature_flags_for_raw_decl(uint node)
+uint compact_method_signature_flags(uint node)
 {
     if (!valid_node(node))
         return 0u;
-    uint dense = raw_to_compact_hir[node];
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense >= hir_count)
-        return 0u;
     uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
-    uint row = compact_method_row_for_hir(
-        compact_method_cores, method_count, dense);
-    return row < method_count ? compact_method_signatures[row].metadata >> 16u : 0u;
+    for (uint row = 0u; row < method_count; row += 1u)
+    {
+        uint dense = compact_method_cores[row].node;
+        if (dense < hir_count && dense == node)
+            return compact_method_signatures[row].metadata >> 16u;
+    }
+    return 0u;
 }
 
 bool generic_decl_node(uint node)
 {
     if (!valid_node(node))
         return false;
-    uint prod = node_kind[node];
+    uint prod = compact_hir_predicate_facts[node].production;
     if (prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB || prod == PROD_IMPL_FN)
-        return (compact_method_signature_flags_for_raw_decl(node) &
+        return (compact_method_signature_flags(node) &
                 METHOD_SIGNATURE_HAS_GENERICS) != 0u;
-    return generic_decl_item_production(prod) ||
+    return generic_decl_item_kind(compact_hir_payload[node].a) ||
            prod == PROD_IMPL_INHERENT ||
            prod == PROD_IMPL_TRAIT;
 }
@@ -124,22 +123,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     generic_decl_owner_by_node_a[node] =
         generic_decl_node(node) ? node : INVALID;
     predicate_bound_list_by_node_a[node] =
-        node_kind[node] == PROD_TYPE_PARAM_BOUND_LIST ? node : INVALID;
-    generic_decl_parent_jump_a[node] = valid_node(parent[node]) ? parent[node] : INVALID;
+        compact_hir_predicate_facts[node].production == PROD_TYPE_PARAM_BOUND_LIST
+            ? node
+            : INVALID;
+    generic_decl_parent_jump_a[node] = valid_node(compact_hir_core[node].parent)
+        ? compact_hir_core[node].parent
+        : INVALID;
 
     uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    uint dense = node < gParams.n_hir_nodes ? raw_to_compact_hir[node] : INVALID;
-    // The dispatch domain is the raw parser tree. A dense HIR row can be
-    // mapped from several raw rows, and some semantic rows have no winning
-    // raw owner after canonicalization. The first compact rows therefore also
-    // visit the dense domain directly so every declaration anchor is covered.
-    if (dense >= compact_count && node < compact_count)
-        dense = node;
-    if (dense < compact_count)
+    // The compact domain is dense and is visited by the same dispatch. This
+    // branch is independent of the raw predicate-owner outputs above.
+    if (node < compact_count)
     {
-        HirPayload payload = compact_hir_payload[dense];
+        HirPayload payload = compact_hir_payload[node];
         uint name_token = payload.b;
         if (generic_decl_item_kind(payload.a) && valid_token(name_token))
-            type_decl_hir_node_by_token[name_token] = dense;
+            type_decl_hir_node_by_token[name_token] = node;
     }
 }

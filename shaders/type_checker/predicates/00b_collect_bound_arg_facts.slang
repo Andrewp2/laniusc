@@ -15,6 +15,7 @@
 
 import atomics;
 import generated_parse_production_ids;
+import hir_records;
 
 struct Params
 {
@@ -25,13 +26,13 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
-StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirPredicateFacts> compact_hir_predicate_facts;
+StructuredBuffer<uint> compact_type_arg_count;
+StructuredBuffer<HirTypeArg> compact_type_args;
+StructuredBuffer<HirRange> compact_type_arg_ranges;
 
 RWStructuredBuffer<uint> predicate_bound_arg_count;
 RWStructuredBuffer<uint> predicate_bound_first_arg_token;
@@ -54,7 +55,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -64,14 +65,14 @@ bool valid_node(uint node)
 
 uint parent_node(uint node)
 {
-    return valid_node(node) ? parent[node] : INVALID;
+    return valid_node(node) ? compact_hir_core[node].parent : INVALID;
 }
 
 uint first_child_node(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint child = first_child[node];
+    uint child = compact_hir_links[node].first_child;
     return valid_node(child) && parent_node(child) == node && child > node
         ? child
         : INVALID;
@@ -81,7 +82,7 @@ uint next_sibling_node(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint sibling = next_sibling[node];
+    uint sibling = compact_hir_links[node].next_sibling;
     uint owner = parent_node(node);
     return valid_node(owner) &&
            valid_node(sibling) &&
@@ -95,7 +96,7 @@ bool bound_args_container(uint node)
 {
     if (!valid_node(node))
         return false;
-    uint kind = node_kind[node];
+    uint kind = compact_hir_predicate_facts[node].production;
     return kind == PROD_BOUND_TYPE_ARGS_SOME ||
            kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE;
 }
@@ -104,40 +105,8 @@ bool bound_expr_node(uint node)
 {
     if (!valid_node(node))
         return false;
-    uint kind = node_kind[node];
+    uint kind = compact_hir_predicate_facts[node].production;
     return kind == PROD_BOUND_TYPE_IDENT || kind == PROD_BOUND_TYPE_REF;
-}
-
-void publish_trait_impl_trait_type(uint node)
-{
-    if (!valid_node(node) || node_kind[node] != PROD_TYPE_IDENT)
-        return;
-    uint owner = parent_node(node);
-    if (valid_node(owner) && node_kind[owner] == PROD_IMPL_TRAIT)
-        atomic_u32_min(predicate_trait_impl_trait_type_node, owner, node);
-}
-
-bool bound_path_node(uint node)
-{
-    return valid_node(node) && node_kind[node] == PROD_BOUND_TYPE_PATH;
-}
-
-bool bound_path_tail_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_BOUND_TYPE_PATH_MORE || kind == PROD_PATH_MORE;
-}
-
-bool bound_path_segment_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_BOUND_TYPE_PATH_IDENT ||
-           kind == PROD_PATH_IDENT ||
-           kind == PROD_PATH_IDENT_ARGS;
 }
 
 void publish_status(uint owner, uint status)
@@ -155,146 +124,23 @@ uint arg_from_container(uint container)
     return bound_expr_node(arg) ? arg : INVALID;
 }
 
-uint qualified_path_first_arg_node(uint owner)
+uint direct_bound_arg_count(uint owner)
 {
-    if (!valid_node(owner) || node_kind[owner] != PROD_BOUND_TYPE_IDENT)
-        return INVALID;
-
-    uint path = first_child_node(owner);
-    if (!bound_path_node(path))
-        return INVALID;
-
-    uint leaf = hir_type_path_leaf_node[owner];
-    if (!bound_path_segment_node(leaf))
-        return INVALID;
-
-    uint arg = next_sibling_node(leaf);
-    return bound_expr_node(arg) ? arg : INVALID;
+    if (!bound_expr_node(owner))
+        return 0u;
+    uint count = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
+    HirRange range = compact_type_arg_ranges[owner];
+    return range.start <= count && range.count <= count - range.start ? range.count : 0u;
 }
 
-uint qualified_path_owner_for_leaf_container(uint container)
+uint direct_bound_arg_node(uint owner, uint ordinal)
 {
-    if (!bound_path_tail_node(container))
+    uint count = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
+    HirRange range = compact_type_arg_ranges[owner];
+    if (ordinal >= range.count || range.start > count || range.count > count - range.start)
         return INVALID;
-
-    uint segment = first_child_node(container);
-    if (!bound_path_segment_node(segment))
-        return INVALID;
-
-    uint owner = hir_bound_path_owner_by_leaf[segment];
-    return bound_expr_node(owner) ? owner : INVALID;
-}
-
-bool bound_ident_has_arg_list(uint node)
-{
-    if (!valid_node(node) || node_kind[node] != PROD_BOUND_TYPE_IDENT)
-        return false;
-
-    uint child = first_child_node(node);
-    // Bound identifiers have a grammar-fixed path/argument child shape. Keep
-    // this bridge explicitly bounded and fail closed if that shape changes.
-    for (uint step = 0u; step < 3u; step += 1u)
-    {
-        if (!valid_node(child))
-            return false;
-        uint kind = node_kind[child];
-        if (kind == PROD_BOUND_TYPE_ARGS_SOME)
-            return true;
-        if (kind == PROD_BOUND_TYPE_ARGS_NONE)
-            return false;
-        child = next_sibling_node(child);
-    }
-    if (qualified_path_first_arg_node(node) != INVALID)
-        return true;
-    return false;
-}
-
-uint owner_for_first_arg_container(uint container)
-{
-    if (!valid_node(container) || node_kind[container] != PROD_BOUND_TYPE_ARGS_SOME)
-        return INVALID;
-
-    uint owner = parent_node(container);
-    return bound_expr_node(owner) ? owner : INVALID;
-}
-
-uint previous_arg_context(uint after_comma_container)
-{
-    if (!valid_node(after_comma_container) ||
-        node_kind[after_comma_container] != PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE)
-        return INVALID;
-
-    uint more = parent_node(after_comma_container);
-    uint previous = parent_node(more);
-    return bound_args_container(previous) || bound_expr_node(previous)
-        ? previous
-        : INVALID;
-}
-
-bool direct_bound_arg_relation(uint arg_node, out uint owner, out uint ordinal)
-{
-    owner = INVALID;
-    ordinal = INVALID;
-    if (!bound_expr_node(arg_node))
-        return false;
-
-    uint container = parent_node(arg_node);
-
-    if (bound_path_tail_node(container))
-    {
-        uint segment = first_child_node(container);
-        if (bound_path_segment_node(segment) && next_sibling_node(segment) == arg_node)
-        {
-            owner = qualified_path_owner_for_leaf_container(container);
-            ordinal = 0u;
-            return valid_node(owner);
-        }
-    }
-
-    if (!bound_args_container(container) || arg_from_container(container) != arg_node)
-        return false;
-
-    if (node_kind[container] == PROD_BOUND_TYPE_ARGS_SOME)
-    {
-        owner = owner_for_first_arg_container(container);
-        ordinal = 0u;
-        return valid_node(owner);
-    }
-
-    uint previous = previous_arg_context(container);
-    if (!valid_node(previous))
-        return false;
-
-    if (bound_expr_node(previous) && qualified_path_first_arg_node(previous) != INVALID)
-    {
-        owner = previous;
-        ordinal = 1u;
-        return true;
-    }
-
-    if (node_kind[previous] == PROD_BOUND_TYPE_ARGS_SOME)
-    {
-        owner = owner_for_first_arg_container(previous);
-        ordinal = 1u;
-        return valid_node(owner);
-    }
-
-    uint first = previous_arg_context(previous);
-    if (bound_expr_node(first) && qualified_path_first_arg_node(first) != INVALID)
-    {
-        owner = first;
-        ordinal = 2u;
-        return true;
-    }
-
-    if (valid_node(first) && node_kind[first] == PROD_BOUND_TYPE_ARGS_SOME)
-    {
-        owner = owner_for_first_arg_container(first);
-        ordinal = 2u;
-        return valid_node(owner);
-    }
-
-    return false;
+    uint row = range.start + ordinal;
+    return compact_type_args[row].value;
 }
 
 void publish_arg_node(uint owner, uint ordinal, uint arg_node)
@@ -316,23 +162,28 @@ void publish_arg_node(uint owner, uint ordinal, uint arg_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    publish_trait_impl_trait_type(node);
     if (!bound_expr_node(node))
         return;
 
-    uint owner = INVALID;
-    uint ordinal = INVALID;
-    if (!direct_bound_arg_relation(node, owner, ordinal))
-        return;
-
-    publish_arg_node(owner, ordinal, node);
-
-    if (node_kind[node] != PROD_BOUND_TYPE_IDENT)
+    uint owner = node;
+    uint arg_count = direct_bound_arg_count(owner);
+    predicate_bound_arg_count[owner] = arg_count;
+    for (uint ordinal = 0u; ordinal < min(arg_count, 3u); ordinal += 1u)
     {
-        publish_status(owner, PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE);
-        return;
+        uint arg_node = direct_bound_arg_node(owner, ordinal);
+        if (!valid_node(arg_node))
+        {
+            publish_status(owner, PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION);
+            continue;
+        }
+        publish_arg_node(owner, ordinal, arg_node);
     }
+    if (arg_count > 2u)
+        publish_status(owner, PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH);
 
-    if (bound_ident_has_arg_list(node))
-        publish_status(owner, PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE);
+    uint owner_parent = parent_node(node);
+    if (compact_hir_predicate_facts[node].production == PROD_TYPE_IDENT &&
+        valid_node(owner_parent) &&
+        compact_hir_predicate_facts[owner_parent].production == PROD_IMPL_TRAIT)
+        atomic_u32_min(predicate_trait_impl_trait_type_node, owner_parent, node);
 }

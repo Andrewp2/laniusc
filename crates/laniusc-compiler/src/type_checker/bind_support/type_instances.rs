@@ -208,7 +208,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             &passes.kernel("type_checker/type/instances/00a1_propagate_generic_decl_owner"),
             &[
                 ("gParams", resources["gParams"].clone()),
-                ("hir_status", resources["hir_status"].clone()),
+                ("compact_hir_count", resources["compact_hir_count"].clone()),
                 ("generic_decl_owner_by_node_in", read_owner),
                 ("predicate_bound_list_by_node_in", read_bound_list),
                 ("generic_decl_parent_jump_in", read_jump),
@@ -225,7 +225,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         resources,
         compiler_graph::TYPE_INSTANCE_ARG_ROW_SCAN,
     )?;
-
     // These scans are recorded before aggregate comparison begins, so the
     // aggregate scan workspace can safely serve both relations without
     // increasing resident scratch memory.

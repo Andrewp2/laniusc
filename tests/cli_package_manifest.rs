@@ -7,7 +7,7 @@ use std::{
 };
 
 use laniusc_compiler::{
-    codegen::unit::{CodegenUnitLimits, SourcePackArtifactTarget, SourcePackJobBatchLimits},
+    codegen::unit::{CompilationUnitLimits, SourcePackArtifactTarget, SourcePackJobBatchLimits},
     compiler::{
         ExplicitSourceLibraryPaths,
         ExplicitSourcePackPathManifest,
@@ -206,7 +206,7 @@ fn source_pack_path_build_manifest_rejects_source_row_library_reinterpretation()
             dependency_library_ids: Vec::new(),
         }])
         .expect("create path manifest from package source");
-    let limits = CodegenUnitLimits {
+    let limits = CompilationUnitLimits {
         max_source_bytes: 1024,
         max_source_files: 1,
     };

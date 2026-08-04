@@ -16,6 +16,7 @@ StructuredBuffer<uint> subject_anchor;
 StructuredBuffer<uint> owner_value;
 StructuredBuffer<HirLinks> hir_links;
 RWStructuredBuffer<HirPayload> hir_payload;
+RWStructuredBuffer<HirPredicateFacts> hir_canonical_predicate_facts;
 RWStructuredBuffer<uint> family_count;
 RWStructuredBuffer<HirPredicate> predicates;
 RWStructuredBuffer<uint> canonical_status;
@@ -70,6 +71,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     predicate.metadata = (hir_links[predicate.owner].file_id << 8u) | kind;
     predicates[row] = predicate;
+
+    if (predicate.bound < gCanonical.canonical_capacity)
+    {
+        HirPredicateFacts facts = hir_canonical_predicate_facts[predicate.bound];
+        facts.predicate_owner = predicate.owner;
+        facts.predicate_subject = predicate.subject;
+        hir_canonical_predicate_facts[predicate.bound] = facts;
+    }
 
     if (kind == PREDICATE_TRAIT_IMPL &&
         predicate.owner < gCanonical.canonical_capacity)

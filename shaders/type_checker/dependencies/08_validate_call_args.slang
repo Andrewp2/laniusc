@@ -24,11 +24,10 @@ struct Params
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
-StructuredBuffer<uint> hir_semantic_count;
-StructuredBuffer<uint> hir_semantic_subtree_end;
 StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> call_dependency_unit_id;
 StructuredBuffer<uint> call_dependency_local_index;
@@ -164,10 +163,10 @@ uint local_type_subtree_count(uint instance)
     if (instance >= gParams.visible_capacity)
         return INVALID;
     uint root = type_semantic_row_by_token[instance];
-    uint semantic_count = min(hir_semantic_count[0u], gParams.hir_capacity);
+    uint semantic_count = min(compact_hir_count[0u], gParams.hir_capacity);
     if (root >= semantic_count || type_semantic_scan_input[root] == 0u)
         return INVALID;
-    uint end = hir_semantic_subtree_end[root];
+    uint end = compact_hir_links[root].subtree_end;
     if (end <= root || end > semantic_count)
         return INVALID;
     uint begin_ordinal = type_semantic_prefix[root];

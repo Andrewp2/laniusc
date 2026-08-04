@@ -16,11 +16,10 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         "type_check_visible_01_clear",
         "type_checker/visible/01/clear/resident",
     )?;
-    let hir_semantic_dispatch_args =
-        buffer_from_resources(resources, "hir_semantic_dispatch_args")?;
-    let hir_semantic_dispatch_params = uniform_from_val(
+    let compact_hir_dispatch_args = buffer_from_resources(resources, "compact_hir_dispatch_args")?;
+    let compact_hir_dispatch_params = uniform_from_val(
         device,
-        "type_check.visible.hir_semantic_dispatch.params",
+        "type_check.visible.compact_hir_dispatch.params",
         &CountDispatchParams {
             capacity: shape.hir_nodes.max(1),
             multiplier: 1,
@@ -28,17 +27,17 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
             reserved1: 0,
         },
     );
-    let hir_semantic_dispatch = reflected_bind_group_with_overrides(
+    let compact_hir_dispatch = reflected_bind_group_with_overrides(
         device,
-        "type_check.visible.hir_semantic_dispatch",
+        "type_check.visible.compact_hir_dispatch",
         &passes.kernel("type_checker/count/dispatch_args"),
         resources,
         &[
-            ("gParams", hir_semantic_dispatch_params.as_entire_binding()),
+            ("gParams", compact_hir_dispatch_params.as_entire_binding()),
             ("count_in", resources["compact_hir_count"].clone()),
             (
                 "dispatch_args",
-                hir_semantic_dispatch_args.as_entire_binding(),
+                compact_hir_dispatch_args.as_entire_binding(),
             ),
         ],
     )?;
@@ -48,7 +47,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         resources,
         passes,
         VISIBLE_DECL_COMPACTION,
-        hir_semantic_dispatch_args,
+        compact_hir_dispatch_args,
     )?;
     let match_payload_dispatch_args = typed_storage_u32_rw(
         device,
@@ -62,7 +61,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         &passes.kernel("type_checker/count/dispatch_args"),
         resources,
         &[
-            ("gParams", hir_semantic_dispatch_params.as_entire_binding()),
+            ("gParams", compact_hir_dispatch_params.as_entire_binding()),
             (
                 "count_in",
                 resources["compact_match_payload_row_count"].clone(),
@@ -149,16 +148,16 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         "type_checker/visible/04_hir_names",
     )?;
     Ok(VisibleBindGroups {
-        hir_semantic_dispatch_args: typed_alias_storage_u32(hir_semantic_dispatch_args, 3),
+        compact_hir_dispatch_args: typed_alias_storage_u32(compact_hir_dispatch_args, 3),
         match_payload_dispatch_args,
         clear,
-        hir_semantic_dispatch,
+        compact_hir_dispatch,
         hir_declarations,
         match_payload_dispatch,
         scatter_match_payload_decls,
         finalize_decl_count,
         declarations,
-        _hir_semantic_dispatch_params: hir_semantic_dispatch_params,
+        _compact_hir_dispatch_params: compact_hir_dispatch_params,
         _hir_decl_scope_leaf_params: leaf_params,
         build_hir_decl_scope_leaves,
         hir_decl_scope_leaf_work_items: shape.leaf_base,

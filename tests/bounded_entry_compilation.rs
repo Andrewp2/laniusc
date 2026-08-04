@@ -3,7 +3,7 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use laniusc_compiler::{
-    codegen::unit::{CodegenUnitLimits, SourcePackBuildShardLimits, SourcePackJobBatchLimits},
+    codegen::unit::{CompilationUnitLimits, SourcePackBuildShardLimits, SourcePackJobBatchLimits},
     compiler::{
         CompileError,
         ExplicitSourceLibraryPathStream,
@@ -103,7 +103,7 @@ fn run_small_limit_worker(
     let artifact_root = project.root.join("artifacts");
     let worker_root = artifact_root.clone();
     common::run_gpu_codegen_with_timeout("small-limit hierarchical compilation", move || {
-        let limits = CodegenUnitLimits {
+        let limits = CompilationUnitLimits {
             max_source_bytes: 1024,
             max_source_files: 1,
         };

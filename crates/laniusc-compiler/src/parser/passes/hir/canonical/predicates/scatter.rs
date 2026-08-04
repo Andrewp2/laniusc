@@ -58,6 +58,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPred
             ("hir_links".into(), b.hir_links.as_entire_binding()),
             ("hir_payload".into(), b.hir_payload.as_entire_binding()),
             (
+                "hir_canonical_predicate_facts".into(),
+                b.hir_canonical_predicate_facts.as_entire_binding(),
+            ),
+            (
                 "family_count".into(),
                 b.hir_predicate_table_count.as_entire_binding(),
             ),

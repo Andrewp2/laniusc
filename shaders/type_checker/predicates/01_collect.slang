@@ -13,11 +13,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     clear_predicate_record(node);
 
-    if (node_kind[node] == PROD_BOUND_TYPE_IDENT || node_kind[node] == PROD_BOUND_TYPE_REF)
+    if (compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT ||
+        compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_REF)
         mark_direct_bound_syntax_tokens(node);
 
     uint list_node = INVALID;
-    if (node_kind[node] == PROD_BOUND_TYPE_IDENT || node_kind[node] == PROD_BOUND_TYPE_REF)
+    if (compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT ||
+        compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_REF)
         list_node = predicate_list_for_direct_bound(node);
 
     if (!valid_node(list_node))
@@ -25,31 +27,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (unsupported_direct_bound_list_relation(node))
         {
             uint owner_decl = generic_decl_owner_for_node(node);
-            predicate_bound_token[node] = node_kind[node] == PROD_BOUND_TYPE_IDENT
+            predicate_bound_token[node] =
+                compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT
                 ? bound_path_leaf_token(node)
-                : hir_token_pos[node];
+                : compact_hir_core[node].token_start;
             predicate_status[node] =
                 valid_node(owner_decl) &&
-                !callable_generic_decl_item_kind(compact_item_kind_for_raw(owner_decl))
+                !callable_generic_decl_item_kind(compact_item_kind_for_node(owner_decl))
                     ? PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND
                     : PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION;
         }
         return;
     }
 
-    uint owner_decl = generic_decl_owner_for_node(list_node);
+    uint owner_decl = compact_hir_predicate_facts[node].predicate_owner;
     if (!valid_node(owner_decl))
         owner_decl = generic_decl_owner_for_node(node);
     uint subject_token = predicate_subject_token_for_list(list_node);
-    uint bound_token = node_kind[node] == PROD_BOUND_TYPE_IDENT
+    uint bound_token = compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT
         ? bound_path_leaf_token(node)
-        : hir_token_pos[node];
+        : compact_hir_core[node].token_start;
 
     predicate_owner_node[node] = owner_decl;
     predicate_subject_token[node] = subject_token;
     predicate_bound_token[node] = bound_token;
 
-    if (node_kind[node] != PROD_BOUND_TYPE_IDENT)
+    if (compact_hir_predicate_facts[node].production != PROD_BOUND_TYPE_IDENT)
     {
         predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
         return;
@@ -59,13 +62,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         predicate_status[node] =
             valid_node(owner_decl) &&
-            !callable_generic_decl_item_kind(compact_item_kind_for_raw(owner_decl))
+            !callable_generic_decl_item_kind(compact_item_kind_for_node(owner_decl))
                 ? PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND
                 : PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION;
         return;
     }
 
-    if (!callable_generic_decl_item_kind(compact_item_kind_for_raw(owner_decl)))
+    if (!callable_generic_decl_item_kind(compact_item_kind_for_node(owner_decl)))
     {
         predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND;
         return;

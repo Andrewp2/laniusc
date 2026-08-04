@@ -52,17 +52,16 @@ pub(in crate::type_checker) fn create_module_index(
     );
     let mut module_record_resources = resources.clone();
     module_record_resources.buffer("gParams", &module_record_params);
-    let scatter_module_records = ComputeOperation::direct_spec(
+    // Module rows are a compaction scatter over the active dense-HIR domain.
+    // Dispatching over the capacity here would reinterpret stale flag/prefix
+    // rows beyond the current compact HIR as live records on daemon reuse.
+    let scatter_module_records = ComputeOperation::indirect_spec(
         device,
         graph,
         &module_record_resources,
         passes,
         MODULE_RECORDS_SCATTER,
-        layout
-            .n_blocks
-            .max(layout.module_n_blocks)
-            .saturating_mul(256)
-            .max(1),
+        inputs.hir_active_dispatch_args,
     )?;
 
     let module_key_build_params = uniform_from_val(

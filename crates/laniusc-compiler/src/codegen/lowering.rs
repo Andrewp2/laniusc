@@ -1104,7 +1104,6 @@ impl GpuSemanticLoweringStage {
         &self.status
     }
 
-
     fn materializer_resources<'a>(
         &'a self,
         hir: GpuSemanticHirInputs<'a>,
@@ -2876,7 +2875,7 @@ mod tests {
             device,
             passes_core::{map_readback_blocking, pipeline_creation_count},
         },
-        parser::buffers::{HirCallArg, HirCore, HirPayload},
+        parser::buffers::{HirCallArg, HirCore, HirMethodCore, HirMethodSignature, HirPayload},
     };
 
     fn words<const N: usize>(records: &[[u32; N]]) -> Vec<u8> {
@@ -2893,6 +2892,30 @@ mod tests {
         records: &[[u32; 10]],
     ) -> LaniusBuffer<crate::type_checker::GpuCheckedCallArtifact> {
         storage_ro_from_bytes(device, label, &words(records), records.len().max(1))
+    }
+
+    fn empty_method_families(
+        device: &wgpu::Device,
+        label: &str,
+    ) -> (
+        LaniusBuffer<u32>,
+        LaniusBuffer<HirMethodCore>,
+        LaniusBuffer<HirMethodSignature>,
+    ) {
+        let count = storage_ro_from_u32s(device, &format!("{label}.count"), &[0]);
+        let cores = storage_ro_from_bytes::<HirMethodCore>(
+            device,
+            &format!("{label}.cores"),
+            &words(&[[u32::MAX; 4]]),
+            1,
+        );
+        let signatures = storage_ro_from_bytes::<HirMethodSignature>(
+            device,
+            &format!("{label}.signatures"),
+            &words(&[[u32::MAX; 4]]),
+            1,
+        );
+        (count, cores, signatures)
     }
 
     fn read_words(device: &wgpu::Device, buffer: &LaniusBuffer<u8>) -> Vec<u32> {
@@ -3836,6 +3859,8 @@ mod tests {
         let stage =
             GpuSemanticLoweringStage::from_workspace(&gpu.device, capacities, graph, &workspace)
                 .unwrap();
+        let (method_count, method_cores, method_signatures) =
+            empty_method_families(&gpu.device, "test.semantic_lir.methods");
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -3869,6 +3894,9 @@ mod tests {
                     param_count: &family_count,
                     params: &params,
                     param_ranges: &param_ranges,
+                    method_count: &method_count,
+                    method_cores: &method_cores,
+                    method_signatures: &method_signatures,
                 },
                 GpuSemanticLoweringBuffers {
                     checked: GpuCheckedSemanticArtifact {
@@ -4160,6 +4188,8 @@ mod tests {
             },
         )
         .unwrap();
+        let (method_count, method_cores, method_signatures) =
+            empty_method_families(&gpu.device, "test.abi.methods");
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -4193,6 +4223,9 @@ mod tests {
                     param_count: &param_count,
                     params: &params,
                     param_ranges: &param_ranges,
+                    method_count: &method_count,
+                    method_cores: &method_cores,
+                    method_signatures: &method_signatures,
                 },
                 GpuSemanticLoweringBuffers {
                     checked: GpuCheckedSemanticArtifact {
@@ -4395,6 +4428,11 @@ mod tests {
             "test.family.semantic_array_lengths",
             &[u32::MAX; 4],
         );
+        let family_by_hir = storage_ro_from_u32s(
+            &gpu.device,
+            "test.family.value_const_by_hir",
+            &[u32::MAX; 16],
+        );
         let stage = GpuSemanticLoweringStage::new(
             &gpu.device,
             LoweringCapacities {
@@ -4410,6 +4448,8 @@ mod tests {
             },
         )
         .unwrap();
+        let (method_count, method_cores, method_signatures) =
+            empty_method_families(&gpu.device, "test.family.methods");
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -4443,6 +4483,9 @@ mod tests {
                     param_count: &zero_count,
                     params: &params,
                     param_ranges: &param_ranges,
+                    method_count: &method_count,
+                    method_cores: &method_cores,
+                    method_signatures: &method_signatures,
                 },
                 GpuSemanticLoweringBuffers {
                     checked: GpuCheckedSemanticArtifact {
@@ -4656,6 +4699,8 @@ mod tests {
             },
         )
         .unwrap();
+        let (method_count, method_cores, method_signatures) =
+            empty_method_families(&gpu.device, "test.control.methods");
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -4689,6 +4734,9 @@ mod tests {
                     param_count: &family_count,
                     params: &params,
                     param_ranges: &param_ranges,
+                    method_count: &method_count,
+                    method_cores: &method_cores,
+                    method_signatures: &method_signatures,
                 },
                 GpuSemanticLoweringBuffers {
                     checked: GpuCheckedSemanticArtifact {

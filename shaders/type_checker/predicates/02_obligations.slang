@@ -20,17 +20,10 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> raw_to_compact_hir;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_member_name_token;
-StructuredBuffer<uint> hir_struct_lit_head_node;
-StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<HirPredicateFacts> compact_hir_predicate_facts;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
@@ -180,7 +173,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_node(uint node)
@@ -197,19 +190,18 @@ uint canonical_function_token(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint dense = raw_to_compact_hir[node];
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense == INVALID || dense >= count)
+    if (node >= count)
         return INVALID;
-    uint token = compact_hir_payload[dense].b;
-    return valid_token(token) ? token : INVALID;
+    uint token = compact_hir_payload[node].b;
+    return valid_token(token) ? token : compact_hir_core[node].token_start;
 }
 
 uint first_named_bound_arg_token_after_bound(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint bound_token = hir_token_pos[node];
+    uint bound_token = compact_hir_core[node].token_start;
     if (!valid_token(bound_token))
         return INVALID;
 
@@ -238,16 +230,15 @@ uint compact_node_for_raw(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint dense = raw_to_compact_hir[node];
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    return dense < count ? dense : INVALID;
+    return node < count ? node : INVALID;
 }
 
 uint compact_expr_for_raw(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint result = hir_expr_result_root_node[node];
+    uint result = compact_hir_predicate_facts[node].expr_result_root;
     return compact_node_for_raw(valid_node(result) ? result : node);
 }
 
@@ -288,11 +279,11 @@ uint visible_type_for_token(uint token_i)
 
 uint call_callee_token(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint call_token = hir_token_pos[call_node];
-    uint call_hir = raw_to_compact_hir[call_node];
+    uint call_token = compact_hir_core[call_node].token_start;
+    uint call_hir = call_node;
     uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     if (call_hir == INVALID || call_hir >= compact_count)
         return INVALID;
@@ -324,35 +315,36 @@ uint direct_node_type(uint node)
     if (lit != TY_UNKNOWN)
         return lit;
 
-    uint token_i = hir_token_pos[node];
+    uint token_i = compact_hir_core[node].token_start;
     if (!valid_token(token_i))
         return TY_UNKNOWN;
 
-    if (hir_kind[node] == HIR_NAME_EXPR)
+    if (compact_hir_core[node].kind == HIR_NAME_EXPR)
         return visible_type_for_token(token_i);
 
-    if (hir_kind[node] == HIR_MEMBER_EXPR)
+    if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
     {
-        uint member_token = hir_member_name_token[node];
+        uint member_token = compact_hir_payload[node].c;
         return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
     }
 
-    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
+    if (compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR)
     {
-        uint head_node = hir_struct_lit_head_node[node];
+        uint head_node = compact_hir_predicate_facts[node].struct_lit_head;
         if (!valid_node(head_node))
             return TY_UNKNOWN;
-        return visible_type_for_token(hir_token_pos[head_node]);
+        return visible_type_for_token(compact_hir_core[head_node].token_start);
     }
 
-    if (hir_kind[node] == HIR_INDEX_EXPR || hir_kind[node] == HIR_MATCH_EXPR)
+    if (compact_hir_core[node].kind == HIR_INDEX_EXPR ||
+        compact_hir_core[node].kind == HIR_MATCH_EXPR)
         return call_return_type[token_i];
 
-    if (hir_kind[node] == HIR_CALL_EXPR)
+    if (compact_hir_core[node].kind == HIR_CALL_EXPR)
     {
         uint callee_token = call_callee_token(node);
         if (!valid_token(callee_token))
-            callee_token = hir_token_pos[node];
+            callee_token = compact_hir_core[node].token_start;
         return valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
     }
 
@@ -443,7 +435,7 @@ uint first_value_type_from_node(uint root, out uint value_token)
     if (!valid_node(root))
         return TY_UNKNOWN;
 
-    uint result = hir_expr_result_root_node[root];
+    uint result = compact_hir_predicate_facts[root].expr_result_root;
     if (!valid_node(result))
         result = root;
     uint expr = compact_expr_for_raw(result);
@@ -456,7 +448,7 @@ uint first_value_type_from_node(uint root, out uint value_token)
     {
         uint token_i = valid_token(compact_expr_value_token(expr))
             ? compact_expr_value_token(expr)
-            : hir_token_pos[result];
+            : compact_hir_core[result].token_start;
         value_token = valid_token(token_i) ? token_i : INVALID;
         return record_ty;
     }
@@ -464,9 +456,9 @@ uint first_value_type_from_node(uint root, out uint value_token)
     uint result_ty = direct_node_type(result);
     if (result_ty != TY_UNKNOWN)
     {
-        uint token_i = hir_kind[result] == HIR_MEMBER_EXPR
-            ? hir_member_name_token[result]
-            : hir_token_pos[result];
+        uint token_i = compact_hir_core[result].kind == HIR_MEMBER_EXPR
+            ? compact_hir_payload[result].c
+            : compact_hir_core[result].token_start;
         value_token = valid_token(token_i) ? token_i : INVALID;
         return result_ty;
     }
@@ -510,11 +502,10 @@ uint generic_owner_token(uint decl_node)
 {
     if (!valid_node(decl_node))
         return INVALID;
-    uint dense = raw_to_compact_hir[decl_node];
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (dense >= count)
+    if (decl_node >= count)
         return canonical_function_token(decl_node);
-    uint name_token = compact_hir_payload[dense].b;
+    uint name_token = compact_hir_payload[decl_node].b;
     return valid_token(name_token) ? name_token : canonical_function_token(decl_node);
 }
 
@@ -1099,7 +1090,9 @@ void validate_unique_impl_key(uint impl_node)
 
     if (!impl_row_has_supported_exact_key(impl_node))
     {
-        uint token_i = valid_token(hir_token_pos[impl_node]) ? hir_token_pos[impl_node] : 0u;
+        uint token_i = valid_token(compact_hir_core[impl_node].token_start)
+            ? compact_hir_core[impl_node].token_start
+            : 0u;
         record_error(token_i, ERR_BAD_HIR, PREDICATE_STATUS_INVALID_IMPL_ARG);
         return;
     }
@@ -1131,7 +1124,9 @@ void validate_unique_impl_key(uint impl_node)
             key.arg1_ty,
             key.arg_count))
     {
-        uint token_i = valid_token(hir_token_pos[impl_node]) ? hir_token_pos[impl_node] : 0u;
+        uint token_i = valid_token(compact_hir_core[impl_node].token_start)
+            ? compact_hir_core[impl_node].token_start
+            : 0u;
         record_error(token_i, ERR_BAD_HIR, PREDICATE_STATUS_OVERLAPPING_IMPL);
         return;
     }
@@ -1141,14 +1136,16 @@ void validate_unique_impl_key(uint impl_node)
     if (predicate_impl_key_order[range.begin] == impl_node)
         return;
 
-    uint token_i = valid_token(hir_token_pos[impl_node]) ? hir_token_pos[impl_node] : 0u;
+    uint token_i = valid_token(compact_hir_core[impl_node].token_start)
+        ? compact_hir_core[impl_node].token_start
+        : 0u;
     record_error(token_i, ERR_BAD_HIR, PREDICATE_STATUS_OVERLAPPING_IMPL);
 }
 
 void validate_predicate_fail_closed_status(uint node)
 {
     uint status_value = predicate_status[node];
-    uint kind = node_kind[node];
+    uint kind = compact_hir_predicate_facts[node].production;
     bool trait_contract_node =
         kind == PROD_IMPL_TRAIT ||
         kind == PROD_IMPL_INHERENT ||
@@ -1168,7 +1165,7 @@ void validate_predicate_fail_closed_status(uint node)
           status_value == PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND));
     if (trait_bound_status)
     {
-        uint token_i = hir_token_pos[node];
+        uint token_i = compact_hir_core[node].token_start;
         if (status_value == PREDICATE_STATUS_INVALID_SUBJECT &&
             valid_token(predicate_subject_token[node]))
             token_i = predicate_subject_token[node];
@@ -1181,7 +1178,7 @@ void validate_predicate_fail_closed_status(uint node)
                 ? predicate_bound_second_arg_token[node]
                 : predicate_bound_first_arg_token[node];
         if (status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE &&
-            token_i == hir_token_pos[node])
+            token_i == compact_hir_core[node].token_start)
         {
             uint fallback_token = first_named_bound_arg_token_after_bound(node);
             if (valid_token(fallback_token))
@@ -1227,13 +1224,13 @@ void validate_predicate_fail_closed_status(uint node)
     if (trait_impl_arg_status && valid_token(predicate_bound_second_arg_token[node]))
         token_i = predicate_bound_second_arg_token[node];
     if (!valid_token(token_i))
-        token_i = hir_token_pos[node];
+        token_i = compact_hir_core[node].token_start;
     record_error(valid_token(token_i) ? token_i : 0u, ERR_BAD_HIR, status_value);
 }
 
 void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
 {
-    if (hir_kind[node] != HIR_CALL_EXPR)
+    if (compact_hir_core[node].kind != HIR_CALL_EXPR)
         return;
 
     uint callee_token = call_callee_token(node);
@@ -1393,7 +1390,7 @@ bool owner_lookup_range_matches_key(QueryRange range, uint owner_token)
 #if defined(LANIUS_OBLIGATION_COUNT_PASS)
 void count_call_predicate_obligations(uint call_node)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return;
 
     uint callee_token = call_callee_token(call_node);

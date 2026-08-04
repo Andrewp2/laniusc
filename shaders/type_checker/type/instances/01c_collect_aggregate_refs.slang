@@ -4,6 +4,8 @@
 // Element and length refs are filled in a later pass after all child type refs
 // have been materialized.
 
+import hir_records;
+
 struct Params
 {
     uint n_tokens;
@@ -13,10 +15,9 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_form;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
@@ -44,14 +45,9 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_hir_node_count()
+uint active_compact_hir_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
-}
-
-bool valid_node(uint node)
-{
-    return node != INVALID && node < active_hir_node_count();
+    return min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
 bool valid_token(uint token)
@@ -64,14 +60,16 @@ bool valid_token(uint token)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!valid_node(node) || hir_kind[node] != HIR_TYPE)
+    if (node >= active_compact_hir_count())
+        return;
+    if (compact_hir_core[node].kind != HIR_TYPE)
         return;
 
-    uint form = hir_type_form[node];
+    uint form = compact_hir_payload[node].a;
     if (form != HIR_TYPE_FORM_ARRAY && form != HIR_TYPE_FORM_SLICE)
         return;
 
-    uint token = hir_token_pos[node];
+    uint token = compact_hir_core[node].token_start;
     if (!valid_token(token))
         return;
 

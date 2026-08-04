@@ -16,6 +16,7 @@
 import range_query;
 import sorted.join;
 import status;
+import hir_records;
 
 struct Params
 {
@@ -32,7 +33,8 @@ StructuredBuffer<uint> import_kind;
 StructuredBuffer<uint> import_path_id;
 StructuredBuffer<uint> import_module_id;
 StructuredBuffer<uint> import_owner_hir;
-StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_prefix_id;
@@ -91,6 +93,11 @@ uint active_module_count()
     return min(module_table_count_out[0], module_capacity());
 }
 
+uint active_compact_hir_count()
+{
+    return compact_hir_count[0];
+}
+
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
@@ -99,7 +106,11 @@ void record_error(uint token_i, uint code, uint detail)
 uint import_owner_token(uint import_i)
 {
     uint owner = import_owner_hir[import_i];
-    return owner == INVALID ? import_i : hir_token_pos[owner];
+    if (owner == INVALID)
+        return import_i;
+    if (owner >= active_compact_hir_count())
+        return import_i;
+    return compact_hir_core[owner].token_start;
 }
 
 public struct ImportPathLookupKey
