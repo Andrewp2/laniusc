@@ -24,8 +24,8 @@ pub use model::{
     HirPathSegment,
     HirPayload,
     HirPredicate,
-    HirPredicateFacts,
     HirRange,
+    HirSemanticFacts,
     HirString,
     HirTypeArg,
     HirVariant,
@@ -2184,9 +2184,9 @@ impl ParserBuffers {
             "parser.hir_payload",
             hir_canonical_capacity as usize,
         );
-        let hir_canonical_predicate_facts = storage_rw_for_array::<HirPredicateFacts>(
+        let hir_canonical_semantic_facts = storage_rw_for_array::<HirSemanticFacts>(
             device,
-            "parser.hir_canonical_predicate_facts",
+            "parser.hir_canonical_semantic_facts",
             hir_canonical_capacity as usize,
         );
         let hir_canonical_semantic_dense_node = storage_rw_for_array::<u32>(
@@ -2737,7 +2737,7 @@ impl ParserBuffers {
             hir_core,
             hir_links,
             hir_payload,
-            hir_canonical_predicate_facts,
+            hir_canonical_semantic_facts,
             hir_canonical_semantic_dense_node,
             hir_canonical_scope_end,
             hir_canonical_nearest_loop,

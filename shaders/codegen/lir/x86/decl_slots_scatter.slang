@@ -31,7 +31,7 @@ TargetLirFunction target_function_for(uint semantic_id)
 bool scalar_gpr_type(uint type_id)
 {
     return type_id == 1u || type_id == 2u || type_id == 3u ||
-        type_id == 4u || type_id == 6u;
+        type_id == 4u || type_id == 6u || type_id == 8u;
 }
 
 uint declaration_location(uint function_id, uint ordinal, uint type_id,

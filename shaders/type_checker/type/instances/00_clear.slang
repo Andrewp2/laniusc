@@ -41,6 +41,7 @@ RWStructuredBuffer<uint> type_instance_len_kind;
 RWStructuredBuffer<uint> type_instance_len_payload;
 RWStructuredBuffer<uint> type_instance_state;
 RWStructuredBuffer<uint> type_instance_decl_token;
+RWStructuredBuffer<uint> type_instance_aggregate_word_count;
 RWStructuredBuffer<uint> external_type_library_id;
 RWStructuredBuffer<uint> external_type_unit_id;
 RWStructuredBuffer<uint> external_type_local_index;
@@ -121,6 +122,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     type_instance_len_payload[i] = INVALID;
     type_instance_state[i] = TYPE_INSTANCE_EMPTY;
     type_instance_decl_token[i] = INVALID;
+    type_instance_aggregate_word_count[i] = 0u;
     external_type_library_id[i] = INVALID;
     external_type_unit_id[i] = INVALID;
     external_type_local_index[i] = INVALID;

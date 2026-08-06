@@ -163,9 +163,7 @@ impl GpuTypeChecker {
         let state = guard.as_ref().ok_or_else(|| {
             anyhow::anyhow!("semantic-interface export requires resident type-check state")
         })?;
-        let module_path = state.module_path.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("semantic-interface export requires resident module/declaration tables")
-        })?;
+        let module_path = &state.module_path;
         let name_scan_total = state.typecheck_graph.u32_buffer("name_scan_total")?;
         let name_spans = state.typecheck_graph.u32_buffer("name_spans")?;
         let graph_buffers = [

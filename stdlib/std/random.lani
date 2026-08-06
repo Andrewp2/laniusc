@@ -144,6 +144,6 @@ pub fn secure_u32_requires_runtime_binding() -> RandomCapability {
     return !secure_u32_is_executable();
 }
 
-pub extern "lanius_std" fn fill_secure_bytes(ptr: u32, len: usize) -> RandomOperationResult;
+pub extern "lanius_std" fn fill_secure_bytes(ptr: ptr, len: usize) -> RandomOperationResult;
 
 pub extern "lanius_std" fn secure_u32() -> u32;

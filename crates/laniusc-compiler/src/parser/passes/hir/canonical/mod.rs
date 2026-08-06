@@ -50,6 +50,7 @@ mod tests {
         HirPayload,
         HirPredicate,
         HirRange,
+        HirSemanticFacts,
         HirString,
         HirTypeArg,
         HirVariant,
@@ -74,7 +75,7 @@ mod tests {
     }
 
     #[test]
-    fn compact_hir_records_are_three_four_word_rows() {
+    fn compact_hir_record_layout_is_stable() {
         assert_eq!(core::mem::size_of::<HirCore>(), 16);
         assert_eq!(core::mem::size_of::<HirLinks>(), 16);
         assert_eq!(core::mem::size_of::<HirPayload>(), 16);
@@ -94,6 +95,7 @@ mod tests {
         assert_eq!(core::mem::size_of::<HirMethodCore>(), 16);
         assert_eq!(core::mem::size_of::<HirMethodSignature>(), 16);
         assert_eq!(core::mem::size_of::<HirPredicate>(), 16);
+        assert_eq!(core::mem::size_of::<HirSemanticFacts>(), 28);
     }
 
     #[test]

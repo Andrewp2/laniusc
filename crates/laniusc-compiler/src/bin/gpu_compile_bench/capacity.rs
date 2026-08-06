@@ -180,7 +180,6 @@ pub(super) fn reject_large_interactive_run(
     let typecheck_floor = typecheck_allocation_floor_bytes(
         token_capacity.lexer_token_capacity,
         estimate.tree_capacity,
-        true,
         source_file_capacity,
     );
     let frontend_floor = parser_floor.total.saturating_add(typecheck_floor.total);
@@ -436,7 +435,6 @@ pub(super) fn compile_capacity_snapshot_for_source(
     let typecheck_floor = typecheck_allocation_floor_bytes(
         token_capacity.lexer_token_capacity,
         parse_capacity.tree_capacity,
-        true,
         source_file_capacity,
     );
     let x86_capacity = x86_graph_capacity_estimate(
@@ -512,7 +510,6 @@ pub(super) fn print_capacity_floors(
     let typecheck_floor = typecheck_allocation_floor_bytes(
         token_capacity,
         parse_capacity.tree_capacity,
-        true,
         source_file_capacity,
     );
 
@@ -531,7 +528,7 @@ pub(super) fn print_capacity_floors(
         human_bytes(allocation_floor.pack_streams)
     );
     println!(
-        "estimate typecheck_u32_buffer_floor total={} names_radix={} module_paths={} visible_hir_decls={} calls={} type_metadata={} methods={} control={} core={} empty_hir={}",
+        "estimate typecheck_u32_buffer_floor total={} names_radix={} module_paths={} visible_hir_decls={} calls={} type_metadata={} methods={} control={} core={}",
         human_bytes(typecheck_floor.total),
         human_bytes(typecheck_floor.names_radix),
         human_bytes(typecheck_floor.module_paths),
@@ -541,7 +538,6 @@ pub(super) fn print_capacity_floors(
         human_bytes(typecheck_floor.methods),
         human_bytes(typecheck_floor.control),
         human_bytes(typecheck_floor.core),
-        human_bytes(typecheck_floor.empty_hir),
     );
     println!(
         "estimate frontend_allocation_floor parser_plus_typecheck={}",
@@ -623,13 +619,11 @@ pub(super) struct TypecheckAllocationFloor {
     methods: usize,
     control: usize,
     core: usize,
-    empty_hir: usize,
 }
 
 pub(super) fn typecheck_allocation_floor_bytes(
     token_capacity: usize,
     hir_node_capacity: usize,
-    uses_hir_items: bool,
     source_file_capacity: usize,
 ) -> TypecheckAllocationFloor {
     let token_capacity = token_capacity.max(1);
@@ -723,11 +717,6 @@ pub(super) fn typecheck_allocation_floor_bytes(
     let type_metadata_u32 = 2usize
         .saturating_mul(TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE)
         .saturating_mul(token_capacity);
-    let empty_hir_u32 = if uses_hir_items {
-        4
-    } else {
-        4usize.saturating_mul(hir_node_capacity)
-    };
     let module_path_radix_scratch_u32 = if hir_node_capacity >= module_path_key_radix_histogram_len
     {
         0
@@ -759,15 +748,7 @@ pub(super) fn typecheck_allocation_floor_bytes(
         .saturating_add(module_path_decl_tree_scratch_u32)
         .saturating_add(2usize.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS))
         .saturating_add(33);
-    let visible_hir_decl_scan_scratch_u32 = if uses_hir_items {
-        0
-    } else {
-        3usize
-            .saturating_mul(hir_node_capacity)
-            .saturating_add(3usize.saturating_mul(hir_blocks))
-    };
-    let visible_hir_decls_u32 = visible_hir_decl_scan_scratch_u32
-        .saturating_add(1)
+    let visible_hir_decls_u32 = 1usize
         .saturating_add(3)
         .saturating_add(6usize.saturating_mul(token_capacity))
         .saturating_add(2usize.saturating_mul(hir_visible_decl_radix_histogram_len))
@@ -783,8 +764,7 @@ pub(super) fn typecheck_allocation_floor_bytes(
                 .saturating_add(calls_u32)
                 .saturating_add(type_metadata_u32)
                 .saturating_add(methods_u32)
-                .saturating_add(control_u32)
-                .saturating_add(empty_hir_u32),
+                .saturating_add(control_u32),
         ),
         names_radix: u32_words_to_bytes(names_radix_u32),
         module_paths: u32_words_to_bytes(module_paths_u32),
@@ -794,7 +774,6 @@ pub(super) fn typecheck_allocation_floor_bytes(
         methods: u32_words_to_bytes(methods_u32),
         control: u32_words_to_bytes(control_u32),
         core: u32_words_to_bytes(core_u32),
-        empty_hir: u32_words_to_bytes(empty_hir_u32),
     }
 }
 

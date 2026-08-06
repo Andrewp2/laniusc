@@ -4016,7 +4016,7 @@ fn main() {
     let unavailable_from_fn: StdioOperationResult = stdio_operation_unavailable();
     let byte_count: std::io::StdioOperationResult = 12;
     let other_failure: StdioOperationResult = -2;
-    let ptr: u32 = 0;
+    let ptr: ptr = 0;
     let len: usize = 0;
     let stdin_result: std::io::StdioOperationResult = std::io::read_stdin(ptr, len);
     let stdout_result: StdioOperationResult = std::io::write_stdout(ptr, len);
@@ -4875,7 +4875,7 @@ fn main() {
         filesystem_operation_unavailable();
     let byte_count: std::fs::FilesystemOperationResult = 12;
     let other_failure: FilesystemOperationResult = -2;
-    let ptr: u32 = 0;
+    let ptr: ptr = 0;
     let len: usize = 0;
     let open_read_result: std::fs::FilesystemOperationResult =
         std::fs::open_read(ptr, len);
@@ -5295,10 +5295,10 @@ fn main() {
         network_operation_unavailable();
     let byte_count: std::net::NetworkOperationResult = 16;
     let other_failure: NetworkOperationResult = -2;
-    let addr_ptr: u32 = 0;
+    let addr_ptr: ptr = 0;
     let addr_len: usize = 0;
-    let endpoint_ptr: u32 = 0;
-    let payload_ptr: u32 = 0;
+    let endpoint_ptr: ptr = 0;
+    let payload_ptr: ptr = 0;
     let payload_len: usize = 0;
     let tcp: std::net::NetworkOperationResult = std::net::tcp_connect(addr_ptr, addr_len, 80);
     let listen_status: NetworkOperationResult = tcp_listen(tcp, 1);
@@ -5962,7 +5962,7 @@ fn main() {
     let empty_count: std::process::ProcessArgumentResult = 0;
     let byte_count: ProcessArgumentResult = 12;
     let other_failure: std::process::ProcessArgumentResult = -2;
-    let ptr: u32 = 0;
+    let ptr: ptr = 0;
     let len: usize = 0;
     let argc_result: std::process::ProcessArgumentResult = std::process::argc();
     let arg_len_result: ProcessArgumentResult = arg_len(0);
@@ -6756,7 +6756,7 @@ fn main() {
         gpu_operation_unavailable();
     let byte_count: std::gpu::GpuOperationResult = 16;
     let other_failure: GpuOperationResult = -2;
-    let ptr: u32 = 0;
+    let ptr: ptr = 0;
     let byte_len: usize = 16;
     let kernel_id: u32 = 0;
     let workgroup_count: u32 = 1;
@@ -7353,13 +7353,13 @@ import std::process;
 import std::time;
 
 fn main() {
-    let zero_ptr: u32 = 0;
+    let zero_ptr: ptr = 0;
     let size: usize = 16;
     let grown_size: usize = 32;
     let align: usize = 4;
     let sleep_ms: i64 = 0;
-    let ptr: u32 = alloc::allocator::alloc(size, align);
-    let grown: u32 = alloc::allocator::realloc(ptr, size, grown_size, align);
+    let ptr: ptr = alloc::allocator::alloc(size, align);
+    let grown: ptr = alloc::allocator::realloc(ptr, size, grown_size, align);
     let stdin_count: i32 = std::io::read_stdin(grown, grown_size);
     let stdout_count: i32 = std::io::write_stdout(grown, grown_size);
     let stderr_count: i32 = std::io::write_stderr(grown, grown_size);

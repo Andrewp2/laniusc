@@ -249,9 +249,9 @@ pub fn sleep_ms_i32_requires_runtime_binding() -> ClockCapability {
     return !sleep_ms_i32_is_executable();
 }
 
-pub extern "lanius_std" fn monotonic_read(ptr: u32, len: usize) -> ClockSleepResult;
+pub extern "lanius_std" fn monotonic_read(ptr: ptr, len: usize) -> ClockSleepResult;
 
-pub extern "lanius_std" fn system_read(ptr: u32, len: usize) -> ClockSleepResult;
+pub extern "lanius_std" fn system_read(ptr: ptr, len: usize) -> ClockSleepResult;
 
 pub extern "lanius_std" fn sleep_ms_i32(milliseconds: i32) -> ClockSleepResult;
 

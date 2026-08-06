@@ -90,7 +90,7 @@ struct SemanticAggregateParams {
     element_capacity: u32,
     n_hir_nodes: u32,
     semantic_capacity: u32,
-    reserved: u32,
+    n_tokens: u32,
 }
 
 #[repr(C)]
@@ -157,6 +157,7 @@ struct SemanticPasses {
     function_mark: PassData,
     function_layout_clear: PassData,
     function_layout_collect: PassData,
+    function_layout_words: PassData,
     function_scatter: PassData,
     function_params: PassData,
     local_mark: PassData,
@@ -213,6 +214,10 @@ impl SemanticPasses {
                 "lir.semantic.functions.layout.collect",
                 "codegen/lir/semantic/function_layout_collect",
             )?,
+            function_layout_words: load(
+                "lir.semantic.functions.layout.words",
+                "codegen/lir/semantic/function_layout_words",
+            )?,
             function_scatter: load(
                 "lir.semantic.functions.scatter",
                 "codegen/lir/semantic/function_scatter",
@@ -238,6 +243,7 @@ pub(crate) struct GpuSemanticLirView<'a> {
     pub count: &'a LaniusBuffer<u32>,
     pub core: &'a LaniusBuffer<SemanticLirCore>,
     pub operands: &'a LaniusBuffer<SemanticLirOperands>,
+    pub layout_word_offset: &'a LaniusBuffer<u32>,
     pub owner_by_instruction: &'a LaniusBuffer<u32>,
     pub op_by_instruction: &'a LaniusBuffer<u32>,
     pub function_id_by_hir: &'a LaniusBuffer<u32>,
@@ -277,6 +283,7 @@ impl<'a> GpuSemanticLirView<'a> {
         buffer!("lir.semantic.total", self.count);
         buffer!("lir.semantic.core", self.core);
         buffer!("lir.semantic.operands", self.operands);
+        buffer!("lir.semantic.layout_word_offset", self.layout_word_offset);
         buffer!(
             "lir.semantic.owner_by_instruction",
             self.owner_by_instruction
@@ -340,6 +347,10 @@ pub(super) fn target_lowering_allocations(
     import!("lir.semantic.total", semantic.count);
     import!("lir.semantic.core", semantic.core);
     import!("lir.semantic.operands", semantic.operands);
+    import!(
+        "lir.semantic.layout_word_offset",
+        semantic.layout_word_offset
+    );
     import!(
         "lir.semantic.owner_by_instruction",
         semantic.owner_by_instruction
@@ -489,6 +500,10 @@ pub(crate) struct GpuSemanticLoweringStage {
     const_function_by_root: LaniusBuffer<u32>,
     struct_hir_by_name_token: LaniusBuffer<u32>,
     struct_field_count_by_hir: LaniusBuffer<u32>,
+    struct_field_start_by_hir: LaniusBuffer<u32>,
+    struct_word_count_by_hir: LaniusBuffer<u32>,
+    struct_field_word_offset_by_row: LaniusBuffer<u32>,
+    struct_field_word_count_by_row: LaniusBuffer<u32>,
     function_count: LaniusBuffer<u32>,
     function_scan_local: LaniusBuffer<u32>,
     function_scan_block_sum: LaniusBuffer<u32>,
@@ -510,6 +525,7 @@ pub(crate) struct GpuSemanticLoweringStage {
     total: LaniusBuffer<u32>,
     core: LaniusBuffer<SemanticLirCore>,
     operands: LaniusBuffer<SemanticLirOperands>,
+    layout_word_offset: LaniusBuffer<u32>,
     owner_by_instruction: LaniusBuffer<u32>,
     op_by_instruction: LaniusBuffer<u32>,
     schedule: LaniusBuffer<SemanticLirSchedule>,
@@ -596,6 +612,10 @@ impl GpuSemanticLoweringStage {
                 semantic_resident_rows as usize,
             )
             .map_err(anyhow::Error::msg)?;
+        let layout_word_offset = alias(
+            "lir.semantic.layout_word_offset",
+            semantic_resident_rows,
+        )?;
         let owner_by_instruction = alias(
             "lir.semantic.owner_by_instruction",
             capacities.semantic_instructions,
@@ -695,6 +715,12 @@ impl GpuSemanticLoweringStage {
             capacities.tokens.max(1),
         )?;
         let struct_field_count_by_hir = alias("lir.semantic.struct_field_count_by_hir", hir_nodes)?;
+        let struct_field_start_by_hir = alias("lir.semantic.struct_field_start_by_hir", hir_nodes)?;
+        let struct_word_count_by_hir = alias("lir.semantic.struct_word_count_by_hir", hir_nodes)?;
+        let struct_field_word_offset_by_row =
+            alias("lir.semantic.struct_field_word_offset_by_row", hir_nodes)?;
+        let struct_field_word_count_by_row =
+            alias("lir.semantic.struct_field_word_count_by_row", hir_nodes)?;
         let function_scan_local = alias("lir.semantic.function_scan_local", hir_nodes)?;
         let function_scan_block_sum = alias("lir.semantic.function_scan_block_sum", blocks)?;
         let function_scan_block_prefix = alias("lir.semantic.function_scan_block_prefix", blocks)?;
@@ -787,6 +813,10 @@ impl GpuSemanticLoweringStage {
             (
                 "lir.semantic.functions.layout.collect",
                 passes.function_layout_collect.reflection.as_ref(),
+            ),
+            (
+                "lir.semantic.functions.layout.words",
+                passes.function_layout_words.reflection.as_ref(),
             ),
             (
                 "lir.semantic.function_scan.local",
@@ -966,7 +996,7 @@ impl GpuSemanticLoweringStage {
                     element_capacity: capacities.aggregate_elements,
                     n_hir_nodes: hir_nodes,
                     semantic_capacity: capacities.semantic_instructions.max(1),
-                    reserved: 0,
+                    n_tokens: capacities.tokens,
                 },
             ),
             string_params: uniform_from_val(
@@ -1027,6 +1057,10 @@ impl GpuSemanticLoweringStage {
             const_function_by_root,
             struct_hir_by_name_token,
             struct_field_count_by_hir,
+            struct_field_start_by_hir,
+            struct_word_count_by_hir,
+            struct_field_word_offset_by_row,
+            struct_field_word_count_by_row,
             function_count,
             function_scan_local,
             function_scan_block_sum,
@@ -1048,6 +1082,7 @@ impl GpuSemanticLoweringStage {
             total,
             core,
             operands,
+            layout_word_offset,
             owner_by_instruction,
             op_by_instruction,
             schedule,
@@ -1074,6 +1109,7 @@ impl GpuSemanticLoweringStage {
             count: &self.total,
             core: &self.core,
             operands: &self.operands,
+            layout_word_offset: &self.layout_word_offset,
             owner_by_instruction: &self.owner_by_instruction,
             op_by_instruction: &self.op_by_instruction,
             function_id_by_hir: &self.function_ids,
@@ -1133,6 +1169,14 @@ impl GpuSemanticLoweringStage {
             semantic.checked.expr_ref_payload_by_hir
         );
         graph_buffer!(
+            "typecheck.semantic_aggregate_decl_tokens_by_hir",
+            semantic.checked.aggregate_decl_token_by_hir
+        );
+        graph_buffer!(
+            "typecheck.semantic_aggregate_word_counts_by_hir",
+            semantic.checked.aggregate_word_count_by_hir
+        );
+        graph_buffer!(
             "typecheck.semantic_array_lengths_by_hir",
             semantic.checked.array_length_by_hir
         );
@@ -1176,6 +1220,30 @@ impl GpuSemanticLoweringStage {
             "typecheck.semantic_member_field_ordinals_by_hir",
             semantic.checked.member_field_ordinal_by_hir
         );
+        graph_buffer!(
+            "lir.semantic.struct_hir_by_name_token",
+            &self.struct_hir_by_name_token
+        );
+        graph_buffer!(
+            "lir.semantic.struct_field_count_by_hir",
+            &self.struct_field_count_by_hir
+        );
+        graph_buffer!(
+            "lir.semantic.struct_field_start_by_hir",
+            &self.struct_field_start_by_hir
+        );
+        graph_buffer!(
+            "lir.semantic.struct_word_count_by_hir",
+            &self.struct_word_count_by_hir
+        );
+        graph_buffer!(
+            "lir.semantic.struct_field_word_offset_by_row",
+            &self.struct_field_word_offset_by_row
+        );
+        graph_buffer!(
+            "lir.semantic.struct_field_word_count_by_row",
+            &self.struct_field_word_count_by_row
+        );
         graph_buffer!("hir.expression_roots", hir.expr_root);
         graph_buffer!("hir.nearest_loop", hir.nearest_loop);
         graph_buffer!("hir.array_element_start", hir.array_element_start);
@@ -1188,6 +1256,10 @@ impl GpuSemanticLoweringStage {
         graph_buffer!("lowering.status", &self.status);
         graph_buffer!("lir.semantic.core", &self.core);
         graph_buffer!("lir.semantic.operands", &self.operands);
+        graph_buffer!(
+            "lir.semantic.layout_word_offset",
+            &self.layout_word_offset
+        );
         graph_buffer!(
             "lir.semantic.owner_by_instruction",
             &self.owner_by_instruction
@@ -1740,6 +1812,7 @@ impl GpuSemanticLoweringStage {
             vec![
                 bound("compact_hir_count", resource("hir.count"), hir.count)?,
                 bound("compact_hir_core", resource("hir.core"), hir.core)?,
+                bound("compact_hir_payload", resource("hir.payload"), hir.payload)?,
                 bound(
                     "semantic_function_flag",
                     resource("lir.semantic.function_flags"),
@@ -1827,6 +1900,26 @@ impl GpuSemanticLoweringStage {
                     &self.struct_field_count_by_hir,
                 )?,
                 bound(
+                    "semantic_struct_field_start_by_hir",
+                    resource("lir.semantic.struct_field_start_by_hir"),
+                    &self.struct_field_start_by_hir,
+                )?,
+                bound(
+                    "semantic_struct_word_count_by_hir",
+                    resource("lir.semantic.struct_word_count_by_hir"),
+                    &self.struct_word_count_by_hir,
+                )?,
+                bound(
+                    "semantic_struct_field_word_offset_by_row",
+                    resource("lir.semantic.struct_field_word_offset_by_row"),
+                    &self.struct_field_word_offset_by_row,
+                )?,
+                bound(
+                    "semantic_struct_field_word_count_by_row",
+                    resource("lir.semantic.struct_field_word_count_by_row"),
+                    &self.struct_field_word_count_by_row,
+                )?,
+                bound(
                     "semantic_function_id_by_token",
                     resource("lir.semantic.function_id_by_token"),
                     &self.function_id_by_token,
@@ -1846,6 +1939,22 @@ impl GpuSemanticLoweringStage {
                 (
                     "semantic_struct_field_count_by_hir",
                     self.struct_field_count_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_start_by_hir",
+                    self.struct_field_start_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_word_count_by_hir",
+                    self.struct_word_count_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_word_offset_by_row",
+                    self.struct_field_word_offset_by_row.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_word_count_by_row",
+                    self.struct_field_word_count_by_row.as_entire_binding(),
                 ),
                 (
                     "semantic_function_id_by_token",
@@ -1884,6 +1993,11 @@ impl GpuSemanticLoweringStage {
                     resource("lir.semantic.struct_field_count_by_hir"),
                     &self.struct_field_count_by_hir,
                 )?,
+                bound(
+                    "semantic_struct_field_start_by_hir",
+                    resource("lir.semantic.struct_field_start_by_hir"),
+                    &self.struct_field_start_by_hir,
+                )?,
             ],
         )?;
         let layout_collect = make_group(
@@ -1905,6 +2019,10 @@ impl GpuSemanticLoweringStage {
                     "semantic_struct_field_count_by_hir",
                     self.struct_field_count_by_hir.as_entire_binding(),
                 ),
+                (
+                    "semantic_struct_field_start_by_hir",
+                    self.struct_field_start_by_hir.as_entire_binding(),
+                ),
             ],
         )?;
         record_direct(
@@ -1914,6 +2032,117 @@ impl GpuSemanticLoweringStage {
             self.capacities
                 .hir_nodes
                 .max(self.capacities.aggregate_elements),
+        )?;
+
+        self.validate(
+            self.graph
+                .pass_id("lir.semantic.functions.layout.words")
+                .unwrap(),
+            vec![
+                bound("compact_hir_count", resource("hir.count"), hir.count)?,
+                bound("compact_hir_core", resource("hir.core"), hir.core)?,
+                bound("compact_hir_payload", resource("hir.payload"), hir.payload)?,
+                bound("compact_fields", resource("hir.fields"), hir.fields)?,
+                bound(
+                    "semantic_expr_ref_tag",
+                    resource("typecheck.semantic_expr_ref_tags_by_hir"),
+                    semantic.checked.expr_ref_tag_by_hir,
+                )?,
+                bound(
+                    "semantic_expr_ref_payload",
+                    resource("typecheck.semantic_expr_ref_payloads_by_hir"),
+                    semantic.checked.expr_ref_payload_by_hir,
+                )?,
+                bound(
+                    "semantic_aggregate_decl_token",
+                    resource("typecheck.semantic_aggregate_decl_tokens_by_hir"),
+                    semantic.checked.aggregate_decl_token_by_hir,
+                )?,
+                bound(
+                    "semantic_struct_hir_by_name_token",
+                    resource("lir.semantic.struct_hir_by_name_token"),
+                    &self.struct_hir_by_name_token,
+                )?,
+                bound(
+                    "semantic_struct_field_start_by_hir",
+                    resource("lir.semantic.struct_field_start_by_hir"),
+                    &self.struct_field_start_by_hir,
+                )?,
+                bound(
+                    "semantic_struct_field_count_by_hir",
+                    resource("lir.semantic.struct_field_count_by_hir"),
+                    &self.struct_field_count_by_hir,
+                )?,
+                bound(
+                    "semantic_struct_word_count_by_hir",
+                    resource("lir.semantic.struct_word_count_by_hir"),
+                    &self.struct_word_count_by_hir,
+                )?,
+                bound(
+                    "semantic_struct_field_word_offset_by_row",
+                    resource("lir.semantic.struct_field_word_offset_by_row"),
+                    &self.struct_field_word_offset_by_row,
+                )?,
+                bound(
+                    "semantic_struct_field_word_count_by_row",
+                    resource("lir.semantic.struct_field_word_count_by_row"),
+                    &self.struct_field_word_count_by_row,
+                )?,
+            ],
+        )?;
+        let layout_words = make_group(
+            device,
+            &self.passes.function_layout_words,
+            "lir.semantic.functions.layout.words.bind_group",
+            &[
+                ("gParams", self.function_params.as_entire_binding()),
+                ("compact_hir_count", hir.count.as_entire_binding()),
+                ("compact_hir_core", hir.core.as_entire_binding()),
+                ("compact_hir_payload", hir.payload.as_entire_binding()),
+                ("compact_fields", hir.fields.as_entire_binding()),
+                (
+                    "semantic_expr_ref_tag",
+                    semantic.checked.expr_ref_tag_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_expr_ref_payload",
+                    semantic.checked.expr_ref_payload_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_aggregate_decl_token",
+                    semantic.checked.aggregate_decl_token_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_hir_by_name_token",
+                    self.struct_hir_by_name_token.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_start_by_hir",
+                    self.struct_field_start_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_count_by_hir",
+                    self.struct_field_count_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_word_count_by_hir",
+                    self.struct_word_count_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_word_offset_by_row",
+                    self.struct_field_word_offset_by_row.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_word_count_by_row",
+                    self.struct_field_word_count_by_row.as_entire_binding(),
+                ),
+            ],
+        )?;
+        record_direct(
+            encoder,
+            &self.passes.function_layout_words,
+            &layout_words,
+            self.capacities.hir_nodes,
         )?;
 
         self.validate(
@@ -2006,9 +2235,9 @@ impl GpuSemanticLoweringStage {
                     &self.struct_hir_by_name_token,
                 )?,
                 bound(
-                    "semantic_struct_field_count_by_hir",
-                    resource("lir.semantic.struct_field_count_by_hir"),
-                    &self.struct_field_count_by_hir,
+                    "semantic_struct_word_count_by_hir",
+                    resource("lir.semantic.struct_word_count_by_hir"),
+                    &self.struct_word_count_by_hir,
                 )?,
                 bound(
                     "semantic_lir_functions",
@@ -2099,8 +2328,8 @@ impl GpuSemanticLoweringStage {
                     self.struct_hir_by_name_token.as_entire_binding(),
                 ),
                 (
-                    "semantic_struct_field_count_by_hir",
-                    self.struct_field_count_by_hir.as_entire_binding(),
+                    "semantic_struct_word_count_by_hir",
+                    self.struct_word_count_by_hir.as_entire_binding(),
                 ),
                 ("semantic_lir_functions", self.functions.as_entire_binding()),
                 (
@@ -2208,6 +2437,7 @@ impl GpuSemanticLoweringStage {
             vec![
                 bound("compact_hir_count", resource("hir.count"), hir.count)?,
                 bound("compact_hir_core", resource("hir.core"), hir.core)?,
+                bound("compact_hir_payload", resource("hir.payload"), hir.payload)?,
                 bound(
                     "compact_field_count",
                     resource("hir.field_count"),
@@ -2243,6 +2473,31 @@ impl GpuSemanticLoweringStage {
                     "semantic_expr_ref_payload",
                     resource("typecheck.semantic_expr_ref_payloads_by_hir"),
                     semantic.checked.expr_ref_payload_by_hir,
+                )?,
+                bound(
+                    "semantic_aggregate_decl_token",
+                    resource("typecheck.semantic_aggregate_decl_tokens_by_hir"),
+                    semantic.checked.aggregate_decl_token_by_hir,
+                )?,
+                bound(
+                    "semantic_struct_hir_by_name_token",
+                    resource("lir.semantic.struct_hir_by_name_token"),
+                    &self.struct_hir_by_name_token,
+                )?,
+                bound(
+                    "semantic_struct_field_start_by_hir",
+                    resource("lir.semantic.struct_field_start_by_hir"),
+                    &self.struct_field_start_by_hir,
+                )?,
+                bound(
+                    "semantic_struct_field_word_offset_by_row",
+                    resource("lir.semantic.struct_field_word_offset_by_row"),
+                    &self.struct_field_word_offset_by_row,
+                )?,
+                bound(
+                    "semantic_struct_field_word_count_by_row",
+                    resource("lir.semantic.struct_field_word_count_by_row"),
+                    &self.struct_field_word_count_by_row,
                 )?,
                 bound(
                     "semantic_lir_count",
@@ -2302,6 +2557,26 @@ impl GpuSemanticLoweringStage {
                 (
                     "semantic_expr_ref_payload",
                     semantic.checked.expr_ref_payload_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_aggregate_decl_token",
+                    semantic.checked.aggregate_decl_token_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_hir_by_name_token",
+                    self.struct_hir_by_name_token.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_start_by_hir",
+                    self.struct_field_start_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_word_offset_by_row",
+                    self.struct_field_word_offset_by_row.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_field_word_count_by_row",
+                    self.struct_field_word_count_by_row.as_entire_binding(),
                 ),
                 ("semantic_lir_count", self.counts.as_entire_binding()),
                 ("semantic_lir_offset", self.offsets.as_entire_binding()),
@@ -3913,6 +4188,8 @@ mod tests {
                         calls_by_hir: &checked_calls,
                         expr_ref_tag_by_hir: &semantic_ref_tags,
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
+                        aggregate_decl_token_by_hir: &semantic_ref_payloads,
+                        aggregate_word_count_by_hir: &checked_layout_facts,
                         array_length_by_hir: &semantic_array_lengths,
                         member_field_ordinal_by_hir: &visible,
                         iterable_kind_by_hir: &checked_layout_facts,
@@ -4242,6 +4519,8 @@ mod tests {
                         calls_by_hir: &checked_calls,
                         expr_ref_tag_by_hir: &semantic_ref_tags,
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
+                        aggregate_decl_token_by_hir: &semantic_ref_payloads,
+                        aggregate_word_count_by_hir: &zero_by_hir,
                         array_length_by_hir: &semantic_array_lengths,
                         member_field_ordinal_by_hir: &invalid_tokens,
                         iterable_kind_by_hir: &zero_by_hir,
@@ -4502,6 +4781,8 @@ mod tests {
                         calls_by_hir: &checked_calls,
                         expr_ref_tag_by_hir: &semantic_ref_tags,
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
+                        aggregate_decl_token_by_hir: &semantic_ref_payloads,
+                        aggregate_word_count_by_hir: &enclosing,
                         array_length_by_hir: &semantic_array_lengths,
                         member_field_ordinal_by_hir: &visible,
                         iterable_kind_by_hir: &enclosing,
@@ -4753,6 +5034,8 @@ mod tests {
                         calls_by_hir: &checked_calls,
                         expr_ref_tag_by_hir: &semantic_ref_tags,
                         expr_ref_payload_by_hir: &semantic_ref_payloads,
+                        aggregate_decl_token_by_hir: &semantic_ref_payloads,
+                        aggregate_word_count_by_hir: &checked_layout_facts,
                         array_length_by_hir: &semantic_array_lengths,
                         member_field_ordinal_by_hir: &visible,
                         iterable_kind_by_hir: &checked_layout_facts,

@@ -3,7 +3,7 @@
 module alloc::allocator;
 
 pub type AllocatorCapability = bool;
-pub type AllocatorPointer = u32;
+pub type AllocatorPointer = ptr;
 pub type AllocatorRuntimeAbiVersion = u32;
 pub type AllocatorServiceId = u32;
 pub type AllocatorServiceStatus = u32;
@@ -171,7 +171,7 @@ pub fn realloc_result_is_fail_closed(ptr: AllocatorPointer) -> AllocatorCapabili
     return false;
 }
 
-pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> u32;
-pub extern "lanius_alloc" fn realloc(ptr: u32, old_size: usize, new_size: usize, align: usize) -> u32;
-pub extern "lanius_alloc" fn dealloc(ptr: u32, size: usize, align: usize);
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+pub extern "lanius_alloc" fn realloc(ptr: ptr, old_size: usize, new_size: usize, align: usize) -> ptr;
+pub extern "lanius_alloc" fn dealloc(ptr: ptr, size: usize, align: usize);
 pub extern "lanius_alloc" fn alloc_failed(size: usize, align: usize);

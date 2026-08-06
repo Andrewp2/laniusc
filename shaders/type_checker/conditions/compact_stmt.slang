@@ -37,6 +37,7 @@ static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_RETURN = 2u;
 static const uint HIR_STMT_CONST = 4u;
 static const uint HIR_STMT_ASSIGN = 5u;
+static const uint HIR_EXPR_INT = 3u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
 static const uint TY_INT = 3u;
@@ -44,6 +45,7 @@ static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
+static const uint TY_POINTER = 8u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_REF_INVALID = 0u;
@@ -58,7 +60,7 @@ uint scalar_type(uint node)
 {
     return valid_hir(node) ? compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT : TY_UNKNOWN;
 }
-bool known_scalar(uint ty) { return ty != TY_UNKNOWN && ty <= TY_STRING; }
+bool known_scalar(uint ty) { return ty != TY_UNKNOWN && ty <= TY_POINTER; }
 
 uint declaration_token(uint token)
 {
@@ -124,18 +126,27 @@ bool expression_type_ref(uint node, out uint tag, out uint payload)
     return tag != TYPE_REF_INVALID;
 }
 
-bool assignable(uint dst, uint src)
+bool null_pointer_constant(uint node)
+{
+    return valid_hir(node) && compact_hir_payload[node].a == HIR_EXPR_INT &&
+        compact_hir_payload[node].b == 0u;
+}
+
+bool assignable(uint dst, uint src, uint source_node)
 {
     if (dst == src) return true;
+    if (dst == TY_POINTER)
+        return src == TY_INT && null_pointer_constant(source_node);
     if (dst == TY_INT) return src == TY_UINT || src == TY_CHAR;
     if (dst == TY_UINT) return src == TY_INT || src == TY_CHAR;
     if (dst == TY_FLOAT) return src == TY_INT || src == TY_UINT || src == TY_CHAR;
     return false;
 }
 
-void validate_pair(uint expected, uint actual, uint error_token)
+void validate_pair(uint expected, uint actual, uint actual_node, uint error_token)
 {
-    if (!known_scalar(expected) || !known_scalar(actual) || assignable(expected, actual)) return;
+    if (!known_scalar(expected) || !known_scalar(actual) ||
+        assignable(expected, actual, actual_node)) return;
     record_min_token_error(
         status,
         valid_token(error_token) ? error_token : 0u,
@@ -152,14 +163,14 @@ void validate_decl(HirPayload stmt)
     if (aggregate_type_node(stmt.d)) return;
     uint expected = scalar_decl_type(stmt.b);
     uint actual = scalar_type(stmt.c);
-    validate_pair(expected, actual, expression_token(stmt.c));
+    validate_pair(expected, actual, stmt.c, expression_token(stmt.c));
 }
 
 void validate_assignment(HirPayload stmt)
 {
     uint target_token = expression_token(stmt.b);
     if (aggregate_decl_ref(target_token)) return;
-    validate_pair(scalar_type(stmt.b), scalar_type(stmt.c), expression_token(stmt.c));
+    validate_pair(scalar_type(stmt.b), scalar_type(stmt.c), stmt.c, expression_token(stmt.c));
 }
 
 void validate_return(uint node, HirCore core, HirPayload stmt)
@@ -203,10 +214,10 @@ void validate_return(uint node, HirCore core, HirPayload stmt)
     if (!valid_hir(stmt.b))
     {
         if (expected != TY_VOID && valid_token(call_return_type_token[fn_token]))
-            validate_pair(expected, TY_VOID, core.token_start);
+            validate_pair(expected, TY_VOID, INVALID, core.token_start);
         return;
     }
-    validate_pair(expected, scalar_type(stmt.b), expression_token(stmt.b));
+    validate_pair(expected, scalar_type(stmt.b), stmt.b, expression_token(stmt.b));
 }
 
 [shader("compute")]

@@ -11,7 +11,7 @@ fn main() -> i32 {
     let capacity: usize = 256;
     let capacity_i32: i32 = 256;
     let align: usize = 4;
-    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (ptr == 0) {
         return 1;
     }

@@ -42,7 +42,7 @@ uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands)
         return 2u;
     return (core.op == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT) || false_branch ||
         (core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-         operands.a == HOST_SERVICE_I32_ARRAY_DATA_PTR)
+         operands.a == INTRINSIC_I32_ARRAY_DATA_PTR)
         ? 2u : 1u;
 }
 
@@ -59,7 +59,8 @@ uint wasm_compare_opcode(uint predicate, uint type_id)
     }
     if (predicate == 0u) return WASM_LIR_OP_I32_EQ;
     if (predicate == 1u) return WASM_LIR_OP_I32_NE;
-    bool is_unsigned = type_id == TY_UINT || type_id == TY_CHAR;
+    bool is_unsigned = type_id == TY_UINT || type_id == TY_CHAR ||
+        type_id == SEMANTIC_LIR_TY_POINTER;
     if (is_unsigned)
     {
         if (predicate == 2u) return WASM_LIR_OP_I32_LT_U;

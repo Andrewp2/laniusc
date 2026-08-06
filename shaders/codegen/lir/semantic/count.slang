@@ -1,5 +1,6 @@
 import hir_records;
 import codegen.lir.semantic.common;
+import codegen.lir.semantic.loop_recipe;
 import codegen.lowering_ir;
 import gpu_index;
 
@@ -44,18 +45,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
               (compact_hir_core[parent].kind == HIR_STMT &&
                compact_hir_payload[parent].a == HIR_STMT_FOR)) &&
               compact_hir_payload[parent].c == node));
-        bool range_for = core.kind == HIR_FOR_STMT ||
-            (core.kind == HIR_STMT && payload.a == HIR_STMT_FOR);
-        uint iterable_form = range_for && payload.c < count
+        bool for_loop = semantic_lir_is_for(core, payload);
+        uint iterable_form = for_loop && payload.c < count
             ? compact_hir_payload[payload.c].a : 0u;
-        uint iterable_kind = range_for ? semantic_iterable_kind[node] : 0u;
-        uint array_length = range_for && payload.c < count
+        uint iterable_kind = for_loop ? semantic_iterable_kind[node] : 0u;
+        uint array_length = for_loop && payload.c < count
             ? semantic_array_length[payload.c] : 0xffffffffu;
-        rows = owned_syntax ? 0u : range_for
-            ? (iterable_form == HIR_EXPR_RANGE || iterable_form == HIR_EXPR_RANGE_INCLUSIVE
-                ? 17u : (iterable_kind == 1u || iterable_kind == 2u)
-                    ? 21u : iterable_kind == 3u || array_length != 0xffffffffu ? 21u : 1u)
-            : semantic_lir_row_count(core, payload);
+        SemanticLoopRecipe recipe = semantic_loop_recipe(
+            core, payload, iterable_form, iterable_kind, array_length);
+        rows = owned_syntax ? 0u : recipe.row_count;
     }
     semantic_lir_count[node] = rows;
 }

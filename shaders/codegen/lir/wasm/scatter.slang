@@ -63,7 +63,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? wasm_host_import_for_service(operands.a) : WASM_HOST_INVALID;
     bool imported_host_operation = host_import != WASM_HOST_INVALID;
     bool supported_intrinsic = core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-        operands.a == 1u;
+        (operands.a == 1u || operands.a == INTRINSIC_I32_ARRAY_DATA_PTR);
     uint flags = wasm_lir_supported(core) || inline_host_operation ||
         imported_host_operation || supported_intrinsic
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
@@ -189,7 +189,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         immediate = 0u;
     }
     else if (core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-             operands.a == HOST_SERVICE_I32_ARRAY_DATA_PTR)
+             operands.a == INTRINSIC_I32_ARRAY_DATA_PTR)
     {
         // Aggregate values are represented by their linear-memory pointer on
         // the Wasm value stack.  The compiler-only projection must preserve

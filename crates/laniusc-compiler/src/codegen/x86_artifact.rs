@@ -533,6 +533,7 @@ mod tests {
             count: &semantic_total,
             core: &semantic_core,
             operands: &semantic_operands,
+            layout_word_offset: &no_call_counts,
             owner_by_instruction: &no_call_counts,
             op_by_instruction: &no_call_counts,
             function_id_by_hir: &function_ids,

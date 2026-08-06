@@ -26,7 +26,7 @@ StructuredBuffer<uint> semantic_function_host_service_by_hir;
 StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<uint> semantic_struct_hir_by_name_token;
-StructuredBuffer<uint> semantic_struct_field_count_by_hir;
+StructuredBuffer<uint> semantic_struct_word_count_by_hir;
 RWStructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 RWStructuredBuffer<uint> semantic_function_id_by_token;
 RWStructuredBuffer<uint> semantic_const_function_by_root;
@@ -82,7 +82,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint struct_hir = valid_token(name_token)
             ? semantic_struct_hir_by_name_token[name_token] : LIR_INVALID;
         if (struct_hir < hir_count)
-            result.result_word_count = semantic_struct_field_count_by_hir[struct_hir];
+            result.result_word_count = semantic_struct_word_count_by_hir[struct_hir];
     }
     result.flags = !constant && semantic_function_entrypoint_by_hir[hir] != 0u
         ? SEMANTIC_FUNCTION_FLAG_ENTRYPOINT : 0u;

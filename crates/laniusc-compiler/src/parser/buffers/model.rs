@@ -230,27 +230,15 @@ pub struct HirPredicate {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, ShaderType, PartialEq, Eq)]
-/// Dense, phase-boundary facts used by predicate validation.
-///
-/// These are not parser rows: every node reference has already been translated
-/// to a canonical HIR id by the canonical HIR core pass. The production tag is
-/// retained only for validating the small grammar-specific predicate surface;
-/// all ordinary semantic consumers use `HirCore`, `HirLinks`, and the compact
-/// family tables instead.
-pub struct HirPredicateFacts {
-    pub production: u32,
-    pub token_start: u32,
+/// Additional semantic links that are not part of the universal HIR record.
+/// `semantic_kind` belongs to the HIR contract and is independent of generated
+/// parser production numbers.
+pub struct HirSemanticFacts {
+    pub semantic_kind: u32,
     pub type_path_leaf: u32,
-    pub type_arg_start: u32,
-    pub type_arg_count: u32,
-    pub type_arg_next: u32,
     pub method_impl_receiver_type: u32,
     pub expr_result_root: u32,
     pub struct_lit_head: u32,
-    /// Dense owner of a bound-path segment, when the parser's bound-path
-    /// relation identified one.  This keeps the grammar-specific relation at
-    /// the compact HIR boundary instead of exposing the raw row map.
-    pub bound_path_owner: u32,
     /// Dense generic-declaration or impl owner for this predicate bound.
     pub predicate_owner: u32,
     /// Dense target type for an impl predicate, or the subject token for a
@@ -336,7 +324,71 @@ pub struct GpuHirView {
     pub method_signatures: LaniusBuffer<HirMethodSignature>,
     pub predicate_count: LaniusBuffer<u32>,
     pub predicates: LaniusBuffer<HirPredicate>,
-    pub predicate_facts: LaniusBuffer<HirPredicateFacts>,
+    pub semantic_facts: LaniusBuffer<HirSemanticFacts>,
+}
+
+impl GpuHirView {
+    /// Physical identities consumed by type checking. Keeping this list with
+    /// the phase artifact prevents resident bind-group invalidation from
+    /// silently omitting a newly added HIR table.
+    pub(crate) fn typecheck_buffers(&self) -> Vec<&wgpu::Buffer> {
+        vec![
+            &self.count,
+            &self.core,
+            &self.links,
+            &self.payload,
+            &self.semantic_facts,
+            &self.scope_end,
+            &self.nearest_loop,
+            &self.nearest_block,
+            &self.nearest_control,
+            &self.nearest_fn,
+            &self.expr_parent,
+            &self.expr_root,
+            &self.call_arg_count,
+            &self.call_args,
+            &self.fn_return_type,
+            &self.type_root_owner,
+            &self.type_alias_target,
+            &self.const_type,
+            &self.param_count,
+            &self.params,
+            &self.param_ranges,
+            &self.method_count,
+            &self.method_cores,
+            &self.method_signatures,
+            &self.predicate_count,
+            &self.predicates,
+            &self.type_arg_count,
+            &self.type_args,
+            &self.type_arg_ranges,
+            &self.path_count,
+            &self.paths,
+            &self.path_segment_count,
+            &self.path_segments,
+            &self.generic_param_count,
+            &self.generic_params,
+            &self.generic_param_ranges,
+            &self.field_count,
+            &self.fields,
+            &self.variant_count,
+            &self.variants,
+            &self.variant_payload_start,
+            &self.variant_payload_count,
+            &self.variant_payload_row_count,
+            &self.variant_payloads,
+            &self.match_arm_count,
+            &self.match_arms,
+            &self.match_payload_start,
+            &self.match_payload_count,
+            &self.match_payload_row_count,
+            &self.match_payloads,
+            &self.array_element_start,
+            &self.array_element_count,
+            &self.array_element_row_count,
+            &self.array_elements,
+        ]
+    }
 }
 
 /// All GPU-side buffers for the parser pipeline.
@@ -594,7 +646,7 @@ pub struct ParserBuffers {
     pub hir_core: LaniusBuffer<HirCore>,
     pub hir_links: LaniusBuffer<HirLinks>,
     pub hir_payload: LaniusBuffer<HirPayload>,
-    pub hir_canonical_predicate_facts: LaniusBuffer<HirPredicateFacts>,
+    pub hir_canonical_semantic_facts: LaniusBuffer<HirSemanticFacts>,
     /// Dense HIR ids corresponding to the semantic preorder rows. This is a
     /// phase-boundary projection; the raw parser relation remains parser
     /// workspace and is not registered with type-check passes.
@@ -981,7 +1033,7 @@ impl GpuHirView {
             method_signatures: buffers.hir_method_signature_rows.clone(),
             predicate_count: buffers.hir_predicate_table_count.clone(),
             predicates: buffers.hir_predicate_rows.clone(),
-            predicate_facts: buffers.hir_canonical_predicate_facts.clone(),
+            semantic_facts: buffers.hir_canonical_semantic_facts.clone(),
         }
     }
 }

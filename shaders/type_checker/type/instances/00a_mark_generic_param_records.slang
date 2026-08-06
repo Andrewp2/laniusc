@@ -10,7 +10,6 @@
 //   consumers; it does not scan declaration subtrees.
 
 import hir_records;
-import generated_parse_production_ids;
 import fixed.compact_method;
 
 struct Params
@@ -25,7 +24,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<HirPredicateFacts> compact_hir_predicate_facts;
+StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<CompactMethodCore> compact_method_cores;
 StructuredBuffer<HirMethodSignature> compact_method_signatures;
@@ -77,13 +76,6 @@ bool generic_decl_item_kind(uint item_kind)
            item_kind == HIR_ITEM_KIND_TRAIT;
 }
 
-bool generic_decl_item_production(uint prod)
-{
-    return prod == PROD_FN || prod == PROD_EXTERN_FN ||
-           prod == PROD_STRUCT || prod == PROD_ENUM ||
-           prod == PROD_TYPE_ALIAS || prod == PROD_TRAIT;
-}
-
 uint compact_method_signature_flags(uint node)
 {
     if (!valid_node(node))
@@ -103,13 +95,13 @@ bool generic_decl_node(uint node)
 {
     if (!valid_node(node))
         return false;
-    uint prod = compact_hir_predicate_facts[node].production;
-    if (prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB || prod == PROD_IMPL_FN)
+    uint prod = compact_hir_semantic_facts[node].semantic_kind;
+    if (prod == HIR_SEMANTIC_TRAIT_METHOD || prod == HIR_SEMANTIC_PUBLIC_TRAIT_METHOD || prod == HIR_SEMANTIC_IMPL_FUNCTION)
         return (compact_method_signature_flags(node) &
                 METHOD_SIGNATURE_HAS_GENERICS) != 0u;
     return generic_decl_item_kind(compact_hir_payload[node].a) ||
-           prod == PROD_IMPL_INHERENT ||
-           prod == PROD_IMPL_TRAIT;
+           prod == HIR_SEMANTIC_IMPL_INHERENT ||
+           prod == HIR_SEMANTIC_IMPL_TRAIT;
 }
 
 [shader("compute")]
@@ -123,7 +115,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     generic_decl_owner_by_node_a[node] =
         generic_decl_node(node) ? node : INVALID;
     predicate_bound_list_by_node_a[node] =
-        compact_hir_predicate_facts[node].production == PROD_TYPE_PARAM_BOUND_LIST
+        compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_TYPE_PARAM_BOUND_LIST
             ? node
             : INVALID;
     generic_decl_parent_jump_a[node] = valid_node(compact_hir_core[node].parent)

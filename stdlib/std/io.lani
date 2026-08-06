@@ -244,11 +244,11 @@ pub fn print_i32_requires_runtime_binding() -> StdioCapability {
     return !print_i32_is_executable();
 }
 
-pub extern "lanius_std" fn write_stdout(ptr: u32, len: usize) -> StdioOperationResult;
+pub extern "lanius_std" fn write_stdout(ptr: ptr, len: usize) -> StdioOperationResult;
 
-pub extern "lanius_std" fn write_stderr(ptr: u32, len: usize) -> StdioOperationResult;
+pub extern "lanius_std" fn write_stderr(ptr: ptr, len: usize) -> StdioOperationResult;
 
-pub extern "lanius_std" fn read_stdin(ptr: u32, len: usize) -> StdioOperationResult;
+pub extern "lanius_std" fn read_stdin(ptr: ptr, len: usize) -> StdioOperationResult;
 
 // Output crosses both supported host boundaries synchronously, so there is no
 // compiler-owned userspace buffer left to drain after a write completes.

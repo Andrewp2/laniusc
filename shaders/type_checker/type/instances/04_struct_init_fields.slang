@@ -31,8 +31,10 @@ StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> struct_field_key_order;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 StructuredBuffer<uint> path_count_out;
@@ -48,11 +50,14 @@ RWStructuredBuffer<uint> struct_init_field_expected_ref_tag;
 RWStructuredBuffer<uint> struct_init_field_expected_ref_payload;
 RWStructuredBuffer<uint> struct_init_field_ordinal;
 RWStructuredBuffer<uint> struct_init_field_ordinal_by_row;
-RWStructuredBuffer<uint> struct_init_field_decl_token_by_row;
 
 static const uint INVALID = 0xffffffffu;
 
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TY_STRUCT_BASE = 4096u;
+static const uint TY_ENUM_BASE = 1048576u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
@@ -134,8 +139,49 @@ bool context_for_struct_literal_node(uint literal_node, out uint decl_token, out
     if (!valid_node(literal_node))
         return false;
 
-    decl_token = struct_lit_context_decl_token[literal_node];
-    instance_i = struct_lit_context_instance[literal_node];
+    uint contextual_decl = struct_lit_context_decl_token[literal_node];
+    uint contextual_instance = struct_lit_context_instance[literal_node];
+    uint constructor_token = type_head_token_for_node(literal_node);
+    uint explicit_decl = INVALID;
+    uint explicit_instance = INVALID;
+    if (valid_token(constructor_token) && valid_token(visible_decl[constructor_token]))
+        explicit_decl = visible_decl[constructor_token];
+    uint constructor_tag = valid_token(constructor_token)
+        ? type_expr_ref_tag[constructor_token]
+        : 0u;
+    uint constructor_payload = valid_token(constructor_token)
+        ? type_expr_ref_payload[constructor_token]
+        : INVALID;
+    if (constructor_tag == TYPE_REF_INSTANCE && valid_token(constructor_payload))
+    {
+        explicit_decl = type_instance_decl_token[constructor_payload];
+        explicit_instance = constructor_payload;
+    }
+    else if (constructor_tag == TYPE_REF_SCALAR &&
+        constructor_payload >= TY_STRUCT_BASE && constructor_payload < TY_ENUM_BASE)
+        explicit_decl = constructor_payload - TY_STRUCT_BASE;
+
+    if (valid_token(explicit_instance))
+    {
+        decl_token = explicit_decl;
+        instance_i = explicit_instance;
+        return valid_token(decl_token);
+    }
+    if (valid_token(contextual_instance) &&
+        type_instance_decl_token[contextual_instance] == explicit_decl)
+    {
+        decl_token = explicit_decl;
+        instance_i = contextual_instance;
+        return valid_token(decl_token);
+    }
+    if (valid_token(explicit_decl))
+    {
+        decl_token = explicit_decl;
+        return true;
+    }
+
+    decl_token = contextual_decl;
+    instance_i = contextual_instance;
     return valid_token(decl_token);
 }
 
@@ -292,7 +338,6 @@ void publish_struct_init_field_row(uint field_row)
         row < literal_payload.b || row - literal_payload.b >= literal_payload.c)
         return;
     struct_init_field_ordinal_by_row[row] = field_ordinal;
-    struct_init_field_decl_token_by_row[row] = decl_field.name_token;
 }
 
 [shader("compute")]

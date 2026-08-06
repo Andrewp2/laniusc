@@ -2770,7 +2770,7 @@ extern "host" fn host_alloc(size: usize, align: usize) -> u32;
 extern fn host_log_i32(value: i32);
 
 fn main() {
-    let ptr: u32 = host_alloc(16, 4);
+    let ptr: ptr = host_alloc(16, 4);
     host_log_i32(ptr);
     return 0;
 }

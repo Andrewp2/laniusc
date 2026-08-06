@@ -30,6 +30,7 @@ StructuredBuffer<uint> resolved_dependency_library_id;
 StructuredBuffer<uint> resolved_dependency_unit_id;
 StructuredBuffer<uint> resolved_dependency_local_index;
 StructuredBuffer<uint> canonical_type_roots;
+StructuredBuffer<uint> declaration_field_count;
 StructuredBuffer<uint> module_value_path_call_open;
 RWStructuredBuffer<uint> call_dependency_library_id;
 RWStructuredBuffer<uint> call_dependency_unit_id;
@@ -39,6 +40,7 @@ RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> call_param_count;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
+RWStructuredBuffer<uint> call_return_aggregate_word_count;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
 
@@ -47,6 +49,7 @@ static const uint DECL_WORDS = 14u;
 static const uint TYPE_WORDS = 9u;
 static const uint INTERFACE_TYPE_SCALAR = 1u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
+static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint WG_SIZE = 256u;
@@ -64,6 +67,20 @@ uint scalar_type(uint type_i)
     return dependency_type_word(base) == INTERFACE_TYPE_SCALAR
         ? dependency_type_word(base + 1u)
         : 0u;
+}
+
+uint aggregate_word_count(uint type_i)
+{
+    type_i = canonical_type_roots[type_i];
+    uint base = type_i * TYPE_WORDS;
+    if (dependency_type_word(base) != INTERFACE_TYPE_DECLARATION)
+        return 0u;
+    uint declaration_i = dependency_find_declaration(
+        dependency_type_word(base + 1u),
+        dependency_type_word(base + 8u),
+        dependency_type_word(base + 2u));
+    return declaration_i < dependency_declaration_count()
+        ? declaration_field_count[declaration_i] : 0u;
 }
 
 void publish_call(
@@ -85,6 +102,7 @@ void publish_call(
     call_fn_index[token] = token;
     call_param_count[token] = edge_count - 1u;
     call_return_type[token] = return_type;
+    call_return_aggregate_word_count[token] = aggregate_word_count(return_root);
     if (return_type == 0u)
     {
         decl_type_ref_tag[token] = TYPE_REF_EXTERNAL_CANONICAL;

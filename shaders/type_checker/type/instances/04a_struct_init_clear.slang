@@ -18,7 +18,6 @@ RWStructuredBuffer<uint> struct_init_field_ordinal;
 RWStructuredBuffer<uint> struct_lit_context_decl_token;
 RWStructuredBuffer<uint> struct_lit_context_instance;
 RWStructuredBuffer<uint> struct_init_field_ordinal_by_row;
-RWStructuredBuffer<uint> struct_init_field_decl_token_by_row;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
@@ -52,6 +51,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         struct_lit_context_decl_token[i] = INVALID;
         struct_lit_context_instance[i] = INVALID;
         struct_init_field_ordinal_by_row[i] = INVALID;
-        struct_init_field_decl_token_by_row[i] = INVALID;
     }
 }

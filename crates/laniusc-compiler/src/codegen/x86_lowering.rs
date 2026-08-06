@@ -907,6 +907,7 @@ mod tests {
                 count: &total,
                 core: &page_core,
                 operands: &page_operands,
+                layout_word_offset: &semantic_owners,
                 owner_by_instruction: &semantic_owners,
                 op_by_instruction: &semantic_ops,
                 function_id_by_hir: &semantic_owners,

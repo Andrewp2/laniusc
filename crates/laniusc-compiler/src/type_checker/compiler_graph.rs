@@ -1,32 +1,35 @@
 use super::*;
-use crate::gpu::{
-    compiler_graph::{
-        AccessMode,
-        CompilerGraph,
-        CompilerGraphAllocations,
-        CompilerGraphBuilder,
-        CompilerPhase,
-        HierarchicalRadixSortGraphPasses,
-        HierarchicalRadixSortGraphStepPasses,
-        MaterializedCompilerGraph,
-        PassAccess,
-        PassDesc,
-        PrefixScanGraph,
-        PrefixScanGraphPasses,
-        PrefixScanPairSpec,
-        PrefixScanResources,
-        PrefixScanSpec,
-        PrefixScanWorkspace,
-        RadixSortGraphPasses,
-        RadixSortGraphResourceNames,
-        RadixSortGraphStepPasses,
-        ReflectedResourceBinding,
-        ResourceClass,
-        ResourceDesc,
-        ResourceDomain,
-        ResourceId,
+use crate::{
+    gpu::{
+        compiler_graph::{
+            AccessMode,
+            CompilerGraph,
+            CompilerGraphAllocations,
+            CompilerGraphBuilder,
+            CompilerPhase,
+            HierarchicalRadixSortGraphPasses,
+            HierarchicalRadixSortGraphStepPasses,
+            MaterializedCompilerGraph,
+            PassAccess,
+            PassDesc,
+            PrefixScanGraph,
+            PrefixScanGraphPasses,
+            PrefixScanPairSpec,
+            PrefixScanResources,
+            PrefixScanSpec,
+            PrefixScanWorkspace,
+            RadixSortGraphPasses,
+            RadixSortGraphResourceNames,
+            RadixSortGraphStepPasses,
+            ReflectedResourceBinding,
+            ResourceClass,
+            ResourceDesc,
+            ResourceDomain,
+            ResourceId,
+        },
+        workspace::WorkspaceUsageClass,
     },
-    workspace::WorkspaceUsageClass,
+    parser::buffers::HirSemanticFacts,
 };
 
 macro_rules! radix_sort_graph_passes {
@@ -1568,7 +1571,8 @@ fn build_graph(
         compact_hir_core in HirNodes => hir_rows * 16;
         _compact_hir_links as "compact_hir_links" in HirNodes => hir_rows * 16;
         _compact_hir_payload as "compact_hir_payload" in HirNodes => hir_rows * 16;
-        _compact_hir_predicate_facts as "compact_hir_predicate_facts" in HirNodes => hir_rows * 48;
+        _compact_hir_semantic_facts as "compact_hir_semantic_facts" in HirNodes =>
+            hir_rows * core::mem::size_of::<HirSemanticFacts>() as u64;
         _compact_type_root_owner as "compact_type_root_owner" in HirNodes => hir_rows * 4;
         _compact_param_count as "compact_param_count" in Declarations => 4;
         _compact_params as "compact_params" in Declarations => hir_rows * 16;
@@ -1630,6 +1634,7 @@ fn build_graph(
     graph_resources!(graph, External {
         _module_value_path_status as "module_value_path_status" in Tokens => token_rows * 4;
         _type_instance_decl_token as "type_instance_decl_token" in Types => token_rows * 4;
+        _type_instance_aggregate_word_count as "type_instance_aggregate_word_count" in Types => token_rows * 4;
         _module_file_id as "module_file_id" in Declarations => module_rows * 4;
         _module_path_id as "module_path_id" in Declarations => module_rows * 4;
         _module_owner_hir as "module_owner_hir" in Declarations => module_rows * 4;
@@ -1824,6 +1829,7 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         _call_return_type as "call_return_type" in Tokens => token_rows * 4;
         _call_return_type_token as "call_return_type_token" in Tokens => token_rows * 4;
+        _call_return_aggregate_word_count as "call_return_aggregate_word_count" in Tokens => token_rows * 4;
         _call_fn_index as "call_fn_index" in Calls => token_rows * 4;
         _method_call_receiver_ref_tag as "method_call_receiver_ref_tag" in Calls => token_rows * 4;
         _method_call_receiver_ref_payload as "method_call_receiver_ref_payload" in Calls => token_rows * 4;
@@ -1864,9 +1870,6 @@ fn build_graph(
     });
     graph_resources!(graph, Output {
         struct_init_field_ordinal_by_row in Declarations => hir_rows * 4;
-    });
-    graph_resources!(graph, Workspace {
-        struct_init_field_decl_token_by_row in Declarations => hir_rows * 4;
     });
     graph_resources!(graph, Workspace {
         generic_decl_owner_by_node_a as "generic_decl_owner_by_node" in HirNodes => hir_rows * 4;
@@ -1980,7 +1983,11 @@ fn build_graph(
     graph.add_storage(
         "path_segment_name_id",
         ResourceDomain::Tokens,
-        ResourceClass::Workspace,
+        // Module keys alias this relation and semantic-interface export reads
+        // those canonical segment names after the type-check schedule ends.
+        // It therefore crosses the graph boundary and must never share a
+        // phase-local workspace slot.
+        ResourceClass::Output,
         token_rows * 4,
     )?;
     graph_resources!(graph, Input {
@@ -2155,6 +2162,12 @@ fn build_graph(
     )?;
     let resolved_dependency_local_index = graph.add_storage(
         "resolved_dependency_local_index",
+        ResourceDomain::Declarations,
+        ResourceClass::External,
+        token_rows * 4,
+    )?;
+    graph.add_storage(
+        "dependency_declaration_field_count",
         ResourceDomain::Declarations,
         ResourceClass::External,
         token_rows * 4,
@@ -2443,6 +2456,8 @@ fn build_graph(
         semantic_calls_by_hir in Calls => hir_rows * std::mem::size_of::<GpuCheckedCallArtifact>() as u64;
         semantic_expr_ref_tag_by_hir in HirNodes => hir_rows * 4;
         semantic_expr_ref_payload_by_hir in HirNodes => hir_rows * 4;
+        semantic_aggregate_decl_token_by_hir in HirNodes => hir_rows * 4;
+        semantic_aggregate_word_count_by_hir in HirNodes => hir_rows * 4;
         semantic_array_length_by_hir in HirNodes => hir_rows * 4;
         semantic_member_field_ordinal_by_hir in HirNodes => hir_rows * 4;
         semantic_iterable_kind_by_hir in HirNodes => hir_rows * 4;
@@ -3063,8 +3078,12 @@ fn build_graph(
                 "type_checker/semantic/artifact/01_expression_refs",
                 reflected_bindings![
                     "compact_expr_scalar_type" => final_scalar,
+                    "type_instance_decl_token" => _type_instance_decl_token: Read,
+                    "type_instance_aggregate_word_count" => _type_instance_aggregate_word_count: Read,
                     "semantic_expr_ref_tag_by_hir" => semantic_expr_ref_tag_by_hir: Write,
                     "semantic_expr_ref_payload_by_hir" => semantic_expr_ref_payload_by_hir: Write,
+                    "semantic_aggregate_decl_token_by_hir" => semantic_aggregate_decl_token_by_hir: Write,
+                    "semantic_aggregate_word_count_by_hir" => semantic_aggregate_word_count_by_hir: ReadWrite,
                     "semantic_array_length_by_hir" => semantic_array_length_by_hir: Write,
                     "semantic_member_field_ordinal_by_hir" => semantic_member_field_ordinal_by_hir: Write,
                     "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: Write,
@@ -3355,7 +3374,6 @@ fn build_graph(
             "struct_lit_context_decl_token" => struct_lit_context_decl_token: Write,
             "struct_lit_context_instance" => struct_lit_context_instance: Write,
             "struct_init_field_ordinal_by_row" => struct_init_field_ordinal_by_row: Write,
-            "struct_init_field_decl_token_by_row" => struct_init_field_decl_token_by_row: Write,
         ],
     )?;
     graph.add_kernel_pass_by_name(
@@ -3384,6 +3402,10 @@ fn build_graph(
                 "semantic_expr_ref_payload_by_hir",
                 semantic_expr_ref_payload_by_hir,
             ),
+            PassAccess::write(
+                "semantic_aggregate_decl_token_by_hir",
+                semantic_aggregate_decl_token_by_hir,
+            ),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -3400,11 +3422,16 @@ fn build_graph(
             PassAccess::read("struct_lit_context_instance", struct_lit_context_instance),
             PassAccess::read("decl_type_ref_tag", decl_type_ref_tag),
             PassAccess::read("decl_type_ref_payload", decl_type_ref_payload),
+            PassAccess::read("type_instance_decl_token", _type_instance_decl_token),
             PassAccess::read("member_result_field_ordinal", member_result_field_ordinal),
             PassAccess::read_write("semantic_expr_ref_tag_by_hir", semantic_expr_ref_tag_by_hir),
             PassAccess::read_write(
                 "semantic_expr_ref_payload_by_hir",
                 semantic_expr_ref_payload_by_hir,
+            ),
+            PassAccess::read_write(
+                "semantic_aggregate_decl_token_by_hir",
+                semantic_aggregate_decl_token_by_hir,
             ),
             PassAccess::write(
                 "semantic_member_field_ordinal_by_hir",
@@ -3920,7 +3947,10 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/semantic/artifact/00_calls",
-        reflected_bindings!["semantic_calls_by_hir" => semantic_calls_by_hir: Write],
+        reflected_bindings![
+            "semantic_calls_by_hir" => semantic_calls_by_hir: Write,
+            "semantic_aggregate_word_count_by_hir" => semantic_aggregate_word_count_by_hir: Write,
+        ],
     )?;
     add_expression_type_passes(&mut graph)?;
     // Member projection currently executes once before several call/method
@@ -3952,7 +3982,6 @@ fn build_graph(
         struct_init_field_expected_ref_payload,
         struct_init_field_ordinal,
         struct_init_field_ordinal_by_row,
-        struct_init_field_decl_token_by_row,
         struct_lit_context_decl_token,
         struct_lit_context_instance,
     ] {
@@ -4816,7 +4845,6 @@ mod tests {
             resource("struct_init_field_expected_ref_tag"),
             resource("struct_init_field_expected_ref_payload"),
             resource("struct_init_field_ordinal"),
-            resource("struct_init_field_decl_token_by_row"),
             resource("struct_lit_context_decl_token"),
             resource("struct_lit_context_instance"),
         ];

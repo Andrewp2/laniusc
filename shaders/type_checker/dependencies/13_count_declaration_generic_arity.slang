@@ -15,10 +15,12 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> declaration_generic_arity;
+RWStructuredBuffer<uint> declaration_field_count;
 
 static const uint MEMBER_WORDS = 10u;
 static const uint MEMBER_GENERIC_TYPE_PARAMETER = 2u;
 static const uint MEMBER_GENERIC_CONST_PARAMETER = 3u;
+static const uint MEMBER_FIELD = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -31,9 +33,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     uint base = member_i * MEMBER_WORDS;
     uint kind = dependency_member_word(base + 1u);
-    if (kind != MEMBER_GENERIC_TYPE_PARAMETER && kind != MEMBER_GENERIC_CONST_PARAMETER)
-        return;
     uint owner = dependency_member_word(base);
-    if (owner < dependency_declaration_count())
+    if (owner >= dependency_declaration_count())
+        return;
+    if (kind == MEMBER_GENERIC_TYPE_PARAMETER || kind == MEMBER_GENERIC_CONST_PARAMETER)
         atomic_u32_add(declaration_generic_arity, owner, 1u);
+    else if (kind == MEMBER_FIELD)
+        atomic_u32_add(declaration_field_count, owner, 1u);
 }

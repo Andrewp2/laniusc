@@ -39,12 +39,14 @@ StructuredBuffer<uint> call_dependency_host_service;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
+StructuredBuffer<uint> call_return_aggregate_word_count;
 StructuredBuffer<uint> call_result_instance;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
+RWStructuredBuffer<uint> semantic_aggregate_word_count_by_hir;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_CALL_EXPR = 19u;
@@ -127,6 +129,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     if (row >= gParams.n_hir_nodes) return;
+    semantic_aggregate_word_count_by_hir[row] = 0u;
 
     CheckedCallArtifact call = empty_call();
     if (valid_hir(row) && compact_hir_core[row].kind == HIR_CALL_EXPR)
@@ -145,6 +148,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             }
             call.intrinsic_tag = call_intrinsic_tag[callee_token];
             call.return_type = call_return_type[callee_token];
+            semantic_aggregate_word_count_by_hir[row] =
+                call_return_aggregate_word_count[callee_token];
             uint return_token = call_return_type_token[callee_token];
             if (valid_token(return_token))
             {

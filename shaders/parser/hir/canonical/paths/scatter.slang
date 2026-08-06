@@ -9,6 +9,7 @@ StructuredBuffer<uint> family_local_prefix;
 StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> segment_table_count;
 StructuredBuffer<uint> raw_to_hir;
+StructuredBuffer<HirCore> canonical_core;
 StructuredBuffer<uint> segment_count_by_raw_owner;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
@@ -24,6 +25,7 @@ static const uint HIR_TYPE = 5u;
 static const uint HIR_MODULE_ITEM = 31u;
 static const uint HIR_IMPORT_ITEM = 32u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_ITEM_KIND_MODULE = 1u;
 static const uint HIR_ITEM_KIND_IMPORT = 2u;
 static const uint PATH_KIND_MODULE_DECL = 1u;
@@ -43,7 +45,16 @@ uint semantic_path_kind(uint raw)
     if (item_kind == HIR_ITEM_KIND_IMPORT || kind == HIR_IMPORT_ITEM)
         return PATH_KIND_IMPORT;
     if (kind == HIR_PATH_EXPR)
-        return PATH_KIND_VALUE;
+    {
+        uint owner = raw_to_hir[raw];
+        // A struct literal's compact path names its constructed type. The raw
+        // path and literal intentionally share one token-anchored dense HIR
+        // row, so classify the side-table path from that canonical owner.
+        return owner < gCanonical.canonical_capacity &&
+            canonical_core[owner].kind == HIR_STRUCT_LITERAL_EXPR
+            ? PATH_KIND_TYPE
+            : PATH_KIND_VALUE;
+    }
     if (node_kind[raw] == PROD_BOUND_TYPE_IDENT)
         return PATH_KIND_BOUND_TYPE;
     return kind == HIR_TYPE ? PATH_KIND_TYPE : 0u;

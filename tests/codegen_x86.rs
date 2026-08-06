@@ -4309,6 +4309,37 @@ fn main() {
 }
 
 #[test]
+fn x86_nested_aggregate_return_owns_nested_field_storage() {
+    assert_source_exit(
+        "nested_aggregate_return_owns_nested_field_storage",
+        r#"
+struct Vec2 {
+    x: i32,
+    y: i32,
+}
+
+struct Pair {
+    left: Vec2,
+    right: Vec2,
+}
+
+fn make_pair(value: i32) -> Pair {
+    let left: Vec2 = Vec2 { x: value, y: value + 1 };
+    let right: Vec2 = Vec2 { x: value + 2, y: value + 3 };
+    return Pair { left: left, right: right };
+}
+
+fn main() -> i32 {
+    let retained: Pair = make_pair(10);
+    let overwritten: Pair = make_pair(100);
+    return retained.right.y;
+}
+"#,
+        13,
+    );
+}
+
+#[test]
 fn x86_executes_camera_sky_pixel_color_byte() {
     assert_source_exit(
         "camera_sky_pixel_color_byte",
@@ -6822,11 +6853,11 @@ import std::process;
 fn main() -> i32 {
     let capacity: usize = 64;
     let align: usize = 4;
-    let out_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let out_ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (out_ptr == 0) {
         return 1;
     }
-    let err_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let err_ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (err_ptr == 0) {
         alloc::allocator::dealloc(out_ptr, capacity, align);
         return 2;
@@ -6908,7 +6939,7 @@ import std::io;
 fn main() -> i32 {
     let capacity: usize = 32;
     let align: usize = 4;
-    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (ptr == 0) {
         return 1;
     }
@@ -7057,7 +7088,7 @@ import std::fs;
 fn main() -> i32 {
     let capacity: usize = 64;
     let align: usize = 4;
-    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (ptr == 0) {
         return 1;
     }
@@ -7152,16 +7183,16 @@ fn main() -> i32 {
     let path_capacity: usize = 4096;
     let data_capacity: usize = 4;
     let align: usize = 4;
-    let input_path: u32 = alloc::allocator::alloc(path_capacity, align);
+    let input_path: ptr = alloc::allocator::alloc(path_capacity, align);
     if (input_path == 0) {
         return 1;
     }
-    let output_path: u32 = alloc::allocator::alloc(path_capacity, align);
+    let output_path: ptr = alloc::allocator::alloc(path_capacity, align);
     if (output_path == 0) {
         alloc::allocator::dealloc(input_path, path_capacity, align);
         return 2;
     }
-    let data: u32 = alloc::allocator::alloc(data_capacity, align);
+    let data: ptr = alloc::allocator::alloc(data_capacity, align);
     if (data == 0) {
         alloc::allocator::dealloc(output_path, path_capacity, align);
         alloc::allocator::dealloc(input_path, path_capacity, align);
@@ -7358,7 +7389,7 @@ fn first_arg_len(index: i32) -> i32 {
     return std::process::arg_len(index);
 }
 
-fn first_arg_read(index: i32, ptr: u32, len: usize) -> i32 {
+fn first_arg_read(index: i32, ptr: ptr, len: usize) -> i32 {
     return std::process::arg_read(index, ptr, len);
 }
 
@@ -7377,7 +7408,7 @@ fn main() -> i32 {
     }
     let capacity: usize = 16;
     let align: usize = 4;
-    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (ptr == 0) {
         return 13;
     }
@@ -7525,7 +7556,7 @@ fn main() -> i32 {
     }
     let len: usize = 16;
     let align: usize = 4;
-    let ptr: u32 = alloc::allocator::alloc(len, align);
+    let ptr: ptr = alloc::allocator::alloc(len, align);
     if (ptr == 0) {
         return 1;
     }
@@ -7575,8 +7606,8 @@ import std::fs;
 fn main() -> i32 {
     let capacity: usize = 64;
     let path_len: usize = 20;
-    let from_ptr: u32 = alloc::allocator::alloc(capacity, 4);
-    let to_ptr: u32 = alloc::allocator::alloc(capacity, 4);
+    let from_ptr: ptr = alloc::allocator::alloc(capacity, 4);
+    let to_ptr: ptr = alloc::allocator::alloc(capacity, 4);
     let from_read_result: i32 = std::process::arg_read(1, from_ptr, capacity);
     let to_read_result: i32 = std::process::arg_read(2, to_ptr, capacity);
     if (from_read_result != 20) {
@@ -7682,7 +7713,7 @@ module app::main;
 import alloc::allocator;
 import std::time;
 fn main() -> i32 {
-    let ptr: u32 = alloc::allocator::alloc(16, 8);
+    let ptr: ptr = alloc::allocator::alloc(16, 8);
     let monotonic_status: i32 = std::time::monotonic_read(ptr, 16);
     if (monotonic_status != 0) {
         return 1;
@@ -7733,7 +7764,7 @@ module app::main;
 import alloc::allocator;
 import std::env;
 
-fn read_current_dir(ptr: u32, capacity: usize) -> i32 {
+fn read_current_dir(ptr: ptr, capacity: usize) -> i32 {
     return std::env::current_dir_read(ptr, capacity);
 }
 
@@ -7745,7 +7776,7 @@ fn main() -> i32 {
     let capacity: usize = 256;
     let capacity_i32: i32 = 256;
     let align: usize = 4;
-    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (ptr == 0) {
         return 10;
     }
@@ -7795,7 +7826,7 @@ fn first_key_len(index: i32) -> i32 {
     return std::env::var_key_len(index);
 }
 
-fn first_key_read(index: i32, ptr: u32, capacity: usize) -> i32 {
+fn first_key_read(index: i32, ptr: ptr, capacity: usize) -> i32 {
     return std::env::var_key_read(index, ptr, capacity);
 }
 
@@ -7818,7 +7849,7 @@ fn main() -> i32 {
     let capacity: usize = 4096;
     let capacity_i32: i32 = 4096;
     let align: usize = 4;
-    let ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (ptr == 0) {
         return 13;
     }
@@ -7868,11 +7899,11 @@ module app::main;
 import alloc::allocator;
 import std::env;
 
-fn value_len_for_key(ptr: u32, len: usize) -> i32 {
+fn value_len_for_key(ptr: ptr, len: usize) -> i32 {
     return std::env::var_len(ptr, len);
 }
 
-fn value_read_for_key(key_ptr: u32, key_len: usize, value_ptr: u32, value_capacity: usize) -> i32 {
+fn value_read_for_key(key_ptr: ptr, key_len: usize, value_ptr: ptr, value_capacity: usize) -> i32 {
     return std::env::var_read(key_ptr, key_len, value_ptr, value_capacity);
 }
 
@@ -7887,11 +7918,11 @@ fn main() -> i32 {
     let capacity: usize = 4096;
     let capacity_i32: i32 = 4096;
     let align: usize = 4;
-    let key_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let key_ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (key_ptr == 0) {
         return 11;
     }
-    let value_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let value_ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (value_ptr == 0) {
         alloc::allocator::dealloc(key_ptr, capacity, align);
         return 12;
@@ -7952,7 +7983,7 @@ module app::main;
 import alloc::allocator;
 
 fn main() {
-    let ptr: u32 = alloc::allocator::alloc(64, 8);
+    let ptr: ptr = alloc::allocator::alloc(64, 8);
     if (ptr == 0) {
         return 1;
     }
@@ -9040,12 +9071,12 @@ import alloc::allocator;
 import std::process;
 import std::io;
 fn main() -> i32 {
-    let ptr: u32 = alloc::allocator::alloc(32, 4);
+    let ptr: ptr = alloc::allocator::alloc(32, 4);
     let read: i32 = std::process::arg_read(1, ptr, 32);
     if (read != 15) {
         return 1;
     }
-    let grown: u32 = alloc::allocator::realloc(ptr, 32, 64, 4);
+    let grown: ptr = alloc::allocator::realloc(ptr, 32, 64, 4);
     if (grown == 0) {
         return 2;
     }

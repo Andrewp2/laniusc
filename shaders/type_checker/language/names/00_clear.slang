@@ -11,7 +11,7 @@ RWStructuredBuffer<uint> language_name_id;
 RWStructuredBuffer<uint> name_max_len;
 
 static const uint INVALID = 0xffffffffu;
-static const uint LANGUAGE_NAME_COUNT = 67u;
+static const uint LANGUAGE_NAME_COUNT = 68u;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

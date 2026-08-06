@@ -15,7 +15,7 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 bool scalar_gpr_type(uint type_id)
 {
     return type_id == 1u || type_id == 2u || type_id == 3u ||
-        type_id == 4u || type_id == 6u;
+        type_id == 4u || type_id == 6u || type_id == 8u;
 }
 
 [shader("compute")]

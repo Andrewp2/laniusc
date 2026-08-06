@@ -82,7 +82,7 @@ bool valid_token(uint token) { return token != INVALID && token < gParams.n_toke
 
 uint checked_scalar_type(uint ty)
 {
-    return ty <= TY_STRING ? ty : TY_UNKNOWN;
+    return ty <= 8u ? ty : TY_UNKNOWN;
 }
 
 uint visible_type_for_token(uint token)

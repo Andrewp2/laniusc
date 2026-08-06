@@ -23,6 +23,7 @@ StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> canonical_type_roots;
 StructuredBuffer<uint> declaration_generic_arity;
+StructuredBuffer<uint> declaration_field_count;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;
 RWStructuredBuffer<uint> type_instance_decl_token;
@@ -32,6 +33,7 @@ RWStructuredBuffer<uint> type_expr_ref_payload;
 RWStructuredBuffer<uint> external_type_library_id;
 RWStructuredBuffer<uint> external_type_unit_id;
 RWStructuredBuffer<uint> external_type_local_index;
+RWStructuredBuffer<uint> type_instance_aggregate_word_count;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
@@ -90,6 +92,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     external_type_local_index[leaf_token] = kind == TYPE_KIND_DECLARATION
         ? dependency_type_word(type_base + 2u)
         : dependency_type_local_index(root);
+    type_instance_aggregate_word_count[leaf_token] =
+        declaration_field_count[declaration_i];
     type_instance_state[leaf_token] = TYPE_INSTANCE_RESOLVED;
     type_expr_ref_tag[owner_token] = TYPE_REF_INSTANCE;
     type_expr_ref_payload[owner_token] = leaf_token;

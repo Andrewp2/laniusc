@@ -7,7 +7,7 @@ import std::random;
 fn main() -> i32 {
     let len: usize = 16;
     let align: usize = 4;
-    let ptr: u32 = alloc::allocator::alloc(len, align);
+    let ptr: ptr = alloc::allocator::alloc(len, align);
     if (ptr == 0) {
         return 1;
     }

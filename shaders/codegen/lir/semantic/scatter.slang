@@ -5,6 +5,7 @@ import gpu_index;
 
 RWStructuredBuffer<SemanticLirCore> semantic_lir_core;
 RWStructuredBuffer<SemanticLirOperands> semantic_lir_operands;
+RWStructuredBuffer<uint> semantic_lir_layout_word_offset;
 RWStructuredBuffer<SemanticLirSchedule> semantic_lir_schedule;
 RWStructuredBuffer<uint> semantic_owner_by_instruction;
 RWStructuredBuffer<uint> semantic_op_by_instruction;
@@ -51,6 +52,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 materialize_semantic_lir_row(node, local_row, hir_count);
             semantic_lir_core[row] = result.core;
             semantic_lir_operands[row] = result.operands;
+            semantic_lir_layout_word_offset[row] = result.layout_word_offset;
         }
     }
 }

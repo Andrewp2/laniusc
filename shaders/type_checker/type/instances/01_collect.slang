@@ -38,6 +38,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_TYPE = 5u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
 static const uint HIR_TYPE_FORM_NONE = 0u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
@@ -48,7 +49,7 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_ERROR = 4u;
 
 static const uint TY_UNKNOWN = 0u;
-static const uint LANGUAGE_SYMBOL_COUNT = 67u;
+static const uint LANGUAGE_SYMBOL_COUNT = 68u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -117,8 +118,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_thread_id(dtid);
     uint compact_count = active_compact_hir_count();
     if (node < compact_count &&
-        compact_hir_core[node].kind == HIR_TYPE &&
-        compact_hir_payload[node].a == HIR_TYPE_FORM_PATH)
+        ((compact_hir_core[node].kind == HIR_TYPE &&
+          compact_hir_payload[node].a == HIR_TYPE_FORM_PATH) ||
+         compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR))
     {
         uint compact_token = compact_hir_core[node].token_start;
         uint leaf_token = path_leaf_token_for_type_node(node);

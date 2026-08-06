@@ -48,6 +48,7 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_INT = 3u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
@@ -55,6 +56,7 @@ static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
+static const uint TY_POINTER = 8u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_GENERIC_BASE = 8192u;
@@ -132,6 +134,27 @@ bool binary_operand_ok(uint form, uint ty)
     return true;
 }
 
+bool pointer_offset_binary(uint form, uint left_ty, uint right_ty)
+{
+    return (form == HIR_EXPR_ADD || form == HIR_EXPR_SUB) &&
+        left_ty == TY_POINTER && assignable_to_int(right_ty);
+}
+
+bool null_pointer_constant(uint node)
+{
+    return valid_hir(node) && compact_hir_payload[node].a == HIR_EXPR_INT &&
+        compact_hir_payload[node].b == 0u;
+}
+
+bool pointer_equality_ok(uint form, HirPayload payload, uint left_ty, uint right_ty)
+{
+    if (!equality_binary(form) ||
+        (left_ty != TY_POINTER && right_ty != TY_POINTER)) return false;
+    return (left_ty == TY_POINTER && right_ty == TY_POINTER) ||
+        (left_ty == TY_POINTER && right_ty == TY_INT && null_pointer_constant(payload.c)) ||
+        (right_ty == TY_POINTER && left_ty == TY_INT && null_pointer_constant(payload.b));
+}
+
 void record_mismatch(uint node, uint detail)
 {
     uint token = valid_hir(node) ? compact_hir_core[node].token_start : 0u;
@@ -143,12 +166,20 @@ void validate_binary(uint node, HirPayload payload)
     uint form = payload.a;
     if (!integer_binary(form) && !numeric_binary(form) && !equality_binary(form)) return;
     uint left_ty = scalar_type(payload.b);
+    uint right_ty = scalar_type(payload.c);
+    if (pointer_offset_binary(form, left_ty, right_ty)) return;
+    if (pointer_equality_ok(form, payload, left_ty, right_ty)) return;
+    if (equality_binary(form) &&
+        (left_ty == TY_POINTER || right_ty == TY_POINTER))
+    {
+        record_mismatch(left_ty == TY_POINTER ? payload.c : payload.b, form);
+        return;
+    }
     if (!binary_operand_ok(form, left_ty))
     {
         record_mismatch(payload.b, form);
         return;
     }
-    uint right_ty = scalar_type(payload.c);
     if (!binary_operand_ok(form, right_ty)) record_mismatch(payload.c, form);
 }
 

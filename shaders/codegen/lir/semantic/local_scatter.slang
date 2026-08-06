@@ -33,10 +33,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         SemanticLirLocal result;
         result.function_id = function_id;
-        // Value ids below n_tokens retain source declaration identity. The
-        // disjoint n_tokens + HIR domain names compiler-generated slots.
-        result.declaration_id = local == 0u ? compact_hir_payload[hir].b
-            : gParams.n_tokens + hir;
+        result.declaration_id = local == 0u
+            ? compact_hir_payload[hir].b : gParams.n_tokens + hir;
         result.ordinal = row + local - function.local_start;
         result.type_id = local == 0u ? semantic_value_type_by_hir[hir] : 3u;
         semantic_lir_locals[row + local] = result;

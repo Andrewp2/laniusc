@@ -71,6 +71,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         locations.a = value_location(operands.a, total);
     else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
         locations.a = value_location(operands.a, total);
+    else if (core.op == X86_LIR_OP_AGGREGATE_COPY_WORD)
+        locations.a = value_location(operands.a, total);
     else if (core.op == X86_LIR_OP_CALL_ARG)
     {
         if ((operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u)
@@ -82,7 +84,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else locations.a = value_location(operands.a, total);
     }
-    else if (core.op == X86_LIR_OP_ARRAY_INIT)
+    else if (core.op == X86_LIR_OP_AGGREGATE_INIT)
     {
         locations.a = value_location(operands.a, total);
         locations.c = stack_location(operands.c);

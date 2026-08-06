@@ -16,6 +16,7 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) resolved_dependency_library_id: LaniusBuffer<u32>,
     pub(in crate::type_checker) resolved_dependency_unit_id: LaniusBuffer<u32>,
     pub(in crate::type_checker) resolved_dependency_local_index: LaniusBuffer<u32>,
+    pub(in crate::type_checker) declaration_field_count: LaniusBuffer<u32>,
     pub(in crate::type_checker) call_compare_scan_input: LaniusBuffer<u32>,
     pub(in crate::type_checker) call_compare_dispatch_args: LaniusBuffer<u32>,
     pub(in crate::type_checker) canonical_type_subtree: Box<DependencyCanonicalTypeSubtreeState>,
@@ -357,6 +358,12 @@ pub(in crate::type_checker) fn create(
         dependencies.declaration_count.max(1) as usize,
         wgpu::BufferUsages::empty(),
     );
+    let declaration_field_count = typed_storage_u32_rw(
+        device,
+        "type_check.dependencies.declaration_field_count",
+        dependencies.declaration_count.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
     let canonical_type_jump_rounds = if dependencies.type_count <= 1 {
         0
     } else {
@@ -621,6 +628,10 @@ pub(in crate::type_checker) fn create(
                 "canonical_type_roots",
                 canonical_type_roots.as_entire_binding(),
             ),
+            (
+                "declaration_field_count",
+                declaration_field_count.as_entire_binding(),
+            ),
         ],
     )?;
     let clear_declaration_generic_arity_group = resources.reflected_bind_group_with_overrides(
@@ -633,6 +644,10 @@ pub(in crate::type_checker) fn create(
                 "declaration_generic_arity",
                 declaration_generic_arity.as_entire_binding(),
             ),
+            (
+                "declaration_field_count",
+                declaration_field_count.as_entire_binding(),
+            ),
         ],
     )?;
     let count_declaration_generic_arity_group = resources.reflected_bind_group_with_overrides(
@@ -644,6 +659,10 @@ pub(in crate::type_checker) fn create(
             (
                 "declaration_generic_arity",
                 declaration_generic_arity.as_entire_binding(),
+            ),
+            (
+                "declaration_field_count",
+                declaration_field_count.as_entire_binding(),
             ),
         ],
     )?;
@@ -683,6 +702,10 @@ pub(in crate::type_checker) fn create(
                 "declaration_generic_arity",
                 declaration_generic_arity.as_entire_binding(),
             ),
+            (
+                "declaration_field_count",
+                declaration_field_count.as_entire_binding(),
+            ),
         ],
     )?;
     let project_methods_group = resources.reflected_bind_group_with_overrides(
@@ -706,6 +729,10 @@ pub(in crate::type_checker) fn create(
             (
                 "canonical_type_roots",
                 canonical_type_roots.as_entire_binding(),
+            ),
+            (
+                "declaration_field_count",
+                declaration_field_count.as_entire_binding(),
             ),
             (
                 "resolved_value_decl",
@@ -861,6 +888,7 @@ pub(in crate::type_checker) fn create(
         resolved_dependency_library_id,
         resolved_dependency_unit_id,
         resolved_dependency_local_index,
+        declaration_field_count: declaration_field_count.clone(),
         call_compare_scan_input,
         call_compare_dispatch_args,
         canonical_type_subtree: Box::new(DependencyCanonicalTypeSubtreeState {
@@ -886,6 +914,7 @@ pub(in crate::type_checker) fn create(
             canonical_type_roots_b,
             canonical_type_subtree_scratch,
             declaration_generic_arity,
+            declaration_field_count,
         ]),
         canonical_type_jump_rounds,
         scan,

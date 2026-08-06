@@ -98,7 +98,7 @@ import std::io;
 
 fn main() -> i32 {
     let bytes: [i32; 1] = [65];
-    let ptr: u32 = core::mem::i32_array_data_ptr(bytes);
+    let ptr: ptr = core::mem::i32_array_data_ptr(bytes);
     let written: i32 = std::io::write_stdout(ptr, 1);
     if (written != 1) {
         return 1;
@@ -272,7 +272,7 @@ import std::process;
 
 fn main() -> i32 {
     let buffer: [i32; 2] = [0, 0];
-    let ptr: u32 = core::mem::i32_array_data_ptr(buffer);
+    let ptr: ptr = core::mem::i32_array_data_ptr(buffer);
     let count: i32 = std::process::argc();
     let len: i32 = std::process::arg_len(0);
     let copied: i32 = std::process::arg_read(0, ptr, len);
@@ -360,7 +360,7 @@ fn main() -> i32 {
         return 4;
     }
     let values: [i32; 1] = [0];
-    let ptr: u32 = core::mem::i32_array_data_ptr(values);
+    let ptr: ptr = core::mem::i32_array_data_ptr(values);
     let filled: i32 = std::random::fill_secure_bytes(ptr, 4);
     if (filled != 4) {
         return 1;
@@ -398,7 +398,7 @@ import std::fs;
 fn main() -> i32 {
     let capacity: usize = 64;
     let path_len: usize = 15;
-    let ptr: u32 = alloc::allocator::alloc(capacity, 4);
+    let ptr: ptr = alloc::allocator::alloc(capacity, 4);
     let arg_read_result: i32 = std::process::arg_read(1, ptr, capacity);
     if (arg_read_result != 15) {
         return 1;
@@ -456,7 +456,7 @@ module app::main;
 import alloc::allocator;
 
 fn main() -> i32 {
-    let ptr: u32 = alloc::allocator::alloc(64, 8);
+    let ptr: ptr = alloc::allocator::alloc(64, 8);
     if (ptr == 0) {
         return 1;
     }
@@ -512,7 +512,7 @@ import std::env;
 
 fn main() -> i32 {
     let buffer: [i32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
-    let ptr: u32 = core::mem::i32_array_data_ptr(buffer);
+    let ptr: ptr = core::mem::i32_array_data_ptr(buffer);
     let reported_cwd_len: i32 = std::env::current_dir_len();
     let cwd_len: i32 = std::env::current_dir_read(ptr, 64);
     if (cwd_len <= 0) {
@@ -573,9 +573,9 @@ fn main() -> i32 {
     let path: [i32; 1] = [102];
     let payload: [i32; 1] = [82];
     let read_buffer: [i32; 1] = [0];
-    let path_ptr: u32 = core::mem::i32_array_data_ptr(path);
-    let payload_ptr: u32 = core::mem::i32_array_data_ptr(payload);
-    let read_ptr: u32 = core::mem::i32_array_data_ptr(read_buffer);
+    let path_ptr: ptr = core::mem::i32_array_data_ptr(path);
+    let payload_ptr: ptr = core::mem::i32_array_data_ptr(payload);
+    let read_ptr: ptr = core::mem::i32_array_data_ptr(read_buffer);
 
     let output: i32 = std::fs::open_write(path_ptr, 1);
     if (output < 0) {
@@ -3508,7 +3508,7 @@ module app::main;
 import alloc::allocator;
 import std::time;
 fn main() -> i32 {
-    let ptr: u32 = alloc::allocator::alloc(16, 8);
+    let ptr: ptr = alloc::allocator::alloc(16, 8);
     let monotonic_status: i32 = std::time::monotonic_read(ptr, 16);
     if (monotonic_status != 0) {
         return 1;
@@ -3578,12 +3578,12 @@ import alloc::allocator;
 import std::process;
 import std::io;
 fn main() -> i32 {
-    let ptr: u32 = alloc::allocator::alloc(32, 4);
+    let ptr: ptr = alloc::allocator::alloc(32, 4);
     let read: i32 = std::process::arg_read(1, ptr, 32);
     if (read != 15) {
         return 1;
     }
-    let grown: u32 = alloc::allocator::realloc(ptr, 32, 64, 4);
+    let grown: ptr = alloc::allocator::realloc(ptr, 32, 64, 4);
     if (grown == 0) {
         return 2;
     }

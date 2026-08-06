@@ -61,8 +61,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         (core.type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
          (core.type_ref_tag == SEMANTIC_TYPE_REF_SCALAR && core.type_ref_payload >= 128u) ||
          (core.type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u));
+    uint aggregate_words = core.value_word_count;
     uint instruction_bytes = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL
-        ? (aggregate_symbol ? 12u : 11u) : 17u;
+        ? (aggregate_symbol
+            ? aggregate_words > 2u ? 19u : 19u + aggregate_words * 7u
+            : 11u) : 17u;
     uint footer_bytes = target_row + 1u == function.instruction_start + function.instruction_count
         ? 4u : 0u;
     uint row_bytes = target_byte_length[target_row];
@@ -74,7 +77,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     X86ArtifactLayout layout = x86_artifact_layout[0u];
     uint wrapper_length = layout.body_offset - layout.text_offset;
     relocation.site_offset = wrapper_length + target_byte_offset[target_row] + prefix_bytes +
-        (core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? 1u : 2u);
+        (core.op == SEMANTIC_LIR_OP_CALL_SYMBOL
+            ? aggregate_symbol && aggregate_words > 2u ? 8u : 1u
+            : 2u);
     relocation.addend_lo = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xfffffffcu : 0u;
     relocation.addend_hi = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xffffffffu : 0u;
     if (core.op == SEMANTIC_LIR_OP_CALL_SYMBOL)

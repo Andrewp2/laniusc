@@ -13,13 +13,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     clear_predicate_record(node);
 
-    if (compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT ||
-        compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_REF)
+    if (compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_PATH ||
+        compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_REFERENCE)
         mark_direct_bound_syntax_tokens(node);
 
     uint list_node = INVALID;
-    if (compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT ||
-        compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_REF)
+    if (compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_PATH ||
+        compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_REFERENCE)
         list_node = predicate_list_for_direct_bound(node);
 
     if (!valid_node(list_node))
@@ -28,7 +28,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint owner_decl = generic_decl_owner_for_node(node);
             predicate_bound_token[node] =
-                compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT
+                compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_PATH
                 ? bound_path_leaf_token(node)
                 : compact_hir_core[node].token_start;
             predicate_status[node] =
@@ -40,11 +40,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint owner_decl = compact_hir_predicate_facts[node].predicate_owner;
+    uint owner_decl = compact_hir_semantic_facts[node].predicate_owner;
     if (!valid_node(owner_decl))
         owner_decl = generic_decl_owner_for_node(node);
     uint subject_token = predicate_subject_token_for_list(list_node);
-    uint bound_token = compact_hir_predicate_facts[node].production == PROD_BOUND_TYPE_IDENT
+    uint bound_token = compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_PATH
         ? bound_path_leaf_token(node)
         : compact_hir_core[node].token_start;
 
@@ -52,7 +52,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     predicate_subject_token[node] = subject_token;
     predicate_bound_token[node] = bound_token;
 
-    if (compact_hir_predicate_facts[node].production != PROD_BOUND_TYPE_IDENT)
+    if (compact_hir_semantic_facts[node].semantic_kind != HIR_SEMANTIC_BOUND_PATH)
     {
         predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
         return;

@@ -30,10 +30,6 @@ StructuredBuffer<uint> hir_type_root_owner;
 StructuredBuffer<uint> hir_method_impl_receiver_type;
 StructuredBuffer<uint> hir_type_alias_target_node;
 StructuredBuffer<uint> hir_type_path_leaf_node;
-StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
-StructuredBuffer<uint> hir_type_arg_start;
-StructuredBuffer<uint> hir_type_arg_count;
-StructuredBuffer<uint> hir_type_arg_next;
 StructuredBuffer<uint> hir_method_impl_receiver_type_node;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_param_type_node;
@@ -61,7 +57,7 @@ StructuredBuffer<uint> hir_nearest_fn_node;
 RWStructuredBuffer<HirCore> hir_core;
 RWStructuredBuffer<HirLinks> hir_links;
 RWStructuredBuffer<HirPayload> hir_payload;
-RWStructuredBuffer<HirPredicateFacts> hir_canonical_predicate_facts;
+RWStructuredBuffer<HirSemanticFacts> hir_canonical_semantic_facts;
 RWStructuredBuffer<uint> hir_canonical_scope_end;
 RWStructuredBuffer<uint> hir_canonical_nearest_loop;
 RWStructuredBuffer<uint> hir_canonical_nearest_block;
@@ -106,6 +102,25 @@ static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_CHAR = 29u;
 static const uint HIR_CALL_CONTEXT_STMT_BIT = 0x80000000u;
 static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
+
+uint semantic_kind(uint production)
+{
+    if (production == PROD_TYPE_IDENT) return HIR_SEMANTIC_TYPE_PATH;
+    if (production == PROD_BOUND_TYPE_IDENT) return HIR_SEMANTIC_BOUND_PATH;
+    if (production == PROD_BOUND_TYPE_REF) return HIR_SEMANTIC_BOUND_REFERENCE;
+    if (production == PROD_BOUND_TYPE_ARGS_SOME) return HIR_SEMANTIC_BOUND_ARGUMENT_LIST;
+    if (production == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE)
+        return HIR_SEMANTIC_BOUND_ARGUMENT_TAIL;
+    if (production == PROD_IMPL_TRAIT) return HIR_SEMANTIC_IMPL_TRAIT;
+    if (production == PROD_IMPL_INHERENT) return HIR_SEMANTIC_IMPL_INHERENT;
+    if (production == PROD_IMPL_FN) return HIR_SEMANTIC_IMPL_FUNCTION;
+    if (production == PROD_TRAIT_METHOD) return HIR_SEMANTIC_TRAIT_METHOD;
+    if (production == PROD_TRAIT_METHOD_PUB) return HIR_SEMANTIC_PUBLIC_TRAIT_METHOD;
+    if (production == PROD_PUB_IMPL) return HIR_SEMANTIC_PUBLIC_IMPL;
+    if (production == PROD_TYPE_PARAM_BOUND_LIST)
+        return HIR_SEMANTIC_TYPE_PARAM_BOUND_LIST;
+    return HIR_SEMANTIC_NONE;
+}
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 bool valid_raw(uint raw) { return raw != INVALID && raw < gCanonical.raw_capacity; }
 
@@ -341,21 +356,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_core[row] = core;
     hir_links[row] = links;
     hir_payload[row] = payload;
-    HirPredicateFacts predicate_facts;
-    predicate_facts.production = production;
-    predicate_facts.token_start = hir_token_pos[raw];
-    predicate_facts.type_path_leaf = dense_id(hir_type_path_leaf_node[raw]);
-    predicate_facts.type_arg_start = dense_id(hir_type_arg_start[raw]);
-    predicate_facts.type_arg_count = hir_type_arg_count[raw];
-    predicate_facts.type_arg_next = dense_id(hir_type_arg_next[raw]);
-    predicate_facts.method_impl_receiver_type =
+    HirSemanticFacts semantic_facts;
+    semantic_facts.semantic_kind = semantic_kind(production);
+    semantic_facts.type_path_leaf = dense_id(hir_type_path_leaf_node[raw]);
+    semantic_facts.method_impl_receiver_type =
         dense_id(hir_method_impl_receiver_type_node[raw]);
-    predicate_facts.expr_result_root = dense_id(hir_expr_result_root_node[raw]);
-    predicate_facts.struct_lit_head = dense_id(hir_struct_lit_head_node[raw]);
-    predicate_facts.bound_path_owner = dense_id(hir_bound_path_owner_by_leaf[raw]);
-    predicate_facts.predicate_owner = INVALID;
-    predicate_facts.predicate_subject = INVALID;
-    hir_canonical_predicate_facts[row] = predicate_facts;
+    semantic_facts.expr_result_root = dense_id(hir_expr_result_root_node[raw]);
+    semantic_facts.struct_lit_head = dense_id(hir_struct_lit_head_node[raw]);
+    semantic_facts.predicate_owner = INVALID;
+    semantic_facts.predicate_subject = INVALID;
+    hir_canonical_semantic_facts[row] = semantic_facts;
     hir_canonical_scope_end[row] = hir_stmt_scope_end[raw];
     hir_canonical_nearest_loop[row] = dense_id(hir_nearest_loop_node[raw]);
     hir_canonical_nearest_block[row] = dense_id(hir_nearest_block_node[raw]);

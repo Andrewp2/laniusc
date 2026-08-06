@@ -17,7 +17,7 @@ filesystem_mutations	filesystem_mutations.stdout	0	-	-	filesystem path creation 
 fibonacci_loop	fibonacci_loop.stdout	0	-	-	repeated fibonacci values	x86_64,wasm	checked by sample_programs target tests
 grid_distance_checksum	grid_distance_checksum.stdout	0	-	-	integer grid distance checksum exit status	x86_64,wasm	checked by sample_programs target tests
 host_runtime_files	host_runtime_files.stdout	0	-	-	filesystem host API smoke	x86_64,wasm	checked by sample_programs target tests
-host_runtime_fs_raw	host_runtime_fs_raw.stdout	0	-	-	low-level filesystem pointer-length host API smoke	wasm	checked by sample_programs target tests
+host_runtime_fs_raw	host_runtime_fs_raw.stdout	0	-	-	low-level filesystem pointer-length host API smoke	x86_64,wasm	checked by sample_programs target tests
 host_runtime_input	host_runtime_input.stdout	0	-	-	stdin process argument and environment value byte reads	x86_64,wasm	checked by sample_programs target tests
 host_runtime_smoke	host_runtime_smoke.stdout	0	-	-	host runtime allocation process env time random and stdout	x86_64,wasm	checked by sample_programs target tests
 for_array_control	for_array_control.stdout	0	-	-	for-loop array control	x86_64,wasm	checked by sample_programs target tests

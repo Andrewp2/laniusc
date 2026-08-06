@@ -349,28 +349,28 @@ pub fn rename_requires_runtime_binding() -> FilesystemCapability {
     return !rename_is_executable();
 }
 
-pub extern "lanius_std" fn open_read(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+pub extern "lanius_std" fn open_read(path_ptr: ptr, path_len: usize) -> FilesystemOperationResult;
 
-pub extern "lanius_std" fn open_write(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+pub extern "lanius_std" fn open_write(path_ptr: ptr, path_len: usize) -> FilesystemOperationResult;
 
-pub extern "lanius_std" fn open_append(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+pub extern "lanius_std" fn open_append(path_ptr: ptr, path_len: usize) -> FilesystemOperationResult;
 
 pub extern "lanius_std" fn close(handle: i32) -> FilesystemOperationResult;
 
-pub extern "lanius_std" fn read(handle: i32, ptr: u32, len: usize) -> FilesystemOperationResult;
+pub extern "lanius_std" fn read(handle: i32, ptr: ptr, len: usize) -> FilesystemOperationResult;
 
-pub extern "lanius_std" fn write(handle: i32, ptr: u32, len: usize) -> FilesystemOperationResult;
+pub extern "lanius_std" fn write(handle: i32, ptr: ptr, len: usize) -> FilesystemOperationResult;
 
-pub extern "lanius_std" fn remove_file(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+pub extern "lanius_std" fn remove_file(path_ptr: ptr, path_len: usize) -> FilesystemOperationResult;
 
-pub extern "lanius_std" fn create_dir(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+pub extern "lanius_std" fn create_dir(path_ptr: ptr, path_len: usize) -> FilesystemOperationResult;
 
-pub extern "lanius_std" fn remove_dir(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+pub extern "lanius_std" fn remove_dir(path_ptr: ptr, path_len: usize) -> FilesystemOperationResult;
 
 pub extern "lanius_std" fn rename(
-    from_ptr: u32,
+    from_ptr: ptr,
     from_len: usize,
-    to_ptr: u32,
+    to_ptr: ptr,
     to_len: usize,
 ) -> FilesystemOperationResult;
 

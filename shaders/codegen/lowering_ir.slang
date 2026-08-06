@@ -87,6 +87,10 @@ static const uint SEMANTIC_LIR_OP_CALL_INTRINSIC = 38u;
 // IR_OPCODE
 static const uint SEMANTIC_LIR_OP_CALL_SYMBOL = 39u;
 
+// Canonical scalar type shared by semantic and target lowering. Pointer width
+// is selected by the target: 64 bits on x86_64 and 32 bits on Wasm32.
+static const uint SEMANTIC_LIR_TY_POINTER = 8u;
+
 // Runtime services retain the type checker's canonical language-symbol values
 // at the semantic-LIR boundary. Naming the complete namespace here makes the
 // ABI explicit and keeps target shaders independent of symbol-table trivia.
@@ -154,9 +158,10 @@ static const uint HOST_SERVICE_WRITE_STDOUT = 49u;
 static const uint HOST_SERVICE_WRITE_STDERR = 50u;
 // IR_OPCODE
 static const uint HOST_SERVICE_READ_STDIN = 51u;
-// Slot 52 is a compiler-only address projection, not a runtime service.
+// Compiler intrinsics have their own namespace. They must not reuse host
+// service slots merely because their declarations occupy builtin-name slots.
 // IR_OPCODE
-static const uint HOST_SERVICE_I32_ARRAY_DATA_PTR = 52u;
+static const uint INTRINSIC_I32_ARRAY_DATA_PTR = 3u;
 // IR_OPCODE
 static const uint HOST_SERVICE_FILL_SECURE_BYTES = 53u;
 // IR_OPCODE
@@ -265,23 +270,22 @@ static const uint X86_LIR_OP_CALL_HOST = 22u;
 static const uint X86_LIR_OP_CALL_SYMBOL = 23u;
 // IR_OPCODE
 static const uint X86_LIR_OP_RETURN_VOID = 24u;
-// Fixed-frame aggregate storage. ARRAY_ADDR produces the address of the
-// contiguous element rows; ARRAY_INIT owns one independently emitted element.
+// Fixed-frame aggregate storage. AGGREGATE_ADDR produces the address of the
+// contiguous value rows; AGGREGATE_INIT owns one independently emitted field.
 // IR_OPCODE
-static const uint X86_LIR_OP_ARRAY_ADDR = 30u;
+static const uint X86_LIR_OP_AGGREGATE_ADDR = 30u;
 // IR_OPCODE
-static const uint X86_LIR_OP_ARRAY_INIT = 31u;
+static const uint X86_LIR_OP_AGGREGATE_INIT = 31u;
 // IR_OPCODE
 static const uint X86_LIR_OP_INDEX_LOAD = 32u;
 // IR_OPCODE
 static const uint X86_LIR_OP_FIELD_LOAD = 33u;
-// Target-only frame row reserved for aggregate results returned in registers.
-// It emits no machine bytes, but gives each returned word stable caller-owned
-// storage for the remainder of the caller's activation.
+// Target-only frame row reserved for an aggregate result word. It emits no
+// bytes, but gives the caller stable storage for the rest of its activation.
 // IR_OPCODE
 static const uint X86_LIR_OP_AGGREGATE_RESULT_SLOT = 34u;
-// One independently emitted aggregate-return word. Register-class returns
-// place it in EAX/EDX; sret-class returns copy it to caller-owned storage.
+// One independently emitted aggregate-return word. Register-class results use
+// RAX/RDX; memory-class results copy into caller-owned return storage.
 // IR_OPCODE
 static const uint X86_LIR_OP_AGGREGATE_RETURN_WORD = 35u;
 // The two target rows of one semantic string constant materialize its rodata
@@ -296,10 +300,19 @@ static const uint X86_LIR_OP_STRING_LEN = 37u;
 static const uint X86_LIR_OP_INDEX_STORE = 40u;
 // IR_OPCODE
 static const uint X86_LIR_OP_FIELD_STORE = 41u;
+// One independently lowered word of an aggregate value copy. The destination
+// is a frame-resident row owned by the surrounding STORE_LOCAL expansion.
+// IR_OPCODE
+static const uint X86_LIR_OP_AGGREGATE_COPY_WORD = 42u;
 // Compiler intrinsic lowered to the native runtime's shared signed-decimal
 // printer. Its argument arrives through the ordinary CALL_ARG ABI rows.
 // IR_OPCODE
 static const uint X86_LIR_OP_PRINT_I32 = 38u;
+// Compiler-only identity projection for aggregate pointers. The ordinary
+// CALL_ARG row places the source pointer in RDI; this row moves that value
+// into the result location without crossing the host-service ABI.
+// IR_OPCODE
+static const uint X86_LIR_OP_INTRINSIC_IDENTITY = 39u;
 // Target-only pseudo instruction. It owns a stable scheduled row for branch
 // resolution and is removed by final machine selection.
 // IR_OPCODE
@@ -482,6 +495,9 @@ static const uint X86_LIR_METADATA_WIDE = 0x40000000u;
 // has a separate target-row home from the pointer word and is passed as a
 // normal 32-bit ABI argument.
 static const uint X86_LIR_METADATA_STRING_LEN = 0x20000000u;
+// The compared value is pointer-width, but its RHS is a narrow integer null
+// constant. Keeping this in target metadata avoids weakening semantic types.
+static const uint X86_LIR_METADATA_RHS_NARROW = 0x10000000u;
 
 // A value location is either a target-row stack home or a physical x86 GPR.
 // Stack payloads remain global target rows; the artifact emitter translates
@@ -511,6 +527,8 @@ struct SemanticLirCore
     uint type_ref_payload;
     uint source_hir;
     uint flags;
+    // Fixed-size aggregate width in machine words. Scalar rows use zero.
+    uint value_word_count;
 };
 
 struct SemanticLirOperands
@@ -536,6 +554,8 @@ struct SemanticLirAggregateElement
     uint ordinal;
     uint name_token;
     uint value_metadata;
+    uint word_offset;
+    uint word_count;
 };
 
 struct TargetSemanticPage

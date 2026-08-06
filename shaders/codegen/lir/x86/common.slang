@@ -14,15 +14,21 @@ bool x86_semantic_type_is_aggregate(SemanticLirCore core)
         (core.type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u);
 }
 
-static const uint X86_LIR_TY_FLOAT = 5u;
+uint x86_aggregate_value_word_count(SemanticLirCore core,
+                                    SemanticLirOperands operands)
+{
+    return core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW
+        ? operands.b : core.value_word_count;
+}
 
+static const uint X86_LIR_TY_FLOAT = 5u;
 uint x86_lir_count(SemanticLirCore core, SemanticLirOperands operands)
 {
     // Expansion is explicit and will become >1 for ABI/control records that
     // require payload rows. Scalar rows currently map one-to-one.
     if (core.op == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
     return core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW
-        ? 1u + operands.b
+        ? 1u + core.value_word_count
         : 1u;
 }
 
@@ -66,7 +72,7 @@ uint x86_lir_opcode(SemanticLirCore core)
     if (core.op == SEMANTIC_LIR_OP_CALL_HOST) return X86_LIR_OP_CALL_HOST;
     if (core.op == SEMANTIC_LIR_OP_CALL_SYMBOL) return X86_LIR_OP_CALL_SYMBOL;
     if (core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC) return X86_LIR_OP_PRINT_I32;
-    if (core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW) return X86_LIR_OP_ARRAY_ADDR;
+    if (core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW) return X86_LIR_OP_AGGREGATE_ADDR;
     if (core.op == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
         return X86_LIR_OP_INDEX_LOAD;

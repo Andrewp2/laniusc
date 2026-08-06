@@ -198,8 +198,8 @@ pub extern "lanius_std" fn buffer_alloc(byte_len: usize) -> u32;
 
 pub extern "lanius_std" fn buffer_free(handle: u32) -> i32;
 
-pub extern "lanius_std" fn buffer_write(handle: u32, src_ptr: u32, byte_len: usize) -> i32;
+pub extern "lanius_std" fn buffer_write(handle: u32, src_ptr: ptr, byte_len: usize) -> i32;
 
-pub extern "lanius_std" fn buffer_read(handle: u32, dst_ptr: u32, byte_len: usize) -> i32;
+pub extern "lanius_std" fn buffer_read(handle: u32, dst_ptr: ptr, byte_len: usize) -> i32;
 
 pub extern "lanius_std" fn dispatch_1d(kernel_id: u32, workgroup_count: u32) -> i32;

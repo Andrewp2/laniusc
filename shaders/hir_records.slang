@@ -159,24 +159,31 @@ public struct HirPredicate
     public uint metadata;
 }
 
-/// Dense facts recovered from temporary predicate grammar productions.
-///
-/// The canonical HIR keeps only semantic nodes.  These fields preserve the
-/// relationships that predicate collection needs without retaining the raw
-/// parser tree: the owning predicate, its subject, and the compact side-table
-/// references for paths and arguments.
-public struct HirPredicateFacts
+// Semantic classifications needed after the temporary parse tree is gone.
+// Their values are independent of generated grammar-production numbers.
+public static const uint HIR_SEMANTIC_NONE = 0u;
+public static const uint HIR_SEMANTIC_TYPE_PATH = 1u;
+public static const uint HIR_SEMANTIC_BOUND_PATH = 2u;
+public static const uint HIR_SEMANTIC_BOUND_REFERENCE = 3u;
+public static const uint HIR_SEMANTIC_BOUND_ARGUMENT_LIST = 4u;
+public static const uint HIR_SEMANTIC_BOUND_ARGUMENT_TAIL = 5u;
+public static const uint HIR_SEMANTIC_IMPL_TRAIT = 6u;
+public static const uint HIR_SEMANTIC_IMPL_INHERENT = 7u;
+public static const uint HIR_SEMANTIC_IMPL_FUNCTION = 8u;
+public static const uint HIR_SEMANTIC_TRAIT_METHOD = 9u;
+public static const uint HIR_SEMANTIC_PUBLIC_TRAIT_METHOD = 10u;
+public static const uint HIR_SEMANTIC_PUBLIC_IMPL = 11u;
+public static const uint HIR_SEMANTIC_TYPE_PARAM_BOUND_LIST = 12u;
+
+/// Additional semantic links that are not part of the universal HIR record.
+/// Parser production identities never cross this boundary.
+public struct HirSemanticFacts
 {
-    public uint production;
-    public uint token_start;
+    public uint semantic_kind;
     public uint type_path_leaf;
-    public uint type_arg_start;
-    public uint type_arg_count;
-    public uint type_arg_next;
     public uint method_impl_receiver_type;
     public uint expr_result_root;
     public uint struct_lit_head;
-    public uint bound_path_owner;
     public uint predicate_owner;
     public uint predicate_subject;
 }

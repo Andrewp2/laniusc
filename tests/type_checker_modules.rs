@@ -4293,7 +4293,7 @@ module app::main;
 import alloc::allocator;
 
 fn main() {
-    let ptr: u32 = alloc::allocator::alloc(16, 4);
+    let ptr: ptr = alloc::allocator::alloc(16, 4);
     alloc::allocator::dealloc(ptr, 16, 4);
     return 0;
 }
@@ -4400,7 +4400,7 @@ import std::process;
 import std::time;
 
 fn main() {
-    let zero_ptr: u32 = 0;
+    let zero_ptr: ptr = 0;
     let zero_len: usize = 0;
     let sleep_zero: i64 = 0;
     let args: i32 = std::process::argc();
@@ -4432,8 +4432,8 @@ fn main() {
     let size: usize = 16;
     let grown_size: usize = 32;
     let align: usize = 4;
-    let ptr: u32 = alloc::allocator::alloc(size, align);
-    let grown: u32 = alloc::allocator::realloc(ptr, size, grown_size, align);
+    let ptr: ptr = alloc::allocator::alloc(size, align);
+    let grown: ptr = alloc::allocator::realloc(ptr, size, grown_size, align);
     let stdin_count: i32 = std::io::read_stdin(grown, grown_size);
     let stdout_count: i32 = std::io::write_stdout(grown, grown_size);
     let stderr_count: i32 = std::io::write_stderr(grown, grown_size);
@@ -4506,9 +4506,9 @@ fn type_checker_accepts_direct_host_abi_extern_calls() {
             r#"
 extern "lanius_std" fn argc() -> i32;
 extern "lanius_std" fn var_count() -> i32;
-extern "lanius_std" fn open_read(path_ptr: u32, path_len: usize) -> i32;
+extern "lanius_std" fn open_read(path_ptr: ptr, path_len: usize) -> i32;
 extern "lanius_std" fn monotonic_now_ns() -> i64;
-extern "lanius_std" fn tcp_connect(addr_ptr: u32, addr_len: usize, port: i32) -> i32;
+extern "lanius_std" fn tcp_connect(addr_ptr: ptr, addr_len: usize, port: i32) -> i32;
 extern "lanius_std" fn print_i32(value: i32);
 
 fn main() {
@@ -4525,13 +4525,13 @@ fn main() {
         (
             "lanius_alloc",
             r#"
-extern "lanius_alloc" fn alloc(size: usize, align: usize) -> u32;
-extern "lanius_alloc" fn realloc(ptr: u32, old_size: usize, new_size: usize, align: usize) -> u32;
-extern "lanius_alloc" fn dealloc(ptr: u32, size: usize, align: usize);
+extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+extern "lanius_alloc" fn realloc(ptr: ptr, old_size: usize, new_size: usize, align: usize) -> ptr;
+extern "lanius_alloc" fn dealloc(ptr: ptr, size: usize, align: usize);
 extern "lanius_alloc" fn alloc_failed(size: usize, align: usize);
 
 fn main() {
-    let ptr: u32 = alloc(16, 4);
+    let ptr: ptr = alloc(16, 4);
     let grown: u32 = realloc(ptr, 16, 32, 4);
     dealloc(grown, 32, 4);
     alloc_failed(64, 8);

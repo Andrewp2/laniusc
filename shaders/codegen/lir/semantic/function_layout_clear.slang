@@ -4,6 +4,10 @@ struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reser
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> semantic_struct_hir_by_name_token;
 RWStructuredBuffer<uint> semantic_struct_field_count_by_hir;
+RWStructuredBuffer<uint> semantic_struct_field_start_by_hir;
+RWStructuredBuffer<uint> semantic_struct_word_count_by_hir;
+RWStructuredBuffer<uint> semantic_struct_field_word_offset_by_row;
+RWStructuredBuffer<uint> semantic_struct_field_word_count_by_row;
 RWStructuredBuffer<uint> semantic_function_id_by_token;
 
 static const uint INVALID = 0xffffffffu;
@@ -20,5 +24,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_function_id_by_token[row] = INVALID;
     }
     if (row < gParams.n_hir_nodes)
+    {
         semantic_struct_field_count_by_hir[row] = 0u;
+        semantic_struct_field_start_by_hir[row] = INVALID;
+        semantic_struct_word_count_by_hir[row] = 0u;
+        semantic_struct_field_word_offset_by_row[row] = INVALID;
+        semantic_struct_field_word_count_by_row[row] = 0u;
+    }
 }

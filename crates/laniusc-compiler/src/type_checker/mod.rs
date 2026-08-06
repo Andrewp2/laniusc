@@ -284,13 +284,11 @@ struct ResidentTypeCheckCacheKey {
     call_arg_row_capacity: u32,
     parser_feature_flags: u32,
     input_fingerprint: u64,
-    uses_hir_items: bool,
 }
 
 impl ResidentTypeCheckCacheKey {
     fn covers(self, required: Self) -> bool {
-        self.uses_hir_items == required.uses_hir_items
-            && self.input_fingerprint == required.input_fingerprint
+        self.input_fingerprint == required.input_fingerprint
             && self.source_byte_capacity >= required.source_byte_capacity
             && self.source_file_capacity >= required.source_file_capacity
             && self.token_capacity >= required.token_capacity
@@ -348,7 +346,7 @@ struct ResidentTypeCheckState {
     name_order_in: LaniusBuffer<u32>,
     name_order_tmp: LaniusBuffer<u32>,
     name_id_by_token: LaniusBuffer<u32>,
-    module_path: Option<ModulePathState>,
+    module_path: ModulePathState,
     visible_decl: LaniusBuffer<u32>,
     visible_type: LaniusBuffer<u32>,
     token_active_dispatch_args: LaniusBuffer<u32>,
@@ -357,6 +355,7 @@ struct ResidentTypeCheckState {
     hir_active_dispatch: wgpu::BindGroup,
     semantic_features: SemanticFeaturesOperation,
     type_instance_decl_token: LaniusBuffer<u32>,
+    _type_instance_aggregate_word_count: LaniusBuffer<u32>,
     _call_dependency_library_id: LaniusBuffer<u32>,
     _call_dependency_unit_id: LaniusBuffer<u32>,
     _call_dependency_local_index: LaniusBuffer<u32>,
@@ -369,7 +368,7 @@ struct ResidentTypeCheckState {
     visible_bind_groups: VisibleBindGroups,
     calls: CallBindGroups,
     methods: MethodBindGroups,
-    predicates: Option<PredicateBindGroups>,
+    predicates: PredicateBindGroups,
     type_instances: TypeInstanceBindGroups,
     returns: ReturnValidationOperation,
     predicate_diagnostics: PredicateDiagnosticsOperation,
@@ -455,6 +454,10 @@ pub(crate) struct GpuCheckedSemanticArtifact<'a> {
     pub expr_ref_tag_by_hir: &'a LaniusBuffer<u32>,
     /// Canonical checked type-reference payload keyed by dense expression HIR row.
     pub expr_ref_payload_by_hir: &'a LaniusBuffer<u32>,
+    /// Resolved declaration-name token for named aggregate expressions.
+    pub aggregate_decl_token_by_hir: &'a LaniusBuffer<u32>,
+    /// Checked aggregate ABI width keyed by dense expression HIR row.
+    pub aggregate_word_count_by_hir: &'a LaniusBuffer<u32>,
     /// Checked fixed-array length keyed by dense expression HIR row.
     pub array_length_by_hir: &'a LaniusBuffer<u32>,
     /// Checked field ordinal keyed by dense member-expression HIR row.
@@ -497,6 +500,8 @@ pub(crate) struct OwnedGpuSemanticArtifact {
     calls_by_hir: LaniusBuffer<GpuCheckedCallArtifact>,
     expr_ref_tag_by_hir: LaniusBuffer<u32>,
     expr_ref_payload_by_hir: LaniusBuffer<u32>,
+    aggregate_decl_token_by_hir: LaniusBuffer<u32>,
+    aggregate_word_count_by_hir: LaniusBuffer<u32>,
     array_length_by_hir: LaniusBuffer<u32>,
     member_field_ordinal_by_hir: LaniusBuffer<u32>,
     iterable_kind_by_hir: LaniusBuffer<u32>,
@@ -523,6 +528,8 @@ impl OwnedGpuSemanticArtifact {
                 calls_by_hir: &self.calls_by_hir,
                 expr_ref_tag_by_hir: &self.expr_ref_tag_by_hir,
                 expr_ref_payload_by_hir: &self.expr_ref_payload_by_hir,
+                aggregate_decl_token_by_hir: &self.aggregate_decl_token_by_hir,
+                aggregate_word_count_by_hir: &self.aggregate_word_count_by_hir,
                 array_length_by_hir: &self.array_length_by_hir,
                 member_field_ordinal_by_hir: &self.member_field_ordinal_by_hir,
                 iterable_kind_by_hir: &self.iterable_kind_by_hir,

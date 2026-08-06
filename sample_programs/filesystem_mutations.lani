@@ -7,7 +7,7 @@ import std::fs;
 fn main() -> i32 {
     let capacity: usize = 64;
     let path_len: usize = 15;
-    let ptr: u32 = alloc::allocator::alloc(capacity, 4);
+    let ptr: ptr = alloc::allocator::alloc(capacity, 4);
     let arg_read_result: i32 = std::process::arg_read(1, ptr, capacity);
     if (arg_read_result != 15) {
         return 1;

@@ -8,7 +8,7 @@ import std::process;
 fn main() -> i32 {
     let capacity: usize = 64;
     let align: usize = 4;
-    let stdin_ptr: u32 = alloc::allocator::alloc(capacity, align);
+    let stdin_ptr: ptr = alloc::allocator::alloc(capacity, align);
     if (stdin_ptr == 0) {
         return 1;
     }
@@ -48,7 +48,7 @@ fn main() -> i32 {
         alloc::allocator::dealloc(stdin_ptr, capacity, align);
         return 8;
     }
-    let value_ptr: u32 = stdin_ptr + 32;
+    let value_ptr: ptr = stdin_ptr + 32;
     let env_read: i32 = std::env::var_read(stdin_ptr, 15, value_ptr, 7);
     if (env_read != 7) {
         alloc::allocator::dealloc(stdin_ptr, capacity, align);

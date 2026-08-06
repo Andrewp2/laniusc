@@ -177,7 +177,8 @@ void move_rax_to_argument(inout uint cursor, uint ordinal)
 uint base_frame_slots(TargetLirFunction function, SemanticLirFunction semantic_function)
 {
     return function.instruction_count + semantic_function.param_count +
-        semantic_function.local_count;
+        semantic_function.local_count +
+        (semantic_function.result_word_count > 2u ? 1u : 0u);
 }
 
 uint frame_size(TargetLirFunction function, SemanticLirFunction semantic_function,
@@ -297,11 +298,18 @@ void emit_prologue(inout uint cursor, TargetLirFunction function,
     emit_u32(cursor, frame_size(function, semantic_function, saved_mask));
     uint first_saved_slot = base_frame_slots(function, semantic_function);
     save_registers(cursor, saved_mask, first_saved_slot);
+    uint sret_shift = semantic_function.result_word_count > 2u ? 1u : 0u;
+    if (sret_shift != 0u)
+    {
+        uint sret_slot = function.instruction_count + semantic_function.param_count +
+            semantic_function.local_count;
+        store_stack64(cursor, argument_register(0u), sret_slot);
+    }
     for (uint ordinal = 0u;
-         ordinal < min(semantic_function.param_count, 6u); ordinal += 1u)
+         ordinal < min(semantic_function.param_count, 6u - sret_shift); ordinal += 1u)
     {
         SemanticLirParam param = semantic_lir_params[semantic_function.param_start + ordinal];
-        store_declaration64(cursor, argument_register(ordinal),
+        store_declaration64(cursor, argument_register(ordinal + sret_shift),
             declaration_location(param.declaration_id));
     }
 }
@@ -328,7 +336,8 @@ uint integer_setcc_opcode(uint predicate, uint type_id)
 {
     // u32 and char use the carry-based unsigned condition codes. Equality is
     // representation-independent and therefore shared with signed i32.
-    bool is_unsigned = type_id == 4u || type_id == 6u;
+    bool is_unsigned = type_id == 4u || type_id == 6u ||
+        type_id == SEMANTIC_LIR_TY_POINTER;
     if (!is_unsigned || predicate <= 1u) return setcc_opcode(predicate);
     if (predicate == 2u) return 0x92u;
     if (predicate == 3u) return 0x97u;
@@ -355,7 +364,9 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     if (core.op == X86_LIR_OP_IMM_I32)
     {
         emit_u8(cursor, 0xb8u); emit_u32(cursor, operands.a);
-        store_value32(cursor, 0u, locations.result, function);
+        if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
+            store_value64(cursor, 0u, locations.result, function);
+        else store_value32(cursor, 0u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_ALIAS)
     {
@@ -371,17 +382,14 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
         if (aggregate_reference)
         {
-            // Aggregate variables have value semantics. The source points at
-            // a runtime-owned object whose count header is at [ptr - 8]; the
-            // shared clone helper copies the complete object before storing
-            // the new declaration pointer.
+            uint first_word_slot = value_slot(core.result_or_target + 1u, function);
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du); emit_u8(cursor, 0x85u);
+            emit_u32(cursor, displacement(first_word_slot));
+            store_declaration64(cursor, 0u, declaration_location(operands.a));
+        }
+        else if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
+        {
             load_value64(cursor, locations.b, 0u, function);
-            move_rax_to_argument(cursor, 0u);
-            uint clone_target = layout.runtime_offset +
-                X86_RUNTIME_AGGREGATE_CLONE_OFFSET;
-            uint clone_next = cursor + 5u;
-            emit_u8(cursor, 0xe8u);
-            emit_u32(cursor, clone_target - clone_next);
             store_declaration64(cursor, 0u, declaration_location(operands.a));
         }
         else
@@ -390,42 +398,28 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             store_declaration32(cursor, 0u, declaration_location(operands.a));
         }
     }
-    else if (core.op == X86_LIR_OP_ARRAY_ADDR)
+    else if (core.op == X86_LIR_OP_AGGREGATE_ADDR)
     {
-        // Allocate aggregate storage outside the current function frame.
-        // Nested aggregate fields therefore remain valid after a callee
-        // returns instead of dangling into its stack frame.
-        emit_u8(cursor, 0xbfu); // mov edi, imm32
-        emit_u32(cursor, (operands.b + 1u) * 8u);
-        uint target = layout.runtime_offset + X86_RUNTIME_ALLOC_OFFSET;
-        uint next = cursor + 5u;
-        emit_u8(cursor, 0xe8u);
-        emit_u32(cursor, target - next);
-        // The count header is outside the public object pointer. It lets
-        // aggregate assignment clone values without recovering source type
-        // metadata in the native emitter.
-        emit_u8(cursor, 0xc7u); emit_u8(cursor, 0x00u);
-        emit_u32(cursor, operands.b);
-        emit_u8(cursor, 0x48u); emit_u8(cursor, 0x83u);
-        emit_u8(cursor, 0xc0u); emit_u8(cursor, 0x08u);
+        uint first_element_slot = value_slot(operands.a, function);
+        emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du); emit_u8(cursor, 0x85u);
+        emit_u32(cursor, displacement(first_element_slot));
         store_value64(cursor, 0u, locations.result, function);
     }
-    else if (core.op == X86_LIR_OP_ARRAY_INIT)
+    else if (core.op == X86_LIR_OP_AGGREGATE_INIT)
     {
-        // Store one field/element into the owning aggregate allocation.
-        load_value64(cursor, locations.c, 0u, function);
-        load_value64(cursor, locations.a, 1u, function);
-        emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x88u);
-        emit_u32(cursor, operands.b * 8u);
+        load_value64(cursor, locations.a, 0u, function);
+        if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x80u);
+            emit_u32(cursor, 0u - operands.b * 8u);
+        }
+        store_value64(cursor, 0u, locations.c, function);
     }
     else if (core.op == X86_LIR_OP_INDEX_LOAD)
     {
         load_value64(cursor, locations.a, 0u, function);
         load_value32(cursor, locations.b, 1u, function);
-        // Aggregate storage uses ascending eight-byte slots.  The old stack
-        // representation addressed fields below the base and negated the
-        // index here; heap-backed aggregates must use the ordinary positive
-        // scaled index instead.
+        emit_u8(cursor, 0x48u); emit_u8(cursor, 0xf7u); emit_u8(cursor, 0xd9u);
         emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
         emit_u8(cursor, 0x04u); emit_u8(cursor, 0xc8u);
         store_value64(cursor, 0u, locations.result, function);
@@ -433,8 +427,10 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     else if (core.op == X86_LIR_OP_FIELD_LOAD)
     {
         load_value64(cursor, locations.a, 0u, function);
-        emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x80u);
-        emit_u32(cursor, operands.b * operands.c);
+        emit_u8(cursor, 0x48u); emit_u8(cursor,
+            (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u ? 0x8du : 0x8bu);
+        emit_u8(cursor, 0x80u);
+        emit_u32(cursor, 0u - operands.b * 8u);
         store_value64(cursor, 0u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_INDEX_STORE)
@@ -442,6 +438,7 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         load_value64(cursor, locations.a, 0u, function);
         load_value32(cursor, locations.b, 1u, function);
         load_value32(cursor, locations.c, 2u, function);
+        emit_u8(cursor, 0x48u); emit_u8(cursor, 0xf7u); emit_u8(cursor, 0xd9u);
         emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u);
         emit_u8(cursor, 0x14u); emit_u8(cursor, 0xc8u);
     }
@@ -451,7 +448,7 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         load_value32(cursor, locations.c, 1u, function);
         uint stride = operands.metadata >> 24u;
         emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x88u);
-        emit_u32(cursor, operands.b * stride);
+        emit_u32(cursor, 0u - operands.b * stride);
     }
     else if (core.op == X86_LIR_OP_BINARY)
     {
@@ -466,6 +463,16 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
                 operands.a == X86_LIR_BINARY_MUL_F32 ? 0x59u : 0x5eu);
             emit_u8(cursor, 0xc1u);
             store_xmm0(cursor, result_slot);
+            return;
+        }
+        if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
+        {
+            load_value64(cursor, locations.b, 0u, function);
+            load_value32(cursor, locations.c, 1u, function);
+            emit_u8(cursor, 0x48u);
+            emit_u8(cursor, operands.a == X86_LIR_BINARY_SUB_I32 ? 0x29u : 0x01u);
+            emit_u8(cursor, 0xc8u);
+            store_value64(cursor, 0u, locations.result, function);
             return;
         }
         load_value32(cursor, locations.b, 0u, function);
@@ -504,8 +511,21 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             store_eax(cursor, result_slot);
             return;
         }
-        load_value32(cursor, locations.b, 0u, function);
-        load_value32(cursor, locations.c, 1u, function);
+        bool pointer = (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER;
+        if (pointer)
+        {
+            load_value64(cursor, locations.b, 0u, function);
+            if ((operands.metadata & X86_LIR_METADATA_RHS_NARROW) != 0u)
+                load_value32(cursor, locations.c, 1u, function);
+            else
+                load_value64(cursor, locations.c, 1u, function);
+            emit_u8(cursor, 0x48u);
+        }
+        else
+        {
+            load_value32(cursor, locations.b, 0u, function);
+            load_value32(cursor, locations.c, 1u, function);
+        }
         emit_u8(cursor, 0x39u); emit_u8(cursor, 0xc8u);
         emit_u8(cursor, 0x0fu);
         emit_u8(cursor, integer_setcc_opcode(operands.a, operands.metadata & 0xffu));
@@ -532,10 +552,17 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     {
         if (operands.c != 0u)
         {
-            load_value64(cursor, locations.a, 0u, function);
+            if (operands.c > 2u)
+            {
+                uint sret_slot = function.instruction_count + semantic_function.param_count +
+                    semantic_function.local_count;
+                load_stack64(cursor, sret_slot, 0u);
+            }
         }
         else if (operands.a == INVALID || core.op == X86_LIR_OP_RETURN_VOID)
         { emit_u8(cursor, 0x31u); emit_u8(cursor, 0xc0u); }
+        else if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
+            load_value64(cursor, locations.a, 0u, function);
         else load_value32(cursor, locations.a, 0u, function);
         restore_registers(cursor, saved_mask,
             base_frame_slots(function, semantic_function));
@@ -562,12 +589,28 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         if (callee_index >= target_function_count[0u]) return;
         TargetLirFunction callee = target_functions[callee_index];
         uint target = layout.body_offset + target_byte_offset[callee.instruction_start];
+        uint storage_slot = value_slot(core.result_or_target + 1u, function);
+        if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u && operands.c > 2u)
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du); emit_u8(cursor, 0xbdu);
+            emit_u32(cursor, displacement(storage_slot));
+        }
         uint next = cursor + 5u;
         emit_u8(cursor, 0xe8u); emit_u32(cursor, target - next);
         if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
         {
-            store_value64(cursor, 0u, locations.result, function);
+            if (operands.c <= 2u)
+            {
+                store_stack64(cursor, 0u, storage_slot);
+                if (operands.c > 1u) store_stack64(cursor, 2u, storage_slot + 1u);
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du); emit_u8(cursor, 0x85u);
+                emit_u32(cursor, displacement(storage_slot));
+                store_value64(cursor, 0u, locations.result, function);
+            }
+            else store_value64(cursor, 0u, locations.result, function);
         }
+        else if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
+            store_value64(cursor, 0u, locations.result, function);
         else store_value32(cursor, 0u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_CALL_SYMBOL)
@@ -575,12 +618,31 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         // Object projection records a PC-relative relocation at the four-byte
         // placeholder following E8. Executable mode never admits unresolved
         // dependencies, so no symbol policy is hidden in this emitter.
+        uint storage_slot = value_slot(core.result_or_target + 1u, function);
+        if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
+            core.local_ordinal > 2u)
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du); emit_u8(cursor, 0xbdu);
+            emit_u32(cursor, displacement(storage_slot));
+        }
         emit_u8(cursor, 0xe8u);
         emit_u32(cursor, 0u);
         if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
+        {
+            if (core.local_ordinal <= 2u)
+            {
+                store_stack64(cursor, 0u, storage_slot);
+                if (core.local_ordinal > 1u)
+                    store_stack64(cursor, 2u, storage_slot + 1u);
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du); emit_u8(cursor, 0x85u);
+                emit_u32(cursor, displacement(storage_slot));
+                store_value64(cursor, 0u, locations.result, function);
+            }
+            else store_value64(cursor, 0u, locations.result, function);
+        }
+        else if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
             store_value64(cursor, 0u, locations.result, function);
-        else
-            store_value32(cursor, 0u, locations.result, function);
+        else store_value32(cursor, 0u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_CALL_HOST && operands.a == HOST_SERVICE_I32_TO_F32)
     {
@@ -590,25 +652,78 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         emit_u8(cursor, 0x2au); emit_u8(cursor, 0xc7u);
         store_xmm0(cursor, result_slot);
     }
-    else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
-    {
-        // Aggregate returns are pointer-valued. The actual RETURN row loads
-        // the object pointer into RAX; these legacy expansion rows are kept
-        // in the target stream for stable scheduling but emit no bytes.
-    }
     else if (core.op == X86_LIR_OP_CALL_HOST && x86_runtime_service_supported(operands.a))
     {
         uint target = layout.runtime_offset + x86_runtime_service_offset(operands.a);
         uint next = cursor + 5u;
         emit_u8(cursor, 0xe8u); emit_u32(cursor, target - next);
         if (x86_runtime_service_has_result(operands.a))
-            store_value32(cursor, 0u, locations.result, function);
+        {
+            if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
+                store_value64(cursor, 0u, locations.result, function);
+            else store_value32(cursor, 0u, locations.result, function);
+        }
     }
     else if (core.op == X86_LIR_OP_PRINT_I32 && operands.a == 1u)
     {
         uint target = layout.runtime_offset + X86_RUNTIME_PRINT_I32_OFFSET;
         uint next = cursor + 5u;
         emit_u8(cursor, 0xe8u); emit_u32(cursor, target - next);
+    }
+    else if (core.op == X86_LIR_OP_INTRINSIC_IDENTITY)
+    {
+        // The preceding CALL_ARG row placed the aggregate pointer in RDI.
+        store_value64(cursor, 7u, locations.result, function);
+    }
+    else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
+    {
+        if (operands.c <= 2u)
+        {
+            if (operands.b == 0u)
+            {
+                load_value64(cursor, locations.a, 0u, function);
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x00u);
+            }
+            else
+            {
+                load_value64(cursor, locations.a, 1u, function);
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x91u);
+                emit_u32(cursor, 0u - operands.b * 8u);
+            }
+        }
+        else
+        {
+            load_value64(cursor, locations.a, 0u, function);
+            uint sret_slot = function.instruction_count + semantic_function.param_count +
+                semantic_function.local_count;
+            load_stack64(cursor, sret_slot, 10u);
+            if (operands.b == 0u)
+            {
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x08u);
+                emit_u8(cursor, 0x49u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x0au);
+            }
+            else
+            {
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x88u);
+                emit_u32(cursor, 0u - operands.b * 8u);
+                emit_u8(cursor, 0x49u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x8au);
+                emit_u32(cursor, 0u - operands.b * 8u);
+            }
+        }
+    }
+    else if (core.op == X86_LIR_OP_AGGREGATE_COPY_WORD)
+    {
+        load_value64(cursor, locations.a, 0u, function);
+        if (operands.b == 0u)
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x08u);
+        }
+        else
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x88u);
+            emit_u32(cursor, 0u - operands.b * 8u);
+        }
+        store_value64(cursor, 1u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_STRING_ADDR)
     {

@@ -8,7 +8,7 @@ struct Params
     uint element_capacity;
     uint n_hir_nodes;
     uint semantic_capacity;
-    uint reserved;
+    uint n_tokens;
 };
 
 ConstantBuffer<Params> gParams;
@@ -22,6 +22,11 @@ StructuredBuffer<HirArrayElement> compact_array_elements;
 StructuredBuffer<uint> semantic_expr_type;
 StructuredBuffer<uint> semantic_expr_ref_tag;
 StructuredBuffer<uint> semantic_expr_ref_payload;
+StructuredBuffer<uint> semantic_aggregate_decl_token;
+StructuredBuffer<uint> semantic_struct_hir_by_name_token;
+StructuredBuffer<uint> semantic_struct_field_start_by_hir;
+StructuredBuffer<uint> semantic_struct_field_word_offset_by_row;
+StructuredBuffer<uint> semantic_struct_field_word_count_by_row;
 StructuredBuffer<uint> semantic_lir_count;
 StructuredBuffer<uint> semantic_lir_offset;
 RWStructuredBuffer<uint> semantic_lir_aggregate_element_total;
@@ -29,6 +34,9 @@ RWStructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TY_STRUCT_BASE = 4096u;
+static const uint TY_ENUM_BASE = 1048576u;
 
 uint lir_for_hir(uint node, uint hir_count)
 {
@@ -45,6 +53,22 @@ uint value_metadata_for_hir(uint node, uint hir_count)
             semantic_expr_ref_tag[node],
             semantic_expr_ref_payload[node])
         : 0u;
+}
+
+uint aggregate_decl_token_for_hir(uint node, uint hir_count)
+{
+    if (node >= hir_count) return LIR_INVALID;
+    uint scalar_type = semantic_lir_type(semantic_expr_type[node]);
+    if (scalar_type >= TY_STRUCT_BASE && scalar_type < TY_ENUM_BASE)
+        return scalar_type - TY_STRUCT_BASE;
+    if (semantic_expr_ref_tag[node] == TYPE_REF_SCALAR)
+    {
+        uint type_id = semantic_expr_ref_payload[node];
+        if (type_id >= TY_STRUCT_BASE && type_id < TY_ENUM_BASE)
+            return type_id - TY_STRUCT_BASE;
+    }
+    uint token = semantic_aggregate_decl_token[node];
+    return token < gParams.n_tokens ? token : LIR_INVALID;
 }
 
 [shader("compute")]
@@ -76,6 +100,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         result.ordinal = source.ordinal;
         result.name_token = LIR_INVALID;
         result.value_metadata = value_metadata_for_hir(source.value, hir_count);
+        result.word_offset = source.ordinal;
+        result.word_count = 1u;
     }
     else
     {
@@ -91,6 +117,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
         result.ordinal = struct_init_field_ordinal_by_row[row - array_count];
         result.name_token = source.name_token;
         result.value_metadata = value_metadata_for_hir(source.value, hir_count);
+        result.word_offset = result.ordinal;
+        result.word_count = 1u;
+        uint decl_token = aggregate_decl_token_for_hir(source.owner, hir_count);
+        uint struct_hir = decl_token < gParams.n_tokens
+            ? semantic_struct_hir_by_name_token[decl_token] : LIR_INVALID;
+        uint field_start = struct_hir < hir_count
+            ? semantic_struct_field_start_by_hir[struct_hir] : LIR_INVALID;
+        uint field_row = field_start != LIR_INVALID ? field_start + result.ordinal : LIR_INVALID;
+        if (field_row < gParams.element_capacity)
+        {
+            result.word_offset = semantic_struct_field_word_offset_by_row[field_row];
+            result.word_count = semantic_struct_field_word_count_by_row[field_row];
+        }
     }
     semantic_lir_aggregate_elements[row] = result;
 }

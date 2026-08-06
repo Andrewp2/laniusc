@@ -29,10 +29,4 @@ void main(uint3 dtid: SV_DispatchThreadID)
     InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
     InterlockedMin(lowering_status[0u].first_unsupported_hir,
         target_lir_core[page_row].source_hir);
-    // TEMP diagnostic: expose the target opcode/operands through the existing
-    // status packet while isolating sample-suite lowering failures.
-    InterlockedMin(lowering_status[0u].available_capacity,
-        target_lir_core[page_row].op);
-    InterlockedMin(lowering_status[0u].required_capacity,
-        target_lir_core[page_row].result_or_target);
 }

@@ -14,7 +14,6 @@
 // before claiming an unbounded predicate solver.
 
 import atomics;
-import generated_parse_production_ids;
 import hir_records;
 
 struct Params
@@ -29,7 +28,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirLinks> compact_hir_links;
-StructuredBuffer<HirPredicateFacts> compact_hir_predicate_facts;
+StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
 StructuredBuffer<uint> compact_type_arg_count;
 StructuredBuffer<HirTypeArg> compact_type_args;
 StructuredBuffer<HirRange> compact_type_arg_ranges;
@@ -96,17 +95,17 @@ bool bound_args_container(uint node)
 {
     if (!valid_node(node))
         return false;
-    uint kind = compact_hir_predicate_facts[node].production;
-    return kind == PROD_BOUND_TYPE_ARGS_SOME ||
-           kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE;
+    uint kind = compact_hir_semantic_facts[node].semantic_kind;
+    return kind == HIR_SEMANTIC_BOUND_ARGUMENT_LIST ||
+           kind == HIR_SEMANTIC_BOUND_ARGUMENT_TAIL;
 }
 
 bool bound_expr_node(uint node)
 {
     if (!valid_node(node))
         return false;
-    uint kind = compact_hir_predicate_facts[node].production;
-    return kind == PROD_BOUND_TYPE_IDENT || kind == PROD_BOUND_TYPE_REF;
+    uint kind = compact_hir_semantic_facts[node].semantic_kind;
+    return kind == HIR_SEMANTIC_BOUND_PATH || kind == HIR_SEMANTIC_BOUND_REFERENCE;
 }
 
 void publish_status(uint owner, uint status)
@@ -182,8 +181,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         publish_status(owner, PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH);
 
     uint owner_parent = parent_node(node);
-    if (compact_hir_predicate_facts[node].production == PROD_TYPE_IDENT &&
+    if (compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_TYPE_PATH &&
         valid_node(owner_parent) &&
-        compact_hir_predicate_facts[owner_parent].production == PROD_IMPL_TRAIT)
+        compact_hir_semantic_facts[owner_parent].semantic_kind == HIR_SEMANTIC_IMPL_TRAIT)
         atomic_u32_min(predicate_trait_impl_trait_type_node, owner_parent, node);
 }

@@ -11,6 +11,7 @@ StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 RWStructuredBuffer<uint> semantic_struct_hir_by_name_token;
 RWStructuredBuffer<uint> semantic_struct_field_count_by_hir;
+RWStructuredBuffer<uint> semantic_struct_field_start_by_hir;
 
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -35,6 +36,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (field.owner < hir_count)
         {
             uint ignored;
+            InterlockedMin(semantic_struct_field_start_by_hir[field.owner], row, ignored);
             InterlockedMax(semantic_struct_field_count_by_hir[field.owner],
                            field.ordinal + 1u, ignored);
         }

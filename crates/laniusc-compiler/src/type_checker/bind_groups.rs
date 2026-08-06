@@ -1,13 +1,9 @@
 use super::*;
 
-mod empty_hir_bindings;
+mod hir_resources;
 mod module_path_resources;
 
-use empty_hir_bindings::{
-    EmptyHirBindings,
-    register_empty_hir_resources,
-    register_hir_item_resources,
-};
+use hir_resources::register_hir_resources;
 use module_path_resources::register_module_path_resources;
 
 impl GpuTypeChecker {
@@ -21,7 +17,7 @@ impl GpuTypeChecker {
         token_count_buf: &wgpu::Buffer,
         token_file_id_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
-        hir_items: Option<GpuTypeCheckHirItemBuffers<'_>>,
+        hir_items: GpuTypeCheckHirItemBuffers<'_>,
         passes: &TypeCheckPasses,
         dependency_interfaces: Option<&GpuDependencyInterfaceState>,
     ) -> Result<ResidentTypeCheckState> {
@@ -30,7 +26,6 @@ impl GpuTypeChecker {
         let token_capacity = allocation.token_capacity;
         let hir_node_capacity = allocation.hir_node_capacity;
         let parser_hir_node_capacity = allocation.parser_hir_node_capacity;
-        let uses_hir_items = allocation.uses_hir_items;
         let allocation_timing =
             crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
         let allocation_start = std::time::Instant::now();
@@ -70,18 +65,16 @@ impl GpuTypeChecker {
         let call_arg_row_capacity = allocation.call_arg_row_capacity;
         let module_record_capacity = allocation.module_record_capacity;
         let parser_feature_flags = allocation.parser_feature_flags;
-        let hir_items = hir_items.map(|mut items| {
-            items.call_param_row_capacity = call_param_row_capacity;
-            items.call_arg_row_capacity = call_arg_row_capacity;
-            items.module_record_capacity = module_record_capacity;
-            items.parser_feature_flags = parser_feature_flags;
-            items
-        });
+        let mut hir_items = hir_items;
+        hir_items.call_param_row_capacity = call_param_row_capacity;
+        hir_items.call_arg_row_capacity = call_arg_row_capacity;
+        hir_items.module_record_capacity = module_record_capacity;
+        hir_items.parser_feature_flags = parser_feature_flags;
         let call_generic_claim_capacity =
             generic_claim_capacity_for_features(token_capacity, parser_feature_flags);
         let predicate_capacity =
             predicate_capacity_for_features(hir_node_capacity, parser_feature_flags);
-        let upstream_workspace = hir_items.map(|items| items.upstream_workspace);
+        let upstream_workspace = Some(hir_items.upstream_workspace);
         let typecheck_graph = compiler_graph::TypeCheckCompilerGraph::new(
             device,
             hir_node_capacity,
@@ -329,20 +322,6 @@ impl GpuTypeChecker {
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let method_module_id_by_file_id_implicit_root = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.method_module_id_by_file_id_implicit_root",
-            source_file_capacity.max(1) as usize,
-            0,
-            wgpu::BufferUsages::empty(),
-        );
-        let method_module_count_out_implicit_root = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.method_module_count_out_implicit_root",
-            1,
-            1,
-            wgpu::BufferUsages::empty(),
-        );
         let type_decl_generic_param_count_by_owner_token =
             typecheck_graph.u32_buffer("type_decl_generic_param_count_by_owner_token")?;
         // Local and imported named instances share this identity discriminator.
@@ -354,6 +333,13 @@ impl GpuTypeChecker {
             "type_check.resident.type_instance_decl_token",
             token_capacity as usize,
             u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_aggregate_word_count = typed_storage_u32_fill_rw(
+            device,
+            "type_check.resident.type_instance_aggregate_word_count",
+            token_capacity as usize,
+            0,
             wgpu::BufferUsages::empty(),
         );
         let type_instance_arg_ref_tag = typecheck_graph.u32_buffer("type_instance_arg_ref_tag")?;
@@ -450,7 +436,6 @@ impl GpuTypeChecker {
         let method_token_hir_dispatch_args =
             typecheck_graph.u32_buffer("method_token_hir_dispatch_args")?;
         allocation_stamp!("buffers");
-        let empty_hir = EmptyHirBindings::new(device, uses_hir_items, hir_node_capacity);
         let graph_bindings = typecheck_graph.bindings()?;
         let dependency_words_fallback = if dependency_interfaces.is_none() {
             Some(typecheck_graph.u32_buffer("external_type_library_id")?)
@@ -471,11 +456,7 @@ impl GpuTypeChecker {
             &token_hir_active_dispatch_args,
         );
         resources.buffer("hir_active_count", &hir_active_count);
-        if let Some(hir_items) = hir_items {
-            register_hir_item_resources(&mut resources, hir_items);
-        } else {
-            register_empty_hir_resources(&mut resources, &empty_hir);
-        }
+        register_hir_resources(&mut resources, hir_items);
         resources.buffer("status", &self.status_buf);
         resources.buffer("visible_decl", &visible_decl);
         resources.buffer("visible_type", &visible_type);
@@ -566,6 +547,10 @@ impl GpuTypeChecker {
         );
         resources.buffer("type_instance_decl_token", &type_instance_decl_token);
         resources.buffer(
+            "type_instance_aggregate_word_count",
+            &type_instance_aggregate_word_count,
+        );
+        resources.buffer(
             "type_semantic_row_by_token",
             &type_semantic_buffers.row_by_token,
         );
@@ -652,58 +637,54 @@ impl GpuTypeChecker {
             resources.validate_graph_pass(pass, &[("name_count_in", "name_scan_total")])?;
         }
         allocation_stamp!("core_and_name_bind_groups");
-        let module_path = if let Some(hir_items) = hir_items {
-            Some(create_module_path_state_with_passes(
-                passes,
-                &typecheck_graph,
-                device,
-                ModulePathCreateInputs {
-                    params: &self.params_buf,
-                    source_len,
-                    source_file_capacity,
-                    token_capacity,
-                    hir_node_capacity,
-                    parser_hir_node_capacity,
-                    hir_active_count_buf: &hir_active_count,
-                    hir_active_dispatch_args: &hir_active_dispatch_args,
-                    hir_items,
-                    decl_name_token: &decl_name_token,
-                    decl_id_by_name_token: &decl_id_by_name_token,
-                    decl_kind: &decl_kind,
-                    type_instance_arg_ref_tag: &type_instance_arg_ref_tag,
-                    type_instance_arg_ref_payload: &type_instance_arg_ref_payload,
-                    type_decl_generic_param_count_by_owner_token:
-                        &type_decl_generic_param_count_by_owner_token,
-                    module_record_family_bits: &module_record_family_bits,
-                    module_record_family_flag: &module_record_family_flag,
-                    module_record_prefix: &module_record_prefix,
-                    module_record_scan_workspace: module_record_scan_workspace.as_ref(),
-                    module_value_scan_workspace: module_value_scan_workspace.as_ref(),
-                    decl_type_key_prefix: &decl_type_key_prefix,
-                    decl_value_key_prefix: &decl_value_key_prefix,
-                    decl_type_key_count_out: &decl_type_key_count_out,
-                    decl_value_key_count_out: &decl_value_key_count_out,
-                    decl_status: &decl_status,
-                    import_visible_type_count: &import_visible_type_count,
-                    import_visible_value_count: &import_visible_value_count,
-                    import_visible_type_prefix: &import_visible_type_prefix,
-                    import_visible_value_prefix: &import_visible_value_prefix,
-                    import_visible_type_count_out: &import_visible_type_count_out,
-                    import_visible_value_count_out: &import_visible_value_count_out,
-                    module_path_key_radix_block_histogram: &module_path_key_radix_block_histogram,
-                    module_path_key_radix_block_bucket_prefix:
-                        &module_path_key_radix_block_bucket_prefix,
-                    module_path_key_radix_bucket_total: &module_path_key_radix_bucket_total,
-                    module_path_key_radix_bucket_base: &module_path_key_radix_bucket_base,
-                    dependency_interfaces,
-                },
-                &resources,
-            )?)
-        } else {
-            None
-        };
+        let module_path = create_module_path_state_with_passes(
+            passes,
+            &typecheck_graph,
+            device,
+            ModulePathCreateInputs {
+                params: &self.params_buf,
+                source_len,
+                source_file_capacity,
+                token_capacity,
+                hir_node_capacity,
+                parser_hir_node_capacity,
+                hir_active_count_buf: &hir_active_count,
+                hir_active_dispatch_args: &hir_active_dispatch_args,
+                hir_items,
+                decl_name_token: &decl_name_token,
+                decl_id_by_name_token: &decl_id_by_name_token,
+                decl_kind: &decl_kind,
+                type_instance_arg_ref_tag: &type_instance_arg_ref_tag,
+                type_instance_arg_ref_payload: &type_instance_arg_ref_payload,
+                type_decl_generic_param_count_by_owner_token:
+                    &type_decl_generic_param_count_by_owner_token,
+                module_record_family_bits: &module_record_family_bits,
+                module_record_family_flag: &module_record_family_flag,
+                module_record_prefix: &module_record_prefix,
+                module_record_scan_workspace: module_record_scan_workspace.as_ref(),
+                module_value_scan_workspace: module_value_scan_workspace.as_ref(),
+                decl_type_key_prefix: &decl_type_key_prefix,
+                decl_value_key_prefix: &decl_value_key_prefix,
+                decl_type_key_count_out: &decl_type_key_count_out,
+                decl_value_key_count_out: &decl_value_key_count_out,
+                decl_status: &decl_status,
+                import_visible_type_count: &import_visible_type_count,
+                import_visible_value_count: &import_visible_value_count,
+                import_visible_type_prefix: &import_visible_type_prefix,
+                import_visible_value_prefix: &import_visible_value_prefix,
+                import_visible_type_count_out: &import_visible_type_count_out,
+                import_visible_value_count_out: &import_visible_value_count_out,
+                module_path_key_radix_block_histogram: &module_path_key_radix_block_histogram,
+                module_path_key_radix_block_bucket_prefix:
+                    &module_path_key_radix_block_bucket_prefix,
+                module_path_key_radix_bucket_total: &module_path_key_radix_bucket_total,
+                module_path_key_radix_bucket_base: &module_path_key_radix_bucket_base,
+                dependency_interfaces,
+            },
+            &resources,
+        )?;
         allocation_stamp!("module_path");
-        register_module_path_resources(&mut resources, module_path.as_ref())?;
+        register_module_path_resources(&mut resources, &module_path)?;
         typecheck_graph.validate_module_pass_bindings(&resources)?;
         resources.validate_graph_pass(compiler_graph::MODULE_DECL_ROWS_MATERIALIZE_PASS, &[])?;
         resources.buffer("module_value_path_call_open", &module_value_path_call_open);
@@ -1002,23 +983,16 @@ impl GpuTypeChecker {
             )?;
         }
         typecheck_graph.validate_registered_generic_param_bindings(&resources)?;
-        let predicates = if module_path.is_some() {
-            hir_items.expect("predicate collection requires HIR item buffers");
-            Some(create_predicate_bind_groups(
-                device,
-                passes,
-                token_capacity,
-                predicate_capacity_u32,
-                predicate_key_radix_n_blocks,
-                &resources,
-            )?)
-        } else {
-            None
-        };
-        if predicates.is_some() {
-            resources.validate_graph_passes(compiler_graph::REGISTERED_PREDICATE_DIRECT_PASSES)?;
-            resources.validate_graph_passes(compiler_graph::REGISTERED_PREDICATE_LOGICAL_PASSES)?;
-        }
+        let predicates = create_predicate_bind_groups(
+            device,
+            passes,
+            token_capacity,
+            predicate_capacity_u32,
+            predicate_key_radix_n_blocks,
+            &resources,
+        )?;
+        resources.validate_graph_passes(compiler_graph::REGISTERED_PREDICATE_DIRECT_PASSES)?;
+        resources.validate_graph_passes(compiler_graph::REGISTERED_PREDICATE_LOGICAL_PASSES)?;
         allocation_stamp!("predicates");
         if struct_init_passes_required(parser_feature_flags) {
             resources.validate_graph_passes([
@@ -1047,16 +1021,8 @@ impl GpuTypeChecker {
             hir_node_capacity,
         )?;
         allocation_stamp!("type_instances");
-        let method_module_id_by_file_id = module_path
-            .as_ref()
-            .map(|module_path| &module_path.module_id_by_file_id)
-            .unwrap_or(&method_module_id_by_file_id_implicit_root);
-        let method_module_count_out = module_path
-            .as_ref()
-            .map(|module_path| &module_path.module_count_out)
-            .unwrap_or(&method_module_count_out_implicit_root);
-        resources.buffer("module_id_by_file_id", method_module_id_by_file_id);
-        resources.buffer("module_count_out", method_module_count_out);
+        resources.buffer("module_id_by_file_id", &module_path.module_id_by_file_id);
+        resources.buffer("module_count_out", &module_path.module_count_out);
         resources.validate_graph_passes([
             compiler_graph::METHOD_KEY_SEED_PASS,
             compiler_graph::METHOD_KEY_VALIDATION_PASS,
@@ -1163,6 +1129,7 @@ impl GpuTypeChecker {
             hir_active_dispatch,
             semantic_features,
             type_instance_decl_token,
+            _type_instance_aggregate_word_count: type_instance_aggregate_word_count,
             _call_dependency_library_id: call_dependency_library_id,
             _call_dependency_unit_id: call_dependency_unit_id,
             _call_dependency_local_index: call_dependency_local_index,

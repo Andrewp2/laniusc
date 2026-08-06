@@ -12,16 +12,25 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_expr_scalar_type;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_aggregate_word_count;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_segment_base;
+StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 RWStructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 RWStructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
+RWStructuredBuffer<uint> semantic_aggregate_decl_token_by_hir;
+RWStructuredBuffer<uint> semantic_aggregate_word_count_by_hir;
 RWStructuredBuffer<uint> semantic_array_length_by_hir;
 RWStructuredBuffer<uint> semantic_member_field_ordinal_by_hir;
 RWStructuredBuffer<uint> semantic_iterable_kind_by_hir;
@@ -30,12 +39,21 @@ RWStructuredBuffer<uint> semantic_function_result_word_count_by_hir;
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TY_STRUCT_BASE = 4096u;
+static const uint TY_ENUM_BASE = 1048576u;
+static const uint HIR_TYPE = 5u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
+static const uint HIR_STMT_LET = 1u;
+static const uint HIR_STMT_CONST = 2u;
 static const uint SCALAR_TYPE_SHIFT = 28u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -57,6 +75,20 @@ void name_token_ref(uint token, out uint tag, out uint payload)
 
     tag = type_expr_ref_tag[token];
     payload = type_expr_ref_payload[token];
+}
+
+uint type_head_token(uint node)
+{
+    uint path = node < active_hir_count() ? path_id_by_owner_hir[node] : INVALID;
+    uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+    if (path < path_count)
+    {
+        uint count = path_segment_count[path];
+        uint row = count != 0u ? path_segment_base[path] + count - 1u : INVALID;
+        if (row < gParams.n_tokens && valid_token(path_segment_token[row]))
+            return path_segment_token[row];
+    }
+    return node < active_hir_count() ? compact_hir_core[node].token_start : INVALID;
 }
 
 [shader("compute")]
@@ -111,12 +143,51 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else if (core.kind == HIR_ARRAY_EXPR)
         {
         }
+        else if (core.kind == HIR_STRUCT_LITERAL_EXPR)
+        {
+            name_token_ref(type_head_token(node), tag, payload);
+        }
         else if (core.kind == HIR_PATH_EXPR)
         {
             name_token_ref(core.token_start, tag, payload);
         }
+        else if (core.kind == HIR_TYPE)
+        {
+            // Fixed aggregate layout consumes declaration-field type nodes.
+            // Preserve their checked instance identity in the same dense HIR
+            // artifact used for expression values instead of reconstructing
+            // type resolution in a backend.
+            uint token = type_head_token(node);
+            if (valid_token(token))
+            {
+                tag = type_expr_ref_tag[token];
+                payload = type_expr_ref_payload[token];
+            }
+        }
+        else if ((core.kind == HIR_LET_STMT || core.kind == HIR_STMT) &&
+                 (hir_payload.a == HIR_STMT_LET ||
+                  hir_payload.a == HIR_STMT_CONST))
+        {
+            // Storage layout belongs to the checked declaration. Imported
+            // function-result references can remain canonical interface refs,
+            // while the destination annotation is already a local resolved
+            // instance. Projecting it here gives lowering one uniform dense
+            // layout fact without retaining either token table.
+            name_token_ref(hir_payload.b, tag, payload);
+        }
     }
     semantic_expr_ref_tag_by_hir[node] = tag;
     semantic_expr_ref_payload_by_hir[node] = payload;
+    semantic_aggregate_decl_token_by_hir[node] =
+        tag == TYPE_REF_INSTANCE && valid_token(payload)
+            ? type_instance_decl_token[payload]
+            : tag == TYPE_REF_SCALAR && payload >= TY_STRUCT_BASE &&
+                payload < TY_ENUM_BASE && valid_token(payload - TY_STRUCT_BASE)
+                ? payload - TY_STRUCT_BASE : INVALID;
+    semantic_aggregate_word_count_by_hir[node] =
+        valid_hir(node) && compact_hir_core[node].kind == HIR_CALL_EXPR
+            ? semantic_aggregate_word_count_by_hir[node]
+            : tag == TYPE_REF_INSTANCE && valid_token(payload)
+                ? type_instance_aggregate_word_count[payload] : 0u;
     semantic_array_length_by_hir[node] = INVALID;
 }

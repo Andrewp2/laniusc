@@ -14,9 +14,11 @@ StructuredBuffer<uint> struct_lit_context_decl_token;
 StructuredBuffer<uint> struct_lit_context_instance;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> member_result_field_ordinal;
 RWStructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 RWStructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
+RWStructuredBuffer<uint> semantic_aggregate_decl_token_by_hir;
 RWStructuredBuffer<uint> semantic_member_field_ordinal_by_hir;
 
 static const uint INVALID = 0xffffffffu;
@@ -50,17 +52,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (kind != HIR_STRUCT_LITERAL_EXPR) return;
 
     uint instance = struct_lit_context_instance[dense];
-    if (valid_token(instance))
+    uint contextual_decl = valid_token(instance)
+        ? type_instance_decl_token[instance]
+        : struct_lit_context_decl_token[dense];
+    uint explicit_decl = semantic_aggregate_decl_token_by_hir[dense];
+    // A bare generic constructor names the declaration while its arguments
+    // come from the checked destination/return context. Preserve an explicit
+    // instantiated constructor, but refine a matching scalar declaration to
+    // the contextual instance.
+    if (valid_token(instance) &&
+        (semantic_expr_ref_tag_by_hir[dense] == TYPE_REF_INVALID ||
+         explicit_decl == contextual_decl))
     {
         semantic_expr_ref_tag_by_hir[dense] = TYPE_REF_INSTANCE;
         semantic_expr_ref_payload_by_hir[dense] = instance;
+        semantic_aggregate_decl_token_by_hir[dense] =
+            type_instance_decl_token[instance];
         return;
     }
+    if (semantic_expr_ref_tag_by_hir[dense] != TYPE_REF_INVALID)
+        return;
 
-    uint decl = struct_lit_context_decl_token[dense];
+    uint decl = contextual_decl;
     if (!valid_token(decl)) return;
     uint tag = decl_type_ref_tag[decl];
     if (tag == TYPE_REF_INVALID) return;
     semantic_expr_ref_tag_by_hir[dense] = tag;
     semantic_expr_ref_payload_by_hir[dense] = decl_type_ref_payload[decl];
+    semantic_aggregate_decl_token_by_hir[dense] = decl;
 }

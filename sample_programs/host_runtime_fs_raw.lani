@@ -9,10 +9,10 @@ fn main() -> i32 {
     let payload: [i32; 1] = [82];
     let newline: [i32; 1] = [10];
     let read_buffer: [i32; 1] = [0];
-    let path_ptr: u32 = core::mem::i32_array_data_ptr(path);
-    let payload_ptr: u32 = core::mem::i32_array_data_ptr(payload);
-    let newline_ptr: u32 = core::mem::i32_array_data_ptr(newline);
-    let read_ptr: u32 = core::mem::i32_array_data_ptr(read_buffer);
+    let path_ptr: ptr = core::mem::i32_array_data_ptr(path);
+    let payload_ptr: ptr = core::mem::i32_array_data_ptr(payload);
+    let newline_ptr: ptr = core::mem::i32_array_data_ptr(newline);
+    let read_ptr: ptr = core::mem::i32_array_data_ptr(read_buffer);
 
     let output: i32 = std::fs::open_write(path_ptr, 1);
     if (output < 0) {

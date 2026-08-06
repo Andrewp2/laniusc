@@ -230,6 +230,6 @@ pub extern "lanius_std" fn argc() -> i32;
 
 pub extern "lanius_std" fn arg_len(index: i32) -> i32;
 
-pub extern "lanius_std" fn arg_read(index: i32, ptr: u32, len: usize) -> i32;
+pub extern "lanius_std" fn arg_read(index: i32, ptr: ptr, len: usize) -> i32;
 
 pub extern "lanius_std" fn exit(code: i32);

@@ -13,6 +13,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> declaration_generic_arity;
+RWStructuredBuffer<uint> declaration_field_count;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -23,5 +24,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint declaration_i = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
     if (declaration_i < gParams.declaration_count)
+    {
         declaration_generic_arity[declaration_i] = 0u;
+        declaration_field_count[declaration_i] = 0u;
+    }
 }

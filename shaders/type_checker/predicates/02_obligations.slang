@@ -6,7 +6,6 @@
 
 import hir_records;
 import fixed.key;
-import generated_parse_production_ids;
 import hir_expr_semantics;
 import range_query;
 import status;
@@ -23,7 +22,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<HirPredicateFacts> compact_hir_predicate_facts;
+StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
@@ -238,7 +237,7 @@ uint compact_expr_for_raw(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint result = compact_hir_predicate_facts[node].expr_result_root;
+    uint result = compact_hir_semantic_facts[node].expr_result_root;
     return compact_node_for_raw(valid_node(result) ? result : node);
 }
 
@@ -330,7 +329,7 @@ uint direct_node_type(uint node)
 
     if (compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR)
     {
-        uint head_node = compact_hir_predicate_facts[node].struct_lit_head;
+        uint head_node = compact_hir_semantic_facts[node].struct_lit_head;
         if (!valid_node(head_node))
             return TY_UNKNOWN;
         return visible_type_for_token(compact_hir_core[head_node].token_start);
@@ -435,7 +434,7 @@ uint first_value_type_from_node(uint root, out uint value_token)
     if (!valid_node(root))
         return TY_UNKNOWN;
 
-    uint result = compact_hir_predicate_facts[root].expr_result_root;
+    uint result = compact_hir_semantic_facts[root].expr_result_root;
     if (!valid_node(result))
         result = root;
     uint expr = compact_expr_for_raw(result);
@@ -1145,13 +1144,13 @@ void validate_unique_impl_key(uint impl_node)
 void validate_predicate_fail_closed_status(uint node)
 {
     uint status_value = predicate_status[node];
-    uint kind = compact_hir_predicate_facts[node].production;
+    uint kind = compact_hir_semantic_facts[node].semantic_kind;
     bool trait_contract_node =
-        kind == PROD_IMPL_TRAIT ||
-        kind == PROD_IMPL_INHERENT ||
-        kind == PROD_IMPL_FN ||
-        kind == PROD_TRAIT_METHOD ||
-        kind == PROD_TRAIT_METHOD_PUB;
+        kind == HIR_SEMANTIC_IMPL_TRAIT ||
+        kind == HIR_SEMANTIC_IMPL_INHERENT ||
+        kind == HIR_SEMANTIC_IMPL_FUNCTION ||
+        kind == HIR_SEMANTIC_TRAIT_METHOD ||
+        kind == HIR_SEMANTIC_PUBLIC_TRAIT_METHOD;
 
     bool trait_bound_status =
         status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION ||
