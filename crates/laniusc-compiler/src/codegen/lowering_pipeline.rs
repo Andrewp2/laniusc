@@ -16,7 +16,7 @@ use crate::{
         passes_core::map_readback_blocking,
     },
     parser::buffers::GpuHirView,
-    type_checker::GpuSemanticLoweringBuffers,
+    type_checker::GpuSemanticArtifactView,
 };
 
 enum TargetStage {
@@ -193,7 +193,7 @@ impl GpuLoweringPipeline {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         hir: GpuSemanticHirInputs<'_>,
-        semantic_inputs: GpuSemanticLoweringBuffers<'_>,
+        semantic_inputs: GpuSemanticArtifactView<'_>,
     ) -> Result<()> {
         self.semantic
             .record(device, encoder, hir, semantic_inputs)?;
@@ -220,7 +220,7 @@ impl GpuLoweringPipeline {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         hir: &GpuHirView,
-        semantic: GpuSemanticLoweringBuffers<'_>,
+        semantic: GpuSemanticArtifactView<'_>,
     ) -> Result<()> {
         self.record(device, encoder, hir.into(), semantic)
     }
@@ -231,7 +231,7 @@ impl GpuLoweringPipeline {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         hir: &GpuHirView,
-        semantic: GpuSemanticLoweringBuffers<'_>,
+        semantic: GpuSemanticArtifactView<'_>,
         library_id: u32,
         unit_id: u32,
     ) -> Result<()> {

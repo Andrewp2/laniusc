@@ -124,11 +124,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.op == SEMANTIC_LIR_OP_LOAD &&
              (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
     {
-        opcode = local_row == 0u ? WASM_LIR_OP_I32_CONST
-            : local_row == 1u ? WASM_LIR_OP_I32_MUL
-            : local_row == 2u ? WASM_LIR_OP_I32_ADD
-            : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_LOAD : WASM_LIR_OP_I32_LOAD;
-        immediate = local_row == 0u ? 4u : 0u;
+        bool call_index_base = operands.a < semantic_count &&
+            (semantic_lir_core[operands.a].op == SEMANTIC_LIR_OP_CALL ||
+             semantic_lir_core[operands.a].op == SEMANTIC_LIR_OP_CALL_SYMBOL);
+        if (call_index_base)
+        {
+            // Calls are effect rows and therefore follow the already emitted
+            // subscript expression. Save the returned aggregate address, then
+            // consume the remaining subscript without assuming an implicit
+            // operand swap in Wasm's stack machine.
+            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
+                : local_row == 1u ? WASM_LIR_OP_I32_CONST
+                : local_row == 2u ? WASM_LIR_OP_I32_MUL
+                : local_row == 3u ? WASM_LIR_OP_LOCAL_GET
+                : local_row == 4u ? WASM_LIR_OP_I32_ADD
+                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_LOAD : WASM_LIR_OP_I32_LOAD;
+            immediate = local_row == 0u || local_row == 3u
+                ? WASM_SYNTHETIC_I32_TEMP : local_row == 1u ? 4u : 0u;
+        }
+        else
+        {
+            opcode = local_row == 0u ? WASM_LIR_OP_I32_CONST
+                : local_row == 1u ? WASM_LIR_OP_I32_MUL
+                : local_row == 2u ? WASM_LIR_OP_I32_ADD
+                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_LOAD : WASM_LIR_OP_I32_LOAD;
+            immediate = local_row == 0u ? 4u : 0u;
+        }
     }
     else if (core.op == SEMANTIC_LIR_OP_LOAD &&
              (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)

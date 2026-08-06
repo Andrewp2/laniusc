@@ -155,7 +155,7 @@ fn record_type_alias_projection_passes(
 fn record_type_subtree_comparison_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    bind_groups: &ResidentTypeCheckState,
+    bind_groups: &ResidentTypeCheckWorkspace,
 ) -> Result<()> {
     bind_groups.type_subtree_compare_scan.record(encoder)?;
     record_compute(
@@ -245,17 +245,22 @@ impl GpuTypeChecker {
             params_buf,
             status_buf,
             status_readback,
-            resident_state: Mutex::new(None),
+            resident_workspace: Mutex::new(None),
+            current_semantic_artifact: Mutex::new(None),
         })
     }
 
     /// Releases reusable semantic buffers and their bind groups while
     /// retaining the type-check pipelines and fixed status resources.
-    pub fn release_current_resident_state(&self) {
+    pub fn release_current_resident_workspace(&self) {
         *self
-            .resident_state
+            .current_semantic_artifact
             .lock()
-            .expect("GpuTypeChecker.resident_state poisoned") = None;
+            .expect("GpuTypeChecker.current_semantic_artifact poisoned") = None;
+        *self
+            .resident_workspace
+            .lock()
+            .expect("GpuTypeChecker.resident_workspace poisoned") = None;
     }
 
     /// Records resident type checking with parser-owned HIR item metadata.
@@ -370,11 +375,11 @@ impl GpuTypeChecker {
         };
 
         {
-            let mut resident_state_guard = self
-                .resident_state
+            let mut resident_workspace_guard = self
+                .resident_workspace
                 .lock()
-                .expect("GpuTypeChecker.resident_state poisoned");
-            let needs_rebuild = resident_state_guard
+                .expect("GpuTypeChecker.resident_workspace poisoned");
+            let needs_rebuild = resident_workspace_guard
                 .as_ref()
                 .map(|state| !state.can_reuse_for(cache_key))
                 .unwrap_or(true);
@@ -390,7 +395,7 @@ impl GpuTypeChecker {
                 || resident_cache_trace)
                 && needs_rebuild
             {
-                if let Some(previous) = resident_state_guard.as_ref() {
+                if let Some(previous) = resident_workspace_guard.as_ref() {
                     eprintln!(
                         "[gpu_compile_host_timer] typecheck.resident_cache_miss: input_fingerprint={:#018x}->{:#018x} token_capacity={}->{} hir_capacity={}->{} parser_hir_capacity={}->{} module_capacity={}->{} call_param_capacity={}->{} call_arg_capacity={}->{} features={:#010x}->{:#010x}",
                         previous.cache_key.input_fingerprint,
@@ -443,10 +448,14 @@ impl GpuTypeChecker {
                 // that state before allocating its replacement; assigning the
                 // replacement directly would transiently retain both complete
                 // type-check workspaces at a compilation-unit boundary.
-                resident_state_guard.take();
+                self.current_semantic_artifact
+                    .lock()
+                    .expect("GpuTypeChecker.current_semantic_artifact poisoned")
+                    .take();
+                resident_workspace_guard.take();
                 let (state, resettable_buffers) =
                     crate::gpu::buffers::collect_resettable_buffers(|| {
-                        self.create_resident_state(
+                        self.create_resident_workspace(
                             device,
                             allocation,
                             token_buf,
@@ -460,16 +469,21 @@ impl GpuTypeChecker {
                     });
                 let mut state = state?;
                 state.resettable_buffers = resettable_buffers;
-                *resident_state_guard = Some(state);
+                *resident_workspace_guard = Some(state);
             }
             host_timer.stamp(if rebuilt {
-                "resident_state_rebuilt"
+                "resident_workspace_rebuilt"
             } else {
-                "resident_state_reused"
+                "resident_workspace_reused"
             });
-            let bind_groups = resident_state_guard
+            let bind_groups = resident_workspace_guard
                 .as_ref()
                 .expect("resident type-check state must exist");
+            *self
+                .current_semantic_artifact
+                .lock()
+                .expect("GpuTypeChecker.current_semantic_artifact poisoned") =
+                Some(bind_groups.semantic_artifact()?);
             let module_path = &bind_groups.module_path;
             let predicates = &bind_groups.predicates;
             bind_groups.clear_job_storage(encoder);
@@ -1334,36 +1348,36 @@ impl GpuTypeChecker {
                     },
                 );
             }
+            if members_required {
+                record_compute_indirect(
+                    encoder,
+                    &self
+                        .passes
+                        .kernel("type_checker/type/instances/03a_member_receivers"),
+                    &bind_groups.type_instances.member_receivers,
+                    "type_check.resident.type_instances_member_receivers_after_final_types.pass",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                record_compute_indirect(
+                    encoder,
+                    &self
+                        .passes
+                        .kernel("type_checker/type/instances/03_member_results"),
+                    &bind_groups.type_instances.member_results,
+                    "type_check.resident.type_instances_member_results_after_final_types.pass",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                record_compute_indirect(
+                    encoder,
+                    &self
+                        .passes
+                        .kernel("type_checker/type/instances/03b_member_substitute"),
+                    &bind_groups.type_instances.member_substitute,
+                    "type_check.resident.type_instances_member_substitute_after_final_types.pass",
+                    &bind_groups.token_active_dispatch_args,
+                )?;
+            }
             if arrays_required {
-                if members_required {
-                    record_compute_indirect(
-                        encoder,
-                        &self
-                            .passes
-                            .kernel("type_checker/type/instances/03a_member_receivers"),
-                        &bind_groups.type_instances.member_receivers,
-                        "type_check.resident.type_instances_member_receivers_after_final_types.pass",
-                        &bind_groups.hir_active_dispatch_args,
-                    )?;
-                    record_compute_indirect(
-                        encoder,
-                        &self
-                            .passes
-                            .kernel("type_checker/type/instances/03_member_results"),
-                        &bind_groups.type_instances.member_results,
-                        "type_check.resident.type_instances_member_results_after_final_types.pass",
-                        &bind_groups.hir_active_dispatch_args,
-                    )?;
-                    record_compute_indirect(
-                        encoder,
-                        &self
-                            .passes
-                            .kernel("type_checker/type/instances/03b_member_substitute"),
-                        &bind_groups.type_instances.member_substitute,
-                        "type_check.resident.type_instances_member_substitute_after_final_types.pass",
-                        &bind_groups.token_active_dispatch_args,
-                    )?;
-                }
                 record_compute_indirect(
                     encoder,
                     &self
@@ -1765,9 +1779,9 @@ impl GpuTypeChecker {
         consume: impl FnOnce(&wgpu::Buffer) -> R,
     ) -> Option<R> {
         let guard = self
-            .resident_state
+            .resident_workspace
             .lock()
-            .expect("GpuTypeChecker.resident_state poisoned");
+            .expect("GpuTypeChecker.resident_workspace poisoned");
         guard
             .as_ref()
             .map(|bind_groups| consume(&bind_groups.visible_decl))
@@ -1779,9 +1793,9 @@ impl GpuTypeChecker {
         consume: impl FnOnce(&wgpu::Buffer) -> R,
     ) -> Option<R> {
         let guard = self
-            .resident_state
+            .resident_workspace
             .lock()
-            .expect("GpuTypeChecker.resident_state poisoned");
+            .expect("GpuTypeChecker.resident_workspace poisoned");
         guard
             .as_ref()
             .map(|bind_groups| consume(&bind_groups.visible_type))
@@ -1793,9 +1807,9 @@ impl GpuTypeChecker {
         consume: impl FnOnce(&wgpu::Buffer) -> R,
     ) -> Option<R> {
         let guard = self
-            .resident_state
+            .resident_workspace
             .lock()
-            .expect("GpuTypeChecker.resident_state poisoned");
+            .expect("GpuTypeChecker.resident_workspace poisoned");
         let state = guard.as_ref()?;
         let enclosing_fn = state.typecheck_graph.u32_buffer("enclosing_fn").ok()?;
         Some(consume(&enclosing_fn))
@@ -1805,93 +1819,10 @@ impl GpuTypeChecker {
     /// Backend recording owns this boundary independently of the resident
     /// frontend workspace and cannot observe token-indexed type-check state.
     pub(crate) fn semantic_artifact(&self) -> Option<OwnedGpuSemanticArtifact> {
-        let guard = self
-            .resident_state
+        self.current_semantic_artifact
             .lock()
-            .expect("GpuTypeChecker.resident_state poisoned");
-        let state = guard.as_ref()?;
-        let module_path = &state.module_path;
-        Some(OwnedGpuSemanticArtifact {
-            value_decl_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_value_decl_by_hir")
-                .ok()?,
-            value_type_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_value_type_by_hir")
-                .ok()?,
-            value_const_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_value_const_by_hir")
-                .ok()?,
-            value_const_present_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_value_const_present_by_hir")
-                .ok()?,
-            param_type_by_row: state
-                .typecheck_graph
-                .buffer("semantic_param_type_by_row")
-                .ok()?,
-            enclosing_fn_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_enclosing_fn_by_hir")
-                .ok()?,
-            function_return_type_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_function_return_type_by_hir")
-                .ok()?,
-            function_entrypoint_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_function_entrypoint_by_hir")
-                .ok()?,
-            function_host_service_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_function_host_service_by_hir")
-                .ok()?,
-            control_depth_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_control_depth_by_hir")
-                .ok()?,
-            calls_by_hir: state.typecheck_graph.buffer("semantic_calls_by_hir").ok()?,
-            expr_ref_tag_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_expr_ref_tag_by_hir")
-                .ok()?,
-            expr_ref_payload_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_expr_ref_payload_by_hir")
-                .ok()?,
-            aggregate_decl_token_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_aggregate_decl_token_by_hir")
-                .ok()?,
-            aggregate_word_count_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_aggregate_word_count_by_hir")
-                .ok()?,
-            array_length_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_array_length_by_hir")
-                .ok()?,
-            member_field_ordinal_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_member_field_ordinal_by_hir")
-                .ok()?,
-            iterable_kind_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_iterable_kind_by_hir")
-                .ok()?,
-            function_result_word_count_by_hir: state
-                .typecheck_graph
-                .buffer("semantic_function_result_word_count_by_hir")
-                .ok()?,
-            compact_expr_scalar_type: state.compact_expr_scalar_type.clone(),
-            public_decl_index_by_hir: module_path.interface_public_decl_index_by_hir.clone(),
-            struct_init_field_ordinal_by_row: state
-                .typecheck_graph
-                .buffer("struct_init_field_ordinal_by_row")
-                .ok()?,
-        })
+            .expect("GpuTypeChecker.current_semantic_artifact poisoned")
+            .clone()
     }
 
     /// Borrows the stable-identity and typed-root tables needed by the
@@ -1901,9 +1832,9 @@ impl GpuTypeChecker {
         consume: impl FnOnce(GpuSemanticInterfaceIdentityBuffers<'_>) -> R,
     ) -> Option<R> {
         let guard = self
-            .resident_state
+            .resident_workspace
             .lock()
-            .expect("GpuTypeChecker.resident_state poisoned");
+            .expect("GpuTypeChecker.resident_workspace poisoned");
         let state = guard.as_ref()?;
         let module_path = &state.module_path;
         let name_scan_total = state.typecheck_graph.u32_buffer("name_scan_total").ok()?;
@@ -2046,9 +1977,9 @@ impl GpuTypeChecker {
         ) -> R,
     ) -> Option<R> {
         let guard = self
-            .resident_state
+            .resident_workspace
             .lock()
-            .expect("GpuTypeChecker.resident_state poisoned");
+            .expect("GpuTypeChecker.resident_workspace poisoned");
         let bind_groups = guard.as_ref()?;
         let graph = &bind_groups.typecheck_graph;
         let buffers = [

@@ -18,6 +18,8 @@ StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> call_result_instance;
+StructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> member_result_context_instance;
 RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
@@ -90,6 +92,26 @@ bool index_ref(uint node, out uint tag, out uint payload)
     return tag != TYPE_REF_INVALID && payload != INVALID;
 }
 
+bool call_ref(uint node, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    if (!valid_hir(node) || compact_hir_core[node].kind != HIR_CALL_EXPR) return false;
+    uint instance = call_result_instance[node];
+    if (valid_token(instance))
+    {
+        tag = TYPE_REF_INSTANCE;
+        payload = instance;
+        return true;
+    }
+    uint callee = compact_hir_payload[node].a;
+    uint token = name_token(callee);
+    uint ty = valid_token(token) ? call_return_type[token] : 0u;
+    if (ty == 0u) return false;
+    tag = TYPE_REF_SCALAR;
+    payload = ty;
+    return true;
+}
+
 bool self_ref(uint member, out uint tag, out uint payload)
 {
     tag = TYPE_REF_INVALID; payload = INVALID;
@@ -121,6 +143,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirPayload p = compact_hir_payload[member];
     uint token = p.c;
     if (!valid_token(token)) return;
+    // A member used as a call callee is resolved by the method/static-call
+    // pipeline. This pass may run again after final result types are known;
+    // it must not erase the call resolver's completed metadata.
+    if (call_callee(member)) return;
     member_result_ref_tag[token] = TYPE_REF_INVALID;
     member_result_ref_payload[token] = INVALID;
     member_result_context_instance[token] = INVALID;
@@ -134,11 +160,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         InterlockedCompareExchange(member_next_node[receiver], INVALID, member, previous);
         return;
     }
-    if (call_callee(member)) return;
-
     uint tag; uint payload;
     uint receiver_token = valid_token(p.d) ? p.d : name_token(receiver);
-    bool found = index_ref(receiver, tag, payload) || value_ref(receiver_token, tag, payload);
+    bool found = call_ref(receiver, tag, payload) ||
+        index_ref(receiver, tag, payload) || value_ref(receiver_token, tag, payload);
     if (!found) found = self_ref(member, tag, payload);
     if (!found) return;
     member_result_ref_tag[token] = tag;

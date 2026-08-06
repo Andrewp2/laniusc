@@ -79,6 +79,7 @@ static const uint STMT_ASSIGN = 5u;
 static const uint STMT_WHILE = 6u;
 static const uint STMT_FOR = 7u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
@@ -299,6 +300,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
         payload.b = INVALID;
         payload.c = hir_call_arg_count[raw];
         payload.d = encoded_call_context(hir_call_context_stmt_node[raw]);
+    }
+    else if (core.kind == HIR_INDEX_EXPR)
+    {
+        // The index base is an immediate operand identity. A postfix call,
+        // member, or earlier index may publish the enclosing expression as
+        // its result root, so following that root would make `values()[1]`
+        // refer to the index row itself instead of the call result.
+        uint raw_base = hir_expr_record[stmt_base + 1u];
+        uint base_kind = valid_raw(raw_base) ? hir_kind[raw_base] : 0u;
+        bool direct_base = base_kind == HIR_CALL_EXPR ||
+            base_kind == HIR_INDEX_EXPR || base_kind == HIR_MEMBER_EXPR ||
+            base_kind == HIR_ARRAY_EXPR ||
+            base_kind == HIR_STRUCT_LITERAL_EXPR ||
+            base_kind == HIR_MATCH_EXPR;
+        payload.a = expr_form;
+        payload.b = direct_base ? dense_id(raw_base) : expression_id(raw_base);
+        payload.c = expression_id(hir_expr_record[stmt_base + 2u]);
+        payload.d = hir_expr_record[stmt_base + 3u];
     }
     else if (core.kind == HIR_MEMBER_EXPR)
     {

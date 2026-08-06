@@ -2342,7 +2342,7 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         semantic_feature_flags in HirNodes => 4;
     });
-    graph_resources!(graph, Output {
+    graph_resources!(graph, Workspace {
         _method_token_dispatch_args as "method_token_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _method_hir_dispatch_args as "method_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _method_compact_dispatch_args as "method_compact_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
@@ -2365,7 +2365,7 @@ fn build_graph(
         _return_fn_flags as "return_fn_flags" in HirNodes => hir_rows * 4;
         _return_block_flags as "return_block_flags" in HirNodes => hir_rows * 4;
     });
-    graph_resources!(graph, Output {
+    graph_resources!(graph, Workspace {
         _call_has_array_arg as "call_has_array_arg" in Calls => hir_rows * 4;
         _call_result_instance as "call_result_instance" in Calls => hir_rows * 4;
         _call_generic_return_arg_node as "call_generic_return_arg_node" in Calls => hir_rows * 4;
@@ -2440,9 +2440,11 @@ fn build_graph(
         _call_const_claim_order_tmp as "call_const_claim_order_tmp" in CallArguments => call_arg_rows * 4;
         const_claim_radix_dispatch_args as "call_const_claim_radix_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
     });
-    graph_resources!(graph, Output {
+    graph_resources!(graph, Workspace {
         call_arg_row_count_out in CallArguments => 4;
         generic_claim_count_out as "call_generic_claim_count_out" in CallArguments => 4;
+    });
+    graph_resources!(graph, Output {
         semantic_value_decl_by_hir in HirNodes => hir_rows * 4;
         semantic_value_type_by_hir in HirNodes => hir_rows * 4;
         semantic_value_const_by_hir in HirNodes => hir_rows * 4;
@@ -2453,6 +2455,7 @@ fn build_graph(
         semantic_function_entrypoint_by_hir in HirNodes => hir_rows * 4;
         semantic_function_host_service_by_hir in HirNodes => hir_rows * 4;
         semantic_control_depth_by_hir in HirNodes => hir_rows * 4;
+        semantic_expr_scalar_type_by_hir in HirNodes => hir_rows * 4;
         semantic_calls_by_hir in Calls => hir_rows * std::mem::size_of::<GpuCheckedCallArtifact>() as u64;
         semantic_expr_ref_tag_by_hir in HirNodes => hir_rows * 4;
         semantic_expr_ref_payload_by_hir in HirNodes => hir_rows * 4;
@@ -2988,6 +2991,11 @@ fn build_graph(
         "member_result_field_ordinal" => member_result_field_ordinal: Write,
         "member_result_field_node" => member_result_field_node: Write,
     ];
+    let final_scalar = if step_count % 2 == 0 {
+        scalar_a
+    } else {
+        scalar_b
+    };
     let add_expression_type_passes =
         |graph: &mut CompilerGraphBuilder| -> std::result::Result<(), String> {
             graph.add_kernel_pass_by_name(
@@ -3025,11 +3033,6 @@ fn build_graph(
                 )?;
                 graph.require_complete_reflection(STEP_A_TO_B_TAIL_PASS)?;
             }
-            let final_scalar = if step_count % 2 == 0 {
-                scalar_a
-            } else {
-                scalar_b
-            };
             graph.add_kernel_pass_by_name(
                 TYPE_INSTANCES_STRUCT_INIT_SUBSTITUTE_PASS,
                 CompilerPhase::TypeCheck,
@@ -4013,6 +4016,8 @@ fn build_graph(
             "semantic_function_entrypoint_by_hir" => semantic_function_entrypoint_by_hir: Write,
             "semantic_function_host_service_by_hir" => semantic_function_host_service_by_hir: Write,
             "semantic_control_depth_by_hir" => semantic_control_depth_by_hir: Write,
+            "compact_expr_scalar_type" => final_scalar: Read,
+            "semantic_expr_scalar_type_by_hir" => semantic_expr_scalar_type_by_hir: Write,
         ],
     )?;
     // The resident recorder computes control depth before the still-partly
@@ -4025,6 +4030,32 @@ fn build_graph(
         TYPE_INSTANCE_ARG_ROW_CLEAR_PASS,
         SEMANTIC_ARTIFACT_PROJECT_PASS,
     )?;
+    // Feature-derived indirect dispatch arguments are initialized once and
+    // reused by the handwritten resident recorder throughout type checking.
+    // The graph contains the individual kernels, but does not yet encode all
+    // repeated method/predicate invocations in their physical order. Keep
+    // these tiny buffers phase-local while preventing a later workspace
+    // resource from aliasing them before the resident schedule is finished.
+    for resource in [
+        _method_token_dispatch_args,
+        _method_hir_dispatch_args,
+        _method_compact_dispatch_args,
+        _method_token_hir_dispatch_args,
+        _method_radix_prefix_dispatch_args,
+        _method_radix_bases_dispatch_args,
+        _predicate_token_dispatch_args,
+        _predicate_hir_dispatch_args,
+        _predicate_radix_prefix_dispatch_args,
+        _predicate_radix_bases_dispatch_args,
+        _predicate_single_dispatch_args,
+        _match_hir_dispatch_args,
+    ] {
+        graph.fence_resource_lifetime(
+            resource,
+            FEATURES_DISPATCH_PASS,
+            SEMANTIC_ARTIFACT_PROJECT_PASS,
+        )?;
+    }
     // The resident schedule invokes argument matching after direct-call,
     // module-call, and method-call resolution. Those invocations are not yet
     // individual graph nodes, so the resource surface reflected for the
@@ -5470,6 +5501,7 @@ mod tests {
             resource("semantic_function_entrypoint_by_hir"),
             resource("semantic_function_host_service_by_hir"),
             resource("semantic_control_depth_by_hir"),
+            resource("semantic_expr_scalar_type_by_hir"),
         ] {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
@@ -5507,6 +5539,21 @@ mod tests {
             slot(resource("compact_expr_scalar_type.b")),
             "checked-call artifacts survive scalar pointer jumping",
         );
+        for resource in [
+            resource("compact_expr_scalar_type.a"),
+            resource("compact_expr_scalar_type.b"),
+            resource("call_has_array_arg"),
+            resource("call_result_instance"),
+            resource("call_generic_return_arg_node"),
+            resource("call_arg_row_count_out"),
+            resource("call_generic_claim_count_out"),
+        ] {
+            assert_eq!(
+                graph.resource(resource).unwrap().class,
+                ResourceClass::Workspace,
+                "type-check implementation state must not cross the semantic artifact boundary",
+            );
+        }
         assert_ne!(
             slot(resource("call_has_array_arg")),
             slot(resource("call_result_instance")),

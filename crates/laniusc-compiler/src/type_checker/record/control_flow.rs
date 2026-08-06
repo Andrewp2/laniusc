@@ -6,7 +6,7 @@ use super::*;
 pub(in crate::type_checker) fn record_if_depth_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    state: &ResidentTypeCheckState,
+    state: &ResidentTypeCheckWorkspace,
 ) -> Result<()> {
     record_if_depth_bind_groups_with_passes(
         passes,

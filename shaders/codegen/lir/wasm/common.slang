@@ -6,7 +6,8 @@ static const uint TY_UINT = 4u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 
-uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands)
+uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands,
+                    bool call_index_base)
 {
     // Expression operands are already on the Wasm stack when their semantic
     // owner is lowered. Signed integer negation therefore appends
@@ -25,7 +26,7 @@ uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands)
         return 2u;
     if (core.op == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
-        return 4u;
+        return call_index_base ? 6u : 4u;
     if (core.op == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
         return 5u;

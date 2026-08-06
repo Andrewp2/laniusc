@@ -9,7 +9,7 @@ use module_path_resources::register_module_path_resources;
 impl GpuTypeChecker {
     /// Allocates or wires all resident buffers and bind groups for one cache key.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn create_resident_state(
+    pub(super) fn create_resident_workspace(
         &self,
         device: &wgpu::Device,
         allocation: ResidentTypeCheckCacheKey,
@@ -20,7 +20,7 @@ impl GpuTypeChecker {
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         passes: &TypeCheckPasses,
         dependency_interfaces: Option<&GpuDependencyInterfaceState>,
-    ) -> Result<ResidentTypeCheckState> {
+    ) -> Result<ResidentTypeCheckWorkspace> {
         let source_len = allocation.source_byte_capacity;
         let source_file_capacity = allocation.source_file_capacity;
         let token_capacity = allocation.token_capacity;
@@ -708,13 +708,6 @@ impl GpuTypeChecker {
             &resources,
         )?;
         resources.validate_graph_pass(compiler_graph::SEMANTIC_CALLS_PROJECT_PASS, &[])?;
-        let semantic_artifact_project = reflected_bind_group_from_resources(
-            device,
-            "type_check.semantic_artifact.project",
-            &passes.kernel("type_checker/semantic/artifact/00_project"),
-            &resources,
-        )?;
-        resources.validate_graph_pass(compiler_graph::SEMANTIC_ARTIFACT_PROJECT_PASS, &[])?;
         resources.buffer("compact_expr_scalar_type_out", &compact_expr_scalar_type_a);
         let compact_expr_scalar_type_init = reflected_bind_group_from_resources(
             device,
@@ -749,6 +742,13 @@ impl GpuTypeChecker {
             compact_expr_scalar_type_b.clone()
         };
         resources.buffer("compact_expr_scalar_type", &compact_expr_scalar_type);
+        let semantic_artifact_project = reflected_bind_group_from_resources(
+            device,
+            "type_check.semantic_artifact.project",
+            &passes.kernel("type_checker/semantic/artifact/00_project"),
+            &resources,
+        )?;
+        resources.validate_graph_pass(compiler_graph::SEMANTIC_ARTIFACT_PROJECT_PASS, &[])?;
         let semantic_expression_refs_project = reflected_bind_group_from_resources(
             device,
             "type_check.semantic_artifact.expression_refs",
@@ -1103,11 +1103,10 @@ impl GpuTypeChecker {
         let _ = allocation_last;
         drop(resources);
 
-        Ok(ResidentTypeCheckState {
+        Ok(ResidentTypeCheckWorkspace {
             resettable_buffers: Vec::new(),
             cache_key: allocation,
             typecheck_graph,
-            compact_expr_scalar_type,
             compact_expr_scalar_type_init,
             compact_expr_scalar_type_steps,
             name_capacity,

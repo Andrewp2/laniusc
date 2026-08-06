@@ -3248,74 +3248,33 @@ fn main() {
 }
 
 #[test]
-fn x86_rejects_aggregate_return_call_without_destination_with_diagnostic() {
+fn x86_executes_aggregate_return_call_without_destination() {
     let sources = [
         "module core::i32;\npub struct Pair {\n    left: i32,\n    right: i32,\n}\npub fn make_pair(left: i32, right: i32) -> Pair {\n    return Pair { left: left, right: right };\n}\n",
         "module app::main;\nimport core::i32;\nfn main() {\n    core::i32::make_pair(7, 5);\n    return 0;\n}\n",
     ];
 
-    let err = common::run_gpu_codegen_with_timeout(
+    let bytes = common::run_gpu_codegen_with_timeout(
         "x86 aggregate return call without destination",
         move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
     )
-    .expect_err(
-        "aggregate-return calls should fail closed unless a destination aggregate row exists",
-    );
+    .expect("an unused aggregate return value should not require a destination binding");
 
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "aggregate-return call rejection should use the stable backend diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "aggregate-return call rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 aggregate return call")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the aggregate-return call boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            assert_eq!(label.path.display().to_string(), "<source pack file 1>");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the aggregate-return call source line");
-            assert_eq!(
-                source_line, "    core::i32::make_pair(7, 5);",
-                "diagnostic should point at the unsupported aggregate-return call: {message}"
-            );
-            let call_start = source_line
-                .find("core::i32::make_pair")
-                .map(|column| column + 1)
-                .expect("fixture should contain the aggregate-return call");
-            let call_end = source_line
-                .find(";")
-                .map(|column| column + 1)
-                .expect("fixture should contain the end of the aggregate-return call");
-            assert!(
-                (call_start..=call_end).contains(&label.column),
-                "diagnostic column should fall inside the aggregate-return call: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 aggregate return call without destination",
+        "x86_aggregate_return_call_without_destination",
+        &bytes,
+        0,
+    );
 }
 
 #[test]
-fn x86_rejects_aggregate_temporary_index_with_diagnostic() {
-    let source = r#"
+fn x86_executes_aggregate_temporary_index() {
+    assert_source_exit(
+        "aggregate_temporary_index",
+        r#"
 fn values() -> [i32; 2] {
     return [4, 5];
 }
@@ -3323,59 +3282,16 @@ fn values() -> [i32; 2] {
 fn main() {
     return values()[1];
 }
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout("x86 aggregate temporary index", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect_err("aggregate temporaries should fail closed until indexed temporary lowering exists");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "aggregate temporary index rejection should use the stable backend diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "aggregate temporary index rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 aggregate temporary index")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the aggregate temporary index boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the indexed temporary source line");
-            let index_start = source_line
-                .find("[1]")
-                .map(|column| column + 1)
-                .expect("fixture should contain the index expression");
-            assert!(
-                (1..index_start).contains(&label.column),
-                "diagnostic column should point at the aggregate source before the index: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+"#,
+        5,
+    );
 }
 
 #[test]
-fn x86_rejects_aggregate_return_temporary_member_with_diagnostic() {
-    let source = r#"
+fn x86_executes_aggregate_return_temporary_member() {
+    assert_source_exit(
+        "aggregate_return_temporary_member",
+        r#"
 struct Pair {
     left: i32,
     right: i32,
@@ -3388,66 +3304,16 @@ fn pair() -> Pair {
 fn main() {
     return pair().left;
 }
-"#
-    .to_owned();
-
-    let err =
-        common::run_gpu_codegen_with_timeout("x86 aggregate return temporary member", move || {
-            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-        })
-        .expect_err(
-            "aggregate temporaries should fail closed until member temporary lowering exists",
-        );
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "aggregate temporary member rejection should use the stable backend diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "aggregate temporary member rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 aggregate temporary member")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the aggregate temporary member boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the member temporary source line");
-            assert_eq!(
-                source_line, "    return pair().left;",
-                "diagnostic should point at the aggregate temporary member expression: {message}"
-            );
-            let member_start = source_line
-                .find(".left")
-                .map(|column| column + 1)
-                .expect("fixture should contain the member access");
-            assert!(
-                (1..member_start).contains(&label.column),
-                "diagnostic column should point at the aggregate source before the member: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+"#,
+        4,
+    );
 }
 
 #[test]
-fn x86_rejects_nested_aggregate_member_receiver_with_diagnostic() {
-    let source = r#"
+fn x86_executes_nested_aggregate_member_receiver() {
+    assert_source_exit(
+        "nested_aggregate_member_receiver",
+        r#"
 struct Inner {
     left: i32,
     right: i32,
@@ -3463,64 +3329,13 @@ fn read(outer: Outer) -> i32 {
 }
 
 fn main() {
-    return 0;
+    let inner: Inner = Inner { left: 7, right: 5 };
+    let outer: Outer = Outer { inner: inner, extra: 3 };
+    return read(outer);
 }
-"#
-    .to_owned();
-
-    let err =
-        common::run_gpu_codegen_with_timeout("x86 nested aggregate member receiver", move || {
-            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-        })
-        .expect_err(
-            "nested aggregate member receivers should fail until aggregate path rows exist",
-        );
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "nested aggregate member rejection should use the stable backend diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "nested aggregate member rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 nested aggregate member")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the nested aggregate-member boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the nested member source line");
-            assert_eq!(
-                source_line, "    return outer.inner.left;",
-                "diagnostic should point at the nested aggregate member expression: {message}"
-            );
-            let receiver_start = source_line
-                .find("outer.inner")
-                .map(|column| column + 1)
-                .expect("fixture should contain the nested receiver");
-            let receiver_end = receiver_start + "outer.inner".len();
-            assert!(
-                (receiver_start..=receiver_end).contains(&label.column),
-                "diagnostic column should point at the unsupported aggregate receiver: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+"#,
+        7,
+    );
 }
 
 #[test]

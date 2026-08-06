@@ -2128,6 +2128,59 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_aggregate_return_temporary_member() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn pair() -> Pair {
+    return Pair { left: 4, right: 5 };
+}
+
+fn main() -> i32 {
+    return pair().left;
+}
+"#,
+    )
+    .expect("aggregate-return temporary member access should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM aggregate-return temporary member",
+        "aggregate_return_temporary_member",
+        &wasm,
+    );
+    assert_eq!(status, 4);
+}
+
+#[test]
+fn wasm_executes_aggregate_return_temporary_index() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn values() -> [i32; 2] {
+    return [4, 5];
+}
+
+fn main() -> i32 {
+    return values()[1];
+}
+"#,
+    )
+    .expect("aggregate-return temporary indexing should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM aggregate-return temporary index",
+        "aggregate_return_temporary_index",
+        &wasm,
+    );
+    assert_eq!(status, 5);
+}
+
+#[test]
 fn wasm_passes_aggregate_member_as_aggregate_call_argument() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

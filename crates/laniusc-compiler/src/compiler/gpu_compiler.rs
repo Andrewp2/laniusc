@@ -360,7 +360,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.lexer.release_current_resident_buffers();
         self.parser.release_current_resident_buffers();
-        self.type_checker.release_current_resident_state();
+        self.type_checker.release_current_resident_workspace();
         let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
         GpuResidentJobBufferTrim
     }
@@ -702,7 +702,7 @@ mod tests {
             core_bytes as u64,
         );
         encoder.copy_buffer_to_buffer(
-            &semantic.checked.control_depth_by_hir.buffer,
+            &semantic.control_depth_by_hir.buffer,
             0,
             &depth_readback.buffer,
             0,

@@ -157,9 +157,9 @@ impl GpuTypeChecker {
         hir: GpuSemanticInterfaceHirBuffers<'_>,
     ) -> Result<RecordedSemanticInterface> {
         let guard = self
-            .resident_state
+            .resident_workspace
             .lock()
-            .expect("GpuTypeChecker.resident_state poisoned");
+            .expect("GpuTypeChecker.resident_workspace poisoned");
         let state = guard.as_ref().ok_or_else(|| {
             anyhow::anyhow!("semantic-interface export requires resident type-check state")
         })?;

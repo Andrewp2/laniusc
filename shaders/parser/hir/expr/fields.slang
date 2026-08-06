@@ -71,11 +71,19 @@ static const uint HIR_EXPR_RANGE_FULL = 33u;
 static const uint HIR_EXPR_RANGE_INCLUSIVE = 34u;
 static const uint HIR_EXPR_RANGE_TO_INCLUSIVE = 35u;
 
+static const uint HIR_EXPR = 14u;
+static const uint HIR_ASSIGN_EXPR = 15u;
+static const uint HIR_BINARY_EXPR = 16u;
+static const uint HIR_UNARY_EXPR = 17u;
+static const uint HIR_POSTFIX_EXPR = 18u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
@@ -503,11 +511,24 @@ uint postfix_value_node(uint postfix)
 uint index_base_node(uint index_node)
 {
     uint previous = previous_sibling_node(index_node);
-    if (valid_node(previous))
+    uint previous_kind = valid_node(previous) ? hir_kind[previous] : 0u;
+    bool previous_is_expression =
+        (previous_kind >= HIR_EXPR && previous_kind <= HIR_ARRAY_EXPR) ||
+        previous_kind == HIR_STRUCT_LITERAL_EXPR ||
+        previous_kind == HIR_PATH_EXPR ||
+        previous_kind == HIR_MATCH_EXPR;
+    if (previous_is_expression)
         return previous;
 
     uint p = parent_node(index_node);
-    return valid_node(p) && node_kind[p] == PROD_POSTFIX ? p : INVALID;
+    uint parent_kind = valid_node(p) ? hir_kind[p] : 0u;
+    bool parent_is_expression =
+        (parent_kind >= HIR_EXPR && parent_kind <= HIR_ARRAY_EXPR) ||
+        parent_kind == HIR_STRUCT_LITERAL_EXPR ||
+        parent_kind == HIR_PATH_EXPR ||
+        parent_kind == HIR_MATCH_EXPR;
+    return parent_is_expression || (valid_node(p) && node_kind[p] == PROD_POSTFIX)
+        ? p : INVALID;
 }
 
 bool is_direct_result_hir_kind(uint kind)

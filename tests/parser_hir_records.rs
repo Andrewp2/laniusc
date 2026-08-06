@@ -160,7 +160,8 @@ const VARIANT_PAYLOAD_SLOT_STRIDE: usize = 4;
 
 #[test]
 fn parser_compact_struct_literal_constructor_paths_are_type_paths() {
-    let parsed = parse_resident_source(r#"
+    let parsed = parse_resident_source(
+        r#"
 struct Vec2 { x: i32, y: i32 }
 struct Pair { left: Vec2, right: Vec2 }
 fn make_pair(value: i32) -> Pair {
@@ -168,17 +169,31 @@ fn make_pair(value: i32) -> Pair {
     let right: Vec2 = Vec2 { x: value + 2, y: value + 3 };
     return Pair { left: left, right: right };
 }
-"#);
+"#,
+    );
     let mut literal_count = 0;
     for (raw, kind) in parsed.hir_kind.iter().copied().enumerate() {
-        if kind != HIR_NODE_STRUCT_LITERAL_EXPR { continue; }
+        if kind != HIR_NODE_STRUCT_LITERAL_EXPR {
+            continue;
+        }
         literal_count += 1;
         let dense = parsed.hir_canonical_raw_to_dense[raw];
-        let paths = parsed.hir_path_owner.iter().copied().enumerate()
-            .filter(|(_, owner)| *owner == dense).collect::<Vec<_>>();
-        assert_eq!(paths.len(), 1, "literal raw row {raw} should own one constructor path");
-        assert_eq!(parsed.hir_path_kind[paths[0].0], 4,
-            "a struct literal constructor is a type path, not a value path");
+        let paths = parsed
+            .hir_path_owner
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, owner)| *owner == dense)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths.len(),
+            1,
+            "literal raw row {raw} should own one constructor path"
+        );
+        assert_eq!(
+            parsed.hir_path_kind[paths[0].0], 4,
+            "a struct literal constructor is a type path, not a value path"
+        );
     }
     assert_eq!(literal_count, 3);
 }

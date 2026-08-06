@@ -6,7 +6,7 @@ use super::*;
 pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    state: &ResidentTypeCheckState,
+    state: &ResidentTypeCheckWorkspace,
     hir_active_dispatch_args: &wgpu::Buffer,
     labels: &TypeInstanceCollectionTimerLabels,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,

@@ -26,6 +26,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     uint semantic_row = semantic_schedule_order[row];
+    SemanticLirCore core = semantic_lir_core[semantic_row];
+    SemanticLirOperands operands = semantic_lir_operands[semantic_row];
+    bool call_index_base = core.op == SEMANTIC_LIR_OP_LOAD &&
+        (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u &&
+        operands.a < count &&
+        (semantic_lir_core[operands.a].op == SEMANTIC_LIR_OP_CALL ||
+         semantic_lir_core[operands.a].op == SEMANTIC_LIR_OP_CALL_SYMBOL);
     target_lir_count[row] = wasm_lir_count(
-        semantic_lir_core[semantic_row], semantic_lir_operands[semantic_row]);
+        core, operands, call_index_base);
 }

@@ -717,6 +717,11 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         operands.a = lir_for_hir(assignment_lhs_payload.b, hir_count);
         operands.b = lir_for_hir(assignment_lhs_payload.c, hir_count);
     }
+    else if (op == SEMANTIC_LIR_OP_LOAD && hir.kind == HIR_INDEX_EXPR)
+    {
+        operands.a = lir_for_hir(payload.b, hir_count);
+        operands.b = lir_for_hir(payload.c, hir_count);
+    }
     else if (op == SEMANTIC_LIR_OP_BRANCH)
     {
         operands.a = lir_for_hir(compact_nearest_loop[node], hir_count);

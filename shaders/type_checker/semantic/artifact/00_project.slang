@@ -30,6 +30,7 @@ StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_name_id;
 StructuredBuffer<int> if_depth;
+StructuredBuffer<uint> compact_expr_scalar_type;
 RWStructuredBuffer<uint> semantic_value_decl_by_hir;
 RWStructuredBuffer<uint> semantic_value_type_by_hir;
 RWStructuredBuffer<uint> semantic_value_const_by_hir;
@@ -40,6 +41,7 @@ RWStructuredBuffer<uint> semantic_function_return_type_by_hir;
 RWStructuredBuffer<uint> semantic_function_entrypoint_by_hir;
 RWStructuredBuffer<uint> semantic_function_host_service_by_hir;
 RWStructuredBuffer<uint> semantic_control_depth_by_hir;
+RWStructuredBuffer<uint> semantic_expr_scalar_type_by_hir;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_STMT = 7u;
@@ -145,6 +147,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? host_service_for_function(compact_hir_payload[row]) : INVALID;
         semantic_control_depth_by_hir[row] = valid_token(token)
             ? uint(max(if_depth[token], 0)) : 0u;
+        semantic_expr_scalar_type_by_hir[row] = row < hir_count
+            ? compact_expr_scalar_type[row] : 0u;
 
     }
 

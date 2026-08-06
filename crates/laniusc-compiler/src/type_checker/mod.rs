@@ -265,7 +265,8 @@ pub struct GpuTypeChecker {
     params_buf: LaniusBuffer<TypeCheckParams>,
     status_buf: LaniusBuffer<u32>,
     status_readback: LaniusBuffer<u32>,
-    resident_state: Mutex<Option<ResidentTypeCheckState>>,
+    resident_workspace: Mutex<Option<ResidentTypeCheckWorkspace>>,
+    current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,
 }
 
 /// Marker returned when type-check work has been recorded into a command
@@ -329,11 +330,10 @@ type TypeCheckPasses = KernelRegistry;
 // Resident type-checking keeps buffers and bind groups in this owner so GPU
 // resources stay alive across the retained pipeline even when a field is only
 // consumed indirectly by a reflected bind group.
-struct ResidentTypeCheckState {
+struct ResidentTypeCheckWorkspace {
     resettable_buffers: Vec<crate::gpu::buffers::ResettableBuffer>,
     cache_key: ResidentTypeCheckCacheKey,
     typecheck_graph: compiler_graph::TypeCheckCompilerGraph,
-    compact_expr_scalar_type: LaniusBuffer<u32>,
     compact_expr_scalar_type_init: wgpu::BindGroup,
     compact_expr_scalar_type_steps: Vec<wgpu::BindGroup>,
     name_capacity: u32,
@@ -390,7 +390,7 @@ struct ResidentTypeCheckState {
     scope_hir: wgpu::BindGroup,
 }
 
-impl ResidentTypeCheckState {
+impl ResidentTypeCheckWorkspace {
     fn clear_job_storage(&self, encoder: &mut wgpu::CommandEncoder) {
         for buffer in &self.resettable_buffers {
             if buffer.byte_size == 0 {
@@ -403,6 +403,35 @@ impl ResidentTypeCheckState {
 
     fn can_reuse_for(&self, key: ResidentTypeCheckCacheKey) -> bool {
         self.cache_key.covers(key)
+    }
+
+    fn semantic_artifact(&self) -> Result<OwnedGpuSemanticArtifact> {
+        let graph = &self.typecheck_graph;
+        Ok(OwnedGpuSemanticArtifact {
+            value_decl_by_hir: graph.buffer("semantic_value_decl_by_hir")?,
+            value_type_by_hir: graph.buffer("semantic_value_type_by_hir")?,
+            value_const_by_hir: graph.buffer("semantic_value_const_by_hir")?,
+            value_const_present_by_hir: graph.buffer("semantic_value_const_present_by_hir")?,
+            param_type_by_row: graph.buffer("semantic_param_type_by_row")?,
+            enclosing_fn_by_hir: graph.buffer("semantic_enclosing_fn_by_hir")?,
+            function_return_type_by_hir: graph.buffer("semantic_function_return_type_by_hir")?,
+            function_entrypoint_by_hir: graph.buffer("semantic_function_entrypoint_by_hir")?,
+            function_host_service_by_hir: graph.buffer("semantic_function_host_service_by_hir")?,
+            control_depth_by_hir: graph.buffer("semantic_control_depth_by_hir")?,
+            calls_by_hir: graph.buffer("semantic_calls_by_hir")?,
+            expr_ref_tag_by_hir: graph.buffer("semantic_expr_ref_tag_by_hir")?,
+            expr_ref_payload_by_hir: graph.buffer("semantic_expr_ref_payload_by_hir")?,
+            aggregate_decl_token_by_hir: graph.buffer("semantic_aggregate_decl_token_by_hir")?,
+            aggregate_word_count_by_hir: graph.buffer("semantic_aggregate_word_count_by_hir")?,
+            array_length_by_hir: graph.buffer("semantic_array_length_by_hir")?,
+            member_field_ordinal_by_hir: graph.buffer("semantic_member_field_ordinal_by_hir")?,
+            iterable_kind_by_hir: graph.buffer("semantic_iterable_kind_by_hir")?,
+            function_result_word_count_by_hir: graph
+                .buffer("semantic_function_result_word_count_by_hir")?,
+            expr_scalar_type_by_hir: graph.buffer("semantic_expr_scalar_type_by_hir")?,
+            public_decl_index_by_hir: self.module_path.interface_public_decl_index_by_hir.clone(),
+            struct_init_field_ordinal_by_row: graph.buffer("struct_init_field_ordinal_by_row")?,
+        })
     }
 }
 
@@ -427,7 +456,7 @@ pub(crate) struct GpuCheckedCallArtifact {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct GpuCheckedSemanticArtifact<'a> {
+pub(crate) struct GpuSemanticArtifactView<'a> {
     /// Resolved declaration identity for each compact HIR value row.
     pub value_decl_by_hir: &'a LaniusBuffer<u32>,
     /// Resolved type identity for each compact HIR value row.
@@ -466,15 +495,8 @@ pub(crate) struct GpuCheckedSemanticArtifact<'a> {
     pub iterable_kind_by_hir: &'a LaniusBuffer<u32>,
     /// Checked target-word width keyed by dense function HIR row.
     pub function_result_word_count_by_hir: &'a LaniusBuffer<u32>,
-}
-
-/// Typed allocation-preserving view used by the shared semantic lowering
-/// stage. Token-indexed tables remain private to unfinished type-checking and
-/// legacy backend paths; the new lowering boundary consumes compact artifacts.
-#[derive(Clone, Copy)]
-pub(crate) struct GpuSemanticLoweringBuffers<'a> {
-    pub checked: GpuCheckedSemanticArtifact<'a>,
-    pub compact_expr_scalar_type: &'a LaniusBuffer<u32>,
+    /// Final scalar expression type after type-checker pointer jumping.
+    pub expr_scalar_type_by_hir: &'a LaniusBuffer<u32>,
     /// Persisted public-declaration index keyed by dense compact HIR node.
     pub public_decl_index_by_hir: &'a LaniusBuffer<u32>,
     /// Canonical declaration-order ordinal for each compact literal-field row.
@@ -486,6 +508,7 @@ pub(crate) struct GpuSemanticLoweringBuffers<'a> {
 /// Cloning these handles does not copy GPU data. It detaches artifact lifetime
 /// from the mutex-protected resident type-check workspace, allowing frontend
 /// scratch to be recolored or released without changing backend contracts.
+#[derive(Clone)]
 pub(crate) struct OwnedGpuSemanticArtifact {
     value_decl_by_hir: LaniusBuffer<u32>,
     value_type_by_hir: LaniusBuffer<u32>,
@@ -506,36 +529,34 @@ pub(crate) struct OwnedGpuSemanticArtifact {
     member_field_ordinal_by_hir: LaniusBuffer<u32>,
     iterable_kind_by_hir: LaniusBuffer<u32>,
     function_result_word_count_by_hir: LaniusBuffer<u32>,
-    compact_expr_scalar_type: LaniusBuffer<u32>,
+    expr_scalar_type_by_hir: LaniusBuffer<u32>,
     public_decl_index_by_hir: LaniusBuffer<u32>,
     struct_init_field_ordinal_by_row: LaniusBuffer<u32>,
 }
 
 impl OwnedGpuSemanticArtifact {
-    pub(crate) fn view(&self) -> GpuSemanticLoweringBuffers<'_> {
-        GpuSemanticLoweringBuffers {
-            checked: GpuCheckedSemanticArtifact {
-                value_decl_by_hir: &self.value_decl_by_hir,
-                value_type_by_hir: &self.value_type_by_hir,
-                value_const_by_hir: &self.value_const_by_hir,
-                value_const_present_by_hir: &self.value_const_present_by_hir,
-                param_type_by_row: &self.param_type_by_row,
-                enclosing_fn_by_hir: &self.enclosing_fn_by_hir,
-                function_return_type_by_hir: &self.function_return_type_by_hir,
-                function_entrypoint_by_hir: &self.function_entrypoint_by_hir,
-                function_host_service_by_hir: &self.function_host_service_by_hir,
-                control_depth_by_hir: &self.control_depth_by_hir,
-                calls_by_hir: &self.calls_by_hir,
-                expr_ref_tag_by_hir: &self.expr_ref_tag_by_hir,
-                expr_ref_payload_by_hir: &self.expr_ref_payload_by_hir,
-                aggregate_decl_token_by_hir: &self.aggregate_decl_token_by_hir,
-                aggregate_word_count_by_hir: &self.aggregate_word_count_by_hir,
-                array_length_by_hir: &self.array_length_by_hir,
-                member_field_ordinal_by_hir: &self.member_field_ordinal_by_hir,
-                iterable_kind_by_hir: &self.iterable_kind_by_hir,
-                function_result_word_count_by_hir: &self.function_result_word_count_by_hir,
-            },
-            compact_expr_scalar_type: &self.compact_expr_scalar_type,
+    pub(crate) fn view(&self) -> GpuSemanticArtifactView<'_> {
+        GpuSemanticArtifactView {
+            value_decl_by_hir: &self.value_decl_by_hir,
+            value_type_by_hir: &self.value_type_by_hir,
+            value_const_by_hir: &self.value_const_by_hir,
+            value_const_present_by_hir: &self.value_const_present_by_hir,
+            param_type_by_row: &self.param_type_by_row,
+            enclosing_fn_by_hir: &self.enclosing_fn_by_hir,
+            function_return_type_by_hir: &self.function_return_type_by_hir,
+            function_entrypoint_by_hir: &self.function_entrypoint_by_hir,
+            function_host_service_by_hir: &self.function_host_service_by_hir,
+            control_depth_by_hir: &self.control_depth_by_hir,
+            calls_by_hir: &self.calls_by_hir,
+            expr_ref_tag_by_hir: &self.expr_ref_tag_by_hir,
+            expr_ref_payload_by_hir: &self.expr_ref_payload_by_hir,
+            aggregate_decl_token_by_hir: &self.aggregate_decl_token_by_hir,
+            aggregate_word_count_by_hir: &self.aggregate_word_count_by_hir,
+            array_length_by_hir: &self.array_length_by_hir,
+            member_field_ordinal_by_hir: &self.member_field_ordinal_by_hir,
+            iterable_kind_by_hir: &self.iterable_kind_by_hir,
+            function_result_word_count_by_hir: &self.function_result_word_count_by_hir,
+            expr_scalar_type_by_hir: &self.expr_scalar_type_by_hir,
             public_decl_index_by_hir: &self.public_decl_index_by_hir,
             struct_init_field_ordinal_by_row: &self.struct_init_field_ordinal_by_row,
         }
