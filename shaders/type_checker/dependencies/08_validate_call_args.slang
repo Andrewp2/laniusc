@@ -133,20 +133,39 @@ bool assignable(uint expected, uint actual)
     return false;
 }
 
-bool stable_nominal_matches(uint expected_type_i, uint actual_token)
+bool stable_nominal_matches(
+    uint expected_type_i,
+    uint actual_token,
+    uint actual_canonical_type)
 {
     uint type_count = dependency_count(4u);
     if (expected_type_i >= type_count || actual_token >= gParams.visible_capacity)
         return false;
     uint expected = canonical_type_roots[expected_type_i];
     uint expected_base = expected * TYPE_WORDS;
-    return dependency_type_word(expected_base) == INTERFACE_TYPE_DECLARATION &&
-           dependency_type_word(expected_base + 1u) ==
-               external_type_library_id[actual_token] &&
-           dependency_type_word(expected_base + 2u) ==
-               external_type_local_index[actual_token] &&
-           dependency_type_word(expected_base + 8u) ==
-               external_type_unit_id[actual_token];
+    if (dependency_type_word(expected_base) != INTERFACE_TYPE_DECLARATION)
+        return false;
+    uint actual_library = external_type_library_id[actual_token];
+    uint actual_unit = external_type_unit_id[actual_token];
+    uint actual_local = external_type_local_index[actual_token];
+    if (actual_library != INVALID && actual_unit != INVALID && actual_local != INVALID)
+        return dependency_type_word(expected_base + 1u) == actual_library &&
+               dependency_type_word(expected_base + 2u) == actual_local &&
+               dependency_type_word(expected_base + 8u) == actual_unit;
+
+    // A direct external-canonical reference already carries the page-local
+    // canonical row. Use that row when the declaration-level stable identity
+    // columns have not yet been republished after workspace clearing.
+    if (actual_canonical_type >= type_count)
+        return false;
+    uint actual = canonical_type_roots[actual_canonical_type];
+    if (actual >= type_count)
+        return false;
+    uint actual_base = actual * TYPE_WORDS;
+    return dependency_type_word(actual_base) == INTERFACE_TYPE_DECLARATION &&
+           dependency_type_word(expected_base + 1u) == dependency_type_word(actual_base + 1u) &&
+           dependency_type_word(expected_base + 2u) == dependency_type_word(actual_base + 2u) &&
+           dependency_type_word(expected_base + 8u) == dependency_type_word(actual_base + 8u);
 }
 
 uint canonical_subtree_count(uint root)
@@ -233,14 +252,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (expected_kind == INTERFACE_TYPE_DECLARATION &&
             actual_tag == TYPE_REF_EXTERNAL_CANONICAL)
         {
-            matches = stable_nominal_matches(expected_type_i, actual_ref_token) &&
+            matches = stable_nominal_matches(
+                          expected_type_i, actual_ref_token, actual_payload) &&
                       expected_count == 0u;
         }
         else if (expected_kind == INTERFACE_TYPE_DECLARATION &&
                  actual_tag == TYPE_REF_INSTANCE &&
                  actual_payload < gParams.visible_capacity)
         {
-            matches = stable_nominal_matches(expected_type_i, actual_payload) &&
+            matches = stable_nominal_matches(expected_type_i, actual_payload, INVALID) &&
                       type_instance_arg_count[actual_payload] == expected_count;
             if (matches && expected_count != 0u)
             {

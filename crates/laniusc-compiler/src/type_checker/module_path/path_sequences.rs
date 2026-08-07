@@ -48,6 +48,10 @@ pub(in crate::type_checker) fn create_path_sequences(
                 buffers.path_id_by_owner_hir.as_entire_binding(),
             ),
             (
+                "path_id_by_owner_token",
+                buffers.path_id_by_owner_token.as_entire_binding(),
+            ),
+            (
                 "path_max_segment_count",
                 buffers.path_max_segment_count.as_entire_binding(),
             ),

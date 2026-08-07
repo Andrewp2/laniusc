@@ -2363,6 +2363,20 @@ impl CompilerGraphBuilder {
             .or_else(|| self.resource_aliases.get(name).copied())
     }
 
+    fn reflected_resource(&self, name: &str) -> Option<(&'static str, ResourceId)> {
+        if let Some((index, resource)) = self
+            .resources
+            .iter()
+            .enumerate()
+            .find(|(_, resource)| resource.name == name)
+        {
+            return Some((resource.name, ResourceId(index)));
+        }
+        self.resource_aliases
+            .get_key_value(name)
+            .map(|(&alias, &resource)| (alias, resource))
+    }
+
     /// Retains graph-owned relations after the last recorded pass.
     ///
     /// This is the explicit stage-output boundary corresponding to an array
@@ -2474,10 +2488,7 @@ impl CompilerGraphBuilder {
         names: PrefixScanResources<&str>,
     ) -> Result<PrefixScanGraphResources, String> {
         let resource = |name: &str| {
-            self.resources
-                .iter()
-                .position(|resource| resource.name == name)
-                .map(ResourceId)
+            self.resource_id(name)
                 .ok_or_else(|| format!("prefix scan resource `{name}` is not registered"))
         };
         Ok(PrefixScanResources {
@@ -2816,6 +2827,33 @@ impl CompilerGraphBuilder {
         Ok(id)
     }
 
+    /// Models the command-encoder clear that initializes dedicated resident
+    /// resources at the start of a reusable compiler job.
+    ///
+    /// Ordinary workspace resources are deliberately excluded: they must
+    /// still name their real algorithmic producer so coloring cannot conceal
+    /// an incomplete lifetime. `Resident` is the migration boundary for
+    /// graph-owned storage whose full middle schedule is not yet represented.
+    pub fn add_resident_clear_pass(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+    ) -> Result<PassId, String> {
+        let accesses = self
+            .resources
+            .iter()
+            .enumerate()
+            .filter(|(_, resource)| resource.class == ResourceClass::Resident)
+            .map(|(index, resource)| PassAccess::write(resource.name, ResourceId(index)))
+            .collect();
+        self.add_pass(PassDesc {
+            name,
+            phase,
+            dispatch_domain: ResourceDomain::Bytes,
+            accesses,
+        })
+    }
+
     /// Adds a compute pass whose complete storage-buffer surface is checked
     /// against Slang reflection at graph construction time.
     ///
@@ -2940,20 +2978,15 @@ impl CompilerGraphBuilder {
                 bindings.push(*binding);
                 continue;
             }
-            let (resource_index, resource) = self
-                .resources
-                .iter()
-                .enumerate()
-                .find(|(_, resource)| resource.name == parameter.name)
-                .ok_or_else(|| {
+            let (binding, resource) = self.reflected_resource(&parameter.name).ok_or_else(|| {
                     format!(
                         "compiler pass {name} has reflected storage binding {} with no same-named graph resource or override",
                         parameter.name,
                     )
                 })?;
             bindings.push(ReflectedResourceBinding {
-                binding: resource.name,
-                resource: ResourceId(resource_index),
+                binding,
+                resource,
                 mode: None,
             });
         }
@@ -3016,12 +3049,7 @@ impl CompilerGraphBuilder {
         let overrides = modes
             .iter()
             .map(|&(binding, mode)| {
-                let resource = self
-                    .resources
-                    .iter()
-                    .position(|resource| resource.name == binding)
-                    .map(ResourceId)
-                    .ok_or_else(|| {
+                let resource = self.resource_id(binding).ok_or_else(|| {
                     format!(
                         "compiler pass {name} refines access for {binding}, which has no same-named graph resource"
                     )
@@ -3064,19 +3092,16 @@ impl CompilerGraphBuilder {
                     }
                 );
                 writable.then(|| {
-                    let resource = self
-                        .resources
-                        .iter()
-                        .position(|resource| resource.name == parameter.name)
-                        .map(ResourceId)
+                    let (binding, resource) = self
+                        .reflected_resource(&parameter.name)
                         .ok_or_else(|| {
                             format!(
                                 "compiler pass {name} has reflected initializer binding {} with no same-named graph resource",
                                 parameter.name,
                             )
-                        })?;
+                    })?;
                     Ok(ReflectedResourceBinding {
-                        binding: self.resources[resource.index()].name,
+                        binding,
                         resource,
                         mode: Some(AccessMode::Write),
                     })
@@ -3446,7 +3471,16 @@ fn plan_graph_workspace(
     let mut slots = Vec::<SlotState>::new();
     let mut assignment_by_resource = BTreeMap::<usize, u32>::new();
     for (resource_index, resource, lifetime) in order {
-        let dedicated = resource.class == ResourceClass::Resident;
+        // Retained outputs cross the graph boundary and may be consumed by a
+        // recorder stage that is intentionally outside this graph. Until a
+        // caller imports that downstream schedule explicitly, treating an
+        // output like phase-local scratch would let it reuse storage based on
+        // an incomplete lifetime. Resident state and retained outputs therefore
+        // both receive stable physical identities; Workspace remains colorable.
+        let dedicated = matches!(
+            resource.class,
+            ResourceClass::Resident | ResourceClass::Output
+        );
         let reusable = (!disable_coloring && !dedicated)
             .then(|| {
                 slots
@@ -3926,6 +3960,40 @@ mod tests {
         assert_ne!(slot("early"), slot("resident"));
         assert_ne!(slot("resident"), slot("late"));
         assert_eq!(slot("early"), slot("late"));
+    }
+
+    #[test]
+    fn resident_clear_is_a_physical_job_boundary_not_a_workspace_producer() {
+        let mut builder = CompilerGraphBuilder::new();
+        let resident = builder
+            .add_resource(ResourceDesc {
+                name: "resident",
+                domain: ResourceDomain::Types,
+                class: ResourceClass::Resident,
+                bytes: 32,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        builder
+            .add_resident_clear_pass("job.clear", CompilerPhase::TypeCheck)
+            .unwrap();
+        let graph = builder.build().unwrap();
+        assert_eq!(
+            graph.lifetime(resident).unwrap().producer,
+            graph.pass_id("job.clear")
+        );
+
+        let mut incomplete = CompilerGraphBuilder::new();
+        incomplete
+            .add_resource(workspace("temporary", ResourceDomain::Types, 32))
+            .unwrap();
+        incomplete
+            .add_resident_clear_pass("job.clear", CompilerPhase::TypeCheck)
+            .unwrap();
+        assert_eq!(
+            incomplete.build().unwrap_err(),
+            "compiler resource temporary has no producing pass",
+        );
     }
 
     #[test]

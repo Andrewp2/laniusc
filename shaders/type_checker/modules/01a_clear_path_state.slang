@@ -7,6 +7,7 @@ struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 
 RWStructuredBuffer<uint> path_id_by_owner_hir;
+RWStructuredBuffer<uint> path_id_by_owner_token;
 RWStructuredBuffer<uint> path_max_segment_count;
 
 static const uint INVALID = 0xffffffffu;
@@ -21,6 +22,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint row = tid(dtid);
     if (row < gParams.n_hir_nodes)
         path_id_by_owner_hir[row] = INVALID;
+    if (row < gParams.n_tokens)
+        path_id_by_owner_token[row] = INVALID;
     if (row == 0u)
         path_max_segment_count[0u] = 0u;
 }

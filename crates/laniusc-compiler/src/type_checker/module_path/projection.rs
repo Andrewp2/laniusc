@@ -71,6 +71,7 @@ pub(in crate::type_checker) struct TypeAliasProjection {
 pub(in crate::type_checker) fn create_projection_bind_groups(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     inputs: &CreateInputs<'_>,
     resources: &ResourceMap<'_>,
 ) -> Result<ProjectionBindGroups> {
@@ -100,47 +101,12 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     } else {
         1
     };
-    let alias_hir_capacity = if aliases_required {
-        inputs.hir_node_capacity.max(1)
-    } else {
-        1
-    };
-    let alias_root_a = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_root_a",
-        alias_root_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let alias_root_b = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_root_b",
-        alias_root_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let alias_forwarding = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_forwarding",
-        alias_hir_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let alias_forwarding_target_decl = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_forwarding_target_decl",
-        alias_hir_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let alias_forwarding_valid_arg_count = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_forwarding_valid_arg_count",
-        alias_hir_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let alias_decl_by_target_hir = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_decl_by_target_hir",
-        alias_hir_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
+    let alias_root_a = graph.u32_buffer("alias_root_a")?;
+    let alias_root_b = graph.u32_buffer("alias_root_b")?;
+    let alias_forwarding = graph.u32_buffer("alias_forwarding")?;
+    let alias_forwarding_target_decl = graph.u32_buffer("alias_forwarding_target_decl")?;
+    let alias_forwarding_valid_arg_count = graph.u32_buffer("alias_forwarding_valid_arg_count")?;
+    let alias_decl_by_target_hir = graph.u32_buffer("alias_decl_by_target_hir")?;
     let alias_equiv_capacity = if aliases_required {
         inputs
             .token_capacity
@@ -149,35 +115,15 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
     } else {
         1
     };
-    let alias_equiv_parent_a = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_equiv_parent_a",
-        alias_equiv_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let alias_equiv_parent_b = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_equiv_parent_b",
-        alias_equiv_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
+    let alias_equiv_parent_a = graph.u32_buffer("alias_equiv_parent_a")?;
+    let alias_equiv_parent_b = graph.u32_buffer("alias_equiv_parent_b")?;
     // Forwarding is consumed by root initialization before equivalence graph
     // construction begins. Rebuild those same HIR-wide rows as the two graph
     // edges and the durable normalized source table.
-    let alias_equiv_edge_0 =
-        typed_alias_storage_u32(&alias_forwarding, alias_hir_capacity as usize);
-    let alias_equiv_edge_1 =
-        typed_alias_storage_u32(&alias_forwarding_target_decl, alias_hir_capacity as usize);
-    let alias_equiv_component_source = typed_storage_u32_rw(
-        device,
-        "type_check.modules.type_alias_equiv_component_source",
-        alias_equiv_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let alias_normalized_source = typed_alias_storage_u32(
-        &alias_forwarding_valid_arg_count,
-        alias_hir_capacity as usize,
-    );
+    let alias_equiv_edge_0 = alias_forwarding.clone();
+    let alias_equiv_edge_1 = alias_forwarding_target_decl.clone();
+    let alias_equiv_component_source = graph.u32_buffer("alias_equiv_component_source")?;
+    let alias_normalized_source = alias_forwarding_valid_arg_count.clone();
     let mut alias_resources = resources.clone();
     alias_resources.buffer("alias_forwarding", &alias_forwarding);
     alias_resources.buffer(

@@ -44,18 +44,6 @@ impl GpuTypeChecker {
                 }
             };
         }
-        let visible_decl = typed_storage_u32_rw(
-            device,
-            "type_check.resident.visible_decl",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let visible_type = typed_storage_u32_rw(
-            device,
-            "type_check.resident.visible_type",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
         if hir_node_capacity >= 0x0fff_ffff {
             anyhow::bail!(
                 "compact HIR capacity {hir_node_capacity} exceeds scalar-type link encoding"
@@ -74,6 +62,10 @@ impl GpuTypeChecker {
             generic_claim_capacity_for_features(token_capacity, parser_feature_flags);
         let predicate_capacity =
             predicate_capacity_for_features(hir_node_capacity, parser_feature_flags);
+        let dependency_capacity = compiler_graph::DependencyWorkspaceCapacity::for_job(
+            token_capacity,
+            dependency_interfaces,
+        )?;
         let upstream_workspace = Some(hir_items.upstream_workspace);
         let typecheck_graph = compiler_graph::TypeCheckCompilerGraph::new(
             device,
@@ -85,6 +77,7 @@ impl GpuTypeChecker {
             call_arg_row_capacity,
             call_generic_claim_capacity,
             predicate_capacity,
+            dependency_capacity,
             passes,
             upstream_workspace.unwrap_or(&[]),
         )?;
@@ -92,84 +85,29 @@ impl GpuTypeChecker {
             typecheck_graph.u32_buffer("compact_expr_scalar_type.a")?;
         let compact_expr_scalar_type_b =
             typecheck_graph.u32_buffer("compact_expr_scalar_type.b")?;
-        let module_type_path_type = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_type_path_type",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_type_path_status = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_type_path_status",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_status = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.module_value_path_status",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_expr_head = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_value_path_expr_head",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_call_head = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_value_path_call_head",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_call_open = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.module_value_path_call_open",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_call_path_id = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.module_value_path_call_path_id",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_call_leaf = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_value_path_call_leaf",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_associated_method_token = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.module_value_path_associated_method_token",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_associated_receiver_token = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.module_value_path_associated_receiver_token",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_const_head = typed_storage_u32_rw(
-            device,
-            "type_check.resident.module_value_path_const_head",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_value_path_const_end = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.module_value_path_const_end",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
+        let visible_decl = typecheck_graph.u32_buffer("visible_decl")?;
+        let visible_type = typecheck_graph.u32_buffer("visible_type")?;
+        let module_type_path_type = typecheck_graph.u32_buffer("module_type_path_type")?;
+        let module_type_path_status = typecheck_graph.u32_buffer("module_type_path_status")?;
+        let module_value_path_status = typecheck_graph.u32_buffer("module_value_path_status")?;
+        let module_value_path_expr_head =
+            typecheck_graph.u32_buffer("module_value_path_expr_head")?;
+        let module_value_path_call_head =
+            typecheck_graph.u32_buffer("module_value_path_call_head")?;
+        let module_value_path_call_open =
+            typecheck_graph.u32_buffer("module_value_path_call_open")?;
+        let module_value_path_call_path_id =
+            typecheck_graph.u32_buffer("module_value_path_call_path_id")?;
+        let module_value_path_call_leaf =
+            typecheck_graph.u32_buffer("module_value_path_call_leaf")?;
+        let module_value_path_associated_method_token =
+            typecheck_graph.u32_buffer("module_value_path_associated_method_token")?;
+        let module_value_path_associated_receiver_token =
+            typecheck_graph.u32_buffer("module_value_path_associated_receiver_token")?;
+        let module_value_path_const_head =
+            typecheck_graph.u32_buffer("module_value_path_const_head")?;
+        let module_value_path_const_end =
+            typecheck_graph.u32_buffer("module_value_path_const_end")?;
         let name_capacity = token_capacity.saturating_add(LANGUAGE_SYMBOL_COUNT).max(1);
         let name_n_blocks = name_capacity.div_ceil(256).max(1);
         let hir_value_decl_name_present =
@@ -237,12 +175,7 @@ impl GpuTypeChecker {
             LANGUAGE_SYMBOL_LENS,
         );
         let name_id_by_token = typecheck_graph.u32_buffer("name_id_by_token")?;
-        let language_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.language_name_id",
-            LANGUAGE_SYMBOL_COUNT as usize,
-            wgpu::BufferUsages::empty(),
-        );
+        let language_name_id = typecheck_graph.u32_buffer("language_name_id")?;
         let language_decl_symbol_slot = storage_ro_from_u32s(
             device,
             "type_check.resident.language_decl_symbol_slot",
@@ -258,12 +191,7 @@ impl GpuTypeChecker {
             "type_check.resident.language_decl_tag",
             LANGUAGE_DECL_TAGS,
         );
-        let language_decl_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.resident.language_decl_name_id",
-            LANGUAGE_DECL_COUNT as usize,
-            wgpu::BufferUsages::empty(),
-        );
+        let language_decl_name_id = typecheck_graph.u32_buffer("language_decl_name_id")?;
         let language_type_code_by_name_id =
             typecheck_graph.u32_buffer("language_type_code_by_name_id")?;
         let language_entrypoint_tag_by_name_id =
@@ -294,54 +222,22 @@ impl GpuTypeChecker {
             "type_check.resident.fn_context.params",
             &fn_params_value,
         );
-        let call_dependency_library_id = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.call_dependency_library_id",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let call_dependency_unit_id = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.call_dependency_unit_id",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let call_dependency_local_index = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.call_dependency_local_index",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let call_dependency_host_service = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.call_dependency_host_service",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
+        let call_dependency_library_id =
+            typecheck_graph.u32_buffer("call_dependency_library_id")?;
+        let call_dependency_unit_id = typecheck_graph.u32_buffer("call_dependency_unit_id")?;
+        let call_dependency_local_index =
+            typecheck_graph.u32_buffer("call_dependency_local_index")?;
+        let call_dependency_host_service =
+            typecheck_graph.u32_buffer("call_dependency_host_service")?;
         let type_decl_generic_param_count_by_owner_token =
             typecheck_graph.u32_buffer("type_decl_generic_param_count_by_owner_token")?;
         // Local and imported named instances share this identity discriminator.
         // It must survive name-radix scratch reuse and be reset independently:
         // an imported canonical id and a stale local declaration token are
         // mutually exclusive representations of the same instance.
-        let type_instance_decl_token = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.type_instance_decl_token",
-            token_capacity as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let type_instance_aggregate_word_count = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.type_instance_aggregate_word_count",
-            token_capacity as usize,
-            0,
-            wgpu::BufferUsages::empty(),
-        );
+        let type_instance_decl_token = typecheck_graph.u32_buffer("type_instance_decl_token")?;
+        let type_instance_aggregate_word_count =
+            typecheck_graph.u32_buffer("type_instance_aggregate_word_count")?;
         let type_instance_arg_ref_tag = typecheck_graph.u32_buffer("type_instance_arg_ref_tag")?;
         let type_instance_arg_ref_payload =
             typecheck_graph.u32_buffer("type_instance_arg_ref_payload")?;
@@ -392,42 +288,14 @@ impl GpuTypeChecker {
         // late semantic projection. They cannot alias radix rows that later
         // type-family sorts overwrite; the compiler graph may recolor them
         // only after that complete producer/consumer interval is registered.
-        let decl_type_ref_tag = typed_storage_u32_rw(
-            device,
-            "type_check.resident.decl_type_ref_tag",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let decl_type_ref_payload = typed_storage_u32_rw(
-            device,
-            "type_check.resident.decl_type_ref_payload",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let token_active_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.token_active_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let hir_active_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.hir_active_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let token_hir_active_dispatch_args = typed_storage_u32_rw(
-            device,
-            "type_check.resident.token_hir_active_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let hir_active_count = typed_storage_u32_rw(
-            device,
-            "type_check.resident.hir_active_count",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
+        let decl_type_ref_tag = typecheck_graph.u32_buffer("decl_type_ref_tag")?;
+        let decl_type_ref_payload = typecheck_graph.u32_buffer("decl_type_ref_payload")?;
+        let token_active_dispatch_args =
+            typecheck_graph.u32_buffer("token_active_dispatch_args")?;
+        let hir_active_dispatch_args = typecheck_graph.u32_buffer("hir_active_dispatch_args")?;
+        let token_hir_active_dispatch_args =
+            typecheck_graph.u32_buffer("token_hir_active_dispatch_args")?;
+        let hir_active_count = typecheck_graph.u32_buffer("hir_active_count")?;
         let method_token_dispatch_args =
             typecheck_graph.u32_buffer("method_token_dispatch_args")?;
         let method_hir_dispatch_args = typecheck_graph.u32_buffer("method_hir_dispatch_args")?;

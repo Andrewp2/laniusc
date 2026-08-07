@@ -49,12 +49,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         VISIBLE_DECL_COMPACTION,
         compact_hir_dispatch_args,
     )?;
-    let match_payload_dispatch_args = typed_storage_u32_rw(
-        device,
-        "type_check.visible.match_payload_dispatch_args",
-        3,
-        wgpu::BufferUsages::INDIRECT,
-    );
+    let match_payload_dispatch_args = graph.u32_buffer("match_payload_dispatch_args")?;
     let match_payload_dispatch = reflected_bind_group_with_overrides(
         device,
         "type_check.visible.match_payload_dispatch",

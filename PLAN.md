@@ -71,19 +71,24 @@ Turn the existing graph into the authoritative resource-lifetime system:
 
 Exit condition: temporary GPU allocation follows the compiler graph’s workspace plan; individual type-checking subsystems no longer create independent scratch-buffer collections.
 
-## Phase 5: Make warm daemon jobs allocation-free
+## Phase 5: Reuse capacity-stable job workspaces
 
-Build capacity-stable daemon resources:
+Keep normal daemon startup lightweight while making repeated compilation jobs allocation-free:
 
-- Configure a default 10 MB frontend compilation-unit capacity.
-- During daemon startup, create all pipelines, workspace buffers, indirect buffers, bind groups, and target-lowering resources required for that capacity.
-- Reuse the same physical buffers and bind groups between sequential jobs.
-- Clear or overwrite only the active regions required by the next job.
-- Dispatch using actual token, HIR, declaration, and family counts rather than full capacity.
+- Configure a default maximum frontend compilation-unit size of 10 MB.
+- During daemon startup, create every x86 and Wasm pipeline needed for compilation, but do not allocate or retain capacity-scaled compilation workspace buffers.
+- Do not expose a separate prepare or warmup operation. The user starts the daemon and submits ordinary compilation jobs.
+- Start request timing when the daemon receives a compilation job. Include buffer allocation, bind-group creation, capacity growth, compilation, and artifact writing performed for that request.
+- On the first job, allocate the physical workspace slots needed for that job's capacity and create the bind groups that refer to those buffers. Keep the number of physical allocations and bind groups small by using the compiler graph's shared workspace slots.
+- Reuse retained physical buffers and bind groups for sequential jobs whose required capacity fits the current workspace.
+- When a later job needs more capacity, grow or replace the workspace and its bind groups during that timed request. Never create a pipeline after the daemon reports ready.
+- Clear or overwrite only the regions needed by the next job, and dispatch using actual token, HIR, declaration, and family counts rather than workspace capacity.
+- Allow an idle policy to release job workspaces and their bind groups. The next request then pays the measured cold-workspace creation cost; this is not a distinct user-visible phase.
 - Add per-job counters for buffers, bind groups, pipelines, and other wgpu resources created after the daemon reports ready.
-- Return a clear capacity error for an individual unit larger than the configured workspace.
+- Return a clear capacity error when an individual compilation unit exceeds the configured maximum.
+- Report cold-workspace and retained-capacity request latency separately. Neither measurement may exclude work performed after job submission.
 
-Exit condition: twenty consecutive warm x86 jobs and twenty warm Wasm jobs within capacity create zero pipelines, buffers, or bind groups.
+Exit condition: no compilation job creates a pipeline; the first job after startup, idle release, target change, or capacity growth may create the required workspace buffers and bind groups; after one ordinary job establishes sufficient x86 capacity, twenty subsequent x86 jobs create no buffers or bind groups; and after one ordinary job establishes sufficient Wasm capacity, twenty subsequent Wasm jobs create no buffers or bind groups.
 
 ## Phase 6: Complete bounded source-pack compilation
 
@@ -153,7 +158,7 @@ Measure:
 
 Initial performance targets:
 
-- Preserve or improve the current 1.101 MB x86 median of 170.665 ms.
+- Preserve or improve the latest measured 1 MB mixed-workload x86 median of 210.947 ms.
 - Bring Lanius closer to Pareas around 1 MB.
 - Demonstrate increasing advantage over GCC as input grows.
 - Establish whether the intended 10–100× GCC result appears around \(10^7\)–\(10^8\) bytes.

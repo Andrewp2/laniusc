@@ -52,6 +52,7 @@ pub(in crate::type_checker) fn create_with_passes(
     let dependency_visibility = dependency_visibility::create(
         passes,
         device,
+        graph,
         layout,
         &inputs,
         &buffers,
@@ -128,7 +129,7 @@ pub(in crate::type_checker) fn create_with_passes(
         bind_match_patterns,
         type_match_payloads,
         type_match_exprs,
-    } = create_projection_bind_groups(passes, device, &inputs, &module_resources)?;
+    } = create_projection_bind_groups(passes, device, graph, &inputs, &module_resources)?;
     let Buffers {
         record_scan_local_prefix,
         record_scan_block_sum,
@@ -489,10 +490,8 @@ pub(in crate::type_checker) fn create_with_passes(
     // Declaration validation status/duplicate buffers are dead once
     // namespace flags have been marked. Reuse them for public declaration
     // prefixes so the compact type/value lookup prefix buffers remain intact.
-    let decl_type_public_prefix =
-        typed_alias_storage_u32(&decl_status, record_capacity_u32 as usize);
-    let decl_value_public_prefix =
-        typed_alias_storage_u32(&decl_duplicate_of, record_capacity_u32 as usize);
+    let decl_type_public_prefix = decl_status.clone();
+    let decl_value_public_prefix = decl_duplicate_of.clone();
     let mut public_resources = module_resources.clone();
     public_resources.buffer("decl_type_public_flag", &decl_type_key_flag);
     public_resources.buffer("decl_value_public_flag", &decl_value_key_flag);
@@ -750,30 +749,14 @@ pub(in crate::type_checker) fn create_with_passes(
     // Type and value visibility keys are sorted stage-by-stage in parallel.
     // Keep one secondary radix scratch set for the value namespace so those
     // dispatches have no write hazards inside their shared compute passes.
-    let import_visible_value_radix_block_histogram = typed_storage_u32_rw(
-        device,
-        "type_check.modules.import_visible_value_radix_block_histogram",
-        import_visible_key_radix_block_histogram.count,
-        wgpu::BufferUsages::empty(),
-    );
-    let import_visible_value_radix_block_bucket_prefix = typed_storage_u32_rw(
-        device,
-        "type_check.modules.import_visible_value_radix_block_bucket_prefix",
-        import_visible_key_radix_block_bucket_prefix.count,
-        wgpu::BufferUsages::empty(),
-    );
-    let import_visible_value_radix_bucket_total = typed_storage_u32_rw(
-        device,
-        "type_check.modules.import_visible_value_radix_bucket_total",
-        import_visible_key_radix_bucket_total.count,
-        wgpu::BufferUsages::empty(),
-    );
-    let import_visible_value_radix_bucket_base = typed_storage_u32_rw(
-        device,
-        "type_check.modules.import_visible_value_radix_bucket_base",
-        import_visible_key_radix_bucket_base.count,
-        wgpu::BufferUsages::empty(),
-    );
+    let import_visible_value_radix_block_histogram =
+        graph.u32_buffer("import_visible_value_radix_block_histogram")?;
+    let import_visible_value_radix_block_bucket_prefix =
+        graph.u32_buffer("import_visible_value_radix_block_bucket_prefix")?;
+    let import_visible_value_radix_bucket_total =
+        graph.u32_buffer("import_visible_value_radix_bucket_total")?;
+    let import_visible_value_radix_bucket_base =
+        graph.u32_buffer("import_visible_value_radix_bucket_base")?;
     let import_visible_value_key_resources = HashMap::from([
         (
             "import_visible_count_out".to_owned(),

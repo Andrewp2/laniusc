@@ -81,16 +81,11 @@ pub(super) fn typed_storage_u32_rw(
 }
 
 pub(super) trait ReusableStorageBuffer: Copy {
-    fn byte_size(self) -> u64;
     fn allocation_id(self) -> Option<u64>;
     fn alias_u32(self, count: usize) -> LaniusBuffer<u32>;
 }
 
 impl ReusableStorageBuffer for &wgpu::Buffer {
-    fn byte_size(self) -> u64 {
-        self.size()
-    }
-
     fn allocation_id(self) -> Option<u64> {
         None
     }
@@ -101,10 +96,6 @@ impl ReusableStorageBuffer for &wgpu::Buffer {
 }
 
 impl ReusableStorageBuffer for crate::gpu::buffers::TrackedBufferView<'_> {
-    fn byte_size(self) -> u64 {
-        self.byte_size
-    }
-
     fn allocation_id(self) -> Option<u64> {
         self.allocation_id()
     }
@@ -115,10 +106,6 @@ impl ReusableStorageBuffer for crate::gpu::buffers::TrackedBufferView<'_> {
 }
 
 impl<T> ReusableStorageBuffer for &LaniusBuffer<T> {
-    fn byte_size(self) -> u64 {
-        self.byte_size as u64
-    }
-
     fn allocation_id(self) -> Option<u64> {
         self.allocation_id()
     }
@@ -138,35 +125,6 @@ pub(super) fn typed_alias_storage_u32<B: ReusableStorageBuffer>(
     let alias = source.alias_u32(count);
     debug_assert_eq!(alias.allocation_id(), expected);
     alias
-}
-
-/// Reuses a candidate `u32` storage buffer only when it is large enough.
-pub(super) fn typed_reuse_storage_u32<B: ReusableStorageBuffer>(
-    device: &wgpu::Device,
-    label: &str,
-    count: usize,
-    candidate: Option<B>,
-) -> LaniusBuffer<u32> {
-    let byte_count = count.max(1).saturating_mul(4) as u64;
-    if let Some(buffer) = candidate.filter(|buffer| buffer.byte_size() >= byte_count) {
-        typed_alias_storage_u32(buffer, count)
-    } else {
-        typed_storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
-    }
-}
-
-/// Uses a candidate `u32` storage buffer when supplied, otherwise allocates one.
-pub(super) fn typed_alias_or_storage_u32<B: ReusableStorageBuffer>(
-    device: &wgpu::Device,
-    label: &str,
-    count: usize,
-    candidate: Option<B>,
-) -> LaniusBuffer<u32> {
-    if let Some(buffer) = candidate {
-        typed_alias_storage_u32(buffer, count)
-    } else {
-        typed_storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
-    }
 }
 
 /// Allocates a writable typed `u32` storage buffer initialized to one repeated value.

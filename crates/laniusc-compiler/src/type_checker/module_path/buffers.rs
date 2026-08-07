@@ -40,20 +40,18 @@ macro_rules! module_path_buffers {
 /// Allocates the common case for module resources: a zero-initialized `u32`
 /// storage array whose diagnostic label is its reflected resource name.
 macro_rules! module_storage_buffers {
-    ($device:expr; $(
+    ($graph:expr; $(
         $field:ident $([$usage:ident])? : $count:expr;
     )*) => {
         $(
-            let $field = typed_storage_u32_rw(
-                $device,
-                concat!("type_check.resident.", stringify!($field)),
-                $count,
-                module_storage_buffers!(@usage $($usage)?),
-            );
+            // The graph descriptor is the capacity contract. Keep the full
+            // logical view so reflected binding validation sees that contract;
+            // dispatch counts, rather than narrower buffer aliases, select the
+            // active rows for this job.
+            let $field = $graph.u32_buffer(stringify!($field))?;
+            let _ = $count;
         )*
     };
-    (@usage) => { wgpu::BufferUsages::empty() };
-    (@usage $usage:ident) => { wgpu::BufferUsages::$usage };
 }
 
 module_path_buffers! {
@@ -222,9 +220,7 @@ impl Buffers {
         let hir_node_capacity = inputs.hir_node_capacity;
         let token_capacity = inputs.token_capacity;
         let path_segment_capacity = token_capacity.max(1) as usize;
-        let path_segment_name_id = graph
-            .u32_buffer("path_segment_name_id")?
-            .alias(path_segment_capacity);
+        let path_segment_name_id = graph.u32_buffer("path_segment_name_id")?;
         // Module/path family rows have graph-owned identities. The compiler graph
         // may still color their phase-local lifetimes onto reusable physical slots,
         // but this constructor never borrows an unrelated semantic relation.
@@ -274,17 +270,17 @@ impl Buffers {
         let key_radix_bucket_base = inputs
             .module_path_key_radix_bucket_base
             .alias(NAME_RADIX_BUCKETS as usize);
-        module_storage_buffers!(device;
+        module_storage_buffers!(graph;
             module_count_out: 1;
         );
         let module_table_count_out = typed_storage_u32_fill_rw(
             device,
-            "type_check.resident.module_table_count_out",
+            "type_check.modules.module_table_capacity",
             1,
             layout.module_capacity_u32,
             wgpu::BufferUsages::empty(),
         );
-        module_storage_buffers!(device;
+        module_storage_buffers!(graph;
             import_count_out: 1;
             decl_count_out: 1;
             module_file_id: module_capacity;
@@ -296,7 +292,7 @@ impl Buffers {
             module_key_segment_base: module_capacity;
         );
         let module_key_segment_name_id = path_segment_name_id.clone();
-        module_storage_buffers!(device;
+        module_storage_buffers!(graph;
             module_key_to_module_id: module_capacity;
             module_key_order_tmp: module_capacity;
             module_key_radix_dispatch_args [INDIRECT]: 3;
@@ -305,31 +301,21 @@ impl Buffers {
         let module_key_radix_block_bucket_prefix = key_radix_block_bucket_prefix.clone();
         let module_key_radix_bucket_total = key_radix_bucket_total.clone();
         let module_key_radix_bucket_base = key_radix_bucket_base.clone();
-        module_storage_buffers!(device;
+        module_storage_buffers!(graph;
             module_id_by_file_id: module_capacity;
             import_module_file_id: import_record_capacity;
             import_path_id: import_record_capacity;
             import_kind: import_record_capacity;
             import_owner_hir: import_record_capacity;
         );
-        let import_module_id = graph
-            .u32_buffer("import_module_id")?
-            .alias(import_record_capacity);
-        let import_target_module_id = graph
-            .u32_buffer("import_target_module_id")?
-            .alias(import_record_capacity);
-        let import_target_dependency_module_id = inputs.dependency_interfaces.map(|_| {
-            typed_storage_u32_rw(
-                device,
-                "type_check.resident.import_target_dependency_module_id",
-                import_record_capacity.saturating_mul(4),
-                wgpu::BufferUsages::empty(),
-            )
-        });
-        let import_status = graph
-            .u32_buffer("import_status")?
-            .alias(import_record_capacity);
-        module_storage_buffers!(device;
+        let import_module_id = graph.u32_buffer("import_module_id")?;
+        let import_target_module_id = graph.u32_buffer("import_target_module_id")?;
+        let import_target_dependency_module_id = inputs
+            .dependency_interfaces
+            .map(|_| graph.u32_buffer("import_target_dependency_module_id"))
+            .transpose()?;
+        let import_status = graph.u32_buffer("import_status")?;
+        module_storage_buffers!(graph;
             import_edge_key_order: import_record_capacity;
             import_edge_key_order_tmp: import_record_capacity;
             import_edge_key_radix_dispatch_args [INDIRECT]: 3;
@@ -337,21 +323,11 @@ impl Buffers {
         // Declaration tables are retained through module/path resolution, but they
         // are not part of the x86 handoff. Use parser token/tree workspaces that
         // are dead after HIR construction.
-        let decl_module_file_id = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_module_file_id",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
-        module_storage_buffers!(device;
+        let decl_module_file_id = graph.u32_buffer("decl_module_file_id")?;
+        module_storage_buffers!(graph;
             decl_module_id: record_capacity;
         );
-        let decl_name_id = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_name_id",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
+        let decl_name_id = graph.u32_buffer("decl_name_id")?;
         // Declaration relations have long type-check lifetimes and therefore
         // own explicit compiler-graph workspace identities. Do not hide them
         // behind the short-lived name-mark rows they replaced.
@@ -360,49 +336,22 @@ impl Buffers {
             .decl_id_by_name_token
             .alias(token_capacity.max(1) as usize);
         let decl_kind = inputs.decl_kind.alias(record_capacity);
-        let decl_namespace = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_namespace",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
-        let decl_visibility = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_visibility",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
+        let decl_namespace = graph.u32_buffer("decl_namespace")?;
+        let decl_visibility = graph.u32_buffer("decl_visibility")?;
         // Canonical name hashes remain live through dependency resolution and
         // semantic-interface export. These declaration rows therefore need
         // independent retained storage; aliasing them onto the hash tables
         // made exported identities depend on which declaration rows happened
         // to overwrite which names.
-        module_storage_buffers!(device;
+        module_storage_buffers!(graph;
             decl_hir_node: record_capacity;
             decl_parent_type_decl: record_capacity;
         );
-        let decl_token_start = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_token_start",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
-        let decl_token_end = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_token_end",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
-        let decl_key_to_decl_id = graph
-            .u32_buffer("decl_key_to_decl_id")?
-            .alias(record_capacity);
-        let decl_key_order_tmp = typed_reuse_storage_u32(
-            device,
-            "type_check.resident.decl_key_order_tmp",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
-        module_storage_buffers!(device;
+        let decl_token_start = graph.u32_buffer("decl_token_start")?;
+        let decl_token_end = graph.u32_buffer("decl_token_end")?;
+        let decl_key_to_decl_id = graph.u32_buffer("decl_key_to_decl_id")?;
+        let decl_key_order_tmp = graph.u32_buffer("decl_key_order_tmp")?;
+        module_storage_buffers!(graph;
             decl_key_radix_dispatch_args [INDIRECT]: 3;
         );
         let decl_key_radix_block_histogram = key_radix_block_histogram.clone();
@@ -412,28 +361,13 @@ impl Buffers {
         let decl_status = inputs.decl_status.alias(record_capacity);
         // Duplicate rows are consumed before type-instance passes populate the
         // HIR-keyed generic-param count table.
-        let decl_duplicate_of = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.decl_duplicate_of",
-            record_capacity,
-            Some(inputs.type_decl_generic_param_count_by_owner_token),
-        );
+        let decl_duplicate_of = inputs.type_decl_generic_param_count_by_owner_token.clone();
         // Declaration namespace/public flags are consumed during module-path
         // visibility setup before the graph-owned type-instance argument
         // tag/payload tables are written. Reuse those graph slots directly so
         // this phase no longer keeps parser allocations alive.
-        let decl_type_key_flag = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.decl_type_key_flag",
-            record_capacity,
-            Some(inputs.type_instance_arg_ref_tag),
-        );
-        let decl_value_key_flag = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.decl_value_key_flag",
-            record_capacity,
-            Some(inputs.type_instance_arg_ref_payload),
-        );
+        let decl_type_key_flag = inputs.type_instance_arg_ref_tag.clone();
+        let decl_value_key_flag = inputs.type_instance_arg_ref_payload.clone();
         // Declaration key prefixes are consumed before import-visible key scans
         // populate their prefixes, so both families can share the same external
         // token-capacity prefix workspaces.
@@ -444,23 +378,13 @@ impl Buffers {
         // Type declaration-key lookup is retained by module/path consumers, but
         // lexer DFA summary scratch is dead after tokenization and is not part of
         // the typecheck or x86 input surface.
-        let decl_type_key_to_decl_id = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.decl_type_key_to_decl_id",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
+        let decl_type_key_to_decl_id = graph.u32_buffer("decl_type_key_to_decl_id")?;
         // Module-path value-key lookup is consumed inside typecheck and is not
         // retained by the x86 handoff. Reuse dead parser list-workspace rows.
-        let decl_value_key_to_decl_id = typed_alias_or_storage_u32(
-            device,
-            "type_check.resident.decl_value_key_to_decl_id",
-            record_capacity,
-            None::<&wgpu::Buffer>,
-        );
+        let decl_value_key_to_decl_id = graph.u32_buffer("decl_value_key_to_decl_id")?;
         // Persisted semantic-interface declaration identity crosses the point
         // where namespace/public-key scratch is reused by type instances.
-        module_storage_buffers!(device;
+        module_storage_buffers!(graph;
             interface_public_decl_count: 1;
             interface_public_decl_local_id: record_capacity;
             interface_public_decl_index_by_local: record_capacity;
@@ -472,7 +396,7 @@ impl Buffers {
         let import_visible_value_prefix = inputs.import_visible_value_prefix.alias(record_capacity);
         let import_visible_type_count_out = inputs.import_visible_type_count_out.clone();
         let import_visible_value_count_out = inputs.import_visible_value_count_out.clone();
-        module_storage_buffers!(device;
+        module_storage_buffers!(graph;
             import_visible_type_module_id: import_visible_capacity;
             import_visible_type_name_id: import_visible_capacity;
             import_visible_type_decl_id: import_visible_capacity;
@@ -501,18 +425,10 @@ impl Buffers {
         let import_visible_key_radix_block_bucket_prefix = key_radix_block_bucket_prefix;
         let import_visible_key_radix_bucket_total = key_radix_bucket_total;
         let import_visible_key_radix_bucket_base = key_radix_bucket_base;
-        let resolved_type_decl = graph
-            .u32_buffer("resolved_type_decl")?
-            .alias(record_capacity);
-        let resolved_value_decl = graph
-            .u32_buffer("resolved_value_decl")?
-            .alias(record_capacity);
-        let resolved_type_status = graph
-            .u32_buffer("resolved_type_status")?
-            .alias(record_capacity);
-        let resolved_value_status = graph
-            .u32_buffer("resolved_value_status")?
-            .alias(record_capacity);
+        let resolved_type_decl = graph.u32_buffer("resolved_type_decl")?;
+        let resolved_value_decl = graph.u32_buffer("resolved_value_decl")?;
+        let resolved_type_status = graph.u32_buffer("resolved_type_status")?;
+        let resolved_value_status = graph.u32_buffer("resolved_value_status")?;
         // Path prefixes are only needed until path records have been scattered.
         // Later module/import scatters read the retained path_id_by_owner_hir table,
         // so this prefix can share the module/import/decl prefix scratch.
@@ -521,17 +437,11 @@ impl Buffers {
         let path_scan_block_sum = record_scan_block_sum.clone();
         let path_scan_prefix_a = record_scan_prefix_a.clone();
         let path_scan_prefix_b = record_scan_prefix_b.clone();
-        let path_segment_count = graph
-            .u32_buffer("path_segment_count")?
-            .alias(record_capacity);
-        let path_len = graph.u32_buffer("path_len")?.alias(record_capacity);
-        let path_segment_base = graph
-            .u32_buffer("path_segment_base")?
-            .alias(record_capacity);
-        let path_segment_token = graph
-            .u32_buffer("path_segment_token")?
-            .alias(path_segment_capacity);
-        module_storage_buffers!(device;
+        let path_segment_count = graph.u32_buffer("path_segment_count")?;
+        let path_len = graph.u32_buffer("path_len")?;
+        let path_segment_base = graph.u32_buffer("path_segment_base")?;
+        let path_segment_token = graph.u32_buffer("path_segment_token")?;
+        module_storage_buffers!(graph;
             path_segment_count_out: 1;
             path_max_segment_count: 1;
             path_prefix_base: path_segment_capacity;
@@ -541,43 +451,27 @@ impl Buffers {
         let path_prefix_table_capacity = path_segment_capacity
             .checked_mul(2)
             .expect("path-prefix table capacity overflow");
-        module_storage_buffers!(device;
+        module_storage_buffers!(graph;
             path_prefix_table_state: path_prefix_table_capacity;
         );
         let path_prefix_round_count =
             u32::BITS - token_capacity.max(1).saturating_sub(1).leading_zeros();
-        module_storage_buffers!(device;
+        module_storage_buffers!(graph;
             path_prefix_row_dispatch_args [INDIRECT]: 3;
             path_prefix_round_dispatch_args [INDIRECT]: path_prefix_round_count.max(1) as usize * 3;
         );
-        let path_owner_hir = graph.u32_buffer("path_owner_hir")?.alias(record_capacity);
-        let path_call_hir = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.path_call_hir",
-            record_capacity,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let path_owner_token = graph.u32_buffer("path_owner_token")?.alias(record_capacity);
+        let path_owner_hir = graph.u32_buffer("path_owner_hir")?;
+        let path_call_hir = graph.u32_buffer("path_call_hir")?;
+        let path_owner_token = graph.u32_buffer("path_owner_token")?;
         // Path ids are a retained semantic artifact and are read by passes
         // that also rebuild type metadata in parser list workspaces. Keep the
         // map independent from raw-tree scratch so those workspaces can be
         // recolored without creating a same-dispatch read/write alias.
-        let path_id_by_owner_hir = graph
-            .u32_buffer("path_id_by_owner_hir")?
-            .alias(hir_node_capacity.max(1) as usize);
-        let path_id_by_owner_token = typed_storage_u32_fill_rw(
-            device,
-            "type_check.resident.path_id_by_owner_token",
-            token_capacity.max(1) as usize,
-            u32::MAX,
-            wgpu::BufferUsages::empty(),
-        );
-        let path_owner_module_id = graph
-            .u32_buffer("path_owner_module_id")?
-            .alias(record_capacity);
-        let path_kind = graph.u32_buffer("path_kind")?.alias(record_capacity);
-        module_storage_buffers!(device;
+        let path_id_by_owner_hir = graph.u32_buffer("path_id_by_owner_hir")?;
+        let path_id_by_owner_token = graph.u32_buffer("path_id_by_owner_token")?;
+        let path_owner_module_id = graph.u32_buffer("path_owner_module_id")?;
+        let path_kind = graph.u32_buffer("path_kind")?;
+        module_storage_buffers!(graph;
             path_count_out: 1;
             path_dispatch_args [INDIRECT]: 3;
             import_dispatch_args [INDIRECT]: 3;

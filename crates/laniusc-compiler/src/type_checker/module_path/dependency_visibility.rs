@@ -5,6 +5,7 @@ use super::{super::*, buffers::Buffers, inputs::CreateInputs, layout::Layout};
 /// separate outputs so downstream passes cannot interpret a persisted identity
 /// as a local HIR row.
 pub(in crate::type_checker) struct DependencyVisibilityState {
+    pub(in crate::type_checker) clear_capacity: u32,
     pub(in crate::type_checker) visible_capacity: u32,
     pub(in crate::type_checker) lookup_capacity: u32,
     pub(in crate::type_checker) canonical_type_count: u32,
@@ -25,6 +26,7 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) scan: PrefixScanOperation,
     pub(in crate::type_checker) call_compare_scan: PrefixScanOperation,
     pub(in crate::type_checker) count_group: wgpu::BindGroup,
+    pub(in crate::type_checker) clear_workspace_group: wgpu::BindGroup,
     pub(in crate::type_checker) scatter_group: wgpu::BindGroup,
     pub(in crate::type_checker) clear_lookup_group: wgpu::BindGroup,
     pub(in crate::type_checker) build_lookup_group: wgpu::BindGroup,
@@ -61,6 +63,7 @@ pub(in crate::type_checker) struct DependencyCanonicalTypeSubtreeState {
 pub(in crate::type_checker) fn create(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     layout: Layout,
     inputs: &CreateInputs<'_>,
     buffers: &Buffers,
@@ -126,120 +129,24 @@ pub(in crate::type_checker) fn create(
         },
     );
 
-    let count = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.visible.count",
-        import_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let prefix = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.visible.prefix",
-        import_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let total = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.visible.total",
-        1,
-        wgpu::BufferUsages::empty(),
-    );
-    let owner_module = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.visible.owner_module",
-        visible_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let declaration = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.visible.declaration",
-        visible_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let lookup = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.visible.lookup",
-        lookup_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let resolved_type_decl = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.resolved_type_decl",
-        path_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let resolved_value_decl = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.resolved_value_decl",
-        path_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let resolved_dependency_library_id = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.resolved_value.library_id",
-        path_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let resolved_dependency_unit_id = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.resolved_value.unit_id",
-        path_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let resolved_dependency_local_index = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.resolved_value.local_index",
-        path_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let call_compare_capacity = inputs.hir_node_capacity.max(1);
-    let call_compare_scan_input = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.call_compare.scan_input",
-        call_compare_capacity as usize,
-        wgpu::BufferUsages::COPY_DST,
-    );
-    let call_compare_prefix = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.call_compare.prefix",
-        call_compare_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let call_compare_total = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.call_compare.total",
-        1,
-        wgpu::BufferUsages::empty(),
-    );
-    let call_compare_expected_type = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.call_compare.expected_type",
-        call_compare_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let call_compare_actual_instance = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.call_compare.actual_instance",
-        call_compare_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
-    let call_compare_error_token = typed_storage_u32_fill_rw(
-        device,
-        "type_check.dependencies.call_compare.error_token",
-        call_compare_capacity as usize,
-        u32::MAX,
-        wgpu::BufferUsages::empty(),
-    );
+    let count = graph.u32_buffer("dependency_visible_count")?;
+    let prefix = graph.u32_buffer("dependency_visible_prefix")?;
+    let total = graph.u32_buffer("dependency_visible_total")?;
+    let owner_module = graph.u32_buffer("dependency_visible_owner_module")?;
+    let declaration = graph.u32_buffer("dependency_visible_decl")?;
+    let lookup = graph.u32_buffer("dependency_visible_lookup")?;
+    let resolved_type_decl = graph.u32_buffer("dependency_resolved_type_decl")?;
+    let resolved_value_decl = graph.u32_buffer("dependency_resolved_value_decl")?;
+    let resolved_dependency_library_id = graph.u32_buffer("resolved_dependency_library_id")?;
+    let resolved_dependency_unit_id = graph.u32_buffer("resolved_dependency_unit_id")?;
+    let resolved_dependency_local_index = graph.u32_buffer("resolved_dependency_local_index")?;
+    let call_compare_scan_input = graph.u32_buffer("dependency_call_compare_scan_input")?;
+    let call_compare_prefix = graph.u32_buffer("dependency_call_compare_prefix")?;
+    let call_compare_total = graph.u32_buffer("dependency_call_compare_total")?;
+    let call_compare_expected_type = graph.u32_buffer("dependency_call_compare_expected_type")?;
+    let call_compare_actual_instance =
+        graph.u32_buffer("dependency_call_compare_actual_instance")?;
+    let call_compare_error_token = graph.u32_buffer("dependency_call_compare_error_token")?;
     let mut scan_resources = resources.clone();
     scan_resources.buffers([
         ("hir_active_count", inputs.hir_active_count_buf),
@@ -304,12 +211,7 @@ pub(in crate::type_checker) fn create(
         &scan_resources,
         compiler_graph::DEPENDENCY_CALL_COMPARE_SCAN,
     )?;
-    let call_compare_dispatch_args = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.call_compare.dispatch_args",
-        3,
-        wgpu::BufferUsages::INDIRECT,
-    );
+    let call_compare_dispatch_args = graph.u32_buffer("dependency_call_compare_dispatch_args")?;
     let call_compare_dispatch_params = uniform_from_val(
         device,
         "type_check.dependencies.call_compare.dispatch_params",
@@ -333,42 +235,28 @@ pub(in crate::type_checker) fn create(
             ),
         ],
     )?;
-    let canonical_type_capacity = dependencies.type_count.max(1);
-    let canonical_type_roots_a = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.canonical_type_roots_a",
-        canonical_type_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let canonical_type_roots_b = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.canonical_type_roots_b",
-        canonical_type_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let canonical_type_subtree_scratch = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.canonical_type_subtree_scratch",
-        canonical_type_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let declaration_generic_arity = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.declaration_generic_arity",
-        dependencies.declaration_count.max(1) as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let declaration_field_count = typed_storage_u32_rw(
-        device,
-        "type_check.dependencies.declaration_field_count",
-        dependencies.declaration_count.max(1) as usize,
-        wgpu::BufferUsages::empty(),
-    );
+    let canonical_type_roots_a = graph.u32_buffer("dependency_canonical_type_roots_a")?;
+    let canonical_type_roots_b = graph.u32_buffer("dependency_canonical_type_roots_b")?;
+    let canonical_type_subtree_scratch =
+        graph.u32_buffer("dependency_canonical_type_subtree_scratch")?;
+    let declaration_generic_arity = graph.u32_buffer("dependency_declaration_generic_arity")?;
+    let declaration_field_count = graph.u32_buffer("dependency_declaration_field_count")?;
     let canonical_type_jump_rounds = if dependencies.type_count <= 1 {
         0
     } else {
         u32::BITS - (dependencies.type_count - 1).leading_zeros()
     };
+    let clear_capacity = import_capacity
+        .max(visible_capacity)
+        .max(lookup_capacity)
+        .max(path_capacity)
+        .max(inputs.hir_node_capacity.max(1));
+    let clear_workspace_group = resources.reflected_bind_group_with_overrides(
+        device,
+        "type_check_dependencies_00_clear_workspace",
+        &passes.kernel("type_checker/dependencies/00_clear_workspace"),
+        &[("gParams", params.as_entire_binding())],
+    )?;
 
     let count_group = resources.reflected_bind_group_with_overrides(
         device,
@@ -880,6 +768,7 @@ pub(in crate::type_checker) fn create(
     )?;
 
     Ok(Some(Box::new(DependencyVisibilityState {
+        clear_capacity,
         visible_capacity,
         lookup_capacity,
         canonical_type_count: dependencies.type_count,
@@ -920,6 +809,7 @@ pub(in crate::type_checker) fn create(
         scan,
         call_compare_scan,
         count_group,
+        clear_workspace_group,
         scatter_group,
         clear_lookup_group,
         build_lookup_group,

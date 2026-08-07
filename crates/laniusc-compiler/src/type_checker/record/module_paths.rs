@@ -21,6 +21,15 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         hir_active_dispatch_args,
         timer.as_deref_mut(),
     )?;
+    if let Some(visibility) = state.dependency_visibility.as_ref() {
+        record_compute(
+            encoder,
+            &passes.kernel("type_checker/dependencies/00_clear_workspace"),
+            &visibility.clear_workspace_group,
+            "type_check.dependencies.clear_workspace",
+            visibility.clear_capacity,
+        )?;
+    }
     if let Some(pages) = dependency_pages {
         record_dependency_pages(device, queue, encoder, pages, passes, state)?;
     } else {
@@ -77,6 +86,7 @@ fn record_module_path_stage(
     stage: ModulePathRecordStage,
 ) -> Result<()> {
     let hir_work = state.n_blocks.saturating_mul(256).max(1);
+    let path_clear_work = hir_work.max(state.token_capacity.max(1));
 
     if stage != ModulePathRecordStage::Finalize {
         state.bind_groups.mark_records.record(encoder)?;
@@ -86,7 +96,7 @@ fn record_module_path_stage(
             &passes.kernel("type_checker/modules/01a_clear_path_state"),
             &state.bind_groups.clear_path_state,
             "type_check.modules.clear_path_state",
-            hir_work,
+            path_clear_work,
         )?;
         record_compute(
             encoder,

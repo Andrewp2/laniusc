@@ -7,12 +7,12 @@ use crate::{
     },
 };
 
-const MODULE_WORDS: usize = 2;
-const MODULE_SEGMENT_WORDS: usize = 4;
-const DECLARATION_WORDS: usize = 14;
+pub(super) const MODULE_WORDS: usize = 2;
+pub(super) const MODULE_SEGMENT_WORDS: usize = 4;
+pub(super) const DECLARATION_WORDS: usize = 14;
 const COUNT_WORDS: usize = 5;
-const TYPE_WORDS: usize = 9;
-const MEMBER_WORDS: usize = 10;
+pub(super) const TYPE_WORDS: usize = 9;
+pub(super) const MEMBER_WORDS: usize = 10;
 
 #[allow(clippy::too_many_arguments)]
 fn graph_prefix_scan(
@@ -314,25 +314,11 @@ impl GpuTypeChecker {
             .max(decl_capacity)
             .max(member_capacity);
         let scan_scratch = typecheck_graph.semantic_interface_scan_workspace();
+        let workspace = |name| typecheck_graph.semantic_interface_buffer(name);
 
-        let name_ref_len = typed_storage_u32_rw(
-            device,
-            "type_check.interface.name_ref_len",
-            name_ref_count as usize,
-            wgpu::BufferUsages::COPY_DST,
-        );
-        let name_ref_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.name_ref_prefix",
-            name_ref_count as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let scan_total = typed_storage_u32_rw(
-            device,
-            "type_check.interface.scan_total",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
+        let name_ref_len = workspace("semantic_interface.name_ref_len")?;
+        let (name_ref_prefix, scan_total) = typecheck_graph
+            .semantic_interface_scan_outputs(compiler_graph::SemanticInterfaceScan::Names)?;
         let scan_count = initialized_u32_buffer(
             device,
             "type_check.interface.scan_count",
@@ -372,18 +358,8 @@ impl GpuTypeChecker {
             &scan_total,
             scan_scratch,
         )?;
-        let module_segment_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.module_segment_prefix",
-            module_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let module_segment_total = typed_storage_u32_rw(
-            device,
-            "type_check.interface.module_segment_total",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
+        let (module_segment_prefix, module_segment_total) = typecheck_graph
+            .semantic_interface_scan_outputs(compiler_graph::SemanticInterfaceScan::Modules)?;
         let (module_dispatch_x, module_dispatch_y, module_dispatch_z) = plan_workgroups(
             DispatchDim::D1,
             InputElements::Elements1D(module_capacity.max(1)),
@@ -414,24 +390,9 @@ impl GpuTypeChecker {
             scan_scratch,
         )?;
 
-        let modules = typed_storage_u32_rw(
-            device,
-            "type_check.interface.modules",
-            (module_capacity as usize).saturating_mul(MODULE_WORDS),
-            wgpu::BufferUsages::empty(),
-        );
-        let module_segments = typed_storage_u32_rw(
-            device,
-            "type_check.interface.module_segments",
-            (module_segment_capacity as usize).saturating_mul(MODULE_SEGMENT_WORDS),
-            wgpu::BufferUsages::empty(),
-        );
-        let declarations = typed_storage_u32_rw(
-            device,
-            "type_check.interface.declarations",
-            (declaration_capacity as usize).saturating_mul(DECLARATION_WORDS),
-            wgpu::BufferUsages::empty(),
-        );
+        let modules = workspace("semantic_interface.modules")?;
+        let module_segments = workspace("semantic_interface.module_segments")?;
+        let declarations = workspace("semantic_interface.declarations")?;
         let name_word_capacity = (name_byte_capacity as usize).div_ceil(4);
         let name_byte_words = typed_storage_u32_rw(
             device,
@@ -805,194 +766,49 @@ impl GpuTypeChecker {
                 unit_id,
             },
         );
-        let parent = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.parent",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let seed_owner = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.seed_owner",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let child_ordinal = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.child_ordinal",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let direct_type_hir_by_decl = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.direct_type_hir_by_decl",
-            decl_capacity.max(1) as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let index_by_hir = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.index_by_hir",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let root_link_a = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.root_link_a",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let root_link_b = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.root_link_b",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let root_owner_a = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.root_owner_a",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let root_owner_b = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.root_owner_b",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let reverse_flag = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.reverse_flag",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let reverse_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.reverse_prefix",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let count = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.count",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
+        let workspace = |name| typecheck_graph.semantic_interface_buffer(name);
+        let parent = workspace("semantic_interface.type.parent")?;
+        let seed_owner = workspace("semantic_interface.type.seed_owner")?;
+        let child_ordinal = workspace("semantic_interface.type.child_ordinal")?;
+        let direct_type_hir_by_decl = workspace("semantic_interface.type.direct_hir_by_decl")?;
+        let index_by_hir = workspace("semantic_interface.type.index_by_hir")?;
+        let root_link_a = workspace("semantic_interface.type.root_link_a")?;
+        let root_link_b = workspace("semantic_interface.type.root_link_b")?;
+        let root_owner_a = workspace("semantic_interface.type.root_owner_a")?;
+        let root_owner_b = workspace("semantic_interface.type.root_owner_b")?;
+        let reverse_flag = workspace("semantic_interface.type.reverse_flag")?;
+        let (reverse_prefix, count) = typecheck_graph
+            .semantic_interface_scan_outputs(compiler_graph::SemanticInterfaceScan::TypeOrder)?;
         let scan_count = initialized_u32_buffer(
             device,
             "type_check.interface.type_topology.scan_count",
             &[capacity],
             wgpu::BufferUsages::STORAGE,
         );
-        let hir_order = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.hir_order",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let edge_count = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.edge_count",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let edge_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.edge_prefix",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let edge_total = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.edge_total",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let edges = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.edges",
-            edge_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let edge_written = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.edge_written",
-            edge_capacity as usize,
-            wgpu::BufferUsages::COPY_DST,
-        );
-        let types = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.types",
-            (type_capacity as usize).saturating_mul(TYPE_WORDS),
-            wgpu::BufferUsages::empty(),
-        );
-        let local_decl_by_hir = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.local_decl_by_hir",
-            capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let path_classification = typed_storage_u32_rw(
-            device,
-            "type_check.interface.type_topology.path_classification",
-            (capacity as usize).saturating_mul(4),
-            wgpu::BufferUsages::empty(),
-        );
+        let hir_order = workspace("semantic_interface.type.hir_order")?;
+        let edge_count = workspace("semantic_interface.type.edge_count")?;
+        let (edge_prefix, edge_total) = typecheck_graph
+            .semantic_interface_scan_outputs(compiler_graph::SemanticInterfaceScan::TypeEdges)?;
+        let edges = workspace("semantic_interface.type.edges")?;
+        let edge_written = workspace("semantic_interface.type.edge_written")?;
+        let types = workspace("semantic_interface.type.types")?;
+        let local_decl_by_hir = workspace("semantic_interface.type.local_decl_by_hir")?;
+        let path_classification = workspace("semantic_interface.type.path_classification")?;
         let signature_capacity = decl_capacity.max(1);
         let signature_n_blocks = signature_capacity.div_ceil(256).max(1);
-        let signature_type_flag = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.type_flag",
-            signature_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let signature_type_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.type_prefix",
-            signature_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let signature_type_total = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.type_total",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let signature_edge_count = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.edge_count",
-            signature_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let signature_edge_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.edge_prefix",
-            signature_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let signature_edge_total = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.edge_total",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let signature_type_by_decl = typed_storage_u32_rw(
-            device,
-            "type_check.interface.signature.type_by_decl",
-            signature_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let complete_type_count = typed_storage_u32_rw(
-            device,
-            "type_check.interface.complete_type_count",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let complete_edge_total = typed_storage_u32_rw(
-            device,
-            "type_check.interface.complete_edge_total",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
+        let signature_type_flag = workspace("semantic_interface.signature.type_flag")?;
+        let (signature_type_prefix, signature_type_total) = typecheck_graph
+            .semantic_interface_scan_outputs(
+                compiler_graph::SemanticInterfaceScan::SignatureTypes,
+            )?;
+        let signature_edge_count = workspace("semantic_interface.signature.edge_count")?;
+        let (signature_edge_prefix, signature_edge_total) = typecheck_graph
+            .semantic_interface_scan_outputs(
+                compiler_graph::SemanticInterfaceScan::SignatureEdges,
+            )?;
+        let signature_type_by_decl = workspace("semantic_interface.signature.type_by_decl")?;
+        let complete_type_count = workspace("semantic_interface.complete_type_count")?;
+        let complete_edge_total = workspace("semantic_interface.complete_edge_total")?;
         let signature_scan_count = initialized_u32_buffer(
             device,
             "type_check.interface.signature.scan_count",
@@ -1003,78 +819,21 @@ impl GpuTypeChecker {
             .checked_mul(2)
             .and_then(|value| value.checked_add(token_capacity))
             .ok_or_else(|| anyhow::anyhow!("semantic-interface member capacity overflows u32"))?;
-        let variant_count_by_hir = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.variant_count_by_hir",
-            capacity as usize,
-            wgpu::BufferUsages::COPY_DST,
-        );
-        let field_count_by_hir = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.field_count_by_hir",
-            capacity as usize,
-            wgpu::BufferUsages::COPY_DST,
-        );
-        let generic_type_count_by_decl = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.generic_type_count_by_decl",
-            signature_capacity as usize,
-            wgpu::BufferUsages::COPY_DST,
-        );
-        let generic_const_count_by_decl = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.generic_const_count_by_decl",
-            signature_capacity as usize,
-            wgpu::BufferUsages::COPY_DST,
-        );
-        let member_count = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.count",
-            signature_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let member_cursor = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.cursor",
-            signature_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let member_prefix = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.prefix",
-            signature_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let member_total = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.total",
-            1,
-            wgpu::BufferUsages::empty(),
-        );
-        let members = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.records",
-            (member_capacity as usize).saturating_mul(MEMBER_WORDS),
-            wgpu::BufferUsages::empty(),
-        );
-        let member_name_id = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.name_id",
-            member_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let member_index_by_generic_row = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.index_by_generic_row",
-            token_capacity.max(1) as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let member_written = typed_storage_u32_rw(
-            device,
-            "type_check.interface.members.written",
-            member_capacity as usize,
-            wgpu::BufferUsages::COPY_DST,
-        );
+        let variant_count_by_hir = workspace("semantic_interface.members.variant_count_by_hir")?;
+        let field_count_by_hir = workspace("semantic_interface.members.field_count_by_hir")?;
+        let generic_type_count_by_decl =
+            workspace("semantic_interface.members.generic_type_count_by_decl")?;
+        let generic_const_count_by_decl =
+            workspace("semantic_interface.members.generic_const_count_by_decl")?;
+        let member_count = workspace("semantic_interface.members.row_count")?;
+        let member_cursor = workspace("semantic_interface.members.cursor")?;
+        let (member_prefix, member_total) = typecheck_graph
+            .semantic_interface_scan_outputs(compiler_graph::SemanticInterfaceScan::Members)?;
+        let members = workspace("semantic_interface.members.records")?;
+        let member_name_id = workspace("semantic_interface.members.name_id")?;
+        let member_index_by_generic_row =
+            workspace("semantic_interface.members.index_by_generic_row")?;
+        let member_written = workspace("semantic_interface.members.written")?;
         let signature_scan_params = PrefixScanParams {
             n_items: signature_capacity,
             n_blocks: signature_n_blocks,

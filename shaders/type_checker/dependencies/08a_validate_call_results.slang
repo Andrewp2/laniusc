@@ -231,6 +231,24 @@ bool stable_nominal_equal(uint lhs_token, uint rhs_token)
            external_type_local_index[lhs_token] == external_type_local_index[rhs_token];
 }
 
+bool canonical_nominal_equal(uint lhs, uint rhs)
+{
+    uint type_count = dependency_count(4u);
+    if (lhs >= type_count || rhs >= type_count)
+        return false;
+    lhs = canonical_type_roots[lhs];
+    rhs = canonical_type_roots[rhs];
+    if (lhs >= type_count || rhs >= type_count)
+        return false;
+    uint lhs_base = lhs * TYPE_WORDS;
+    uint rhs_base = rhs * TYPE_WORDS;
+    return dependency_type_word(lhs_base) == INTERFACE_TYPE_DECLARATION &&
+           dependency_type_word(rhs_base) == INTERFACE_TYPE_DECLARATION &&
+           dependency_type_word(lhs_base + 1u) == dependency_type_word(rhs_base + 1u) &&
+           dependency_type_word(lhs_base + 2u) == dependency_type_word(rhs_base + 2u) &&
+           dependency_type_word(lhs_base + 8u) == dependency_type_word(rhs_base + 8u);
+}
+
 uint canonical_subtree_count(uint root)
 {
     uint type_count = dependency_count(4u);
@@ -403,7 +421,8 @@ void validate_dependency_result(
     if (expected_tag == TYPE_REF_EXTERNAL_CANONICAL)
     {
         bool matches = expected_payload < type_count &&
-            canonical_type_roots[expected_payload] == actual_root;
+            (canonical_type_roots[expected_payload] == actual_root ||
+             canonical_nominal_equal(expected_payload, actual_root));
         if (!matches && valid_token(expected_external_token))
             matches = dependency_nominal_matches_token(actual_root, expected_external_token);
         if (!matches || actual_count != 0u)
