@@ -849,12 +849,7 @@ impl GpuLexer {
             record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
-        let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.lex.source_pack.resident.token_count"),
-            size: 8,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let token_count_readback = &bufs.token_count_readback.buffer;
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
         lex_encoder.copy_buffer_to_buffer(
             &bufs.parser_feature_flags,
@@ -1163,12 +1158,7 @@ impl GpuLexer {
             record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
-        let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.lex.resident.token_count"),
-            size: 8,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let token_count_readback = &bufs.token_count_readback.buffer;
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
         lex_encoder.copy_buffer_to_buffer(
             &bufs.parser_feature_flags,
@@ -1348,12 +1338,7 @@ impl GpuLexer {
             record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
-        let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.lex.resident.token_count"),
-            size: 8,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let token_count_readback = &bufs.token_count_readback.buffer;
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
         lex_encoder.copy_buffer_to_buffer(
             &bufs.parser_feature_flags,
@@ -1539,12 +1524,7 @@ impl GpuLexer {
             record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
-        let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.lex.resident.token_count"),
-            size: 8,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let token_count_readback = &bufs.token_count_readback.buffer;
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
         lex_encoder.copy_buffer_to_buffer(
             &bufs.parser_feature_flags,

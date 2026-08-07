@@ -13,7 +13,7 @@ use crate::gpu::scan::{PingPongScanStep, ScanFinalize, ping_pong_scan_steps};
 /// pipelines with a separate block-sum buffer. The lexer pair path reuses the
 /// ping buffer as both block totals and scan prefix storage, so `pair_02` starts
 /// at the first real stride step.
-pub(super) fn block_total_scan_steps(n_blocks: u32) -> Vec<PingPongScanStep> {
+pub(crate) fn block_total_scan_steps(n_blocks: u32) -> Vec<PingPongScanStep> {
     ping_pong_scan_steps(n_blocks, ScanFinalize::None)
         .into_iter()
         .skip(1)

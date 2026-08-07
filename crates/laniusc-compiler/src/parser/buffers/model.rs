@@ -420,6 +420,7 @@ pub struct ParserBuffers {
     // buffer is shared by parser validation and tree/HIR passes. Host LL(1)
     // tables remain in `PrecomputedParseTables` for diagnostics and tests.
     pub ll1_status: LaniusBuffer<u32>,
+    pub(crate) ll1_status_readback: LaniusBuffer<u8>,
 
     // pair-to-header
     pub params_llp: LaniusBuffer<super::super::passes::llp_pairs::LLPParams>,
@@ -505,6 +506,8 @@ pub struct ParserBuffers {
 
     // pack varlen
     pub params_pack: LaniusBuffer<super::super::passes::pack::varlen::PackParams>,
+    pub(crate) pack_offsets_status_params:
+        LaniusBuffer<super::super::passes::pack::offsets::status::Params>,
     pub sc_offsets: LaniusBuffer<u32>,
     pub emit_offsets: LaniusBuffer<u32>,
     pub pack_sc_prefix_a: LaniusBuffer<u32>,
@@ -903,6 +906,10 @@ pub struct ParserBuffers {
     pub hir_expr_float_bits: LaniusBuffer<u32>,
     pub hir_expr_string_start: LaniusBuffer<u32>,
     pub hir_expr_string_len: LaniusBuffer<u32>,
+    pub(crate) hir_literal_values_params:
+        LaniusBuffer<super::super::passes::hir::literal_values::Params>,
+    pub(crate) hir_string_decode_params:
+        LaniusBuffer<super::super::passes::hir::string::decode::Params>,
     pub hir_string_data_offset: LaniusBuffer<u32>,
     pub hir_string_decoded_len: LaniusBuffer<u32>,
     pub hir_string_data_words: LaniusBuffer<u32>,

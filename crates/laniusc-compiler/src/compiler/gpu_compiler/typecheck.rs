@@ -258,21 +258,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                 src,
                 |device, queue, bufs, token_count, encoder, mut timer| {
                     let token_capacity = token_count.max(1);
-                    let parser_capacity = self
+                    let parser_tree_capacity = self
                         .parser
-                        .measure_resident_partial_parse_capacity(
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            &self.parse_tables,
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source(&diagnostic_path, src, err)
-                        })?;
-                    let parser_tree_capacity = parser_capacity.tree_capacity;
-                    let parser_feature_flags =
-                        parser_capacity.parser_feature_flags | bufs.parser_feature_flags_value;
+                        .partial_parse_resident_tree_capacity(token_capacity, &self.parse_tables);
+                    let parser_feature_flags = bufs.parser_feature_flags_value;
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.parser-boundary.encoder"),
@@ -372,15 +361,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                     }
                     if let Some(target) = target {
                         let pipeline = self
-                            .lowering_pipeline(target)
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        pipeline
-                            .ensure_frontend_capacity(
+                            .ensure_lowering_pipeline(
+                                target,
                                 bufs.n,
                                 token_capacity,
                                 typecheck_hir.capacity,
                             )
-                            .map_err(CompileError::GpuCodegen)?;
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
                             CompileError::GpuCodegen(
                                 "semantic lowering buffers are unavailable".into(),
@@ -581,22 +568,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let mut record_host_timer =
                         CompilerHostTimer::new("compile.source-pack.record");
                     let token_capacity = token_count.max(1);
-                    let parser_capacity = self
+                    let parser_tree_capacity = self
                         .parser
-                        .measure_resident_partial_parse_capacity(
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            &self.parse_tables,
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?;
+                        .partial_parse_resident_tree_capacity(token_capacity, &self.parse_tables);
                     record_host_timer.stamp("parser_capacity");
-                    let parser_tree_capacity = parser_capacity.tree_capacity;
-                    let parser_feature_flags =
-                        parser_capacity.parser_feature_flags | bufs.parser_feature_flags_value;
+                    let parser_feature_flags = bufs.parser_feature_flags_value;
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.source_pack.parser-boundary.encoder"),
@@ -727,15 +703,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                     }
                     if let Some(target) = lowering_target {
                         let pipeline = self
-                            .lowering_pipeline(target)
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        pipeline
-                            .ensure_frontend_capacity(
+                            .ensure_lowering_pipeline(
+                                target,
                                 bufs.n,
                                 token_capacity,
                                 typecheck_hir.capacity,
                             )
-                            .map_err(CompileError::GpuCodegen)?;
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
                             CompileError::GpuCodegen(
                                 "semantic lowering buffers are unavailable".into(),
@@ -747,15 +721,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                     }
                     if let Some(request) = object_request {
                         let pipeline = self
-                            .lowering_pipeline(request.target())
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        pipeline
-                            .ensure_frontend_capacity(
+                            .ensure_lowering_pipeline(
+                                request.target(),
                                 bufs.n,
                                 token_capacity,
                                 typecheck_hir.capacity,
                             )
-                            .map_err(CompileError::GpuCodegen)?;
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
                             CompileError::GpuCodegen(
                                 "semantic lowering buffers are unavailable".into(),

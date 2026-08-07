@@ -4,20 +4,17 @@ use anyhow::Result;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{
-        buffers::uniform_from_val,
-        passes_core::{PassData, bind_group},
-    },
+    gpu::passes_core::{PassData, bind_group},
     parser::buffers::ParserBuffers,
 };
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
-struct Params {
-    n: u32,
-    source_len: u32,
-    pool_capacity: u32,
-    uses_status_count: u32,
+pub(crate) struct Params {
+    pub(crate) n: u32,
+    pub(crate) source_len: u32,
+    pub(crate) pool_capacity: u32,
+    pub(crate) uses_status_count: u32,
 }
 pub struct HirStringDecodePass {
     data: PassData,
@@ -27,14 +24,15 @@ impl HirStringDecodePass {
     pub fn record_with_source(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         b: &ParserBuffers,
         source_len: u32,
         source: &wgpu::Buffer,
     ) -> Result<()> {
-        let params = uniform_from_val(
-            device,
-            "parser.hir_string_decode.params",
+        crate::parser::buffers::write_uniform(
+            queue,
+            &b.hir_string_decode_params,
             &Params {
                 n: b.tree_capacity,
                 source_len,
@@ -43,7 +41,10 @@ impl HirStringDecodePass {
             },
         );
         let resources = HashMap::from([
-            ("gHirString".into(), params.as_entire_binding()),
+            (
+                "gHirString".into(),
+                b.hir_string_decode_params.as_entire_binding(),
+            ),
             ("source_bytes".into(), source.as_entire_binding()),
             (
                 "hir_string_node".into(),

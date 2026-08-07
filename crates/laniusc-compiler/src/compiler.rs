@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use crate::codegen::unit::artifact_key_for_output as source_pack_artifact_key_for_output;
 use crate::{
     codegen::{
-        lowering_ir::{LoweringCapacities, LoweringTarget},
-        lowering_pipeline::GpuLoweringPipeline,
+        lowering_ir::LoweringTarget,
+        lowering_pipeline::GpuLoweringWorkspaceCache,
         unit::{
             CompilationUnit,
             CompilationUnitLimits,

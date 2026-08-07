@@ -67,7 +67,10 @@ static LIVE_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 static PEAK_BUFFER_ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static PEAK_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 static NEXT_BUFFER_ALLOCATION_ID: AtomicU64 = AtomicU64::new(1);
+static BUFFER_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static LIVE_BUFFER_BYTES_BY_LABEL: LazyLock<Mutex<HashMap<Arc<str>, (u64, u64)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static BUFFER_CREATIONS_BY_LABEL: LazyLock<Mutex<HashMap<Arc<str>, u64>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static BUFFER_PHASE_SNAPSHOTS: LazyLock<Mutex<Vec<TrackedBufferPhaseSnapshot>>> =
     LazyLock::new(|| Mutex::new(Vec::new()));
@@ -92,6 +95,19 @@ pub fn tracked_buffer_allocation_stats() -> TrackedBufferAllocationStats {
         allocations: LIVE_BUFFER_ALLOCATIONS.load(Ordering::Relaxed),
         bytes: LIVE_BUFFER_BYTES.load(Ordering::Relaxed),
     }
+}
+
+/// Monotonic number of physical GPU buffers created through Lanius's typed
+/// allocation boundary. Aliases and cloned handles do not increment it.
+pub(crate) fn buffer_creation_count() -> u64 {
+    BUFFER_CREATION_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn buffer_creation_counts_by_label() -> HashMap<Arc<str>, u64> {
+    BUFFER_CREATIONS_BY_LABEL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
 /// Resets the peak window to the allocations that are live at the phase/job boundary.
@@ -180,7 +196,13 @@ struct BufferAllocationLedger {
 
 impl BufferAllocationLedger {
     fn new(bytes: u64, label: impl Into<Arc<str>>) -> Arc<Self> {
+        BUFFER_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
         let label = label.into();
+        *BUFFER_CREATIONS_BY_LABEL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(label.clone())
+            .or_default() += 1;
         let allocations = LIVE_BUFFER_ALLOCATIONS.fetch_add(1, Ordering::Relaxed) + 1;
         let live_bytes = LIVE_BUFFER_BYTES.fetch_add(bytes, Ordering::Relaxed) + bytes;
         record_allocation_peak(allocations, live_bytes);
@@ -230,6 +252,34 @@ pub struct LaniusBuffer<T> {
     _allocation: Option<Arc<BufferAllocationLedger>>,
     _borrowed_allocation_id: Option<u64>,
     _marker: std::marker::PhantomData<T>,
+}
+
+/// One uniform-buffer allocation containing fixed-stride records selected by
+/// WGPU dynamic offsets. This is the GPU equivalent of an array of small pass
+/// parameters without one allocation and bind group per element.
+pub struct DynamicUniformBuffer<T> {
+    pub buffer: LaniusBuffer<u8>,
+    stride: u32,
+    binding_size: std::num::NonZeroU64,
+    count: usize,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> DynamicUniformBuffer<T> {
+    pub fn binding(&self) -> wgpu::BindingResource<'_> {
+        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: &self.buffer,
+            offset: 0,
+            size: Some(self.binding_size),
+        })
+    }
+
+    pub fn dynamic_offset(&self, index: usize) -> u32 {
+        assert!(index < self.count, "dynamic uniform index out of bounds");
+        self.stride
+            .checked_mul(index as u32)
+            .expect("dynamic uniform offset overflow")
+    }
 }
 
 /// Borrowed, type-erased view of a tracked GPU allocation.
@@ -407,6 +457,97 @@ where
     });
     queue.write_buffer(&raw, 0, bytes);
     LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label)
+}
+
+/// Creates an alignment-padded uniform table for one dynamically offset
+/// binding. Records are encoded independently so each offset has the same
+/// layout as a standalone `ConstantBuffer<T>`.
+pub fn dynamic_uniforms_from_vals_with_queue<T>(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    values: &[T],
+) -> DynamicUniformBuffer<T>
+where
+    T: encase::ShaderType + encase::internal::WriteInto,
+{
+    dynamic_uniforms_from_vals_impl(device, label, values, |bytes| {
+        let raw = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: bytes.len() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&raw, 0, bytes);
+        raw
+    })
+}
+
+/// Creates a dynamic-uniform table through the checked mapped-at-creation
+/// path when construction does not own a queue.
+pub fn dynamic_uniforms_from_vals<T>(
+    device: &wgpu::Device,
+    label: &str,
+    values: &[T],
+) -> DynamicUniformBuffer<T>
+where
+    T: encase::ShaderType + encase::internal::WriteInto,
+{
+    dynamic_uniforms_from_vals_impl(device, label, values, |bytes| {
+        create_buffer_init_checked(
+            device,
+            label,
+            bytes,
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        )
+    })
+}
+
+fn dynamic_uniforms_from_vals_impl<T>(
+    device: &wgpu::Device,
+    label: &str,
+    values: &[T],
+    create: impl FnOnce(&[u8]) -> wgpu::Buffer,
+) -> DynamicUniformBuffer<T>
+where
+    T: encase::ShaderType + encase::internal::WriteInto,
+{
+    assert!(
+        !values.is_empty(),
+        "dynamic uniform table must not be empty"
+    );
+    let encoded = values
+        .iter()
+        .map(|value| {
+            let mut uniform = encase::UniformBuffer::new(Vec::<u8>::new());
+            uniform
+                .write(value)
+                .expect("failed to encode dynamic uniform value");
+            uniform.into_inner()
+        })
+        .collect::<Vec<_>>();
+    let binding_len = encoded[0].len();
+    assert!(
+        encoded.iter().all(|bytes| bytes.len() == binding_len),
+        "dynamic uniform records have inconsistent encoded sizes"
+    );
+    let alignment = device.limits().min_uniform_buffer_offset_alignment.max(1) as usize;
+    let stride = binding_len.div_ceil(alignment) * alignment;
+    let mut bytes = vec![0u8; stride * values.len()];
+    for (index, value) in encoded.iter().enumerate() {
+        bytes[index * stride..index * stride + binding_len].copy_from_slice(value);
+    }
+    let raw = create(&bytes);
+    DynamicUniformBuffer {
+        buffer: LaniusBuffer::new_labeled((raw, bytes.len() as u64), bytes.len(), label),
+        stride: stride
+            .try_into()
+            .expect("dynamic uniform stride exceeds u32"),
+        binding_size: std::num::NonZeroU64::new(binding_len as u64)
+            .expect("uniform encoding must not be empty"),
+        count: values.len(),
+        _marker: std::marker::PhantomData,
+    }
 }
 
 /// Create a STORAGE (read-only) buffer from a raw byte slice.

@@ -3,6 +3,7 @@ use std::{
     env,
     sync::{
         Arc,
+        Weak,
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
@@ -23,6 +24,157 @@ use crate::reflection::{
 };
 
 static PIPELINE_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
+static BIND_GROUP_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
+static BIND_GROUP_RESOURCE_PLAN_NS: AtomicU64 = AtomicU64::new(0);
+static BIND_GROUP_CACHE_NS: AtomicU64 = AtomicU64::new(0);
+static BIND_GROUP_WGPU_CREATE_NS: AtomicU64 = AtomicU64::new(0);
+static BIND_GROUP_CREATIONS_BY_LABEL: std::sync::LazyLock<std::sync::Mutex<HashMap<String, u64>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+#[derive(Default)]
+struct ReflectedBindGroupCache {
+    invocations: HashMap<String, CachedBindGroupInvocation>,
+}
+
+struct CachedBindGroupInvocation {
+    variants: HashMap<Vec<ReflectedBufferBindingIdentity>, CachedBindGroup>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct ReflectedBufferBindingIdentity {
+    binding: u32,
+    array_index: usize,
+    buffer: wgpu::Buffer,
+    offset: u64,
+    size: Option<std::num::NonZeroU64>,
+}
+
+struct CachedBindGroup {
+    bind_group: wgpu::BindGroup,
+    last_used_job: u64,
+}
+
+static NEXT_BIND_GROUP_JOB: AtomicU64 = AtomicU64::new(1);
+static ACTIVE_BIND_GROUP_JOB: AtomicU64 = AtomicU64::new(0);
+
+/// Starts one sequential daemon job's reflected-resource usage epoch.
+pub(crate) fn begin_reflected_bind_group_job() -> u64 {
+    let epoch = NEXT_BIND_GROUP_JOB.fetch_add(1, Ordering::Relaxed);
+    ACTIVE_BIND_GROUP_JOB.store(epoch, Ordering::Relaxed);
+    epoch
+}
+
+/// Drops bind groups from superseded workspace allocations after a successful
+/// cold/growth job has rebound the complete active compiler path.
+pub(crate) fn finish_reflected_bind_group_job(epoch: u64, workspace_changed: bool) {
+    ACTIVE_BIND_GROUP_JOB.store(0, Ordering::Relaxed);
+    if !workspace_changed {
+        return;
+    }
+    let mut caches = reflected_bind_group_caches()
+        .lock()
+        .expect("reflected bind-group cache registry poisoned");
+    caches.retain(|_, cache| {
+        let Some(cache) = cache.upgrade() else {
+            return false;
+        };
+        let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
+        cache.invocations.retain(|_, invocation| {
+            invocation
+                .variants
+                .retain(|_, cached| cached.last_used_job == epoch);
+            !invocation.variants.is_empty()
+        });
+        true
+    });
+}
+
+type SharedReflectedBindGroupCache = Arc<std::sync::Mutex<ReflectedBindGroupCache>>;
+
+fn reflected_bind_group_caches() -> &'static std::sync::Mutex<
+    HashMap<wgpu::BindGroupLayout, Weak<std::sync::Mutex<ReflectedBindGroupCache>>>,
+> {
+    static CACHES: std::sync::OnceLock<
+        std::sync::Mutex<
+            HashMap<wgpu::BindGroupLayout, Weak<std::sync::Mutex<ReflectedBindGroupCache>>>,
+        >,
+    > = std::sync::OnceLock::new();
+    CACHES.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn register_reflected_bind_group_cache(
+    layouts: &[Arc<wgpu::BindGroupLayout>],
+    cache: &SharedReflectedBindGroupCache,
+) {
+    let mut caches = reflected_bind_group_caches()
+        .lock()
+        .expect("reflected bind-group cache registry poisoned");
+    for layout in layouts {
+        caches.insert((**layout).clone(), Arc::downgrade(cache));
+    }
+}
+
+/// Releases every automatically derived bind group while keeping prepared
+/// pipelines and layouts alive. The daemon calls this at its idle trim
+/// boundary after dropping capacity-dependent workspace owners.
+pub(crate) fn release_reflected_bind_group_caches() {
+    let mut caches = reflected_bind_group_caches()
+        .lock()
+        .expect("reflected bind-group cache registry poisoned");
+    caches.retain(|_, cache| {
+        let Some(cache) = cache.upgrade() else {
+            return false;
+        };
+        cache
+            .lock()
+            .expect("reflected bind-group cache poisoned")
+            .invocations
+            .clear();
+        true
+    });
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct PreparedKernelKey {
+    device: wgpu::Device,
+    entry: String,
+    shader: String,
+    dynamic_uniforms: Vec<String>,
+}
+
+fn prepared_kernel_cache() -> &'static std::sync::Mutex<HashMap<PreparedKernelKey, PassData>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<PreparedKernelKey, PassData>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn prepared_kernel_key(
+    device: &wgpu::Device,
+    entry: &str,
+    shader: &str,
+    dynamic_uniforms: &[&str],
+) -> PreparedKernelKey {
+    let mut dynamic_uniforms = dynamic_uniforms
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect::<Vec<_>>();
+    dynamic_uniforms.sort_unstable();
+    dynamic_uniforms.dedup();
+    PreparedKernelKey {
+        device: device.clone(),
+        entry: entry.to_owned(),
+        shader: shader.to_owned(),
+        dynamic_uniforms,
+    }
+}
+
+fn relabel_pass_data(mut pass: PassData, label: &str) -> PassData {
+    // Bind-group caches use invocation identity as well as this diagnostic
+    // name. Preserve the caller's logical pass name while sharing the physical
+    // pipeline and reflected layouts.
+    pass.shader_id = label.to_owned();
+    pass
+}
 
 thread_local! {
     static RECORDED_COMPUTE_PASS_COUNT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
@@ -51,6 +203,72 @@ pub(crate) fn pipeline_creation_count() -> u64 {
     PIPELINE_CREATION_COUNT.load(Ordering::Relaxed)
 }
 
+/// Returns the monotonic number of bind groups created through the compiler's
+/// reflected binding boundary.
+pub(crate) fn bind_group_creation_count() -> u64 {
+    BIND_GROUP_CREATION_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn bind_group_creation_counts_by_label() -> HashMap<String, u64> {
+    BIND_GROUP_CREATIONS_BY_LABEL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+fn record_bind_group_creation(label: Option<&str>) {
+    BIND_GROUP_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
+    *BIND_GROUP_CREATIONS_BY_LABEL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(label.unwrap_or("<unnamed>").to_owned())
+        .or_default() += 1;
+}
+
+pub(crate) fn bind_group_timing_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        crate::gpu::env::env_bool_truthy("LANIUS_GPU_BIND_GROUP_TIMING", false)
+            || crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
+    })
+}
+
+fn add_timing(counter: &AtomicU64, start: Option<Instant>) {
+    if let Some(start) = start {
+        counter.fetch_add(
+            start.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+            Ordering::Relaxed,
+        );
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct BindGroupTimingCounters {
+    pub resource_plan_ns: u64,
+    pub cache_ns: u64,
+    pub wgpu_create_ns: u64,
+}
+
+impl BindGroupTimingCounters {
+    pub(crate) fn saturating_sub(self, before: Self) -> Self {
+        Self {
+            resource_plan_ns: self
+                .resource_plan_ns
+                .saturating_sub(before.resource_plan_ns),
+            cache_ns: self.cache_ns.saturating_sub(before.cache_ns),
+            wgpu_create_ns: self.wgpu_create_ns.saturating_sub(before.wgpu_create_ns),
+        }
+    }
+}
+
+pub(crate) fn bind_group_timing_counters() -> BindGroupTimingCounters {
+    BindGroupTimingCounters {
+        resource_plan_ns: BIND_GROUP_RESOURCE_PLAN_NS.load(Ordering::Relaxed),
+        cache_ns: BIND_GROUP_CACHE_NS.load(Ordering::Relaxed),
+        wgpu_create_ns: BIND_GROUP_WGPU_CREATE_NS.load(Ordering::Relaxed),
+    }
+}
+
 /// Returns whether selected GPU operations should use wgpu validation scopes.
 pub fn validation_scopes_enabled() -> bool {
     crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false)
@@ -69,6 +287,7 @@ enum DeferredComputeCommand {
         pipeline: Arc<wgpu::ComputePipeline>,
         bind_groups: Vec<wgpu::BindGroup>,
         groups: (u32, u32, u32),
+        dynamic_offsets: Vec<u32>,
     },
     Indirect {
         pipeline: Arc<wgpu::ComputePipeline>,
@@ -133,6 +352,15 @@ pub(crate) fn defer_compute_direct(
     bind_group: &wgpu::BindGroup,
     groups: (u32, u32, u32),
 ) -> bool {
+    defer_compute_direct_with_offsets(pass, bind_group, groups, &[])
+}
+
+pub(crate) fn defer_compute_direct_with_offsets(
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    groups: (u32, u32, u32),
+    dynamic_offsets: &[u32],
+) -> bool {
     DEFERRED_COMPUTE.with(|state| {
         let mut state = state.borrow_mut();
         if !state.active {
@@ -142,6 +370,7 @@ pub(crate) fn defer_compute_direct(
             pipeline: pass.pipeline.clone(),
             bind_groups: vec![bind_group.clone()],
             groups,
+            dynamic_offsets: dynamic_offsets.to_vec(),
         });
         true
     })
@@ -184,6 +413,7 @@ pub(crate) fn defer_compute_direct_bind_groups(
             pipeline: pass.pipeline.clone(),
             bind_groups: bind_groups.iter().map(|group| (**group).clone()).collect(),
             groups,
+            dynamic_offsets: Vec::new(),
         });
         true
     })
@@ -292,10 +522,16 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
                 pipeline,
                 bind_groups,
                 groups,
+                dynamic_offsets,
             } => {
                 compute.set_pipeline(pipeline);
                 for (index, bind_group) in bind_groups.iter().enumerate() {
-                    compute.set_bind_group(index as u32, bind_group, &[]);
+                    let offsets = if index == 0 {
+                        dynamic_offsets.as_slice()
+                    } else {
+                        &[]
+                    };
+                    compute.set_bind_group(index as u32, bind_group, offsets);
                 }
                 compute.dispatch_workgroups(groups.0, groups.1, groups.2);
             }
@@ -378,6 +614,7 @@ pub struct PassData {
     pub thread_group_size: [u32; 3],
     /// Parsed Slang reflection used for bind groups.
     pub reflection: Arc<SlangReflection>,
+    _reflected_bind_groups: SharedReflectedBindGroupCache,
 }
 
 #[derive(Debug)]
@@ -422,6 +659,79 @@ pub fn bgls_from_reflection(
     device: &wgpu::Device,
     reflection: &SlangReflection,
 ) -> Result<Vec<wgpu::BindGroupLayout>> {
+    bgls_from_reflection_with_dynamic_uniforms(device, reflection, &[])
+}
+
+fn dynamic_uniform_binding_type(
+    parameter: &ParameterReflection,
+    mut ty: wgpu::BindingType,
+    dynamic_uniforms: &[&str],
+) -> wgpu::BindingType {
+    if !dynamic_uniforms.contains(&parameter.name.as_str()) {
+        return ty;
+    }
+    match &mut ty {
+        wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset,
+            ..
+        } => {
+            *has_dynamic_offset = true;
+            ty
+        }
+        _ => unreachable!("dynamic-uniform requests are validated before layout creation"),
+    }
+}
+
+fn validate_dynamic_uniforms(
+    reflection: &SlangReflection,
+    dynamic_uniforms: &[&str],
+) -> Result<()> {
+    for &name in dynamic_uniforms {
+        let parameter = reflection
+            .entry_points
+            .iter()
+            .find(|entry| entry.stage.as_deref() == Some("compute"))
+            .and_then(|entry| entry.program_layout.as_ref())
+            .and_then(|layout| {
+                layout
+                    .parameters
+                    .iter()
+                    .flat_map(|set| set.parameters.iter())
+                    .find(|parameter| parameter.name == name)
+            })
+            .or_else(|| {
+                reflection
+                    .parameters
+                    .iter()
+                    .find(|parameter| parameter.name == name)
+            })
+            .ok_or_else(|| anyhow!("dynamic uniform '{name}' is absent from shader reflection"))?;
+        let ty = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
+            .ok_or_else(|| anyhow!("dynamic uniform '{name}' has no reflected binding type"))?;
+        if !matches!(
+            ty,
+            wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                ..
+            }
+        ) {
+            return Err(anyhow!(
+                "reflected resource '{name}' was requested as a dynamic uniform but is not a uniform buffer"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Creates reflected layouts while marking selected uniform-buffer bindings as
+/// dynamically offset. The names are part of prepared-pipeline identity.
+pub fn bgls_from_reflection_with_dynamic_uniforms(
+    device: &wgpu::Device,
+    reflection: &SlangReflection,
+    dynamic_uniforms: &[&str],
+) -> Result<Vec<wgpu::BindGroupLayout>> {
+    validate_dynamic_uniforms(reflection, dynamic_uniforms)?;
     let ep: &EntryPointReflection = reflection
         .entry_points
         .iter()
@@ -435,7 +745,11 @@ pub fn bgls_from_reflection(
                 .parameters
                 .iter()
                 .filter_map(|p| {
-                    let ty = slang_category_and_type_to_wgpu(p, &p.ty)?;
+                    let ty = dynamic_uniform_binding_type(
+                        p,
+                        slang_category_and_type_to_wgpu(p, &p.ty)?,
+                        dynamic_uniforms,
+                    );
                     let idx = p.binding.index?;
                     Some(wgpu::BindGroupLayoutEntry {
                         binding: idx,
@@ -459,7 +773,11 @@ pub fn bgls_from_reflection(
         .parameters
         .iter()
         .filter_map(|p| {
-            let ty = slang_category_and_type_to_wgpu(p, &p.ty)?;
+            let ty = dynamic_uniform_binding_type(
+                p,
+                slang_category_and_type_to_wgpu(p, &p.ty)?,
+                dynamic_uniforms,
+            );
             let idx = p.binding.index?;
             Some(wgpu::BindGroupLayoutEntry {
                 binding: idx,
@@ -600,6 +918,42 @@ mod reflected_limit_tests {
         assert!(message.contains("type_check.example"));
         assert!(message.contains("requires 2 storage buffers"));
         assert!(message.contains("supports 1"));
+    }
+
+    #[test]
+    fn selected_uniform_binding_uses_dynamic_offsets() {
+        let parameter = storage_parameter("gScan", 0);
+        let ty = dynamic_uniform_binding_type(
+            &parameter,
+            wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            &["gScan"],
+        );
+        assert!(matches!(
+            ty,
+            wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn dynamic_uniform_name_must_exist_in_reflection() {
+        let reflection = SlangReflection {
+            entry_points: vec![EntryPointReflection {
+                stage: Some("compute".to_owned()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let error = validate_dynamic_uniforms(&reflection, &["gScan"])
+            .expect_err("missing dynamic uniform must be rejected");
+        assert!(error.to_string().contains("gScan"));
     }
 }
 
@@ -876,12 +1230,24 @@ pub fn make_pass_data(
     spirv: &[u8],
     reflection_json: &[u8],
 ) -> Result<PassData> {
+    make_pass_data_with_dynamic_uniforms(device, label, entry, spirv, reflection_json, &[])
+}
+
+fn make_pass_data_with_dynamic_uniforms(
+    device: &wgpu::Device,
+    label: &str,
+    entry: &str,
+    spirv: &[u8],
+    reflection_json: &[u8],
+    dynamic_uniforms: &[&str],
+) -> Result<PassData> {
     let reflection: SlangReflection =
         parse_reflection_from_bytes(reflection_json).map_err(anyhow::Error::msg)?;
     validate_reflected_compute_limits(&reflection, label, &device.limits())?;
     let init_scope = validation_scope(device, validation_scopes_enabled());
     let init_result = (|| {
-        let owned_bgls = bgls_from_reflection(device, &reflection)?;
+        let owned_bgls =
+            bgls_from_reflection_with_dynamic_uniforms(device, &reflection, dynamic_uniforms)?;
         let bgl_refs: Vec<&wgpu::BindGroupLayout> = owned_bgls.iter().collect();
         let pipeline = pipeline_from_spirv_and_bgls(device, label, entry, spirv, &bgl_refs);
         Ok::<_, anyhow::Error>((owned_bgls, pipeline))
@@ -903,12 +1269,16 @@ pub fn make_pass_data(
         tgs[0] > 0 && tgs[1] > 0 && tgs[2] > 0,
         "thread_group_size must be non-zero"
     );
+    let bind_group_layouts = owned_bgls.into_iter().map(Arc::new).collect::<Vec<_>>();
+    let reflected_bind_groups = Arc::new(std::sync::Mutex::new(ReflectedBindGroupCache::default()));
+    register_reflected_bind_group_cache(&bind_group_layouts, &reflected_bind_groups);
     Ok(PassData {
         pipeline: Arc::new(pipeline),
-        bind_group_layouts: owned_bgls.into_iter().map(Arc::new).collect(),
+        bind_group_layouts,
         shader_id: label.to_string(),
         thread_group_size: tgs,
         reflection: Arc::new(reflection),
+        _reflected_bind_groups: reflected_bind_groups,
     })
 }
 
@@ -925,6 +1295,29 @@ where
     P: AsRef<std::path::Path>,
     R: AsRef<std::path::Path>,
 {
+    make_pass_data_from_artifact_files_with_dynamic_uniforms(
+        device,
+        label,
+        entry,
+        spv_path,
+        reflection_path,
+        &[],
+    )
+}
+
+#[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+fn make_pass_data_from_artifact_files_with_dynamic_uniforms<P, R>(
+    device: &wgpu::Device,
+    label: &str,
+    entry: &str,
+    spv_path: P,
+    reflection_path: R,
+    dynamic_uniforms: &[&str],
+) -> Result<PassData>
+where
+    P: AsRef<std::path::Path>,
+    R: AsRef<std::path::Path>,
+{
     let spv_path = spv_path.as_ref();
     let reflection_path = reflection_path.as_ref();
     let spirv = std::fs::read(spv_path)
@@ -935,7 +1328,14 @@ where
             reflection_path.display()
         )
     })?;
-    make_pass_data(device, label, entry, &spirv, &reflection_json)
+    make_pass_data_with_dynamic_uniforms(
+        device,
+        label,
+        entry,
+        &spirv,
+        &reflection_json,
+        dynamic_uniforms,
+    )
 }
 
 /// Builds `PassData` from a shader artifact key without extensions.
@@ -945,13 +1345,41 @@ pub fn make_pass_data_from_shader_key(
     entry: &str,
     shader: &str,
 ) -> Result<PassData> {
-    make_pass_data_from_shader_artifacts(
+    make_pass_data_from_shader_key_with_dynamic_uniforms(device, label, entry, shader, &[])
+}
+
+pub fn make_pass_data_from_shader_key_with_dynamic_uniforms(
+    device: &wgpu::Device,
+    label: &str,
+    entry: &str,
+    shader: &str,
+    dynamic_uniforms: &[&str],
+) -> Result<PassData> {
+    let key = prepared_kernel_key(device, entry, shader, dynamic_uniforms);
+    if let Some(pass) = prepared_kernel_cache()
+        .lock()
+        .expect("prepared kernel cache poisoned")
+        .get(&key)
+        .cloned()
+    {
+        return Ok(relabel_pass_data(pass, label));
+    }
+
+    let pass = make_pass_data_from_shader_artifacts_with_dynamic_uniforms(
         device,
         label,
         entry,
         &format!("{shader}.spv"),
         &format!("{shader}.reflect.json"),
-    )
+        dynamic_uniforms,
+    )?;
+    let retained = {
+        let mut cache = prepared_kernel_cache()
+            .lock()
+            .expect("prepared kernel cache poisoned");
+        cache.entry(key).or_insert_with(|| pass.clone()).clone()
+    };
+    Ok(relabel_pass_data(retained, label))
 }
 
 /// Builds `PassData` from explicit SPIR-V and reflection artifact names.
@@ -962,14 +1390,33 @@ pub fn make_pass_data_from_shader_artifacts(
     spv: &str,
     reflection: &str,
 ) -> Result<PassData> {
+    make_pass_data_from_shader_artifacts_with_dynamic_uniforms(
+        device,
+        label,
+        entry,
+        spv,
+        reflection,
+        &[],
+    )
+}
+
+fn make_pass_data_from_shader_artifacts_with_dynamic_uniforms(
+    device: &wgpu::Device,
+    label: &str,
+    entry: &str,
+    spv: &str,
+    reflection: &str,
+    dynamic_uniforms: &[&str],
+) -> Result<PassData> {
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
     {
-        return make_pass_data_from_artifact_files(
+        return make_pass_data_from_artifact_files_with_dynamic_uniforms(
             device,
             label,
             entry,
             crate::shader_artifacts::artifact_path(spv),
             crate::shader_artifacts::artifact_path(reflection),
+            dynamic_uniforms,
         );
     }
     #[cfg(any(not(debug_assertions), target_arch = "wasm32"))]
@@ -984,7 +1431,14 @@ pub fn make_pass_data_from_shader_artifacts(
                 reflection_path.display()
             )
         })?;
-        make_pass_data(device, label, entry, &spv_bytes, &reflection_bytes)
+        make_pass_data_with_dynamic_uniforms(
+            device,
+            label,
+            entry,
+            &spv_bytes,
+            &reflection_bytes,
+            dynamic_uniforms,
+        )
     }
 }
 
@@ -997,6 +1451,15 @@ macro_rules! make_shader_pass {
             $entry,
             $spv,
             $reflection,
+        )
+    }};
+    ($device:expr, $label:expr, entry: $entry:expr, shader: $shader:literal, dynamic_uniforms: [$($dynamic:literal),+ $(,)?]) => {{
+        $crate::gpu::passes_core::make_pass_data_from_shader_key_with_dynamic_uniforms(
+            $device,
+            $label,
+            $entry,
+            $shader,
+            &[$($dynamic),+],
         )
     }};
 }
@@ -1080,6 +1543,21 @@ macro_rules! impl_static_shader_pass {
             }
         }
     };
+    ($pass:ident, label: $label:expr, entry: $entry:expr, shader: $shader:literal, dynamic_uniforms: [$($dynamic:literal),+ $(,)?]) => {
+        impl $pass {
+            /// Creates this static shader pass for `device`.
+            pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
+                let data = $crate::gpu::passes_core::make_shader_pass!(
+                    device,
+                    $label,
+                    entry: $entry,
+                    shader: $shader,
+                    dynamic_uniforms: [$($dynamic),+]
+                )?;
+                Ok(Self { data })
+            }
+        }
+    };
 }
 
 pub(crate) use impl_static_shader_pass;
@@ -1095,6 +1573,115 @@ pub mod bind_group {
     use wgpu;
 
     use super::*;
+
+    fn push_buffer_binding_identity(
+        identities: &mut Vec<ReflectedBufferBindingIdentity>,
+        binding_index: u32,
+        array_index: usize,
+        binding: &wgpu::BufferBinding<'_>,
+    ) {
+        identities.push(ReflectedBufferBindingIdentity {
+            binding: binding_index,
+            array_index,
+            buffer: binding.buffer.clone(),
+            offset: binding.offset,
+            size: binding.size,
+        });
+    }
+
+    fn reflected_buffer_resource_identity(
+        entries: &[wgpu::BindGroupEntry<'_>],
+    ) -> Option<Vec<ReflectedBufferBindingIdentity>> {
+        let mut identity = Vec::with_capacity(entries.len());
+        for entry in entries {
+            match &entry.resource {
+                wgpu::BindingResource::Buffer(binding) => {
+                    push_buffer_binding_identity(&mut identity, entry.binding, 0, binding);
+                }
+                wgpu::BindingResource::BufferArray(bindings) => {
+                    for (array_index, binding) in bindings.iter().enumerate() {
+                        push_buffer_binding_identity(
+                            &mut identity,
+                            entry.binding,
+                            array_index,
+                            binding,
+                        );
+                    }
+                }
+                _ => return None,
+            }
+        }
+        Some(identity)
+    }
+
+    fn reflected_bind_group_cache_for_layout(
+        layout: &wgpu::BindGroupLayout,
+    ) -> Option<SharedReflectedBindGroupCache> {
+        reflected_bind_group_caches()
+            .lock()
+            .expect("reflected bind-group cache registry poisoned")
+            .get(layout)
+            .and_then(Weak::upgrade)
+    }
+
+    fn create_or_reuse_buffer_bind_group(
+        device: &wgpu::Device,
+        label: Option<&str>,
+        layout: &wgpu::BindGroupLayout,
+        set_index: usize,
+        entries: &[wgpu::BindGroupEntry<'_>],
+    ) -> wgpu::BindGroup {
+        let cache_started = bind_group_timing_enabled().then(Instant::now);
+        let cache = reflected_bind_group_cache_for_layout(layout);
+        let identity = reflected_buffer_resource_identity(entries);
+        let invocation = format!("{}::set::{set_index}", label.unwrap_or("<unnamed>"));
+        if let (Some(cache), Some(identity)) = (&cache, identity.as_ref()) {
+            let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
+            let invocation_cache =
+                cache
+                    .invocations
+                    .entry(invocation.clone())
+                    .or_insert_with(|| CachedBindGroupInvocation {
+                        variants: HashMap::new(),
+                    });
+            if let Some(cached) = invocation_cache.variants.get_mut(identity) {
+                cached.last_used_job = ACTIVE_BIND_GROUP_JOB.load(Ordering::Relaxed);
+                add_timing(&BIND_GROUP_CACHE_NS, cache_started);
+                return cached.bind_group.clone();
+            }
+        }
+        add_timing(&BIND_GROUP_CACHE_NS, cache_started);
+
+        record_bind_group_creation(label);
+        let create_started = bind_group_timing_enabled().then(Instant::now);
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label,
+            layout,
+            entries,
+        });
+        add_timing(&BIND_GROUP_WGPU_CREATE_NS, create_started);
+        let cache_insert_started = bind_group_timing_enabled().then(Instant::now);
+        if let (Some(cache), Some(identity)) = (cache, identity) {
+            cache
+                .lock()
+                .expect("reflected bind-group cache poisoned")
+                .invocations
+                .entry(invocation)
+                .or_insert_with(|| CachedBindGroupInvocation {
+                    variants: HashMap::new(),
+                })
+                .variants
+                .insert(
+                    identity,
+                    CachedBindGroup {
+                        bind_group: bind_group.clone(),
+                        last_used_job: ACTIVE_BIND_GROUP_JOB.load(Ordering::Relaxed),
+                    },
+                );
+        }
+        add_timing(&BIND_GROUP_CACHE_NS, cache_insert_started);
+        bind_group
+    }
 
     fn reflected_parameters_for_set(
         reflection: &SlangReflection,
@@ -1186,6 +1773,7 @@ pub mod bind_group {
         set_index: usize,
         resources: &HashMap<String, wgpu::BindingResource<'a>>,
     ) -> Result<wgpu::BindGroup> {
+        let plan_started = bind_group_timing_enabled().then(Instant::now);
         let resolved_label = label.unwrap_or("<unnamed>");
         if resolved_label.starts_with("type_check") {
             validate_reflected_buffer_aliases(reflection, set_index, resources, resolved_label)?;
@@ -1207,12 +1795,11 @@ pub mod bind_group {
                 }
             }
         }
+        add_timing(&BIND_GROUP_RESOURCE_PLAN_NS, plan_started);
 
-        Ok(device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label,
-            layout: bgl,
-            entries: &entries,
-        }))
+        Ok(create_or_reuse_buffer_bind_group(
+            device, label, bgl, set_index, &entries,
+        ))
     }
 
     /// Creates a bind group from named resources, preferring reflected order.
@@ -1223,6 +1810,7 @@ pub mod bind_group {
         set_index: usize,
         bindings: &[(&str, wgpu::BindingResource<'a>)],
     ) -> Result<wgpu::BindGroup> {
+        let plan_started = bind_group_timing_enabled().then(Instant::now);
         let params = reflected_parameters_for_set(&pass.reflection, set_index);
         let mut entries = Vec::<wgpu::BindGroupEntry>::with_capacity(params.len());
 
@@ -1265,11 +1853,11 @@ pub mod bind_group {
             }
         }
 
-        Ok(device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label,
-            layout: &pass.bind_group_layouts[set_index],
-            entries: &entries,
-        }))
+        let layout = &pass.bind_group_layouts[set_index];
+        add_timing(&BIND_GROUP_RESOURCE_PLAN_NS, plan_started);
+        Ok(create_or_reuse_buffer_bind_group(
+            device, label, layout, set_index, &entries,
+        ))
     }
 
     /// Proves that a graph-managed pass binds exactly the resources present in
@@ -1623,6 +2211,16 @@ impl<'encoder> ComputePassBatch<'encoder> {
         bind_group: &'encoder wgpu::BindGroup,
         n_elements: u32,
     ) -> Result<()> {
+        self.record_raw_with_offsets(pass, bind_group, n_elements, &[])
+    }
+
+    pub(crate) fn record_raw_with_offsets(
+        &mut self,
+        pass: &'encoder PassData,
+        bind_group: &'encoder wgpu::BindGroup,
+        n_elements: u32,
+        dynamic_offsets: &[u32],
+    ) -> Result<()> {
         let [tgsx, tgsy, _] = pass.thread_group_size;
         let (gx, gy, gz) = plan_workgroups(
             DispatchDim::D1,
@@ -1630,7 +2228,8 @@ impl<'encoder> ComputePassBatch<'encoder> {
             [tgsx, tgsy, 1],
         )?;
         self.pass.set_pipeline(&pass.pipeline);
-        self.pass.set_bind_group(0, Some(bind_group), &[]);
+        self.pass
+            .set_bind_group(0, Some(bind_group), dynamic_offsets);
         self.pass.dispatch_workgroups(gx, gy, gz);
         Ok(())
     }
@@ -1642,8 +2241,19 @@ impl<'encoder> ComputePassBatch<'encoder> {
         bind_group: &'encoder wgpu::BindGroup,
         dispatch_args: &'encoder wgpu::Buffer,
     ) {
+        self.record_raw_indirect_with_offsets(pass, bind_group, dispatch_args, &[]);
+    }
+
+    pub(crate) fn record_raw_indirect_with_offsets(
+        &mut self,
+        pass: &'encoder PassData,
+        bind_group: &'encoder wgpu::BindGroup,
+        dispatch_args: &'encoder wgpu::Buffer,
+        dynamic_offsets: &[u32],
+    ) {
         self.pass.set_pipeline(&pass.pipeline);
-        self.pass.set_bind_group(0, Some(bind_group), &[]);
+        self.pass
+            .set_bind_group(0, Some(bind_group), dynamic_offsets);
         self.pass.dispatch_workgroups_indirect(dispatch_args, 0);
     }
 

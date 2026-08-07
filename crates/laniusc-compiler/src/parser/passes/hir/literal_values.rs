@@ -4,20 +4,17 @@ use anyhow::Result;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{
-        buffers::uniform_from_val,
-        passes_core::{PassData, bind_group},
-    },
+    gpu::passes_core::{PassData, bind_group},
     parser::buffers::ParserBuffers,
 };
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 /// Uniform parameters for literal value extraction.
-pub struct Params {
-    pub n: u32,
-    pub source_len: u32,
-    pub uses_status_count: u32,
+pub(crate) struct Params {
+    pub(crate) n: u32,
+    pub(crate) source_len: u32,
+    pub(crate) uses_status_count: u32,
 }
 
 /// Pass that records literal token ranges and value-source references.
@@ -36,6 +33,7 @@ impl HirLiteralValuesPass {
     pub fn record_with_source(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         dispatch_args: &wgpu::Buffer,
@@ -43,9 +41,9 @@ impl HirLiteralValuesPass {
         token_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
     ) -> Result<()> {
-        let params = uniform_from_val(
-            device,
-            "parser.hir_literal_values.params",
+        crate::parser::buffers::write_uniform(
+            queue,
+            &buffers.hir_literal_values_params,
             &Params {
                 n: buffers.tree_capacity,
                 source_len,
@@ -53,7 +51,10 @@ impl HirLiteralValuesPass {
             },
         );
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gHirLiteral".into(), params.as_entire_binding()),
+            (
+                "gHirLiteral".into(),
+                buffers.hir_literal_values_params.as_entire_binding(),
+            ),
             ("token_words".into(), token_buf.as_entire_binding()),
             ("source_bytes".into(), source_buf.as_entire_binding()),
             (

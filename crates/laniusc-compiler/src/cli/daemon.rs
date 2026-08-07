@@ -1,6 +1,7 @@
 #[cfg(unix)]
 use std::os::unix::net::UnixListener;
 use std::{
+    collections::HashMap,
     fs,
     io::{self, BufRead, Write},
     path::{Path, PathBuf},
@@ -30,7 +31,17 @@ use crate::{
         load_entry_path_manifest_with_stdlib,
         load_explicit_source_pack_from_path_manifest,
     },
-    gpu::{device, passes_core::pipeline_creation_count},
+    gpu::{
+        buffers::{buffer_creation_count, buffer_creation_counts_by_label},
+        device,
+        passes_core::{
+            bind_group_creation_count,
+            bind_group_creation_counts_by_label,
+            bind_group_timing_counters,
+            bind_group_timing_enabled,
+            pipeline_creation_count,
+        },
+    },
 };
 
 const DAEMON_SCHEMA: &str = "lanius.compiler-daemon.v1";
@@ -508,20 +519,61 @@ async fn run_session(
         // A compilation is active rather than idle. Cancel the previous idle
         // deadline before it can contend for the resident pipeline lock.
         reaper.disarm();
-        let pipelines_before = pipeline_creation_count();
+        let resources_before = job_resource_creation_counts();
+        let bind_group_timing_before = bind_group_timing_counters();
+        let bind_group_job = crate::gpu::passes_core::begin_reflected_bind_group_job();
+        let breakdown_before =
+            crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false)
+                .then(job_resource_creation_breakdown);
         let mut response =
             compile_request(&compiler, options, &mut source_pack_cache, request).await;
-        let pipelines_after = pipeline_creation_count();
+        let resources_after = job_resource_creation_counts();
+        let bind_group_timing =
+            bind_group_timing_counters().saturating_sub(bind_group_timing_before);
+        let created = resources_after.saturating_sub(resources_before);
+        let successful = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
+        crate::gpu::passes_core::finish_reflected_bind_group_job(
+            bind_group_job,
+            successful && created.buffers > 0,
+        );
+        let breakdown_after = breakdown_before
+            .as_ref()
+            .map(|_| job_resource_creation_breakdown());
         if let Some(response) = response.as_object_mut() {
             response.insert(
-                "compute_pipelines_before_job".into(),
-                pipelines_before.into(),
+                "resource_creations_before_job".into(),
+                resources_before.to_json(),
             );
-            response.insert("compute_pipelines_after_job".into(), pipelines_after.into());
             response.insert(
-                "compute_pipelines_created_during_job".into(),
-                pipelines_after.saturating_sub(pipelines_before).into(),
+                "resource_creations_after_job".into(),
+                resources_after.to_json(),
             );
+            response.insert("resources_created_during_job".into(), created.to_json());
+            if bind_group_timing_enabled() {
+                response.insert(
+                    "bind_group_timing_ms".into(),
+                    json!({
+                        "resource_plan": bind_group_timing.resource_plan_ns as f64 / 1_000_000.0,
+                        "cache": bind_group_timing.cache_ns as f64 / 1_000_000.0,
+                        "wgpu_create": bind_group_timing.wgpu_create_ns as f64 / 1_000_000.0,
+                    }),
+                );
+            }
+            response.insert(
+                "workspace_request_kind".into(),
+                if created.buffers == 0 && created.bind_groups == 0 {
+                    "retained_capacity"
+                } else {
+                    "cold_or_grown_workspace"
+                }
+                .into(),
+            );
+            if let (Some(before), Some(after)) = (&breakdown_before, &breakdown_after) {
+                response.insert(
+                    "resource_creation_breakdown".into(),
+                    after.delta_json(before),
+                );
+            }
         }
         write_response(&mut output, &response)?;
         reaper.arm();
@@ -529,6 +581,82 @@ async fn run_session(
     crate::gpu::trace::flush();
     device::persist_pipeline_cache();
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct JobResourceCreationCounts {
+    buffers: u64,
+    bind_groups: u64,
+    compute_pipelines: u64,
+}
+
+impl JobResourceCreationCounts {
+    fn saturating_sub(self, before: Self) -> Self {
+        Self {
+            buffers: self.buffers.saturating_sub(before.buffers),
+            bind_groups: self.bind_groups.saturating_sub(before.bind_groups),
+            compute_pipelines: self
+                .compute_pipelines
+                .saturating_sub(before.compute_pipelines),
+        }
+    }
+
+    fn to_json(self) -> Value {
+        json!({
+            "buffers": self.buffers,
+            "bind_groups": self.bind_groups,
+            "compute_pipelines": self.compute_pipelines,
+        })
+    }
+}
+
+fn job_resource_creation_counts() -> JobResourceCreationCounts {
+    JobResourceCreationCounts {
+        buffers: buffer_creation_count(),
+        bind_groups: bind_group_creation_count(),
+        compute_pipelines: pipeline_creation_count(),
+    }
+}
+
+struct JobResourceCreationBreakdown {
+    buffers: HashMap<String, u64>,
+    bind_groups: HashMap<String, u64>,
+}
+
+impl JobResourceCreationBreakdown {
+    fn delta_json(&self, before: &Self) -> Value {
+        fn rows(after: &HashMap<String, u64>, before: &HashMap<String, u64>) -> Value {
+            let mut rows = after
+                .iter()
+                .filter_map(|(label, &count)| {
+                    let created = count.saturating_sub(before.get(label).copied().unwrap_or(0));
+                    (created > 0).then(|| (label, created))
+                })
+                .collect::<Vec<_>>();
+            rows.sort_unstable_by(|left, right| {
+                right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0))
+            });
+            Value::Array(
+                rows.into_iter()
+                    .map(|(label, created)| json!({"label": label, "created": created}))
+                    .collect(),
+            )
+        }
+        json!({
+            "buffers": rows(&self.buffers, &before.buffers),
+            "bind_groups": rows(&self.bind_groups, &before.bind_groups),
+        })
+    }
+}
+
+fn job_resource_creation_breakdown() -> JobResourceCreationBreakdown {
+    JobResourceCreationBreakdown {
+        buffers: buffer_creation_counts_by_label()
+            .into_iter()
+            .map(|(label, count)| (label.to_string(), count))
+            .collect(),
+        bind_groups: bind_group_creation_counts_by_label(),
+    }
 }
 
 enum ResidentBufferReaperMessage {

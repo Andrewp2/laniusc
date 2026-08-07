@@ -7,7 +7,7 @@ use super::passes_core::{
     InputElements,
     PassData,
     count_recorded_compute_pass,
-    defer_compute_direct,
+    defer_compute_direct_with_offsets,
     defer_compute_indirect,
     plan_workgroups,
 };
@@ -24,6 +24,7 @@ pub(crate) use hierarchical_radix_sort::{
     HierarchicalRadixSortKernels,
 };
 pub(crate) use prefix_scan::PrefixScanOperation;
+pub(super) use radix_sort::uses_dynamic_uniform_kernel;
 pub(crate) use radix_sort::{
     RadixDispatchDomain,
     RadixSortBatchItem,
@@ -44,6 +45,17 @@ fn record_direct(
     label: &str,
     n_elements: u32,
 ) -> Result<()> {
+    record_direct_with_offsets(encoder, pass, bind_group, label, n_elements, &[])
+}
+
+fn record_direct_with_offsets(
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    label: &str,
+    n_elements: u32,
+    dynamic_offsets: &[u32],
+) -> Result<()> {
     count_recorded_compute_pass();
     let [x, y, _] = pass.thread_group_size;
     let groups = plan_workgroups(
@@ -51,7 +63,7 @@ fn record_direct(
         InputElements::Elements1D(n_elements),
         [x, y, 1],
     )?;
-    if defer_compute_direct(pass, bind_group, groups) {
+    if defer_compute_direct_with_offsets(pass, bind_group, groups, dynamic_offsets) {
         return Ok(());
     }
     let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -59,7 +71,7 @@ fn record_direct(
         timestamp_writes: None,
     });
     compute.set_pipeline(&pass.pipeline);
-    compute.set_bind_group(0, Some(bind_group), &[]);
+    compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     compute.dispatch_workgroups(groups.0, groups.1, groups.2);
     Ok(())
 }
@@ -71,8 +83,19 @@ fn record_indirect(
     label: &str,
     dispatch_args: &wgpu::Buffer,
 ) -> Result<()> {
+    record_indirect_with_offsets(encoder, pass, bind_group, label, dispatch_args, &[])
+}
+
+fn record_indirect_with_offsets(
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    label: &str,
+    dispatch_args: &wgpu::Buffer,
+    dynamic_offsets: &[u32],
+) -> Result<()> {
     count_recorded_compute_pass();
-    if defer_compute_indirect(pass, bind_group, dispatch_args, 0, &[]) {
+    if defer_compute_indirect(pass, bind_group, dispatch_args, 0, dynamic_offsets) {
         return Ok(());
     }
     let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -80,7 +103,7 @@ fn record_indirect(
         timestamp_writes: None,
     });
     compute.set_pipeline(&pass.pipeline);
-    compute.set_bind_group(0, Some(bind_group), &[]);
+    compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     compute.dispatch_workgroups_indirect(dispatch_args, 0);
     Ok(())
 }

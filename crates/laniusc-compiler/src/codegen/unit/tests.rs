@@ -11,7 +11,7 @@ fn limits(max_source_bytes: usize, max_source_files: usize) -> CompilationUnitLi
 fn default_frontend_unit_capacity_matches_the_resident_gpu_workspace() {
     assert_eq!(
         CompilationUnitLimits::default().max_source_bytes,
-        1024 * 1024,
+        10 * 1024 * 1024,
     );
 }
 

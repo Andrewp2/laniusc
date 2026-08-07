@@ -4,11 +4,11 @@ use anyhow::{Result, anyhow};
 
 use super::{
     hierarchical_radix_sort::{HierarchicalRadixSortPlan, HierarchicalRadixSortSchedule},
-    record_direct,
-    record_indirect,
+    record_direct_with_offsets,
+    record_indirect_with_offsets,
 };
 use crate::gpu::{
-    buffers::{LaniusBuffer, uniform_from_val},
+    buffers::{DynamicUniformBuffer, LaniusBuffer, dynamic_uniforms_from_vals, uniform_from_val},
     compiler_graph::{
         CompilerGraphBuilder,
         CompilerPhase,
@@ -23,6 +23,31 @@ use crate::gpu::{
     passes_core::{ComputePassBatch, PassData, count_recorded_compute_pass},
     resource_registry::{ResourceMap, buffer_from_resources, reflected_bind_group_with_overrides},
 };
+
+/// Identifies kernels participating in a repeated radix/key-scheduling step
+/// from their reflected operation contract. The kernel registry uses this to
+/// prepare the dynamic-parameter layout variant before daemon readiness.
+pub(crate) fn uses_dynamic_uniform_kernel(reflection: &crate::reflection::SlangReflection) -> bool {
+    let parameters = reflection
+        .entry_points
+        .iter()
+        .find(|entry| entry.stage.as_deref() == Some("compute"))
+        .and_then(|entry| entry.program_layout.as_ref())
+        .map(|layout| {
+            layout
+                .parameters
+                .iter()
+                .flat_map(|set| set.parameters.iter())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| reflection.parameters.iter().collect());
+    parameters
+        .iter()
+        .any(|parameter| parameter.name == "gParams")
+        && parameters.iter().any(|parameter| {
+            parameter.name.starts_with("radix_") || parameter.name == "target_schedule_order_in"
+        })
+}
 
 /// Shader kernels implementing one stable radix-sort operation.
 #[derive(Clone, Copy)]
@@ -224,10 +249,12 @@ impl RadixSortKernels {
     fn resolve(self, kernels: &KernelRegistry) -> RadixSortPasses<'_> {
         RadixSortPasses {
             small: self.small.and_then(|key| kernels.optional(key)),
-            histogram: kernels.kernel(self.histogram),
-            bucket_prefix: kernels.kernel("type_checker/names/radix/00b/bucket/prefix"),
-            bucket_bases: kernels.kernel("type_checker/names/radix/00c/bucket/bases"),
-            scatter: kernels.kernel(self.scatter),
+            histogram: kernels.dynamic_uniform_kernel(self.histogram, "gParams"),
+            bucket_prefix: kernels
+                .dynamic_uniform_kernel("type_checker/names/radix/00b/bucket/prefix", "gParams"),
+            bucket_bases: kernels
+                .dynamic_uniform_kernel("type_checker/names/radix/00c/bucket/bases", "gParams"),
+            scatter: kernels.dynamic_uniform_kernel(self.scatter, "gParams"),
         }
     }
 
@@ -418,13 +445,14 @@ fn record_dispatch(
     group: &wgpu::BindGroup,
     label: &str,
     domain: &OwnedRadixDispatchDomain,
+    dynamic_offsets: &[u32],
 ) -> Result<()> {
     match domain {
         OwnedRadixDispatchDomain::Indirect(args) => {
-            record_indirect(encoder, pass, group, label, args)
+            record_indirect_with_offsets(encoder, pass, group, label, args, dynamic_offsets)
         }
         OwnedRadixDispatchDomain::Direct(elements) => {
-            record_direct(encoder, pass, group, label, *elements)
+            record_direct_with_offsets(encoder, pass, group, label, *elements, dynamic_offsets)
         }
     }
 }
@@ -439,11 +467,13 @@ struct StandardRadixSortOperation<P> {
     labels: RadixSortStageLabels,
     passes: OwnedRadixSortPasses,
     dispatch: OwnedRadixSortDispatch,
-    _params: Vec<LaniusBuffer<P>>,
+    _small_params: Option<LaniusBuffer<P>>,
+    radix_params: Option<DynamicUniformBuffer<P>>,
+    steps: usize,
     small: Option<wgpu::BindGroup>,
     histogram: Vec<wgpu::BindGroup>,
-    bucket_prefix: Vec<wgpu::BindGroup>,
-    bucket_bases: Vec<wgpu::BindGroup>,
+    bucket_prefix: Option<wgpu::BindGroup>,
+    bucket_bases: Option<wgpu::BindGroup>,
     scatter: Vec<wgpu::BindGroup>,
 }
 
@@ -471,6 +501,13 @@ impl<P> StandardRadixSortOperation<P>
 where
     P: encase::ShaderType + encase::internal::WriteInto,
 {
+    fn dynamic_offset(&self, step: usize) -> u32 {
+        self.radix_params
+            .as_ref()
+            .expect("non-small radix sort must own parameters")
+            .dynamic_offset(step)
+    }
+
     pub(crate) fn new<F>(
         device: &wgpu::Device,
         kernels: &KernelRegistry,
@@ -513,11 +550,13 @@ where
                 labels: RadixSortStageLabels::new(plan.label),
                 passes: passes.into(),
                 dispatch: plan.dispatch.into(),
-                _params: vec![params],
+                _small_params: Some(params),
+                radix_params: None,
+                steps: 0,
                 small: Some(small),
                 histogram: Vec::new(),
-                bucket_prefix: Vec::new(),
-                bucket_bases: Vec::new(),
+                bucket_prefix: None,
+                bucket_bases: None,
                 scatter: Vec::new(),
             });
         }
@@ -530,67 +569,35 @@ where
         let bucket_prefix_rows = buffer_from_resources(registry, plan.resources.bucket_prefix)?;
         let bucket_total = buffer_from_resources(registry, plan.resources.bucket_total)?;
         let bucket_base = buffer_from_resources(registry, plan.resources.bucket_base)?;
-        let mut params = Vec::with_capacity(steps as usize);
-        let mut histogram = Vec::with_capacity(steps as usize);
-        let mut bucket_prefix = Vec::with_capacity(steps as usize);
-        let mut bucket_bases = Vec::with_capacity(steps as usize);
-        let mut scatter = Vec::with_capacity(steps as usize);
-        for step in 0..steps {
-            let step_params = uniform_from_val(
-                device,
-                &format!("{}.params.{step}", plan.label),
-                &make_params(step),
-            );
-            let (read_order, write_order) = if step % 2 == 0 {
+        let param_values = (0..steps).map(make_params).collect::<Vec<_>>();
+        let params =
+            dynamic_uniforms_from_vals(device, &format!("{}.params", plan.label), &param_values);
+        let mut histogram = Vec::with_capacity(2);
+        let mut scatter = Vec::with_capacity(2);
+        for direction in 0..2 {
+            let (read_order, write_order) = if direction == 0 {
                 (order, temporary_order)
             } else {
                 (temporary_order, order)
             };
             histogram.push(reflected_bind_group_with_overrides(
                 device,
-                &format!("{}.histogram.{step}", plan.label),
+                &format!("{}.histogram.{direction}", plan.label),
                 passes.histogram,
                 registry,
                 &[
-                    ("gParams", step_params.as_entire_binding()),
+                    ("gParams", params.binding()),
                     ("radix_order_in", read_order.as_entire_binding()),
                     ("radix_block_histogram", histogram_rows.as_entire_binding()),
                 ],
             )?);
-            bucket_prefix.push(reflected_bind_group_with_overrides(
-                device,
-                &format!("{}.bucket_prefix.{step}", plan.label),
-                passes.bucket_prefix,
-                registry,
-                &[
-                    ("gParams", step_params.as_entire_binding()),
-                    ("name_count_in", count.as_entire_binding()),
-                    ("radix_block_histogram", histogram_rows.as_entire_binding()),
-                    (
-                        "radix_block_bucket_prefix",
-                        bucket_prefix_rows.as_entire_binding(),
-                    ),
-                    ("radix_bucket_total", bucket_total.as_entire_binding()),
-                ],
-            )?);
-            bucket_bases.push(reflected_bind_group_with_overrides(
-                device,
-                &format!("{}.bucket_bases.{step}", plan.label),
-                passes.bucket_bases,
-                registry,
-                &[
-                    ("gParams", step_params.as_entire_binding()),
-                    ("radix_bucket_total", bucket_total.as_entire_binding()),
-                    ("radix_bucket_base", bucket_base.as_entire_binding()),
-                ],
-            )?);
             scatter.push(reflected_bind_group_with_overrides(
                 device,
-                &format!("{}.scatter.{step}", plan.label),
+                &format!("{}.scatter.{direction}", plan.label),
                 passes.scatter,
                 registry,
                 &[
-                    ("gParams", step_params.as_entire_binding()),
+                    ("gParams", params.binding()),
                     ("radix_order_in", read_order.as_entire_binding()),
                     ("radix_bucket_base", bucket_base.as_entire_binding()),
                     (
@@ -600,18 +607,46 @@ where
                     ("radix_order_out", write_order.as_entire_binding()),
                 ],
             )?);
-            params.push(step_params);
         }
+        let bucket_prefix = reflected_bind_group_with_overrides(
+            device,
+            &format!("{}.bucket_prefix", plan.label),
+            passes.bucket_prefix,
+            registry,
+            &[
+                ("gParams", params.binding()),
+                ("name_count_in", count.as_entire_binding()),
+                ("radix_block_histogram", histogram_rows.as_entire_binding()),
+                (
+                    "radix_block_bucket_prefix",
+                    bucket_prefix_rows.as_entire_binding(),
+                ),
+                ("radix_bucket_total", bucket_total.as_entire_binding()),
+            ],
+        )?;
+        let bucket_bases = reflected_bind_group_with_overrides(
+            device,
+            &format!("{}.bucket_bases", plan.label),
+            passes.bucket_bases,
+            registry,
+            &[
+                ("gParams", params.binding()),
+                ("radix_bucket_total", bucket_total.as_entire_binding()),
+                ("radix_bucket_base", bucket_base.as_entire_binding()),
+            ],
+        )?;
 
         Ok(Self {
             labels: RadixSortStageLabels::new(plan.label),
             passes: passes.into(),
             dispatch: plan.dispatch.into(),
-            _params: params,
+            _small_params: None,
+            radix_params: Some(params),
+            steps: steps as usize,
             small: None,
             histogram,
-            bucket_prefix,
-            bucket_bases,
+            bucket_prefix: Some(bucket_prefix),
+            bucket_bases: Some(bucket_bases),
             scatter,
         })
     }
@@ -629,36 +664,51 @@ where
                 small,
                 &self.labels.small,
                 &dispatch.small,
+                &[],
             );
         }
-        for step in 0..self.scatter.len() {
+        let params = self
+            .radix_params
+            .as_ref()
+            .expect("non-small radix sort must own dynamic parameters");
+        for step in 0..self.steps {
+            let dynamic_offsets = [params.dynamic_offset(step)];
+            let direction = step % 2;
             record_dispatch(
                 encoder,
                 &passes.histogram,
-                &self.histogram[step],
+                &self.histogram[direction],
                 &self.labels.histogram,
                 &dispatch.rows,
+                &dynamic_offsets,
             )?;
             record_dispatch(
                 encoder,
                 &passes.bucket_prefix,
-                &self.bucket_prefix[step],
+                self.bucket_prefix
+                    .as_ref()
+                    .expect("non-small radix sort must bind bucket prefix"),
                 &self.labels.bucket_prefix,
                 &dispatch.bucket_prefix,
+                &dynamic_offsets,
             )?;
             record_dispatch(
                 encoder,
                 &passes.bucket_bases,
-                &self.bucket_bases[step],
+                self.bucket_bases
+                    .as_ref()
+                    .expect("non-small radix sort must bind bucket bases"),
                 &self.labels.bucket_bases,
                 &dispatch.bucket_bases,
+                &dynamic_offsets,
             )?;
             record_dispatch(
                 encoder,
                 &passes.scatter,
-                &self.scatter[step],
+                &self.scatter[direction],
                 &self.labels.scatter,
                 &dispatch.rows,
+                &dynamic_offsets,
             )?;
         }
         Ok(())
@@ -757,13 +807,16 @@ fn record_batch_dispatch<'a>(
     pass: &'a PassData,
     bind_group: &'a wgpu::BindGroup,
     domain: &'a OwnedRadixDispatchDomain,
+    dynamic_offsets: &[u32],
 ) -> Result<()> {
     match domain {
         OwnedRadixDispatchDomain::Indirect(args) => {
-            batch.record_raw_indirect(pass, bind_group, args);
+            batch.record_raw_indirect_with_offsets(pass, bind_group, args, dynamic_offsets);
             Ok(())
         }
-        OwnedRadixDispatchDomain::Direct(elements) => batch.record_raw(pass, bind_group, *elements),
+        OwnedRadixDispatchDomain::Direct(elements) => {
+            batch.record_raw_with_offsets(pass, bind_group, *elements, dynamic_offsets)
+        }
     }
 }
 
@@ -803,18 +856,20 @@ where
                     .expect("compiled small sort has a small kernel"),
                 sort.small.as_ref().expect("small algorithm selected"),
                 &sort.dispatch.small,
+                &[],
             )?;
         }
         return Ok(());
     }
-    let steps = first.scatter.len();
-    if sorts.iter().any(|sort| sort.scatter.len() != steps) {
+    let steps = first.steps;
+    if sorts.iter().any(|sort| sort.steps != steps) {
         return Err(anyhow!(
             "batched radix sorts must have the same digit-step count"
         ));
     }
 
     for step in 0..steps {
+        let direction = step % 2;
         count_recorded_compute_pass();
         let mut histogram =
             ComputePassBatch::begin(encoder, "type_check.radix_sort.batch.histogram");
@@ -822,8 +877,9 @@ where
             record_batch_dispatch(
                 &mut histogram,
                 &sort.passes.histogram,
-                &sort.histogram[step],
+                &sort.histogram[direction],
                 &sort.dispatch.rows,
+                &[sort.dynamic_offset(step)],
             )?;
         }
         drop(histogram);
@@ -835,8 +891,11 @@ where
             record_batch_dispatch(
                 &mut prefix,
                 &sort.passes.bucket_prefix,
-                &sort.bucket_prefix[step],
+                sort.bucket_prefix
+                    .as_ref()
+                    .expect("non-small radix sort must bind bucket prefix"),
                 &sort.dispatch.bucket_prefix,
+                &[sort.dynamic_offset(step)],
             )?;
         }
         drop(prefix);
@@ -848,8 +907,11 @@ where
             record_batch_dispatch(
                 &mut bases,
                 &sort.passes.bucket_bases,
-                &sort.bucket_bases[step],
+                sort.bucket_bases
+                    .as_ref()
+                    .expect("non-small radix sort must bind bucket bases"),
                 &sort.dispatch.bucket_bases,
+                &[sort.dynamic_offset(step)],
             )?;
         }
         drop(bases);
@@ -860,8 +922,9 @@ where
             record_batch_dispatch(
                 &mut scatter,
                 &sort.passes.scatter,
-                &sort.scatter[step],
+                &sort.scatter[direction],
                 &sort.dispatch.rows,
+                &[sort.dynamic_offset(step)],
             )?;
         }
     }

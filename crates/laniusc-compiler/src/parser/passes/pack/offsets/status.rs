@@ -4,19 +4,16 @@ use anyhow::Result;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{
-        buffers::{LaniusBuffer, uniform_from_val},
-        passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
-    },
+    gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
     parser::buffers::ParserBuffers,
 };
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 /// Uniform parameters for packed stream status validation.
-pub struct Params {
-    pub n_pairs: u32,
-    pub emit_capacity: u32,
+pub(crate) struct Params {
+    pub(crate) n_pairs: u32,
+    pub(crate) emit_capacity: u32,
 }
 
 /// Pass that validates partial-parse packed stream capacity and status.
@@ -35,34 +32,37 @@ impl PackOffsetsStatusPass {
     pub fn record_pass(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
     ) -> Result<()> {
-        self.record_pass_inner(device, encoder, buffers, None)
+        self.record_pass_inner(device, queue, encoder, buffers, None)
     }
 
     /// Records indirect status validation for packed stream offsets.
     pub fn record_pass_indirect(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         dispatch_args: &wgpu::Buffer,
     ) -> Result<()> {
-        self.record_pass_inner(device, encoder, buffers, Some(dispatch_args))
+        self.record_pass_inner(device, queue, encoder, buffers, Some(dispatch_args))
     }
 
     fn record_pass_inner(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         dispatch_args: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let n_pairs = buffers.n_tokens.saturating_sub(1);
-        let params: LaniusBuffer<Params> = uniform_from_val(
-            device,
-            "pack.offset_status.params",
+        crate::parser::buffers::write_uniform(
+            queue,
+            &buffers.pack_offsets_status_params,
             &Params {
                 n_pairs,
                 emit_capacity: buffers.tree_capacity,
@@ -85,7 +85,10 @@ impl PackOffsetsStatusPass {
         };
 
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params.as_entire_binding()),
+            (
+                "gParams".into(),
+                buffers.pack_offsets_status_params.as_entire_binding(),
+            ),
             (
                 "token_count".into(),
                 buffers.token_count.as_entire_binding(),

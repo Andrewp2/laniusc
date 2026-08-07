@@ -53,13 +53,14 @@ pub(crate) use storage::{dispatch_args_schedule_count_offset, pointer_jump_step_
 
 use crate::gpu::buffers::{
     LaniusBuffer,
+    readback_bytes,
     storage_ro_from_bytes,
     storage_ro_from_u32s,
     storage_rw_for_array,
     uniform_from_val,
 };
 
-fn write_uniform<T>(queue: &wgpu::Queue, buffer: &LaniusBuffer<T>, value: &T)
+pub(crate) fn write_uniform<T>(queue: &wgpu::Queue, buffer: &LaniusBuffer<T>, value: &T)
 where
     T: encase::ShaderType + encase::internal::WriteInto,
 {
@@ -240,6 +241,8 @@ impl ParserBuffers {
         let token_delimiter_n_blocks = token_input_capacity.div_ceil(256).max(1);
         let pair_capacity = n_pairs.max(1);
         let ll1_status = storage_rw_for_array::<u32>(device, "parser.ll1_status", 6);
+        let ll1_status_readback =
+            readback_bytes(device, "rb.parser.recorded_ll1_hir.status", 32, 32);
 
         let stream_has_soi = token_kinds_u32
             .map(|kinds| kinds.first().copied() == Some(0))
@@ -697,6 +700,14 @@ impl ParserBuffers {
                 pp_superseq_off,
                 pp_off_off,
                 pp_len_off,
+            },
+        );
+        let pack_offsets_status_params = uniform_from_val(
+            device,
+            "pack.offset_status.params",
+            &super::passes::pack::offsets::status::Params {
+                n_pairs: n_tokens.saturating_sub(1),
+                emit_capacity,
             },
         );
 
@@ -1879,6 +1890,25 @@ impl ParserBuffers {
             optional_invalid_row(string_expr_required, "parser.hir_expr_string_start");
         let hir_expr_string_len =
             optional_zero_row(string_expr_required, "parser.hir_expr_string_len");
+        let hir_literal_values_params = uniform_from_val(
+            device,
+            "parser.hir_literal_values.params",
+            &super::passes::hir::literal_values::Params {
+                n: tree_capacity,
+                source_len: source_capacity,
+                uses_status_count: u32::from(tree_count_uses_status),
+            },
+        );
+        let hir_string_decode_params = uniform_from_val(
+            device,
+            "parser.hir_string_decode.params",
+            &super::passes::hir::string::decode::Params {
+                n: tree_capacity,
+                source_len: source_capacity,
+                pool_capacity: source_capacity,
+                uses_status_count: u32::from(tree_count_uses_status),
+            },
+        );
         let hir_string_data_offset = storage_rw_for_array::<u32>(
             device,
             "parser.hir_string_data_offset",
@@ -2483,6 +2513,7 @@ impl ParserBuffers {
             hir_canonical_capacity,
 
             ll1_status,
+            ll1_status_readback,
             params_llp,
             semantic_token_kinds,
             token_delimiter_params,
@@ -2560,6 +2591,7 @@ impl ParserBuffers {
             out_headers,
 
             params_pack,
+            pack_offsets_status_params,
             sc_offsets,
             emit_offsets,
             pack_sc_prefix_a,
@@ -2939,6 +2971,8 @@ impl ParserBuffers {
             hir_expr_float_bits,
             hir_expr_string_start,
             hir_expr_string_len,
+            hir_literal_values_params,
+            hir_string_decode_params,
             hir_string_data_offset,
             hir_string_decoded_len,
             hir_string_data_words,

@@ -348,12 +348,14 @@ mod tests {
     }
 
     #[test]
-    fn ten_mebibyte_project_is_split_at_the_stable_resident_capacity() {
+    fn hundred_mebibyte_project_is_split_at_the_ten_mebibyte_capacity() {
         let limits = resident_source_unit_limits();
-        assert_eq!(limits.max_source_bytes, 1024 * 1024);
+        assert_eq!(limits.max_source_bytes, 10 * 1024 * 1024);
 
         let source_pack = ExplicitSourcePackPathManifest {
-            files: (0..10).map(|index| file(0, index, 1024 * 1024)).collect(),
+            files: (0..10)
+                .map(|index| file(0, index, 10 * 1024 * 1024))
+                .collect(),
             library_dependencies: Vec::new(),
         };
         assert!(source_pack.requires_bounded_compilation_with_limits(limits));

@@ -29,6 +29,133 @@ impl Drop for ChildGuard {
     }
 }
 
+fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Option<&str>) {
+    let source = common::temp_artifact_path("laniusc_daemon_capacity", backend, Some("lani"));
+    let grown_source = common::temp_artifact_path("laniusc_daemon_capacity", "grown", Some("lani"));
+    let artifact = common::temp_artifact_path("laniusc_daemon_capacity", emit, extension);
+    let requests = common::temp_artifact_path("laniusc_daemon_capacity", "requests", Some("jsonl"));
+    fs::write(&source, "fn main() -> i32 { return 42; }\n")
+        .expect("write capacity-stable daemon source");
+    fs::write(
+        &grown_source,
+        format!(
+            "fn main() -> i32 {{ return 42; }}\n//{}\n",
+            "x".repeat(4096)
+        ),
+    )
+    .expect("write grown daemon source");
+
+    let mut request_lines = (0..21)
+        .map(|job| {
+            serde_json::json!({
+                "id": format!("compile-{job}"),
+                "command": "compile",
+                "emit": emit,
+                "input": source,
+                "output": artifact,
+            })
+            .to_string()
+        })
+        .collect::<Vec<_>>();
+    for job in ["growth", "growth-repeat"] {
+        request_lines.push(
+            serde_json::json!({
+                "id": job,
+                "command": "compile",
+                "emit": emit,
+                "input": grown_source,
+                "output": artifact,
+            })
+            .to_string(),
+        );
+    }
+    request_lines.push(serde_json::json!({"id": "shutdown", "command": "shutdown"}).to_string());
+    fs::write(&requests, format!("{}\n", request_lines.join("\n")))
+        .expect("write capacity-stable daemon requests");
+
+    let stdin = fs::File::open(&requests).expect("open capacity-stable daemon requests");
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("daemon")
+        .arg("--stdio")
+        .arg("--backend")
+        .arg(backend)
+        .arg("--stdlib-root")
+        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+        .stdin(Stdio::from(stdin));
+    let output = common::codegen_command_output_with_timeout(
+        &format!("laniusc daemon {backend} twenty-job reuse"),
+        &mut command,
+    );
+    common::assert_command_success("laniusc daemon twenty-job reuse", &output);
+
+    let responses = String::from_utf8(output.stdout)
+        .expect("daemon stdout should be UTF-8")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("daemon response JSON"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        responses.len(),
+        25,
+        "ready, 21 stable jobs, growth, growth repeat, and shutdown"
+    );
+    assert_eq!(responses[0]["event"], "ready");
+    assert_eq!(
+        responses[1]["workspace_request_kind"],
+        "cold_or_grown_workspace"
+    );
+    let retained_wgpu_buffers = responses[2]["wgpu_resources"]["buffers"]["kept_from_user"]
+        .as_u64()
+        .expect("warm response should report resident WGPU buffers");
+    for response in &responses[2..22] {
+        assert_eq!(
+            response["ok"], true,
+            "capacity-stable job failed: {response}"
+        );
+        assert_eq!(response["workspace_request_kind"], "retained_capacity");
+        assert_eq!(response["resources_created_during_job"]["buffers"], 0);
+        assert_eq!(response["resources_created_during_job"]["bind_groups"], 0);
+        assert_eq!(
+            response["resources_created_during_job"]["compute_pipelines"],
+            0
+        );
+        assert_eq!(
+            response["wgpu_resources"]["buffers"]["kept_from_user"], retained_wgpu_buffers,
+            "warm job changed the raw WGPU buffer population: {response}"
+        );
+        assert_eq!(
+            response["wgpu_resources"]["buffers"]["released_from_user"], 0,
+            "warm job created and dropped an untracked raw WGPU buffer: {response}"
+        );
+    }
+    assert_eq!(responses[22]["id"], "growth");
+    assert_eq!(
+        responses[22]["workspace_request_kind"],
+        "cold_or_grown_workspace"
+    );
+    assert_eq!(responses[23]["id"], "growth-repeat");
+    assert_eq!(
+        responses[23]["workspace_request_kind"], "retained_capacity",
+        "repeat after growth created resources: {}",
+        responses[23]
+    );
+    assert_eq!(responses[23]["resources_created_during_job"]["buffers"], 0);
+    assert_eq!(
+        responses[23]["resources_created_during_job"]["bind_groups"],
+        0
+    );
+    assert_eq!(
+        responses[23]["resources_created_during_job"]["compute_pipelines"],
+        0
+    );
+}
+
+#[test]
+fn cli_daemon_reuses_capacity_for_twenty_jobs_on_each_target() {
+    assert_twenty_capacity_stable_jobs("x86_64", "x86_64", None);
+    assert_twenty_capacity_stable_jobs("wasm", "wasm", Some("wasm"));
+}
+
 #[cfg(unix)]
 #[test]
 fn cli_daemon_accepts_a_unix_socket_session() {
@@ -240,10 +367,36 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
     assert_eq!(responses[2]["emit"], "x86_64");
     for response in [&responses[2], &responses[3], &responses[4], &responses[6]] {
         assert_eq!(
-            response["compute_pipelines_created_during_job"], 0,
+            response["resources_created_during_job"]["compute_pipelines"], 0,
             "daemon compilation jobs must not create pipelines after readiness: {response}"
         );
     }
+    assert_eq!(
+        responses[2]["workspace_request_kind"],
+        "cold_or_grown_workspace"
+    );
+    assert_eq!(
+        responses[3]["workspace_request_kind"], "retained_capacity",
+        "repeat job created resources: {}",
+        responses[3]
+    );
+    assert_eq!(responses[3]["resources_created_during_job"]["buffers"], 0);
+    assert_eq!(
+        responses[3]["resources_created_during_job"]["bind_groups"],
+        0
+    );
+    for phase in ["resource_plan", "cache", "wgpu_create"] {
+        assert!(
+            responses[2]["bind_group_timing_ms"][phase]
+                .as_f64()
+                .is_some_and(|ms| ms >= 0.0),
+            "cold daemon response should report bind-group {phase} time"
+        );
+    }
+    assert_eq!(
+        responses[3]["bind_group_timing_ms"]["wgpu_create"], 0.0,
+        "warm retained-capacity job must not call Device::create_bind_group"
+    );
     assert!(
         responses[0]["startup_ms"]
             .as_f64()
@@ -283,15 +436,13 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
         tracked_after_trim < tracked_before_trim,
         "trim should release job-sized tracked buffers: before={tracked_before_trim} after={tracked_after_trim}"
     );
-    assert!(
-        responses[5]["x86_pooled_buffers_released"]
-            .as_u64()
-            .is_some_and(|count| count > 0),
-        "trim should drain idle raw x86 scratch from the process pool"
-    );
     assert_eq!(responses[6]["id"], "second_compile");
     assert_eq!(responses[6]["ok"], true);
     assert_eq!(responses[6]["emit"], "x86_64");
+    assert_eq!(
+        responses[6]["workspace_request_kind"],
+        "cold_or_grown_workspace"
+    );
     assert_eq!(responses[7]["event"], "shutdown");
 
     let run = common::short_process_output_with_timeout(
@@ -387,10 +538,20 @@ fn cli_daemon_first_wasm_job_creates_no_pipelines_and_runs() {
         );
         assert_eq!(response["emit"], "wasm");
         assert_eq!(
-            response["compute_pipelines_created_during_job"], 0,
+            response["resources_created_during_job"]["compute_pipelines"], 0,
             "daemon Wasm jobs must not create pipelines after readiness: {response}"
         );
     }
+    assert_eq!(
+        responses[1]["workspace_request_kind"],
+        "cold_or_grown_workspace"
+    );
+    assert_eq!(responses[2]["workspace_request_kind"], "retained_capacity");
+    assert_eq!(responses[2]["resources_created_during_job"]["buffers"], 0);
+    assert_eq!(
+        responses[2]["resources_created_during_job"]["bind_groups"],
+        0
+    );
 
     let wasm = fs::read(&artifact).expect("read daemon Wasm artifact");
     let stdout =

@@ -8,18 +8,29 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    lowering::{ScanHierarchyParams, ScanParams, bound, make_group, record_direct},
+    lowering::{
+        ScanHierarchyParams,
+        ScanParams,
+        bound,
+        make_group,
+        record_direct,
+        record_direct_with_offsets,
+    },
     lowering_ir::{TARGET_SCHEDULE_RADIX_STEPS, TargetScheduleKey},
 };
 use crate::gpu::{
-    buffers::{LaniusBuffer, uniform_from_val},
+    buffers::{DynamicUniformBuffer, LaniusBuffer, dynamic_uniforms_from_vals, uniform_from_val},
     compiler_graph::{
         BoundGraphResource,
         CompilerGraph,
         CompilerGraphAllocations,
         CompilerGraphWorkspace,
     },
-    passes_core::{PassData, make_pass_data_from_shader_key},
+    passes_core::{
+        PassData,
+        make_pass_data_from_shader_key,
+        make_pass_data_from_shader_key_with_dynamic_uniforms,
+    },
     scan::{HierarchicalScanLevel, hierarchical_scan_levels},
 };
 
@@ -42,12 +53,6 @@ struct SchedulePasses {
     scatter: PassData,
 }
 
-struct ScheduleStep {
-    _params: LaniusBuffer<ScheduleParams>,
-    histogram: wgpu::BindGroup,
-    scatter: wgpu::BindGroup,
-}
-
 /// Fully resident scheduler. `record` creates no pipelines, buffers, uniforms,
 /// or bind groups.
 pub(crate) struct GpuStableScheduleSorter {
@@ -59,7 +64,9 @@ pub(crate) struct GpuStableScheduleSorter {
     scan_up_groups: Vec<wgpu::BindGroup>,
     scan_down_groups: Vec<wgpu::BindGroup>,
     scan_apply_group: wgpu::BindGroup,
-    steps: Vec<ScheduleStep>,
+    radix_params: DynamicUniformBuffer<ScheduleParams>,
+    histogram_groups: Vec<wgpu::BindGroup>,
+    scatter_groups: Vec<wgpu::BindGroup>,
     scan_levels: Vec<HierarchicalScanLevel>,
     _slot_params: LaniusBuffer<ScheduleParams>,
     _scan_params: LaniusBuffer<ScanParams>,
@@ -138,7 +145,7 @@ impl GpuStableScheduleSorter {
                 "lir.target.schedule.slot_count",
                 "codegen/lir/schedule/slot_count",
             )?,
-            histogram: load(
+            histogram: load_dynamic(
                 device,
                 "lir.target.schedule.histogram",
                 "codegen/lir/schedule/histogram",
@@ -163,7 +170,7 @@ impl GpuStableScheduleSorter {
                 "lir.target.schedule.scan.apply",
                 "scan/counted/02_apply",
             )?,
-            scatter: load(
+            scatter: load_dynamic(
                 device,
                 "lir.target.schedule.scatter",
                 "codegen/lir/schedule/scatter",
@@ -277,41 +284,42 @@ impl GpuStableScheduleSorter {
                 ("scan_total", scan_total.as_entire_binding()),
             ],
         )?;
-        let mut steps = Vec::with_capacity(TARGET_SCHEDULE_RADIX_STEPS as usize);
-        for key_step in 0..TARGET_SCHEDULE_RADIX_STEPS {
-            let params = uniform_from_val(
-                device,
-                &format!("lir.target.schedule.radix.params.{key_step}"),
-                &ScheduleParams {
-                    target_capacity,
-                    max_blocks,
-                    key_step,
-                    reserved: 0,
-                },
-            );
-            let (input, output) = if key_step % 2 == 0 {
+        let radix_values = (0..TARGET_SCHEDULE_RADIX_STEPS)
+            .map(|key_step| ScheduleParams {
+                target_capacity,
+                max_blocks,
+                key_step,
+                reserved: 0,
+            })
+            .collect::<Vec<_>>();
+        let radix_params =
+            dynamic_uniforms_from_vals(device, "lir.target.schedule.radix.params", &radix_values);
+        let mut histogram_groups = Vec::with_capacity(2);
+        let mut scatter_groups = Vec::with_capacity(2);
+        for direction in 0..2 {
+            let (input, output) = if direction == 0 {
                 (order, &order_tmp)
             } else {
                 (&order_tmp, order)
             };
-            let histogram_group = make_group(
+            histogram_groups.push(make_group(
                 device,
                 &passes.histogram,
                 "lir.target.schedule.histogram.bind_group",
                 &[
-                    ("gParams", params.as_entire_binding()),
+                    ("gParams", radix_params.binding()),
                     ("target_lir_total", total.as_entire_binding()),
                     ("target_schedule_key", keys.as_entire_binding()),
                     ("target_schedule_order_in", input.as_entire_binding()),
                     ("target_schedule_histogram", histogram.as_entire_binding()),
                 ],
-            )?;
-            let scatter_group = make_group(
+            )?);
+            scatter_groups.push(make_group(
                 device,
                 &passes.scatter,
                 "lir.target.schedule.scatter.bind_group",
                 &[
-                    ("gParams", params.as_entire_binding()),
+                    ("gParams", radix_params.binding()),
                     ("target_lir_total", total.as_entire_binding()),
                     ("target_schedule_key", keys.as_entire_binding()),
                     ("target_schedule_order_in", input.as_entire_binding()),
@@ -321,12 +329,7 @@ impl GpuStableScheduleSorter {
                     ),
                     ("target_schedule_order_out", output.as_entire_binding()),
                 ],
-            )?;
-            steps.push(ScheduleStep {
-                _params: params,
-                histogram: histogram_group,
-                scatter: scatter_group,
-            });
+            )?);
         }
 
         validate_bindings(
@@ -356,7 +359,9 @@ impl GpuStableScheduleSorter {
             scan_up_groups,
             scan_down_groups,
             scan_apply_group,
-            steps,
+            radix_params,
+            histogram_groups,
+            scatter_groups,
             scan_levels,
             _slot_params: slot_params,
             _scan_params: scan_params,
@@ -380,12 +385,15 @@ impl GpuStableScheduleSorter {
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         record_direct(encoder, &self.passes.slot_count, &self.slot_count_group, 1)?;
-        for step in &self.steps {
-            record_direct(
+        for step in 0..TARGET_SCHEDULE_RADIX_STEPS as usize {
+            let offsets = [self.radix_params.dynamic_offset(step)];
+            let direction = step % 2;
+            record_direct_with_offsets(
                 encoder,
                 &self.passes.histogram,
-                &step.histogram,
+                &self.histogram_groups[direction],
                 self.target_capacity,
+                &offsets,
             )?;
             record_direct(
                 encoder,
@@ -415,11 +423,12 @@ impl GpuStableScheduleSorter {
                 &self.scan_apply_group,
                 self.slot_capacity,
             )?;
-            record_direct(
+            record_direct_with_offsets(
                 encoder,
                 &self.passes.scatter,
-                &step.scatter,
+                &self.scatter_groups[direction],
                 self.target_capacity,
+                &offsets,
             )?;
         }
         Ok(())
@@ -428,6 +437,16 @@ impl GpuStableScheduleSorter {
 
 fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
     make_pass_data_from_shader_key(device, label, "main", shader)
+}
+
+fn load_dynamic(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
+    make_pass_data_from_shader_key_with_dynamic_uniforms(
+        device,
+        label,
+        "main",
+        shader,
+        &["gParams"],
+    )
 }
 
 #[derive(Clone, Copy)]

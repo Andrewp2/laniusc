@@ -1,6 +1,8 @@
 //! One graph-owned lowering pipeline from compact semantic HIR to the selected
 //! target LIR and artifact boundary.
 
+use std::sync::{Arc, Mutex};
+
 use anyhow::Result;
 
 use super::{
@@ -105,16 +107,92 @@ impl TargetStage {
 /// all phase-local aliases in one workspace, while the target enum guarantees
 /// that an inactive backend consumes no resident slots.
 ///
-/// The target passes and their bind groups are created here. Semantic input
-/// bind groups are still job-bound until parser/type-check outputs themselves
-/// move into stable graph-owned slots; that remaining boundary is explicit in
-/// `record` rather than hidden inside either backend.
+/// Target and semantic bind groups are derived from reflected resource
+/// identities and reused while their graph-owned inputs remain resident.
 pub(crate) struct GpuLoweringPipeline {
     capacities: LoweringCapacities,
     _workspace: CompilerGraphWorkspace,
     semantic: GpuSemanticLoweringStage,
     target: TargetStage,
     status_readback: LaniusBuffer<u8>,
+}
+
+/// Lazily materialized, capacity-covering workspace for one target.
+///
+/// Shader pipelines are prepared before the daemon reports ready. This cache
+/// owns only capacity-dependent buffers, uniforms, bind groups, and readback
+/// storage, so an idle trim can return job memory without invalidating kernel
+/// readiness.
+pub(crate) struct GpuLoweringWorkspaceCache {
+    target: LoweringTarget,
+    current: Mutex<Option<Arc<GpuLoweringPipeline>>>,
+}
+
+impl GpuLoweringWorkspaceCache {
+    pub(crate) fn new(target: LoweringTarget) -> Self {
+        Self {
+            target,
+            current: Mutex::new(None),
+        }
+    }
+
+    pub(crate) fn ensure(
+        &self,
+        device: &wgpu::Device,
+        source_bytes: u32,
+        tokens: u32,
+        hir_nodes: u32,
+    ) -> Result<Arc<GpuLoweringPipeline>, String> {
+        let required =
+            LoweringCapacities::from_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?;
+        let mut current = self
+            .current
+            .lock()
+            .expect("lowering workspace cache poisoned");
+        if let Some(pipeline) = current.as_ref()
+            && pipeline.capacities.covers(required)
+        {
+            return Ok(Arc::clone(pipeline));
+        }
+        let capacities = current.as_ref().map_or(required, |pipeline| {
+            pipeline.capacities.grow_to_cover(required)
+        });
+        let pipeline = Arc::new(
+            GpuLoweringPipeline::new(device, capacities, self.target)
+                .map_err(|err| err.to_string())?,
+        );
+        *current = Some(Arc::clone(&pipeline));
+        Ok(pipeline)
+    }
+
+    pub(crate) fn current(&self) -> Result<Arc<GpuLoweringPipeline>, String> {
+        let target = match self.target {
+            LoweringTarget::X86_64 => "x86_64",
+            LoweringTarget::Wasm => "Wasm",
+        };
+        self.current
+            .lock()
+            .expect("lowering workspace cache poisoned")
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| format!("{target} lowering workspace is not initialized"))
+    }
+
+    pub(crate) fn release(&self) {
+        *self
+            .current
+            .lock()
+            .expect("lowering workspace cache poisoned") = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_capacities(&self) -> Option<LoweringCapacities> {
+        self.current
+            .lock()
+            .expect("lowering workspace cache poisoned")
+            .as_ref()
+            .map(|pipeline| pipeline.capacities)
+    }
 }
 
 impl GpuLoweringPipeline {
@@ -156,24 +234,6 @@ impl GpuLoweringPipeline {
             target,
             status_readback,
         })
-    }
-
-    pub(crate) fn ensure_frontend_capacity(
-        &self,
-        source_bytes: u32,
-        tokens: u32,
-        hir_nodes: u32,
-    ) -> Result<(), String> {
-        if source_bytes <= self.capacities.source_bytes
-            && tokens <= self.capacities.tokens
-            && hir_nodes <= self.capacities.hir_nodes
-        {
-            return Ok(());
-        }
-        Err(format!(
-            "compilation unit requires source={source_bytes} bytes, tokens={tokens}, HIR={hir_nodes}; resident lowering capacity is source={} bytes, tokens={}, HIR={}",
-            self.capacities.source_bytes, self.capacities.tokens, self.capacities.hir_nodes,
-        ))
     }
 
     fn record_target_pages(&self, encoder: &mut wgpu::CommandEncoder, object: bool) -> Result<()> {
@@ -334,6 +394,14 @@ impl GpuLoweringPipeline {
 mod tests {
     use super::*;
     use crate::gpu::device;
+
+    #[test]
+    fn lowering_workspace_cache_starts_without_job_storage() {
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            let cache = GpuLoweringWorkspaceCache::new(target);
+            assert_eq!(cache.retained_capacities(), None);
+        }
+    }
 
     #[test]
     fn physical_gpu_constructs_one_workspace_pipeline_for_each_target() {

@@ -694,6 +694,7 @@ impl ParserPasses {
 
 /// Records the debug parser pipeline in pass order.
 pub fn record_all_passes(
+    queue: &wgpu::Queue,
     mut ctx: PassContext<'_, ParserBuffers, DebugOutput>,
     p: &ParserPasses,
 ) -> Result<(), anyhow::Error> {
@@ -704,7 +705,7 @@ pub fn record_all_passes(
     p.pack_offsets
         .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.pack_offsets_status
-        .record_pass(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_pass(ctx.device, queue, ctx.encoder, ctx.buffers)?;
     p.pack_varlen
         .record_pass(&mut ctx, E1D(n_pairs.saturating_mul(256)))?;
     parser_copy_buffer_to_buffer(

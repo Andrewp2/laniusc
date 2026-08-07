@@ -10,7 +10,11 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
-use super::passes_core::{PassData, make_pass_data_from_shader_key};
+use super::passes_core::{
+    PassData,
+    make_pass_data_from_shader_key,
+    make_pass_data_from_shader_key_with_dynamic_uniforms,
+};
 use crate::reflection::SlangReflection;
 #[cfg(test)]
 use crate::reflection::parse_reflection_from_bytes;
@@ -59,6 +63,7 @@ impl KernelReflections for KernelCatalog {
 /// Pipelines prepared before a compilation job begins.
 pub(crate) struct KernelRegistry {
     kernels: HashMap<String, PassData>,
+    dynamic_uniform_kernels: HashMap<(String, String), PassData>,
 }
 
 impl KernelRegistry {
@@ -76,12 +81,27 @@ impl KernelRegistry {
         keys.dedup();
 
         let mut kernels = HashMap::with_capacity(keys.len());
+        let mut dynamic_uniform_kernels = HashMap::new();
         for key in keys {
             let kernel = make_pass_data_from_shader_key(device, &key, "main", &key)
                 .with_context(|| format!("prepare GPU kernel `{key}`"))?;
+            if super::operations::uses_dynamic_uniform_kernel(&kernel.reflection) {
+                let dynamic = make_pass_data_from_shader_key_with_dynamic_uniforms(
+                    device,
+                    &key,
+                    "main",
+                    &key,
+                    &["gParams"],
+                )
+                .with_context(|| format!("prepare dynamic-uniform GPU kernel `{key}`"))?;
+                dynamic_uniform_kernels.insert((key.clone(), "gParams".to_owned()), dynamic);
+            }
             kernels.insert(key, kernel);
         }
-        Ok(Self { kernels })
+        Ok(Self {
+            kernels,
+            dynamic_uniform_kernels,
+        })
     }
 
     /// Prepares the union of several generated-kernel namespaces. Shared GPU
@@ -114,6 +134,16 @@ impl KernelRegistry {
     /// Returns a capability-dependent pipeline when it was prepared.
     pub(crate) fn optional(&self, key: &str) -> Option<&PassData> {
         self.kernels.get(key)
+    }
+
+    /// Returns the startup-prepared layout variant for an operation whose
+    /// repeated invocations select rows from one dynamic-uniform table.
+    pub(crate) fn dynamic_uniform_kernel(&self, key: &str, uniform: &str) -> &PassData {
+        self.dynamic_uniform_kernels
+            .get(&(key.to_owned(), uniform.to_owned()))
+            .unwrap_or_else(|| {
+                panic!("GPU kernel `{key}` has no prepared dynamic-uniform variant for `{uniform}`")
+            })
     }
 }
 

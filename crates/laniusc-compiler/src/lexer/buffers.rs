@@ -1,7 +1,10 @@
 use super::LexParams;
 use crate::{
     gpu::buffers::{
+        DynamicUniformBuffer,
         LaniusBuffer,
+        dynamic_uniforms_from_vals_with_queue,
+        readback_bytes,
         storage_ro_from_u32s_with_queue,
         storage_rw_for_array,
         storage_rw_uninit_bytes,
@@ -42,6 +45,8 @@ pub struct GpuBuffers {
     pub dfa_02_pong: LaniusBuffer<u32>,
     /// Per-block DFA summaries retained for prefix application.
     pub dfa_chunk_summaries: LaniusBuffer<u32>,
+    pub(in crate::lexer) dfa_scan_params: Option<DynamicUniformBuffer<super::passes::ScanParams>>,
+    pub(in crate::lexer) pair_scan_params: Option<DynamicUniformBuffer<super::passes::ScanParams>>,
     /// Raw token kinds by byte boundary; also reused by all-boundary compaction.
     pub tok_types: LaniusBuffer<u32>,
     /// Packed boundary and keep flags emitted by DFA prefix application.
@@ -61,6 +66,8 @@ pub struct GpuBuffers {
     pub token_count: LaniusBuffer<u32>,
     /// Conservative parser-family flags collected by the GPU token builder.
     pub parser_feature_flags: LaniusBuffer<u32>,
+    /// Reused host-visible count/feature boundary for capacity-stable jobs.
+    pub token_count_readback: LaniusBuffer<u8>,
 
     /// Final resident token records consumed by parser and readback paths.
     pub tokens_out: LaniusBuffer<super::GpuToken>,
@@ -137,6 +144,35 @@ impl GpuBuffers {
             "dfa_chunk_summaries",
             per_block_count * DFA_CHUNK_COUNT,
         );
+        let dfa_scan_values = (0..super::util::compute_rounds(nb_dfa))
+            .map(|round| super::passes::ScanParams {
+                stride: 1u32 << round,
+                use_ping_as_src: u32::from(round % 2 == 0),
+            })
+            .collect::<Vec<_>>();
+        let dfa_scan_params = (!dfa_scan_values.is_empty()).then(|| {
+            dynamic_uniforms_from_vals_with_queue(
+                device,
+                queue,
+                "ScanParams[FUNC-BLOCKS]",
+                &dfa_scan_values,
+            )
+        });
+        let pair_scan_values = super::passes::pair::block_total_scan_steps(nb_sum)
+            .into_iter()
+            .map(|step| super::passes::ScanParams {
+                stride: step.scan_step,
+                use_ping_as_src: u32::from(step.read_from_a),
+            })
+            .collect::<Vec<_>>();
+        let pair_scan_params = (!pair_scan_values.is_empty()).then(|| {
+            dynamic_uniforms_from_vals_with_queue(
+                device,
+                queue,
+                "ScanParams[PAIR-BLOCKS]",
+                &pair_scan_values,
+            )
+        });
 
         let tok_types: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "tok_types", n as usize);
@@ -161,6 +197,7 @@ impl GpuBuffers {
         let token_count: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "token_count", 1);
         let parser_feature_flags =
             storage_rw_for_array::<u32>(device, "lexer.parser_feature_flags", 1);
+        let token_count_readback = readback_bytes(device, "rb.lex.resident.token_count", 8, 8);
 
         let tokens_out = storage_rw_for_array::<super::GpuToken>(device, "tokens_out", n as usize);
         let source_file_count = storage_rw_for_array::<u32>(device, "source_file_count", 1);
@@ -201,6 +238,8 @@ impl GpuBuffers {
             dfa_02_ping,
             dfa_02_pong,
             dfa_chunk_summaries,
+            dfa_scan_params,
+            pair_scan_params,
             tok_types,
             flags_packed,
 
@@ -212,6 +251,7 @@ impl GpuBuffers {
             all_index_compact,
             token_count,
             parser_feature_flags,
+            token_count_readback,
 
             tokens_out,
             source_file_count,

@@ -733,6 +733,33 @@ impl LoweringCapacities {
         u64::from(count.max(1)) * std::mem::size_of::<T>() as u64
     }
 
+    pub(crate) fn covers(self, required: Self) -> bool {
+        self.source_bytes >= required.source_bytes
+            && self.tokens >= required.tokens
+            && self.hir_nodes >= required.hir_nodes
+            && self.semantic_instructions >= required.semantic_instructions
+            && self.call_arguments >= required.call_arguments
+            && self.parameters >= required.parameters
+            && self.aggregate_elements >= required.aggregate_elements
+            && self.target_instructions >= required.target_instructions
+            && self.artifact_bytes >= required.artifact_bytes
+    }
+
+    pub(crate) fn grow_to_cover(self, required: Self) -> Self {
+        let grow = |current: u32, needed: u32| needed.max(current.saturating_mul(2));
+        Self {
+            source_bytes: grow(self.source_bytes, required.source_bytes),
+            tokens: grow(self.tokens, required.tokens),
+            hir_nodes: grow(self.hir_nodes, required.hir_nodes),
+            semantic_instructions: grow(self.semantic_instructions, required.semantic_instructions),
+            call_arguments: grow(self.call_arguments, required.call_arguments),
+            parameters: grow(self.parameters, required.parameters),
+            aggregate_elements: grow(self.aggregate_elements, required.aggregate_elements),
+            target_instructions: grow(self.target_instructions, required.target_instructions),
+            artifact_bytes: grow(self.artifact_bytes, required.artifact_bytes),
+        }
+    }
+
     /// Derives lossless lowering capacities from the bounded frontend unit.
     /// These factors are structural upper bounds of the current IR contracts,
     /// not workload guesses. Although one range-loop owner expands to
@@ -4805,6 +4832,24 @@ mod tests {
             .unwrap_err()
             .contains("semantic instruction")
         );
+    }
+
+    #[test]
+    fn lowering_capacity_growth_reuses_covering_workspace_and_doubles_on_growth() {
+        let initial =
+            LoweringCapacities::from_frontend_unit(1_000, 400, 100, LoweringTarget::X86_64)
+                .unwrap();
+        assert!(initial.covers(initial));
+
+        let required =
+            LoweringCapacities::from_frontend_unit(1_001, 401, 101, LoweringTarget::X86_64)
+                .unwrap();
+        assert!(!initial.covers(required));
+        let grown = initial.grow_to_cover(required);
+        assert!(grown.covers(required));
+        assert_eq!(grown.source_bytes, 2_000);
+        assert_eq!(grown.hir_nodes, 200);
+        assert_eq!(grown.semantic_instructions, 1_000);
     }
 
     #[test]

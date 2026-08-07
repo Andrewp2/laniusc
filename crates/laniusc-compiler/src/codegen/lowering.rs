@@ -3088,6 +3088,16 @@ pub(super) fn record_direct(
     bind_group: &wgpu::BindGroup,
     elements: u32,
 ) -> Result<()> {
+    record_direct_with_offsets(encoder, pass, bind_group, elements, &[])
+}
+
+pub(super) fn record_direct_with_offsets(
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    elements: u32,
+    dynamic_offsets: &[u32],
+) -> Result<()> {
     if elements == 0 {
         return Ok(());
     }
@@ -3101,7 +3111,7 @@ pub(super) fn record_direct(
         timestamp_writes: None,
     });
     compute.set_pipeline(&pass.pipeline);
-    compute.set_bind_group(0, Some(bind_group), &[]);
+    compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     compute.dispatch_workgroups(x, y, z);
     Ok(())
 }

@@ -40,6 +40,7 @@ impl GpuParser {
         stamp_timer(timer_ref, ctx.encoder, "parser.pack_offsets");
         self.passes.pack_offsets_status.record_pass_indirect(
             ctx.device,
+            &self.queue,
             ctx.encoder,
             ctx.buffers,
             &bufs.active_pair_thread_dispatch_args,
@@ -809,6 +810,7 @@ impl GpuParser {
                 if let Some((source_len, token_buf, source_buf)) = literal_source {
                     self.passes.hir_literal_values.record_with_source(
                         &self.device,
+                        &self.queue,
                         ctx.encoder,
                         bufs,
                         &bufs.tree_active_dispatch_args,
@@ -851,6 +853,7 @@ impl GpuParser {
                     parser_clear_buffer(ctx.encoder, &bufs.hir_string_data_words, 0, None);
                     self.passes.hir_string_decode.record_with_source(
                         ctx.device,
+                        &self.queue,
                         ctx.encoder,
                         ctx.buffers,
                         source_len,

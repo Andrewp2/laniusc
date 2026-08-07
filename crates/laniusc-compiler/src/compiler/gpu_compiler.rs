@@ -57,22 +57,38 @@ pub struct GpuCompiler<'gpu> {
     pub(super) resident_pipeline_lock: Mutex<()>,
     pub(super) wasm_linker: Result<Box<wasm::GpuWasmLinker>, String>,
     pub(super) x86_linker: Result<Box<x86::GpuX86Linker>, String>,
-    pub(super) wasm_lowering: Result<Box<GpuLoweringPipeline>, String>,
-    pub(super) x86_lowering: Result<Box<GpuLoweringPipeline>, String>,
+    pub(super) wasm_lowering: Result<Box<GpuLoweringWorkspaceCache>, String>,
+    pub(super) x86_lowering: Result<Box<GpuLoweringWorkspaceCache>, String>,
+    _codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
 }
 
-fn initial_lowering_capacities(target: LoweringTarget) -> Result<LoweringCapacities, String> {
-    let unit_capacity = u32::try_from(DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES)
-        .map_err(|_| "default codegen-unit capacity exceeds u32".to_string())?;
-    LoweringCapacities::from_frontend_unit(unit_capacity, unit_capacity, unit_capacity, target)
+fn prepare_codegen_kernels(
+    device: &wgpu::Device,
+    backends: GpuCompilerBackends,
+) -> anyhow::Result<crate::gpu::kernels::KernelRegistry> {
+    crate::gpu::kernels::KernelRegistry::prepare_prefixes(
+        device,
+        &["codegen/lir", "scan/counted"],
+        |key| {
+            let target_enabled = if key.contains("/x86/") {
+                backends.x86
+            } else if key.contains("/wasm/") {
+                backends.wasm
+            } else {
+                backends.x86 || backends.wasm
+            };
+            target_enabled
+        },
+    )
 }
 
 type PipelineFamilyInitialization = (
     gpu_type_checker::GpuTypeChecker,
     Result<Box<wasm::GpuWasmLinker>, String>,
     Result<Box<x86::GpuX86Linker>, String>,
-    Result<Box<GpuLoweringPipeline>, String>,
-    Result<Box<GpuLoweringPipeline>, String>,
+    Result<Box<GpuLoweringWorkspaceCache>, String>,
+    Result<Box<GpuLoweringWorkspaceCache>, String>,
+    Option<Box<crate::gpu::kernels::KernelRegistry>>,
 );
 
 const PIPELINE_INIT_STACK_BYTES: usize = 32 * 1024 * 1024;
@@ -108,12 +124,9 @@ fn initialize_pipeline_families(
                     let linker = wasm::GpuWasmLinker::new_with_device(gpu)
                         .map(Box::new)
                         .map_err(|err| err.to_string());
-                    let lowering =
-                        initial_lowering_capacities(LoweringTarget::Wasm).and_then(|capacities| {
-                            GpuLoweringPipeline::new(&gpu.device, capacities, LoweringTarget::Wasm)
-                                .map(Box::new)
-                                .map_err(|err| err.to_string())
-                        });
+                    let lowering = Ok(Box::new(GpuLoweringWorkspaceCache::new(
+                        LoweringTarget::Wasm,
+                    )));
                     ((linker, lowering), start.elapsed())
                 })
                 .expect("spawn Wasm pipeline initialization worker")
@@ -127,20 +140,19 @@ fn initialize_pipeline_families(
                     let linker = x86::GpuX86Linker::new_with_device(gpu)
                         .map(Box::new)
                         .map_err(|err| err.to_string());
-                    let lowering = initial_lowering_capacities(LoweringTarget::X86_64).and_then(
-                        |capacities| {
-                            GpuLoweringPipeline::new(
-                                &gpu.device,
-                                capacities,
-                                LoweringTarget::X86_64,
-                            )
-                            .map(Box::new)
-                            .map_err(|err| err.to_string())
-                        },
-                    );
+                    let lowering = Ok(Box::new(GpuLoweringWorkspaceCache::new(
+                        LoweringTarget::X86_64,
+                    )));
                     ((linker, lowering), start.elapsed())
                 })
                 .expect("spawn x86 pipeline initialization worker")
+        });
+        let codegen_kernels = (backends.x86 || backends.wasm).then(|| {
+            std::thread::Builder::new()
+                .name("lanius-codegen-kernel-init".into())
+                .stack_size(PIPELINE_INIT_STACK_BYTES)
+                .spawn_scoped(scope, || prepare_codegen_kernels(&gpu.device, backends))
+                .expect("spawn codegen kernel initialization worker")
         });
         let (type_checker, type_checker_elapsed) = type_checker.join().map_err(|_| {
             compiler_initialization_failed_error(
@@ -184,12 +196,31 @@ fn initialize_pipeline_families(
                 Err("x86 lowering pipeline was not initialized for this compiler".into()),
             ),
         };
+        let codegen_kernels = match codegen_kernels.map(std::thread::ScopedJoinHandle::join) {
+            Some(Ok(Ok(kernels))) => Some(Box::new(kernels)),
+            Some(Ok(Err(err))) => {
+                return Err(compiler_initialization_failed_error(
+                    "the compiler stopped while initializing GPU code-generation pipelines",
+                    "initialize code-generation kernels",
+                    err,
+                ));
+            }
+            Some(Err(_)) => {
+                return Err(compiler_initialization_failed_error(
+                    "the compiler stopped while initializing GPU code-generation pipelines",
+                    "initialize code-generation kernel worker",
+                    anyhow::anyhow!("code-generation kernel initialization thread panicked"),
+                ));
+            }
+            None => None,
+        };
         Ok((
             type_checker,
             wasm_linker,
             x86_linker,
             wasm_lowering,
             x86_lowering,
+            codegen_kernels,
         ))
     })
 }
@@ -303,8 +334,14 @@ impl<'gpu> GpuCompiler<'gpu> {
             // These eager pipeline families have no construction-time data
             // dependencies. Build them concurrently in every profile so debug
             // daemon jobs exercise the same readiness contract as release jobs.
-            let (type_checker, wasm_linker, x86_linker, wasm_lowering, x86_lowering) =
-                initialize_pipeline_families_on_coordinator(gpu, backends)?;
+            let (
+                type_checker,
+                wasm_linker,
+                x86_linker,
+                wasm_lowering,
+                x86_lowering,
+                codegen_kernels,
+            ) = initialize_pipeline_families_on_coordinator(gpu, backends)?;
             if let Err(err) = &wasm_linker {
                 if backends.wasm {
                     log::warn!("preinitializing WASM linker failed: {err}");
@@ -328,6 +365,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 x86_linker,
                 wasm_lowering,
                 x86_lowering,
+                _codegen_kernels: codegen_kernels,
             })
         })
     }
@@ -338,16 +376,42 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.gpu
     }
 
+    pub(super) fn ensure_lowering_pipeline(
+        &self,
+        target: LoweringTarget,
+        source_bytes: u32,
+        tokens: u32,
+        hir_nodes: u32,
+    ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
+    {
+        let maximum = u32::try_from(DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES)
+            .map_err(|_| "default codegen-unit capacity exceeds u32".to_string())?;
+        if source_bytes > maximum {
+            return Err(format!(
+                "compilation unit is {source_bytes} source bytes, exceeding the configured {maximum}-byte frontend compilation-unit capacity"
+            ));
+        }
+        let cache = match target {
+            LoweringTarget::X86_64 => &self.x86_lowering,
+            LoweringTarget::Wasm => &self.wasm_lowering,
+        }
+        .as_deref()
+        .map_err(Clone::clone)?;
+        cache.ensure(&self.gpu.device, source_bytes, tokens, hir_nodes)
+    }
+
     pub(super) fn lowering_pipeline(
         &self,
         target: LoweringTarget,
-    ) -> Result<&GpuLoweringPipeline, &str> {
+    ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
+    {
         match target {
             LoweringTarget::X86_64 => &self.x86_lowering,
             LoweringTarget::Wasm => &self.wasm_lowering,
         }
         .as_deref()
-        .map_err(String::as_str)
+        .map_err(Clone::clone)?
+        .current()
     }
 
     /// Releases source/job-sized GPU buffers across every compiler phase while
@@ -361,6 +425,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.lexer.release_current_resident_buffers();
         self.parser.release_current_resident_buffers();
         self.type_checker.release_current_resident_workspace();
+        if let Ok(cache) = &self.wasm_lowering {
+            cache.release();
+        }
+        if let Ok(cache) = &self.x86_lowering {
+            cache.release();
+        }
+        crate::gpu::passes_core::release_reflected_bind_group_caches();
         let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
         GpuResidentJobBufferTrim
     }

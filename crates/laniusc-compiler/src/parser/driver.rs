@@ -525,12 +525,7 @@ impl GpuParser {
             timer.stamp(encoder, "parser.done");
         }
 
-        let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.parser.recorded_ll1_hir.status"),
-            size: 32,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let status_readback = bufs.ll1_status_readback.buffer.clone();
         parser_copy_buffer_to_buffer(encoder, &bufs.ll1_status, 0, &status_readback, 0, 24);
         parser_copy_buffer_to_buffer(
             encoder,
@@ -982,7 +977,7 @@ impl GpuParser {
             };
 
             // Record all passes in one place (like the lexer).
-            passes::record_all_passes(ctx, &self.passes)?;
+            passes::record_all_passes(&self.queue, ctx, &self.passes)?;
         } // <- drop ctx, timer_ref, dbg_ref_opt, cache_guard
 
         // -------- Submit & (optionally) read back --------
