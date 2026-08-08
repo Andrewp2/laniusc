@@ -6,6 +6,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirArray;
@@ -91,8 +92,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint previous = hir_array_element_previous[node];
     hir_array_element_parent_lit[node] = owner;
     hir_array_element_ordinal[node] = ordinal;
-    atomic_u32_min(hir_array_lit_first_element, owner, node);
-    atomic_u32_max(hir_array_lit_element_count, owner, ordinal + 1u);
-    if (valid_node(previous))
-        hir_array_element_next[previous] = node;
+    if (gHirArray.retain_debug_rows != 0u)
+    {
+        atomic_u32_min(hir_array_lit_first_element, owner, node);
+        atomic_u32_max(hir_array_lit_element_count, owner, ordinal + 1u);
+        if (valid_node(previous))
+            hir_array_element_next[previous] = node;
+    }
 }

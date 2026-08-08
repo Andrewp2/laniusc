@@ -33,7 +33,7 @@ pub(crate) trait ComputeKernels {
 
 enum Dispatch {
     Direct(u32),
-    Indirect(wgpu::Buffer),
+    Indirect(LaniusBuffer<u32>),
 }
 
 /// A shader, its reflection-built bindings, validated ownership, and dispatch.
@@ -122,7 +122,7 @@ impl ComputeOperation {
         resources: &ResourceMap<'_>,
         name: &'static str,
         pass: &PassData,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         Self::new(
             device,
@@ -158,7 +158,7 @@ impl ComputeOperation {
         resources: &ResourceMap<'_>,
         kernels: &impl ComputeKernels,
         spec: ReflectedComputeSpec,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         Self::indirect(
             device,

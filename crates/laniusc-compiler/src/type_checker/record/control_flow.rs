@@ -23,7 +23,7 @@ pub(in crate::type_checker) fn record_fn_context_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     token_capacity: u32,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
     n_blocks: u32,
     groups: &FnContextBindGroups,
 ) -> Result<()> {
@@ -80,7 +80,7 @@ pub(in crate::type_checker) fn record_if_depth_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     token_capacity: u32,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
     n_blocks: u32,
     groups: &IfDepthBindGroups,
 ) -> Result<()> {

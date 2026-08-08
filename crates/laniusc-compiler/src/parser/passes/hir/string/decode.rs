@@ -15,6 +15,8 @@ pub(crate) struct Params {
     pub(crate) source_len: u32,
     pub(crate) pool_capacity: u32,
     pub(crate) uses_status_count: u32,
+    pub(crate) token_capacity: u32,
+    pub(crate) retain_debug_rows: u32,
 }
 pub struct HirStringDecodePass {
     data: PassData,
@@ -38,6 +40,8 @@ impl HirStringDecodePass {
                 source_len,
                 pool_capacity: b.source_capacity,
                 uses_status_count: u32::from(b.tree_count_uses_status),
+                token_capacity: b.token_input_capacity,
+                retain_debug_rows: u32::from(b.retain_debug_hir_buffers),
             },
         );
         let resources = HashMap::from([
@@ -54,6 +58,7 @@ impl HirStringDecodePass {
                 "hir_string_count".into(),
                 b.hir_string_count.as_entire_binding(),
             ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "hir_expr_string_start".into(),
                 b.hir_expr_string_start.as_entire_binding(),

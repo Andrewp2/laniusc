@@ -362,7 +362,7 @@ impl GpuX86ObjectStage {
         if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
             eprintln!("[x86_object_identity] bytes={:?}", bytes.as_ref());
         }
-        queue.write_buffer(&self.identity.buffer, 0, bytes.as_ref());
+        self.identity.write(queue, 0, bytes.as_ref());
     }
 
     pub(crate) fn record_status_normalization(
@@ -382,25 +382,14 @@ impl GpuX86ObjectStage {
         self.definitions_op.record(encoder)?;
         self.bytes_op.record(encoder)?;
         for (source, destination) in [
-            (&self.relocation_total.buffer, 4),
-            (&self.symbol_total.buffer, 8),
-            (&self.definition_total.buffer, 12),
+            (&self.relocation_total, 4),
+            (&self.symbol_total, 8),
+            (&self.definition_total, 12),
         ] {
-            encoder.copy_buffer_to_buffer(
-                source,
-                0,
-                &self.metadata_readback.buffer,
-                destination,
-                4,
-            );
+            source.copy_to(encoder, 0, &self.metadata_readback, destination, 4);
         }
-        encoder.copy_buffer_to_buffer(
-            &self.layout.buffer,
-            0,
-            &self.metadata_readback.buffer,
-            16,
-            48,
-        );
+        self.layout
+            .copy_to(encoder, 0, &self.metadata_readback, 16, 48);
         Ok(())
     }
 
@@ -463,22 +452,27 @@ impl GpuX86ObjectStage {
             );
         }
 
-        let read = |buffer: &wgpu::Buffer, len: usize, label: &str| {
-            self.payload_readback
-                .read(device, queue, buffer, 0, len, label)
-        };
-        let relocation_words = decode_words(&read(
-            &self.relocations.buffer,
+        let relocation_words = decode_words(&self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.relocations,
+            0,
             relocation_count * 32,
             "x86 object relocation readback",
         )?);
-        let undefined_words = decode_words(&read(
-            &self.undefined_symbols.buffer,
+        let undefined_words = decode_words(&self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.undefined_symbols,
+            0,
             symbol_count * 16,
             "x86 object undefined-symbol readback",
         )?);
-        let definition_words = decode_words(&read(
-            &self.definitions.buffer,
+        let definition_words = decode_words(&self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.definitions,
+            0,
             definition_count * 32,
             "x86 object definition readback",
         )?);
@@ -491,13 +485,19 @@ impl GpuX86ObjectStage {
             eprintln!("[x86_object_identity] relocation_words={relocation_words:?}");
             eprintln!("[x86_object_identity] undefined_words={undefined_words:?}");
         }
-        let text = read(
-            &self.text_words.buffer,
+        let text = self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.text_words,
+            0,
             text_len,
             "x86 object text readback",
         )?;
-        let rodata = read(
-            &self.rodata_words.buffer,
+        let rodata = self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.rodata_words,
+            0,
             rodata_len,
             "x86 object rodata readback",
         )?;

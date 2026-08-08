@@ -113,26 +113,32 @@ fn record_canonical_scan(
     )
 }
 
-fn parser_clear_buffer(
+fn parser_clear_buffer<'a>(
     encoder: &mut wgpu::CommandEncoder,
-    buffer: &wgpu::Buffer,
+    buffer: impl Into<crate::gpu::buffers::TrackedBufferView<'a>>,
     offset: u64,
     size: Option<u64>,
 ) {
     crate::gpu::passes_core::flush_deferred_compute(encoder);
-    encoder.clear_buffer(buffer, offset, size);
+    buffer.into().clear(encoder, offset, size);
 }
 
-fn parser_copy_buffer_to_buffer(
+fn parser_copy_buffer_to_buffer<'a, 'b>(
     encoder: &mut wgpu::CommandEncoder,
-    source: &wgpu::Buffer,
+    source: impl Into<crate::gpu::buffers::TrackedBufferView<'a>>,
     source_offset: u64,
-    destination: &wgpu::Buffer,
+    destination: impl Into<crate::gpu::buffers::TrackedBufferView<'b>>,
     destination_offset: u64,
     size: u64,
 ) {
     crate::gpu::passes_core::flush_deferred_compute(encoder);
-    encoder.copy_buffer_to_buffer(source, source_offset, destination, destination_offset, size);
+    source.into().copy_to(
+        encoder,
+        source_offset,
+        destination.into(),
+        destination_offset,
+        size,
+    );
 }
 
 /// Delimiter pairing and bracket-layer passes.
@@ -236,11 +242,14 @@ pub struct ParserPasses {
     pub hir_fn_return_type: hir::functions::return_type::HirFnReturnTypePass,
     pub hir_method_signature_status: hir::method::signature_status::HirMethodSignatureStatusPass,
     pub hir_item_fields: hir::item::fields::HirItemFieldsPass,
-    pub hir_item_decl_tokens: hir::item::decl_tokens::HirItemDeclTokensPass,
     pub hir_canonical_mark: hir::canonical::mark::HirCanonicalMarkPass,
     pub hir_canonical_local: hir::canonical::local::HirCanonicalLocalPass,
     pub hir_canonical_scatter: hir::canonical::scatter::HirCanonicalScatterPass,
-    pub hir_canonical_parent_init: hir::canonical::parent_init::HirCanonicalParentInitPass,
+    pub hir_canonical_stmt_compact: hir::canonical::stmt_compact::HirCanonicalStmtCompactPass,
+    pub hir_canonical_identity_aliases:
+        hir::canonical::identity_aliases::HirCanonicalIdentityAliasesPass,
+    pub hir_canonical_parent_links_init:
+        hir::canonical::parent_links_init::HirCanonicalParentLinksInitPass,
     pub hir_canonical_core: hir::canonical::core::HirCanonicalCorePass,
     pub hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass,
     pub hir_canonical_expr_forest_edges:
@@ -250,6 +259,10 @@ pub struct ParserPasses {
     pub hir_canonical_expr_forest_root_step:
         hir::canonical::expr_forest::root_step::HirCanonicalExprForestRootStepPass,
     pub hir_canonical_validate: hir::canonical::validate::HirCanonicalValidatePass,
+    pub hir_canonical_decl_index_clear:
+        hir::canonical::decl_index::HirCanonicalDeclIndexClearPass,
+    pub hir_canonical_decl_index_scatter:
+        hir::canonical::decl_index::HirCanonicalDeclIndexScatterPass,
     pub hir_canonical_call_arg_mark: hir::canonical::call_args::mark::HirCanonicalCallArgMarkPass,
     pub exclusive_u32_local_scan: PassData,
     pub hir_canonical_call_arg_scatter:
@@ -313,9 +326,6 @@ pub struct ParserPasses {
     pub hir_method_fields: hir::method::fields::HirMethodFieldsPass,
     pub hir_expr_fields: hir::expr::fields::HirExprFieldsPass,
     pub hir_expr_result_root_step: hir::expr::result_root_step::HirExprResultRootStepPass,
-    pub hir_expr_forest_edges: hir::expr::forest::edges::HirExprForestEdgesPass,
-    pub hir_expr_forest_root_init: hir::expr::forest::root_init::HirExprForestRootInitPass,
-    pub hir_expr_forest_root_step: hir::expr::forest::root_step::HirExprForestRootStepPass,
     pub hir_binary_span_apply: hir::binary::span::apply::HirBinarySpanApplyPass,
     pub hir_binary_span_step: hir::binary::span::step::HirBinarySpanStepPass,
     pub hir_binary_spans: hir::binary::spans::HirBinarySpansPass,
@@ -500,12 +510,15 @@ impl ParserPasses {
             hir_method_signature_status:
                 hir::method::signature_status::HirMethodSignatureStatusPass::new(device)?,
             hir_item_fields: hir::item::fields::HirItemFieldsPass::new(device)?,
-            hir_item_decl_tokens: hir::item::decl_tokens::HirItemDeclTokensPass::new(device)?,
             hir_canonical_mark: hir::canonical::mark::HirCanonicalMarkPass::new(device)?,
             hir_canonical_local: hir::canonical::local::HirCanonicalLocalPass::new(device)?,
             hir_canonical_scatter: hir::canonical::scatter::HirCanonicalScatterPass::new(device)?,
-            hir_canonical_parent_init:
-                hir::canonical::parent_init::HirCanonicalParentInitPass::new(device)?,
+            hir_canonical_stmt_compact:
+                hir::canonical::stmt_compact::HirCanonicalStmtCompactPass::new(device)?,
+            hir_canonical_identity_aliases:
+                hir::canonical::identity_aliases::HirCanonicalIdentityAliasesPass::new(device)?,
+            hir_canonical_parent_links_init:
+                hir::canonical::parent_links_init::HirCanonicalParentLinksInitPass::new(device)?,
             hir_canonical_core: hir::canonical::core::HirCanonicalCorePass::new(device)?,
             hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass::new(device)?,
             hir_canonical_expr_forest_edges:
@@ -523,6 +536,10 @@ impl ParserPasses {
             hir_canonical_validate: hir::canonical::validate::HirCanonicalValidatePass::new(
                 device,
             )?,
+            hir_canonical_decl_index_clear:
+                hir::canonical::decl_index::HirCanonicalDeclIndexClearPass::new(device)?,
+            hir_canonical_decl_index_scatter:
+                hir::canonical::decl_index::HirCanonicalDeclIndexScatterPass::new(device)?,
             hir_canonical_call_arg_mark:
                 hir::canonical::call_args::mark::HirCanonicalCallArgMarkPass::new(device)?,
             exclusive_u32_local_scan: crate::gpu::passes_core::make_main_pass!(
@@ -591,11 +608,6 @@ impl ParserPasses {
             hir_expr_result_root_step: hir::expr::result_root_step::HirExprResultRootStepPass::new(
                 device,
             )?,
-            hir_expr_forest_edges: hir::expr::forest::edges::HirExprForestEdgesPass::new(device)?,
-            hir_expr_forest_root_init:
-                hir::expr::forest::root_init::HirExprForestRootInitPass::new(device)?,
-            hir_expr_forest_root_step:
-                hir::expr::forest::root_step::HirExprForestRootStepPass::new(device)?,
             hir_binary_span_apply: hir::binary::span::apply::HirBinarySpanApplyPass::new(device)?,
             hir_binary_span_step: hir::binary::span::step::HirBinarySpanStepPass::new(device)?,
             hir_binary_spans: hir::binary::spans::HirBinarySpansPass::new(device)?,
@@ -721,6 +733,7 @@ pub fn record_all_passes(
 
     // Tree parent recovery: one independent thread per emitted production.
     let n_tree = ctx.buffers.tree_capacity;
+    let n_canonical = ctx.buffers.hir_canonical_capacity;
     let n_tree_node_threads = ctx.buffers.tree_n_node_blocks.saturating_mul(256);
     let n_tree_prefix_positions = ctx.buffers.tree_capacity.saturating_add(1);
     p.tree_prefix_01
@@ -751,6 +764,7 @@ pub fn record_all_passes(
     p.tree_prev_sibling_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_nodes.record_pass(&mut ctx, E1D(n_tree))?;
+    p.hir_expr_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_semantic_prefix_local
         .record_pass(&mut ctx, E1D(n_tree_node_threads))?;
     p.hir_semantic_prefix_blocks
@@ -933,8 +947,6 @@ pub fn record_all_passes(
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_method_fields
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
-    p.hir_expr_fields
-        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_expr_result_root_step.record_steps_indirect(
         ctx.device,
         ctx.encoder,
@@ -992,16 +1004,6 @@ pub fn record_all_passes(
     p.hir_canonical_call_arg_mark
         .record_pass(&mut ctx, E1D(n_tree))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    p.hir_expr_forest_edges
-        .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
-    p.hir_expr_forest_root_init
-        .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
-    p.hir_expr_forest_root_step.record_steps_indirect(
-        ctx.device,
-        ctx.encoder,
-        ctx.buffers,
-        &ctx.buffers.tree_pointer_jump_dispatch_args,
-    )?;
     p.hir_array_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_array_element_links
         .record_pass(&mut ctx, E1D(n_tree))?;
@@ -1044,24 +1046,6 @@ pub fn record_all_passes(
     )?;
     p.hir_match_arm_scatter.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_struct_fields.record_pass(&mut ctx, E1D(n_tree))?;
-    p.hir_context_relations_init
-        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
-    if ctx.buffers.tree_capacity
-        <= hir::context::relations::step_small::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
-    {
-        p.hir_context_relations_step_small
-            .record_pass(&mut ctx, E1D(1))?;
-    } else {
-        p.hir_context_relations_step.record_steps_indirect(
-            ctx.device,
-            ctx.encoder,
-            ctx.buffers,
-            &hir_semantic_pointer_jump_dispatch_args,
-        )?;
-    }
-    p.hir_context_relations_scatter
-        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
-    p.hir_stmt_scope.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_struct_field_links
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_struct_lit_spans.record_pass(&mut ctx, E1D(n_tree))?;
@@ -1081,10 +1065,38 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_struct_field_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
-    p.hir_item_decl_tokens
+    record_canonical_hir_identity(&mut ctx, p)?;
+    p.hir_canonical_identity_aliases
+        .record_pass(&mut ctx, E1D(n_tree))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    record_canonical_fields(&mut ctx, p)?;
+    // Struct ranking owns the shared list workspace. Context propagation
+    // aliases those rows, so it can begin only after declaration/literal
+    // fields have been scattered into their compact table.
+    p.hir_context_relations_init
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
-
-    record_canonical_hir(&mut ctx, p)?;
+    if ctx.buffers.tree_capacity
+        <= hir::context::relations::step_small::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
+    {
+        p.hir_context_relations_step_small
+            .record_pass(&mut ctx, E1D(1))?;
+    } else {
+        p.hir_context_relations_step.record_steps_indirect(
+            ctx.device,
+            ctx.encoder,
+            ctx.buffers,
+            &hir_semantic_pointer_jump_dispatch_args,
+        )?;
+    }
+    p.hir_context_relations_scatter
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_stmt_scope
+        .record_pass(&mut ctx, E1D(n_canonical))?;
+    record_canonical_variants(&mut ctx, p)?;
+    record_canonical_call_arguments(&mut ctx, p)?;
+    record_canonical_array_elements(&mut ctx, p)?;
+    record_canonical_matches(&mut ctx, p)?;
+    record_canonical_hir_materialization(&mut ctx, p)?;
 
     Ok(())
 }
@@ -1093,6 +1105,69 @@ pub fn record_all_passes(
 /// records have been finalized. The raw-to-dense maps and pointer-jump rows
 /// are phase-local workspace and may be overwritten by later phases.
 pub fn record_canonical_hir(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+) -> Result<(), anyhow::Error> {
+    record_canonical_hir_identity(ctx, p)?;
+    p.hir_canonical_identity_aliases
+        .record_pass(ctx, InputElements::Elements1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    record_canonical_variants(ctx, p)?;
+    record_canonical_call_arguments(ctx, p)?;
+    record_canonical_array_elements(ctx, p)?;
+    record_canonical_matches(ctx, p)?;
+    record_canonical_fields(ctx, p)?;
+    record_canonical_hir_materialization(ctx, p)
+}
+
+/// Compacts enum variants and their payload types before the shared raw-family
+/// columns are reassigned to call reconstruction.
+pub fn record_canonical_variants(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+) -> Result<(), anyhow::Error> {
+    use InputElements::Elements1D as E1D;
+
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_variant_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_variant_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    record_canonical_scan(ctx, p, CanonicalConstruct::Variant)?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_variant_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_variant_payload_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_variant_payload_owner_init
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_semantic_parent_step
+        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    record_canonical_scan(ctx, p, CanonicalConstruct::VariantPayload)?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_variant_payload_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_variant_payload_ordinal
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    Ok(())
+}
+
+/// Selects token-anchored semantic nodes and establishes the stable dense/raw
+/// identity maps before later HIR enrichment allocates family metadata.
+pub fn record_canonical_hir_identity(
     ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
     p: &ParserPasses,
 ) -> Result<(), anyhow::Error> {
@@ -1126,18 +1201,23 @@ pub fn record_canonical_hir(
         .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
     p.hir_semantic_prefix_blocks
         .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_stmt_compact
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     p.hir_canonical_scatter
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    p.hir_canonical_parent_init
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    p.hir_semantic_parent_step
-        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_core
-        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    p.hir_canonical_nav
-        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    Ok(())
+}
+
+/// Compacts call arguments immediately after their raw owner/rank relation is
+/// finalized, before the shared raw-family workspace is reused.
+pub fn record_canonical_call_arguments(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+) -> Result<(), anyhow::Error> {
+    use InputElements::Elements1D as E1D;
+
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_call_arg_table_count.buffer,
@@ -1149,6 +1229,119 @@ pub fn record_canonical_hir(
         .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_call_arg_scatter
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    Ok(())
+}
+
+/// Compacts array elements immediately after raw list ranking, so later raw
+/// HIR families may reuse the same phase-local storage.
+pub fn record_canonical_array_elements(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+) -> Result<(), anyhow::Error> {
+    use InputElements::Elements1D as E1D;
+
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_array_element_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_array_element_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    record_canonical_scan(ctx, p, CanonicalConstruct::ArrayElement)?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_array_element_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    Ok(())
+}
+
+/// Compacts match arms and their pattern payloads as soon as raw match-list
+/// ranking completes, before the shared raw-family slots are reassigned.
+pub fn record_canonical_matches(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+) -> Result<(), anyhow::Error> {
+    use InputElements::Elements1D as E1D;
+
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_match_arm_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_match_arm_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    record_canonical_scan(ctx, p, CanonicalConstruct::MatchArm)?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_match_arm_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_match_payload_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_match_payload_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    record_canonical_scan(ctx, p, CanonicalConstruct::MatchPayload)?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_match_payload_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    Ok(())
+}
+
+/// Compacts declaration and literal fields after struct list ranking. Field
+/// ranges share the canonical owner-range storage used by match expressions;
+/// the owner kinds are disjoint.
+pub fn record_canonical_fields(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+) -> Result<(), anyhow::Error> {
+    use InputElements::Elements1D as E1D;
+
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_field_table_count.buffer,
+        0,
+        None,
+    );
+    p.hir_canonical_field_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    record_canonical_scan(ctx, p, CanonicalConstruct::Field)?;
+    p.hir_semantic_prefix_blocks
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_field_scatter
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    Ok(())
+}
+
+/// Materializes compact navigation, payloads, and side tables after raw
+/// classification passes have populated the facts referenced by canonical
+/// nodes. Identity compaction has already completed.
+pub fn record_canonical_hir_materialization(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+) -> Result<(), anyhow::Error> {
+    use InputElements::Elements1D as E1D;
+
+    p.hir_canonical_parent_links_init
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    p.hir_semantic_parent_step
+        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_core
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_nav
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     parser_clear_buffer(
         ctx.encoder,
@@ -1243,95 +1436,6 @@ pub fn record_canonical_hir(
     p.hir_canonical_path_scatter
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    parser_clear_buffer(
-        ctx.encoder,
-        &ctx.buffers.hir_field_table_count.buffer,
-        0,
-        None,
-    );
-    p.hir_canonical_field_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::Field)?;
-    p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_field_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    parser_clear_buffer(
-        ctx.encoder,
-        &ctx.buffers.hir_variant_table_count.buffer,
-        0,
-        None,
-    );
-    p.hir_canonical_variant_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::Variant)?;
-    p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_variant_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    parser_clear_buffer(
-        ctx.encoder,
-        &ctx.buffers.hir_variant_payload_table_count.buffer,
-        0,
-        None,
-    );
-    p.hir_canonical_variant_payload_owner_init
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    p.hir_semantic_parent_step
-        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::VariantPayload)?;
-    p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_variant_payload_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    p.hir_canonical_variant_payload_ordinal
-        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    parser_clear_buffer(
-        ctx.encoder,
-        &ctx.buffers.hir_match_arm_table_count.buffer,
-        0,
-        None,
-    );
-    p.hir_canonical_match_arm_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::MatchArm)?;
-    p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_match_arm_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    parser_clear_buffer(
-        ctx.encoder,
-        &ctx.buffers.hir_match_payload_table_count.buffer,
-        0,
-        None,
-    );
-    p.hir_canonical_match_payload_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::MatchPayload)?;
-    p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_match_payload_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    parser_clear_buffer(
-        ctx.encoder,
-        &ctx.buffers.hir_array_element_table_count.buffer,
-        0,
-        None,
-    );
-    p.hir_canonical_array_element_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::ArrayElement)?;
-    p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_array_element_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     p.hir_canonical_string_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
@@ -1363,9 +1467,9 @@ pub fn record_canonical_hir(
         ctx.device,
         ctx.encoder,
         ctx.buffers,
-        &ctx.buffers.hir_type_arg_link_a,
+        &ctx.buffers.hir_struct_lit_field_link_a,
         &ctx.buffers.hir_type_arg_rank_a,
-        &ctx.buffers.hir_type_arg_link_b,
+        &ctx.buffers.hir_struct_lit_field_link_b,
         &ctx.buffers.hir_type_arg_rank_b,
         "hir_canonical_predicate_owner_step",
     )?;
@@ -1383,6 +1487,13 @@ pub fn record_canonical_hir(
         // raw capacity so every parser row receives an explicit dense-ID
         // result before the type checker starts.
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_decl_index_clear
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    p.hir_canonical_decl_index_scatter
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     crate::gpu::buffers::record_tracked_buffer_phase_snapshot("compact_hir_materialized");
     Ok(())
 }
@@ -1435,6 +1546,6 @@ fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuf
         &buffers.hir_type_arg_link_b,
         &buffers.hir_type_arg_rank_b,
     ] {
-        parser_clear_buffer(encoder, &buffer.buffer, 0, Some(bytes));
+        parser_clear_buffer(encoder, buffer, 0, Some(bytes));
     }
 }

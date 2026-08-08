@@ -67,10 +67,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearCa
                 b.hir_call_parent_by_callee.as_entire_binding(),
             ),
             (
-                "hir_call_context_stmt_node".into(),
-                b.hir_call_context_stmt_node.as_entire_binding(),
-            ),
-            (
                 "hir_call_arg_start".into(),
                 b.hir_call_arg_start.as_entire_binding(),
             ),

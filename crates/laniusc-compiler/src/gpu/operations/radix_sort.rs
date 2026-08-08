@@ -369,7 +369,7 @@ fn select_strategy(
 /// A work domain can be generated on the GPU or fixed by the kernel shape.
 #[derive(Clone, Copy)]
 pub(crate) enum RadixDispatchDomain<'a> {
-    Indirect(&'a wgpu::Buffer),
+    Indirect(&'a LaniusBuffer<u32>),
     Direct(u32),
 }
 
@@ -408,7 +408,7 @@ impl From<RadixSortPasses<'_>> for OwnedRadixSortPasses {
 }
 
 enum OwnedRadixDispatchDomain {
-    Indirect(wgpu::Buffer),
+    Indirect(LaniusBuffer<u32>),
     Direct(u32),
 }
 

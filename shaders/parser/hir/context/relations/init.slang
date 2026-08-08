@@ -27,6 +27,7 @@ StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_semantic_parent;
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> canonical_raw_to_dense;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 
 RWStructuredBuffer<uint> hir_stmt_context_link_a;
@@ -89,7 +90,16 @@ bool valid_semantic_row(uint row, uint semantic_count)
 
 uint stmt_slot(uint node, uint slot)
 {
-    return node * STMT_RECORD_STRIDE + slot;
+    uint dense = valid_original_node(node) ? canonical_raw_to_dense[node] : INVALID;
+    return dense < gHirContextRelations.n
+        ? dense * STMT_RECORD_STRIDE + slot
+        : INVALID;
+}
+
+uint statement_kind(uint node)
+{
+    uint slot = stmt_slot(node, 0u);
+    return slot != INVALID ? hir_stmt_record[slot] : STMT_RECORD_KIND_NONE;
 }
 
 bool block_node(uint node)
@@ -119,7 +129,7 @@ bool context_statement_node(uint node, uint parent_node)
 {
     if (!nearest_statement_node(node, parent_node))
         return false;
-    uint kind = hir_stmt_record[stmt_slot(node, 0u)];
+    uint kind = statement_kind(node);
     return kind != STMT_RECORD_KIND_NONE || generic_statement_node(node);
 }
 

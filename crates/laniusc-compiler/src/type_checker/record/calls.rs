@@ -38,7 +38,7 @@ pub(in crate::type_checker) fn record_dependency_call_counts(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     visibility: &DependencyVisibilityState,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<()> {
     record_compute_indirect(
         encoder,
@@ -60,7 +60,7 @@ pub(in crate::type_checker) fn record_dependency_call_params(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     visibility: &DependencyVisibilityState,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<()> {
     record_compute_indirect(
         encoder,

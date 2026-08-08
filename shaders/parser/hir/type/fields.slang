@@ -92,9 +92,10 @@ void clear_type(uint i)
 
 void publish_path_type(uint i)
 {
-    uint path_node = first_child_node(i);
+    // The path root can be separated from this semantic type row by grammar
+    // forwarding nodes. The path-leaf scatter joins it to its nearest semantic
+    // owner after the path pointer jump has completed.
     hir_type_form[i] = HIR_TYPE_FORM_PATH;
-    hir_type_value_node[i] = path_node;
 }
 
 void publish_ref_type(uint i)

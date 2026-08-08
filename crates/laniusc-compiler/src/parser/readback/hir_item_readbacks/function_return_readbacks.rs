@@ -245,20 +245,62 @@ impl ParserHirFunctionReturnReadbacks {
             bufs.hir_kind.count,
         )?;
 
+        let hir_token_pos = read_u32_vec_padded(&self.hir_token_pos, tree_len, INVALID);
+        let hir_item_kind = read_u32_vec_padded(&self.hir_item_kind, tree_len, 0);
+        let hir_item_name_token_words = read_u32_vec(
+            &self.hir_item_name_token,
+            bufs.hir_item_name_token.count,
+        );
+        let hir_item_name_token = (0..tree_len)
+            .map(|node| {
+                if hir_item_kind[node] == 0 {
+                    return INVALID;
+                }
+                let anchor = hir_token_pos[node] as usize;
+                hir_item_name_token_words
+                    .get(anchor)
+                    .copied()
+                    .unwrap_or(INVALID)
+            })
+            .collect();
         let decoded = DecodedParserHirFunctionReturnReadbacks {
             ll1_status,
-            hir_kind: read_u32_vec(&self.hir_kind, tree_len),
-            hir_token_pos: read_u32_vec(&self.hir_token_pos, tree_len),
-            hir_token_end: read_u32_vec(&self.hir_token_end, tree_len),
-            hir_node_file_id: read_u32_vec(&self.hir_node_file_id, tree_len),
-            hir_type_form: read_u32_vec(&self.hir_type_form, tree_len),
-            hir_type_file_id: read_u32_vec(&self.hir_type_file_id, tree_len),
-            hir_fn_return_type_node: read_u32_vec(&self.hir_fn_return_type_node, tree_len),
-            hir_method_signature_flags: read_u32_vec(&self.hir_method_signature_flags, tree_len),
-            hir_method_name_token: read_u32_vec(&self.hir_method_name_token, tree_len),
-            hir_item_kind: read_u32_vec(&self.hir_item_kind, tree_len),
-            hir_item_name_token: read_u32_vec(&self.hir_item_name_token, tree_len),
-            hir_item_file_id: read_u32_vec(&self.hir_item_file_id, tree_len),
+            hir_kind: read_u32_vec_padded(&self.hir_kind, tree_len, 0),
+            hir_token_pos,
+            hir_token_end: read_u32_vec_padded(&self.hir_token_end, tree_len, INVALID),
+            hir_node_file_id: read_u32_vec_padded(
+                &self.hir_node_file_id,
+                tree_len,
+                INVALID,
+            ),
+            hir_type_form: read_u32_vec_padded(&self.hir_type_form, tree_len, 0),
+            hir_type_file_id: read_u32_vec_padded(
+                &self.hir_type_file_id,
+                tree_len,
+                INVALID,
+            ),
+            hir_fn_return_type_node: read_u32_vec_padded(
+                &self.hir_fn_return_type_node,
+                tree_len,
+                INVALID,
+            ),
+            hir_method_signature_flags: read_u32_vec_padded(
+                &self.hir_method_signature_flags,
+                tree_len,
+                0,
+            ),
+            hir_method_name_token: read_u32_vec_padded(
+                &self.hir_method_name_token,
+                tree_len,
+                INVALID,
+            ),
+            hir_item_kind,
+            hir_item_name_token,
+            hir_item_file_id: read_u32_vec_padded(
+                &self.hir_item_file_id,
+                tree_len,
+                INVALID,
+            ),
         };
         validate_hir_source_address_records(
             &decoded.hir_kind,

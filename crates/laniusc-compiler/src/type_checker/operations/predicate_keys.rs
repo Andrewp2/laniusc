@@ -106,7 +106,7 @@ pub(in crate::type_checker) struct PredicateKeyPipeline {
     definition: PredicateKeyDefinition,
     _seed_params: LaniusBuffer<PredicateKeyParams>,
     seed: wgpu::BindGroup,
-    row_dispatch_args: wgpu::Buffer,
+    row_dispatch_args: LaniusBuffer<u32>,
     sort: RadixSortOperation<PredicateKeyParams>,
 }
 
@@ -156,6 +156,12 @@ impl PredicateKeyPipeline {
                 .resources
                 .validate_graph_pass(definition.seed_pass, &[])?;
         }
+        let radix_bases_dispatch_args =
+            typed_buffer_from_resources(input.resources, "predicate_radix_bases_dispatch_args")?;
+        let hir_dispatch_args =
+            typed_buffer_from_resources(input.resources, "predicate_hir_dispatch_args")?;
+        let radix_prefix_dispatch_args =
+            typed_buffer_from_resources(input.resources, "predicate_radix_prefix_dispatch_args")?;
         let sort = definition.sort.operation(
             device,
             passes,
@@ -164,22 +170,10 @@ impl PredicateKeyPipeline {
             PREDICATE_KEY_SMALL_SORT_CAPACITY,
             definition.steps,
             RadixSortDispatch {
-                small: RadixDispatchDomain::Indirect(buffer_from_resources(
-                    input.resources,
-                    "predicate_radix_bases_dispatch_args",
-                )?),
-                rows: RadixDispatchDomain::Indirect(buffer_from_resources(
-                    input.resources,
-                    "predicate_hir_dispatch_args",
-                )?),
-                bucket_prefix: RadixDispatchDomain::Indirect(buffer_from_resources(
-                    input.resources,
-                    "predicate_radix_prefix_dispatch_args",
-                )?),
-                bucket_bases: RadixDispatchDomain::Indirect(buffer_from_resources(
-                    input.resources,
-                    "predicate_radix_bases_dispatch_args",
-                )?),
+                small: RadixDispatchDomain::Indirect(&radix_bases_dispatch_args),
+                rows: RadixDispatchDomain::Indirect(&hir_dispatch_args),
+                bucket_prefix: RadixDispatchDomain::Indirect(&radix_prefix_dispatch_args),
+                bucket_bases: RadixDispatchDomain::Indirect(&radix_bases_dispatch_args),
             },
             params,
         )?;
@@ -187,11 +181,10 @@ impl PredicateKeyPipeline {
             definition,
             _seed_params: seed_params,
             seed,
-            row_dispatch_args: buffer_from_resources(
+            row_dispatch_args: typed_buffer_from_resources(
                 input.resources,
                 "predicate_hir_dispatch_args",
-            )?
-            .clone(),
+            )?,
             sort,
         })
     }

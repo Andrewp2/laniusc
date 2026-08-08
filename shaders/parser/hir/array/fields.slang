@@ -8,13 +8,13 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirArray;
 
 RWStructuredBuffer<uint> hir_array_lit_first_element;
 RWStructuredBuffer<uint> hir_array_lit_element_count;
-RWStructuredBuffer<uint> hir_array_lit_context_stmt_node;
 RWStructuredBuffer<uint> hir_array_element_parent_lit;
 RWStructuredBuffer<uint> hir_array_element_ordinal;
 RWStructuredBuffer<uint> hir_array_element_next;
@@ -36,10 +36,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= gHirArray.n)
         return;
 
-    hir_array_lit_first_element[node] = INVALID;
-    hir_array_lit_element_count[node] = 0u;
-    hir_array_lit_context_stmt_node[node] = INVALID;
+    if (gHirArray.retain_debug_rows != 0u)
+    {
+        hir_array_lit_first_element[node] = INVALID;
+        hir_array_lit_element_count[node] = 0u;
+        hir_array_element_next[node] = INVALID;
+    }
     hir_array_element_parent_lit[node] = INVALID;
     hir_array_element_ordinal[node] = INVALID;
-    hir_array_element_next[node] = INVALID;
 }

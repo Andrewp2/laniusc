@@ -232,7 +232,7 @@ pub(in crate::type_checker) fn record_dependency_methods(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<()> {
     let Some(visibility) = &state.dependency_visibility else {
         return Ok(());
@@ -253,7 +253,7 @@ pub(in crate::type_checker) fn record_dependency_call_validation(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
     rebuild_type_index: bool,
 ) -> Result<()> {
     let Some(visibility) = &state.dependency_visibility else {
@@ -262,7 +262,7 @@ pub(in crate::type_checker) fn record_dependency_call_validation(
     if rebuild_type_index {
         record_dependency_type_index(passes, encoder, state)?;
     }
-    encoder.clear_buffer(&visibility.call_compare_scan_input.buffer, 0, None);
+    visibility.call_compare_scan_input.clear(encoder, 0, None);
     record_compute_indirect(
         encoder,
         &passes.kernel("type_checker/dependencies/08_validate_call_args"),

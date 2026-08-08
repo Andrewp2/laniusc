@@ -44,6 +44,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticPrefi
             ),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
+                "hir_expr_record".into(),
+                b.hir_expr_record.as_entire_binding(),
+            ),
+            (
                 "hir_semantic_flag".into(),
                 b.hir_semantic_flag.as_entire_binding(),
             ),

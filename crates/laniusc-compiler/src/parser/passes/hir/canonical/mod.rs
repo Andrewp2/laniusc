@@ -3,19 +3,22 @@ use encase::ShaderType;
 pub mod array_elements;
 pub mod call_args;
 pub mod core;
+pub mod decl_index;
 pub mod expr_forest;
 pub mod fields;
 pub mod generic_params;
+pub mod identity_aliases;
 pub mod local;
 pub mod mark;
 pub mod matches;
 pub mod methods;
 pub mod nav;
 pub mod params;
-pub mod parent_init;
+pub mod parent_links_init;
 pub mod paths;
 pub mod predicates;
 pub mod scatter;
+pub mod stmt_compact;
 pub mod strings;
 pub mod type_args;
 pub mod validate;
@@ -28,6 +31,7 @@ pub struct CanonicalHirParams {
     pub canonical_capacity: u32,
     pub uses_status_count: u32,
     pub local_ancestor_span: u32,
+    pub records_use_token_rows: u32,
 }
 
 #[cfg(test)]

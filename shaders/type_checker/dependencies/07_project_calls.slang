@@ -73,14 +73,23 @@ uint aggregate_word_count(uint type_i)
 {
     type_i = canonical_type_roots[type_i];
     uint base = type_i * TYPE_WORDS;
-    if (dependency_type_word(base) != INTERFACE_TYPE_DECLARATION)
+    uint kind = dependency_type_word(base);
+    uint library_id = kind == INTERFACE_TYPE_DECLARATION
+        ? dependency_type_word(base + 1u)
+        : dependency_type_library_id(type_i);
+    uint unit_id = kind == INTERFACE_TYPE_DECLARATION
+        ? dependency_type_word(base + 8u)
+        : dependency_type_unit_id(type_i);
+    uint local_index = kind == INTERFACE_TYPE_DECLARATION
+        ? dependency_type_word(base + 2u)
+        : dependency_type_local_index(type_i);
+    if (library_id == INVALID || unit_id == INVALID || local_index == INVALID)
         return 0u;
     uint declaration_i = dependency_find_declaration(
-        dependency_type_word(base + 1u),
-        dependency_type_word(base + 8u),
-        dependency_type_word(base + 2u));
-    return declaration_i < dependency_declaration_count()
-        ? declaration_field_count[declaration_i] : 0u;
+        library_id, unit_id, local_index);
+    if (declaration_i >= dependency_declaration_count())
+        return 0u;
+    return declaration_field_count[declaration_i];
 }
 
 void publish_call(

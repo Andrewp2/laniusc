@@ -26,7 +26,7 @@ pub(in crate::type_checker) fn create_name_bind_groups(
         &compaction_resources,
         passes,
         NAME_COMPACTION,
-        buffer_from_resources(resources, "token_active_dispatch_args")?,
+        &typed_buffer_from_resources(resources, "token_active_dispatch_args")?,
     )?;
 
     let mut name_resources = compaction_resources.to_binding_map();

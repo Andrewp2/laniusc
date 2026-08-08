@@ -53,6 +53,30 @@ impl PagedReadback {
         }
         Ok(output)
     }
+
+    /// Reads bytes relative to a logical buffer view, preserving its arena
+    /// offset and preventing a read from crossing into an adjacent occupant.
+    pub(crate) fn read_buffer<T>(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        source: &LaniusBuffer<T>,
+        source_offset: u64,
+        byte_len: usize,
+        label: &str,
+    ) -> Result<Vec<u8>> {
+        if source_offset.saturating_add(byte_len as u64) > source.byte_size as u64 {
+            return Err(anyhow!("{label} exceeds its logical GPU buffer view"));
+        }
+        self.read(
+            device,
+            queue,
+            &source.buffer,
+            source.absolute_offset(source_offset),
+            byte_len,
+            label,
+        )
+    }
 }
 
 /// Decodes exactly `N` little-endian `u32` words from readback bytes.

@@ -32,7 +32,6 @@ StructuredBuffer<HirMethodSignature> compact_method_signatures;
 RWStructuredBuffer<uint> generic_decl_owner_by_node_a;
 RWStructuredBuffer<uint> predicate_bound_list_by_node_a;
 RWStructuredBuffer<uint> generic_decl_parent_jump_a;
-RWStructuredBuffer<uint> type_decl_hir_node_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -122,14 +121,4 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? compact_hir_core[node].parent
         : INVALID;
 
-    uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    // The compact domain is dense and is visited by the same dispatch. This
-    // branch is independent of the raw predicate-owner outputs above.
-    if (node < compact_count)
-    {
-        HirPayload payload = compact_hir_payload[node];
-        uint name_token = payload.b;
-        if (generic_decl_item_kind(payload.a) && valid_token(name_token))
-            type_decl_hir_node_by_token[name_token] = node;
-    }
 }

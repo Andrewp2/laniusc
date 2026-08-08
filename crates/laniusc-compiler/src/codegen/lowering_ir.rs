@@ -1685,6 +1685,7 @@ fn build_lowering_compiler_graph(
         accesses: vec![
             PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_hir_core", hir_core),
+            PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_field_count", hir_field_count),
             PassAccess::read("compact_fields", hir_fields),
             PassAccess::write(
@@ -3169,7 +3170,6 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("semantic_lir_total", semantic_total),
                 PassAccess::read("semantic_lir_core", semantic_core),
                 PassAccess::read("semantic_lir_operands", semantic_operands),
-                PassAccess::read("semantic_lir_strings", semantic_strings),
                 PassAccess::read("semantic_schedule_order", schedule_order),
                 PassAccess::write(
                     "x86_position_by_semantic",
@@ -3793,7 +3793,6 @@ fn build_lowering_compiler_graph(
                     PassAccess::read("target_lir_total", target_total),
                     PassAccess::read("wasm_local_index_by_decl_token", wasm.local_index_by_token),
                     PassAccess::read("semantic_owner_by_instruction", semantic_owner),
-                    PassAccess::read("semantic_lir_core", semantic_core),
                     PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                     PassAccess::read("wasm_lir_functions", wasm.functions),
                     PassAccess::read("target_lir_operands", target_operands.unwrap()),
@@ -3984,7 +3983,6 @@ fn build_lowering_compiler_graph(
                     wasm_abi.expect("Wasm ABI resources").local_index_by_token,
                 ),
                 PassAccess::read("semantic_owner_by_instruction", semantic_owner),
-                PassAccess::read("semantic_lir_core", semantic_core),
                 PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 PassAccess::read(
                     "wasm_lir_functions",
@@ -4272,6 +4270,11 @@ fn build_lowering_compiler_graph(
             accesses: vec![
                 PassAccess::read("semantic_lir_function_total", semantic_function_total),
                 PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::read("target_function_count", function_count),
+                PassAccess::read(
+                    "target_function_index_by_semantic",
+                    function_index_by_semantic,
+                ),
                 PassAccess::write("x86_object_definition_flag", object.definition_flags),
             ],
         })?;
@@ -5138,7 +5141,6 @@ mod tests {
             ),
             ("lir.semantic.scan.apply", "scan/counted/02_apply"),
             ("lir.semantic.scatter", "codegen/lir/semantic/scatter"),
-            ("lir.semantic.validate", "codegen/lir/semantic/validate"),
             ("lir.semantic.call_args", "codegen/lir/semantic/call_args"),
         ] {
             let reflection = crate::reflection::parse_reflection_from_file(
@@ -5146,7 +5148,10 @@ mod tests {
             )
             .unwrap();
             graph
-                .validate_pass_reflection(graph.pass_id(pass_name).unwrap(), &reflection)
+                .validate_complete_pass_reflection(
+                    graph.pass_id(pass_name).unwrap(),
+                    &reflection,
+                )
                 .unwrap();
         }
     }
@@ -5224,7 +5229,10 @@ mod tests {
             )
             .unwrap();
             graph
-                .validate_pass_reflection(graph.pass_id(pass_name).unwrap(), &reflection)
+                .validate_complete_pass_reflection(
+                    graph.pass_id(pass_name).unwrap(),
+                    &reflection,
+                )
                 .unwrap();
         }
     }
@@ -5329,13 +5337,40 @@ mod tests {
             ("lir.x86.artifact.clear", "codegen/lir/x86/artifact_clear"),
             ("lir.x86.emit", "codegen/lir/x86/emit"),
             ("lir.x86.runtime.emit", "codegen/lir/x86/runtime_emit"),
+            (
+                "artifact.x86.object.normalize_status",
+                "codegen/lir/x86/object_normalize_status",
+            ),
+            (
+                "artifact.x86.object.relocation_flags",
+                "codegen/lir/x86/object_relocation_flags",
+            ),
+            (
+                "artifact.x86.object.definition_flags",
+                "codegen/lir/x86/object_definition_flags",
+            ),
+            (
+                "artifact.x86.object.relocations",
+                "codegen/lir/x86/object_relocations",
+            ),
+            (
+                "artifact.x86.object.definitions",
+                "codegen/lir/x86/object_definitions",
+            ),
+            (
+                "artifact.x86.object.bytes",
+                "codegen/lir/x86/object_bytes",
+            ),
         ] {
             let reflection = crate::reflection::parse_reflection_from_file(
                 crate::shader_artifacts::artifact_path(&format!("{artifact}.reflect.json")),
             )
             .unwrap();
             graph
-                .validate_pass_reflection(graph.pass_id(pass_name).unwrap(), &reflection)
+                .validate_complete_pass_reflection(
+                    graph.pass_id(pass_name).unwrap(),
+                    &reflection,
+                )
                 .unwrap();
         }
     }

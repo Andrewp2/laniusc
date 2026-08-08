@@ -41,6 +41,7 @@ StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> call_return_aggregate_word_count;
 StructuredBuffer<uint> call_result_instance;
+StructuredBuffer<uint> type_instance_aggregate_word_count;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -180,6 +181,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             {
                 call.return_ref_tag = 3u;
                 call.return_ref_payload = result_instance;
+                uint instance_words = type_instance_aggregate_word_count[result_instance];
+                if (instance_words != 0u)
+                    semantic_aggregate_word_count_by_hir[row] = instance_words;
             }
         }
         call.receiver_hir = valid_hir(callee) &&

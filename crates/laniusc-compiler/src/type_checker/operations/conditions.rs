@@ -45,7 +45,7 @@ impl ConditionFinalizationOperation {
         resources: &ResourceMap<'_>,
         kernels: &KernelRegistry,
         hir_capacity: u32,
-        method_dispatch_args: &wgpu::Buffer,
+        method_dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         let direct = |spec| {
             ComputeOperation::direct_spec(device, graph, resources, kernels, spec, hir_capacity)

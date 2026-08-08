@@ -2,11 +2,19 @@
 import atomics;
 import byte_packing;
 
-struct Params { uint n; uint source_len; uint pool_capacity; uint uses_status_count; };
+struct Params {
+    uint n;
+    uint source_len;
+    uint pool_capacity;
+    uint uses_status_count;
+    uint token_capacity;
+    uint retain_debug_rows;
+};
 ConstantBuffer<Params> gHirString;
 ByteAddressBuffer source_bytes;
 StructuredBuffer<uint> hir_string_node;
 StructuredBuffer<uint> hir_string_count;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_string_start;
 StructuredBuffer<uint> hir_expr_string_len;
 StructuredBuffer<uint> hir_string_data_offset;
@@ -60,8 +68,14 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     if (row >= hir_string_count[0])
         return;
     uint node = hir_string_node[row];
-    uint start = hir_expr_string_start[node];
-    uint raw_len = hir_expr_string_len[node];
+    uint literal_row = gHirString.retain_debug_rows != 0u ? node : hir_token_pos[node];
+    uint literal_capacity = gHirString.retain_debug_rows != 0u
+        ? gHirString.n
+        : gHirString.token_capacity;
+    if (literal_row == 0xffffffffu || literal_row >= literal_capacity)
+        return;
+    uint start = hir_expr_string_start[literal_row];
+    uint raw_len = hir_expr_string_len[literal_row];
     uint chunk = (raw_len + WG_SIZE - 1u) / WG_SIZE;
     uint begin = min(raw_len, ltid.x * chunk);
     uint end = min(raw_len, begin + chunk);
@@ -97,7 +111,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint incoming_count = ltid.x == 0u ? 0u : scan_count0[ltid.x - 1u];
     uint state = ltid.x == 0u ? 0u : scan_end0[ltid.x - 1u];
     uint out_i = incoming_count;
-    uint pool_base = hir_string_data_offset[node];
+    uint pool_base = hir_string_data_offset[literal_row];
     for (uint i = begin; i < end; i += 1u)
     {
         uint b = source_byte(start + i);
@@ -111,7 +125,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     }
     if (ltid.x == WG_SIZE - 1u)
     {
-        hir_string_decoded_len[node] = scan_count0[WG_SIZE - 1u];
+        hir_string_decoded_len[literal_row] = scan_count0[WG_SIZE - 1u];
         scatter_byte(pool_base + scan_count0[WG_SIZE - 1u], 0u);
     }
 }

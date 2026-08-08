@@ -22,6 +22,9 @@ pub struct ParserHirItemReadbacks {
     pub hir_semantic_next_sibling: wgpu::Buffer,
     pub hir_semantic_depth: wgpu::Buffer,
     pub hir_semantic_child_index: wgpu::Buffer,
+    pub hir_canonical_core: wgpu::Buffer,
+    pub hir_canonical_payload: wgpu::Buffer,
+    pub hir_canonical_nearest_fn: wgpu::Buffer,
     pub hir_type_form: wgpu::Buffer,
     pub hir_type_value_node: wgpu::Buffer,
     pub hir_type_len_token: wgpu::Buffer,
@@ -35,7 +38,6 @@ pub struct ParserHirItemReadbacks {
     pub hir_fn_return_type_node: wgpu::Buffer,
     pub hir_item_kind: wgpu::Buffer,
     pub hir_item_name_token: wgpu::Buffer,
-    pub hir_item_decl_token: wgpu::Buffer,
     pub hir_item_namespace: wgpu::Buffer,
     pub hir_item_visibility: wgpu::Buffer,
     pub hir_item_path_start: wgpu::Buffer,
@@ -123,6 +125,9 @@ pub struct DecodedParserHirItemReadbacks {
     pub hir_semantic_next_sibling: Vec<u32>,
     pub hir_semantic_depth: Vec<u32>,
     pub hir_semantic_child_index: Vec<u32>,
+    pub hir_canonical_core_words: Vec<u32>,
+    pub hir_canonical_payload_words: Vec<u32>,
+    pub hir_canonical_nearest_fn: Vec<u32>,
     pub hir_type_form: Vec<u32>,
     pub hir_type_value_node: Vec<u32>,
     pub hir_type_len_token: Vec<u32>,
@@ -280,6 +285,18 @@ impl ParserHirItemReadbacks {
                 "rb.parser.hir_item_records.hir_semantic_child_index",
                 bufs.hir_semantic_child_index.byte_size as u64,
             ),
+            hir_canonical_core: mk(
+                "rb.parser.hir_item_records.hir_canonical_core",
+                bufs.hir_core.byte_size as u64,
+            ),
+            hir_canonical_payload: mk(
+                "rb.parser.hir_item_records.hir_canonical_payload",
+                bufs.hir_payload.byte_size as u64,
+            ),
+            hir_canonical_nearest_fn: mk(
+                "rb.parser.hir_item_records.hir_canonical_nearest_fn",
+                bufs.hir_canonical_nearest_fn.byte_size as u64,
+            ),
             hir_type_form: mk(
                 "rb.parser.hir_item_records.hir_type_form",
                 bufs.hir_type_form.byte_size as u64,
@@ -331,10 +348,6 @@ impl ParserHirItemReadbacks {
             hir_item_name_token: mk(
                 "rb.parser.hir_item_records.hir_item_name_token",
                 bufs.hir_item_name_token.byte_size as u64,
-            ),
-            hir_item_decl_token: mk(
-                "rb.parser.hir_item_records.hir_item_decl_token",
-                bufs.hir_item_decl_token.byte_size as u64,
             ),
             hir_item_namespace: mk(
                 "rb.parser.hir_item_records.hir_item_namespace",
@@ -710,6 +723,27 @@ impl ParserHirItemReadbacks {
             bufs.hir_semantic_child_index.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
+            &bufs.hir_core,
+            0,
+            &self.hir_canonical_core,
+            0,
+            bufs.hir_core.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_payload,
+            0,
+            &self.hir_canonical_payload,
+            0,
+            bufs.hir_payload.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_canonical_nearest_fn,
+            0,
+            &self.hir_canonical_nearest_fn,
+            0,
+            bufs.hir_canonical_nearest_fn.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
             &bufs.hir_type_form,
             0,
             &self.hir_type_form,
@@ -799,13 +833,6 @@ impl ParserHirItemReadbacks {
             &self.hir_item_name_token,
             0,
             bufs.hir_item_name_token.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.hir_item_decl_token,
-            0,
-            &self.hir_item_decl_token,
-            0,
-            bufs.hir_item_decl_token.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_item_namespace,
@@ -1330,6 +1357,9 @@ impl ParserHirItemReadbacks {
         map("hir_semantic_next_sibling", &self.hir_semantic_next_sibling);
         map("hir_semantic_depth", &self.hir_semantic_depth);
         map("hir_semantic_child_index", &self.hir_semantic_child_index);
+        map("hir_canonical_core", &self.hir_canonical_core);
+        map("hir_canonical_payload", &self.hir_canonical_payload);
+        map("hir_canonical_nearest_fn", &self.hir_canonical_nearest_fn);
         map("hir_type_form", &self.hir_type_form);
         map("hir_type_value_node", &self.hir_type_value_node);
         map("hir_type_len_token", &self.hir_type_len_token);
@@ -1346,7 +1376,6 @@ impl ParserHirItemReadbacks {
         map("hir_fn_return_type_node", &self.hir_fn_return_type_node);
         map("hir_item_kind", &self.hir_item_kind);
         map("hir_item_name_token", &self.hir_item_name_token);
-        map("hir_item_decl_token", &self.hir_item_decl_token);
         map("hir_item_namespace", &self.hir_item_namespace);
         map("hir_item_visibility", &self.hir_item_visibility);
         map("hir_item_path_start", &self.hir_item_path_start);
@@ -1637,6 +1666,7 @@ impl ParserHirItemReadbacks {
         }
         let hir_variant_payload_count =
             read_u32_vec_padded(&self.hir_variant_payload_count, tree_len, 0);
+        let hir_item_decl_token = project_hir_item_decl_tokens(&hir_item_kind, &hir_token_pos);
 
         let decoded = DecodedParserHirItemReadbacks {
             ll1_status,
@@ -1651,6 +1681,18 @@ impl ParserHirItemReadbacks {
             hir_semantic_next_sibling: read_u32_vec(&self.hir_semantic_next_sibling, tree_len),
             hir_semantic_depth: read_u32_vec(&self.hir_semantic_depth, tree_len),
             hir_semantic_child_index: read_u32_vec(&self.hir_semantic_child_index, tree_len),
+            hir_canonical_core_words: read_u32_vec(
+                &self.hir_canonical_core,
+                tree_len.saturating_mul(4),
+            ),
+            hir_canonical_payload_words: read_u32_vec(
+                &self.hir_canonical_payload,
+                tree_len.saturating_mul(4),
+            ),
+            hir_canonical_nearest_fn: read_u32_vec(
+                &self.hir_canonical_nearest_fn,
+                tree_len,
+            ),
             hir_type_form: read_u32_vec(&self.hir_type_form, tree_len),
             hir_type_value_node: read_u32_vec(&self.hir_type_value_node, tree_len),
             hir_type_len_token: read_u32_vec(&self.hir_type_len_token, tree_len),
@@ -1664,7 +1706,7 @@ impl ParserHirItemReadbacks {
             hir_fn_return_type_node: read_u32_vec(&self.hir_fn_return_type_node, tree_len),
             hir_item_kind,
             hir_item_name_token,
-            hir_item_decl_token: read_u32_vec(&self.hir_item_decl_token, tree_len),
+            hir_item_decl_token,
             hir_item_namespace,
             hir_item_visibility,
             hir_item_path_start,

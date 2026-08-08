@@ -42,10 +42,10 @@ impl HirExprResultRootStepPass {
         if steps % 2 == 1 {
             crate::gpu::passes_core::flush_deferred_compute(encoder);
             let bytes = u64::from(buffers.tree_capacity) * 4;
-            encoder.copy_buffer_to_buffer(
-                &buffers.hir_expr_result_root_scratch_node.buffer,
+            buffers.hir_expr_result_root_scratch_node.copy_to(
+                encoder,
                 0,
-                &buffers.hir_expr_result_root_node.buffer,
+                &buffers.hir_expr_result_root_node,
                 0,
                 bytes,
             );

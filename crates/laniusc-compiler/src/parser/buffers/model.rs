@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use encase::ShaderType;
 
 use super::{
@@ -9,7 +11,7 @@ use super::{
     TreePrefixMaxBuildStep,
     TreePrefixScanStep,
 };
-use crate::gpu::buffers::LaniusBuffer;
+use crate::gpu::buffers::{LaniusBuffer, TrackedBufferView};
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType, Default)]
@@ -258,6 +260,8 @@ pub struct GpuHirView {
     pub core: LaniusBuffer<HirCore>,
     pub links: LaniusBuffer<HirLinks>,
     pub payload: LaniusBuffer<HirPayload>,
+    /// Dense type-declaration HIR row keyed by its declaration-name token.
+    pub type_decl_by_name_token: LaniusBuffer<u32>,
     /// Lexical source-token scope end keyed by dense declaration HIR id.
     pub scope_end: LaniusBuffer<u32>,
     /// Dense nearest enclosing loop keyed by dense HIR id.
@@ -328,66 +332,92 @@ pub struct GpuHirView {
 }
 
 impl GpuHirView {
+    /// Complete physical buffer surface retained by compact HIR.
+    fn retained_buffers(&self) -> Vec<TrackedBufferView<'_>> {
+        vec![
+            (&self.count).into(),
+            (&self.core).into(),
+            (&self.links).into(),
+            (&self.payload).into(),
+            (&self.type_decl_by_name_token).into(),
+            (&self.scope_end).into(),
+            (&self.nearest_loop).into(),
+            (&self.nearest_block).into(),
+            (&self.nearest_control).into(),
+            (&self.nearest_fn).into(),
+            (&self.fn_return_type).into(),
+            (&self.type_root_owner).into(),
+            (&self.type_alias_target).into(),
+            (&self.const_type).into(),
+            (&self.const_value).into(),
+            (&self.expr_parent).into(),
+            (&self.expr_root).into(),
+            (&self.call_arg_count).into(),
+            (&self.call_args).into(),
+            (&self.param_count).into(),
+            (&self.params).into(),
+            (&self.param_ranges).into(),
+            (&self.type_arg_count).into(),
+            (&self.type_args).into(),
+            (&self.type_arg_ranges).into(),
+            (&self.generic_param_count).into(),
+            (&self.generic_params).into(),
+            (&self.generic_param_ranges).into(),
+            (&self.path_count).into(),
+            (&self.paths).into(),
+            (&self.path_segment_count).into(),
+            (&self.path_segments).into(),
+            (&self.field_count).into(),
+            (&self.fields).into(),
+            (&self.variant_count).into(),
+            (&self.variants).into(),
+            (&self.variant_payload_start).into(),
+            (&self.variant_payload_count).into(),
+            (&self.variant_payload_row_count).into(),
+            (&self.variant_payloads).into(),
+            (&self.match_arm_count).into(),
+            (&self.match_arms).into(),
+            (&self.match_payload_start).into(),
+            (&self.match_payload_count).into(),
+            (&self.match_payload_row_count).into(),
+            (&self.match_payloads).into(),
+            (&self.array_element_start).into(),
+            (&self.array_element_count).into(),
+            (&self.array_element_row_count).into(),
+            (&self.array_elements).into(),
+            (&self.string_count).into(),
+            (&self.strings).into(),
+            (&self.string_data_words).into(),
+            (&self.string_pool_len).into(),
+            (&self.method_count).into(),
+            (&self.method_cores).into(),
+            (&self.method_signatures).into(),
+            (&self.predicate_count).into(),
+            (&self.predicates).into(),
+            (&self.semantic_facts).into(),
+        ]
+    }
+
+    /// Physical allocations retained by the compact semantic artifact.
+    ///
+    /// Parser logical buffers can alias a common physical arena. Consumers
+    /// must therefore exclude storage by allocation identity, not by field
+    /// name, before reusing parser scratch after HIR materialization.
+    pub(crate) fn retained_allocation_ids(&self) -> HashSet<u64> {
+        self.retained_buffers()
+            .into_iter()
+            .filter_map(TrackedBufferView::allocation_id)
+            .collect()
+    }
+
     /// Physical identities consumed by type checking. Keeping this list with
     /// the phase artifact prevents resident bind-group invalidation from
     /// silently omitting a newly added HIR table.
     pub(crate) fn typecheck_buffers(&self) -> Vec<&wgpu::Buffer> {
-        vec![
-            &self.count,
-            &self.core,
-            &self.links,
-            &self.payload,
-            &self.semantic_facts,
-            &self.scope_end,
-            &self.nearest_loop,
-            &self.nearest_block,
-            &self.nearest_control,
-            &self.nearest_fn,
-            &self.expr_parent,
-            &self.expr_root,
-            &self.call_arg_count,
-            &self.call_args,
-            &self.fn_return_type,
-            &self.type_root_owner,
-            &self.type_alias_target,
-            &self.const_type,
-            &self.param_count,
-            &self.params,
-            &self.param_ranges,
-            &self.method_count,
-            &self.method_cores,
-            &self.method_signatures,
-            &self.predicate_count,
-            &self.predicates,
-            &self.type_arg_count,
-            &self.type_args,
-            &self.type_arg_ranges,
-            &self.path_count,
-            &self.paths,
-            &self.path_segment_count,
-            &self.path_segments,
-            &self.generic_param_count,
-            &self.generic_params,
-            &self.generic_param_ranges,
-            &self.field_count,
-            &self.fields,
-            &self.variant_count,
-            &self.variants,
-            &self.variant_payload_start,
-            &self.variant_payload_count,
-            &self.variant_payload_row_count,
-            &self.variant_payloads,
-            &self.match_arm_count,
-            &self.match_arms,
-            &self.match_payload_start,
-            &self.match_payload_count,
-            &self.match_payload_row_count,
-            &self.match_payloads,
-            &self.array_element_start,
-            &self.array_element_count,
-            &self.array_element_row_count,
-            &self.array_elements,
-        ]
+        self.retained_buffers()
+            .into_iter()
+            .map(|buffer| buffer.buffer)
+            .collect()
     }
 }
 
@@ -415,6 +445,7 @@ pub struct ParserBuffers {
     pub hir_enum_match_capacity: u32,
     pub hir_struct_capacity: u32,
     pub hir_canonical_capacity: u32,
+    pub retain_debug_hir_buffers: bool,
 
     // The active parser uses the adjacent-pair production stream; this status
     // buffer is shared by parser validation and tree/HIR passes. Host LL(1)
@@ -638,14 +669,18 @@ pub struct ParserBuffers {
     /// Winning raw-node-plus-one for each source-token anchor. Zero means no
     /// canonical node claimed the token.
     pub hir_canonical_anchor_owner: LaniusBuffer<u32>,
-    /// Prefix-before value for every raw parse node. It is a dense id only
-    /// when `hir_semantic_flag[raw]` is set by the canonical mark pass.
-    /// Raw-row prefix storage used during canonical construction. After the
-    /// final canonical validation pass, the same allocation is republished as
-    /// the semantic raw-row to dense-HIR alias map consumed by type checking.
+    /// Prefix-before value for every raw parse node.
     pub hir_canonical_prefix_before_raw: LaniusBuffer<u32>,
     pub hir_canonical_dense_to_raw: LaniusBuffer<u32>,
+    /// Final semantic projection from every raw wrapper to a dense HIR id.
+    pub hir_canonical_alias_to_dense: LaniusBuffer<u32>,
+    /// Dense ids only for rows that won canonical identity arbitration.
     pub hir_canonical_raw_to_dense: LaniusBuffer<u32>,
+    /// Four-word statement classification records gathered by canonical HIR
+    /// id. Raw-node references inside each record are translated by consumers.
+    pub hir_canonical_stmt_record: LaniusBuffer<u32>,
+    /// Four-word expression records gathered by canonical HIR id.
+    pub hir_canonical_expr_record: LaniusBuffer<u32>,
     pub hir_core: LaniusBuffer<HirCore>,
     pub hir_links: LaniusBuffer<HirLinks>,
     pub hir_payload: LaniusBuffer<HirPayload>,
@@ -659,6 +694,9 @@ pub struct ParserBuffers {
     pub hir_canonical_nearest_block: LaniusBuffer<u32>,
     pub hir_canonical_nearest_control: LaniusBuffer<u32>,
     pub hir_canonical_nearest_fn: LaniusBuffer<u32>,
+    /// Encoded nearest statement context keyed by dense HIR id. The high bit
+    /// distinguishes grammar statement wrappers from semantic statements.
+    pub hir_canonical_context_stmt: LaniusBuffer<u32>,
     pub hir_canonical_fn_return_type: LaniusBuffer<u32>,
     pub hir_canonical_type_root_owner: LaniusBuffer<u32>,
     pub hir_canonical_type_alias_target: LaniusBuffer<u32>,
@@ -672,6 +710,7 @@ pub struct ParserBuffers {
     pub hir_call_arg_table_count: LaniusBuffer<u32>,
     pub hir_call_arg_family_flag: LaniusBuffer<u32>,
     pub hir_call_args: LaniusBuffer<HirCallArg>,
+    pub hir_call_arg_ranges: LaniusBuffer<HirRange>,
     pub hir_param_table_count: LaniusBuffer<u32>,
     pub hir_param_family_flag: LaniusBuffer<u32>,
     pub hir_param_rows: LaniusBuffer<HirParam>,
@@ -709,6 +748,8 @@ pub struct ParserBuffers {
     /// compact match construction begins.
     pub hir_match_arm_raw_to_row: LaniusBuffer<u32>,
     pub hir_match_arm_rows: LaniusBuffer<HirMatchArm>,
+    pub hir_match_arm_ranges: LaniusBuffer<HirRange>,
+    pub hir_match_pattern_to_arm: LaniusBuffer<u32>,
     pub hir_match_compact_payload_start: LaniusBuffer<u32>,
     pub hir_match_compact_payload_count: LaniusBuffer<u32>,
     pub hir_match_payload_table_count: LaniusBuffer<u32>,
@@ -774,7 +815,6 @@ pub struct ParserBuffers {
     pub hir_type_alias_owner_value_b: LaniusBuffer<u32>,
     pub hir_item_kind: LaniusBuffer<u32>,
     pub hir_item_name_token: LaniusBuffer<u32>,
-    pub hir_item_decl_token: LaniusBuffer<u32>,
     pub hir_item_namespace: LaniusBuffer<u32>,
     pub hir_item_visibility: LaniusBuffer<u32>,
     pub hir_item_path_start: LaniusBuffer<u32>,
@@ -892,12 +932,8 @@ pub struct ParserBuffers {
     pub hir_array_element_previous: LaniusBuffer<u32>,
     pub hir_expr_record: LaniusBuffer<u32>,
     pub hir_expr_name_role: LaniusBuffer<u32>,
-    pub hir_expr_result_node: LaniusBuffer<u32>,
     pub hir_expr_result_root_node: LaniusBuffer<u32>,
     pub hir_expr_result_root_scratch_node: LaniusBuffer<u32>,
-    pub hir_expr_parent_node: LaniusBuffer<u32>,
-    pub hir_expr_forest_root_node: LaniusBuffer<u32>,
-    pub hir_expr_forest_status: LaniusBuffer<u32>,
     pub hir_binary_span_link_a: LaniusBuffer<u32>,
     pub hir_binary_span_link_b: LaniusBuffer<u32>,
     pub hir_binary_span_start_a: LaniusBuffer<u32>,
@@ -986,6 +1022,7 @@ impl GpuHirView {
             core: buffers.hir_core.clone(),
             links: buffers.hir_links.clone(),
             payload: buffers.hir_payload.clone(),
+            type_decl_by_name_token: buffers.hir_canonical_anchor_owner.clone(),
             scope_end: buffers.hir_canonical_scope_end.clone(),
             nearest_loop: buffers.hir_canonical_nearest_loop.clone(),
             nearest_block: buffers.hir_canonical_nearest_block.clone(),

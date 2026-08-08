@@ -4,7 +4,7 @@ use super::*;
 pub(in crate::type_checker) fn record_predicate_method_contract_keys_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    predicate_active_dispatch_args: &wgpu::Buffer,
+    predicate_active_dispatch_args: &LaniusBuffer<u32>,
     groups: &PredicateBindGroups,
 ) -> Result<()> {
     groups.method_contract_keys.record(passes, encoder)?;

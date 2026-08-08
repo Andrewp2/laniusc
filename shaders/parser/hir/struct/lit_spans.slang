@@ -3,6 +3,8 @@
 // The grammar owner for a struct literal starts at the field block. HIR users
 // need the full source expression span, including the head path/name.
 
+import generated_parse_production_ids;
+
 struct Params
 {
     uint n;
@@ -12,8 +14,10 @@ struct Params
 ConstantBuffer<Params> gHirStruct;
 
 StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_struct_lit_head_node;
 
 RWStructuredBuffer<uint> hir_token_pos;
 
@@ -38,6 +42,12 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
+uint previous_sibling_node(uint node)
+{
+    uint previous = prev_sibling[node];
+    return valid_node(previous) && parent[previous] == parent[node] ? previous : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -46,8 +56,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node) || hir_kind[node] != HIR_STRUCT_LITERAL_EXPR)
         return;
 
-    uint head = hir_struct_lit_head_node[node];
-    if (!valid_node(head))
+    if (node_kind[node] != PROD_STRUCT_LIT)
+        return;
+    uint head = previous_sibling_node(node);
+    if (!valid_node(head) || node_kind[head] != PROD_PATH)
         return;
 
     uint head_start = hir_token_pos[head];

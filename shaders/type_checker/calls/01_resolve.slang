@@ -25,7 +25,6 @@ RWStructuredBuffer<uint> call_param_row_count;
 RWStructuredBuffer<uint> call_generic_slot_type;
 RWStructuredBuffer<uint> call_generic_slot_ordinal;
 RWStructuredBuffer<uint> call_const_slot_len;
-RWStructuredBuffer<uint> call_has_array_arg;
 RWStructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> function_lookup_key;
 RWStructuredBuffer<uint> function_lookup_fn;
@@ -114,7 +113,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (i < gParams.n_hir_nodes)
     {
-        call_has_array_arg[i] = 0u;
         call_result_instance[i] = INVALID;
     }
 

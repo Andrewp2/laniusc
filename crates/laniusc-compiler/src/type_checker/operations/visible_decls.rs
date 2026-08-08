@@ -21,7 +21,7 @@ impl VisibleDeclSort {
         n_blocks: u32,
     ) -> Result<Self> {
         let dispatch_args =
-            buffer_from_resources(resources, "hir_visible_decl_key_radix_dispatch_args")?;
+            typed_buffer_from_resources(resources, "hir_visible_decl_key_radix_dispatch_args")?;
         let capacity = capacity.max(1);
         let radix_bytes = visible_decl_key_radix_bytes(capacity);
         let params = |key_step| ModuleKeyRadixParams {
@@ -65,7 +65,7 @@ impl VisibleDeclSort {
             visible_decl_key_radix_steps(capacity),
             RadixSortDispatch {
                 small: RadixDispatchDomain::Direct(256),
-                rows: RadixDispatchDomain::Indirect(dispatch_args),
+                rows: RadixDispatchDomain::Indirect(&dispatch_args),
                 bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS * 256),
                 bucket_bases: RadixDispatchDomain::Direct(256),
             },
@@ -75,7 +75,7 @@ impl VisibleDeclSort {
         Ok(Self {
             _dispatch_params: dispatch_params,
             dispatch,
-            dispatch_args: typed_alias_storage_u32(dispatch_args, 3),
+            dispatch_args: typed_alias_storage_u32(&dispatch_args, 3),
             seed,
             sort,
         })

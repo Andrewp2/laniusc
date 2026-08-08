@@ -146,7 +146,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         obligation_pair_scan,
         obligation_pair_dispatch,
         obligation_pair_dispatch_args: typed_alias_storage_u32(
-            buffer_from_resources(resources, "predicate_obligation_pair_dispatch_args")?,
+            &typed_buffer_from_resources::<u32>(
+                resources,
+                "predicate_obligation_pair_dispatch_args",
+            )?,
             3,
         ),
         validate_obligation_pairs,

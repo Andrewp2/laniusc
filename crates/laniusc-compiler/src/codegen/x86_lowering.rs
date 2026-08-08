@@ -761,14 +761,14 @@ mod tests {
             &gpu.device,
             "test.x86_lir.page_core",
             &record_bytes(&[
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 1, 0],
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_ADD, 3, 0, u32::MAX, 2, 0],
-                [opcode::SEMANTIC_LIR_OP_RETURN, 0, 0, u32::MAX, 3, 0],
-                [opcode::SEMANTIC_LIR_OP_BRANCH, 0, 0, u32::MAX, 5, 0],
-                [opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN, 0, 0, u32::MAX, 6, 0],
-                [opcode::SEMANTIC_LIR_OP_CALL, 3, 0, u32::MAX, 4, 0],
-                [opcode::SEMANTIC_LIR_OP_CALL_SYMBOL, 3, 0, u32::MAX, 7, 0],
+                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 1, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_ADD, 3, 0, u32::MAX, 2, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_RETURN, 0, 0, u32::MAX, 3, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_BRANCH, 0, 0, u32::MAX, 5, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN, 0, 0, u32::MAX, 6, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_CALL, 3, 0, u32::MAX, 4, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_CALL_SYMBOL, 3, 0, u32::MAX, 7, 0, 0],
             ]),
             8,
         );
@@ -794,11 +794,7 @@ mod tests {
                 8,
             )
             .unwrap();
-        gpu.queue.write_buffer(
-            &semantic_order.buffer,
-            0,
-            &record_bytes(&[[1u32, 0, 2, 3, 5, 6, 4, 7]]),
-        );
+        semantic_order.write(&gpu.queue, 0, &record_bytes(&[[1u32, 0, 2, 3, 5, 6, 4, 7]]));
         let semantic_owners =
             storage_ro_from_u32s(&gpu.device, "test.x86_lir.semantic_owners", &[0; 8]);
         let semantic_ops = storage_ro_from_u32s(
@@ -828,8 +824,7 @@ mod tests {
                 1,
             )
             .unwrap();
-        gpu.queue
-            .write_buffer(&call_arg_total.buffer, 0, &2u32.to_le_bytes());
+        call_arg_total.write(&gpu.queue, 0, &2u32.to_le_bytes());
         let call_arg_start_by_hir = storage_ro_from_u32s(
             &gpu.device,
             "test.x86_lir.call_arg_start_by_hir",
@@ -852,7 +847,7 @@ mod tests {
         let aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
             "test.x86_lir.aggregate_elements",
-            &record_bytes(&[[u32::MAX; 5]; 4]),
+            &record_bytes(&[[u32::MAX; 7]; 4]),
             4,
         );
         let string_rows = storage_ro_from_bytes::<SemanticLirString>(
@@ -953,27 +948,27 @@ mod tests {
         let status_rb = readback_bytes(&gpu.device, "test.x86_lir.status.rb", 16, 4);
         let frame_slots_rb = readback_bytes(&gpu.device, "test.x86_lir.frame_slots.rb", 32, 8);
         let saved_mask_rb = readback_bytes(&gpu.device, "test.x86_lir.saved_mask.rb", 4, 1);
-        encoder.copy_buffer_to_buffer(&output.total.buffer, 0, &total_rb.buffer, 0, 4);
-        encoder.copy_buffer_to_buffer(&output.core.buffer, 0, &core_rb.buffer, 0, 160);
-        encoder.copy_buffer_to_buffer(&output.operands.buffer, 0, &operands_rb.buffer, 0, 160);
-        encoder.copy_buffer_to_buffer(&output.locations.buffer, 0, &locations_rb.buffer, 0, 160);
-        encoder.copy_buffer_to_buffer(&functions.count.buffer, 0, &function_count_rb.buffer, 0, 4);
-        encoder.copy_buffer_to_buffer(&functions.rows.buffer, 0, &functions_rb.buffer, 0, 64);
-        encoder.copy_buffer_to_buffer(&status.buffer, 0, &status_rb.buffer, 0, 16);
-        encoder.copy_buffer_to_buffer(
-            &stage.decl_location_by_token.buffer,
-            0,
-            &frame_slots_rb.buffer,
-            0,
-            32,
-        );
-        encoder.copy_buffer_to_buffer(
-            &stage.saved_gpr_mask_by_function.buffer,
-            0,
-            &saved_mask_rb.buffer,
-            0,
-            4,
-        );
+        output.total.copy_to(&mut encoder, 0, &total_rb, 0, 4);
+        output.core.copy_to(&mut encoder, 0, &core_rb, 0, 160);
+        output
+            .operands
+            .copy_to(&mut encoder, 0, &operands_rb, 0, 160);
+        output
+            .locations
+            .copy_to(&mut encoder, 0, &locations_rb, 0, 160);
+        functions
+            .count
+            .copy_to(&mut encoder, 0, &function_count_rb, 0, 4);
+        functions
+            .rows
+            .copy_to(&mut encoder, 0, &functions_rb, 0, 64);
+        status.copy_to(&mut encoder, 0, &status_rb, 0, 16);
+        stage
+            .decl_location_by_token
+            .copy_to(&mut encoder, 0, &frame_slots_rb, 0, 32);
+        stage
+            .saved_gpr_mask_by_function
+            .copy_to(&mut encoder, 0, &saved_mask_rb, 0, 4);
         gpu.queue.submit(Some(encoder.finish()));
 
         assert_eq!(read_words(&gpu.device, &total_rb)[0], 10);

@@ -15,6 +15,8 @@ pub(crate) struct Params {
     pub(crate) n: u32,
     pub(crate) source_len: u32,
     pub(crate) uses_status_count: u32,
+    pub(crate) token_capacity: u32,
+    pub(crate) retain_debug_rows: u32,
 }
 
 /// Pass that records literal token ranges and value-source references.
@@ -48,6 +50,8 @@ impl HirLiteralValuesPass {
                 n: buffers.tree_capacity,
                 source_len,
                 uses_status_count: u32::from(buffers.tree_count_uses_status),
+                token_capacity: buffers.token_input_capacity,
+                retain_debug_rows: u32::from(buffers.retain_debug_hir_buffers),
             },
         );
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
@@ -68,6 +72,10 @@ impl HirLiteralValuesPass {
             (
                 "hir_expr_record".into(),
                 buffers.hir_expr_record.as_entire_binding(),
+            ),
+            (
+                "hir_token_pos".into(),
+                buffers.hir_token_pos.as_entire_binding(),
             ),
             (
                 "hir_type_len_token".into(),

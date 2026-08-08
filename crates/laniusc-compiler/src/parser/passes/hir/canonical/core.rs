@@ -51,6 +51,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 b.hir_canonical_raw_to_dense.as_entire_binding(),
             ),
             (
+                "canonical_alias_to_dense".into(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
+            ),
+            (
                 "parent_value".into(),
                 b.hir_semantic_parent_value_a.as_entire_binding(),
             ),
@@ -147,7 +151,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             ),
             (
                 "hir_stmt_record".into(),
-                b.hir_stmt_record.as_entire_binding(),
+                b.hir_canonical_stmt_record.as_entire_binding(),
             ),
             (
                 "hir_stmt_scope_end".into(),
@@ -155,7 +159,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             ),
             (
                 "hir_expr_record".into(),
-                b.hir_expr_record.as_entire_binding(),
+                b.hir_canonical_expr_record.as_entire_binding(),
             ),
             (
                 "hir_expr_int_value".into(),
@@ -186,8 +190,16 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 b.hir_call_arg_count.as_entire_binding(),
             ),
             (
-                "hir_call_context_stmt_node".into(),
-                b.hir_call_context_stmt_node.as_entire_binding(),
+                "hir_call_arg_ranges".into(),
+                b.hir_call_arg_ranges.as_entire_binding(),
+            ),
+            (
+                "hir_match_arm_ranges".into(),
+                b.hir_match_arm_ranges.as_entire_binding(),
+            ),
+            (
+                "hir_field_ranges".into(),
+                b.hir_match_arm_ranges.as_entire_binding(),
             ),
             (
                 "hir_member_receiver_node".into(),
@@ -202,32 +214,12 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 b.hir_member_name_token.as_entire_binding(),
             ),
             (
-                "hir_array_lit_context_stmt_node".into(),
-                b.hir_array_lit_context_stmt_node.as_entire_binding(),
-            ),
-            (
-                "hir_struct_lit_context_stmt_node".into(),
-                b.hir_struct_lit_context_stmt_node.as_entire_binding(),
-            ),
-            (
                 "hir_match_scrutinee_node".into(),
                 b.hir_match_scrutinee_node.as_entire_binding(),
             ),
             (
-                "hir_nearest_loop_node".into(),
-                b.hir_nearest_loop_node.as_entire_binding(),
-            ),
-            (
-                "hir_nearest_block_node".into(),
-                b.hir_nearest_block_node.as_entire_binding(),
-            ),
-            (
-                "hir_nearest_enclosing_control_node".into(),
-                b.hir_nearest_enclosing_control_node.as_entire_binding(),
-            ),
-            (
-                "hir_nearest_fn_node".into(),
-                b.hir_nearest_fn_node.as_entire_binding(),
+                "hir_canonical_context_stmt".into(),
+                b.hir_canonical_context_stmt.as_entire_binding(),
             ),
             ("hir_core".into(), b.hir_core.as_entire_binding()),
             ("hir_links".into(), b.hir_links.as_entire_binding()),
@@ -239,22 +231,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             (
                 "hir_canonical_scope_end".into(),
                 b.hir_canonical_scope_end.as_entire_binding(),
-            ),
-            (
-                "hir_canonical_nearest_loop".into(),
-                b.hir_canonical_nearest_loop.as_entire_binding(),
-            ),
-            (
-                "hir_canonical_nearest_block".into(),
-                b.hir_canonical_nearest_block.as_entire_binding(),
-            ),
-            (
-                "hir_canonical_nearest_control".into(),
-                b.hir_canonical_nearest_control.as_entire_binding(),
-            ),
-            (
-                "hir_canonical_nearest_fn".into(),
-                b.hir_canonical_nearest_fn.as_entire_binding(),
             ),
             (
                 "hir_canonical_fn_return_type".into(),

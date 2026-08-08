@@ -182,6 +182,52 @@ async fn main() -> Result<()> {
                     "  node[{i}] prod={kind} hir={hir} pos={pos} end={end} parent={parent} child={first_child} next={next_sibling} subtree_end={subtree_end} callee={callee} args=({arg_start},{arg_end},{arg_count}) member=({member_receiver},{member_receiver_token},{member_name_token},{member_name_text:?}) array=({array_first},{array_count},{array_parent},{array_ordinal},{array_next}) match=({match_arm_start},{match_arm_count}) arm=({match_pattern},{match_payload_start},{match_payload_count},{match_result},{match_next}) token={token_text:?}"
                 );
             }
+            for dense in 0..parsed.hir_canonical_count as usize {
+                let raw = parsed
+                    .hir_canonical_dense_to_raw
+                    .get(dense)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let raw_index = raw as usize;
+                let kind = parsed.hir_kind.get(raw_index).copied().unwrap_or(u32::MAX);
+                let token = parsed
+                    .hir_token_pos
+                    .get(raw_index)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let type_form = parsed
+                    .hir_type_form
+                    .get(raw_index)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let type_value = parsed
+                    .hir_type_value_node
+                    .get(raw_index)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let type_leaf = parsed
+                    .hir_type_path_leaf_node
+                    .get(raw_index)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let token_text = tokens
+                    .get(token as usize)
+                    .map(|token| &input[token.start..token.start + token.len])
+                    .unwrap_or("");
+                println!(
+                    "  canonical[{dense}] raw={raw} hir={kind} token={token} type=({type_form},{type_value},{type_leaf}) text={token_text:?}"
+                );
+            }
+            println!("  compact fields: {}", parsed.hir_field_owner.len());
+            for row in 0..parsed.hir_field_owner.len() {
+                println!(
+                    "  field[{row}] owner={} name_token={} value={} ordinal={}",
+                    parsed.hir_field_owner[row],
+                    parsed.hir_field_name_token[row],
+                    parsed.hir_field_value[row],
+                    parsed.hir_field_ordinal[row],
+                );
+            }
         }
         return Ok(());
     }

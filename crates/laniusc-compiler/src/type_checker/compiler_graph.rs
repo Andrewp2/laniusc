@@ -2084,7 +2084,7 @@ fn build_graph(
         module_path_key_radix_bucket_base in Declarations => u64::from(NAME_RADIX_BUCKETS) * 4;
     });
 
-    graph_resources!(graph, Workspace {
+    graph_resources!(graph, Input {
         _type_decl_hir_node_by_token as "type_decl_hir_node_by_token" in Tokens => token_rows * 4;
     });
     graph_resources!(graph, Workspace {
@@ -2616,6 +2616,13 @@ fn build_graph(
         _hir_visible_decl_scan_block_sum as "hir_visible_decl_scan_block_sum" in HirNodes => hir_blocks * 4;
         _hir_visible_decl_scan_prefix_a as "hir_visible_decl_scan_prefix_a" in HirNodes => hir_blocks * 4;
         _hir_visible_decl_scan_prefix_b as "hir_visible_decl_scan_prefix_b" in HirNodes => hir_blocks * 4;
+    });
+    // These columns and their count form one lookup table consumed across the
+    // collection, sort, scope-tree, and query recorders. Keep the table under
+    // one stable allocation contract until those recorders are represented by
+    // a single executable graph schedule; coloring the columns independently
+    // can expose a later workspace occupant to an earlier prebuilt bind group.
+    graph_resources!(graph, Resident {
         hir_visible_decl_count_out in Declarations => 4;
         hir_visible_decl_owner_fn in Declarations => token_rows * 4;
         hir_visible_decl_name_id in Declarations => token_rows * 4;
@@ -2719,7 +2726,6 @@ fn build_graph(
         _return_block_flags as "return_block_flags" in HirNodes => hir_rows * 4;
     });
     graph_resources!(graph, Workspace {
-        _call_has_array_arg as "call_has_array_arg" in Calls => hir_rows * 4;
         _call_result_instance as "call_result_instance" in Calls => hir_rows * 4;
         _call_generic_return_arg_node as "call_generic_return_arg_node" in Calls => hir_rows * 4;
     });
@@ -2809,6 +2815,12 @@ fn build_graph(
         semantic_function_host_service_by_hir in HirNodes => hir_rows * 4;
         semantic_control_depth_by_hir in HirNodes => hir_rows * 4;
         semantic_expr_scalar_type_by_hir in HirNodes => hir_rows * 4;
+        semantic_type_ref_tag_by_hir in HirNodes => hir_rows * 4;
+        semantic_type_ref_payload_by_hir in HirNodes => hir_rows * 4;
+        semantic_type_generic_param_slot_by_hir in HirNodes => hir_rows * 4;
+        semantic_type_external_library_id_by_hir in HirNodes => hir_rows * 4;
+        semantic_type_external_unit_id_by_hir in HirNodes => hir_rows * 4;
+        semantic_type_external_local_index_by_hir in HirNodes => hir_rows * 4;
         semantic_calls_by_hir in Calls => hir_rows * std::mem::size_of::<GpuCheckedCallArtifact>() as u64;
         semantic_expr_ref_tag_by_hir in HirNodes => hir_rows * 4;
         semantic_expr_ref_payload_by_hir in HirNodes => hir_rows * 4;
@@ -3699,6 +3711,17 @@ fn build_graph(
     CALLS_ENTRYPOINT_PROJECT.register_kernel(&mut graph, kernels)?;
     CALLS_FUNCTIONS.register_kernel(&mut graph, kernels)?;
     CALLS_PARAM_TYPES.register_kernel(&mut graph, kernels)?;
+    // The resident recorder completes call-argument compaction before method
+    // collection and struct-field sorting. Keep the graph in that same order
+    // so compact call rows remain live while the later radix sort runs.
+    CALLS_INTRINSICS.register_kernel(&mut graph, kernels)?;
+    CALLS_ARGUMENT_CLEAR.register_kernel(&mut graph, kernels)?;
+    CALLS_ARGUMENT_PACK.register_kernel(&mut graph, kernels)?;
+    CALL_ARGUMENT_COMPACTION.register(
+        &mut graph,
+        kernels,
+        prefix_scan_hierarchy_levels(hir_blocks),
+    )?;
     METHODS_CLEAR.register_kernel(&mut graph, kernels)?;
     METHODS_COLLECT.register_kernel(&mut graph, kernels)?;
     METHODS_ATTACH_METADATA.register_kernel(&mut graph, kernels)?;
@@ -3841,20 +3864,11 @@ fn build_graph(
     graph.require_complete_reflection(SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS)?;
     CALL_PARAM_ROW_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(token_blocks))?;
     CALLS_PARAM_SCATTER.register_kernel(&mut graph, kernels)?;
-    CALLS_INTRINSICS.register_kernel(&mut graph, kernels)?;
-    CALLS_ARGUMENT_CLEAR.register_kernel(&mut graph, kernels)?;
-    CALLS_ARGUMENT_PACK.register_kernel(&mut graph, kernels)?;
-    CALL_ARGUMENT_COMPACTION.register(
-        &mut graph,
-        kernels,
-        prefix_scan_hierarchy_levels(hir_blocks),
-    )?;
     CALLS_RESOLVE.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_INITIALIZE.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_CONSUME.register_kernel(&mut graph, kernels)?;
     CALLS_APPLY_ARGUMENTS.register_kernel(&mut graph, kernels)?;
     CALLS_RESULT_INSTANCE_PROJECT.register_kernel(&mut graph, kernels)?;
-    CALLS_ARRAY_STATE_PUBLISH.register_kernel(&mut graph, kernels)?;
     GENERIC_CLAIM_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(call_arg_blocks))?;
     CALLS_GENERIC_CLAIM_EMIT.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
@@ -4086,6 +4100,9 @@ fn build_graph(
     METHODS_MARK_CALL_RETURN_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE.register_kernel(&mut graph, kernels)?;
+    // Array-call state is published only after the recorder has completed
+    // method resolution and its repeated argument-reconciliation passes.
+    CALLS_ARRAY_STATE_PUBLISH.register_kernel(&mut graph, kernels)?;
     {
         let predicate_clear_overrides = reflected_bindings![
             "predicate_trait_impl_trait_type_node" => predicate_trait_impl_trait_type_node: Write,
@@ -4343,6 +4360,23 @@ fn build_graph(
         kernels,
         "type_checker/semantic/artifact/00_calls",
         reflected_bindings![
+            "call_fn_index" => _call_fn_index: Read,
+            "backend_call_fn_index" => backend_call_fn_index: Read,
+            "call_dependency_library_id" => _call_dependency_library_id: Read,
+            "call_dependency_unit_id" => _call_dependency_unit_id: Read,
+            "call_dependency_local_index" => _call_dependency_local_index: Read,
+            "call_dependency_host_service" => _call_dependency_host_service: Read,
+            "call_intrinsic_tag" => _call_intrinsic_tag: Read,
+            "call_return_type" => _call_return_type: Read,
+            "call_return_type_token" => _call_return_type_token: Read,
+            "call_return_aggregate_word_count" => _call_return_aggregate_word_count: Read,
+            "call_result_instance" => call_result_instance: Read,
+            "type_instance_aggregate_word_count" => _type_instance_aggregate_word_count: Read,
+            "type_expr_ref_tag" => _type_expr_ref_tag: Read,
+            "type_expr_ref_payload" => _type_expr_ref_payload: Read,
+            "type_generic_param_slot_by_token" => _type_generic_param_slot_by_token: Read,
+            "decl_type_ref_tag" => decl_type_ref_tag: Read,
+            "decl_type_ref_payload" => decl_type_ref_payload: Read,
             "semantic_calls_by_hir" => semantic_calls_by_hir: Write,
             "semantic_aggregate_word_count_by_hir" => semantic_aggregate_word_count_by_hir: Write,
         ],
@@ -4367,6 +4401,16 @@ fn build_graph(
             SEMANTIC_EXPRESSION_REFS_PROJECT_PASS,
         )?;
     }
+    // The resident recorder interleaves method-key work between the struct
+    // field sort and the later member/initializer queries. That physical
+    // schedule is not fully represented by graph nodes yet, so the sorted
+    // field order must not share a slot with method radix workspace during
+    // that interval.
+    graph.dedicate_workspace(struct_field_key_order)?;
+    // Declaration-token projection is initialized with generic/type-instance
+    // state, then consumed by member, aggregate, alias, and predicate passes
+    // interleaved by the resident recorder. Keep the indexed relation intact
+    // until that recorder is represented by the graph's exact pass order.
     // Struct-literal context and field facts are produced before several
     // aggregate-validation passes that are not all graph-owned yet. Their
     // output row survives into lowering, while the remaining columns stay
@@ -4410,6 +4454,17 @@ fn build_graph(
             "semantic_control_depth_by_hir" => semantic_control_depth_by_hir: Write,
             "compact_expr_scalar_type" => final_scalar: Read,
             "semantic_expr_scalar_type_by_hir" => semantic_expr_scalar_type_by_hir: Write,
+            "type_expr_ref_tag" => _type_expr_ref_tag: Read,
+            "type_expr_ref_payload" => _type_expr_ref_payload: Read,
+            "external_type_library_id" => _external_type_library_id: Read,
+            "external_type_unit_id" => _external_type_unit_id: Read,
+            "external_type_local_index" => _external_type_local_index: Read,
+            "semantic_type_ref_tag_by_hir" => semantic_type_ref_tag_by_hir: Write,
+            "semantic_type_ref_payload_by_hir" => semantic_type_ref_payload_by_hir: Write,
+            "semantic_type_generic_param_slot_by_hir" => semantic_type_generic_param_slot_by_hir: Write,
+            "semantic_type_external_library_id_by_hir" => semantic_type_external_library_id_by_hir: Write,
+            "semantic_type_external_unit_id_by_hir" => semantic_type_external_unit_id_by_hir: Write,
+            "semantic_type_external_local_index_by_hir" => semantic_type_external_local_index_by_hir: Write,
         ],
     )?;
     // The resident recorder computes control depth before the still-partly
@@ -4879,13 +4934,15 @@ mod tests {
             resource("type_expr_ref_payload"),
             resource("type_generic_param_slot_by_token"),
             resource("type_const_param_slot_by_token"),
-            resource("type_decl_hir_node_by_token"),
         ];
         for resource in type_reference_resources {
             assert!(
                 matches!(
                     graph.resource(resource).unwrap().class,
-                    ResourceClass::Workspace | ResourceClass::Output
+                    ResourceClass::Input
+                        | ResourceClass::Workspace
+                        | ResourceClass::Resident
+                        | ResourceClass::Output
                 ),
                 "type-reference and generic-slot relations must be graph-owned workspace or retained outputs",
             );
@@ -4897,9 +4954,17 @@ mod tests {
                 .collect::<std::collections::BTreeSet<_>>()
                 .len(),
             type_reference_resources.len(),
-            "the type-instance clear pass initializes all five relations together",
+            "the type-instance clear pass initializes all four relations together",
         );
-        let visible_workspace = [
+        assert_eq!(
+            graph
+                .resource(resource("type_decl_hir_node_by_token"))
+                .unwrap()
+                .class,
+            ResourceClass::Input,
+            "the compact parser declaration index remains an external graph input",
+        );
+        let visible_resources = [
             graph.resource_id("hir_visible_decl_flag").unwrap(),
             graph.resource_id("hir_visible_decl_prefix").unwrap(),
             graph
@@ -4935,11 +5000,13 @@ mod tests {
                 .unwrap(),
             graph.resource_id("hir_visible_decl_scope_tree").unwrap(),
         ];
-        for resource in visible_workspace {
-            assert_eq!(
-                graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "visible-declaration compaction scratch must be graph-owned",
+        for resource in visible_resources {
+            assert!(
+                matches!(
+                    graph.resource(resource).unwrap().class,
+                    ResourceClass::Workspace | ResourceClass::Resident
+                ),
+                "visible-declaration compaction storage must be graph-owned",
             );
         }
         assert_ne!(
@@ -5653,6 +5720,14 @@ mod tests {
                 continue;
             }
             let id = graph.resource_id(resource.name).unwrap();
+            if resource.name == "struct_field_key_order" {
+                assert_eq!(
+                    graph.lifetime(id).unwrap().producer,
+                    graph.pass_id(TYPE_INSTANCES_STRUCT_FIELD_SORT_SEED_PASS),
+                    "dedicated sorted-field storage keeps its real graph producer",
+                );
+                continue;
+            }
             assert_eq!(
                 graph.lifetime(id).unwrap().producer,
                 Some(resident_clear),
@@ -5903,6 +5978,12 @@ mod tests {
             resource("semantic_function_host_service_by_hir"),
             resource("semantic_control_depth_by_hir"),
             resource("semantic_expr_scalar_type_by_hir"),
+            resource("semantic_type_ref_tag_by_hir"),
+            resource("semantic_type_ref_payload_by_hir"),
+            resource("semantic_type_generic_param_slot_by_hir"),
+            resource("semantic_type_external_library_id_by_hir"),
+            resource("semantic_type_external_unit_id_by_hir"),
+            resource("semantic_type_external_local_index_by_hir"),
         ] {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
@@ -5943,7 +6024,6 @@ mod tests {
         for resource in [
             resource("compact_expr_scalar_type.a"),
             resource("compact_expr_scalar_type.b"),
-            resource("call_has_array_arg"),
             resource("call_result_instance"),
             resource("call_generic_return_arg_node"),
             resource("call_arg_row_count_out"),
@@ -5955,11 +6035,6 @@ mod tests {
                 "type-check implementation state must not cross the semantic artifact boundary",
             );
         }
-        assert_ne!(
-            slot(resource("call_has_array_arg")),
-            slot(resource("call_result_instance")),
-            "simultaneously writable call state must not alias",
-        );
         assert!(
             graph
                 .pass_id(CALLS_ARGUMENT_MATCH_INITIALIZE.name)

@@ -45,6 +45,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalFiel
                 "token_feature_flags".into(),
                 b.token_feature_flags.as_entire_binding(),
             ),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
             (
                 "decl_owner".into(),
                 b.hir_struct_field_parent_struct.as_entire_binding(),

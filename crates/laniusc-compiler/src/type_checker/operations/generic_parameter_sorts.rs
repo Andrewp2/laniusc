@@ -25,7 +25,7 @@ impl GenericParameterSorts {
         radix_steps: u32,
     ) -> Result<Self> {
         let dispatch_args =
-            buffer_from_resources(resources, "generic_param_key_radix_dispatch_args")?;
+            typed_buffer_from_resources(resources, "generic_param_key_radix_dispatch_args")?;
         let make_params = |key_step| ModuleKeyRadixParams {
             module_capacity: capacity,
             reserved: radix_bytes,
@@ -63,7 +63,7 @@ impl GenericParameterSorts {
             return Ok(Self {
                 _dispatch_params: dispatch_params,
                 dispatch,
-                dispatch_args: typed_alias_storage_u32(dispatch_args, 3),
+                dispatch_args: typed_alias_storage_u32(&dispatch_args, 3),
                 small: Some(small),
                 key: None,
                 slot: None,
@@ -81,7 +81,7 @@ impl GenericParameterSorts {
                 radix_steps,
                 RadixSortDispatch {
                     small: RadixDispatchDomain::Direct(256),
-                    rows: RadixDispatchDomain::Indirect(dispatch_args),
+                    rows: RadixDispatchDomain::Indirect(&dispatch_args),
                     bucket_prefix: RadixDispatchDomain::Direct(
                         NAME_RADIX_BUCKETS.saturating_mul(256),
                     ),
@@ -100,7 +100,7 @@ impl GenericParameterSorts {
                 radix_steps,
                 RadixSortDispatch {
                     small: RadixDispatchDomain::Direct(256),
-                    rows: RadixDispatchDomain::Indirect(dispatch_args),
+                    rows: RadixDispatchDomain::Indirect(&dispatch_args),
                     bucket_prefix: RadixDispatchDomain::Direct(
                         NAME_RADIX_BUCKETS.saturating_mul(256),
                     ),
@@ -111,7 +111,7 @@ impl GenericParameterSorts {
         Ok(Self {
             _dispatch_params: dispatch_params,
             dispatch,
-            dispatch_args: typed_alias_storage_u32(dispatch_args, 3),
+            dispatch_args: typed_alias_storage_u32(&dispatch_args, 3),
             small: None,
             key: Some(key),
             slot: Some(slot),

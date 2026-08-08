@@ -1,7 +1,13 @@
 import hir_records;
 import canonical_hir_identity;
 
-struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
+struct Params {
+    uint raw_capacity;
+    uint canonical_capacity;
+    uint uses_status_count;
+    uint local_ancestor_span;
+    uint records_use_token_rows;
+};
 
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> raw_to_hir;
@@ -40,13 +46,7 @@ uint semantic_anchor(uint raw)
 }
 uint mapped(uint raw)
 {
-    if (raw >= gCanonical.raw_capacity) return INVALID;
-    uint direct = raw_to_hir[raw];
-    if (direct != INVALID) return direct;
-    uint anchor = semantic_anchor(raw);
-    if (anchor >= gCanonical.canonical_capacity) return INVALID;
-    uint winner_plus_one = canonical_anchor_owner[anchor] & 0x0fffffffu;
-    return winner_plus_one == 0u ? INVALID : raw_to_hir[winner_plus_one - 1u];
+    return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID;
 }
 
 [shader("compute")]
@@ -57,10 +57,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint count = min(raw_string_count[0u], gCanonical.canonical_capacity);
     if (row >= count) return;
     uint raw = raw_string_node[row];
+    uint literal_row = gCanonical.records_use_token_rows != 0u
+        ? hir_token_pos[raw]
+        : raw;
     HirString string_row;
     string_row.node = mapped(raw);
-    string_row.data_offset = raw_string_data_offset[raw];
-    string_row.decoded_len = raw_string_decoded_len[raw];
+    string_row.data_offset = raw_string_data_offset[literal_row];
+    string_row.decoded_len = raw_string_decoded_len[literal_row];
     string_row.file_id = hir_token_file_id[raw];
     hir_strings[row] = string_row;
     if (string_row.node != INVALID)

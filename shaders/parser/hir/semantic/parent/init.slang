@@ -18,7 +18,6 @@ ConstantBuffer<Params> gHirSemantic;
 
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> parent;
-StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_node_dense_id;
 
 RWStructuredBuffer<uint> hir_semantic_parent_link_a;
@@ -27,7 +26,6 @@ RWStructuredBuffer<uint> hir_semantic_parent_value_a;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint HIR_NONE = 0u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -64,7 +62,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         if (!valid_node(ancestor) || ancestor == node)
             return;
-        if (hir_kind[ancestor] != HIR_NONE)
+        if (hir_node_dense_id[ancestor] != INVALID)
         {
             hir_semantic_parent_value_a[node] = hir_node_dense_id[ancestor];
             return;

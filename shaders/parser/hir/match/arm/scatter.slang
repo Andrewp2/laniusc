@@ -11,6 +11,8 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint family_flags;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirMatch;
@@ -66,10 +68,13 @@ void publish_arm(uint node)
 
     uint ordinal = hir_match_arm_rank_a[node];
     uint previous = hir_match_arm_previous[node];
-    atomic_u32_min(hir_match_arm_start, owner, node);
-    atomic_u32_max(hir_match_arm_count, owner, ordinal + 1u);
-    if (valid_node(previous))
-        hir_match_arm_next[previous] = node;
+    if (gHirMatch.retain_debug_rows != 0u)
+    {
+        atomic_u32_min(hir_match_arm_start, owner, node);
+        atomic_u32_max(hir_match_arm_count, owner, ordinal + 1u);
+        if (valid_node(previous))
+            hir_match_arm_next[previous] = node;
+    }
     hir_match_payload_match_node[node] = owner;
     hir_match_payload_ordinal[node] = ordinal;
 }
@@ -88,8 +93,11 @@ void publish_payload(uint node)
     hir_match_payload_owner_arm[node] = owner;
     hir_match_payload_match_node[node] = match_node;
     hir_match_payload_ordinal[node] = ordinal;
-    atomic_u32_min(hir_match_arm_payload_start, owner, node);
-    atomic_u32_max(hir_match_arm_payload_count, owner, ordinal + 1u);
+    if (gHirMatch.retain_debug_rows != 0u)
+    {
+        atomic_u32_min(hir_match_arm_payload_start, owner, node);
+        atomic_u32_max(hir_match_arm_payload_count, owner, ordinal + 1u);
+    }
 }
 
 [shader("compute")]

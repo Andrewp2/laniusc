@@ -21,6 +21,14 @@ pub(crate) struct ResettableBuffer {
     pub(crate) allocation_id: u64,
 }
 
+impl ResettableBuffer {
+    /// Borrows the complete physical allocation while preserving the identity
+    /// used by compiler-graph ownership and alias validation.
+    pub(crate) fn tracked_view(&self) -> TrackedBufferView<'_> {
+        TrackedBufferView::from_parts(&self.buffer, 0, self.byte_size, Some(self.allocation_id))
+    }
+}
+
 /// Collects writable allocations created while `build` runs. This lets an
 /// owning workspace reset each unique physical allocation without manually
 /// listing every logical or aliased field.
@@ -54,7 +62,9 @@ pub(crate) fn register_resettable_buffer<T>(buffer: &LaniusBuffer<T>) {
         };
         buffers.push(ResettableBuffer {
             buffer: buffer.buffer.clone(),
-            byte_size: buffer.byte_size as u64,
+            // Resetting is allocation-wide: one collected entry represents
+            // every logical range packed into this physical arena.
+            byte_size: buffer.buffer.size(),
             allocation_id: buffer
                 .allocation_id()
                 .expect("resettable buffers must have tracked allocation identities"),
@@ -245,7 +255,9 @@ impl Drop for BufferAllocationLedger {
 #[derive(Clone)]
 pub struct LaniusBuffer<T> {
     pub buffer: wgpu::Buffer,
-    /// total allocated size in bytes
+    /// Byte offset of this logical view inside the physical allocation.
+    pub byte_offset: u64,
+    /// Size of this logical view in bytes.
     pub byte_size: usize,
     /// number of logical T elements
     pub count: usize,
@@ -269,7 +281,7 @@ impl<T> DynamicUniformBuffer<T> {
     pub fn binding(&self) -> wgpu::BindingResource<'_> {
         wgpu::BindingResource::Buffer(wgpu::BufferBinding {
             buffer: &self.buffer,
-            offset: 0,
+            offset: self.buffer.byte_offset,
             size: Some(self.binding_size),
         })
     }
@@ -292,17 +304,62 @@ impl<T> DynamicUniformBuffer<T> {
 #[derive(Clone, Copy)]
 pub struct TrackedBufferView<'a> {
     pub buffer: &'a wgpu::Buffer,
+    pub byte_offset: u64,
     pub byte_size: u64,
     allocation_id: Option<u64>,
 }
 
 impl<'a> TrackedBufferView<'a> {
+    pub(crate) fn from_parts(
+        buffer: &'a wgpu::Buffer,
+        byte_offset: u64,
+        byte_size: u64,
+        allocation_id: Option<u64>,
+    ) -> Self {
+        Self {
+            buffer,
+            byte_offset,
+            byte_size,
+            allocation_id,
+        }
+    }
+
     pub fn allocation_id(self) -> Option<u64> {
         self.allocation_id
     }
 
     pub fn as_entire_binding(self) -> wgpu::BindingResource<'a> {
-        self.buffer.as_entire_binding()
+        let binding_size = self.byte_size.saturating_add(3) & !3;
+        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: self.buffer,
+            offset: self.byte_offset,
+            size: (self.byte_offset != 0 || binding_size != self.buffer.size())
+                .then(|| std::num::NonZeroU64::new(binding_size))
+                .flatten(),
+        })
+    }
+
+    /// Narrows this view to a relative byte range while retaining the physical
+    /// allocation identity used by compiler-graph ownership checks.
+    pub fn subrange(self, byte_offset: u64, byte_size: u64) -> Result<Self, String> {
+        let relative_end = byte_offset
+            .checked_add(byte_size)
+            .ok_or_else(|| "tracked GPU buffer subrange overflows".to_owned())?;
+        if byte_size == 0 || relative_end > self.byte_size {
+            return Err(format!(
+                "tracked GPU buffer subrange {byte_offset}..{relative_end} exceeds view size {}",
+                self.byte_size,
+            ));
+        }
+        Ok(Self {
+            buffer: self.buffer,
+            byte_offset: self
+                .byte_offset
+                .checked_add(byte_offset)
+                .ok_or_else(|| "tracked GPU buffer absolute offset overflows".to_owned())?,
+            byte_size,
+            allocation_id: self.allocation_id,
+        })
     }
 
     /// Reinterprets this borrowed allocation without losing the producer's
@@ -311,6 +368,7 @@ impl<'a> TrackedBufferView<'a> {
     pub fn alias<T>(self, count: usize) -> LaniusBuffer<T> {
         LaniusBuffer {
             buffer: self.buffer.clone(),
+            byte_offset: self.byte_offset,
             byte_size: self.byte_size as usize,
             count,
             _allocation: None,
@@ -332,9 +390,76 @@ impl<'a, T> From<&'a LaniusBuffer<T>> for TrackedBufferView<'a> {
     fn from(buffer: &'a LaniusBuffer<T>) -> Self {
         Self {
             buffer: &buffer.buffer,
+            byte_offset: buffer.byte_offset,
             byte_size: buffer.byte_size as u64,
             allocation_id: buffer.allocation_id(),
         }
+    }
+}
+
+impl<'a> From<&'a wgpu::Buffer> for TrackedBufferView<'a> {
+    fn from(buffer: &'a wgpu::Buffer) -> Self {
+        Self {
+            buffer,
+            byte_offset: 0,
+            byte_size: buffer.size(),
+            allocation_id: None,
+        }
+    }
+}
+
+impl TrackedBufferView<'_> {
+    pub(crate) fn absolute_offset(&self, relative_offset: u64) -> u64 {
+        assert!(
+            relative_offset <= self.byte_size,
+            "GPU buffer relative offset exceeds its logical view"
+        );
+        self.byte_offset
+            .checked_add(relative_offset)
+            .expect("GPU buffer absolute offset overflow")
+    }
+
+    pub(crate) fn clear(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        relative_offset: u64,
+        size: Option<u64>,
+    ) {
+        let size = size.unwrap_or(self.byte_size - relative_offset);
+        assert!(
+            relative_offset.saturating_add(size) <= self.byte_size,
+            "GPU buffer clear exceeds its logical view"
+        );
+        encoder.clear_buffer(
+            self.buffer,
+            self.absolute_offset(relative_offset),
+            Some(size),
+        );
+    }
+
+    pub(crate) fn copy_to(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        source_offset: u64,
+        destination: TrackedBufferView<'_>,
+        destination_offset: u64,
+        size: u64,
+    ) {
+        assert!(
+            source_offset.saturating_add(size) <= self.byte_size,
+            "GPU buffer copy exceeds its source view"
+        );
+        assert!(
+            destination_offset.saturating_add(size) <= destination.byte_size,
+            "GPU buffer copy exceeds its destination view"
+        );
+        encoder.copy_buffer_to_buffer(
+            self.buffer,
+            self.absolute_offset(source_offset),
+            destination.buffer,
+            destination.absolute_offset(destination_offset),
+            size,
+        );
     }
 }
 
@@ -346,6 +471,122 @@ impl<T> LaniusBuffer<T> {
             .as_ref()
             .map(|allocation| allocation.id)
             .or(self._borrowed_allocation_id)
+    }
+
+    /// Creates a WGPU binding for exactly this logical byte range.
+    pub fn as_entire_binding(&self) -> wgpu::BindingResource<'_> {
+        let binding_size = (self.byte_size as u64).saturating_add(3) & !3;
+        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: &self.buffer,
+            offset: self.byte_offset,
+            size: (self.byte_offset != 0 || binding_size != self.buffer.size())
+                .then(|| std::num::NonZeroU64::new(binding_size))
+                .flatten(),
+        })
+    }
+
+    /// Absolute physical offset corresponding to a relative offset in this
+    /// logical view.
+    pub fn absolute_offset(&self, relative_offset: u64) -> u64 {
+        assert!(
+            relative_offset <= self.byte_size as u64,
+            "GPU buffer relative offset exceeds its logical view"
+        );
+        self.byte_offset
+            .checked_add(relative_offset)
+            .expect("GPU buffer absolute offset overflow")
+    }
+
+    /// Uploads bytes at an offset relative to this logical view.
+    pub fn write(&self, queue: &wgpu::Queue, relative_offset: u64, data: &[u8]) {
+        let end = relative_offset
+            .checked_add(data.len() as u64)
+            .expect("GPU buffer upload range overflow");
+        assert!(
+            end <= self.byte_size as u64,
+            "GPU buffer upload exceeds its logical view"
+        );
+        queue.write_buffer(&self.buffer, self.absolute_offset(relative_offset), data);
+    }
+
+    /// Clears bytes relative to this logical view. `None` clears only the rest
+    /// of the view, never adjacent arena occupants.
+    pub fn clear(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        relative_offset: u64,
+        size: Option<u64>,
+    ) {
+        let size = size.unwrap_or_else(|| self.byte_size as u64 - relative_offset);
+        let end = relative_offset
+            .checked_add(size)
+            .expect("GPU buffer clear range overflow");
+        assert!(
+            end <= self.byte_size as u64,
+            "GPU buffer clear exceeds its logical view"
+        );
+        encoder.clear_buffer(
+            &self.buffer,
+            self.absolute_offset(relative_offset),
+            Some(size),
+        );
+    }
+
+    /// Copies between logical views while translating both relative offsets to
+    /// their physical arena offsets.
+    pub fn copy_to<U>(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        source_offset: u64,
+        destination: &LaniusBuffer<U>,
+        destination_offset: u64,
+        size: u64,
+    ) {
+        assert!(
+            source_offset.saturating_add(size) <= self.byte_size as u64,
+            "GPU buffer copy exceeds its source view"
+        );
+        assert!(
+            destination_offset.saturating_add(size) <= destination.byte_size as u64,
+            "GPU buffer copy exceeds its destination view"
+        );
+        encoder.copy_buffer_to_buffer(
+            &self.buffer,
+            self.absolute_offset(source_offset),
+            &destination.buffer,
+            destination.absolute_offset(destination_offset),
+            size,
+        );
+    }
+
+    /// Creates an owned typed view of a subrange of this allocation.
+    pub fn subrange<U>(
+        &self,
+        relative_offset: u64,
+        byte_size: u64,
+        count: usize,
+    ) -> Result<LaniusBuffer<U>, String> {
+        let relative_end = relative_offset
+            .checked_add(byte_size)
+            .ok_or_else(|| "GPU buffer subrange overflows".to_owned())?;
+        if byte_size == 0 || relative_end > self.byte_size as u64 {
+            return Err(format!(
+                "GPU buffer subrange {relative_offset}..{relative_end} exceeds view size {}",
+                self.byte_size,
+            ));
+        }
+        Ok(LaniusBuffer {
+            buffer: self.buffer.clone(),
+            byte_offset: self
+                .byte_offset
+                .checked_add(relative_offset)
+                .ok_or_else(|| "GPU buffer absolute offset overflows".to_owned())?,
+            byte_size: byte_size as usize,
+            count,
+            _allocation: self._allocation.clone(),
+            _borrowed_allocation_id: self._borrowed_allocation_id,
+            _marker: std::marker::PhantomData,
+        })
     }
 
     /// Wraps a raw `wgpu::Buffer` plus byte size and logical element count.
@@ -362,6 +603,7 @@ impl<T> LaniusBuffer<T> {
     ) -> Self {
         Self {
             buffer,
+            byte_offset: 0,
             byte_size: byte_size as usize,
             count,
             _allocation: Some(BufferAllocationLedger::new(byte_size, label)),
@@ -375,6 +617,7 @@ impl<T> LaniusBuffer<T> {
     pub fn reinterpret<U>(self, count: usize) -> LaniusBuffer<U> {
         LaniusBuffer {
             buffer: self.buffer,
+            byte_offset: self.byte_offset,
             byte_size: self.byte_size,
             count,
             _allocation: self._allocation,
@@ -388,6 +631,7 @@ impl<T> LaniusBuffer<T> {
     pub fn alias<U>(&self, count: usize) -> LaniusBuffer<U> {
         LaniusBuffer {
             buffer: self.buffer.clone(),
+            byte_offset: self.byte_offset,
             byte_size: self.byte_size,
             count,
             _allocation: self._allocation.clone(),
@@ -401,6 +645,7 @@ impl<T> LaniusBuffer<T> {
     pub fn untracked_alias((buffer, byte_size): (wgpu::Buffer, u64), count: usize) -> Self {
         Self {
             buffer,
+            byte_offset: 0,
             byte_size: byte_size as usize,
             count,
             _allocation: None,

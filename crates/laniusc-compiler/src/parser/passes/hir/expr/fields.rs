@@ -141,24 +141,12 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirExprFieldsPas
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
-                "hir_semantic_dense_node".into(),
-                b.hir_semantic_dense_node.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_count".into(),
-                b.hir_semantic_count.as_entire_binding(),
-            ),
-            (
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
             ),
             (
                 "hir_expr_name_role".into(),
                 b.hir_expr_name_role.as_entire_binding(),
-            ),
-            (
-                "hir_expr_result_node".into(),
-                b.hir_expr_result_node.as_entire_binding(),
             ),
             (
                 "hir_expr_result_root_node".into(),

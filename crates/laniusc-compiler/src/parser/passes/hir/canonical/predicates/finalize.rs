@@ -32,7 +32,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPred
             ("next_sibling".into(), b.next_sibling.as_entire_binding()),
             (
                 "raw_to_hir".into(),
-                b.hir_canonical_raw_to_dense.as_entire_binding(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
             (
                 "hir_to_raw".into(),

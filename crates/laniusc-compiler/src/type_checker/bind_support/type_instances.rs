@@ -142,6 +142,8 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         ],
     )?;
 
+    let struct_field_key_radix_dispatch_args =
+        typed_buffer_from_resources(resources, "struct_field_key_radix_dispatch_args")?;
     let sort_struct_fields = RadixSortOperation::new_hierarchical(
         device,
         passes,
@@ -149,7 +151,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         compiler_graph::STRUCT_FIELD_RADIX_SORT.plan(
             struct_field_radix_steps,
             HierarchicalRadixSortDispatch {
-                rows: buffer_from_resources(resources, "struct_field_key_radix_dispatch_args")?,
+                rows: &struct_field_key_radix_dispatch_args,
                 bucket_work_items: struct_field_n_blocks
                     .div_ceil(256)
                     .saturating_mul(NAME_RADIX_BUCKETS)
@@ -312,7 +314,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             resources,
             passes,
             TYPE_SEMANTIC_COMPACTION,
-            buffer_from_resources(resources, "hir_active_dispatch_args")?,
+            &typed_buffer_from_resources(resources, "hir_active_dispatch_args")?,
         )?),
         decl_refs: reflected_bind_group_from_resources(
             device,

@@ -39,10 +39,10 @@ impl HirTypeRootOwnerStepPass {
         }
         if steps % 2 == 1 {
             crate::gpu::passes_core::flush_deferred_compute(encoder);
-            encoder.copy_buffer_to_buffer(
-                &b.hir_type_arg_owner_b.buffer,
+            b.hir_type_arg_owner_b.copy_to(
+                encoder,
                 0,
-                &b.hir_type_root_owner.buffer,
+                &b.hir_type_root_owner,
                 0,
                 u64::from(b.tree_capacity) * 4,
             );

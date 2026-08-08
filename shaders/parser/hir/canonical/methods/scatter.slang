@@ -46,13 +46,7 @@ uint semantic_anchor(uint raw)
 }
 uint mapped(uint raw)
 {
-    if (raw >= gCanonical.raw_capacity) return INVALID;
-    uint direct = raw_to_hir[raw];
-    if (direct != INVALID) return direct;
-    uint anchor = semantic_anchor(raw);
-    if (anchor >= gCanonical.canonical_capacity) return INVALID;
-    uint winner_plus_one = canonical_anchor_owner[anchor] & 0x0fffffffu;
-    return winner_plus_one == 0u ? INVALID : raw_to_hir[winner_plus_one - 1u];
+    return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID;
 }
 [shader("compute")]
 [numthreads(256, 1, 1)]

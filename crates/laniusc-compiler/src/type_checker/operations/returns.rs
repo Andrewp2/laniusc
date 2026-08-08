@@ -35,7 +35,7 @@ impl ReturnValidationOperation {
         graph: &compiler_graph::TypeCheckCompilerGraph,
         resources: &ResourceMap<'_>,
         kernels: &KernelRegistry,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         let operation = |spec| {
             ComputeOperation::indirect_spec(device, graph, resources, kernels, spec, dispatch_args)

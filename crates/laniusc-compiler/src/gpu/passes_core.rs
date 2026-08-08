@@ -1712,7 +1712,7 @@ pub mod bind_group {
         struct BoundBuffer<'a> {
             name: &'a str,
             buffer: &'a wgpu::Buffer,
-            start: u64,
+            offset: u64,
             end: u64,
             writable: bool,
         }
@@ -1734,29 +1734,35 @@ pub mod bind_group {
             else {
                 continue;
             };
-            let start = binding.offset;
-            let size = binding
-                .size
-                .map(std::num::NonZeroU64::get)
-                .unwrap_or_else(|| binding.buffer.size().saturating_sub(start));
-            let end = start.saturating_add(size);
+            let offset = binding.offset;
+            let end = offset.saturating_add(
+                binding
+                    .size
+                    .map_or_else(|| binding.buffer.size().saturating_sub(offset), |size| size.get()),
+            );
             for prior in &buffers {
-                if binding.buffer == prior.buffer
-                    && start < prior.end
-                    && prior.start < end
-                    && (writable || prior.writable)
-                {
-                    return Err(anyhow!(
-                        "bind group `{label}` binds overlapping buffer ranges as `{}` and `{}` while at least one binding is writable",
-                        prior.name,
-                        parameter.name,
-                    ));
+                let ranges_overlap = offset < prior.end && prior.offset < end;
+                if binding.buffer == prior.buffer && ranges_overlap && writable != prior.writable {
+                    let (read_only_name, writable_name) = if prior.writable {
+                        (parameter.name.as_str(), prior.name)
+                    } else {
+                        (prior.name, parameter.name.as_str())
+                    };
+                    let error = anyhow!(
+                        "bind group `{label}` binds one physical buffer as read-only `{}` and writable `{}`",
+                        read_only_name,
+                        writable_name,
+                    );
+                    if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
+                        eprintln!("{error:#}");
+                    }
+                    return Err(error);
                 }
             }
             buffers.push(BoundBuffer {
                 name: &parameter.name,
                 buffer: binding.buffer,
-                start,
+                offset,
                 end,
                 writable,
             });
@@ -1775,9 +1781,7 @@ pub mod bind_group {
     ) -> Result<wgpu::BindGroup> {
         let plan_started = bind_group_timing_enabled().then(Instant::now);
         let resolved_label = label.unwrap_or("<unnamed>");
-        if resolved_label.starts_with("type_check") {
-            validate_reflected_buffer_aliases(reflection, set_index, resources, resolved_label)?;
-        }
+        validate_reflected_buffer_aliases(reflection, set_index, resources, resolved_label)?;
         let mut entries = Vec::<wgpu::BindGroupEntry>::new();
         for p in reflected_parameters_for_set(reflection, set_index) {
             if let (Some(idx), Some(_ty)) = (p.binding.index, p.ty.kind.as_ref()) {
@@ -1788,9 +1792,10 @@ pub mod bind_group {
                     });
                 } else {
                     return Err(anyhow!(
-                        "no resource provided for '{}' in bind group '{}'",
+                        "no resource provided for {:?} in bind group '{}'; available resources: {:?}",
                         p.name,
-                        label.unwrap_or("<unnamed>")
+                        label.unwrap_or("<unnamed>"),
+                        resources.keys().collect::<Vec<_>>(),
                     ));
                 }
             }

@@ -11,7 +11,7 @@ pub(super) fn create_record_flag_extract(
     family_bit: u32,
     record_family_bits: &LaniusBuffer<u32>,
     record_family_flag: &LaniusBuffer<u32>,
-    dispatch_args: &wgpu::Buffer,
+    dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<(LaniusBuffer<RecordFamilyFlagParams>, ComputeOperation)> {
     let params = uniform_from_val(
         device,
@@ -38,8 +38,8 @@ pub(super) fn create_radix_dispatch(
     pass: &PassData,
     label: &'static str,
     params: &LaniusBuffer<ModuleKeyRadixParams>,
-    item_count: &wgpu::Buffer,
-    dispatch_args: &wgpu::Buffer,
+    item_count: &LaniusBuffer<u32>,
+    dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<wgpu::BindGroup> {
     let mut resources = ResourceMap::new();
     resources.buffer("gParams", params);
@@ -56,8 +56,8 @@ pub(super) fn create_count_dispatch(
     bind_label: &'static str,
     capacity: u32,
     multiplier: u32,
-    count_in: &wgpu::Buffer,
-    dispatch_args: &wgpu::Buffer,
+    count_in: &LaniusBuffer<u32>,
+    dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<(LaniusBuffer<CountDispatchParams>, wgpu::BindGroup)> {
     let params = uniform_from_val(
         device,
@@ -86,9 +86,9 @@ pub(super) fn create_pair_max_dispatch(
     bind_label: &'static str,
     left_capacity: u32,
     right_capacity: u32,
-    left_count_in: &wgpu::Buffer,
-    right_count_in: &wgpu::Buffer,
-    dispatch_args: &wgpu::Buffer,
+    left_count_in: &LaniusBuffer<u32>,
+    right_count_in: &LaniusBuffer<u32>,
+    dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<(LaniusBuffer<CountPairMaxDispatchParams>, wgpu::BindGroup)> {
     let params = uniform_from_val(
         device,

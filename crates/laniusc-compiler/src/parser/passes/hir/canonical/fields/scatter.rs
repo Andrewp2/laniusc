@@ -46,20 +46,11 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalFiel
                 b.hir_semantic_block_prefix_a.as_entire_binding(),
             ),
             (
-                "raw_to_hir".into(),
-                b.hir_canonical_raw_to_dense.as_entire_binding(),
+                "alias_to_hir".into(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
-            (
-                "canonical_anchor_owner".into(),
-                b.hir_canonical_anchor_owner.as_entire_binding(),
-            ),
-            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
-            ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
-            (
-                "hir_expr_record".into(),
-                b.hir_expr_record.as_entire_binding(),
-            ),
             (
                 "decl_owner".into(),
                 b.hir_struct_field_parent_struct.as_entire_binding(),
@@ -89,17 +80,13 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalFiel
                 b.hir_expr_result_root_node.as_entire_binding(),
             ),
             (
-                "hir_call_callee_node".into(),
-                b.hir_call_callee_node.as_entire_binding(),
-            ),
-            (
                 "family_count".into(),
                 b.hir_field_table_count.as_entire_binding(),
             ),
             ("hir_fields".into(), b.hir_field_rows.as_entire_binding()),
             (
-                "hir_payload_words".into(),
-                b.hir_payload.as_entire_binding(),
+                "field_range_words".into(),
+                b.hir_match_arm_ranges.as_entire_binding(),
             ),
             (
                 "canonical_status".into(),

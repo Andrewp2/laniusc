@@ -7,6 +7,8 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint family_flags;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirEnum;
@@ -66,13 +68,13 @@ void publish_payload_type(uint node)
         return;
 
     uint ordinal = hir_variant_payload_rank_a[node];
-    if (ordinal < VARIANT_PAYLOAD_SLOT_STRIDE)
+    if (gHirEnum.retain_debug_rows != 0u && ordinal < VARIANT_PAYLOAD_SLOT_STRIDE)
         hir_variant_payload_node[owner * VARIANT_PAYLOAD_SLOT_STRIDE + ordinal] = node;
-    atomic_u32_min(hir_variant_payload_start, owner, node);
-    atomic_u32_max(
-        hir_variant_payload_count,
-        owner,
-        ordinal + 1u);
+    if (gHirEnum.retain_debug_rows != 0u)
+    {
+        atomic_u32_min(hir_variant_payload_start, owner, node);
+        atomic_u32_max(hir_variant_payload_count, owner, ordinal + 1u);
+    }
     uint payload_end = hir_token_end[node];
     if (payload_end != INVALID)
         atomic_u32_max(hir_token_end, owner, payload_end);
@@ -83,7 +85,7 @@ void publish_payload_type(uint node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (node >= gHirEnum.n || !valid_node(node))
+    if ((gHirEnum.family_flags & 1u) == 0u || node >= gHirEnum.n || !valid_node(node))
         return;
 
     if (node_kind[node] == PROD_ENUM_VARIANT)

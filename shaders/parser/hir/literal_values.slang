@@ -12,6 +12,8 @@ struct Params
     uint n;
     uint source_len;
     uint uses_status_count;
+    uint token_capacity;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirLiteral;
@@ -27,6 +29,7 @@ StructuredBuffer<TokenIn> token_words;
 ByteAddressBuffer source_bytes;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_len_token;
 
 RWStructuredBuffer<uint> hir_expr_int_value;
@@ -212,11 +215,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gHirLiteral.n)
         return;
 
-    hir_expr_int_value[i] = 0u;
-    hir_expr_float_bits[i] = 0u;
-    hir_expr_string_start[i] = INVALID;
-    hir_expr_string_len[i] = 0u;
     hir_type_len_value[i] = INVALID;
+
+    uint literal_row = gHirLiteral.retain_debug_rows != 0u ? i : hir_token_pos[i];
+    if (gHirLiteral.retain_debug_rows != 0u)
+    {
+        hir_expr_int_value[literal_row] = 0u;
+        hir_expr_float_bits[literal_row] = 0u;
+        hir_expr_string_start[literal_row] = INVALID;
+        hir_expr_string_len[literal_row] = 0u;
+    }
 
     if (!valid_node(i))
         return;
@@ -226,6 +234,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_type_len_value[i] = parse_uint_token(len_token);
 
     uint form = expr_slot(i, HIR_EXPR_RECORD_FORM);
+    uint literal_capacity = gHirLiteral.retain_debug_rows != 0u
+        ? gHirLiteral.n
+        : gHirLiteral.token_capacity;
+    if (literal_row == INVALID || literal_row >= literal_capacity)
+        return;
     if (form == HIR_EXPR_STRING)
     {
         uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
@@ -236,8 +249,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint token_len = token_words[value_token].len;
         if (token_len >= 2u)
         {
-            hir_expr_string_start[i] = token_start + 1u;
-            hir_expr_string_len[i] = token_len - 2u;
+            hir_expr_string_start[literal_row] = token_start + 1u;
+            hir_expr_string_len[literal_row] = token_len - 2u;
         }
         return;
     }
@@ -246,7 +259,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
         if (value_token != INVALID)
-            hir_expr_int_value[i] = parse_char_token(value_token);
+            hir_expr_int_value[literal_row] = parse_char_token(value_token);
         return;
     }
 
@@ -259,7 +272,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (value_token == INVALID)
             return;
 
-        hir_expr_float_bits[i] = parse_float_token_bits(value_token);
+        hir_expr_float_bits[literal_row] = parse_float_token_bits(value_token);
         return;
     }
 
@@ -267,5 +280,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (value_token == INVALID)
         return;
 
-    hir_expr_int_value[i] = parse_uint_token(value_token);
+    hir_expr_int_value[literal_row] = parse_uint_token(value_token);
 }

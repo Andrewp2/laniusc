@@ -326,6 +326,7 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
     let output =
         common::codegen_command_output_with_timeout("laniusc daemon x86 job", &mut command);
     common::assert_command_success("laniusc daemon x86 job", &output);
+    let daemon_stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
     let responses = String::from_utf8(output.stdout)
         .expect("daemon stdout should be UTF-8")
@@ -363,7 +364,11 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
     assert_eq!(responses[1]["ok"], false);
     assert!(responses[1]["diagnostic"].is_object());
     assert_eq!(responses[2]["id"], "compile");
-    assert_eq!(responses[2]["ok"], true);
+    assert_eq!(
+        responses[2]["ok"], true,
+        "compile response: {}\ndaemon stderr:\n{}",
+        responses[2], daemon_stderr,
+    );
     assert_eq!(responses[2]["emit"], "x86_64");
     for response in [&responses[2], &responses[3], &responses[4], &responses[6]] {
         assert_eq!(

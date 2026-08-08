@@ -99,7 +99,7 @@ uint classify(uint prod)
         return HIR_IMPORT_ITEM;
     if (prod == PROD_MODULE)
         return HIR_MODULE_ITEM;
-    if (prod == PROD_PATH || prod == PROD_TYPE_PATH)
+    if (prod == PROD_PATH || prod == PROD_TYPE_PATH || prod == PROD_BOUND_TYPE_PATH)
         return HIR_PATH_EXPR;
     if (prod == PROD_PARAM_NAMED || prod == PROD_PARAM_SELF ||
         prod == PROD_PARAM_SELF_REF)

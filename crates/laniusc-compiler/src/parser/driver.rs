@@ -40,7 +40,7 @@ use wgpu;
 
 use crate::{
     gpu::{
-        buffers::{storage_ro_from_bytes, storage_ro_from_u32s},
+        buffers::{TrackedBufferView, storage_ro_from_bytes, storage_ro_from_u32s},
         device,
         passes_core::{
             BindGroupCache,
@@ -414,7 +414,7 @@ impl GpuParser {
             &mut Option<&mut GpuTimer>,
         ) -> std::result::Result<R, E>,
     ) -> Result<(RecordedResidentLl1HirCheck, std::result::Result<R, E>)> {
-        self.record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
+        self.record_checked_resident_ll1_hir_artifacts_impl(
             encoder,
             token_capacity,
             token_buf,
@@ -425,6 +425,7 @@ impl GpuParser {
             tables,
             tree_capacity_override,
             CONSERVATIVE_PARSER_FEATURES,
+            true,
             timer_ref,
             consume,
         )
@@ -452,16 +453,55 @@ impl GpuParser {
             &mut Option<&mut GpuTimer>,
         ) -> std::result::Result<R, E>,
     ) -> Result<(RecordedResidentLl1HirCheck, std::result::Result<R, E>)> {
+        self.record_checked_resident_ll1_hir_artifacts_impl(
+            encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            token_file_id_buf,
+            source_len,
+            source_buf,
+            tables,
+            tree_capacity_override,
+            parser_feature_flags,
+            false,
+            timer_ref,
+            consume,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_checked_resident_ll1_hir_artifacts_impl<R, E>(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: Option<&wgpu::Buffer>,
+        source_len: u32,
+        source_buf: &wgpu::Buffer,
+        tables: &PrecomputedParseTables,
+        tree_capacity_override: Option<u32>,
+        parser_feature_flags: u32,
+        retain_debug_hir_buffers: bool,
+        timer_ref: &mut Option<&mut GpuTimer>,
+        consume: impl FnOnce(
+            &ParserBuffers,
+            &mut wgpu::CommandEncoder,
+            &mut Option<&mut GpuTimer>,
+        ) -> std::result::Result<R, E>,
+    ) -> Result<(RecordedResidentLl1HirCheck, std::result::Result<R, E>)> {
         let mut resident_guard = self
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned");
-        let bufs = self.resident_buffers_for_with_tree_capacity_and_source_and_features(
+        let bufs = self.resident_buffers_for_with_tree_capacity_and_debug(
             &mut resident_guard,
             token_capacity,
             source_len,
             tables,
             tree_capacity_override,
+            retain_debug_hir_buffers,
             parser_feature_flags,
         );
         if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
@@ -619,7 +659,8 @@ impl GpuParser {
         if let Some(token_file_id_buf) = token_file_id_buf {
             let copy_bytes = (token_capacity as u64).saturating_mul(4);
             if copy_bytes > 0 {
-                encoder.copy_buffer_to_buffer(
+                parser_copy_buffer_to_buffer(
+                    &mut encoder,
                     token_file_id_buf,
                     0,
                     &bufs.default_token_file_id,
@@ -628,7 +669,7 @@ impl GpuParser {
                 );
             }
         } else {
-            encoder.clear_buffer(&bufs.default_token_file_id, 0, None);
+            parser_clear_buffer(&mut encoder, &bufs.default_token_file_id, 0, None);
         }
         self.record_resident_partial_parse_status(&mut encoder, bufs)?;
 
@@ -638,8 +679,22 @@ impl GpuParser {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(&bufs.partial_parse_status, 0, &status_readback, 0, 24);
-        encoder.copy_buffer_to_buffer(&bufs.token_feature_flags, 0, &status_readback, 24, 4);
+        parser_copy_buffer_to_buffer(
+            &mut encoder,
+            &bufs.partial_parse_status,
+            0,
+            &status_readback,
+            0,
+            24,
+        );
+        parser_copy_buffer_to_buffer(
+            &mut encoder,
+            &bufs.token_feature_flags,
+            0,
+            &status_readback,
+            24,
+            4,
+        );
         crate::gpu::passes_core::submit_with_progress(
             &self.queue,
             "parser.partial-parse-tree-capacity",
@@ -729,13 +784,20 @@ impl GpuParser {
         tree_capacity: u32,
         consume: impl FnOnce(&ParserBuffers) -> R,
     ) -> R {
-        self.with_current_resident_buffers_with_tree_capacity_and_features(
+        let mut resident_guard = self
+            .resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned");
+        let bufs = self.resident_buffers_for_with_tree_capacity_and_debug(
+            &mut resident_guard,
+            token_capacity,
             token_capacity,
             tables,
-            tree_capacity,
+            Some(tree_capacity),
+            true,
             CONSERVATIVE_PARSER_FEATURES,
-            consume,
-        )
+        );
+        consume(bufs)
     }
 
     /// Borrows current resident buffers with feature-aware optional-family capacities.
@@ -1329,7 +1391,7 @@ fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuf
         &buffers.hir_type_arg_link_b,
         &buffers.hir_type_arg_rank_b,
     ] {
-        parser_clear_buffer(encoder, &buffer.buffer, 0, Some(bytes));
+        parser_clear_buffer(encoder, buffer, 0, Some(bytes));
     }
 }
 
@@ -1354,24 +1416,30 @@ fn record_parser_compute(
     Ok(())
 }
 
-fn parser_clear_buffer(
+fn parser_clear_buffer<'a>(
     encoder: &mut wgpu::CommandEncoder,
-    buffer: &wgpu::Buffer,
+    buffer: impl Into<TrackedBufferView<'a>>,
     offset: u64,
     size: Option<u64>,
 ) {
     crate::gpu::passes_core::flush_deferred_compute(encoder);
-    encoder.clear_buffer(buffer, offset, size);
+    buffer.into().clear(encoder, offset, size);
 }
 
-fn parser_copy_buffer_to_buffer(
+fn parser_copy_buffer_to_buffer<'a, 'b>(
     encoder: &mut wgpu::CommandEncoder,
-    source: &wgpu::Buffer,
+    source: impl Into<TrackedBufferView<'a>>,
     source_offset: u64,
-    destination: &wgpu::Buffer,
+    destination: impl Into<TrackedBufferView<'b>>,
     destination_offset: u64,
     size: u64,
 ) {
     crate::gpu::passes_core::flush_deferred_compute(encoder);
-    encoder.copy_buffer_to_buffer(source, source_offset, destination, destination_offset, size);
+    source.into().copy_to(
+        encoder,
+        source_offset,
+        destination.into(),
+        destination_offset,
+        size,
+    );
 }

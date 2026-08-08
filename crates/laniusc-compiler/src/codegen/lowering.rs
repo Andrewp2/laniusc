@@ -863,7 +863,7 @@ impl GpuSemanticLoweringStage {
             ),
         ] {
             graph
-                .validate_pass_reflection(graph.pass_id(name).unwrap(), reflection)
+                .validate_complete_pass_reflection(graph.pass_id(name).unwrap(), reflection)
                 .map_err(anyhow::Error::msg)?;
         }
 
@@ -3107,7 +3107,7 @@ pub(super) fn record_direct_with_offsets(
         pass.thread_group_size,
     )?;
     let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some("lir.semantic"),
+        label: Some(&pass.shader_id),
         timestamp_writes: None,
     });
     compute.set_pipeline(&pass.pipeline);
@@ -3531,13 +3531,7 @@ mod tests {
             count as usize * 4,
             count as usize,
         );
-        encoder.copy_buffer_to_buffer(
-            &order_a.buffer,
-            0,
-            &readback.buffer,
-            0,
-            u64::from(count) * 4,
-        );
+        order_a.copy_to(&mut encoder, 0, &readback, 0, u64::from(count) * 4);
         gpu.queue.submit(Some(encoder.finish()));
 
         let actual = read_words(&gpu.device, &readback);
@@ -3589,14 +3583,13 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let initial_order = (0..count).collect::<Vec<_>>();
-        gpu.queue
-            .write_buffer(&total.buffer, 0, &count.to_le_bytes());
-        gpu.queue.write_buffer(&keys.buffer, 0, &words(&key_words));
+        total.write(&gpu.queue, 0, &count.to_le_bytes());
+        keys.write(&gpu.queue, 0, &words(&key_words));
         let order_bytes = initial_order
             .iter()
             .flat_map(|word| word.to_le_bytes())
             .collect::<Vec<_>>();
-        gpu.queue.write_buffer(&order.buffer, 0, &order_bytes);
+        order.write(&gpu.queue, 0, &order_bytes);
 
         let sorter = GpuStableScheduleSorter::new_semantic(
             &gpu.device,
@@ -3626,13 +3619,9 @@ mod tests {
             count as usize * 4,
             count as usize,
         );
-        encoder.copy_buffer_to_buffer(
-            &sorter.output_order().buffer,
-            0,
-            &readback.buffer,
-            0,
-            u64::from(count) * 4,
-        );
+        sorter
+            .output_order()
+            .copy_to(&mut encoder, 0, &readback, 0, u64::from(count) * 4);
         gpu.queue.submit(Some(encoder.finish()));
         let actual = read_words(&gpu.device, &readback);
         let mut expected = initial_order;
@@ -3845,9 +3834,9 @@ mod tests {
             });
         record_direct(&mut encoder, &count_pass, &count_group, 5).unwrap();
         record_direct(&mut encoder, &scatter_pass, &scatter_group, 5).unwrap();
-        encoder.copy_buffer_to_buffer(&target_counts.buffer, 0, &count_readback.buffer, 0, 20);
-        encoder.copy_buffer_to_buffer(&target_core.buffer, 0, &core_readback.buffer, 0, 80);
-        encoder.copy_buffer_to_buffer(&target_operands.buffer, 0, &operands_readback.buffer, 0, 80);
+        target_counts.copy_to(&mut encoder, 0, &count_readback, 0, 20);
+        target_core.copy_to(&mut encoder, 0, &core_readback, 0, 80);
+        target_operands.copy_to(&mut encoder, 0, &operands_readback, 0, 80);
         gpu.queue.submit(Some(encoder.finish()));
 
         assert_eq!(read_words(&gpu.device, &count_readback), &[1, 1, 1, 1, 1]);
@@ -4166,43 +4155,24 @@ mod tests {
             readback_bytes(&gpu.device, "test.lir.scheduled_core.rb", 252, 63);
         let scheduled_operands_readback =
             readback_bytes(&gpu.device, "test.lir.scheduled_operands.rb", 144, 36);
-        encoder.copy_buffer_to_buffer(&output.count.buffer, 0, &count_readback.buffer, 0, 4);
-        encoder.copy_buffer_to_buffer(&output.core.buffer, 0, &core_readback.buffer, 0, 252);
-        encoder.copy_buffer_to_buffer(
-            &output.operands.buffer,
-            0,
-            &operands_readback.buffer,
-            0,
-            144,
-        );
-        encoder.copy_buffer_to_buffer(
-            &output.owner_by_instruction.buffer,
-            0,
-            &owner_readback.buffer,
-            0,
-            36,
-        );
-        encoder.copy_buffer_to_buffer(
-            &output.execution_order.unwrap().buffer,
-            0,
-            &order_readback.buffer,
-            0,
-            36,
-        );
-        encoder.copy_buffer_to_buffer(
-            &stage.core.buffer,
-            0,
-            &scheduled_core_readback.buffer,
-            0,
-            252,
-        );
-        encoder.copy_buffer_to_buffer(
-            &stage.operands.buffer,
-            0,
-            &scheduled_operands_readback.buffer,
-            0,
-            144,
-        );
+        output.count.copy_to(&mut encoder, 0, &count_readback, 0, 4);
+        output.core.copy_to(&mut encoder, 0, &core_readback, 0, 252);
+        output
+            .operands
+            .copy_to(&mut encoder, 0, &operands_readback, 0, 144);
+        output
+            .owner_by_instruction
+            .copy_to(&mut encoder, 0, &owner_readback, 0, 36);
+        output
+            .execution_order
+            .unwrap()
+            .copy_to(&mut encoder, 0, &order_readback, 0, 36);
+        stage
+            .core
+            .copy_to(&mut encoder, 0, &scheduled_core_readback, 0, 252);
+        stage
+            .operands
+            .copy_to(&mut encoder, 0, &scheduled_operands_readback, 0, 144);
         gpu.queue.submit(Some(encoder.finish()));
 
         assert_eq!(read_words(&gpu.device, &count_readback)[0], 7);
@@ -4479,37 +4449,27 @@ mod tests {
             readback_bytes(&gpu.device, "test.abi.function_count.rb", 4, 1);
         let local_count_readback = readback_bytes(&gpu.device, "test.abi.local_count.rb", 4, 1);
         let output = stage.output();
-        encoder.copy_buffer_to_buffer(
-            &output.functions.buffer,
-            0,
-            &function_readback.buffer,
-            0,
-            52,
-        );
-        encoder.copy_buffer_to_buffer(&output.params.buffer, 0, &param_readback.buffer, 0, 32);
-        encoder.copy_buffer_to_buffer(&output.locals.buffer, 0, &local_readback.buffer, 0, 16);
-        encoder.copy_buffer_to_buffer(&stage.schedule.buffer, 0, &schedule_readback.buffer, 0, 32);
-        encoder.copy_buffer_to_buffer(
-            &output.param_count.buffer,
-            0,
-            &param_count_readback.buffer,
-            0,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(
-            &output.function_count.buffer,
-            0,
-            &function_count_readback.buffer,
-            0,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(
-            &output.local_count.buffer,
-            0,
-            &local_count_readback.buffer,
-            0,
-            4,
-        );
+        output
+            .functions
+            .copy_to(&mut encoder, 0, &function_readback, 0, 52);
+        output
+            .params
+            .copy_to(&mut encoder, 0, &param_readback, 0, 32);
+        output
+            .locals
+            .copy_to(&mut encoder, 0, &local_readback, 0, 16);
+        stage
+            .schedule
+            .copy_to(&mut encoder, 0, &schedule_readback, 0, 32);
+        output
+            .param_count
+            .copy_to(&mut encoder, 0, &param_count_readback, 0, 4);
+        output
+            .function_count
+            .copy_to(&mut encoder, 0, &function_count_readback, 0, 4);
+        output
+            .local_count
+            .copy_to(&mut encoder, 0, &local_count_readback, 0, 4);
         gpu.queue.submit(Some(encoder.finish()));
 
         assert_eq!(
@@ -4723,30 +4683,20 @@ mod tests {
         let aggregates_rb = readback_bytes(&gpu.device, "test.family.aggregates.rb", 84, 21);
         let strings_rb = readback_bytes(&gpu.device, "test.family.strings.rb", 16, 4);
         let string_data_rb = readback_bytes(&gpu.device, "test.family.string_data.rb", 4, 1);
-        encoder.copy_buffer_to_buffer(&output.operands.buffer, 0, &operands_rb.buffer, 0, 64);
-        encoder.copy_buffer_to_buffer(&output.core.buffer, 0, &core_rb.buffer, 0, 112);
-        encoder.copy_buffer_to_buffer(
-            &output.aggregate_element_count.buffer,
-            0,
-            &aggregate_count_rb.buffer,
-            0,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(
-            &output.aggregate_elements.buffer,
-            0,
-            &aggregates_rb.buffer,
-            0,
-            84,
-        );
-        encoder.copy_buffer_to_buffer(&output.strings.buffer, 0, &strings_rb.buffer, 0, 16);
-        encoder.copy_buffer_to_buffer(
-            &output.string_data_words.buffer,
-            0,
-            &string_data_rb.buffer,
-            0,
-            4,
-        );
+        output
+            .operands
+            .copy_to(&mut encoder, 0, &operands_rb, 0, 64);
+        output.core.copy_to(&mut encoder, 0, &core_rb, 0, 112);
+        output
+            .aggregate_element_count
+            .copy_to(&mut encoder, 0, &aggregate_count_rb, 0, 4);
+        output
+            .aggregate_elements
+            .copy_to(&mut encoder, 0, &aggregates_rb, 0, 84);
+        output.strings.copy_to(&mut encoder, 0, &strings_rb, 0, 16);
+        output
+            .string_data_words
+            .copy_to(&mut encoder, 0, &string_data_rb, 0, 4);
         gpu.queue.submit(Some(encoder.finish()));
 
         let operands = read_words(&gpu.device, &operands_rb);
@@ -4981,17 +4931,17 @@ mod tests {
         let operands_readback = readback_bytes(&gpu.device, "test.control.operands.rb", 160, 40);
         let status_readback = readback_bytes(&gpu.device, "test.control.status.rb", 16, 4);
         let schedule_readback = readback_bytes(&gpu.device, "test.control.schedule.rb", 160, 40);
-        encoder.copy_buffer_to_buffer(&output.count.buffer, 0, &count_readback.buffer, 0, 4);
-        encoder.copy_buffer_to_buffer(&output.core.buffer, 0, &core_readback.buffer, 0, 280);
-        encoder.copy_buffer_to_buffer(
-            &output.operands.buffer,
-            0,
-            &operands_readback.buffer,
-            0,
-            160,
-        );
-        encoder.copy_buffer_to_buffer(&stage.status().buffer, 0, &status_readback.buffer, 0, 16);
-        encoder.copy_buffer_to_buffer(&stage.schedule.buffer, 0, &schedule_readback.buffer, 0, 160);
+        output.count.copy_to(&mut encoder, 0, &count_readback, 0, 4);
+        output.core.copy_to(&mut encoder, 0, &core_readback, 0, 280);
+        output
+            .operands
+            .copy_to(&mut encoder, 0, &operands_readback, 0, 160);
+        stage
+            .status()
+            .copy_to(&mut encoder, 0, &status_readback, 0, 16);
+        stage
+            .schedule
+            .copy_to(&mut encoder, 0, &schedule_readback, 0, 160);
         gpu.queue.submit(Some(encoder.finish()));
 
         let status = read_words(&gpu.device, &status_readback);

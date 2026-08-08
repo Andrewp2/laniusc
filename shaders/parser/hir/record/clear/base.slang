@@ -8,6 +8,8 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint semantic_parent_local_ancestor_span;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gClear;
@@ -33,14 +35,7 @@ RWStructuredBuffer<uint> hir_method_receiver_mode;
 RWStructuredBuffer<uint> hir_method_visibility;
 RWStructuredBuffer<uint> hir_method_signature_flags;
 RWStructuredBuffer<uint> hir_method_impl_receiver_type_node;
-RWStructuredBuffer<uint> hir_expr_record;
-RWStructuredBuffer<uint> hir_expr_name_role;
-RWStructuredBuffer<uint> hir_expr_result_node;
-RWStructuredBuffer<uint> hir_expr_result_root_node;
 RWStructuredBuffer<uint> hir_expr_result_root_scratch_node;
-RWStructuredBuffer<uint> hir_expr_parent_node;
-RWStructuredBuffer<uint> hir_expr_forest_root_node;
-RWStructuredBuffer<uint> hir_expr_forest_status;
 RWStructuredBuffer<uint> hir_stmt_record;
 RWStructuredBuffer<uint> hir_stmt_scope_end;
 RWStructuredBuffer<uint> hir_nearest_stmt_node;
@@ -49,6 +44,9 @@ RWStructuredBuffer<uint> hir_nearest_enclosing_control_node;
 RWStructuredBuffer<uint> hir_nearest_loop_node;
 RWStructuredBuffer<uint> hir_nearest_fn_node;
 RWStructuredBuffer<uint> hir_nearest_array_element_node;
+RWStructuredBuffer<uint> hir_call_context_stmt_node;
+RWStructuredBuffer<uint> hir_array_lit_context_stmt_node;
+RWStructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 RWStructuredBuffer<uint> hir_type_alias_target_node;
 RWStructuredBuffer<uint> hir_fn_return_type_node;
 RWStructuredBuffer<uint> hir_type_len_value;
@@ -61,7 +59,6 @@ static const uint HIR_ITEM_KIND_NONE = 0u;
 static const uint HIR_ITEM_NAMESPACE_NONE = 0u;
 static const uint HIR_ITEM_VIS_PRIVATE = 0u;
 static const uint HIR_ITEM_IMPORT_TARGET_NONE = 0u;
-static const uint HIR_EXPR_NONE = 0u;
 static const uint STMT_RECORD_KIND_NONE = 0u;
 static const uint RECORD_STRIDE = 4u;
 
@@ -119,28 +116,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_method_signature_flags[node] = 0u;
     hir_method_impl_receiver_type_node[node] = INVALID;
 
-    hir_expr_record[slot(node, 0u)] = HIR_EXPR_NONE;
-    hir_expr_record[slot(node, 1u)] = INVALID;
-    hir_expr_record[slot(node, 2u)] = INVALID;
-    hir_expr_record[slot(node, 3u)] = INVALID;
-    hir_expr_name_role[node] = 0u;
-    hir_expr_result_node[node] = INVALID;
-    hir_expr_result_root_node[node] = INVALID;
     hir_expr_result_root_scratch_node[node] = INVALID;
-    hir_expr_parent_node[node] = INVALID;
-    hir_expr_forest_root_node[node] = INVALID;
     if (node == 0u)
-        hir_expr_forest_status[0u] = 0u;
 
     hir_stmt_record[slot(node, 0u)] = STMT_RECORD_KIND_NONE;
     hir_stmt_record[slot(node, 1u)] = INVALID;
     hir_stmt_record[slot(node, 2u)] = INVALID;
     hir_stmt_record[slot(node, 3u)] = INVALID;
-    hir_stmt_scope_end[node] = INVALID;
-    hir_nearest_stmt_node[node] = INVALID;
-    hir_nearest_block_node[node] = INVALID;
-    hir_nearest_enclosing_control_node[node] = INVALID;
-    hir_nearest_loop_node[node] = INVALID;
-    hir_nearest_fn_node[node] = INVALID;
-    hir_nearest_array_element_node[node] = INVALID;
+    if (gClear.retain_debug_rows != 0u)
+    {
+        hir_stmt_scope_end[node] = INVALID;
+        hir_nearest_stmt_node[node] = INVALID;
+        hir_nearest_block_node[node] = INVALID;
+        hir_nearest_enclosing_control_node[node] = INVALID;
+        hir_nearest_loop_node[node] = INVALID;
+        hir_nearest_fn_node[node] = INVALID;
+        hir_nearest_array_element_node[node] = INVALID;
+        hir_call_context_stmt_node[node] = INVALID;
+        hir_array_lit_context_stmt_node[node] = INVALID;
+        hir_struct_lit_context_stmt_node[node] = INVALID;
+    }
 }

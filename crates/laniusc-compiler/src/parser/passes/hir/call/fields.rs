@@ -13,6 +13,7 @@ use crate::{
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
+    pub retain_debug_rows: u32,
 }
 
 /// Pass that records callee and argument metadata for call expressions.
@@ -79,10 +80,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCallFieldsPas
             (
                 "hir_call_parent_by_callee".into(),
                 b.hir_call_parent_by_callee.as_entire_binding(),
-            ),
-            (
-                "hir_call_context_stmt_node".into(),
-                b.hir_call_context_stmt_node.as_entire_binding(),
             ),
             (
                 "hir_call_arg_start".into(),

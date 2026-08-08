@@ -38,3 +38,26 @@ pub const LEXICALLY_PROVEN_PARSER_FEATURES: u32 = PARSER_FEATURE_ARRAYS
 /// Unknown means present: disabling a family is valid only when the measured
 /// feature flags prove it absent.
 pub const CONSERVATIVE_PARSER_FEATURES: u32 = u32::MAX;
+
+/// Converts the lexer's proven feature set into a safe parser-allocation set.
+///
+/// Struct literals may name a type imported from another source file, so the
+/// absence of a local `struct` keyword does not prove that struct-family parser
+/// storage is unused. Until semantic classification has run, that family must
+/// remain provisioned.
+pub const fn parser_allocation_features(lexical_features: u32) -> u32 {
+    lexical_features | PARSER_FEATURE_STRUCTS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parser_allocation_keeps_semantically_discovered_structs_enabled() {
+        assert_eq!(
+            parser_allocation_features(PARSER_FEATURE_IMPORTS),
+            PARSER_FEATURE_IMPORTS | PARSER_FEATURE_STRUCTS
+        );
+    }
+}

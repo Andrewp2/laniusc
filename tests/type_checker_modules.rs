@@ -50,6 +50,45 @@ fn assert_gpu_type_check_rejects(src: &str) {
     }
 }
 
+#[test]
+fn range_interface_preserves_generic_fields_and_methods() {
+    let artifact = common::semantic_interface_with_timeout(
+        7,
+        &[include_str!("../stdlib/core/range.lani")],
+    )
+    .unwrap();
+    let declaration = artifact
+        .declarations
+        .iter()
+        .find(|declaration| {
+            semantic_interface_name(
+                &artifact.name_bytes,
+                declaration.name_byte_start,
+                declaration.name_byte_len,
+            ) == "Range"
+        })
+        .expect("Range must be exported");
+    let first = declaration.first_member as usize;
+    let end = first + declaration.member_count as usize;
+    let kinds = artifact.members[first..end]
+        .iter()
+        .map(|member| member.kind)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds,
+        vec![
+            GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32,
+            GpuSemanticInterfaceMemberKind::Field as u32,
+            GpuSemanticInterfaceMemberKind::Field as u32,
+            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
+            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
+            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
+            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
+            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
+        ]
+    );
+}
+
 fn assert_gpu_type_check_accepts(src: &str) {
     common::type_check_source_with_timeout(src)
         .unwrap_or_else(|err| panic!("source should pass GPU type checking: {err:?}"));
@@ -3746,6 +3785,7 @@ fn main() {
     }
     return end;
 }
+
 "#,
         ),
         (

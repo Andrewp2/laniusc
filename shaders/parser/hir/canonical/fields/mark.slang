@@ -1,8 +1,10 @@
 import token_features;
+import generated_parse_production_ids;
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> token_feature_flags;
+StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> decl_owner;
 StructuredBuffer<uint> literal_owner;
 RWStructuredBuffer<uint> family_flag;
@@ -22,7 +24,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         family_flag[raw] = 0u;
         return;
     }
-    bool declaration = raw < active_count() && decl_owner[raw] != INVALID;
-    bool initializer = raw < active_count() && literal_owner[raw] != INVALID;
+    uint prod = raw < active_count() ? node_kind[raw] : INVALID;
+    bool declaration = prod == PROD_STRUCT_FIELD && decl_owner[raw] != INVALID;
+    bool initializer = prod == PROD_STRUCT_LIT_FIELD && literal_owner[raw] != INVALID;
     family_flag[raw] = declaration || initializer ? 1u : 0u;
 }

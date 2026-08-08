@@ -41,7 +41,13 @@ use util::*;
 use wgpu::util::DeviceExt;
 
 use crate::gpu::{
-    buffers::{LaniusBuffer, storage_ro_from_bytes, storage_ro_from_u32s, uniform_from_val},
+    buffers::{
+        LaniusBuffer,
+        TrackedBufferView,
+        storage_ro_from_bytes,
+        storage_ro_from_u32s,
+        uniform_from_val,
+    },
     compiler_graph::{CompilerGraphBindings, PrefixScanWorkspace},
     device,
     kernels::KernelRegistry,
@@ -72,9 +78,9 @@ use crate::gpu::{
     },
     resource_registry::{
         ResourceMap,
-        buffer_from_resources,
         reflected_bind_group_from_resources,
         reflected_bind_group_with_overrides,
+        typed_buffer_from_resources,
     },
     scan::{PrefixScanHierarchyParams, PrefixScanParams},
 };
@@ -609,6 +615,16 @@ pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
     pub external_type_library_id: &'a wgpu::Buffer,
     pub external_type_unit_id: &'a wgpu::Buffer,
     pub external_type_local_index: &'a wgpu::Buffer,
+    pub semantic_type_ref_tag_by_hir: &'a wgpu::Buffer,
+    pub semantic_type_ref_payload_by_hir: &'a wgpu::Buffer,
+    pub semantic_type_generic_param_slot_by_hir: &'a wgpu::Buffer,
+    pub semantic_type_external_library_id_by_hir: &'a wgpu::Buffer,
+    pub semantic_type_external_unit_id_by_hir: &'a wgpu::Buffer,
+    pub semantic_type_external_local_index_by_hir: &'a wgpu::Buffer,
+    pub resolved_dependency_library_id: &'a wgpu::Buffer,
+    pub resolved_dependency_unit_id: &'a wgpu::Buffer,
+    pub resolved_dependency_local_index: &'a wgpu::Buffer,
+    pub path_id_by_owner_hir: &'a wgpu::Buffer,
     pub path_id_by_owner_token: &'a wgpu::Buffer,
     pub resolved_type_decl: &'a wgpu::Buffer,
     pub decl_id_by_name_token: &'a wgpu::Buffer,
@@ -641,6 +657,10 @@ pub struct GpuSemanticInterfaceHirBuffers<'a> {
     pub compact_type_arg_count: &'a wgpu::Buffer,
     pub compact_type_args: &'a wgpu::Buffer,
     pub compact_type_arg_ranges: &'a wgpu::Buffer,
+    pub compact_path_count: &'a wgpu::Buffer,
+    pub compact_paths: &'a wgpu::Buffer,
+    pub compact_path_segment_count: &'a wgpu::Buffer,
+    pub compact_path_segments: &'a wgpu::Buffer,
     pub compact_field_count: &'a wgpu::Buffer,
     pub compact_fields: &'a wgpu::Buffer,
     pub compact_variant_count: &'a wgpu::Buffer,

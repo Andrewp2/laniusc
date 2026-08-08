@@ -22,7 +22,7 @@ static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
 void fail(uint detail)
 {
-    atomic_u32_or(interface_status, 0u, 2048u);
+    atomic_u32_or(interface_status, 0u, 65536u);
     atomic_u32_min(interface_status, 1u, detail);
 }
 

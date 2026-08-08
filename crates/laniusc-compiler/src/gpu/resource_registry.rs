@@ -21,8 +21,8 @@ pub(crate) trait ResourceBinding<'a> {
     fn binding(self) -> wgpu::BindingResource<'a>;
 
     /// Returns the compiler allocation identity when this binding is backed by
-    /// a tracked `LaniusBuffer`, plus the complete bound byte extent.
-    fn graph_identity(self) -> (Option<u64>, u64);
+    /// tracked storage, plus its bound byte offset and extent.
+    fn graph_identity(self) -> (Option<u64>, u64, u64);
 
     /// Logical byte extent of this view, which may be smaller than its aliased
     /// physical allocation.
@@ -34,8 +34,8 @@ impl<'a> ResourceBinding<'a> for &'a wgpu::Buffer {
         self.as_entire_binding()
     }
 
-    fn graph_identity(self) -> (Option<u64>, u64) {
-        (None, self.size())
+    fn graph_identity(self) -> (Option<u64>, u64, u64) {
+        (None, 0, self.size())
     }
 
     fn logical_byte_size(self) -> u64 {
@@ -48,8 +48,8 @@ impl<'a, 'b> ResourceBinding<'a> for &'b &'a wgpu::Buffer {
         (*self).as_entire_binding()
     }
 
-    fn graph_identity(self) -> (Option<u64>, u64) {
-        (None, self.size())
+    fn graph_identity(self) -> (Option<u64>, u64, u64) {
+        (None, 0, self.size())
     }
 
     fn logical_byte_size(self) -> u64 {
@@ -62,8 +62,12 @@ impl<'a, T> ResourceBinding<'a> for &'a LaniusBuffer<T> {
         self.as_entire_binding()
     }
 
-    fn graph_identity(self) -> (Option<u64>, u64) {
-        (self.allocation_id(), self.byte_size as u64)
+    fn graph_identity(self) -> (Option<u64>, u64, u64) {
+        (
+            self.allocation_id(),
+            self.byte_offset,
+            self.byte_size as u64,
+        )
     }
 
     fn logical_byte_size(self) -> u64 {
@@ -76,8 +80,8 @@ impl<'a> ResourceBinding<'a> for TrackedBufferView<'a> {
         self.as_entire_binding()
     }
 
-    fn graph_identity(self) -> (Option<u64>, u64) {
-        (self.allocation_id(), self.byte_size)
+    fn graph_identity(self) -> (Option<u64>, u64, u64) {
+        (self.allocation_id(), self.byte_offset, self.byte_size)
     }
 
     fn logical_byte_size(self) -> u64 {
@@ -90,8 +94,12 @@ impl<'a, 'b, T> ResourceBinding<'a> for &'b &'a LaniusBuffer<T> {
         (*self).as_entire_binding()
     }
 
-    fn graph_identity(self) -> (Option<u64>, u64) {
-        (self.allocation_id(), self.byte_size as u64)
+    fn graph_identity(self) -> (Option<u64>, u64, u64) {
+        (
+            self.allocation_id(),
+            self.byte_offset,
+            self.byte_size as u64,
+        )
     }
 
     fn logical_byte_size(self) -> u64 {
@@ -102,6 +110,7 @@ impl<'a, 'b, T> ResourceBinding<'a> for &'b &'a LaniusBuffer<T> {
 #[derive(Clone, Copy)]
 struct GraphResourceIdentity {
     allocation_id: Option<u64>,
+    byte_offset: u64,
     byte_size: u64,
     logical_byte_size: u64,
 }
@@ -146,6 +155,25 @@ impl<'a> ResourceMap<'a> {
         self.resources.clone()
     }
 
+    /// Returns the exact logical range registered for a reflected buffer.
+    pub(crate) fn tracked_view(&self, name: &str) -> Result<TrackedBufferView<'a>> {
+        let binding = match self.resources.get(name) {
+            Some(wgpu::BindingResource::Buffer(binding)) => binding,
+            Some(_) => return Err(anyhow::anyhow!("GPU resource `{name}` is not a buffer")),
+            None => return Err(anyhow::anyhow!("GPU resource `{name}` is not registered")),
+        };
+        let identity = self
+            .graph_identities
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("GPU resource `{name}` has no range identity"))?;
+        Ok(TrackedBufferView::from_parts(
+            binding.buffer,
+            identity.byte_offset,
+            identity.byte_size,
+            identity.allocation_id,
+        ))
+    }
+
     /// Inserts a prebuilt binding resource under the shader resource name.
     pub(crate) fn add(&mut self, name: &'static str, resource: wgpu::BindingResource<'a>) {
         // Raw upstream buffers are valid immutable graph inputs even when
@@ -161,6 +189,7 @@ impl<'a> ResourceMap<'a> {
                 name.to_owned(),
                 GraphResourceIdentity {
                     allocation_id: None,
+                    byte_offset: binding.offset,
                     byte_size,
                     logical_byte_size: byte_size,
                 },
@@ -174,13 +203,14 @@ impl<'a> ResourceMap<'a> {
     where
         B: ResourceBinding<'a> + Copy,
     {
-        let (allocation_id, byte_size) = buffer.graph_identity();
+        let (allocation_id, byte_offset, byte_size) = buffer.graph_identity();
         let logical_byte_size = buffer.logical_byte_size();
         self.add(name, buffer.binding());
         self.graph_identities.insert(
             name.to_owned(),
             GraphResourceIdentity {
                 allocation_id,
+                byte_offset,
                 byte_size,
                 logical_byte_size,
             },
@@ -372,6 +402,7 @@ impl<'a> ResourceMap<'a> {
                     access.binding,
                     access.resource,
                     identity.allocation_id,
+                    identity.byte_offset,
                     identity.byte_size,
                 )
                 .map_err(anyhow::Error::msg)?;
@@ -494,4 +525,36 @@ pub(crate) fn buffer_from_resources<'buffer>(
             "type-check resource `{name}` is not registered"
         )),
     }
+}
+
+/// Reconstructs a typed logical view without discarding an arena binding's
+/// byte range or compiler allocation identity.
+pub(crate) fn typed_buffer_from_resources<T>(
+    resources: &ResourceMap<'_>,
+    name: &str,
+) -> Result<LaniusBuffer<T>> {
+    let binding = match resources.resources.get(name) {
+        Some(wgpu::BindingResource::Buffer(binding)) => binding,
+        Some(_) => return Err(anyhow::anyhow!("GPU resource `{name}` is not a buffer")),
+        None => return Err(anyhow::anyhow!("GPU resource `{name}` is not registered")),
+    };
+    let identity = resources
+        .graph_identities
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("GPU resource `{name}` has no range identity"))?;
+    let element_bytes = std::mem::size_of::<T>() as u64;
+    if element_bytes == 0 || identity.logical_byte_size % element_bytes != 0 {
+        return Err(anyhow::anyhow!(
+            "GPU resource `{name}` is incompatible with the requested element type"
+        ));
+    }
+    let count = usize::try_from(identity.logical_byte_size / element_bytes)
+        .map_err(|_| anyhow::anyhow!("GPU resource `{name}` exceeds host addressable size"))?;
+    Ok(TrackedBufferView::from_parts(
+        binding.buffer,
+        identity.byte_offset,
+        identity.byte_size,
+        identity.allocation_id,
+    )
+    .alias(count))
 }

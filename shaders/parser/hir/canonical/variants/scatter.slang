@@ -7,12 +7,7 @@ StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;
 StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> raw_to_hir;
-StructuredBuffer<uint> canonical_anchor_owner;
-StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_token_file_id;
 StructuredBuffer<uint> variant_parent_enum;
 StructuredBuffer<uint> variant_ordinal;
@@ -26,30 +21,9 @@ static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 uint block_count() { return (gCanonical.raw_capacity + 255u) / 256u; }
-uint semantic_anchor(uint raw)
-{
-    uint kind = hir_kind[raw];
-    uint expr_form = hir_expr_record[raw * 4u];
-    uint identity_kind = canonical_hir_identity_kind(kind, expr_form, false);
-    uint callee = hir_call_callee_node[raw];
-    uint open = callee < gCanonical.raw_capacity ? hir_token_end[callee] : INVALID;
-    uint right = hir_expr_record[raw * 4u + 2u];
-    uint right_start = right < gCanonical.raw_capacity ? hir_token_pos[right] : INVALID;
-    uint operator_token = canonical_hir_operator_anchor(
-        identity_kind, right_start, gCanonical.canonical_capacity);
-    uint value_token = hir_expr_record[raw * 4u + 3u];
-    return canonical_hir_anchor(identity_kind, hir_token_pos[raw], hir_token_end[raw], open, value_token,
-                                operator_token, gCanonical.canonical_capacity);
-}
 uint mapped(uint raw)
 {
-    if (raw >= gCanonical.raw_capacity) return INVALID;
-    uint direct = raw_to_hir[raw];
-    if (direct != INVALID) return direct;
-    uint anchor = semantic_anchor(raw);
-    if (anchor >= gCanonical.canonical_capacity) return INVALID;
-    uint winner_plus_one = canonical_anchor_owner[anchor] & 0x0fffffffu;
-    return winner_plus_one == 0u ? INVALID : raw_to_hir[winner_plus_one - 1u];
+    return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID;
 }
 
 [shader("compute")]

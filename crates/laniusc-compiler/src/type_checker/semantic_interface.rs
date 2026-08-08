@@ -23,7 +23,7 @@ fn graph_prefix_scan(
     graph: &compiler_graph::TypeCheckCompilerGraph,
     scan: compiler_graph::SemanticInterfaceScan,
     count: &wgpu::Buffer,
-    dispatch_args: &wgpu::Buffer,
+    dispatch_args: &LaniusBuffer<u32>,
     input: &wgpu::Buffer,
     output_prefix: &LaniusBuffer<u32>,
     total: &LaniusBuffer<u32>,
@@ -200,7 +200,24 @@ impl GpuTypeChecker {
             state
                 .typecheck_graph
                 .u32_buffer("semantic_function_host_service_by_hir")?,
+            state.typecheck_graph.u32_buffer("semantic_type_ref_tag_by_hir")?,
+            state
+                .typecheck_graph
+                .u32_buffer("semantic_type_ref_payload_by_hir")?,
+            state
+                .typecheck_graph
+                .u32_buffer("semantic_type_external_library_id_by_hir")?,
+            state
+                .typecheck_graph
+                .u32_buffer("semantic_type_external_unit_id_by_hir")?,
+            state
+                .typecheck_graph
+                .u32_buffer("semantic_type_external_local_index_by_hir")?,
+            state
+                .typecheck_graph
+                .u32_buffer("semantic_type_generic_param_slot_by_hir")?,
         ];
+        let dependency_visibility = module_path.dependency_visibility.as_deref();
         let inputs = GpuSemanticInterfaceIdentityBuffers {
             name_capacity: state.name_capacity,
             module_capacity: u32::try_from(module_path.module_key_segment_count.count)
@@ -240,6 +257,22 @@ impl GpuTypeChecker {
             external_type_library_id: &graph_buffers[11],
             external_type_unit_id: &graph_buffers[12],
             external_type_local_index: &graph_buffers[13],
+            semantic_type_ref_tag_by_hir: &graph_buffers[15],
+            semantic_type_ref_payload_by_hir: &graph_buffers[16],
+            semantic_type_external_library_id_by_hir: &graph_buffers[17],
+            semantic_type_external_unit_id_by_hir: &graph_buffers[18],
+            semantic_type_external_local_index_by_hir: &graph_buffers[19],
+            semantic_type_generic_param_slot_by_hir: &graph_buffers[20],
+            resolved_dependency_library_id: dependency_visibility
+                .map(|visibility| &visibility.resolved_dependency_library_id)
+                .unwrap_or(&graph_buffers[11]),
+            resolved_dependency_unit_id: dependency_visibility
+                .map(|visibility| &visibility.resolved_dependency_unit_id)
+                .unwrap_or(&graph_buffers[11]),
+            resolved_dependency_local_index: dependency_visibility
+                .map(|visibility| &visibility.resolved_dependency_local_index)
+                .unwrap_or(&graph_buffers[11]),
+            path_id_by_owner_hir: &module_path.path_id_by_owner_hir,
             path_id_by_owner_token: &module_path.path_id_by_owner_token,
             resolved_type_decl: &module_path.resolved_type_decl,
             decl_id_by_name_token: &module_path.decl_id_by_name_token,
@@ -982,6 +1015,10 @@ impl GpuTypeChecker {
             "compact_type_arg_count" => hir.compact_type_arg_count,
             "compact_type_arg_ranges" => hir.compact_type_arg_ranges,
             "compact_type_args" => hir.compact_type_args,
+            "compact_path_count" => hir.compact_path_count,
+            "compact_paths" => hir.compact_paths,
+            "compact_path_segment_count" => hir.compact_path_segment_count,
+            "compact_path_segments" => hir.compact_path_segments,
             "compact_variant_count" => hir.compact_variant_count,
             "compact_variant_payload_count" => hir.compact_variant_payload_count,
             "compact_variant_payload_row_count" => hir.compact_variant_payload_row_count,
@@ -997,17 +1034,27 @@ impl GpuTypeChecker {
             "external_type_library_id" => inputs.external_type_library_id,
             "external_type_unit_id" => inputs.external_type_unit_id,
             "external_type_local_index" => inputs.external_type_local_index,
+            "semantic_type_ref_tag_by_hir" => inputs.semantic_type_ref_tag_by_hir,
+            "semantic_type_ref_payload_by_hir" => inputs.semantic_type_ref_payload_by_hir,
+            "semantic_type_generic_param_slot_by_hir" => inputs.semantic_type_generic_param_slot_by_hir,
+            "semantic_type_external_library_id_by_hir" => inputs.semantic_type_external_library_id_by_hir,
+            "semantic_type_external_unit_id_by_hir" => inputs.semantic_type_external_unit_id_by_hir,
+            "semantic_type_external_local_index_by_hir" => inputs.semantic_type_external_local_index_by_hir,
             "generic_param_count_out" => inputs.generic_param_count_out,
             "generic_param_kind" => inputs.generic_param_kind,
             "generic_param_name_id" => inputs.generic_param_name_id,
             "generic_param_owner_token" => inputs.generic_param_owner_token,
             "generic_param_token" => inputs.generic_param_token,
             "name_id_by_token" => inputs.name_id_by_token,
+            "path_id_by_owner_hir" => inputs.path_id_by_owner_hir,
             "path_id_by_owner_token" => inputs.path_id_by_owner_token,
             "public_decl_count" => inputs.public_decl_count,
             "public_decl_index_by_hir" => inputs.public_decl_index_by_hir,
             "public_decl_index_by_local" => inputs.public_decl_index_by_local,
             "public_decl_local_id" => inputs.public_decl_local_id,
+            "resolved_dependency_library_id" => inputs.resolved_dependency_library_id,
+            "resolved_dependency_unit_id" => inputs.resolved_dependency_unit_id,
+            "resolved_dependency_local_index" => inputs.resolved_dependency_local_index,
             "resolved_type_decl" => inputs.resolved_type_decl,
             "type_const_param_slot_by_token" => inputs.type_const_param_slot_by_token,
             "type_expr_ref_payload" => inputs.type_expr_ref_payload,

@@ -7,11 +7,11 @@ pub(in crate::type_checker) fn create_method_bind_groups(
     passes: &TypeCheckPasses,
     resources: &ResourceMap<'_>,
     keys: MethodKeyPipeline,
-    token_args: &wgpu::Buffer,
-    method_token_args: &wgpu::Buffer,
-    method_compact_args: &wgpu::Buffer,
-    method_hir_args: &wgpu::Buffer,
-    method_token_hir_args: &wgpu::Buffer,
+    token_args: &LaniusBuffer<u32>,
+    method_token_args: &LaniusBuffer<u32>,
+    method_compact_args: &LaniusBuffer<u32>,
+    method_hir_args: &LaniusBuffer<u32>,
+    method_token_hir_args: &LaniusBuffer<u32>,
 ) -> Result<MethodBindGroups> {
     let indirect =
         |spec, args| ComputeOperation::indirect_spec(device, graph, resources, passes, spec, args);

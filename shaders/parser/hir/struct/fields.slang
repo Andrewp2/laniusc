@@ -8,6 +8,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirStruct;
@@ -18,7 +19,6 @@ RWStructuredBuffer<uint> hir_struct_field_type_node;
 RWStructuredBuffer<uint> hir_struct_decl_field_start;
 RWStructuredBuffer<uint> hir_struct_decl_field_count;
 RWStructuredBuffer<uint> hir_struct_lit_head_node;
-RWStructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 RWStructuredBuffer<uint> hir_struct_lit_field_start;
 RWStructuredBuffer<uint> hir_struct_lit_field_count;
 RWStructuredBuffer<uint> hir_struct_lit_field_parent_lit;
@@ -44,12 +44,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_struct_field_parent_struct[node] = INVALID;
     hir_struct_field_ordinal[node] = INVALID;
     hir_struct_field_type_node[node] = INVALID;
-    hir_struct_decl_field_start[node] = INVALID;
-    hir_struct_decl_field_count[node] = 0u;
+    if (gHirStruct.retain_debug_rows != 0u)
+    {
+        hir_struct_decl_field_start[node] = INVALID;
+        hir_struct_decl_field_count[node] = 0u;
+        hir_struct_lit_field_start[node] = INVALID;
+        hir_struct_lit_field_count[node] = 0u;
+    }
     hir_struct_lit_head_node[node] = INVALID;
-    hir_struct_lit_context_stmt_node[node] = INVALID;
-    hir_struct_lit_field_start[node] = INVALID;
-    hir_struct_lit_field_count[node] = 0u;
     hir_struct_lit_field_parent_lit[node] = INVALID;
     hir_struct_lit_field_value_node[node] = INVALID;
 }

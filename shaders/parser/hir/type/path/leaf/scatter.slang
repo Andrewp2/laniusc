@@ -14,12 +14,14 @@ ConstantBuffer<Params> gHirType;
 
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_type_value_node;
+StructuredBuffer<uint> hir_node_dense_id;
+StructuredBuffer<uint> hir_semantic_parent;
+StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_type_path_leaf_value_a;
 
+RWStructuredBuffer<uint> hir_type_value_node;
 RWStructuredBuffer<uint> hir_type_path_leaf_node;
 RWStructuredBuffer<uint> hir_type_path_owner_by_leaf;
 RWStructuredBuffer<uint> hir_bound_path_owner_by_leaf;
@@ -30,6 +32,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_TYPE = 5u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 
 uint linear_thread_id(uint3 dtid)
@@ -47,14 +50,6 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
-uint first_child_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint child = first_child[node];
-    return valid_node(child) ? child : INVALID;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -67,37 +62,39 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint leaf = hir_type_path_leaf_value_a[node];
         hir_type_path_leaf_node[node] = leaf;
-        return;
     }
 
-    if (node_kind[node] == PROD_BOUND_TYPE_IDENT)
-    {
-        uint path_node = first_child_node(node);
-        if (valid_node(path_node) && node_kind[path_node] == PROD_BOUND_TYPE_PATH)
-        {
-            uint leaf = hir_type_path_leaf_value_a[path_node];
-            hir_type_path_leaf_node[node] = leaf;
-            if (valid_node(leaf))
-                hir_bound_path_owner_by_leaf[leaf] = node;
-        }
+    // A type path root can sit below arbitrary grammar forwarding nodes. Join
+    // the root to its nearest semantic HIR owner instead of assuming it is the
+    // raw first child of the type row.
+    if (node_kind[node] != PROD_TYPE_PATH && node_kind[node] != PROD_PATH &&
+        node_kind[node] != PROD_BOUND_TYPE_PATH)
         return;
-    }
-
-    if (hir_type_form[node] != HIR_TYPE_FORM_PATH)
-        return;
-
-    uint path_node = hir_type_value_node[node];
-    if (!valid_node(path_node))
+    uint path_row = hir_node_dense_id[node];
+    uint owner_row = path_row != INVALID && path_row < active_node_count()
+        ? hir_semantic_parent[path_row]
+        : INVALID;
+    uint owner = owner_row != INVALID && owner_row < active_node_count()
+        ? hir_semantic_dense_node[owner_row]
+        : INVALID;
+    if (!valid_node(owner) || hir_kind[owner] != HIR_TYPE ||
+        hir_type_form[owner] != HIR_TYPE_FORM_PATH)
         return;
 
-    uint leaf = hir_type_path_leaf_value_a[path_node];
-    hir_type_path_leaf_node[node] = leaf;
+    uint leaf = hir_type_path_leaf_value_a[node];
+    hir_type_value_node[owner] = node;
+    hir_type_path_leaf_node[owner] = leaf;
     if (valid_node(leaf))
     {
+        if (node_kind[node] == PROD_BOUND_TYPE_PATH)
+        {
+            hir_bound_path_owner_by_leaf[leaf] = owner;
+            return;
+        }
         // Grammar wrapper records can publish the same leaf as their semantic
         // HIR_TYPE owner. Prefer the lower (outer semantic) node independent
         // of lane order while preserving zero as the host-clear sentinel.
-        uint encoded_owner = OWNER_NODE_MASK - node;
+        uint encoded_owner = OWNER_NODE_MASK - owner;
         atomic_u32_max(hir_type_path_owner_by_leaf, leaf, encoded_owner);
     }
 }

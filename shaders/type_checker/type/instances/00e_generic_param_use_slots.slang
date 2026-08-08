@@ -450,5 +450,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint slot = slot_for_row(row);
     if (slot != INVALID)
+    {
         type_generic_param_slot_by_token[token] = slot;
+        type_expr_ref_tag[token] = TYPE_REF_GENERIC_PARAM;
+        type_expr_ref_payload[token] = generic_param_token[row];
+    }
 }

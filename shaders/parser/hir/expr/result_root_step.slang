@@ -1,7 +1,7 @@
 // Pointer-jump parser expression result edges into direct result roots.
 //
-// `hir_expr_result_node` remains the local edge relation. This pass family
-// materializes the transitive result root with one graph hop per dispatch, so
+// The expression-field pass publishes the local edge relation. This pass
+// materializes its transitive result root with one graph hop per dispatch, so
 // consumers do not need bounded in-shader chases through expression wrappers.
 
 struct Params

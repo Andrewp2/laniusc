@@ -127,29 +127,7 @@ impl GpuParser {
         )
     }
 
-    pub(in crate::parser::driver) fn resident_buffers_for_with_tree_capacity_and_source_and_features<
-        'a,
-    >(
-        &self,
-        slot: &'a mut Option<ResidentParserBufferCache>,
-        token_capacity: u32,
-        source_capacity: u32,
-        tables: &PrecomputedParseTables,
-        tree_capacity_override: Option<u32>,
-        parser_feature_flags: u32,
-    ) -> &'a ParserBuffers {
-        self.resident_buffers_for_with_tree_capacity_and_debug(
-            slot,
-            token_capacity,
-            source_capacity,
-            tables,
-            tree_capacity_override,
-            false,
-            parser_feature_flags,
-        )
-    }
-
-    fn resident_buffers_for_with_tree_capacity_and_debug<'a>(
+    pub(in crate::parser::driver) fn resident_buffers_for_with_tree_capacity_and_debug<'a>(
         &self,
         slot: &'a mut Option<ResidentParserBufferCache>,
         token_capacity: u32,

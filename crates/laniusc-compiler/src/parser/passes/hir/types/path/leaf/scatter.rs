@@ -46,16 +46,27 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypePathLeafS
                 },
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
-            ("first_child".into(), b.first_child.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_type_form".into(), b.hir_type_form.as_entire_binding()),
             (
-                "hir_type_value_node".into(),
-                b.hir_type_value_node.as_entire_binding(),
+                "hir_node_dense_id".into(),
+                b.hir_node_dense_id.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_parent".into(),
+                b.hir_semantic_parent.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_dense_node".into(),
+                b.hir_semantic_dense_node.as_entire_binding(),
             ),
             (
                 "hir_type_path_leaf_value_a".into(),
                 b.hir_type_path_leaf_value_a.as_entire_binding(),
+            ),
+            (
+                "hir_type_value_node".into(),
+                b.hir_type_value_node.as_entire_binding(),
             ),
             (
                 "hir_type_path_leaf_node".into(),

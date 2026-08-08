@@ -335,7 +335,7 @@ impl GpuDependencyInterfaceState {
             .copied()
             .flat_map(u32::to_le_bytes)
             .collect::<Vec<_>>();
-        queue.write_buffer(&self.words.buffer, 0, &bytes);
+        self.words.write(queue, 0, &bytes);
         Ok(())
     }
 }

@@ -64,7 +64,11 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirContextRelati
             ),
             (
                 "hir_stmt_record".into(),
-                b.hir_stmt_record.as_entire_binding(),
+                b.hir_canonical_stmt_record.as_entire_binding(),
+            ),
+            (
+                "canonical_raw_to_dense".into(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
             (
                 "hir_array_element_parent_lit".into(),

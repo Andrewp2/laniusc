@@ -67,7 +67,7 @@ impl HirSemanticParentStepPass {
             crate::gpu::passes_core::flush_deferred_compute(encoder);
             let bytes = u64::from(buffers.tree_capacity) * 4;
             for (src, dst) in [(link_b, link_a), (value_b, value_a)] {
-                encoder.copy_buffer_to_buffer(&src.buffer, 0, &dst.buffer, 0, bytes);
+                src.copy_to(encoder, 0, dst, 0, bytes);
             }
         }
 

@@ -13,6 +13,7 @@ use crate::{
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
+    pub retain_debug_rows: u32,
 }
 
 /// Pass that records field-list metadata for struct declarations.
@@ -70,10 +71,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStructFieldsP
             (
                 "hir_struct_lit_head_node".into(),
                 b.hir_struct_lit_head_node.as_entire_binding(),
-            ),
-            (
-                "hir_struct_lit_context_stmt_node".into(),
-                b.hir_struct_lit_context_stmt_node.as_entire_binding(),
             ),
             (
                 "hir_struct_lit_field_start".into(),

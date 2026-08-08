@@ -142,6 +142,13 @@ impl GpuParser {
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_nodes");
             }
+            // Classify expression forwarding directly on the temporary tree
+            // so the semantic scan can discard precedence scaffolding before
+            // constructing dense navigation.
+            self.passes
+                .hir_expr_fields
+                .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_fields_raw");
             self.passes
                 .tree_depth_init
                 .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
@@ -691,13 +698,6 @@ impl GpuParser {
                             &self.passes.hir_param_fields,
                             &bufs.hir_semantic_dispatch_args,
                         )?;
-                        batch.record_pass_indirect_cached(
-                            ctx.device,
-                            ctx.buffers,
-                            bg_cache,
-                            &self.passes.hir_expr_fields,
-                            &bufs.hir_semantic_dispatch_args,
-                        )?;
                     }
                     self.passes
                         .hir_expr_result_root_step
@@ -762,10 +762,6 @@ impl GpuParser {
                         .hir_param_fields
                         .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_param_fields");
-                    self.passes
-                        .hir_expr_fields
-                        .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_fields");
                     self.passes
                         .hir_expr_result_root_step
                         .record_steps_indirect(
@@ -866,6 +862,33 @@ impl GpuParser {
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_fields");
                 self.passes
+                    .hir_struct_lit_spans
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_struct_lit_identity_spans",
+                );
+                crate::parser::passes::record_canonical_hir_identity(&mut ctx, &self.passes)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_canonical_identity");
+                self.passes.hir_canonical_identity_aliases.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
+                )?;
+                crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_canonical_identity_aliases",
+                );
+                crate::parser::passes::record_canonical_variants(&mut ctx, &self.passes)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_variant_compact");
+                // The compact statement record is now durable, so its raw
+                // arena has changed ownership to call reconstruction. Counts
+                // require zero initialization; links/scatter overwrite the
+                // other active rows before reading them.
+                parser_clear_buffer(ctx.encoder, &bufs.hir_call_arg_count, 0, None);
+                self.passes
                     .hir_call_spans
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_spans");
@@ -935,23 +958,11 @@ impl GpuParser {
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_family_mark");
-                self.passes
-                    .hir_expr_forest_edges
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_forest_edges");
-                self.passes
-                    .hir_expr_forest_root_init
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_forest_root_init");
-                self.passes
-                    .hir_expr_forest_root_step
-                    .record_steps_indirect(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.tree_pointer_jump_dispatch_args,
-                    )?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_forest_root_step");
+                crate::parser::passes::record_canonical_call_arguments(
+                    &mut ctx,
+                    &self.passes,
+                )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_compact");
                 self.passes
                     .hir_array_fields
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
@@ -1009,6 +1020,11 @@ impl GpuParser {
                     .hir_array_element_scatter
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_element_scatter");
+                crate::parser::passes::record_canonical_array_elements(
+                    &mut ctx,
+                    &self.passes,
+                )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_element_compact");
                 self.passes
                     .hir_match_arm_links
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
@@ -1050,56 +1066,16 @@ impl GpuParser {
                     .hir_match_arm_scatter
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_scatter");
+                crate::parser::passes::record_canonical_matches(&mut ctx, &self.passes)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_compact");
                 self.passes
                     .hir_struct_fields
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_fields");
                 self.passes
-                    .hir_context_relations_init
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_context_relations_init");
-                if bufs.tree_capacity
-                    <= passes::hir::context::relations::step_small::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
-                {
-                    self.passes.hir_context_relations_step_small.record_pass(
-                        &mut ctx,
-                        crate::gpu::passes_core::InputElements::Elements1D(1),
-                    )?;
-                } else {
-                    self.passes
-                        .hir_context_relations_step
-                        .record_steps_indirect(
-                            ctx.device,
-                            ctx.encoder,
-                            ctx.buffers,
-                            &bufs.hir_semantic_pointer_jump_dispatch_args,
-                        )?;
-                }
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_context_relations_step");
-                self.passes
-                    .hir_context_relations_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(
-                    timer_ref,
-                    ctx.encoder,
-                    "parser.hir_context_relations_scatter",
-                );
-                self.passes
-                    .hir_method_fields
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_method_fields");
-                self.passes
-                    .hir_stmt_scope
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_stmt_scope");
-                self.passes
                     .hir_struct_field_links
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_links");
-                self.passes
-                    .hir_struct_lit_spans
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_lit_spans");
                 self.passes.hir_struct_rank_prefix_local.record_pass(
                     &mut ctx,
                     crate::gpu::passes_core::InputElements::Elements1D(
@@ -1151,12 +1127,63 @@ impl GpuParser {
                     .hir_struct_field_scatter
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_scatter");
+                crate::parser::passes::record_canonical_fields(&mut ctx, &self.passes)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_field_compact");
+                // Context pointer jumping aliases the two raw struct-list
+                // workspaces. Start it only after both declaration and
+                // literal fields have crossed the compact HIR boundary.
                 self.passes
-                    .hir_item_decl_tokens
+                    .hir_context_relations_init
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_item_decl_tokens");
-                crate::parser::passes::record_canonical_hir(&mut ctx, &self.passes)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_canonical");
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_context_relations_init");
+                if bufs.tree_capacity
+                    <= passes::hir::context::relations::step_small::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
+                {
+                    self.passes.hir_context_relations_step_small.record_pass(
+                        &mut ctx,
+                        crate::gpu::passes_core::InputElements::Elements1D(1),
+                    )?;
+                } else {
+                    self.passes
+                        .hir_context_relations_step
+                        .record_steps_indirect(
+                            ctx.device,
+                            ctx.encoder,
+                            ctx.buffers,
+                            &bufs.hir_semantic_pointer_jump_dispatch_args,
+                        )?;
+                }
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_context_relations_step");
+                self.passes
+                    .hir_context_relations_scatter
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_context_relations_scatter",
+                );
+                self.passes
+                    .hir_method_fields
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_method_fields");
+                self.passes
+                    .hir_stmt_scope
+                    .record_pass(
+                        &mut ctx,
+                        crate::gpu::passes_core::InputElements::Elements1D(
+                            bufs.hir_canonical_capacity,
+                        ),
+                    )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_stmt_scope");
+                crate::parser::passes::record_canonical_hir_materialization(
+                    &mut ctx,
+                    &self.passes,
+                )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_canonical_materialization",
+                );
             }
         }
         Ok(())

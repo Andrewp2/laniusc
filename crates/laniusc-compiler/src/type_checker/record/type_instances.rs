@@ -7,7 +7,7 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ResidentTypeCheckWorkspace,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
     labels: &TypeInstanceCollectionTimerLabels,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
@@ -54,7 +54,7 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     type_instances: &TypeInstanceBindGroups,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
     record_compute_indirect(
@@ -133,7 +133,7 @@ pub(in crate::type_checker) fn record_struct_field_key_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     type_instances: &TypeInstanceBindGroups,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
     record_compute_indirect(

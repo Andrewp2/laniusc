@@ -10,8 +10,8 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
     dependency_pages: Option<&GpuDependencyInterfacePages>,
-    hir_active_dispatch_args: &wgpu::Buffer,
-    _token_hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
+    _token_hir_active_dispatch_args: &LaniusBuffer<u32>,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
     record_module_path_prepare(
@@ -42,7 +42,7 @@ pub(in crate::type_checker) fn record_module_path_prepare(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
     timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
     record_module_path_stage(
@@ -81,7 +81,7 @@ fn record_module_path_stage(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
-    hir_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &LaniusBuffer<u32>,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
     stage: ModulePathRecordStage,
 ) -> Result<()> {

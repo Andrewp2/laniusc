@@ -148,7 +148,7 @@ pub(crate) struct HierarchicalRadixSortPlan<'a> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct HierarchicalRadixSortDispatch<'a> {
-    pub rows: &'a wgpu::Buffer,
+    pub rows: &'a LaniusBuffer<u32>,
     pub bucket_work_items: u32,
     pub bucket_chunk_work_items: u32,
     pub bucket_count: u32,
@@ -162,7 +162,7 @@ pub(crate) struct HierarchicalRadixSortDispatch<'a> {
 pub(super) struct HierarchicalRadixSortSchedule<P> {
     labels: HierarchicalRadixSortStageLabels,
     passes: OwnedHierarchicalRadixSortPasses,
-    row_dispatch_args: wgpu::Buffer,
+    row_dispatch_args: LaniusBuffer<u32>,
     bucket_work_items: u32,
     bucket_chunk_work_items: u32,
     bucket_count: u32,

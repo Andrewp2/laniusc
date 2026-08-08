@@ -125,36 +125,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                 b.hir_method_impl_receiver_type_node.as_entire_binding(),
             ),
             (
-                "hir_expr_record".into(),
-                b.hir_expr_record.as_entire_binding(),
-            ),
-            (
-                "hir_expr_name_role".into(),
-                b.hir_expr_name_role.as_entire_binding(),
-            ),
-            (
-                "hir_expr_result_node".into(),
-                b.hir_expr_result_node.as_entire_binding(),
-            ),
-            (
-                "hir_expr_result_root_node".into(),
-                b.hir_expr_result_root_node.as_entire_binding(),
-            ),
-            (
                 "hir_expr_result_root_scratch_node".into(),
                 b.hir_expr_result_root_scratch_node.as_entire_binding(),
-            ),
-            (
-                "hir_expr_parent_node".into(),
-                b.hir_expr_parent_node.as_entire_binding(),
-            ),
-            (
-                "hir_expr_forest_root_node".into(),
-                b.hir_expr_forest_root_node.as_entire_binding(),
-            ),
-            (
-                "hir_expr_forest_status".into(),
-                b.hir_expr_forest_status.as_entire_binding(),
             ),
             (
                 "hir_stmt_record".into(),
@@ -187,6 +159,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
             (
                 "hir_nearest_array_element_node".into(),
                 b.hir_nearest_array_element_node.as_entire_binding(),
+            ),
+            (
+                "hir_call_context_stmt_node".into(),
+                b.hir_call_context_stmt_node.as_entire_binding(),
+            ),
+            (
+                "hir_array_lit_context_stmt_node".into(),
+                b.hir_array_lit_context_stmt_node.as_entire_binding(),
+            ),
+            (
+                "hir_struct_lit_context_stmt_node".into(),
+                b.hir_struct_lit_context_stmt_node.as_entire_binding(),
             ),
         ])
     }

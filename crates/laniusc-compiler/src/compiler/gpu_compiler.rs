@@ -764,18 +764,13 @@ mod tests {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("test.control_depth.encoder"),
         });
-        encoder.copy_buffer_to_buffer(&hir.count.buffer, 0, &count_readback.buffer, 0, 4);
-        encoder.copy_buffer_to_buffer(
-            &hir.core.buffer,
+        hir.count.copy_to(&mut encoder, 0, &count_readback, 0, 4);
+        hir.core
+            .copy_to(&mut encoder, 0, &core_readback, 0, core_bytes as u64);
+        semantic.control_depth_by_hir.copy_to(
+            &mut encoder,
             0,
-            &core_readback.buffer,
-            0,
-            core_bytes as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &semantic.control_depth_by_hir.buffer,
-            0,
-            &depth_readback.buffer,
+            &depth_readback,
             0,
             depth_bytes as u64,
         );

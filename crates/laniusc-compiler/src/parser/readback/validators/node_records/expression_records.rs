@@ -130,6 +130,15 @@ pub fn validate_hir_expression_records(
         Ok(())
     };
 
+    let require_source_owner = |node: usize, label: &str| -> Result<()> {
+        if !has_non_empty_span(node) || node_file_ids[node] == INVALID {
+            return Err(anyhow!(
+                "parser raw expression row {node} published {label} without a source-addressable parse row"
+            ));
+        }
+        Ok(())
+    };
+
     let require_empty = |node: usize, label: &str| -> Result<()> {
         if left_nodes[node] != INVALID
             || right_nodes[node] != INVALID
@@ -253,7 +262,11 @@ pub fn validate_hir_expression_records(
                 require_empty(row, "no expression record")?;
             }
             HIR_EXPR_FORM_FORWARD => {
-                require_expression_owner(row, "forward record")?;
+                // Forwarding layers are temporary parse-tree structure used to
+                // resolve a concrete expression root.  Early HIR compaction
+                // deliberately excludes these rows, so unlike concrete value
+                // and operator records they need not own an expression HIR row.
+                require_source_owner(row, "forward record")?;
                 require_expression_edge(row, left_nodes[row], "forward target")?;
                 require_no_right_or_value(row, "forward record")?;
             }
@@ -382,9 +395,16 @@ pub fn validate_hir_expression_result_root_records(
         if root == INVALID {
             continue;
         }
-        if !is_hir_expression_kind(kinds[row]) {
+        if !is_hir_expression_kind(kinds[row]) && kinds[row] != HIR_NODE_NONE {
             return Err(anyhow!(
                 "parser HIR expression-result row {row} published a result root without an expression HIR row"
+            ));
+        }
+        if kinds[row] == HIR_NODE_NONE
+            && (!has_non_empty_span(row) || node_file_ids[row] == INVALID)
+        {
+            return Err(anyhow!(
+                "parser raw expression-result row {row} published a result root without source-addressable parse structure"
             ));
         }
         let root = root as usize;

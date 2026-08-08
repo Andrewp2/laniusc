@@ -18,8 +18,6 @@ use log::warn;
 const PIPELINE_CACHE_FILE_MAGIC: [u8; 8] = *b"LANIUSPC";
 const PIPELINE_CACHE_FILE_VERSION: u32 = 1;
 const PIPELINE_CACHE_HEADER_LEN: usize = 8 + 4 + 4 + 8 + 8 + 8;
-const MAX_COMPILER_BUFFER_BYTES: u64 = 2_147_483_644;
-
 /// Global GPU device/queue resource shared across compiler subsystems.
 pub struct GpuDevice {
     instance: wgpu::Instance,
@@ -518,12 +516,12 @@ fn compiler_device_limits(adapter_limits: &wgpu::Limits) -> wgpu::Limits {
     limits.max_compute_workgroup_storage_size = adapter_limits
         .max_compute_workgroup_storage_size
         .min(48 * 1024);
-    limits.max_storage_buffer_binding_size = adapter_limits
-        .max_storage_buffer_binding_size
-        .min(MAX_COMPILER_BUFFER_BYTES);
-    limits.max_buffer_size = adapter_limits
-        .max_buffer_size
-        .min(MAX_COMPILER_BUFFER_BYTES);
+    // WGPU has already applied the selected backend's hardware, driver, and
+    // shader-addressing safety limits to the adapter. Keep allocation size and
+    // storage-binding size distinct; the workspace arena planner may place
+    // several independently bindable ranges in a larger physical buffer.
+    limits.max_storage_buffer_binding_size = adapter_limits.max_storage_buffer_binding_size;
+    limits.max_buffer_size = adapter_limits.max_buffer_size;
     limits
 }
 
@@ -1012,18 +1010,18 @@ mod tests {
     }
 
     #[test]
-    fn compiler_buffer_limits_cap_large_adapters_without_demanding_all_vram() {
+    fn compiler_buffer_limits_preserve_large_adapter_capabilities() {
         let mut adapter = wgpu::Limits::defaults();
-        adapter.max_storage_buffer_binding_size = u64::MAX;
-        adapter.max_buffer_size = u64::MAX;
+        adapter.max_storage_buffer_binding_size = 3 * 1024 * 1024 * 1024;
+        adapter.max_buffer_size = 4 * 1024 * 1024 * 1024;
 
         let requested = compiler_device_limits(&adapter);
 
         assert_eq!(
             requested.max_storage_buffer_binding_size,
-            MAX_COMPILER_BUFFER_BYTES
+            adapter.max_storage_buffer_binding_size
         );
-        assert_eq!(requested.max_buffer_size, MAX_COMPILER_BUFFER_BYTES);
+        assert_eq!(requested.max_buffer_size, adapter.max_buffer_size);
     }
 
     #[test]

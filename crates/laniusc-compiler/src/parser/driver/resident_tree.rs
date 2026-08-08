@@ -123,7 +123,6 @@ struct ResidentTreeReadbacks {
     hir_stmt_scope_end: U32Readback,
     hir_item_kind: U32Readback,
     hir_item_name_token: U32Readback,
-    hir_item_decl_token: U32Readback,
     hir_item_namespace: U32Readback,
     hir_item_visibility: U32Readback,
     hir_item_path_start: U32Readback,
@@ -164,9 +163,6 @@ struct ResidentTreeReadbacks {
     hir_array_element_next: U32Readback,
     hir_expr_name_role: U32Readback,
     hir_expr_result_root_node: U32Readback,
-    hir_expr_parent_node: U32Readback,
-    hir_expr_forest_root_node: U32Readback,
-    hir_expr_forest_status: U32Readback,
     hir_member_receiver_node: U32Readback,
     hir_member_receiver_token: U32Readback,
     hir_member_name_token: U32Readback,
@@ -400,11 +396,6 @@ impl ResidentTreeReadbacks {
                 "rb.parser.resident_tree.hir_item_name_token",
                 bufs.hir_item_name_token.byte_size,
             ),
-            hir_item_decl_token: rb(
-                device,
-                "rb.parser.resident_tree.hir_item_decl_token",
-                bufs.hir_item_decl_token.byte_size,
-            ),
             hir_item_namespace: rb(
                 device,
                 "rb.parser.resident_tree.hir_item_namespace",
@@ -604,21 +595,6 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.hir_expr_result_root_node",
                 bufs.hir_expr_result_root_node.byte_size,
-            ),
-            hir_expr_parent_node: rb(
-                device,
-                "rb.parser.resident_tree.hir_expr_parent_node",
-                bufs.hir_expr_parent_node.byte_size,
-            ),
-            hir_expr_forest_root_node: rb(
-                device,
-                "rb.parser.resident_tree.hir_expr_forest_root_node",
-                bufs.hir_expr_forest_root_node.byte_size,
-            ),
-            hir_expr_forest_status: rb(
-                device,
-                "rb.parser.resident_tree.hir_expr_forest_status",
-                bufs.hir_expr_forest_status.byte_size,
             ),
             hir_member_receiver_node: rb(
                 device,
@@ -1072,11 +1048,6 @@ impl ResidentTreeReadbacks {
             &bufs.hir_item_name_token,
             bufs.hir_item_name_token.byte_size as u64,
         );
-        self.hir_item_decl_token.copy_from(
-            encoder,
-            &bufs.hir_item_decl_token,
-            bufs.hir_item_decl_token.byte_size as u64,
-        );
         self.hir_item_namespace.copy_from(
             encoder,
             &bufs.hir_item_namespace,
@@ -1277,21 +1248,6 @@ impl ResidentTreeReadbacks {
             &bufs.hir_expr_result_root_node,
             bufs.hir_expr_result_root_node.byte_size as u64,
         );
-        self.hir_expr_parent_node.copy_from(
-            encoder,
-            &bufs.hir_expr_parent_node,
-            bufs.hir_expr_parent_node.byte_size as u64,
-        );
-        self.hir_expr_forest_root_node.copy_from(
-            encoder,
-            &bufs.hir_expr_forest_root_node,
-            bufs.hir_expr_forest_root_node.byte_size as u64,
-        );
-        self.hir_expr_forest_status.copy_from(
-            encoder,
-            &bufs.hir_expr_forest_status,
-            bufs.hir_expr_forest_status.byte_size as u64,
-        );
         self.hir_member_receiver_node.copy_from(
             encoder,
             &bufs.hir_member_receiver_node,
@@ -1409,8 +1365,8 @@ impl ResidentTreeReadbacks {
         );
         self.hir_canonical_raw_to_dense.copy_from(
             encoder,
-            &bufs.hir_canonical_raw_to_dense,
-            bufs.hir_canonical_raw_to_dense.byte_size as u64,
+            &bufs.hir_canonical_alias_to_dense,
+            bufs.hir_canonical_alias_to_dense.byte_size as u64,
         );
         self.hir_param_ranges.copy_from(
             encoder,
@@ -1619,7 +1575,6 @@ impl ResidentTreeReadbacks {
         self.hir_stmt_scope_end.map();
         self.hir_item_kind.map();
         self.hir_item_name_token.map();
-        self.hir_item_decl_token.map();
         self.hir_item_namespace.map();
         self.hir_item_visibility.map();
         self.hir_item_path_start.map();
@@ -1660,9 +1615,6 @@ impl ResidentTreeReadbacks {
         self.hir_array_element_next.map();
         self.hir_expr_name_role.map();
         self.hir_expr_result_root_node.map();
-        self.hir_expr_parent_node.map();
-        self.hir_expr_forest_root_node.map();
-        self.hir_expr_forest_status.map();
         self.hir_member_receiver_node.map();
         self.hir_member_receiver_token.map();
         self.hir_member_name_token.map();
@@ -2054,6 +2006,13 @@ impl ResidentTreeReadbacks {
             hir_compact_predicate_metadata.push(predicate_words[base + 3]);
         }
 
+        let hir_kind = self.hir_kind.read_words(tree_len)?;
+        let hir_token_pos = self.hir_token_pos.read_words(tree_len)?;
+        let hir_item_kind = self.hir_item_kind.read_words(tree_len)?;
+        let hir_item_decl_token = crate::parser::readback::project_hir_item_decl_tokens(
+            &hir_item_kind,
+            &hir_token_pos,
+        );
         let result = ResidentParseResult {
             ll1: Ll1AcceptResult {
                 accepted: ll1_words[0] != 0,
@@ -2068,7 +2027,7 @@ impl ResidentTreeReadbacks {
             first_child: self.first_child.read_words(tree_len)?,
             next_sibling: self.next_sibling.read_words(tree_len)?,
             subtree_end: self.subtree_end.read_words(tree_len)?,
-            hir_kind: self.hir_kind.read_words(tree_len)?,
+            hir_kind,
             hir_semantic_prefix_before_node: self
                 .hir_semantic_prefix_before_node
                 .read_words(tree_len)?,
@@ -2079,7 +2038,7 @@ impl ResidentTreeReadbacks {
             hir_semantic_next_sibling: self.hir_semantic_next_sibling.read_words(tree_len)?,
             hir_semantic_depth: self.hir_semantic_depth.read_words(tree_len)?,
             hir_semantic_child_index: self.hir_semantic_child_index.read_words(tree_len)?,
-            hir_token_pos: self.hir_token_pos.read_words(tree_len)?,
+            hir_token_pos,
             hir_token_end: self.hir_token_end.read_words(tree_len)?,
             hir_node_file_id: self.hir_node_file_id.read_words(tree_len)?,
             hir_type_form: self.hir_type_form.read_words(tree_len)?,
@@ -2099,11 +2058,11 @@ impl ResidentTreeReadbacks {
             hir_stmt_record_operand1,
             hir_stmt_record_operand2,
             hir_stmt_scope_end: self.hir_stmt_scope_end.read_words(tree_len)?,
-            hir_item_kind: self.hir_item_kind.read_words(tree_len)?,
+            hir_item_kind,
             hir_item_name_token: self
                 .hir_item_name_token
                 .read_words_padded(tree_len, u32::MAX)?,
-            hir_item_decl_token: self.hir_item_decl_token.read_words(tree_len)?,
+            hir_item_decl_token,
             hir_item_namespace: self.hir_item_namespace.read_words_padded(tree_len, 0)?,
             hir_item_visibility: self.hir_item_visibility.read_words_padded(tree_len, 0)?,
             hir_item_path_start: self
@@ -2194,14 +2153,6 @@ impl ResidentTreeReadbacks {
                 .read_words_padded(tree_len, u32::MAX)?,
             hir_expr_name_role: self.hir_expr_name_role.read_words(tree_len)?,
             hir_expr_result_root_node: self.hir_expr_result_root_node.read_words(tree_len)?,
-            hir_expr_parent_node: self.hir_expr_parent_node.read_words(tree_len)?,
-            hir_expr_forest_root_node: self.hir_expr_forest_root_node.read_words(tree_len)?,
-            hir_expr_forest_status: self
-                .hir_expr_forest_status
-                .read_words(1)?
-                .first()
-                .copied()
-                .unwrap_or(u32::MAX),
             hir_member_receiver_node: self.hir_member_receiver_node.read_words(tree_len)?,
             hir_member_receiver_token: self.hir_member_receiver_token.read_words(tree_len)?,
             hir_member_name_token: self.hir_member_name_token.read_words(tree_len)?,

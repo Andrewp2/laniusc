@@ -46,7 +46,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
             ),
             (
                 "raw_to_hir".into(),
-                b.hir_canonical_raw_to_dense.as_entire_binding(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
             (
                 "family_flag".into(),
@@ -62,7 +62,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
             ),
             (
                 "owner_link_a".into(),
-                b.hir_type_arg_link_a.as_entire_binding(),
+                b.hir_struct_lit_field_link_a.as_entire_binding(),
             ),
             (
                 "owner_value_a".into(),

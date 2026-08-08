@@ -33,6 +33,31 @@ pub(super) fn reuse_or_allocate_u32_workspace(
     }
 }
 
+/// Borrows one aligned, non-overlapping u32 workspace slot from a larger dead
+/// allocation. Returns `None` when the requested slot does not fit.
+pub(super) fn u32_workspace_subrange<T>(
+    device: &wgpu::Device,
+    source: &LaniusBuffer<T>,
+    slot: usize,
+    count: usize,
+) -> Option<LaniusBuffer<u32>> {
+    workspace_subrange(device, source, slot, count)
+}
+
+/// Borrows one aligned typed slot from a larger dead phase allocation.
+pub(super) fn workspace_subrange<T, U>(
+    device: &wgpu::Device,
+    source: &LaniusBuffer<T>,
+    slot: usize,
+    count: usize,
+) -> Option<LaniusBuffer<U>> {
+    let byte_size = count.checked_mul(core::mem::size_of::<U>().max(1))? as u64;
+    let alignment = u64::from(device.limits().min_storage_buffer_offset_alignment.max(1));
+    let stride = byte_size.checked_add(alignment - 1)? / alignment * alignment;
+    let offset = stride.checked_mul(slot as u64)?;
+    source.subrange(offset, byte_size, count).ok()
+}
+
 /// Allocates a three-word dispatch-argument buffer usable for compute indirect dispatches.
 pub(super) fn dispatch_args_buffer(device: &wgpu::Device, label: &str) -> LaniusBuffer<u32> {
     dispatch_args_schedule_buffer(device, label, 1)

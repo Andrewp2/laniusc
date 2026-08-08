@@ -48,7 +48,7 @@ impl HirPathSegmentStepPass {
                     &buffers.hir_path_segment_rank_a,
                 ),
             ] {
-                encoder.copy_buffer_to_buffer(&src.buffer, 0, &dst.buffer, 0, bytes);
+                src.copy_to(encoder, 0, dst, 0, bytes);
             }
         }
         Ok(())

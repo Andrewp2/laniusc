@@ -143,6 +143,28 @@ use super::{
     },
 };
 
+pub(crate) fn project_hir_item_decl_tokens(kinds: &[u32], token_pos: &[u32]) -> Vec<u32> {
+    kinds
+        .iter()
+        .zip(token_pos)
+        .map(|(&kind, &token)| {
+            matches!(
+                kind,
+                HIR_ITEM_KIND_CONST
+                    | HIR_ITEM_KIND_FN
+                    | HIR_ITEM_KIND_EXTERN_FN
+                    | HIR_ITEM_KIND_STRUCT
+                    | HIR_ITEM_KIND_ENUM
+                    | HIR_ITEM_KIND_TYPE_ALIAS
+                    | HIR_ITEM_KIND_ENUM_VARIANT
+                    | HIR_ITEM_KIND_TRAIT
+            )
+            .then_some(token)
+            .unwrap_or(INVALID)
+        })
+        .collect()
+}
+
 const HIR_VARIANT_PAYLOAD_SLOT_STRIDE: u32 = 4;
 const PROD_BOUND_TYPE_IDENT: u32 = 241;
 
@@ -192,7 +214,6 @@ pub struct ParserReadbacks {
     pub hir_stmt_scope_end: wgpu::Buffer,
     pub hir_item_kind: wgpu::Buffer,
     pub hir_item_name_token: wgpu::Buffer,
-    pub hir_item_decl_token: wgpu::Buffer,
     pub hir_item_namespace: wgpu::Buffer,
     pub hir_item_visibility: wgpu::Buffer,
     pub hir_item_path_start: wgpu::Buffer,
@@ -377,10 +398,6 @@ impl ParserReadbacks {
         let hir_item_name_token = mk(
             "rb.parser.hir_item_name_token",
             bufs.hir_item_name_token.byte_size as u64,
-        );
-        let hir_item_decl_token = mk(
-            "rb.parser.hir_item_decl_token",
-            bufs.hir_item_decl_token.byte_size as u64,
         );
         let hir_item_namespace = mk(
             "rb.parser.hir_item_namespace",
@@ -623,7 +640,6 @@ impl ParserReadbacks {
             hir_stmt_scope_end,
             hir_item_kind,
             hir_item_name_token,
-            hir_item_decl_token,
             hir_item_namespace,
             hir_item_visibility,
             hir_item_path_start,
@@ -927,13 +943,6 @@ impl ParserReadbacks {
             &self.hir_item_name_token,
             0,
             bufs.hir_item_name_token.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.hir_item_decl_token,
-            0,
-            &self.hir_item_decl_token,
-            0,
-            bufs.hir_item_decl_token.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_item_namespace,
@@ -1459,7 +1468,6 @@ impl DecodedParserReadbacks {
         map("hir_stmt_scope_end", &rb.hir_stmt_scope_end);
         map("hir_item_kind", &rb.hir_item_kind);
         map("hir_item_name_token", &rb.hir_item_name_token);
-        map("hir_item_decl_token", &rb.hir_item_decl_token);
         map("hir_item_namespace", &rb.hir_item_namespace);
         map("hir_item_visibility", &rb.hir_item_visibility);
         map("hir_item_path_start", &rb.hir_item_path_start);
@@ -1630,7 +1638,7 @@ impl DecodedParserReadbacks {
         }
         let hir_item_kind = read_u32_vec(&rb.hir_item_kind, tree_len);
         let hir_item_name_token = read_u32_vec(&rb.hir_item_name_token, tree_len);
-        let hir_item_decl_token = read_u32_vec(&rb.hir_item_decl_token, tree_len);
+        let hir_item_decl_token = project_hir_item_decl_tokens(&hir_item_kind, &hir_token_pos);
         let hir_item_namespace = read_u32_vec(&rb.hir_item_namespace, tree_len);
         let hir_item_visibility = read_u32_vec(&rb.hir_item_visibility, tree_len);
         let hir_item_path_start = read_u32_vec(&rb.hir_item_path_start, tree_len);

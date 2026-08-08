@@ -8,7 +8,7 @@ pub(in crate::type_checker) fn record_name_bind_groups_with_passes(
     encoder: &mut wgpu::CommandEncoder,
     _token_capacity: u32,
     _name_capacity: u32,
-    _token_active_dispatch_args: &wgpu::Buffer,
+    _token_active_dispatch_args: &LaniusBuffer<u32>,
     groups: &NameBindGroups,
 ) -> Result<()> {
     groups.compaction.record(encoder)?;

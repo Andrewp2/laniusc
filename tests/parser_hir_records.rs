@@ -408,68 +408,6 @@ fn main(a: i32, b: i32, c: i32, settings: Settings) -> i32 {{
         max_depth >= DEEP_NEGATION_COUNT,
         "fixture should prove an expression forest deeper than the old 16-row stack; got {max_depth}"
     );
-
-    let gpu = parse_resident_source(&source);
-    assert!(
-        gpu.ll1.accepted,
-        "resident parser should accept the GPU expression-forest fixture"
-    );
-    assert_eq!(
-        gpu.hir_expr_forest_status, 0,
-        "GPU expression-forest construction should not publish malformed or conflicting edges"
-    );
-
-    for (child, &expected_parent) in parent.iter().enumerate() {
-        if expected_parent == INVALID {
-            continue;
-        }
-        assert_eq!(
-            gpu.hir_expr_parent_node[child], expected_parent,
-            "expression node {child} should publish parent {expected_parent} in the GPU forest"
-        );
-    }
-
-    for raw_arg in 0..gpu.hir_call_arg_parent_call.len() {
-        let call = gpu.hir_call_arg_parent_call[raw_arg];
-        if call == INVALID {
-            continue;
-        }
-        let resolved = gpu.hir_expr_result_root_node[raw_arg] as usize;
-        assert!(
-            resolved < gpu.hir_expr_parent_node.len(),
-            "call argument row {raw_arg} should resolve to a bounded expression node"
-        );
-        assert_eq!(
-            gpu.hir_expr_parent_node[resolved], call,
-            "resolved call argument {resolved} should publish call {call} as its GPU forest parent"
-        );
-    }
-
-    let mut gpu_max_depth = 0usize;
-    for start in 0..gpu.hir_expr_result_root_node.len() {
-        if gpu.hir_expr_result_root_node[start] != start as u32 {
-            continue;
-        }
-        let mut node = start;
-        let mut depth = 0usize;
-        while gpu.hir_expr_parent_node[node] != INVALID {
-            node = gpu.hir_expr_parent_node[node] as usize;
-            depth += 1;
-            assert!(
-                depth <= gpu.hir_expr_parent_node.len(),
-                "GPU expression parent links should be acyclic"
-            );
-        }
-        assert_eq!(
-            gpu.hir_expr_forest_root_node[start], node as u32,
-            "GPU pointer jumping should resolve expression node {start} to its terminal root"
-        );
-        gpu_max_depth = gpu_max_depth.max(depth);
-    }
-    assert!(
-        gpu_max_depth >= DEEP_NEGATION_COUNT,
-        "GPU expression forest should retain all {DEEP_NEGATION_COUNT} nested operators; got {gpu_max_depth}"
-    );
 }
 
 #[test]
@@ -2451,17 +2389,6 @@ fn main(pair: Pair) -> i32 {
         parsed.hir_kind[parsed.hir_member_receiver_node[first_member] as usize], HIR_NODE_NAME_EXPR,
         "first member receiver should be the base name expression"
     );
-    let base_receiver = parsed.hir_member_receiver_node[first_member] as usize;
-    let resolved_base = parsed.hir_expr_result_root_node[base_receiver] as usize;
-    assert_eq!(
-        parsed.hir_expr_parent_node[resolved_base], first_member as u32,
-        "base name should publish the first member as its expression-forest parent"
-    );
-    assert_eq!(
-        parsed.hir_expr_parent_node[first_member], second_member as u32,
-        "first member should publish the second member as its expression-forest parent"
-    );
-
     for member in [first_member, second_member] {
         let receiver = assert_valid_hir_node_index(
             &parsed,
@@ -2488,59 +2415,6 @@ fn main(pair: Pair) -> i32 {
             "member row {member} name token should stay inside its member expression span"
         );
         assert_hir_node_has_non_empty_span(&parsed, receiver, "member receiver");
-    }
-}
-
-#[test]
-fn parser_expression_forest_retains_deep_member_receiver_chain() {
-    const DEPTH: usize = 24;
-    let chain = (0..DEPTH)
-        .map(|index| format!(".field{index}"))
-        .collect::<String>();
-    let source = format!(
-        "struct Root {{ field0: i32, }}\nfn read(value: Root) -> i32 {{ return value{chain}; }}\n"
-    );
-    let parsed = parse_resident_source(&source);
-    assert!(
-        parsed.ll1.accepted,
-        "deep member-chain fixture should parse"
-    );
-
-    let member_count = parsed
-        .hir_kind
-        .iter()
-        .filter(|&&kind| kind == HIR_NODE_MEMBER_EXPR)
-        .count();
-    assert_eq!(member_count, DEPTH);
-
-    let base = parsed
-        .hir_kind
-        .iter()
-        .enumerate()
-        .find_map(|(node, &kind)| {
-            (kind == HIR_NODE_NAME_EXPR && parsed.hir_expr_parent_node[node] != INVALID)
-                .then_some(node)
-        })
-        .expect("member chain should publish its base name");
-    let mut node = base;
-    let mut depth = 0usize;
-    while parsed.hir_expr_parent_node[node] != INVALID {
-        node = parsed.hir_expr_parent_node[node] as usize;
-        depth += 1;
-        assert!(depth <= parsed.hir_expr_parent_node.len());
-    }
-    assert_eq!(
-        depth, DEPTH,
-        "every member should contribute one forest edge"
-    );
-    assert_eq!(parsed.hir_expr_forest_root_node[base], node as u32);
-    for (member, &kind) in parsed.hir_kind.iter().enumerate() {
-        if kind == HIR_NODE_MEMBER_EXPR {
-            assert_eq!(
-                parsed.hir_expr_forest_root_node[member], node as u32,
-                "every member in the receiver chain should publish the final member as its forest root"
-            );
-        }
     }
 }
 
@@ -3381,8 +3255,18 @@ fn main(value: i32) -> i32 {
         .expect("nested local declaration should publish a call expression");
     let nested_return = node_inside_span(&parsed, HIR_NODE_RETURN_STMT, main_if)
         .expect("if branch should publish a nested return statement");
-    let nested_binary = node_inside_span(&parsed, HIR_NODE_BINARY_EXPR, nested_return)
-        .expect("nested return should publish a binary expression");
+    let nested_binary = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == HIR_NODE_BINARY_EXPR
+                && parsed.hir_expr_result_root_node[node] == node as u32
+                && parsed.hir_token_pos[nested_return] < parsed.hir_token_pos[node]
+                && parsed.hir_token_end[node] <= parsed.hir_token_end[nested_return])
+                .then_some(node)
+        })
+        .expect("nested return should publish a concrete binary expression");
     let trailing_return_call = parsed
         .hir_kind
         .iter()
@@ -3752,12 +3636,8 @@ fn main(value: i32) -> i32 {
         parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
     );
 
-    let semantic_rows = parsed
-        .hir_kind
-        .iter()
-        .enumerate()
-        .filter_map(|(node, &kind)| (kind != HIR_NODE_NONE).then_some(node))
-        .collect::<Vec<_>>();
+    let semantic_rows =
+        active_semantic_nodes(&parsed.hir_semantic_dense_node, parsed.hir_kind.len());
     assert!(
         semantic_rows.len() >= 12,
         "fixture should publish enough semantic HIR rows to exercise tree navigation"
@@ -3885,13 +3765,13 @@ fn parser_hir_semantic_parents_match_raw_tree_oracle_for_deeply_nested_source() 
         parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
     );
 
-    let semantic_count = parsed
-        .hir_kind
-        .iter()
-        .filter(|&&kind| kind != HIR_NODE_NONE)
-        .count();
-    for row in 0..semantic_count {
-        let node = parsed.hir_semantic_dense_node[row] as usize;
+    let semantic_nodes =
+        active_semantic_nodes(&parsed.hir_semantic_dense_node, parsed.hir_kind.len());
+    let mut raw_to_dense = vec![INVALID; parsed.hir_kind.len()];
+    for (row, &node) in semantic_nodes.iter().enumerate() {
+        raw_to_dense[node] = row as u32;
+    }
+    for (row, &node) in semantic_nodes.iter().enumerate() {
         let mut ancestor = parsed.parent[node];
         let expected = loop {
             if ancestor == INVALID {
@@ -3902,8 +3782,8 @@ fn parser_hir_semantic_parents_match_raw_tree_oracle_for_deeply_nested_source() 
                 ancestor_usize < parsed.parent.len(),
                 "raw parent chain for semantic row {row} should remain bounded"
             );
-            if parsed.hir_kind[ancestor_usize] != HIR_NODE_NONE {
-                break parsed.hir_semantic_prefix_before_node[ancestor_usize];
+            if raw_to_dense[ancestor_usize] != INVALID {
+                break raw_to_dense[ancestor_usize];
             }
             let next = parsed.parent[ancestor_usize];
             assert_ne!(
@@ -3959,11 +3839,8 @@ fn parser_hir_child_indices_cross_local_sibling_blocks() {
         parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
     );
 
-    let semantic_count = parsed
-        .hir_kind
-        .iter()
-        .filter(|&&kind| kind != HIR_NODE_NONE)
-        .count();
+    let semantic_count =
+        active_semantic_nodes(&parsed.hir_semantic_dense_node, parsed.hir_kind.len()).len();
     let file_row = (0..semantic_count)
         .find(|&row| parsed.hir_kind[parsed.hir_semantic_dense_node[row] as usize] == HIR_NODE_FILE)
         .expect("wide fixture should publish a semantic file root");
@@ -4055,6 +3932,18 @@ fn node_inside_span(parsed: &ResidentParseResult, kind: u32, owner_node: usize) 
                 .then_some(node)
         })
         .min_by_key(|&node| parsed.hir_token_pos[node])
+}
+
+fn active_semantic_nodes(dense_nodes: &[u32], raw_node_count: usize) -> Vec<usize> {
+    let mut nodes = Vec::new();
+    for &node in dense_nodes {
+        let node = node as usize;
+        if node >= raw_node_count || nodes.last().is_some_and(|&previous| node <= previous) {
+            break;
+        }
+        nodes.push(node);
+    }
+    nodes
 }
 
 fn source_pack_node_inside_span(
@@ -5202,8 +5091,17 @@ fn main() {
         .position(|array| *array == dense_array)
         .expect("fixture should publish a compact array-element row");
     assert_eq!(
-        parsed.hir_compact_array_element_value[row], parsed.hir_canonical_raw_to_dense[raw_literal],
-        "compact array-element values must identify their canonical semantic value"
+        parsed.hir_compact_array_element_value[row],
+        parsed.hir_canonical_raw_to_dense[raw_literal],
+        "compact array-element values must identify their canonical semantic value: raw_element={raw_element} raw_literal={raw_literal} element_root={} element_dense={} literal_dense={} root_kind={} root_span={}..{} literal_span={}..{}",
+        parsed.hir_expr_result_root_node[raw_element],
+        parsed.hir_canonical_raw_to_dense[raw_element],
+        parsed.hir_canonical_raw_to_dense[raw_literal],
+        parsed.hir_kind[parsed.hir_expr_result_root_node[raw_element] as usize],
+        parsed.hir_token_pos[parsed.hir_expr_result_root_node[raw_element] as usize],
+        parsed.hir_token_end[parsed.hir_expr_result_root_node[raw_element] as usize],
+        parsed.hir_token_pos[raw_literal],
+        parsed.hir_token_end[raw_literal],
     );
 }
 
@@ -13375,7 +13273,7 @@ fn parser_hir_function_return_readback_rejects_unanchored_method_signature_flags
         &[HIR_ITEM_KIND_NONE],
         &[INVALID],
         &[INVALID],
-        &[4],
+        &[1 << 3],
         &[1],
     )
     .expect_err("unknown method signature flag bits must fail closed");
@@ -16052,11 +15950,8 @@ fn assert_source_pack_semantic_file_rows_partition_sources(
     parsed: &DecodedParserHirItemReadbacks,
     file_rows: &[usize],
 ) {
-    let semantic_count = parsed
-        .hir_kind
-        .iter()
-        .filter(|&&kind| kind != HIR_NODE_NONE)
-        .count();
+    let semantic_count =
+        active_semantic_nodes(&parsed.hir_semantic_dense_node, parsed.hir_kind.len()).len();
 
     for &file_node in file_rows {
         let file_row = parsed

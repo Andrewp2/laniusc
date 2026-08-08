@@ -1,11 +1,5 @@
 use super::*;
-use crate::{
-    gpu::buffers::{LaniusBuffer, TrackedBufferView},
-    type_checker::GpuTypeCheckHirItemBuffers,
-};
-
-const TYPECHECK_FRONTEND_WORKSPACE_COUNT: usize =
-    crate::parser::buffers::POST_HIR_WORKSPACE_COUNT + 7;
+use crate::{gpu::buffers::TrackedBufferView, type_checker::GpuTypeCheckHirItemBuffers};
 
 /// Builds the borrowed workspace view used by type-check recording.
 ///
@@ -14,11 +8,12 @@ const TYPECHECK_FRONTEND_WORKSPACE_COUNT: usize =
 /// keeping the array outside the HIR view makes that lifetime explicit and
 /// lets the compiler graph recolor the slots without retaining parser state.
 pub(super) fn typecheck_workspace<'a>(
-    phase_workspace: &'a [LaniusBuffer<u32>; crate::parser::buffers::POST_HIR_WORKSPACE_COUNT],
+    phase_workspace: &[TrackedBufferView<'a>],
     lexer: &'a LexerBuffers,
-) -> [TrackedBufferView<'a>; TYPECHECK_FRONTEND_WORKSPACE_COUNT] {
-    let parser = phase_workspace.each_ref().map(Into::into);
-    let lexer = [
+) -> Vec<TrackedBufferView<'a>> {
+    let mut workspace = Vec::with_capacity(phase_workspace.len() + 7);
+    workspace.extend_from_slice(phase_workspace);
+    let lexer_workspace: [TrackedBufferView<'a>; 7] = [
         (&lexer.tok_types).into(),
         (&lexer.flags_packed).into(),
         (&lexer.s_all_final).into(),
@@ -27,13 +22,8 @@ pub(super) fn typecheck_workspace<'a>(
         (&lexer.types_compact).into(),
         (&lexer.all_index_compact).into(),
     ];
-    std::array::from_fn(|index| {
-        if index < parser.len() {
-            parser[index]
-        } else {
-            lexer[index - parser.len()]
-        }
-    })
+    workspace.extend(lexer_workspace);
+    workspace
 }
 
 /// Assembles the type-check input without cloning parser buffers. The HIR
@@ -76,6 +66,10 @@ pub(super) fn semantic_interface_hir_buffers(
         compact_type_arg_count: &hir.type_arg_count,
         compact_type_args: &hir.type_args,
         compact_type_arg_ranges: &hir.type_arg_ranges,
+        compact_path_count: &hir.path_count,
+        compact_paths: &hir.paths,
+        compact_path_segment_count: &hir.path_segment_count,
+        compact_path_segments: &hir.path_segments,
         compact_field_count: &hir.field_count,
         compact_fields: &hir.fields,
         compact_variant_count: &hir.variant_count,

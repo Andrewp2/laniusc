@@ -261,7 +261,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let parser_tree_capacity = self
                         .parser
                         .partial_parse_resident_tree_capacity(token_capacity, &self.parse_tables);
-                    let parser_feature_flags = bufs.parser_feature_flags_value;
+                    let parser_feature_flags =
+                        crate::lexer::features::parser_allocation_features(
+                            bufs.parser_feature_flags_value,
+                        );
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.parser-boundary.encoder"),
@@ -572,7 +575,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .parser
                         .partial_parse_resident_tree_capacity(token_capacity, &self.parse_tables);
                     record_host_timer.stamp("parser_capacity");
-                    let parser_feature_flags = bufs.parser_feature_flags_value;
+                    let parser_feature_flags =
+                        crate::lexer::features::parser_allocation_features(
+                            bufs.parser_feature_flags_value,
+                        );
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.source_pack.parser-boundary.encoder"),
@@ -852,7 +858,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         timer: Option<&mut GpuTimer>,
         map_execution_error: impl FnOnce(GpuTypeCheckError) -> CompileError,
     ) -> Result<gpu_type_checker::RecordedTypeCheck, CompileError> {
-        let phase_workspace = parse_bufs.post_hir_workspace();
+        let phase_workspace = parse_bufs.post_hir_workspace(hir);
         let upstream_workspace = buffers::typecheck_workspace(&phase_workspace, lexer_bufs);
         let hir_items = buffers::typecheck_hir_item_buffers(
             hir,
@@ -870,10 +876,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                 source_len,
                 source_file_capacity,
                 token_capacity,
-                &lexer_bufs.tokens_out,
-                &lexer_bufs.token_count,
-                &lexer_bufs.token_file_id,
-                &lexer_bufs.in_bytes,
+                (&lexer_bufs.tokens_out).into(),
+                (&lexer_bufs.token_count).into(),
+                (&lexer_bufs.token_file_id).into(),
+                (&lexer_bufs.in_bytes).into(),
                 hir_node_capacity,
                 parser_hir_node_capacity,
                 hir_items,

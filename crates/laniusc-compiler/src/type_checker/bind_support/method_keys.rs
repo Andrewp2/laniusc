@@ -12,7 +12,7 @@ pub(in crate::type_checker) struct MethodKeyPipeline {
     sort: RadixSortOperation<ModuleKeyRadixParams>,
     validate_pass: PassData,
     validate: wgpu::BindGroup,
-    token_dispatch_args: wgpu::Buffer,
+    token_dispatch_args: LaniusBuffer<u32>,
 }
 
 impl MethodKeyPipeline {
@@ -42,6 +42,12 @@ impl MethodKeyPipeline {
             &[("gParams", seed_params.as_entire_binding())],
         )?;
 
+        let radix_bases_dispatch_args =
+            typed_buffer_from_resources(resources, "method_radix_bases_dispatch_args")?;
+        let token_dispatch_args =
+            typed_buffer_from_resources(resources, "method_token_dispatch_args")?;
+        let radix_prefix_dispatch_args =
+            typed_buffer_from_resources(resources, "method_radix_prefix_dispatch_args")?;
         let sort = compiler_graph::METHOD_KEY_RADIX_SORT.operation(
             device,
             passes,
@@ -50,22 +56,10 @@ impl MethodKeyPipeline {
             METHOD_KEY_SMALL_SORT_CAPACITY,
             METHOD_KEY_RADIX_STEPS,
             RadixSortDispatch {
-                small: RadixDispatchDomain::Indirect(buffer_from_resources(
-                    resources,
-                    "method_radix_bases_dispatch_args",
-                )?),
-                rows: RadixDispatchDomain::Indirect(buffer_from_resources(
-                    resources,
-                    "method_token_dispatch_args",
-                )?),
-                bucket_prefix: RadixDispatchDomain::Indirect(buffer_from_resources(
-                    resources,
-                    "method_radix_prefix_dispatch_args",
-                )?),
-                bucket_bases: RadixDispatchDomain::Indirect(buffer_from_resources(
-                    resources,
-                    "method_radix_bases_dispatch_args",
-                )?),
+                small: RadixDispatchDomain::Indirect(&radix_bases_dispatch_args),
+                rows: RadixDispatchDomain::Indirect(&token_dispatch_args),
+                bucket_prefix: RadixDispatchDomain::Indirect(&radix_prefix_dispatch_args),
+                bucket_bases: RadixDispatchDomain::Indirect(&radix_bases_dispatch_args),
             },
             params,
         )?;
@@ -93,8 +87,10 @@ impl MethodKeyPipeline {
                 .kernel("type_checker/methods/05_validate_keys")
                 .clone(),
             validate,
-            token_dispatch_args: buffer_from_resources(resources, "method_token_dispatch_args")?
-                .clone(),
+            token_dispatch_args: typed_buffer_from_resources(
+                resources,
+                "method_token_dispatch_args",
+            )?,
         })
     }
 

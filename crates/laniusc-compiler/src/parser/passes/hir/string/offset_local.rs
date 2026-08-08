@@ -24,7 +24,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStringOffsetL
         HashMap::from([
             (
                 "gHirString".into(),
-                b.hir_type_fields_params.as_entire_binding(),
+                b.hir_literal_values_params.as_entire_binding(),
             ),
             (
                 "tree_count_status".into(),
@@ -38,6 +38,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStringOffsetL
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
             ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "hir_expr_string_len".into(),
                 b.hir_expr_string_len.as_entire_binding(),

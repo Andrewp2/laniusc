@@ -32,7 +32,7 @@ impl PredicateDiagnosticsOperation {
         resources: &ResourceMap<'_>,
         kernels: &KernelRegistry,
         hir_capacity: u32,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         Ok(Self {
             clear: ComputeOperation::direct_spec(

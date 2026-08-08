@@ -6,7 +6,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     graph: &compiler_graph::TypeCheckCompilerGraph,
     passes: &TypeCheckPasses,
     resources: &ResourceMap<'_>,
-    hir_dispatch_args: &wgpu::Buffer,
+    hir_dispatch_args: &LaniusBuffer<u32>,
     token_capacity: u32,
     hir_capacity: u32,
     call_param_capacity: u32,
@@ -31,11 +31,11 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         .max(1);
     let semantic_work = token_capacity.max(hir_capacity).max(512);
     let call_generic_claim_radix_dispatch_args =
-        buffer_from_resources(resources, "call_generic_claim_radix_dispatch_args")?;
+        typed_buffer_from_resources(resources, "call_generic_claim_radix_dispatch_args")?;
     let call_const_claim_radix_dispatch_args =
-        buffer_from_resources(resources, "call_const_claim_radix_dispatch_args")?;
+        typed_buffer_from_resources(resources, "call_const_claim_radix_dispatch_args")?;
     let call_required_generic_dispatch_args =
-        buffer_from_resources(resources, "call_required_generic_dispatch_args")?;
+        typed_buffer_from_resources(resources, "call_required_generic_dispatch_args")?;
     let prefix_scan_spec = |spec| PrefixScanOperation::from_spec(device, passes, resources, spec);
     let required_generic_dispatch_params = uniform_from_val(
         device,
@@ -73,7 +73,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             kind: CallClaimKind::Generic,
             token_capacity,
             claim_capacity,
-            dispatch_args: call_generic_claim_radix_dispatch_args,
+            dispatch_args: &call_generic_claim_radix_dispatch_args,
             resources,
         },
     )?;
@@ -84,7 +84,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             kind: CallClaimKind::Const,
             token_capacity,
             claim_capacity,
-            dispatch_args: call_const_claim_radix_dispatch_args,
+            dispatch_args: &call_const_claim_radix_dispatch_args,
             resources,
         },
     )?;
@@ -117,7 +117,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 resources,
                 passes,
                 CALLS_REQUIRED_GENERIC_VALIDATE,
-                call_required_generic_dispatch_args,
+                &call_required_generic_dispatch_args,
             )?,
             validate_const: ComputeOperation::indirect_spec(
                 device,

@@ -274,10 +274,10 @@ impl GpuTypeChecker {
         source_len: u32,
         source_file_capacity: u32,
         token_capacity: u32,
-        token_buf: &wgpu::Buffer,
-        token_count_buf: &wgpu::Buffer,
-        token_file_id_buf: &wgpu::Buffer,
-        source_buf: &wgpu::Buffer,
+        token_buf: TrackedBufferView<'_>,
+        token_count_buf: TrackedBufferView<'_>,
+        token_file_id_buf: TrackedBufferView<'_>,
+        source_buf: TrackedBufferView<'_>,
         hir_node_capacity: u32,
         parser_hir_node_capacity: u32,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
@@ -312,10 +312,10 @@ impl GpuTypeChecker {
         source_len: u32,
         source_file_capacity: u32,
         token_capacity: u32,
-        token_buf: &wgpu::Buffer,
-        token_count_buf: &wgpu::Buffer,
-        token_file_id_buf: &wgpu::Buffer,
-        source_buf: &wgpu::Buffer,
+        token_buf: TrackedBufferView<'_>,
+        token_count_buf: TrackedBufferView<'_>,
+        token_file_id_buf: TrackedBufferView<'_>,
+        source_buf: TrackedBufferView<'_>,
         hir_node_capacity: u32,
         parser_hir_node_capacity: u32,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
@@ -336,15 +336,20 @@ impl GpuTypeChecker {
             n_source_files: source_file_capacity,
             parser_feature_flags: hir_items.parser_feature_flags,
         };
-        queue.write_buffer(&self.params_buf, 0, &type_check_params_bytes(&params));
-        queue.write_buffer(&self.status_buf, 0, &status_init_bytes());
+        self.params_buf
+            .write(queue, 0, &type_check_params_bytes(&params));
+        self.status_buf.write(queue, 0, &status_init_bytes());
         let dependency_interfaces = dependency_pages.map(GpuDependencyInterfacePages::state);
         let mut host_timer = TypeCheckRecordHostTimer::new();
         reset_recorded_compute_pass_count();
         host_timer.stamp("params");
 
-        let mut fingerprint_buffers =
-            vec![token_buf, token_count_buf, token_file_id_buf, source_buf];
+        let mut fingerprint_buffers = vec![
+            token_buf.buffer,
+            token_count_buf.buffer,
+            token_file_id_buf.buffer,
+            source_buf.buffer,
+        ];
         fingerprint_buffers.extend(hir_items.hir.typecheck_buffers());
         fingerprint_buffers.extend(
             hir_items
@@ -486,6 +491,11 @@ impl GpuTypeChecker {
                 Some(bind_groups.semantic_artifact()?);
             let module_path = &bind_groups.module_path;
             let predicates = &bind_groups.predicates;
+            debug_assert!(
+                bind_groups.resettable_buffers.iter().all(|buffer| {
+                    Some(buffer.allocation_id) != self.status_buf.allocation_id()
+                })
+            );
             bind_groups.clear_job_storage(encoder);
             queue.write_buffer(
                 &bind_groups.if_depth_params,
@@ -1896,6 +1906,30 @@ impl GpuTypeChecker {
             .typecheck_graph
             .u32_buffer("semantic_function_host_service_by_hir")
             .ok()?;
+        let semantic_type_ref_tag_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_type_ref_tag_by_hir")
+            .ok()?;
+        let semantic_type_ref_payload_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_type_ref_payload_by_hir")
+            .ok()?;
+        let semantic_type_generic_param_slot_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_type_generic_param_slot_by_hir")
+            .ok()?;
+        let semantic_type_external_library_id_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_type_external_library_id_by_hir")
+            .ok()?;
+        let semantic_type_external_unit_id_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_type_external_unit_id_by_hir")
+            .ok()?;
+        let semantic_type_external_local_index_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_type_external_local_index_by_hir")
+            .ok()?;
         Some(consume(GpuSemanticInterfaceIdentityBuffers {
             name_capacity: state.name_capacity,
             module_capacity: u32::try_from(module_path.module_key_segment_count.count)
@@ -1937,6 +1971,30 @@ impl GpuTypeChecker {
             external_type_library_id: &external_type_library_id,
             external_type_unit_id: &external_type_unit_id,
             external_type_local_index: &external_type_local_index,
+            semantic_type_ref_tag_by_hir: &semantic_type_ref_tag_by_hir,
+            semantic_type_ref_payload_by_hir: &semantic_type_ref_payload_by_hir,
+            semantic_type_generic_param_slot_by_hir: &semantic_type_generic_param_slot_by_hir,
+            semantic_type_external_library_id_by_hir:
+                &semantic_type_external_library_id_by_hir,
+            semantic_type_external_unit_id_by_hir: &semantic_type_external_unit_id_by_hir,
+            semantic_type_external_local_index_by_hir:
+                &semantic_type_external_local_index_by_hir,
+            resolved_dependency_library_id: module_path
+                .dependency_visibility
+                .as_deref()
+                .map(|visibility| &visibility.resolved_dependency_library_id)
+                .unwrap_or(&external_type_library_id),
+            resolved_dependency_unit_id: module_path
+                .dependency_visibility
+                .as_deref()
+                .map(|visibility| &visibility.resolved_dependency_unit_id)
+                .unwrap_or(&external_type_library_id),
+            resolved_dependency_local_index: module_path
+                .dependency_visibility
+                .as_deref()
+                .map(|visibility| &visibility.resolved_dependency_local_index)
+                .unwrap_or(&external_type_library_id),
+            path_id_by_owner_hir: &module_path.path_id_by_owner_hir,
             path_id_by_owner_token: &module_path.path_id_by_owner_token,
             resolved_type_decl: &module_path.resolved_type_decl,
             decl_id_by_name_token: &module_path.decl_id_by_name_token,

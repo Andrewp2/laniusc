@@ -108,7 +108,7 @@ impl CompactionOperation {
         resources: &ResourceMap<'_>,
         kernels: &KernelRegistry,
         spec: crate::gpu::compiler_graph::CompactionSpec,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         Ok(Self::new(
             ComputeOperation::indirect_spec(

@@ -2,14 +2,17 @@
 
 use anyhow::Result;
 
-use super::passes_core::{
-    DispatchDim,
-    InputElements,
-    PassData,
-    count_recorded_compute_pass,
-    defer_compute_direct_with_offsets,
-    defer_compute_indirect,
-    plan_workgroups,
+use super::{
+    buffers::LaniusBuffer,
+    passes_core::{
+        DispatchDim,
+        InputElements,
+        PassData,
+        count_recorded_compute_pass,
+        defer_compute_direct_with_offsets,
+        defer_compute_indirect,
+        plan_workgroups,
+    },
 };
 
 mod compute;
@@ -81,7 +84,7 @@ fn record_indirect(
     pass: &PassData,
     bind_group: &wgpu::BindGroup,
     label: &str,
-    dispatch_args: &wgpu::Buffer,
+    dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<()> {
     record_indirect_with_offsets(encoder, pass, bind_group, label, dispatch_args, &[])
 }
@@ -91,11 +94,17 @@ fn record_indirect_with_offsets(
     pass: &PassData,
     bind_group: &wgpu::BindGroup,
     label: &str,
-    dispatch_args: &wgpu::Buffer,
+    dispatch_args: &LaniusBuffer<u32>,
     dynamic_offsets: &[u32],
 ) -> Result<()> {
     count_recorded_compute_pass();
-    if defer_compute_indirect(pass, bind_group, dispatch_args, 0, dynamic_offsets) {
+    if defer_compute_indirect(
+        pass,
+        bind_group,
+        &dispatch_args.buffer,
+        dispatch_args.byte_offset,
+        dynamic_offsets,
+    ) {
         return Ok(());
     }
     let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -104,6 +113,6 @@ fn record_indirect_with_offsets(
     });
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
-    compute.dispatch_workgroups_indirect(dispatch_args, 0);
+    compute.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
     Ok(())
 }

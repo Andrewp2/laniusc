@@ -55,7 +55,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
             ),
             (
                 "raw_to_hir".into(),
-                b.hir_canonical_raw_to_dense.as_entire_binding(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
             (
                 "family_flag".into(),

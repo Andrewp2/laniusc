@@ -55,11 +55,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStructLitSpan
                     b.ll1_status.as_entire_binding()
                 },
             ),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("parent".into(), b.parent.as_entire_binding()),
+            ("prev_sibling".into(), b.prev_sibling.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
-            (
-                "hir_struct_lit_head_node".into(),
-                b.hir_struct_lit_head_node.as_entire_binding(),
-            ),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
         ])
     }

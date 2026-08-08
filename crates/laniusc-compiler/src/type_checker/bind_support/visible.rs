@@ -16,7 +16,8 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         "type_check_visible_01_clear",
         "type_checker/visible/01/clear/resident",
     )?;
-    let compact_hir_dispatch_args = buffer_from_resources(resources, "compact_hir_dispatch_args")?;
+    let compact_hir_dispatch_args =
+        typed_buffer_from_resources(resources, "compact_hir_dispatch_args")?;
     let compact_hir_dispatch_params = uniform_from_val(
         device,
         "type_check.visible.compact_hir_dispatch.params",
@@ -47,7 +48,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         resources,
         passes,
         VISIBLE_DECL_COMPACTION,
-        compact_hir_dispatch_args,
+        &compact_hir_dispatch_args,
     )?;
     let match_payload_dispatch_args = graph.u32_buffer("match_payload_dispatch_args")?;
     let match_payload_dispatch = reflected_bind_group_with_overrides(
@@ -143,7 +144,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         "type_checker/visible/04_hir_names",
     )?;
     Ok(VisibleBindGroups {
-        compact_hir_dispatch_args: typed_alias_storage_u32(compact_hir_dispatch_args, 3),
+        compact_hir_dispatch_args: typed_alias_storage_u32(&compact_hir_dispatch_args, 3),
         match_payload_dispatch_args,
         clear,
         compact_hir_dispatch,

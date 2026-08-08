@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 
 use super::{record_direct, record_indirect};
 use crate::gpu::{
-    buffers::{LaniusBuffer, uniform_from_val},
+    buffers::{LaniusBuffer, TrackedBufferView, uniform_from_val},
     compiler_graph::{
         PrefixScanPairSpec,
         PrefixScanResources,
@@ -11,7 +11,7 @@ use crate::gpu::{
     },
     kernels::KernelRegistry,
     passes_core::{ComputePassBatch, PassData, bind_group, count_recorded_compute_pass},
-    resource_registry::{ResourceMap, buffer_from_resources},
+    resource_registry::ResourceMap,
     scan::{
         HierarchicalScanLevel,
         PrefixScanHierarchyParams,
@@ -37,7 +37,7 @@ fn standard_passes(kernels: &KernelRegistry) -> PrefixScanPasses<'_> {
     }
 }
 
-pub(crate) type PrefixScanBuffers<'a> = PrefixScanResources<&'a wgpu::Buffer>;
+pub(crate) type PrefixScanBuffers<'a> = PrefixScanResources<TrackedBufferView<'a>>;
 
 struct HierarchyStep {
     _params: LaniusBuffer<PrefixScanHierarchyParams>,
@@ -48,7 +48,7 @@ struct HierarchyStep {
 pub(crate) struct PrefixScanOperation {
     label: &'static str,
     passes: [PassData; 4],
-    dispatch_args: wgpu::Buffer,
+    dispatch_args: LaniusBuffer<u32>,
     _params: LaniusBuffer<PrefixScanParams>,
     local: wgpu::BindGroup,
     up: Vec<HierarchyStep>,
@@ -117,15 +117,15 @@ impl PrefixScanOperation {
             params,
             standard_passes(kernels),
             PrefixScanBuffers {
-                count,
-                dispatch_args,
-                input,
-                output_prefix,
-                total,
-                local_prefix: workspace.local_prefix,
-                block_sum: workspace.block_sum,
-                block_prefix: workspace.block_prefix,
-                hierarchy: workspace.hierarchy,
+                count: count.into(),
+                dispatch_args: dispatch_args.into(),
+                input: input.into(),
+                output_prefix: output_prefix.into(),
+                total: total.into(),
+                local_prefix: workspace.local_prefix.into(),
+                block_sum: workspace.block_sum.into(),
+                block_prefix: workspace.block_prefix.into(),
+                hierarchy: workspace.hierarchy.into(),
             },
         )
     }
@@ -153,7 +153,7 @@ impl PrefixScanOperation {
         resources: &ResourceMap<'_>,
         names: PrefixScanResources<&str>,
     ) -> Result<Self> {
-        let buffer = |name| buffer_from_resources(resources, name);
+        let buffer = |name| resources.tracked_view(name);
         let n_items = resources.logical_u32_count(names.input)?;
         Self::new(
             device,
@@ -302,7 +302,7 @@ impl PrefixScanOperation {
                 passes.hierarchy_down.clone(),
                 passes.apply.clone(),
             ],
-            dispatch_args: buffers.dispatch_args.clone(),
+            dispatch_args: buffers.dispatch_args.alias(3),
             _params: params_buffer,
             local,
             up,

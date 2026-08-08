@@ -39,6 +39,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalMatc
                 "token_feature_flags".into(),
                 b.token_feature_flags.as_entire_binding(),
             ),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
             (
                 "payload_owner_arm".into(),
                 b.hir_match_payload_owner_arm.as_entire_binding(),

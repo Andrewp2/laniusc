@@ -45,9 +45,6 @@ static const uint HIR_TYPE_FORM_PATH = 1u;
 
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
-static const uint TYPE_REF_GENERIC_PARAM = 2u;
-static const uint TYPE_REF_ERROR = 4u;
-
 static const uint TY_UNKNOWN = 0u;
 static const uint LANGUAGE_SYMBOL_COUNT = 68u;
 
@@ -87,15 +84,11 @@ void publish_path_ref(uint token)
         type_expr_ref_tag[token] = TYPE_REF_SCALAR;
         type_expr_ref_payload[token] = resolved;
     }
-    else if (type_expr_ref_tag[token] != TYPE_REF_INVALID)
-    {
-        return;
-    }
-    else
-    {
-        type_expr_ref_tag[token] = TYPE_REF_GENERIC_PARAM;
-        type_expr_ref_payload[token] = token;
-    }
+    // An unresolved path is not evidence that the name denotes a generic
+    // parameter. The generic-parameter pass resolves uses against the compact
+    // declaration table and publishes TYPE_REF_GENERIC_PARAM only on a match.
+    // Leave every other unresolved path invalid for later local/dependency
+    // projection and diagnostics.
 }
 
 uint path_leaf_token_for_type_node(uint node)

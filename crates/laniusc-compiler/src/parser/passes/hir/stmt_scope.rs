@@ -35,20 +35,20 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStmtScopePass
         HashMap::from([
             ("gHirStmtScope".into(), b.hir_params.as_entire_binding()),
             (
-                "tree_count_status".into(),
-                if b.tree_count_uses_status {
-                    b.partial_parse_status.as_entire_binding()
-                } else {
-                    b.ll1_status.as_entire_binding()
-                },
+                "canonical_count".into(),
+                b.hir_canonical_count.as_entire_binding(),
+            ),
+            (
+                "canonical_dense_to_raw".into(),
+                b.hir_canonical_dense_to_raw.as_entire_binding(),
             ),
             (
                 "hir_stmt_record".into(),
-                b.hir_stmt_record.as_entire_binding(),
+                b.hir_canonical_stmt_record.as_entire_binding(),
             ),
             (
-                "hir_nearest_block_node".into(),
-                b.hir_nearest_block_node.as_entire_binding(),
+                "hir_canonical_nearest_block".into(),
+                b.hir_canonical_nearest_block.as_entire_binding(),
             ),
             ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
             (

@@ -712,10 +712,10 @@ impl GpuWasmLirStage {
                 artifact.words.byte_size,
             );
         }
-        self.artifact_readback.read(
+        self.artifact_readback.read_buffer(
             device,
             queue,
-            &artifact.words.buffer,
+            artifact.words,
             0,
             length,
             "Wasm artifact byte readback",
@@ -797,13 +797,9 @@ impl GpuWasmLirStage {
             self.object.record(encoder)
         } else {
             let artifact = self.module.output();
-            encoder.copy_buffer_to_buffer(
-                &artifact.length.buffer,
-                0,
-                &self.artifact_length_readback.buffer,
-                0,
-                4,
-            );
+            artifact
+                .length
+                .copy_to(encoder, 0, &self.artifact_length_readback, 0, 4);
             Ok(())
         }
     }
@@ -916,9 +912,9 @@ mod tests {
             &gpu.device,
             "test.wasm_stage.semantic_page_core",
             &words(&[
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 1, 0],
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_ADD, 3, 0, u32::MAX, 2, 0],
+                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 1, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_ADD, 3, 0, u32::MAX, 2, 0, 0],
                 [
                     opcode::SEMANTIC_LIR_OP_BRANCH_IF,
                     0,
@@ -927,11 +923,12 @@ mod tests {
                     3,
                     opcode::SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID
                         | opcode::SEMANTIC_LIR_FLAG_BRANCH_FALSE,
+                    0,
                 ],
-                [opcode::SEMANTIC_LIR_OP_VALUE_GET, 7, 0, u32::MAX, 5, 0],
-                [opcode::SEMANTIC_LIR_OP_VALUE_SET, 3, 0, u32::MAX, 6, 0],
-                [opcode::SEMANTIC_LIR_OP_CALL_SYMBOL, 3, 0, u32::MAX, 7, 0],
-                [opcode::SEMANTIC_LIR_OP_RETURN, 0, 0, u32::MAX, 4, 0],
+                [opcode::SEMANTIC_LIR_OP_VALUE_GET, 7, 0, u32::MAX, 5, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_VALUE_SET, 3, 0, u32::MAX, 6, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_CALL_SYMBOL, 3, 0, u32::MAX, 7, 0, 0],
+                [opcode::SEMANTIC_LIR_OP_RETURN, 0, 0, u32::MAX, 4, 0, 0],
             ]),
             8,
         );
@@ -957,11 +954,7 @@ mod tests {
                 8,
             )
             .unwrap();
-        gpu.queue.write_buffer(
-            &semantic_order.buffer,
-            0,
-            &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]),
-        );
+        semantic_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
         let semantic_owners =
             storage_ro_from_u32s(&gpu.device, "test.wasm_stage.semantic_owners", &[0; 8]);
         let semantic_ops = storage_ro_from_u32s(
@@ -997,7 +990,7 @@ mod tests {
         let semantic_aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
             "test.wasm_stage.aggregate_elements",
-            &words(&[[u32::MAX; 5]; 2]),
+            &words(&[[u32::MAX; 7]; 2]),
             2,
         );
         let semantic_string_rows = storage_ro_from_bytes::<SemanticLirString>(
@@ -1112,48 +1105,36 @@ mod tests {
         let body_length_readback =
             readback_bytes(&gpu.device, "test.wasm_stage.body_length.rb", 4, 1);
         let body_readback = readback_bytes(&gpu.device, "test.wasm_stage.body.rb", 64, 16);
-        encoder.copy_buffer_to_buffer(&target_total.buffer, 0, &total_readback.buffer, 0, 4);
-        encoder.copy_buffer_to_buffer(&stage.instructions.buffer, 0, &core_readback.buffer, 0, 160);
-        encoder.copy_buffer_to_buffer(
-            &functions.count.buffer,
-            0,
-            &function_count_readback.buffer,
-            0,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(&functions.rows.buffer, 0, &functions_readback.buffer, 0, 64);
-        encoder.copy_buffer_to_buffer(
-            &stage.abi_functions.buffer,
-            0,
-            &abi_functions_readback.buffer,
-            0,
-            224,
-        );
-        encoder.copy_buffer_to_buffer(&body_length.buffer, 0, &body_length_readback.buffer, 0, 4);
-        encoder.copy_buffer_to_buffer(&body_words.buffer, 0, &body_readback.buffer, 0, 64);
+        target_total.copy_to(&mut encoder, 0, &total_readback, 0, 4);
+        stage
+            .instructions
+            .copy_to(&mut encoder, 0, &core_readback, 0, 160);
+        functions
+            .count
+            .copy_to(&mut encoder, 0, &function_count_readback, 0, 4);
+        functions
+            .rows
+            .copy_to(&mut encoder, 0, &functions_readback, 0, 64);
+        stage
+            .abi_functions
+            .copy_to(&mut encoder, 0, &abi_functions_readback, 0, 224);
+        body_length.copy_to(&mut encoder, 0, &body_length_readback, 0, 4);
+        body_words.copy_to(&mut encoder, 0, &body_readback, 0, 64);
         stage.module.record(&mut encoder).unwrap();
-        encoder.copy_buffer_to_buffer(
-            &artifact.length.buffer,
-            0,
-            &artifact_length_readback.buffer,
-            0,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(
-            &artifact.words.buffer,
-            0,
-            &artifact_readback.buffer,
-            0,
-            2048,
-        );
+        artifact
+            .length
+            .copy_to(&mut encoder, 0, &artifact_length_readback, 0, 4);
+        artifact
+            .words
+            .copy_to(&mut encoder, 0, &artifact_readback, 0, 2048);
         gpu.queue.submit(Some(encoder.finish()));
 
-        assert_eq!(read_words(&gpu.device, &total_readback)[0], 9);
         let core = read_words(&gpu.device, &core_readback);
+        assert_eq!(read_words(&gpu.device, &total_readback)[0], 10);
         assert_eq!(
             [
                 core[0], core[4], core[8], core[12], core[16], core[20], core[24], core[28],
-                core[32],
+                core[32], core[36],
             ],
             [
                 opcode::WASM_LIR_OP_I32_CONST,
@@ -1161,49 +1142,54 @@ mod tests {
                 opcode::WASM_LIR_OP_I32_ADD,
                 opcode::WASM_LIR_OP_I32_EQZ,
                 opcode::WASM_LIR_OP_BRANCH_IF,
-                opcode::WASM_LIR_OP_LOCAL_GET,
                 opcode::WASM_LIR_OP_LOCAL_SET,
                 opcode::WASM_LIR_OP_CALL_SYMBOL,
                 opcode::WASM_LIR_OP_RETURN,
+                opcode::WASM_LIR_OP_LOCAL_GET,
+                opcode::WASM_LIR_OP_LOCAL_GET,
             ]
         );
-        assert_eq!(core[21], 1);
-        assert_eq!(core[25], 5);
+        assert_eq!(core[21], 5);
+        assert_eq!(core[33], 1);
+        assert_eq!(core[37], 2);
         assert_eq!(
             core[23],
             1u32 << 8,
-            "resolved local.get must remain supported"
+            "resolved local.set must remain supported"
         );
         assert_eq!(
-            core[27],
+            core[35],
             1u32 << 8,
-            "resolved local.set must remain supported"
+            "the first word of a resolved string local.get must remain supported"
+        );
+        assert_eq!(
+            core[39],
+            1u32 << 8,
+            "the second word of a resolved string local.get must remain supported"
         );
         assert_eq!(read_words(&gpu.device, &function_count_readback)[0], 1);
         assert_eq!(
             &read_words(&gpu.device, &functions_readback)[0..4],
-            &[0, 0, 9, 0]
+            &[0, 0, 10, 0]
         );
         let abi = read_words(&gpu.device, &abi_functions_readback);
-        assert_eq!(&abi[0..14], &[0, 10, 3, 3, 0, 9, 0, 19, 1, 0, 0, 2, 0, 2]);
-        assert_eq!(read_words(&gpu.device, &body_length_readback)[0], 19);
+        assert_eq!(&abi[0..14], &[0, 10, 3, 3, 0, 10, 0, 21, 1, 0, 0, 2, 0, 2]);
+        assert_eq!(read_words(&gpu.device, &body_length_readback)[0], 21);
         let body_bytes = read_words(&gpu.device, &body_readback)
             .into_iter()
             .flat_map(u32::to_le_bytes)
             .collect::<Vec<_>>();
         assert_eq!(
-            &body_bytes[..19],
+            &body_bytes[..21],
             &[
                 opcode::WASM_LIR_OP_I32_CONST as u8,
-                9,
-                opcode::WASM_LIR_OP_I32_CONST as u8,
                 7,
+                opcode::WASM_LIR_OP_I32_CONST as u8,
+                9,
                 opcode::WASM_LIR_OP_I32_ADD as u8,
                 opcode::WASM_LIR_OP_I32_EQZ as u8,
                 opcode::WASM_LIR_OP_BRANCH_IF as u8,
                 0,
-                opcode::WASM_LIR_OP_LOCAL_GET as u8,
-                1,
                 opcode::WASM_LIR_OP_LOCAL_SET as u8,
                 5,
                 opcode::WASM_LIR_OP_CALL as u8,
@@ -1213,11 +1199,15 @@ mod tests {
                 0x80,
                 0,
                 opcode::WASM_LIR_OP_RETURN as u8,
+                opcode::WASM_LIR_OP_LOCAL_GET as u8,
+                1,
+                opcode::WASM_LIR_OP_LOCAL_GET as u8,
+                2,
             ]
         );
         // The module includes the target runtime's memory and mutable heap-pointer
         // global in addition to the function/table/export/code sections.
-        assert_eq!(read_words(&gpu.device, &artifact_length_readback)[0], 1018);
+        assert_eq!(read_words(&gpu.device, &artifact_length_readback)[0], 1020);
         let artifact_bytes = read_words(&gpu.device, &artifact_readback)
             .into_iter()
             .flat_map(u32::to_le_bytes)
@@ -1227,11 +1217,7 @@ mod tests {
         let allocations_before = tracked_buffer_allocation_stats();
         // A full compiler job regenerates semantic order before target lowering.
         // This target-only resident replay supplies the same input explicitly.
-        gpu.queue.write_buffer(
-            &semantic_order.buffer,
-            0,
-            &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]),
-        );
+        semantic_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1241,18 +1227,14 @@ mod tests {
         assert_eq!(tracked_buffer_allocation_stats(), allocations_before);
         gpu.queue.submit(Some(encoder.finish()));
         let resident_artifact = stage.finish_artifact(&gpu.device, &gpu.queue).unwrap();
-        assert_eq!(resident_artifact.len(), 1018);
+        assert_eq!(resident_artifact.len(), 1020);
         assert_eq!(&resident_artifact[..8], b"\0asm\x01\0\0\0");
 
         // Object projection is a separate recording mode over the same
         // resident lowering graph. This fixture has one public function and
         // one imported call, exercising definition, symbol, and relocation
         // compaction together.
-        gpu.queue.write_buffer(
-            &semantic_order.buffer,
-            0,
-            &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]),
-        );
+        semantic_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
         let object = stage.object();
         let object_counts = readback_bytes(&gpu.device, "test.wasm_object.counts.rb", 12, 3);
         let object_function = readback_bytes(&gpu.device, "test.wasm_object.function.rb", 24, 6);
@@ -1268,57 +1250,45 @@ mod tests {
         stage
             .record_object(&gpu.queue, &mut encoder, 7, 11)
             .unwrap();
-        encoder.copy_buffer_to_buffer(
-            &object.relocation_count.buffer,
-            0,
-            &object_counts.buffer,
-            0,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(&object.symbol_count.buffer, 0, &object_counts.buffer, 4, 4);
-        encoder.copy_buffer_to_buffer(
-            &object.definition_count.buffer,
-            0,
-            &object_counts.buffer,
-            8,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(&object.functions.buffer, 0, &object_function.buffer, 0, 24);
-        encoder.copy_buffer_to_buffer(
-            &object.definitions.buffer,
-            0,
-            &object_definition.buffer,
-            0,
-            32,
-        );
-        encoder.copy_buffer_to_buffer(
-            &object.relocations.buffer,
-            0,
-            &object_relocation.buffer,
-            0,
-            32,
-        );
+        object
+            .relocation_count
+            .copy_to(&mut encoder, 0, &object_counts, 0, 4);
+        object
+            .symbol_count
+            .copy_to(&mut encoder, 0, &object_counts, 4, 4);
+        object
+            .definition_count
+            .copy_to(&mut encoder, 0, &object_counts, 8, 4);
+        object
+            .functions
+            .copy_to(&mut encoder, 0, &object_function, 0, 24);
+        object
+            .definitions
+            .copy_to(&mut encoder, 0, &object_definition, 0, 32);
+        object
+            .relocations
+            .copy_to(&mut encoder, 0, &object_relocation, 0, 32);
         gpu.queue.submit(Some(encoder.finish()));
         assert_eq!(read_words(&gpu.device, &object_counts), &[1, 1, 1]);
         assert_eq!(
             read_words(&gpu.device, &object_function),
-            &[0, 14, 0, 54, 1, 1]
+            &[0, 14, 0, 56, 1, 1]
         );
         assert_eq!(
             read_words(&gpu.device, &object_definition),
-            &[7, 11, 0, 0, 19, 0, 0, 0]
+            &[7, 11, 0, 0, 21, 0, 0, 0]
         );
         assert_eq!(
             read_words(&gpu.device, &object_relocation),
-            &[47, 2, 0, 0, 7, 11, 23, 0]
+            &[45, 2, 0, 0, 7, 11, 23, 0]
         );
         let durable = stage.finish_object(&gpu.device, &gpu.queue, 7, 11).unwrap();
         assert_eq!(durable.functions.len(), 1);
         assert_eq!(durable.functions[0].symbol_index, 1);
         assert_eq!(durable.type_bytes.len(), 14);
-        assert_eq!(durable.body_bytes.len(), 54);
+        assert_eq!(durable.body_bytes.len(), 56);
         assert_eq!(durable.relocations.len(), 1);
-        assert_eq!(durable.relocations[0].body_byte_offset, 47);
+        assert_eq!(durable.relocations[0].body_byte_offset, 45);
         assert_eq!(durable.relocations[0].target_index, 0);
         assert_eq!(durable.symbols.len(), 2);
         assert_eq!(durable.identity_bytes, words(&[[7, 11, 23], [7, 11, 0]]));

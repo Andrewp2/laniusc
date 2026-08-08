@@ -47,7 +47,7 @@ pub(in crate::type_checker) struct CallClaimKeyBuild<'a> {
     pub kind: CallClaimKind,
     pub token_capacity: u32,
     pub claim_capacity: u32,
-    pub dispatch_args: &'a wgpu::Buffer,
+    pub dispatch_args: &'a LaniusBuffer<u32>,
     pub resources: &'a ResourceMap<'a>,
 }
 
@@ -55,7 +55,7 @@ pub(in crate::type_checker) struct CallClaimKeyPipeline {
     dispatch_pass: PassData,
     _dispatch_params: LaniusBuffer<ModuleKeyRadixParams>,
     dispatch: wgpu::BindGroup,
-    dispatch_args: wgpu::Buffer,
+    dispatch_args: LaniusBuffer<u32>,
     sort: RadixSortOperation<ModuleKeyRadixParams>,
 }
 
@@ -145,7 +145,7 @@ impl CallClaimKeyPipeline {
         self.sort.record(encoder)
     }
 
-    pub(in crate::type_checker) fn dispatch_args(&self) -> &wgpu::Buffer {
+    pub(in crate::type_checker) fn dispatch_args(&self) -> &LaniusBuffer<u32> {
         &self.dispatch_args
     }
 }

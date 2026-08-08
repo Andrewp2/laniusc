@@ -46,10 +46,10 @@ impl HirCanonicalExprForestRootStepPass {
 
         if steps % 2 == 1 {
             crate::gpu::passes_core::flush_deferred_compute(encoder);
-            encoder.copy_buffer_to_buffer(
-                &buffers.hir_canonical_expr_root_scratch.buffer,
+            buffers.hir_canonical_expr_root_scratch.copy_to(
+                encoder,
                 0,
-                &buffers.hir_canonical_expr_root.buffer,
+                &buffers.hir_canonical_expr_root,
                 0,
                 u64::from(buffers.hir_canonical_capacity) * 4,
             );

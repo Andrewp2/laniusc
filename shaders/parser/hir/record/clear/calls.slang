@@ -7,6 +7,8 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint semantic_parent_local_ancestor_span;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gClear;
@@ -19,7 +21,6 @@ RWStructuredBuffer<uint> hir_member_name_token;
 RWStructuredBuffer<uint> hir_call_callee_node;
 RWStructuredBuffer<uint> hir_call_callee_path_node;
 RWStructuredBuffer<uint> hir_call_parent_by_callee;
-RWStructuredBuffer<uint> hir_call_context_stmt_node;
 RWStructuredBuffer<uint> hir_call_arg_start;
 RWStructuredBuffer<uint> hir_call_arg_end;
 RWStructuredBuffer<uint> hir_call_arg_count;
@@ -53,12 +54,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_member_name_token[node] = INVALID;
 
     hir_call_callee_node[node] = INVALID;
-    hir_call_callee_path_node[node] = INVALID;
-    hir_call_parent_by_callee[node] = INVALID;
-    hir_call_context_stmt_node[node] = INVALID;
-    hir_call_arg_start[node] = INVALID;
-    hir_call_arg_end[node] = INVALID;
-    hir_call_arg_count[node] = 0u;
-    hir_call_arg_parent_call[node] = INVALID;
-    hir_call_arg_ordinal[node] = INVALID;
+    if (gClear.retain_debug_rows != 0u)
+    {
+        hir_call_callee_path_node[node] = INVALID;
+        hir_call_parent_by_callee[node] = INVALID;
+        hir_call_arg_start[node] = INVALID;
+    }
+    if (gClear.retain_debug_rows != 0u)
+    {
+    }
+    if (gClear.retain_debug_rows != 0u)
+    {
+        hir_call_arg_end[node] = INVALID;
+        hir_call_arg_count[node] = 0u;
+        hir_call_arg_parent_call[node] = INVALID;
+        hir_call_arg_ordinal[node] = INVALID;
+    }
 }

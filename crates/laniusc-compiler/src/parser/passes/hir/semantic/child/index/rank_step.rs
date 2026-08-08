@@ -48,16 +48,16 @@ impl HirSemanticChildIndexRankStepPass {
                     &buffers.hir_semantic_child_index_rank_a,
                 ),
             ] {
-                encoder.copy_buffer_to_buffer(&src.buffer, 0, &dst.buffer, 0, bytes);
+                src.copy_to(encoder, 0, dst, 0, bytes);
             }
         }
 
-        encoder.copy_buffer_to_buffer(
-            &buffers.hir_semantic_child_index_rank_a.buffer,
+        buffers.hir_semantic_child_index_rank_a.copy_to(
+            encoder,
             0,
-            &buffers.hir_semantic_child_index.buffer,
+            &buffers.hir_semantic_child_index,
             0,
-            u64::from(buffers.tree_capacity) * 4,
+            buffers.hir_semantic_child_index.byte_size as u64,
         );
 
         Ok(())

@@ -2,26 +2,32 @@
 
 use super::*;
 
-pub(in crate::type_checker) fn record_typecheck_clear_buffer(
+pub(in crate::type_checker) fn record_typecheck_clear_buffer<'a>(
     encoder: &mut wgpu::CommandEncoder,
-    buffer: &wgpu::Buffer,
+    buffer: impl Into<TrackedBufferView<'a>>,
     offset: u64,
     size: Option<u64>,
 ) {
     crate::gpu::passes_core::flush_deferred_compute(encoder);
-    encoder.clear_buffer(buffer, offset, size);
+    buffer.into().clear(encoder, offset, size);
 }
 
-pub(in crate::type_checker) fn record_typecheck_copy_buffer_to_buffer(
+pub(in crate::type_checker) fn record_typecheck_copy_buffer_to_buffer<'a, 'b>(
     encoder: &mut wgpu::CommandEncoder,
-    source: &wgpu::Buffer,
+    source: impl Into<TrackedBufferView<'a>>,
     source_offset: u64,
-    destination: &wgpu::Buffer,
+    destination: impl Into<TrackedBufferView<'b>>,
     destination_offset: u64,
     size: u64,
 ) {
     crate::gpu::passes_core::flush_deferred_compute(encoder);
-    encoder.copy_buffer_to_buffer(source, source_offset, destination, destination_offset, size);
+    source.into().copy_to(
+        encoder,
+        source_offset,
+        destination.into(),
+        destination_offset,
+        size,
+    );
 }
 
 /// Emits a GPU timer stamp when type-check timing is enabled.
@@ -75,10 +81,16 @@ pub(in crate::type_checker) fn record_compute_indirect(
     pass: &PassData,
     bind_group: &wgpu::BindGroup,
     label: &str,
-    dispatch_args: &wgpu::Buffer,
+    dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<()> {
     count_recorded_compute_pass();
-    if crate::gpu::passes_core::defer_compute_indirect(pass, bind_group, dispatch_args, 0, &[]) {
+    if crate::gpu::passes_core::defer_compute_indirect(
+        pass,
+        bind_group,
+        &dispatch_args.buffer,
+        dispatch_args.byte_offset,
+        &[],
+    ) {
         return Ok(());
     }
     let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -87,7 +99,7 @@ pub(in crate::type_checker) fn record_compute_indirect(
     });
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
-    compute.dispatch_workgroups_indirect(dispatch_args, 0);
+    compute.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
     Ok(())
 }
 
@@ -99,7 +111,7 @@ pub(in crate::type_checker) fn record_compute_indirect_offset(
     pass: &PassData,
     bind_group: &wgpu::BindGroup,
     label: &'static str,
-    dispatch_args: &wgpu::Buffer,
+    dispatch_args: &LaniusBuffer<u32>,
     dispatch_offset: u64,
 ) -> Result<()> {
     count_recorded_compute_pass();
@@ -108,8 +120,8 @@ pub(in crate::type_checker) fn record_compute_indirect_offset(
         pass,
         bind_group,
         label,
-        dispatch_args,
-        dispatch_offset,
+        &dispatch_args.buffer,
+        dispatch_args.absolute_offset(dispatch_offset),
     );
     Ok(())
 }

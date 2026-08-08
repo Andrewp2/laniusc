@@ -175,7 +175,7 @@ uint direct_result_type(uint node)
     // and an expression-form tag must never affect semantics.
     if (core.kind == HIR_CALL_EXPR)
         return compact_call_result_type(node);
-    if (core.kind == HIR_NAME_EXPR)
+    if (core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR)
         return visible_type_for_token(payload.d);
     if (core.kind == HIR_MEMBER_EXPR)
         return visible_type_for_token(payload.c);

@@ -55,27 +55,19 @@ impl HirCallArgOrdinalStepPass {
         if steps % 2 == 1 {
             crate::gpu::passes_core::flush_deferred_compute(encoder);
             let bytes = u64::from(buffers.tree_capacity) * 4;
-            encoder.copy_buffer_to_buffer(
-                &buffers.hir_call_arg_owner_b.buffer,
+            buffers.hir_call_arg_owner_b.copy_to(
+                encoder,
                 0,
-                &buffers.hir_call_arg_owner_a.buffer,
-                0,
-                bytes,
-            );
-            encoder.copy_buffer_to_buffer(
-                &buffers.hir_call_arg_link_b.buffer,
-                0,
-                &buffers.hir_call_arg_link_a.buffer,
+                &buffers.hir_call_arg_owner_a,
                 0,
                 bytes,
             );
-            encoder.copy_buffer_to_buffer(
-                &buffers.hir_call_arg_rank_b.buffer,
-                0,
-                &buffers.hir_call_arg_rank_a.buffer,
-                0,
-                bytes,
-            );
+            buffers
+                .hir_call_arg_link_b
+                .copy_to(encoder, 0, &buffers.hir_call_arg_link_a, 0, bytes);
+            buffers
+                .hir_call_arg_rank_b
+                .copy_to(encoder, 0, &buffers.hir_call_arg_rank_a, 0, bytes);
         }
 
         Ok(())

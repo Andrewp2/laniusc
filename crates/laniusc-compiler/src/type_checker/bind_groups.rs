@@ -13,10 +13,10 @@ impl GpuTypeChecker {
         &self,
         device: &wgpu::Device,
         allocation: ResidentTypeCheckCacheKey,
-        token_buf: &wgpu::Buffer,
-        token_count_buf: &wgpu::Buffer,
-        token_file_id_buf: &wgpu::Buffer,
-        source_buf: &wgpu::Buffer,
+        token_buf: TrackedBufferView<'_>,
+        token_count_buf: TrackedBufferView<'_>,
+        token_file_id_buf: TrackedBufferView<'_>,
+        source_buf: TrackedBufferView<'_>,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         passes: &TypeCheckPasses,
         dependency_interfaces: Option<&GpuDependencyInterfaceState>,
@@ -313,10 +313,10 @@ impl GpuTypeChecker {
         let mut resources = ResourceMap::new();
         typecheck_graph.register_bindings(&graph_bindings, &mut resources);
         resources.buffer("gParams", &self.params_buf);
-        resources.buffer("token_words", &token_buf);
-        resources.buffer("token_count", &token_count_buf);
-        resources.buffer("token_file_id", &token_file_id_buf);
-        resources.buffer("source_bytes", &source_buf);
+        resources.buffer("token_words", token_buf);
+        resources.buffer("token_count", token_count_buf);
+        resources.buffer("token_file_id", token_file_id_buf);
+        resources.buffer("source_bytes", source_buf);
         resources.buffer("token_active_dispatch_args", &token_active_dispatch_args);
         resources.buffer("hir_active_dispatch_args", &hir_active_dispatch_args);
         resources.buffer(

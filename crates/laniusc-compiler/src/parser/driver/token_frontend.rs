@@ -108,7 +108,7 @@ impl GpuParser {
             timer_ref,
         )?;
         self.record_where_clause_phase_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
-        parser_clear_buffer(encoder, &bufs.token_feature_flags.buffer, 0, Some(4));
+        parser_clear_buffer(encoder, &bufs.token_feature_flags, 0, Some(4));
         write_uniform(
             &self.queue,
             &bind_groups.tokens_to_kinds_params,
@@ -605,7 +605,7 @@ impl GpuParser {
         bufs: &ParserBuffers,
         timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<()> {
-        parser_clear_buffer(encoder, &bufs.token_impl_header_kind.buffer, 0, None);
+        parser_clear_buffer(encoder, &bufs.token_impl_header_kind, 0, None);
 
         let local_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (

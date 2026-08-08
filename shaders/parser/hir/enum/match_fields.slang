@@ -8,7 +8,8 @@ struct Params
 {
     uint n;
     uint uses_status_count;
-    uint has_family;
+    uint family_flags;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirEnumMatch;
@@ -51,25 +52,48 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     hir_variant_parent_enum[node] = INVALID;
     hir_variant_ordinal[node] = INVALID;
-    hir_variant_payload_start[node] = INVALID;
-    hir_variant_payload_count[node] = 0u;
-    if (gHirEnumMatch.has_family != 0u)
+    bool has_enum = (gHirEnumMatch.family_flags & 1u) != 0u;
+    bool has_match = (gHirEnumMatch.family_flags & 2u) != 0u;
+    if (has_enum && gHirEnumMatch.retain_debug_rows != 0u)
     {
+        hir_variant_payload_start[node] = INVALID;
+        hir_variant_payload_count[node] = 0u;
         hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 0u] = INVALID;
         hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 1u] = INVALID;
         hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 2u] = INVALID;
         hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 3u] = INVALID;
     }
+    else if (node == 0u)
+    {
+        hir_variant_payload_start[0u] = INVALID;
+        hir_variant_payload_count[0u] = 0u;
+        hir_variant_payload_node[0u] = INVALID;
+    }
     hir_match_scrutinee_node[node] = INVALID;
-    hir_match_arm_start[node] = INVALID;
-    hir_match_arm_count[node] = 0u;
-    hir_match_arm_next[node] = INVALID;
-    hir_match_arm_pattern_node[node] = INVALID;
-    hir_match_pattern_owner_arm[node] = INVALID;
-    hir_match_arm_payload_start[node] = INVALID;
-    hir_match_arm_payload_count[node] = 0u;
-    hir_match_arm_result_node[node] = INVALID;
-    hir_match_payload_owner_arm[node] = INVALID;
-    hir_match_payload_match_node[node] = INVALID;
-    hir_match_payload_ordinal[node] = INVALID;
+    if (has_match && gHirEnumMatch.retain_debug_rows != 0u)
+    {
+        hir_match_arm_start[node] = INVALID;
+        hir_match_arm_count[node] = 0u;
+        hir_match_arm_next[node] = INVALID;
+        hir_match_pattern_owner_arm[node] = INVALID;
+        hir_match_arm_payload_start[node] = INVALID;
+        hir_match_arm_payload_count[node] = 0u;
+    }
+    else if (node == 0u)
+    {
+        hir_match_arm_start[0u] = INVALID;
+        hir_match_arm_count[0u] = 0u;
+        hir_match_arm_next[0u] = INVALID;
+        hir_match_pattern_owner_arm[0u] = INVALID;
+        hir_match_arm_payload_start[0u] = INVALID;
+        hir_match_arm_payload_count[0u] = 0u;
+    }
+    if (gHirEnumMatch.retain_debug_rows != 0u)
+    {
+        hir_match_arm_pattern_node[node] = INVALID;
+        hir_match_arm_result_node[node] = INVALID;
+        hir_match_payload_owner_arm[node] = INVALID;
+        hir_match_payload_match_node[node] = INVALID;
+        hir_match_payload_ordinal[node] = INVALID;
+    }
 }

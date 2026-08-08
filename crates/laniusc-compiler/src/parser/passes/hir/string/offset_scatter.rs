@@ -24,8 +24,13 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStringOffsetS
         HashMap::from([
             (
                 "gHirString".into(),
-                b.hir_type_fields_params.as_entire_binding(),
+                b.hir_literal_values_params.as_entire_binding(),
             ),
+            (
+                "hir_expr_record".into(),
+                b.hir_expr_record.as_entire_binding(),
+            ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "hir_list_rank_local_prefix".into(),
                 b.hir_list_rank_local_prefix.as_entire_binding(),

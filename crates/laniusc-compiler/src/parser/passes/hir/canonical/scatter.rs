@@ -75,6 +75,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalScat
                 b.hir_array_compact_element_count.as_entire_binding(),
             ),
             (
+                "call_arg_ranges".into(),
+                b.hir_call_arg_ranges.as_entire_binding(),
+            ),
+            (
+                "match_arm_ranges".into(),
+                b.hir_match_arm_ranges.as_entire_binding(),
+            ),
+            (
+                "match_pattern_to_arm".into(),
+                b.hir_match_pattern_to_arm.as_entire_binding(),
+            ),
+            (
                 "param_ranges".into(),
                 b.hir_param_ranges.as_entire_binding(),
             ),

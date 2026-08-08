@@ -44,7 +44,6 @@ StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_param_row;
 
-RWStructuredBuffer<uint> call_has_array_arg;
 RWStructuredBuffer<uint> call_result_instance;
 
 static const uint INVALID = 0xffffffffu;
@@ -528,7 +527,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (is_array_type(first_value_type_from_node(arg_node)))
     {
-        atomic_u32_max(call_has_array_arg, call_node, 1u);
         mark_array_return_arg_instance(call_node, arg_node, call_arg_param_row[row]);
     }
 }

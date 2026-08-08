@@ -7,6 +7,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirStruct;
@@ -57,8 +58,11 @@ void publish_struct_field(uint node)
     uint ordinal = hir_struct_field_rank_a[node];
     hir_struct_field_parent_struct[node] = owner;
     hir_struct_field_ordinal[node] = ordinal;
-    atomic_u32_min(hir_struct_decl_field_start, owner, node);
-    atomic_u32_max(hir_struct_decl_field_count, owner, ordinal + 1u);
+    if (gHirStruct.retain_debug_rows != 0u)
+    {
+        atomic_u32_min(hir_struct_decl_field_start, owner, node);
+        atomic_u32_max(hir_struct_decl_field_count, owner, ordinal + 1u);
+    }
 }
 
 void publish_literal_field(uint node)
@@ -70,10 +74,13 @@ void publish_literal_field(uint node)
     uint ordinal = hir_struct_lit_field_rank_a[node];
     uint previous = hir_struct_lit_field_previous[node];
     hir_struct_lit_field_parent_lit[node] = owner;
-    atomic_u32_min(hir_struct_lit_field_start, owner, node);
-    atomic_u32_max(hir_struct_lit_field_count, owner, ordinal + 1u);
-    if (valid_node(previous))
-        hir_struct_lit_field_next[previous] = node;
+    if (gHirStruct.retain_debug_rows != 0u)
+    {
+        atomic_u32_min(hir_struct_lit_field_start, owner, node);
+        atomic_u32_max(hir_struct_lit_field_count, owner, ordinal + 1u);
+        if (valid_node(previous))
+            hir_struct_lit_field_next[previous] = node;
+    }
 }
 
 [shader("compute")]

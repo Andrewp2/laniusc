@@ -37,22 +37,12 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCall
             ),
             (
                 "raw_to_hir".into(),
-                b.hir_canonical_raw_to_dense.as_entire_binding(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
-            (
-                "canonical_anchor_owner".into(),
-                b.hir_canonical_anchor_owner.as_entire_binding(),
-            ),
-            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
-            ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
             (
                 "hir_expr_result_root_node".into(),
                 b.hir_expr_result_root_node.as_entire_binding(),
-            ),
-            (
-                "hir_expr_record".into(),
-                b.hir_expr_record.as_entire_binding(),
             ),
             (
                 "hir_token_file_id".into(),
@@ -75,19 +65,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCall
                 b.hir_call_arg_count.as_entire_binding(),
             ),
             (
-                "hir_call_callee_node".into(),
-                b.hir_call_callee_node.as_entire_binding(),
-            ),
-            (
-                "hir_call_context_stmt_node".into(),
-                b.hir_call_context_stmt_node.as_entire_binding(),
-            ),
-            (
                 "family_count".into(),
                 b.hir_call_arg_table_count.as_entire_binding(),
             ),
             ("hir_call_args".into(), b.hir_call_args.as_entire_binding()),
-            ("hir_payload".into(), b.hir_payload.as_entire_binding()),
+            (
+                "hir_call_arg_ranges".into(),
+                b.hir_call_arg_ranges.as_entire_binding(),
+            ),
             (
                 "canonical_status".into(),
                 b.hir_canonical_status.as_entire_binding(),

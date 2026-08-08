@@ -43,7 +43,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticParen
                 },
             ),
             ("parent".into(), b.parent.as_entire_binding()),
-            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
                 "hir_node_dense_id".into(),
                 b.hir_node_dense_id.as_entire_binding(),

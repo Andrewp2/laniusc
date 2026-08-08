@@ -1,18 +1,10 @@
 import hir_records;
-import canonical_hir_identity;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> canonical_count;
-StructuredBuffer<uint> canonical_anchor_owner;
 StructuredBuffer<uint> canonical_raw_to_dense;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<HirCore> hir_core;
@@ -69,42 +61,11 @@ RWStructuredBuffer<uint> canonical_status;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_NONE = 0u;
-static const uint STMT_ASSIGN = 5u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
-
-uint semantic_anchor(uint node)
-{
-    uint kind = hir_kind[node];
-    bool assignment_stmt = hir_stmt_record[node * 4u] == STMT_ASSIGN;
-    uint expr_form = hir_expr_record[node * 4u];
-    uint identity_kind = canonical_hir_identity_kind(kind, expr_form, assignment_stmt);
-    uint callee = hir_call_callee_node[node];
-    uint open = callee < gCanonical.raw_capacity ? hir_token_end[callee] : INVALID;
-    uint right = assignment_stmt
-        ? hir_stmt_record[node * 4u + 2u]
-        : hir_expr_record[node * 4u + 2u];
-    uint right_start = right < gCanonical.raw_capacity ? hir_token_pos[right] : INVALID;
-    uint operator_token = canonical_hir_operator_anchor(
-        identity_kind, right_start, gCanonical.canonical_capacity);
-    uint value_token = hir_expr_record[node * 4u + 3u];
-    return canonical_hir_anchor(
-        identity_kind, hir_token_pos[node], hir_token_end[node], open, value_token,
-        operator_token, gCanonical.canonical_capacity);
-}
 
 uint compact_alias_for_raw(uint raw, uint canonical_count_value)
 {
-    if (raw >= gCanonical.raw_capacity || hir_kind[raw] == HIR_NONE)
-        return INVALID;
-    uint anchor = semantic_anchor(raw);
-    if (anchor >= gCanonical.canonical_capacity)
-        return INVALID;
-    uint winner_plus_one = canonical_anchor_owner[anchor] & 0x0fffffffu;
-    if (winner_plus_one == 0u)
-        return INVALID;
-    uint winner = winner_plus_one - 1u;
-    uint dense = winner < gCanonical.raw_capacity ? canonical_raw_to_dense[winner] : INVALID;
+    uint dense = raw < gCanonical.raw_capacity ? canonical_raw_to_dense[raw] : INVALID;
     return dense < canonical_count_value ? dense : INVALID;
 }
 

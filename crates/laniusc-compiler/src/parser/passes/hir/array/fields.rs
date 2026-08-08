@@ -13,6 +13,7 @@ use crate::{
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
+    pub retain_debug_rows: u32,
 }
 
 /// Pass that records array expression value ranges and element counts.
@@ -54,10 +55,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirArrayFieldsPa
             (
                 "hir_array_lit_element_count".into(),
                 b.hir_array_lit_element_count.as_entire_binding(),
-            ),
-            (
-                "hir_array_lit_context_stmt_node".into(),
-                b.hir_array_lit_context_stmt_node.as_entire_binding(),
             ),
             (
                 "hir_array_element_parent_lit".into(),

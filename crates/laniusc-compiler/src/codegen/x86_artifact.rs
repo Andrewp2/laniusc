@@ -350,7 +350,7 @@ impl GpuX86ArtifactStage {
     }
 
     pub(crate) fn record_length_readback(&self, encoder: &mut wgpu::CommandEncoder) {
-        encoder.copy_buffer_to_buffer(&self.length.buffer, 0, &self.length_readback.buffer, 0, 4);
+        self.length.copy_to(encoder, 0, &self.length_readback, 0, 4);
     }
 
     #[cfg(test)]
@@ -448,7 +448,7 @@ mod tests {
             parameters: 1,
             aggregate_elements: 1,
             target_instructions: 12,
-            artifact_bytes: 512,
+            artifact_bytes: 2048,
         };
         let graph = lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap();
         let workspace =

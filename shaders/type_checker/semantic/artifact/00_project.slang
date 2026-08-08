@@ -20,6 +20,10 @@ StructuredBuffer<uint> resolved_dependency_local_index;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
+StructuredBuffer<uint> compact_path_segment_count;
+StructuredBuffer<HirPathSegment> compact_path_segments;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> visible_decl;
@@ -31,6 +35,12 @@ StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_name_id;
 StructuredBuffer<int> if_depth;
 StructuredBuffer<uint> compact_expr_scalar_type;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> external_type_library_id;
+StructuredBuffer<uint> external_type_unit_id;
+StructuredBuffer<uint> external_type_local_index;
 RWStructuredBuffer<uint> semantic_value_decl_by_hir;
 RWStructuredBuffer<uint> semantic_value_type_by_hir;
 RWStructuredBuffer<uint> semantic_value_const_by_hir;
@@ -42,6 +52,12 @@ RWStructuredBuffer<uint> semantic_function_entrypoint_by_hir;
 RWStructuredBuffer<uint> semantic_function_host_service_by_hir;
 RWStructuredBuffer<uint> semantic_control_depth_by_hir;
 RWStructuredBuffer<uint> semantic_expr_scalar_type_by_hir;
+RWStructuredBuffer<uint> semantic_type_ref_tag_by_hir;
+RWStructuredBuffer<uint> semantic_type_ref_payload_by_hir;
+RWStructuredBuffer<uint> semantic_type_generic_param_slot_by_hir;
+RWStructuredBuffer<uint> semantic_type_external_library_id_by_hir;
+RWStructuredBuffer<uint> semantic_type_external_unit_id_by_hir;
+RWStructuredBuffer<uint> semantic_type_external_local_index_by_hir;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_STMT = 7u;
@@ -49,6 +65,7 @@ static const uint HIR_LET_STMT = 8u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_CONST_ITEM = 25u;
+static const uint HIR_TYPE = 5u;
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_CONST = 4u;
 static const uint HIR_EXPR_NAME = 2u;
@@ -63,6 +80,22 @@ static const uint DECL_WORDS = 14u;
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+uint type_leaf_token(uint row, HirCore core, HirPayload payload)
+{
+    uint path_count = min(compact_path_count[0u], gParams.n_hir_nodes);
+    uint path = row < gParams.n_hir_nodes ? path_id_by_owner_hir[row] : INVALID;
+    if (path >= path_count)
+        path = payload.b < gParams.n_hir_nodes ? path_id_by_owner_hir[payload.b] : INVALID;
+    if (path >= path_count)
+        return core.token_start;
+    HirPath record = compact_paths[path];
+    uint segment_count = min(compact_path_segment_count[0u], gParams.n_tokens);
+    if (record.segment_count == 0u || record.segment_start >= segment_count ||
+        record.segment_count > segment_count - record.segment_start)
+        return core.token_start;
+    return compact_path_segments[record.segment_start + record.segment_count - 1u].name_token;
 }
 
 uint host_service_for_function(HirPayload payload)
@@ -147,8 +180,60 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? host_service_for_function(compact_hir_payload[row]) : INVALID;
         semantic_control_depth_by_hir[row] = valid_token(token)
             ? uint(max(if_depth[token], 0)) : 0u;
-        semantic_expr_scalar_type_by_hir[row] = row < hir_count
+            semantic_expr_scalar_type_by_hir[row] = row < hir_count
             ? compact_expr_scalar_type[row] : 0u;
+
+        uint type_tag = INVALID;
+        uint type_payload = INVALID;
+        uint external_library = INVALID;
+        uint external_unit = INVALID;
+        uint external_local = INVALID;
+        uint generic_param_slot = INVALID;
+        if (row < hir_count && compact_hir_core[row].kind == HIR_TYPE)
+        {
+            HirCore core = compact_hir_core[row];
+            HirPayload payload = compact_hir_payload[row];
+            uint leaf = type_leaf_token(row, core, payload);
+            uint head = core.token_start;
+            uint identity_token = valid_token(leaf) ? leaf : head;
+            if (valid_token(identity_token))
+            {
+                type_tag = type_expr_ref_tag[identity_token];
+                type_payload = type_expr_ref_payload[identity_token];
+            }
+            if ((type_tag == INVALID || type_tag == 0u) && valid_token(head))
+            {
+                type_tag = type_expr_ref_tag[head];
+                type_payload = type_expr_ref_payload[head];
+            }
+            if (type_tag == 2u)
+            {
+                uint parameter_token = valid_token(type_payload) ? type_payload : identity_token;
+                if (valid_token(parameter_token))
+                    generic_param_slot = type_generic_param_slot_by_token[parameter_token];
+            }
+            uint external_token = valid_token(identity_token) &&
+                external_type_library_id[identity_token] != INVALID
+                ? identity_token : INVALID;
+            if (external_token == INVALID && valid_token(type_payload) &&
+                external_type_library_id[type_payload] != INVALID)
+                external_token = type_payload;
+            if (external_token == INVALID && valid_token(head) &&
+                external_type_library_id[head] != INVALID)
+                external_token = head;
+            if (external_token != INVALID)
+            {
+                external_library = external_type_library_id[external_token];
+                external_unit = external_type_unit_id[external_token];
+                external_local = external_type_local_index[external_token];
+            }
+        }
+        semantic_type_ref_tag_by_hir[row] = type_tag;
+        semantic_type_ref_payload_by_hir[row] = type_payload;
+        semantic_type_generic_param_slot_by_hir[row] = generic_param_slot;
+        semantic_type_external_library_id_by_hir[row] = external_library;
+        semantic_type_external_unit_id_by_hir[row] = external_unit;
+        semantic_type_external_local_index_by_hir[row] = external_local;
 
     }
 

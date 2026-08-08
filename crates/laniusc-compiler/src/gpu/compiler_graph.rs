@@ -9,7 +9,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::{
     buffers::{LaniusBuffer, TrackedBufferView},
     kernels::KernelReflections,
-    workspace::{WorkspaceAssignment, WorkspacePlan, WorkspaceSlotPlan, WorkspaceUsageClass},
+    workspace::{
+        WorkspaceArenaLayout,
+        WorkspaceArenaLimits,
+        WorkspaceAssignment,
+        WorkspacePlan,
+        WorkspaceSlotPlan,
+        WorkspaceUsageClass,
+        plan_workspace_arenas_with_conflicts,
+    },
 };
 use crate::reflection::{ParameterReflection, SlangReflection, slang_category_and_type_to_wgpu};
 
@@ -432,10 +440,13 @@ impl BoundGraphResource {
         let allocation_id = buffer.allocation_id().ok_or_else(|| {
             format!("graph binding {binding} uses an allocation not owned by Lanius")
         })?;
-        Ok(Self::whole(
+        Ok(Self::window(
             binding,
             resource,
             allocation_id,
+            buffer.byte_offset,
+            buffer.byte_size as u64,
+            0,
             buffer.byte_size as u64,
         ))
     }
@@ -495,12 +506,22 @@ impl CompilerGraphBindings {
     }
 }
 
-/// Copyable ownership identity for graph-managed physical slots. Stages keep
+/// One byte range owned by a logical graph resource inside a physical GPU
+/// allocation. Whole-buffer workspaces use offset zero; arena-backed
+/// workspaces assign disjoint non-zero ranges of a shared allocation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GraphAllocationRange {
+    allocation_id: u64,
+    byte_offset: u64,
+    byte_size: u64,
+}
+
+/// Copyable ownership ranges for graph-managed physical storage. Stages keep
 /// this after construction so recording can prove that non-input resources
-/// still use the allocations selected by the graph.
+/// still use both the allocation and byte range selected by the graph.
 #[derive(Clone, Debug)]
 pub struct CompilerGraphAllocations {
-    allocation_by_resource: Vec<Option<u64>>,
+    allocation_by_resource: Vec<Option<GraphAllocationRange>>,
 }
 
 impl CompilerGraphWorkspace {
@@ -517,6 +538,9 @@ impl CompilerGraphWorkspace {
         graph: &CompilerGraph,
         upstream: &[TrackedBufferView<'_>],
     ) -> Result<Self, String> {
+        if std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some() {
+            return Self::new(device, label, graph);
+        }
         // A phase may expose several typed aliases of the same physical
         // allocation. Treat that allocation as one candidate; assigning two
         // aliases to different slots would defeat the graph's overlap proof.
@@ -625,13 +649,72 @@ impl CompilerGraphWorkspace {
                 .map(|assignment| assignment.slot)
                 .ok_or_else(|| format!("compiler resource {} has no workspace slot", desc.name))?;
             if let Some(previous) = imported_by_slot.insert(slot, buffer.clone()) {
-                if previous.allocation_id() != buffer.allocation_id() {
+                if previous.allocation_id() != buffer.allocation_id()
+                    || previous.byte_offset != buffer.byte_offset
+                    || previous.byte_size != buffer.byte_size
+                {
                     return Err(format!(
-                        "workspace slot {slot} has imports from two different allocations",
+                        "workspace slot {slot} has imports from two different allocation ranges",
                     ));
                 }
             }
         }
+
+        let unimported = WorkspacePlan {
+            assignments: Vec::new(),
+            slots: graph
+                .workspace
+                .slots
+                .iter()
+                .copied()
+                .filter(|plan| !imported_by_slot.contains_key(&plan.slot))
+                .collect(),
+        };
+        let arena_layout = plan_workspace_arenas_with_conflicts(
+            &unimported,
+            WorkspaceArenaLimits::from_device_limits(&device.limits())?,
+            &graph.workspace_arena_conflicts(),
+        )?;
+        if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
+            for placement in &arena_layout.placements {
+                let resources = graph
+                    .workspace
+                    .assignments
+                    .iter()
+                    .filter(|assignment| assignment.slot == placement.slot)
+                    .map(|assignment| assignment.name)
+                    .collect::<Vec<_>>();
+                eprintln!(
+                    "compiler_graph_arena label={label} arena={} slot={} offset={} bytes={} resources={resources:?}",
+                    placement.arena,
+                    placement.slot,
+                    placement.byte_offset,
+                    placement.byte_size,
+                );
+            }
+        }
+        let arena_usage = wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::INDIRECT;
+        let arenas = arena_layout
+            .arenas
+            .iter()
+            .map(|plan| {
+                let arena_label = format!("{label}.arena.{}", plan.arena);
+                let raw = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(&arena_label),
+                    size: plan.bytes,
+                    usage: arena_usage,
+                    mapped_at_creation: false,
+                });
+                let buffer: LaniusBuffer<u8> =
+                    LaniusBuffer::new_labeled((raw, plan.bytes), plan.bytes as usize, arena_label);
+                crate::gpu::buffers::register_resettable_buffer(&buffer);
+                buffer
+            })
+            .collect::<Vec<_>>();
+
         let mut slots = Vec::with_capacity(graph.workspace.slots.len());
         for plan in &graph.workspace.slots {
             if plan.slot as usize != slots.len() {
@@ -653,28 +736,26 @@ impl CompilerGraphWorkspace {
                         plan.slot, plan.bytes, imported.byte_size,
                     ));
                 }
-                slots.push(imported);
+                slots.push(imported.subrange::<u8>(0, plan.bytes, plan.bytes as usize)?);
             } else {
-                let usage = wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_SRC
-                    | wgpu::BufferUsages::COPY_DST
-                    | match plan.usage {
-                        WorkspaceUsageClass::Storage => wgpu::BufferUsages::empty(),
-                        WorkspaceUsageClass::StorageIndirect => wgpu::BufferUsages::INDIRECT,
-                    };
-                let raw = device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some(&format!("{label}.slot.{}", plan.slot)),
-                    size: plan.bytes,
-                    usage,
-                    mapped_at_creation: false,
-                });
-                let buffer = LaniusBuffer::new_labeled(
-                    (raw, plan.bytes),
-                    plan.bytes as usize,
-                    format!("{label}.slot.{}", plan.slot),
-                );
-                crate::gpu::buffers::register_resettable_buffer(&buffer);
-                slots.push(buffer);
+                let placement = arena_layout
+                    .placements
+                    .iter()
+                    .find(|placement| placement.slot == plan.slot)
+                    .ok_or_else(|| {
+                        format!("workspace slot {} has no arena placement", plan.slot)
+                    })?;
+                let arena = arenas.get(placement.arena as usize).ok_or_else(|| {
+                    format!(
+                        "workspace slot {} names missing arena {}",
+                        plan.slot, placement.arena,
+                    )
+                })?;
+                slots.push(arena.subrange::<u8>(
+                    placement.byte_offset,
+                    placement.byte_size,
+                    placement.byte_size as usize,
+                )?);
             }
         }
         debug_assert!(imported_by_slot.is_empty());
@@ -731,9 +812,12 @@ impl CompilerGraphWorkspace {
                 .iter()
                 .map(|slot| {
                     slot.and_then(|slot| {
-                        self.slots
-                            .get(slot as usize)
-                            .and_then(LaniusBuffer::allocation_id)
+                        let buffer = self.slots.get(slot as usize)?;
+                        Some(GraphAllocationRange {
+                            allocation_id: buffer.allocation_id()?,
+                            byte_offset: buffer.byte_offset,
+                            byte_size: buffer.byte_size as u64,
+                        })
                     })
                 })
                 .collect(),
@@ -869,7 +953,7 @@ impl CompilerGraphAllocations {
                 desc.name
             ));
         }
-        let allocation = buffer.allocation_id().ok_or_else(|| {
+        let allocation_id = buffer.allocation_id().ok_or_else(|| {
             format!(
                 "compiler resource {} imports a buffer without allocation identity",
                 desc.name
@@ -879,7 +963,11 @@ impl CompilerGraphAllocations {
             .allocation_by_resource
             .get_mut(resource.index())
             .ok_or_else(|| format!("unknown compiler resource {}", resource.index()))?;
-        *slot = Some(allocation);
+        *slot = Some(GraphAllocationRange {
+            allocation_id,
+            byte_offset: buffer.byte_offset,
+            byte_size: buffer.byte_size as u64,
+        });
         Ok(())
     }
 
@@ -918,10 +1006,35 @@ impl CompilerGraphAllocations {
                 .iter()
                 .find(|bound| bound.binding == access.binding && bound.resource == access.resource)
                 .expect("logical binding validation ran first");
-            if bound.allocation_id != expected {
+            if bound.allocation_id != expected.allocation_id {
                 return Err(format!(
                     "compiler pass {} binds graph-owned {} to allocation {} instead of {}",
-                    desc.name, resource.name, bound.allocation_id, expected,
+                    desc.name, resource.name, bound.allocation_id, expected.allocation_id,
+                ));
+            }
+            let bound_end = bound
+                .byte_offset
+                .checked_add(bound.byte_size)
+                .ok_or_else(|| {
+                    format!(
+                        "compiler pass {} binding {} has an overflowing byte range",
+                        desc.name, access.binding,
+                    )
+                })?;
+            let expected_end = expected
+                .byte_offset
+                .checked_add(expected.byte_size)
+                .expect("owned compiler allocation range overflow");
+            if bound.byte_offset < expected.byte_offset || bound_end > expected_end {
+                return Err(format!(
+                    "compiler pass {} binds graph-owned {} to byte range {}..{} outside its owned range {}..{} in allocation {}",
+                    desc.name,
+                    resource.name,
+                    bound.byte_offset,
+                    bound_end,
+                    expected.byte_offset,
+                    expected_end,
+                    expected.allocation_id,
                 ));
             }
         }
@@ -967,6 +1080,96 @@ impl CompilerGraph {
 
     pub fn workspace_plan(&self) -> &WorkspacePlan {
         &self.workspace
+    }
+
+    /// Projects the graph's lifetime-colored slots onto the physical arena ABI
+    /// supported by a particular device. Materialization is intentionally a
+    /// separate step so allocation consolidation can be inspected before any
+    /// shader interface is migrated.
+    pub fn workspace_arena_layout(
+        &self,
+        limits: &wgpu::Limits,
+    ) -> Result<WorkspaceArenaLayout, String> {
+        plan_workspace_arenas_with_conflicts(
+            &self.workspace,
+            WorkspaceArenaLimits::from_device_limits(limits)?,
+            &self.workspace_arena_conflicts(),
+        )
+    }
+
+    fn workspace_arena_conflicts(&self) -> BTreeSet<(u32, u32)> {
+        let all_slots = self
+            .workspace
+            .slots
+            .iter()
+            .map(|slot| slot.slot)
+            .collect::<Vec<_>>();
+        if std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some() {
+            return all_slots
+                .iter()
+                .enumerate()
+                .flat_map(|(index, &left)| {
+                    all_slots[index + 1..]
+                        .iter()
+                        .map(move |&right| (left.min(right), left.max(right)))
+                })
+                .collect();
+        }
+        let slot_by_resource = self
+            .workspace
+            .assignments
+            .iter()
+            .filter_map(|assignment| {
+                self.resource_id(assignment.name)
+                    .map(|resource| (resource, assignment.slot))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut conflicts = BTreeSet::new();
+        for pass in &self.passes {
+            let slots = pass
+                .accesses
+                .iter()
+                .filter_map(|access| slot_by_resource.get(&access.resource).copied())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            for (index, &left) in slots.iter().enumerate() {
+                for &right in &slots[index + 1..] {
+                    conflicts.insert((left, right));
+                }
+            }
+        }
+        // Retained outputs and resident state cross the graph's scheduling
+        // boundary. Keep each at offset zero in its own physical allocation
+        // until the downstream consumer is represented in this graph; raw
+        // external APIs cannot otherwise carry the logical arena range.
+        let dedicated_slots = self
+            .workspace
+            .assignments
+            .iter()
+            .filter_map(|assignment| {
+                if self.workspace.slots.iter().any(|slot| {
+                    slot.slot == assignment.slot
+                        && slot.usage == WorkspaceUsageClass::StorageIndirect
+                }) {
+                    return Some(assignment.slot);
+                }
+                let resource = self.resource_id(assignment.name)?;
+                matches!(
+                    self.resource(resource)?.class,
+                    ResourceClass::Resident | ResourceClass::Output
+                )
+                .then_some(assignment.slot)
+            })
+            .collect::<BTreeSet<_>>();
+        for dedicated in dedicated_slots {
+            for &other in &all_slots {
+                if dedicated != other {
+                    conflicts.insert((dedicated.min(other), dedicated.max(other)));
+                }
+            }
+        }
+        conflicts
     }
 
     pub fn paged_resource(&self, resource: ResourceId) -> Option<PagedResourceDesc> {
@@ -1066,6 +1269,7 @@ impl CompilerGraph {
         binding: &'static str,
         resource: ResourceId,
         allocation_id: Option<u64>,
+        byte_offset: u64,
         byte_size: u64,
     ) -> Result<BoundGraphResource, String> {
         let desc = self
@@ -1081,10 +1285,13 @@ impl CompilerGraph {
                 ));
             }
         };
-        Ok(BoundGraphResource::whole(
+        Ok(BoundGraphResource::window(
             binding,
             resource,
             allocation_id,
+            byte_offset,
+            byte_size,
+            0,
             byte_size,
         ))
     }
@@ -2400,6 +2607,23 @@ impl CompilerGraphBuilder {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Gives graph-owned workspace a stable, non-colored allocation for a
+    /// relation whose complete physical schedule is not represented yet.
+    pub fn dedicate_workspace(&mut self, resource: ResourceId) -> Result<(), String> {
+        let desc = self
+            .resources
+            .get_mut(resource.index())
+            .ok_or_else(|| format!("cannot dedicate unknown compiler resource {}", resource.index()))?;
+        if desc.class != ResourceClass::Workspace {
+            return Err(format!(
+                "compiler resource `{}` has ownership class {:?}; only workspace can be dedicated",
+                desc.name, desc.class,
+            ));
+        }
+        desc.class = ResourceClass::Resident;
         Ok(())
     }
 
@@ -3963,6 +4187,54 @@ mod tests {
     }
 
     #[test]
+    fn indirect_slots_never_share_a_physical_arena_with_storage() {
+        let mut builder = CompilerGraphBuilder::new();
+        let dispatch = builder
+            .add_resource(ResourceDesc {
+                name: "dispatch",
+                domain: ResourceDomain::DispatchArguments,
+                class: ResourceClass::Workspace,
+                bytes: 12,
+                usage: WorkspaceUsageClass::StorageIndirect,
+            })
+            .unwrap();
+        let storage = builder
+            .add_resource(workspace("storage", ResourceDomain::Types, 64))
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "dispatch.write",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::DispatchArguments,
+                accesses: vec![PassAccess::write("dispatch", dispatch)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "storage.write",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("storage", storage)],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+        let slot = |name| {
+            graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == name)
+                .unwrap()
+                .slot
+        };
+        let pair = (
+            slot("dispatch").min(slot("storage")),
+            slot("dispatch").max(slot("storage")),
+        );
+        assert!(graph.workspace_arena_conflicts().contains(&pair));
+    }
+
+    #[test]
     fn resident_clear_is_a_physical_job_boundary_not_a_workspace_producer() {
         let mut builder = CompilerGraphBuilder::new();
         let resident = builder
@@ -5004,22 +5276,20 @@ mod tests {
 
         assert_eq!(
             graph
-                .bind_registered_resource("input", input, None, 64)
+                .bind_registered_resource("input", input, None, 0, 64)
                 .unwrap()
                 .allocation_id,
             0,
         );
         let error = graph
-            .bind_registered_resource("output", external, None, 64)
+            .bind_registered_resource("output", external, None, 0, 64)
             .unwrap_err();
         assert!(error.contains("no tracked Lanius allocation identity"));
-        assert_eq!(
-            graph
-                .bind_registered_resource("output", external, Some(17), 64)
-                .unwrap()
-                .allocation_id,
-            17,
-        );
+        let bound = graph
+            .bind_registered_resource("output", external, Some(17), 256, 64)
+            .unwrap();
+        assert_eq!(bound.allocation_id, 17);
+        assert_eq!((bound.byte_offset, bound.byte_size), (256, 64));
     }
 
     #[test]
@@ -5139,7 +5409,14 @@ mod tests {
             .unwrap();
         let graph = builder.build().unwrap();
         let ownership = CompilerGraphAllocations {
-            allocation_by_resource: vec![None, Some(9)],
+            allocation_by_resource: vec![
+                None,
+                Some(GraphAllocationRange {
+                    allocation_id: 9,
+                    byte_offset: 0,
+                    byte_size: 64,
+                }),
+            ],
         };
         let input_binding = BoundGraphResource::whole("input", input, 77, 64);
         let error = ownership
@@ -5163,6 +5440,18 @@ mod tests {
                 ],
             )
             .unwrap();
+
+        let error = ownership
+            .validate_pass_bindings(
+                &graph,
+                pass,
+                &[
+                    input_binding,
+                    BoundGraphResource::window("output", output, 9, 32, 64, 0, 64),
+                ],
+            )
+            .unwrap_err();
+        assert!(error.contains("outside its owned range 0..64"));
     }
 
     #[test]

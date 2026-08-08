@@ -22,12 +22,8 @@ StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_semantic_dense_node;
-StructuredBuffer<uint> hir_semantic_count;
-
 RWStructuredBuffer<uint> hir_expr_record;
 RWStructuredBuffer<uint> hir_expr_name_role;
-RWStructuredBuffer<uint> hir_expr_result_node;
 RWStructuredBuffer<uint> hir_expr_result_root_node;
 
 static const uint INVALID = 0xffffffffu;
@@ -107,19 +103,6 @@ uint active_node_count()
 bool valid_node(uint i)
 {
     return i != INVALID && i < active_node_count();
-}
-
-uint active_semantic_count()
-{
-    return min(hir_semantic_count[0u], active_node_count());
-}
-
-uint semantic_row_node(uint row)
-{
-    if (row >= active_semantic_count())
-        return INVALID;
-    uint node = hir_semantic_dense_node[row];
-    return valid_node(node) ? node : INVALID;
 }
 
 uint first_child_node(uint i)
@@ -346,14 +329,12 @@ void write_expr_record(uint i, uint form, uint left, uint right, uint value_toke
 void publish_expr_result(uint i, uint result)
 {
     uint value = valid_node(result) ? result : INVALID;
-    hir_expr_result_node[i] = value;
     hir_expr_result_root_node[i] = value;
 }
 
 void clear_expr(uint i)
 {
     write_expr_record(i, HIR_EXPR_NONE, INVALID, INVALID, INVALID);
-    hir_expr_result_node[i] = INVALID;
     hir_expr_result_root_node[i] = INVALID;
 }
 
@@ -690,9 +671,8 @@ void publish_expr(uint i)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = linear_thread_id(dtid);
-    uint i = semantic_row_node(row);
-    if (i == INVALID)
+    uint i = linear_thread_id(dtid);
+    if (!valid_node(i))
         return;
 
     clear_expr(i);

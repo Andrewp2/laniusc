@@ -369,7 +369,7 @@ impl GpuWasmObjectStage {
         };
         let mut bytes = encase::UniformBuffer::new(Vec::new());
         bytes.write(&value).expect("Wasm object identity encodes");
-        queue.write_buffer(&self.identity.buffer, 0, bytes.as_ref());
+        self.identity.write(queue, 0, bytes.as_ref());
     }
 
     #[cfg(test)]
@@ -394,35 +394,19 @@ impl GpuWasmObjectStage {
         self.functions_op.record(encoder)?;
         self.bytes_op.record(encoder)?;
         for (source, destination) in [
-            (&self.function_count.buffer, 0),
-            (&self.type_total.buffer, 4),
-            (&self.code_total.buffer, 8),
-            (&self.relocation_total.buffer, 12),
-            (&self.symbol_total.buffer, 16),
-            (&self.definition_total.buffer, 20),
+            (&self.function_count, 0),
+            (&self.type_total, 4),
+            (&self.code_total, 8),
+            (&self.relocation_total, 12),
+            (&self.symbol_total, 16),
+            (&self.definition_total, 20),
         ] {
-            encoder.copy_buffer_to_buffer(
-                source,
-                0,
-                &self.metadata_readback.buffer,
-                destination,
-                4,
-            );
+            source.copy_to(encoder, 0, &self.metadata_readback, destination, 4);
         }
-        encoder.copy_buffer_to_buffer(
-            &self.string_pool_len.buffer,
-            0,
-            &self.metadata_readback.buffer,
-            24,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(
-            &self.layout.buffer,
-            0,
-            &self.metadata_readback.buffer,
-            32,
-            64,
-        );
+        self.string_pool_len
+            .copy_to(encoder, 0, &self.metadata_readback, 24, 4);
+        self.layout
+            .copy_to(encoder, 0, &self.metadata_readback, 32, 64);
         Ok(())
     }
 
@@ -475,37 +459,51 @@ impl GpuWasmObjectStage {
             );
         }
 
-        let read = |buffer: &wgpu::Buffer, len: usize, label: &str| {
-            self.payload_readback
-                .read(device, queue, buffer, 0, len, label)
-        };
-        let function_words = decode_words(&read(
-            &self.functions.buffer,
+        let function_words = decode_words(&self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.functions,
+            0,
             function_count * 24,
             "Wasm object function readback",
         )?);
-        let relocation_words = decode_words(&read(
-            &self.relocations.buffer,
+        let relocation_words = decode_words(&self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.relocations,
+            0,
             relocation_count * 32,
             "Wasm object relocation readback",
         )?);
-        let definition_words = decode_words(&read(
-            &self.definitions.buffer,
+        let definition_words = decode_words(&self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.definitions,
+            0,
             definition_count * 32,
             "Wasm object definition readback",
         )?);
-        let type_bytes = read(
-            &self.type_words.buffer,
+        let type_bytes = self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.type_words,
+            0,
             type_len,
             "Wasm object type readback",
         )?;
-        let body_bytes = read(
-            &self.body_words.buffer,
+        let body_bytes = self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.body_words,
+            0,
             body_len,
             "Wasm object body readback",
         )?;
-        let data_bytes = read(
-            &self.data_words.buffer,
+        let data_bytes = self.payload_readback.read_buffer(
+            device,
+            queue,
+            &self.data_words,
+            0,
             data_len,
             "Wasm object data readback",
         )?;

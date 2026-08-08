@@ -10,6 +10,8 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint family_flags;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirMatch;
@@ -219,7 +221,8 @@ void seed_match_arm(uint node)
     if (valid_node(pattern) && is_pattern_production(node_kind[pattern]))
     {
         hir_match_arm_pattern_node[node] = pattern;
-        hir_match_pattern_owner_arm[pattern] = node;
+        if (gHirMatch.retain_debug_rows != 0u)
+            hir_match_pattern_owner_arm[pattern] = node;
     }
 
     uint result = next_sibling_node(pattern);

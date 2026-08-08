@@ -46,6 +46,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirContextRelati
                 },
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
                 "hir_semantic_dense_node".into(),
                 b.hir_semantic_dense_node.as_entire_binding(),
@@ -83,6 +84,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirContextRelati
                 b.hir_nearest_array_element_value_a.as_entire_binding(),
             ),
             (
+                "canonical_raw_to_dense".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
+            ),
+            (
+                "canonical_alias_to_dense".into(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
+            ),
+            (
                 "hir_nearest_stmt_node".into(),
                 b.hir_nearest_stmt_node.as_entire_binding(),
             ),
@@ -117,6 +126,26 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirContextRelati
             (
                 "hir_call_context_stmt_node".into(),
                 b.hir_call_context_stmt_node.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_nearest_loop".into(),
+                b.hir_canonical_nearest_loop.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_nearest_block".into(),
+                b.hir_canonical_nearest_block.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_nearest_control".into(),
+                b.hir_canonical_nearest_control.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_nearest_fn".into(),
+                b.hir_canonical_nearest_fn.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_context_stmt".into(),
+                b.hir_canonical_context_stmt.as_entire_binding(),
             ),
         ])
     }

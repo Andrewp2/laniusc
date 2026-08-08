@@ -2,7 +2,6 @@
 // Generic parameter payloads remain declaration-local slots until the member
 // scatter assigns final stable member indices.
 
-import external_type_identity;
 import hir_records;
 import atomics;
 
@@ -18,9 +17,17 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> type_expr_ref_tag;
-StructuredBuffer<uint> type_expr_ref_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
+StructuredBuffer<uint> compact_path_segment_count;
+StructuredBuffer<HirPathSegment> compact_path_segments;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> semantic_type_ref_tag_by_hir;
+StructuredBuffer<uint> semantic_type_ref_payload_by_hir;
+StructuredBuffer<uint> semantic_type_generic_param_slot_by_hir;
+StructuredBuffer<uint> semantic_type_external_library_id_by_hir;
+StructuredBuffer<uint> semantic_type_external_unit_id_by_hir;
+StructuredBuffer<uint> semantic_type_external_local_index_by_hir;
 StructuredBuffer<uint> interface_type_local_decl_by_hir;
 StructuredBuffer<uint> public_decl_index_by_local;
 RWStructuredBuffer<uint4> interface_type_path_classification;
@@ -31,8 +38,6 @@ static const uint HIR_TYPE = 5u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
-static const uint TYPE_REF_INSTANCE = 3u;
-static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_KIND_SCALAR = 1u;
 static const uint TYPE_KIND_GENERIC_PARAMETER = 2u;
 static const uint TYPE_KIND_DECLARATION = 3u;
@@ -40,21 +45,27 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
 bool valid_token(uint token) { return token < gParams.token_capacity; }
-bool classify_external(uint token, out uint4 classification)
+uint path_leaf_token(uint node)
 {
-    classification = uint4(0u, 0u, 0u, 0u);
-    if (!valid_token(token) || !external_type_identity_valid(token))
-        return false;
-    classification = uint4(
-        TYPE_KIND_DECLARATION,
-        external_type_library_id[token],
-        external_type_unit_id[token],
-        external_type_local_index[token]);
-    return true;
+    uint path_count = min(compact_path_count[0u], gParams.hir_capacity);
+    uint path = node < gParams.hir_capacity ? path_id_by_owner_hir[node] : INVALID;
+    if (path >= path_count)
+    {
+        uint path_owner = node < gParams.hir_capacity ? compact_hir_payload[node].b : INVALID;
+        path = path_owner < gParams.hir_capacity ? path_id_by_owner_hir[path_owner] : INVALID;
+    }
+    if (path >= path_count)
+        return INVALID;
+    HirPath record = compact_paths[path];
+    uint segment_count = min(compact_path_segment_count[0u], gParams.token_capacity);
+    if (record.segment_count == 0u || record.segment_start >= segment_count ||
+        record.segment_count > segment_count - record.segment_start)
+        return INVALID;
+    return compact_path_segments[record.segment_start + record.segment_count - 1u].name_token;
 }
 void fail(uint detail)
 {
-    atomic_u32_or(interface_status, 0u, 2048u);
+    atomic_u32_or(interface_status, 0u, 16384u);
     atomic_u32_min(interface_status, 1u, detail);
 }
 
@@ -70,42 +81,37 @@ void main(uint3 dtid: SV_DispatchThreadID)
         compact_hir_core[node].kind != HIR_TYPE ||
         compact_hir_payload[node].a != HIR_TYPE_FORM_PATH)
         return;
-    uint token = compact_hir_core[node].token_start;
+    uint token = path_leaf_token(node);
+    if (!valid_token(token))
+        token = compact_hir_core[node].token_start;
     if (!valid_token(token))
     {
-        fail(node);
+        fail(0x10000000u | node);
         return;
     }
-    uint tag = type_expr_ref_tag[token];
-    uint payload = type_expr_ref_payload[token];
+    uint tag = semantic_type_ref_tag_by_hir[node];
+    uint payload = semantic_type_ref_payload_by_hir[node];
     if (tag == TYPE_REF_GENERIC_PARAM)
     {
-        uint parameter_token = valid_token(payload) ? payload : token;
-        uint slot = type_generic_param_slot_by_token[parameter_token];
+        uint slot = semantic_type_generic_param_slot_by_hir[node];
         if (slot == INVALID)
         {
-            fail(node);
+            fail(0x20000000u | node);
             return;
         }
         interface_type_path_classification[node] =
             uint4(TYPE_KIND_GENERIC_PARAMETER, slot, 0u, 0u);
         return;
     }
-    uint external_token = INVALID;
-    if (tag == TYPE_REF_EXTERNAL_CANONICAL)
-        external_token = token;
-    else if (tag == TYPE_REF_INSTANCE && valid_token(payload) &&
-             external_type_identity_valid(payload))
-        external_token = payload;
-    if (external_token != INVALID)
+    if (semantic_type_external_library_id_by_hir[node] != INVALID &&
+        semantic_type_external_unit_id_by_hir[node] != INVALID &&
+        semantic_type_external_local_index_by_hir[node] != INVALID)
     {
-        uint4 classification;
-        if (!classify_external(external_token, classification))
-        {
-            fail(node);
-            return;
-        }
-        interface_type_path_classification[node] = classification;
+        interface_type_path_classification[node] = uint4(
+            TYPE_KIND_DECLARATION,
+            semantic_type_external_library_id_by_hir[node],
+            semantic_type_external_unit_id_by_hir[node],
+            semantic_type_external_local_index_by_hir[node]);
         return;
     }
     uint local = interface_type_local_decl_by_hir[node];
@@ -132,5 +138,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint4(TYPE_KIND_SCALAR, payload, 0u, 0u);
         return;
     }
-    fail(node);
+    fail(0x40000000u | ((tag & 0x0fu) << 24u) | (node & 0x00ffffffu));
 }

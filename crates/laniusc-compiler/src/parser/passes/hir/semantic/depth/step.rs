@@ -48,17 +48,17 @@ impl HirSemanticDepthStepPass {
                     &buffers.hir_semantic_depth_value_a,
                 ),
             ] {
-                encoder.copy_buffer_to_buffer(&src.buffer, 0, &dst.buffer, 0, bytes);
+                src.copy_to(encoder, 0, dst, 0, bytes);
             }
         }
 
         crate::gpu::passes_core::flush_deferred_compute(encoder);
-        encoder.copy_buffer_to_buffer(
-            &buffers.hir_semantic_depth_value_a.buffer,
+        buffers.hir_semantic_depth_value_a.copy_to(
+            encoder,
             0,
-            &buffers.hir_semantic_depth.buffer,
+            &buffers.hir_semantic_depth,
             0,
-            u64::from(buffers.tree_capacity) * 4,
+            buffers.hir_semantic_depth.byte_size as u64,
         );
 
         Ok(())

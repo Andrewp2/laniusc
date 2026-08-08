@@ -552,7 +552,7 @@ pub fn validate_hir_type_records_with_node_kinds(
      -> Result<usize> {
         if node == INVALID || node as usize >= row_count {
             return Err(anyhow!(
-                "parser HIR type row {owner} published {label} without an in-table parser-owned row"
+                "parser HIR type row {owner} published {label} {node} without an in-table parser-owned row (row count {row_count})"
             ));
         }
         let node = node as usize;

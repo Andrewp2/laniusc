@@ -144,7 +144,9 @@ pub fn validate_hir_enum_variant_records(
         let first_payload = payload_slots[0];
         if payload_starts[row] != first_payload {
             return Err(anyhow!(
-                "parser HIR enum variant row {row} payload start does not point at ordinal zero"
+                "parser HIR enum variant row {row} payload start {} does not point at ordinal-zero payload {} (count={payload_count}, slots={payload_slots:?})",
+                payload_starts[row],
+                first_payload,
             ));
         }
 
@@ -248,9 +250,22 @@ pub fn validate_hir_semantic_tree_records(
         ));
     }
 
-    let semantic_count = kinds.iter().filter(|&&kind| kind != HIR_NODE_NONE).count();
+    // Dense rows are strictly increasing raw-node IDs. Capacity beyond the
+    // active count is scratch storage and is not required to contain INVALID.
+    let mut semantic_count = 0usize;
+    let mut previous_dense_node = None;
+    for &dense_node in semantic_dense_node {
+        let dense_node = dense_node as usize;
+        if dense_node >= row_count
+            || previous_dense_node.is_some_and(|previous| dense_node <= previous)
+        {
+            break;
+        }
+        previous_dense_node = Some(dense_node);
+        semantic_count += 1;
+    }
     let mut expected_prefix = 0usize;
-    for (node, &kind) in kinds.iter().enumerate() {
+    for node in 0..row_count {
         let published_prefix = semantic_prefix_before_node[node] as usize;
         if published_prefix != expected_prefix {
             let start = node.saturating_sub(4);
@@ -262,21 +277,29 @@ pub fn validate_hir_semantic_tree_records(
                 &semantic_dense_node[..semantic_count.min(8)]
             ));
         }
-        if kind == HIR_NODE_NONE {
-            continue;
-        }
-        if expected_prefix >= row_count {
+        let next_dense_node = if expected_prefix < semantic_count {
+            semantic_dense_node[expected_prefix] as usize
+        } else {
+            INVALID as usize
+        };
+        if next_dense_node < node {
             return Err(anyhow!(
-                "parser HIR semantic-tree dense row {expected_prefix} exceeds {row_count} readback rows"
+                "parser HIR semantic-tree dense row {expected_prefix} points backward at node {next_dense_node} while validating node {node}"
             ));
         }
-        let dense_node = semantic_dense_node[expected_prefix];
-        if dense_node as usize != node {
-            return Err(anyhow!(
-                "parser HIR semantic-tree dense row {expected_prefix} points at node {dense_node}, expected {node}"
-            ));
+        if next_dense_node == node {
+            if kinds[node] == HIR_NODE_NONE {
+                return Err(anyhow!(
+                    "parser HIR semantic-tree dense row {expected_prefix} points at non-semantic original node {node}"
+                ));
+            }
+            expected_prefix += 1;
         }
-        expected_prefix += 1;
+    }
+    if expected_prefix != semantic_count {
+        return Err(anyhow!(
+            "parser HIR semantic-tree consumed {expected_prefix} dense rows, expected {semantic_count}"
+        ));
     }
 
     let mut next_child_index_by_parent = vec![0u32; semantic_count];
