@@ -247,12 +247,12 @@ pub(super) fn global_x86_gpu_compiler() -> Result<&'static GpuCompiler<'static>,
     global_gpu_compiler_for(&GPU_X86_COMPILER, GpuCompilerBackends::x86_only())
 }
 
-/// Validates that an in-memory source pack fits the default bounded codegen unit.
-pub(super) fn validate_in_memory_source_pack_fits_default_codegen_unit<S: AsRef<str>>(
+pub(super) fn validate_in_memory_source_pack_fits_codegen_unit<S: AsRef<str>>(
     operation: &str,
     sources: &[S],
+    limits: CompilationUnitLimits,
 ) -> Result<(), CompileError> {
-    let limits = CompilationUnitLimits::default().normalized();
+    let limits = limits.normalized();
     if sources.len() > limits.max_source_files {
         return Err(source_pack_input_limit_exceeded(
             operation,
@@ -490,7 +490,7 @@ pub async fn compile_source_pack_manifest_to_wasm_with_gpu_codegen(
 }
 
 /// Compile a path-backed source-pack manifest to Wasm, automatically using
-/// bounded persisted units when one resident job would exceed unit limits.
+/// bounded units when one resident job would exceed unit limits.
 pub async fn compile_source_pack_path_manifest_to_wasm_with_gpu_codegen(
     source_pack: &ExplicitSourcePackPathManifest,
 ) -> Result<Vec<u8>, CompileError> {

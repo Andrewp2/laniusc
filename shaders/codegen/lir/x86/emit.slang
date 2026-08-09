@@ -407,7 +407,12 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     }
     else if (core.op == X86_LIR_OP_AGGREGATE_INIT)
     {
-        load_value64(cursor, locations.a, 0u, function);
+        if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
+        {
+            emit_u8(cursor, 0xb8u);
+            emit_u32(cursor, operands.a);
+        }
+        else load_value64(cursor, locations.a, 0u, function);
         if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
         {
             emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x80u);

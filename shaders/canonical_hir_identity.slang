@@ -60,16 +60,19 @@ bool canonical_hir_uses_value_anchor(uint kind)
            kind == CANONICAL_HIR_LITERAL_EXPR;
 }
 
-uint canonical_hir_operator_anchor(uint kind, uint right_start, uint canonical_capacity)
+uint canonical_hir_operator_anchor(uint kind, uint expr_form, uint right_start,
+                                   uint token_end, uint canonical_capacity)
 {
     // Assignment and binary productions are `operator + right operand`.
     // Raw grammar spans can include the operator in the left subtree, so the
     // right operand is the stable boundary from which to recover its token.
+    uint operator_boundary = expr_form == CANONICAL_HIR_EXPR_RANGE_FROM
+        ? token_end : right_start;
     if ((kind == CANONICAL_HIR_ASSIGN_EXPR || kind == CANONICAL_HIR_BINARY_EXPR ||
          kind == CANONICAL_HIR_INDEX_EXPR) &&
-        right_start != CANONICAL_HIR_INVALID && right_start > 0u &&
-        right_start <= canonical_capacity)
-        return right_start - 1u;
+        operator_boundary != CANONICAL_HIR_INVALID && operator_boundary > 0u &&
+        operator_boundary <= canonical_capacity)
+        return operator_boundary - 1u;
     return CANONICAL_HIR_INVALID;
 }
 

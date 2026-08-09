@@ -1025,6 +1025,22 @@ impl GpuParser {
                     &self.passes,
                 )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_element_compact");
+                self.passes.hir_match_arm_owner_init.record_pass_indirect(
+                    &mut ctx,
+                    &bufs.tree_active_dispatch_args,
+                )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_owner_init");
+                self.passes.hir_semantic_parent_step.record_steps_for_buffers(
+                    ctx.device,
+                    ctx.encoder,
+                    ctx.buffers,
+                    &bufs.hir_semantic_parent_link_a,
+                    &bufs.hir_match_pattern_owner_arm,
+                    &bufs.hir_semantic_parent_link_b,
+                    &bufs.hir_semantic_parent_value_b,
+                    "hir_match_arm_owner_step",
+                )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_owner_step");
                 self.passes
                     .hir_match_arm_links
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;

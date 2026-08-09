@@ -1,0 +1,94 @@
+{
+  "schema": "lanius.typical-construct-profile.v1",
+  "source_of_truth": {
+    "grammar": "grammar/lanius.bnf",
+    "checked_samples": "sample_programs/MANIFEST.tsv",
+    "parser_feature_flags": "crates/laniusc-compiler/src/lexer/features.rs"
+  },
+  "calibration": {
+    "method": "Per-file construct presence measured in local Rust checkouts, excluding target and vendor trees.",
+    "corpus": ["laniusc", "game", "bevy", "wgpu", "winit"],
+    "observed_file_presence_percent_ranges": {
+      "struct": [54, 77],
+      "enum": [13, 34],
+      "trait": [3, 17],
+      "impl": [54, 83],
+      "match": [32, 57],
+      "while": [16, 33],
+      "for": [77, 86],
+      "fixed_array_type": [14, 32],
+      "generic_function": [24, 40],
+      "type_alias": [12, 48],
+      "const_item": [32, 48]
+    }
+  },
+  "archetypes": {
+    "policy": {
+      "weight": 16,
+      "constructs": ["enum", "enum_payload", "match", "match_payload_pattern", "bool", "logical_operators"]
+    },
+    "processor": {
+      "weight": 18,
+      "constructs": ["fixed_array", "array_literal", "array_index", "while", "break", "continue", "compound_assignment"]
+    },
+    "service": {
+      "weight": 22,
+      "constructs": ["struct", "struct_literal", "struct_field", "aggregate_parameter", "aggregate_return", "inherent_impl", "method_call", "self_parameter"]
+    },
+    "planner": {
+      "weight": 18,
+      "constructs": ["for_range", "nested_loop", "nested_scope", "shadowing", "early_return"]
+    },
+    "tracker": {
+      "weight": 14,
+      "constructs": ["recursion", "unary_expression", "bitwise_operators", "shift_operators", "comparison_operators"]
+    },
+    "summary": {
+      "weight": 12,
+      "constructs": ["generic_struct", "generic_function", "generic_type_argument", "type_alias", "const_item"]
+    }
+  },
+  "common_constructs": [
+    "module", "import", "public_item", "function", "parameters", "return_value",
+    "typed_local", "mutable_local", "function_call", "if", "else", "integer_literal",
+    "arithmetic_operators", "assignment", "qualified_path"
+  ],
+  "required_project_constructs": [
+    "module", "import", "public_item", "const_item", "type_alias", "struct", "struct_literal",
+    "struct_field", "aggregate_parameter", "aggregate_return", "inherent_impl", "method_call",
+    "self_parameter", "enum", "enum_payload", "match", "match_payload_pattern", "generic_struct",
+    "generic_function", "generic_type_argument", "fixed_array", "array_literal", "array_index",
+    "while", "for_range", "nested_loop", "break", "continue", "recursion", "nested_scope",
+    "shadowing", "early_return", "typed_local", "mutable_local", "if", "else", "bool",
+    "logical_operators", "unary_expression", "arithmetic_operators", "bitwise_operators",
+    "shift_operators", "comparison_operators", "compound_assignment", "function_call"
+  ],
+  "rare_frontend_constructs": [
+    "trait", "trait_impl", "public_trait_method", "where_clause", "generic_bound", "const_generic", "reference_type",
+    "slice_type", "extern_function", "extern_abi", "extern_without_abi", "void_function",
+    "bare_return", "inferred_local", "if_without_else", "group_expression", "unary_positive",
+    "empty_call", "param_trailing_comma", "call_trailing_comma", "array_trailing_comma",
+    "struct_literal_trailing_comma", "assign_add", "assign_subtract", "assign_multiply", "assign_divide",
+    "assign_remainder", "assign_xor", "assign_shift_left", "assign_shift_right",
+    "assign_bit_and", "assign_bit_or", "type_u8", "type_u32", "type_usize", "type_i64",
+    "type_f32", "type_char", "type_str", "type_ptr", "string_literal", "char_literal",
+    "float_literal", "range_inclusive", "range_to", "range_to_inclusive", "range_from",
+    "range_full", "for_iterable_path", "match_integer_pattern", "match_boolean_pattern", "match_wildcard_pattern",
+    "enum_multi_payload", "match_multi_payload_pattern", "match_unit_pattern",
+    "multiple_generic_parameters", "multiple_type_arguments",
+    "generic_parameter_trailing_comma", "type_argument_trailing_comma",
+    "generic_type_alias",
+    "enum_empty_tuple_payload", "enum_payload_trailing_comma",
+    "match_empty_tuple_pattern", "match_pattern_trailing_comma",
+    "multiple_where_predicates", "where_predicate_trailing_comma",
+    "multiple_type_bounds", "bound_multiple_type_arguments",
+    "bound_type_argument_trailing_comma", "uninitialized_typed_local",
+    "expression_statement", "public_impl_method", "postfix_call_member",
+    "public_const", "public_type_alias", "public_struct", "public_enum",
+    "public_trait", "public_impl", "public_extern", "empty_array_literal",
+    "zero_length_array_type", "empty_struct_declaration", "empty_struct_literal"
+  ],
+  "runtime_facilities": [
+    "stdio", "filesystem", "environment", "process_args", "process_exit", "random", "time", "allocation"
+  ]
+}

@@ -1893,13 +1893,14 @@ impl ResidentTreeReadbacks {
         let mut hir_compact_match_payload_arm = Vec::with_capacity(compact_match_payload_count);
         let mut hir_compact_match_payload_pattern = Vec::with_capacity(compact_match_payload_count);
         let mut hir_compact_match_payload_ordinal = Vec::with_capacity(compact_match_payload_count);
-        let mut hir_compact_match_payload_file_id = Vec::with_capacity(compact_match_payload_count);
+        let mut hir_compact_match_payload_parent_pattern =
+            Vec::with_capacity(compact_match_payload_count);
         for row in 0..compact_match_payload_count {
             let base = row.saturating_mul(4);
             hir_compact_match_payload_arm.push(match_payload_words[base]);
             hir_compact_match_payload_pattern.push(match_payload_words[base + 1]);
             hir_compact_match_payload_ordinal.push(match_payload_words[base + 2]);
-            hir_compact_match_payload_file_id.push(match_payload_words[base + 3]);
+            hir_compact_match_payload_parent_pattern.push(match_payload_words[base + 3]);
         }
 
         let compact_array_capacity = bufs.hir_canonical_capacity as usize;
@@ -2253,7 +2254,7 @@ impl ResidentTreeReadbacks {
             hir_compact_match_payload_arm,
             hir_compact_match_payload_pattern,
             hir_compact_match_payload_ordinal,
-            hir_compact_match_payload_file_id,
+            hir_compact_match_payload_parent_pattern,
             hir_compact_array_element_start,
             hir_compact_array_element_count,
             hir_compact_array_element_array,

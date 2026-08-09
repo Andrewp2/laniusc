@@ -9,6 +9,7 @@ StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> interface_type_count;
 StructuredBuffer<uint> interface_type_edge_total;
+StructuredBuffer<uint> interface_complete_edge_total;
 StructuredBuffer<uint> interface_signature_edge_count;
 StructuredBuffer<uint> interface_signature_edge_prefix;
 StructuredBuffer<uint> interface_decl_direct_type_hir;
@@ -26,7 +27,7 @@ static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
-void fail(uint detail) { atomic_u32_or(interface_status, 0u, 4096u); atomic_u32_min(interface_status, 1u, detail); }
+void fail(uint detail) { atomic_u32_or(interface_status, 0u, 4096u); atomic_u32_min(interface_status, 1u, detail); atomic_u32_min(interface_status, 2u, 6u); }
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -66,8 +67,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         fail(persisted);
         return;
     }
-    interface_type_edges[interface_type_edge_total[0u] +
-                         interface_signature_edge_prefix[persisted] + edge_count - 1u] = target;
-    interface_type_edge_written[interface_type_edge_total[0u] +
-                                interface_signature_edge_prefix[persisted] + edge_count - 1u] = 1u;
+    uint destination = interface_type_edge_total[0u] +
+        interface_signature_edge_prefix[persisted] + edge_count - 1u;
+    if (destination >= interface_complete_edge_total[0u])
+    {
+        fail(persisted);
+        atomic_u32_min(interface_status, 2u, destination);
+        return;
+    }
+    interface_type_edges[destination] = target;
+    interface_type_edge_written[destination] = 1u;
 }

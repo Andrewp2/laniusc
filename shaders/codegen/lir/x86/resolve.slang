@@ -54,7 +54,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else if (core.op == X86_LIR_OP_STORE_LOCAL)
         operands.b = target_value(operands.b, total);
-    else if (core.op == X86_LIR_OP_AGGREGATE_INIT)
+    else if (core.op == X86_LIR_OP_AGGREGATE_INIT &&
+             (operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u)
         operands.a = target_value(operands.a, total);
     else if (core.op == X86_LIR_OP_INDEX_LOAD)
     {

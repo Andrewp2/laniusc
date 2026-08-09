@@ -15,7 +15,7 @@ StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> semantic_expr_ref_tag;
 StructuredBuffer<uint> semantic_expr_ref_payload;
 StructuredBuffer<uint> semantic_aggregate_decl_token;
-StructuredBuffer<uint> semantic_struct_hir_by_name_token;
+StructuredBuffer<uint> semantic_aggregate_hir_by_name_token;
 StructuredBuffer<uint> semantic_struct_field_start_by_hir;
 StructuredBuffer<uint> semantic_struct_field_count_by_hir;
 RWStructuredBuffer<uint> semantic_struct_word_count_by_hir;
@@ -28,7 +28,7 @@ static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_ENUM_BASE = 1048576u;
+static const uint TY_ENUM_BASE = 6144u;
 static const uint MAX_LAYOUT_DEPTH = 64u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -47,7 +47,7 @@ uint nested_struct(uint type_node, uint hir_count)
     {
         uint source_token = compact_hir_core[type_node].token_start;
         if (source_token < gParams.n_tokens &&
-            semantic_struct_hir_by_name_token[source_token] < hir_count)
+            semantic_aggregate_hir_by_name_token[source_token] < hir_count)
             token = source_token;
     }
     // Canonical type rows retain their path/value HIR in payload.b. Checked
@@ -68,12 +68,12 @@ uint nested_struct(uint type_node, uint hir_count)
         {
             uint source_token = compact_hir_core[value_node].token_start;
             if (source_token < gParams.n_tokens &&
-                semantic_struct_hir_by_name_token[source_token] < hir_count)
+                semantic_aggregate_hir_by_name_token[source_token] < hir_count)
                 token = source_token;
         }
     }
     if (token >= gParams.n_tokens) return INVALID;
-    uint result = semantic_struct_hir_by_name_token[token];
+    uint result = semantic_aggregate_hir_by_name_token[token];
     return result < hir_count && compact_hir_core[result].kind == HIR_STRUCT_ITEM
         ? result : INVALID;
 }

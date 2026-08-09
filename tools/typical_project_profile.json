@@ -1,0 +1,47 @@
+{
+  "schema": "lanius.typical-project-profile.v1",
+  "classification": "corpus_calibrated_typical_project",
+  "calibration": {
+    "method": "Source files from local checkouts were measured after excluding build, generated, vendor, external, dependency, and target directories. Function lengths use brace-matched function bodies; dependency-line counts use Rust use/mod and C/C++ include declarations.",
+    "projects": [
+      {"name": "laniusc", "language": "Rust", "source_files": 704},
+      {"name": "game", "language": "Rust", "source_files": 229},
+      {"name": "bevy", "language": "Rust", "source_files": 1142},
+      {"name": "wgpu", "language": "Rust", "source_files": 663},
+      {"name": "winit", "language": "Rust", "source_files": 183},
+      {"name": "Pareas", "language": "C++", "source_files": 72},
+      {"name": "Axomae", "language": "C++", "source_files": 429},
+      {"name": "mitsuba3", "language": "C++", "source_files": 324},
+      {"name": "GLFW", "language": "C", "source_files": 101},
+      {"name": "Icarus Verilog", "language": "C", "source_files": 403}
+    ],
+    "observed_ranges": {
+      "median_file_lines": [47, 329],
+      "p90_file_lines": [164, 1725],
+      "p99_file_lines": [415, 6548],
+      "median_function_lines": [4, 13],
+      "p90_function_lines": [13, 76],
+      "p99_function_lines": [39, 271],
+      "median_dependency_lines": [2, 8],
+      "p90_dependency_lines": [5, 25]
+    }
+  },
+  "generation": {
+    "file_line_bands": [
+      {"cumulative_basis_points": 1200, "minimum": 35, "maximum": 80},
+      {"cumulative_basis_points": 6500, "minimum": 81, "maximum": 230},
+      {"cumulative_basis_points": 9000, "minimum": 231, "maximum": 700},
+      {"cumulative_basis_points": 9800, "minimum": 701, "maximum": 1500},
+      {"cumulative_basis_points": 10000, "minimum": 1501, "maximum": 3000}
+    ],
+    "function_step_bands": [
+      {"cumulative_basis_points": 6500, "minimum": 1, "maximum": 3},
+      {"cumulative_basis_points": 9000, "minimum": 4, "maximum": 8},
+      {"cumulative_basis_points": 9800, "minimum": 9, "maximum": 20},
+      {"cumulative_basis_points": 10000, "minimum": 21, "maximum": 55}
+    ],
+    "dependency_fanout": {"minimum": 0, "median_target": 2, "p90_target": 5, "maximum": 8},
+    "dependency_depth": {"minimum": 3, "maximum": 12},
+    "entry_root_maximum": 5
+  }
+}

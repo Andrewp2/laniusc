@@ -113,7 +113,10 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint abi_row,
     target_lir_core[page_row] = core;
     target_lir_operands[page_row] = operands;
     target_semantic_origin[page_row] = semantic_row;
-    target_lir_flags[page_row] = argument.call_instruction == semantic_row &&
+    bool matching_call = argument.call_instruction < gParams.semantic_capacity &&
+        semantic_owner_by_instruction[argument.call_instruction] == source.source_hir &&
+        semantic_lir_core[argument.call_instruction].op == source.op;
+    target_lir_flags[page_row] = matching_call &&
         argument.value_instruction < gParams.semantic_capacity &&
         abi_ordinal + sret_shift < 6u
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
@@ -239,6 +242,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (source.op == SEMANTIC_LIR_OP_AGGREGATE_NEW && operation_row != 0u)
     {
         uint word = operation_row - 1u;
+        bool enum_discriminant =
+            (args.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u && word == 0u;
         SemanticLirAggregateElement element;
         element.aggregate_instruction = INVALID;
         element.value_instruction = INVALID;
@@ -273,10 +278,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.metadata = source.type_id |
             ((element.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u
                 ? X86_LIR_METADATA_AGGREGATE : 0u);
+        if (enum_discriminant)
+        {
+            operands.a = args.c & SEMANTIC_LIR_AGGREGATE_TAG_MASK;
+            operands.b = 0u;
+            operands.metadata = source.type_id | X86_LIR_METADATA_IMMEDIATE;
+        }
         target_lir_core[page_row] = core;
         target_lir_operands[page_row] = operands;
         target_semantic_origin[page_row] = semantic_row;
-        target_lir_flags[page_row] =
+        target_lir_flags[page_row] = enum_discriminant ? 0u :
             element.aggregate_instruction == semantic_row &&
             element.value_instruction < gParams.semantic_capacity &&
             element.word_offset != INVALID && word >= element.word_offset &&
@@ -311,7 +322,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint flags = x86_lir_supported(source) ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
     if ((source.op == SEMANTIC_LIR_OP_VALUE_SET ||
          source.op == SEMANTIC_LIR_OP_STORE) &&
-        x86_semantic_type_is_aggregate(source) && copy_words == 0u)
+        x86_semantic_type_is_aggregate(source) &&
+        source.value_word_count != 0u && copy_words == 0u)
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     if (source.op == SEMANTIC_LIR_OP_CALL_HOST &&
         (args.a == HOST_SERVICE_I32_TO_F32 || x86_runtime_service_supported(args.a)))

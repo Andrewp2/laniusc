@@ -119,6 +119,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMatchArmLinks
                 "hir_match_payload_rank_b".into(),
                 b.hir_match_payload_rank_b.as_entire_binding(),
             ),
+            (
+                "hir_match_pattern_parent".into(),
+                b.hir_match_pattern_parent.as_entire_binding(),
+            ),
         ])
     }
 }

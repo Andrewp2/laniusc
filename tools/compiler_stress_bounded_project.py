@@ -1,16 +1,14 @@
-#!/usr/bin/env python3
-"""Generate a reachable Lanius workload split across bounded source files."""
+"""Bounded-project layout for the synthetic compiler stress generator."""
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from compile_workload_model import (
+from compiler_stress_model import (
     Workload,
     build_workload,
     evaluate,
@@ -29,29 +27,21 @@ class FunctionSource:
     dependencies: tuple[str, ...]
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--out", required=True)
-    parser.add_argument("--target-bytes", type=int, required=True)
-    parser.add_argument("--seed", type=int, default=20)
-    parser.add_argument(
-        "--max-module-bytes", type=int, default=DEFAULT_MAX_MODULE_BYTES
-    )
-    args = parser.parse_args()
-    if args.target_bytes <= 0:
-        parser.error("--target-bytes must be positive")
-    if args.max_module_bytes <= 0:
-        parser.error("--max-module-bytes must be positive")
-
+def generate_bounded_project(
+    out: Path,
+    target_bytes: int,
+    seed: int = 20,
+    max_module_bytes: int = DEFAULT_MAX_MODULE_BYTES,
+) -> dict[str, object]:
     repo = Path(__file__).resolve().parents[1]
-    out = (repo / args.out).resolve()
+    out = out.resolve()
     leaf_count = largest_project_that_fits(
-        args.seed, args.target_bytes, args.max_module_bytes
+        seed, target_bytes, max_module_bytes
     )
-    workload = build_workload(args.seed, leaf_count)
-    files = render_project(workload, args.max_module_bytes)
+    workload = build_workload(seed, leaf_count)
+    files = render_project(workload, max_module_bytes)
     unpadded_bytes = sum(len(source.encode()) for source in files.values())
-    padding_bytes = args.target_bytes - unpadded_bytes
+    padding_bytes = target_bytes - unpadded_bytes
     if padding_bytes < 0:
         raise AssertionError("selected workload exceeds target project size")
     # Keep the entry outside the source root. The bounded entry loader treats
@@ -78,16 +68,18 @@ def main() -> int:
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
         )
-    if total_bytes != args.target_bytes:
+    if total_bytes != target_bytes:
         raise AssertionError(
-            f"project has {total_bytes} source bytes, expected {args.target_bytes}"
+            f"project has {total_bytes} source bytes, expected {target_bytes}"
         )
     manifest = {
-        "schema": "lanius.large-scaling-project.v1",
-        "seed": args.seed,
-        "target_source_bytes": args.target_bytes,
+        "schema": "lanius.bounded-project-stress.v1",
+        "classification": "synthetic_stress",
+        "representative_workload": False,
+        "seed": seed,
+        "target_source_bytes": target_bytes,
         "expected_exit_code": evaluate(workload) & 255,
-        "max_module_bytes": args.max_module_bytes,
+        "max_module_bytes": max_module_bytes,
         "workload": workload.structure(),
         "sources": source_records,
         "compile_args": [
@@ -100,7 +92,7 @@ def main() -> int:
     (out / "scaling-manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     )
-    return 0
+    return manifest
 
 
 def largest_project_that_fits(seed: int, target_bytes: int, limit: int) -> int:
@@ -394,6 +386,3 @@ def library_record(
         "dependency_library_ids": dependencies,
     }
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())

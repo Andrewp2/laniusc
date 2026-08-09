@@ -18,7 +18,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 d) { return d.x + d.y * MAX_GROUPS_X * WG_SIZE; }
-void fail(uint d) { atomic_u32_or(interface_status, 0u, 4096u); atomic_u32_min(interface_status, 1u, d); }
+void fail(uint d) { atomic_u32_or(interface_status, 0u, 4096u); atomic_u32_min(interface_status, 1u, d); atomic_u32_min(interface_status, 2u, 4u); }
 [shader("compute")][numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {

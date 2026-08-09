@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Materialize and optionally measure the fixed grid-checksum benchmark."""
 import argparse
 import hashlib
 import json

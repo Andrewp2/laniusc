@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared semantic model and emitters for comparative compiler workloads."""
+"""Shared semantic model for explicitly synthetic compiler stress inputs."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ WORKLOAD_PROFILES = {
     profile.name: profile
     for profile in (
         WorkloadProfile(
-            "typical",
-            "mostly short functions with a bounded medium-sized tail",
+            "short-function-heavy",
+            "synthetic shape dominated by short functions with a bounded medium-sized tail",
             (
                 (8000, 2, 8, "short"),
                 (9700, 9, 24, "small"),
@@ -35,8 +35,8 @@ WORKLOAD_PROFILES = {
             ),
         ),
         WorkloadProfile(
-            "mixed",
-            "short ordinary functions plus rare large implementation functions",
+            "mixed-function-sizes",
+            "synthetic shape combining short functions with rare large functions",
             (
                 (7200, 2, 10, "short"),
                 (9300, 11, 40, "small"),
@@ -46,8 +46,8 @@ WORKLOAD_PROFILES = {
             ),
         ),
         WorkloadProfile(
-            "long-tail",
-            "heavy-tailed stress profile containing occasional multi-thousand-line functions",
+            "pathological-long-functions",
+            "stress shape containing occasional multi-thousand-line functions",
             (
                 (6500, 2, 12, "short"),
                 (9000, 13, 48, "small"),
@@ -140,7 +140,9 @@ class Workload:
         }
 
 
-def build_workload(seed: int, leaf_count: int, profile: str = "mixed") -> Workload:
+def build_workload(
+    seed: int, leaf_count: int, profile: str = "mixed-function-sizes"
+) -> Workload:
     if leaf_count <= 0:
         raise ValueError("leaf_count must be positive")
     if profile not in WORKLOAD_PROFILES:
@@ -175,7 +177,7 @@ def build_workload(seed: int, leaf_count: int, profile: str = "mixed") -> Worklo
     return Workload(seed, profile, leaves, tuple(reducers), current[0], level + 1)
 
 
-def build_leaf(seed: int, index: int, profile: str = "mixed") -> Leaf:
+def build_leaf(seed: int, index: int, profile: str = "mixed-function-sizes") -> Leaf:
     rng = random.Random((seed << 32) ^ index ^ 0x5EED5EED)
     operations = []
     kinds = ("add", "mul", "xor", "shift", "branch")
@@ -214,9 +216,9 @@ def choose_operation_count(
     # dominating a tiny fixture merely because its seed selected the tail.
     # Progressively unlock the profile's tail as the workload gains enough
     # functions to contextualize it.
-    if profile.name == "typical":
+    if profile.name == "short-function-heavy":
         limit = 9700 if index < 64 else 9970 if index < 256 else 10000
-    elif profile.name == "mixed":
+    elif profile.name == "mixed-function-sizes":
         limit = (
             9300
             if index < 64
@@ -226,7 +228,7 @@ def choose_operation_count(
             if index < 1024
             else 10000
         )
-    elif profile.name == "long-tail":
+    elif profile.name == "pathological-long-functions":
         limit = (
             9000
             if index < 64

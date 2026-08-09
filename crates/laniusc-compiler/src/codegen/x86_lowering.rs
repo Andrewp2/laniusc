@@ -177,10 +177,7 @@ impl GpuX86LirStage {
         let semantic_origins = alias_u32("lir.x86.semantic_origins", target_page_rows)?;
         let decl_location_by_token = alias_u32(
             "lir.x86.decl_location_by_token",
-            capacities
-                .tokens
-                .saturating_add(capacities.hir_nodes)
-                .max(1),
+            capacities.declaration_capacity(),
         )?;
         let saved_gpr_mask_by_function = alias_u32(
             "lir.x86.saved_gpr_mask_by_function",
@@ -231,12 +228,9 @@ impl GpuX86LirStage {
             device,
             "lir.x86.decl_slots.params",
             &DeclSlotParams {
-                token_capacity: capacities
-                    .tokens
-                    .saturating_add(capacities.hir_nodes)
-                    .max(1),
+                token_capacity: capacities.declaration_capacity(),
                 parameter_capacity: capacities.parameters.max(1),
-                local_capacity: capacities.hir_nodes.max(1),
+                local_capacity: capacities.local_capacity(),
                 function_capacity: capacities.hir_nodes.max(1),
             },
         );

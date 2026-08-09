@@ -733,6 +733,22 @@ impl LoweringCapacities {
         u64::from(count.max(1)) * std::mem::size_of::<T>() as u64
     }
 
+    /// Dense semantic-local rows. A match expression owns three compiler
+    /// locals (result, scrutinee, and first-match state), which is the widest
+    /// per-HIR local recipe. Keeping this bound in one place prevents target
+    /// backends from silently allocating different declaration domains.
+    pub(crate) fn local_capacity(self) -> u32 {
+        self.hir_nodes.saturating_mul(3).max(1)
+    }
+
+    /// Source-token declarations followed by the three disjoint synthetic
+    /// declaration bands used by semantic lowering.
+    pub(crate) fn declaration_capacity(self) -> u32 {
+        self.tokens
+            .saturating_add(self.hir_nodes.saturating_mul(3))
+            .max(1)
+    }
+
     pub(crate) fn covers(self, required: Self) -> bool {
         self.source_bytes >= required.source_bytes
             && self.tokens >= required.tokens
@@ -766,13 +782,15 @@ impl LoweringCapacities {
     /// seventeen semantic rows, it necessarily owns three distinct compact-HIR
     /// rows: the range expression and its two endpoint roots. Those four rows
     /// produce at most twenty semantic rows together. Other structured control
-    /// forms have smaller owner/child ratios, giving a five-row semantic bound
-    /// per compact-HIR row over the whole tree. Target bounds are likewise
+    /// forms have smaller owner/child ratios. A match with N arms owns at
+    /// least its scrutinee plus N distinct pattern rows and N distinct result
+    /// roots; its first-match recipe therefore remains below seven semantic
+    /// rows per compact-HIR row. Target bounds are likewise
     /// coupled over distinct HIR owners and edges instead of adding mutually
     /// exclusive maxima:
     ///
-    /// - x86 range lowering owns at most nineteen rows across its four-row
-    ///   minimal HIR subtree, so five target rows per HIR row is sufficient;
+    /// - x86 match lowering retains at most twelve target rows per arm and
+    ///   therefore remains below seven target rows per HIR row;
     /// - Wasm aggregate lowering owns six rows per distinct element edge plus
     ///   five rows per owner. With at most one incoming aggregate edge per HIR
     ///   row and at most two ordinary rows for every non-owner, this is bounded
@@ -799,13 +817,13 @@ impl LoweringCapacities {
                 .ok_or_else(|| format!("{label} capacity overflows u32 for this frontend unit"))
         };
         let hir_nodes = hir_capacity.max(1);
-        let semantic_instructions = multiply(hir_nodes, 5, "semantic instruction")?;
+        let semantic_instructions = multiply(hir_nodes, 7, "semantic instruction")?;
         let call_arguments = hir_nodes;
         let aggregate_elements = hir_nodes;
         let target_instructions = multiply(
             hir_nodes,
             match target {
-                LoweringTarget::X86_64 => 5,
+                LoweringTarget::X86_64 => 7,
                 LoweringTarget::Wasm => 8,
             },
             "target instruction",
@@ -859,14 +877,8 @@ fn build_lowering_compiler_graph(
     target: Option<LoweringTarget>,
 ) -> Result<CompilerGraph, String> {
     let mut graph = CompilerGraphBuilder::new();
-    let value_capacity = capacities
-        .tokens
-        .saturating_add(capacities.hir_nodes)
-        .max(1);
-    // A source local contributes one row. A range loop contributes two rows,
-    // but necessarily owns three additional compact-HIR rows (range and two
-    // endpoints), so the dense local family cannot exceed the HIR row count.
-    let local_capacity = capacities.hir_nodes.max(1);
+    let value_capacity = capacities.declaration_capacity();
+    let local_capacity = capacities.local_capacity();
     let input = |name, domain, bytes| ResourceDesc {
         name,
         domain,
@@ -921,6 +933,11 @@ fn build_lowering_compiler_graph(
         "hir.payload",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<crate::parser::buffers::HirPayload>(capacities.hir_nodes),
+    ))?;
+    let hir_fn_return_type = graph.add_resource(input(
+        "hir.fn_return_type",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
     let hir_const_value = graph.add_resource(input(
         "hir.const_value",
@@ -1139,7 +1156,7 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
-    let semantic_struct_hir_by_name_token = graph.add_resource(workspace(
+    let semantic_aggregate_hir_by_name_token = graph.add_resource(workspace(
         "lir.semantic.struct_hir_by_name_token",
         ResourceDomain::Tokens,
         LoweringCapacities::bytes::<u32>(capacities.tokens),
@@ -1232,6 +1249,68 @@ fn build_lowering_compiler_graph(
         LoweringCapacities::bytes::<crate::parser::buffers::HirField>(
             capacities.aggregate_elements,
         ),
+    ))?;
+    let hir_variant_count = graph.add_resource(input(
+        "hir.variant_count",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(1),
+    ))?;
+    let hir_variants = graph.add_resource(input(
+        "hir.variants",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<crate::parser::buffers::HirVariant>(capacities.hir_nodes),
+    ))?;
+    let hir_variant_payload_start = graph.add_resource(input(
+        "hir.variant_payload_start",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let hir_variant_payload_count = graph.add_resource(input(
+        "hir.variant_payload_count",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let hir_variant_payload_row_count = graph.add_resource(input(
+        "hir.variant_payload_row_count",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(1),
+    ))?;
+    let hir_variant_payloads = graph.add_resource(input(
+        "hir.variant_payloads",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<crate::parser::buffers::HirVariantPayload>(
+            capacities.hir_nodes,
+        ),
+    ))?;
+    let hir_match_arm_count = graph.add_resource(input(
+        "hir.match_arm_count",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(1),
+    ))?;
+    let hir_match_arms = graph.add_resource(input(
+        "hir.match_arms",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<crate::parser::buffers::HirMatchArm>(capacities.hir_nodes),
+    ))?;
+    let hir_match_payload_start = graph.add_resource(input(
+        "hir.match_payload_start",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let hir_match_payload_count = graph.add_resource(input(
+        "hir.match_payload_count",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let hir_match_payload_row_count = graph.add_resource(input(
+        "hir.match_payload_row_count",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<u32>(1),
+    ))?;
+    let hir_match_payloads = graph.add_resource(input(
+        "hir.match_payloads",
+        ResourceDomain::Declarations,
+        LoweringCapacities::bytes::<crate::parser::buffers::HirMatchPayload>(capacities.hir_nodes),
     ))?;
     let hir_array_element_count = graph.add_resource(input(
         "hir.array_element_row_count",
@@ -1592,6 +1671,14 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_payload", hir_payload),
+            PassAccess::read(
+                "compact_match_payload_row_count",
+                hir_match_payload_row_count,
+            ),
+            PassAccess::read("compact_match_payloads", hir_match_payloads),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read("semantic_value_id", checked_value_decls),
             PassAccess::write("semantic_local_flag", semantic_local_flags),
         ],
     })?;
@@ -1649,8 +1736,8 @@ fn build_lowering_compiler_graph(
         dispatch_domain: ResourceDomain::Tokens,
         accesses: vec![
             PassAccess::write(
-                "semantic_struct_hir_by_name_token",
-                semantic_struct_hir_by_name_token,
+                "semantic_aggregate_hir_by_name_token",
+                semantic_aggregate_hir_by_name_token,
             ),
             PassAccess::write(
                 "semantic_struct_field_count_by_hir",
@@ -1689,8 +1776,8 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_field_count", hir_field_count),
             PassAccess::read("compact_fields", hir_fields),
             PassAccess::write(
-                "semantic_struct_hir_by_name_token",
-                semantic_struct_hir_by_name_token,
+                "semantic_aggregate_hir_by_name_token",
+                semantic_aggregate_hir_by_name_token,
             ),
             PassAccess::write(
                 "semantic_struct_field_count_by_hir",
@@ -1718,8 +1805,8 @@ fn build_lowering_compiler_graph(
                 semantic_aggregate_decl_tokens,
             ),
             PassAccess::read(
-                "semantic_struct_hir_by_name_token",
-                semantic_struct_hir_by_name_token,
+                "semantic_aggregate_hir_by_name_token",
+                semantic_aggregate_hir_by_name_token,
             ),
             PassAccess::read(
                 "semantic_struct_field_start_by_hir",
@@ -1752,11 +1839,21 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_links", hir_links),
             PassAccess::read("compact_hir_payload", hir_payload),
+            PassAccess::read("compact_fn_return_type", hir_fn_return_type),
             PassAccess::read("compact_const_value", hir_const_value),
             PassAccess::read("compact_param_ranges", hir_param_ranges),
             PassAccess::read("compact_method_count", hir_method_count),
             PassAccess::read("compact_method_cores", hir_method_cores),
             PassAccess::read("compact_method_signatures", hir_method_signatures),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read("compact_variant_payload_start", hir_variant_payload_start),
+            PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
+            PassAccess::read(
+                "compact_variant_payload_row_count",
+                hir_variant_payload_row_count,
+            ),
+            PassAccess::read("compact_variant_payloads", hir_variant_payloads),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
             PassAccess::read("semantic_function_prefix", semantic_function_prefix),
             PassAccess::read("semantic_local_prefix", semantic_local_prefix),
@@ -1779,9 +1876,23 @@ fn build_lowering_compiler_graph(
             ),
             PassAccess::read("public_decl_index_by_hir", public_decl_index_by_hir),
             PassAccess::read("semantic_value_type_by_hir", checked_value_types),
+            PassAccess::read("semantic_expr_ref_tag_by_hir", semantic_expr_ref_tags),
             PassAccess::read(
-                "semantic_struct_hir_by_name_token",
-                semantic_struct_hir_by_name_token,
+                "semantic_expr_ref_payload_by_hir",
+                semantic_expr_ref_payloads,
+            ),
+            PassAccess::read(
+                "semantic_aggregate_decl_token_by_hir",
+                semantic_aggregate_decl_tokens,
+            ),
+            PassAccess::read(
+                "semantic_aggregate_word_count_by_hir",
+                semantic_aggregate_word_counts,
+            ),
+            PassAccess::read("semantic_array_length_by_hir", semantic_array_lengths),
+            PassAccess::read(
+                "semantic_aggregate_hir_by_name_token",
+                semantic_aggregate_hir_by_name_token,
             ),
             PassAccess::read(
                 "semantic_struct_word_count_by_hir",
@@ -1823,6 +1934,9 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_expr_root", hir_expr_root),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
             PassAccess::read("semantic_value_decl_by_hir", checked_value_decls),
             PassAccess::read("semantic_value_type_by_hir", checked_value_types),
             PassAccess::read("semantic_calls_by_hir", checked_calls),
@@ -1913,11 +2027,20 @@ fn build_lowering_compiler_graph(
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read("compact_hir_count", hir_count),
+            PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_payload", hir_payload),
+            PassAccess::read(
+                "compact_match_payload_row_count",
+                hir_match_payload_row_count,
+            ),
+            PassAccess::read("compact_match_payloads", hir_match_payloads),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
             PassAccess::read("semantic_local_flag", semantic_local_flags),
             PassAccess::read("semantic_local_prefix", semantic_local_prefix),
             PassAccess::read("semantic_function_id", semantic_function_ids),
             PassAccess::read("semantic_value_type_by_hir", checked_value_types),
+            PassAccess::read("semantic_value_decl_by_hir", checked_value_decls),
             PassAccess::read("semantic_lir_functions", semantic_functions),
             PassAccess::write("semantic_lir_locals", semantic_locals),
         ],
@@ -1977,6 +2100,18 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_expr_parent", hir_expr_parent),
+            PassAccess::read("compact_match_arm_count", hir_match_arm_count),
+            PassAccess::read("compact_match_arms", hir_match_arms),
+            PassAccess::read("compact_match_payload_start", hir_match_payload_start),
+            PassAccess::read("compact_match_payload_count", hir_match_payload_count),
+            PassAccess::read(
+                "compact_match_payload_row_count",
+                hir_match_payload_row_count,
+            ),
+            PassAccess::read("compact_match_payloads", hir_match_payloads),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read("semantic_value_id", checked_value_decls),
             PassAccess::read("semantic_function_id", semantic_function_ids),
             PassAccess::read("semantic_array_length", semantic_array_lengths),
             PassAccess::read("semantic_iterable_kind", semantic_iterable_kinds),
@@ -2030,7 +2165,7 @@ fn build_lowering_compiler_graph(
     graph.add_pass(PassDesc {
         name: "lir.semantic.scatter",
         phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
+        dispatch_domain: ResourceDomain::SemanticInstructions,
         accesses: vec![
             PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_hir_core", hir_core),
@@ -2081,8 +2216,8 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_control_depth_by_hir", semantic_control_depths),
             PassAccess::read("semantic_member_field_ordinal", member_field_ordinals),
             PassAccess::read(
-                "semantic_struct_hir_by_name_token",
-                semantic_struct_hir_by_name_token,
+                "semantic_aggregate_hir_by_name_token",
+                semantic_aggregate_hir_by_name_token,
             ),
             PassAccess::read(
                 "semantic_struct_word_count_by_hir",
@@ -2108,8 +2243,23 @@ fn build_lowering_compiler_graph(
                 hir_array_element_owner_count,
             ),
             PassAccess::read("compact_array_element_row_count", hir_array_element_count),
+            PassAccess::read("compact_field_count", hir_field_count),
+            PassAccess::read("compact_call_arg_count", hir_call_arg_count),
+            PassAccess::read("compact_call_args", hir_call_args),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read("compact_match_arm_count", hir_match_arm_count),
+            PassAccess::read("compact_match_arms", hir_match_arms),
+            PassAccess::read("compact_match_payload_start", hir_match_payload_start),
+            PassAccess::read("compact_match_payload_count", hir_match_payload_count),
+            PassAccess::read(
+                "compact_match_payload_row_count",
+                hir_match_payload_row_count,
+            ),
+            PassAccess::read("compact_match_payloads", hir_match_payloads),
             PassAccess::read("semantic_lir_count", semantic_counts),
             PassAccess::read("semantic_lir_offset", semantic_offsets),
+            PassAccess::read("semantic_lir_total", semantic_total),
             PassAccess::read("semantic_execution_rank", execution_rank_a),
             PassAccess::write("semantic_lir_schedule", semantic_schedule),
             PassAccess::write("semantic_owner_by_instruction", semantic_owner),
@@ -2161,6 +2311,9 @@ fn build_lowering_compiler_graph(
             ),
             PassAccess::read("compact_array_element_count", hir_array_element_count),
             PassAccess::read("compact_array_elements", hir_array_elements),
+            PassAccess::read("compact_call_arg_count", hir_call_arg_count),
+            PassAccess::read("compact_call_args", hir_call_args),
+            PassAccess::read("semantic_call_kind", semantic_call_kinds),
             PassAccess::read("semantic_expr_type", semantic_types),
             PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
             PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
@@ -2169,8 +2322,17 @@ fn build_lowering_compiler_graph(
                 semantic_aggregate_decl_tokens,
             ),
             PassAccess::read(
-                "semantic_struct_hir_by_name_token",
-                semantic_struct_hir_by_name_token,
+                "semantic_aggregate_word_count",
+                semantic_aggregate_word_counts,
+            ),
+            PassAccess::read("semantic_array_length", semantic_array_lengths),
+            PassAccess::read(
+                "semantic_aggregate_hir_by_name_token",
+                semantic_aggregate_hir_by_name_token,
+            ),
+            PassAccess::read(
+                "semantic_struct_word_count_by_hir",
+                semantic_struct_word_count_by_hir,
             ),
             PassAccess::read(
                 "semantic_struct_field_start_by_hir",
@@ -2186,6 +2348,7 @@ fn build_lowering_compiler_graph(
             ),
             PassAccess::read("semantic_lir_count", semantic_counts),
             PassAccess::read("semantic_lir_offset", semantic_offsets),
+            PassAccess::read("semantic_lir_core", semantic_core),
             PassAccess::write(
                 "semantic_lir_aggregate_element_total",
                 semantic_aggregate_element_total,
@@ -4816,15 +4979,17 @@ mod tests {
     fn frontend_unit_capacity_uses_structural_ir_expansion_bounds() {
         let wasm =
             LoweringCapacities::from_frontend_unit(1_000, 400, 100, LoweringTarget::Wasm).unwrap();
-        assert_eq!(wasm.semantic_instructions, 500);
+        assert_eq!(wasm.semantic_instructions, 700);
         assert_eq!(wasm.target_instructions, 800);
         assert_eq!(wasm.call_arguments, 100);
+        assert_eq!(wasm.local_capacity(), 300);
+        assert_eq!(wasm.declaration_capacity(), 700);
         assert!(wasm.artifact_bytes >= 1_000 + 800 * 8 + 100 * 32);
 
         let x86 = LoweringCapacities::from_frontend_unit(1_000, 400, 100, LoweringTarget::X86_64)
             .unwrap();
-        assert_eq!(x86.semantic_instructions, 500);
-        assert_eq!(x86.target_instructions, 500);
+        assert_eq!(x86.semantic_instructions, 700);
+        assert_eq!(x86.target_instructions, 700);
         assert!(
             LoweringCapacities::from_frontend_unit(
                 u32::MAX,
@@ -4964,7 +5129,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<X86ArtifactLayout>(), 48);
         assert_eq!(
             std::mem::size_of::<crate::type_checker::GpuCheckedCallArtifact>(),
-            32
+            56
         );
     }
 

@@ -34,6 +34,7 @@ void fail(uint detail)
 {
     atomic_u32_or(interface_status, 0u, 4096u);
     atomic_u32_min(interface_status, 1u, detail);
+    atomic_u32_min(interface_status, 2u, 1u);
 }
 
 [shader("compute")]

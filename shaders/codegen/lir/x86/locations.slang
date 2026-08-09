@@ -86,7 +86,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else if (core.op == X86_LIR_OP_AGGREGATE_INIT)
     {
-        locations.a = value_location(operands.a, total);
+        locations.a = (operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u
+            ? X86_LOCATION_INVALID : value_location(operands.a, total);
         locations.c = stack_location(operands.c);
     }
     else if (core.op == X86_LIR_OP_INDEX_LOAD)

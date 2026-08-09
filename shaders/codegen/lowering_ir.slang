@@ -86,6 +86,11 @@ static const uint SEMANTIC_LIR_OP_CALL_INTRINSIC = 38u;
 // unit. Operands a/b/c are the canonical library/unit/declaration identity.
 // IR_OPCODE
 static const uint SEMANTIC_LIR_OP_CALL_SYMBOL = 39u;
+// A scheduled semantic dependency row that intentionally emits no target
+// instruction. Recipes use this to preserve uniform parallel row layouts
+// when only some pattern forms require an intermediate machine operation.
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_NOP = 40u;
 
 // Canonical scalar type shared by semantic and target lowering. Pointer width
 // is selected by the target: 64 bits on x86_64 and 32 bits on Wasm32.
@@ -498,6 +503,15 @@ static const uint X86_LIR_METADATA_STRING_LEN = 0x20000000u;
 // The compared value is pointer-width, but its RHS is a narrow integer null
 // constant. Keeping this in target metadata avoids weakening semantic types.
 static const uint X86_LIR_METADATA_RHS_NARROW = 0x10000000u;
+// AGGREGATE_INIT's source operand is an immediate machine word rather than a
+// semantic value. Tagged aggregate discriminants use this path so target
+// lowering does not need to manufacture a fake source expression.
+static const uint X86_LIR_METADATA_IMMEDIATE = 0x08000000u;
+
+// Semantic AGGREGATE_NEW metadata. The high bit distinguishes tagged enums;
+// the remaining bits contain the checked variant ordinal.
+static const uint SEMANTIC_LIR_AGGREGATE_ENUM = 0x80000000u;
+static const uint SEMANTIC_LIR_AGGREGATE_TAG_MASK = 0x7fffffffu;
 
 // A value location is either a target-row stack home or a physical x86 GPR.
 // Stack payloads remain global target rows; the artifact emitter translates

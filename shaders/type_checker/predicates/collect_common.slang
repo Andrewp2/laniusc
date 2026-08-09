@@ -55,6 +55,8 @@ StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 #endif
 #if PREDICATE_BOUND_DECL_RESOLUTION
+StructuredBuffer<uint> compact_predicate_count;
+StructuredBuffer<HirPredicate> compact_predicates;
 StructuredBuffer<uint> generic_decl_owner_by_node;
 StructuredBuffer<uint> predicate_bound_list_by_node;
 #endif
@@ -449,15 +451,30 @@ uint generic_param_slot_for_name(uint decl_node, uint name_token)
 #if PREDICATE_BOUND_DECL_RESOLUTION
 uint predicate_list_for_direct_bound(uint node)
 {
-    return valid_node(node) && compact_hir_semantic_facts[node].predicate_owner != INVALID
-        ? node
+    if (!valid_node(node))
+        return INVALID;
+    uint lo = 0u;
+    uint hi = min(compact_predicate_count[0u], gParams.n_hir_nodes);
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_predicates[mid].bound < node)
+            lo = mid + 1u;
+        else
+            hi = mid;
+    }
+    if (lo >= min(compact_predicate_count[0u], gParams.n_hir_nodes))
+        return INVALID;
+    HirPredicate predicate = compact_predicates[lo];
+    return predicate.bound == node && (predicate.metadata & 0xffu) == 1u
+        ? lo
         : INVALID;
 }
 
 bool unsupported_direct_bound_list_relation(uint node)
 {
     return valid_node(node) &&
-           compact_hir_semantic_facts[node].predicate_owner == INVALID &&
+           predicate_list_for_direct_bound(node) == INVALID &&
            (compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_PATH ||
             compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_REFERENCE);
 }
@@ -469,9 +486,14 @@ bool direct_type_param_bound_list(uint list_node)
 
 uint predicate_subject_token_for_list(uint list_node)
 {
-    return valid_node(list_node)
-        ? compact_hir_semantic_facts[list_node].predicate_subject
-        : INVALID;
+    uint count = min(compact_predicate_count[0u], gParams.n_hir_nodes);
+    return list_node < count ? compact_predicates[list_node].subject : INVALID;
+}
+
+uint predicate_owner_for_list(uint list_node)
+{
+    uint count = min(compact_predicate_count[0u], gParams.n_hir_nodes);
+    return list_node < count ? compact_predicates[list_node].owner : INVALID;
 }
 #endif
 
@@ -2105,27 +2127,10 @@ uint validate_bound_type_args(
     first_arg_token = INVALID;
     second_arg_token = INVALID;
 
-    arg_count = valid_node(predicate_expr_node)
-        ? predicate_bound_arg_count[predicate_expr_node]
-        : 0u;
-
-    uint fact_status = valid_node(predicate_expr_node)
-        ? predicate_bound_arg_fact_status_value(predicate_expr_node)
-        : PREDICATE_STATUS_OK;
-    if (fact_status != PREDICATE_STATUS_OK)
-    {
-        uint first_arg_node = valid_node(predicate_expr_node)
-            ? predicate_bound_first_arg_token[predicate_expr_node]
-            : INVALID;
-        uint second_arg_node = valid_node(predicate_expr_node)
-            ? predicate_bound_second_arg_token[predicate_expr_node]
-            : INVALID;
-        first_arg_token = bound_arg_diagnostic_token_for(predicate_expr_node, first_arg_node);
-        second_arg_token = bound_arg_diagnostic_token_for(predicate_expr_node, second_arg_node);
-        if (!valid_token(first_arg_token))
-            first_arg_token = first_direct_bound_arg_diagnostic_token(predicate_expr_node);
-        return fact_status;
-    }
+    // Bound arguments are parser-owned canonical type-argument rows. Consume
+    // that compact side table directly instead of copying node IDs through a
+    // type-checker scratch relation first.
+    arg_count = direct_type_arg_count(predicate_expr_node);
 
     if (arg_count == 0u && bound_ident_has_direct_arg_list(predicate_expr_node))
     {
@@ -2141,7 +2146,7 @@ uint validate_bound_type_args(
         if (ordinal >= arg_count)
             break;
 
-        uint node = predicate_bound_arg_node(predicate_expr_node, ordinal);
+        uint node = direct_type_arg_node(predicate_expr_node, ordinal);
         if (!valid_node(node) ||
             compact_hir_semantic_facts[node].semantic_kind != HIR_SEMANTIC_BOUND_PATH)
         {

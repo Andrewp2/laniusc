@@ -4375,62 +4375,67 @@ fn main(values: [i32; 2], slot: i32) -> i32 {
 
 #[test]
 fn parser_compact_hir_range_identity_preserves_explicit_start_operand() {
-    let parsed = parse_resident_source(
-        r#"
-fn main(end: i32) -> i32 {
-    for value in 2..end {
+    for (operator, end) in [("..", "end"), ("..=", "end"), ("..", "")] {
+        let parsed = parse_resident_source(&format!(
+            r#"
+fn main(end: i32) -> i32 {{
+    for value in 2{operator}{end} {{
         return value;
-    }
+    }}
     return 0;
-}
-"#,
-    );
+}}
+"#
+        ));
 
-    assert!(parsed.ll1.accepted, "range fixture should parse");
-    let for_node = parsed
-        .hir_stmt_record_kind
-        .iter()
-        .enumerate()
-        .find_map(|(raw, kind)| (*kind == STMT_RECORD_KIND_FOR).then_some(raw))
-        .expect("fixture should publish one for statement");
-    let range_wrapper = parsed.hir_stmt_record_operand1[for_node] as usize;
-    let range = parsed.hir_expr_result_root_node[range_wrapper] as usize;
-    assert!(
-        range < parsed.hir_kind.len(),
-        "range expression root must be valid"
-    );
-    let start_root = parsed
-        .hir_kind
-        .iter()
-        .enumerate()
-        .find_map(|(raw, kind)| {
-            (*kind == HIR_NODE_LITERAL_EXPR
-                && parsed.hir_node_file_id[raw] == parsed.hir_node_file_id[range]
-                && parsed.hir_token_pos[raw] == parsed.hir_token_pos[range]
-                && parsed.hir_token_end[raw] <= parsed.hir_token_end[range])
-                .then_some(raw)
-        })
-        .expect("fixture should publish the explicit range-start literal");
+        assert!(parsed.ll1.accepted, "{operator} range fixture should parse");
+        let for_node = parsed
+            .hir_stmt_record_kind
+            .iter()
+            .enumerate()
+            .find_map(|(raw, kind)| (*kind == STMT_RECORD_KIND_FOR).then_some(raw))
+            .expect("fixture should publish one for statement");
+        let range_wrapper = parsed.hir_stmt_record_operand1[for_node] as usize;
+        let range = parsed.hir_expr_result_root_node[range_wrapper] as usize;
+        assert!(
+            range < parsed.hir_kind.len(),
+            "{operator} range expression root must be valid"
+        );
+        let start_root = parsed
+            .hir_kind
+            .iter()
+            .enumerate()
+            .find_map(|(raw, kind)| {
+                (*kind == HIR_NODE_LITERAL_EXPR
+                    && parsed.hir_node_file_id[raw] == parsed.hir_node_file_id[range]
+                    && parsed.hir_token_pos[raw] == parsed.hir_token_pos[range]
+                    && parsed.hir_token_end[raw] <= parsed.hir_token_end[range])
+                    .then_some(raw)
+            })
+            .expect("fixture should publish the explicit range-start literal");
 
-    let range_dense = parsed.hir_canonical_raw_to_dense[range];
-    let start_dense = parsed.hir_canonical_raw_to_dense[start_root];
-    assert_ne!(range_dense, INVALID, "range must have a dense HIR identity");
-    assert_ne!(
-        start_dense, INVALID,
-        "explicit range start must have a dense HIR identity"
-    );
-    assert_ne!(
-        range_dense, start_dense,
-        "the range operator and its explicit start operand must use distinct token anchors"
-    );
-    assert_eq!(
-        parsed.hir_canonical_dense_to_raw[range_dense as usize], range as u32,
-        "range identity should round-trip through the canonical mapping"
-    );
-    assert_eq!(
-        parsed.hir_canonical_dense_to_raw[start_dense as usize], start_root as u32,
-        "range-start identity should round-trip through the canonical mapping"
-    );
+        let range_dense = parsed.hir_canonical_raw_to_dense[range];
+        let start_dense = parsed.hir_canonical_raw_to_dense[start_root];
+        assert_ne!(
+            range_dense, INVALID,
+            "{operator} range must have a dense HIR identity"
+        );
+        assert_ne!(
+            start_dense, INVALID,
+            "{operator} explicit range start must have a dense HIR identity"
+        );
+        assert_ne!(
+            range_dense, start_dense,
+            "the {operator} range operator and its explicit start operand must use distinct token anchors"
+        );
+        assert_eq!(
+            parsed.hir_canonical_dense_to_raw[range_dense as usize], range as u32,
+            "{operator} range identity should round-trip through the canonical mapping"
+        );
+        assert_eq!(
+            parsed.hir_canonical_dense_to_raw[start_dense as usize], start_root as u32,
+            "{operator} range-start identity should round-trip through the canonical mapping"
+        );
+    }
 }
 
 #[test]
@@ -4941,7 +4946,10 @@ fn main() {
     assert_eq!(parsed.hir_compact_match_payload_start[1], INVALID);
     assert_eq!(parsed.hir_compact_match_payload_arm, vec![0, 0]);
     assert_eq!(parsed.hir_compact_match_payload_ordinal, vec![0, 1]);
-    assert_eq!(parsed.hir_compact_match_payload_file_id, vec![0, 0]);
+    assert_eq!(
+        parsed.hir_compact_match_payload_parent_pattern,
+        vec![parsed.hir_compact_match_arm_pattern[0]; 2]
+    );
 
     for dense in parsed
         .hir_compact_match_arm_pattern
@@ -4955,6 +4963,53 @@ fn main() {
             "compact match reference {dense} must belong to the canonical HIR domain"
         );
     }
+}
+
+#[test]
+fn parser_compact_hir_flattens_nested_patterns_with_parent_and_local_ordinal() {
+    let parsed = parse_resident_source(
+        r#"
+enum InnerEvent {
+    Pair(i32, i32),
+    Empty,
+}
+
+enum OuterEvent {
+    Wrapped(InnerEvent),
+    Other,
+}
+
+fn score(value: OuterEvent) -> i32 {
+    return match (value) {
+        Wrapped(Pair(left, right)) -> left + right,
+        Wrapped(Empty) -> 0,
+        Other -> 1,
+    };
+}
+
+fn main() -> i32 {
+    return 0;
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "nested-pattern fixture should parse");
+    assert_eq!(parsed.hir_compact_match_arm_ordinal, vec![0, 1, 2]);
+    assert_eq!(parsed.hir_compact_match_payload_start, vec![0, 3, INVALID]);
+    assert_eq!(parsed.hir_compact_match_payload_count, vec![1, 1, 0]);
+    assert_eq!(parsed.hir_compact_match_payload_arm, vec![0, 0, 0, 1]);
+    assert_eq!(parsed.hir_compact_match_payload_ordinal, vec![0, 0, 1, 0]);
+
+    let patterns = &parsed.hir_compact_match_payload_pattern;
+    assert_eq!(
+        parsed.hir_compact_match_payload_parent_pattern,
+        vec![
+            parsed.hir_compact_match_arm_pattern[0],
+            patterns[0],
+            patterns[0],
+            parsed.hir_compact_match_arm_pattern[1],
+        ]
+    );
 }
 
 #[test]
@@ -5289,6 +5344,19 @@ impl A<i32> for S {}
     }
     let impl_subject = parsed.hir_compact_predicate_subject[3];
     assert!(parsed.hir_canonical_raw_to_dense.contains(&impl_subject));
+
+    for row in [0usize, 3usize] {
+        let bound = parsed.hir_compact_predicate_bound[row] as usize;
+        let bound_raw = parsed.hir_canonical_dense_to_raw[bound] as usize;
+        assert_eq!(
+            parsed.hir_type_arg_count[bound_raw], 1,
+            "generic predicate bound row {row} must retain its type argument",
+        );
+        assert_ne!(
+            parsed.hir_type_arg_start[bound_raw], INVALID,
+            "generic predicate bound row {row} must retain its first type argument",
+        );
+    }
 }
 
 #[test]

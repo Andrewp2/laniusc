@@ -159,7 +159,7 @@ fn generated_single_source_modes_honor_target_bytes() {
 }
 
 #[test]
-fn representative_modes_bound_function_size_independently_of_source_size() {
+fn synthetic_function_modes_bound_function_size_independently_of_source_size() {
     for mode in [
         SourceMode::Mixed,
         SourceMode::CallGraph,

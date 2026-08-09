@@ -24,6 +24,8 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
+StructuredBuffer<uint> resolved_type_decl;
+StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
@@ -41,7 +43,7 @@ static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_ENUM_BASE = 1048576u;
+static const uint TY_ENUM_BASE = 6144u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
@@ -77,6 +79,13 @@ void name_token_ref(uint token, out uint tag, out uint payload)
     payload = type_expr_ref_payload[token];
 }
 
+uint name_decl_token(uint token)
+{
+    if (!valid_token(token)) return INVALID;
+    uint decl = visible_decl[token];
+    return valid_token(decl) ? decl : token;
+}
+
 uint type_head_token(uint node)
 {
     uint path = node < active_hir_count() ? path_id_by_owner_hir[node] : INVALID;
@@ -91,6 +100,17 @@ uint type_head_token(uint node)
     return node < active_hir_count() ? compact_hir_core[node].token_start : INVALID;
 }
 
+uint resolved_path_decl_token(uint node)
+{
+    uint path = node < active_hir_count() ? path_id_by_owner_hir[node] : INVALID;
+    uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+    if (path >= path_count) return INVALID;
+    uint decl = resolved_type_decl[path];
+    if (decl == INVALID || decl >= gParams.n_tokens) return INVALID;
+    uint token = decl_name_token[decl];
+    return valid_token(token) ? token : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -103,6 +123,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint tag = TYPE_REF_INVALID;
     uint payload = INVALID;
+    uint explicit_aggregate_decl = INVALID;
     if (valid_hir(node))
     {
         HirCore core = compact_hir_core[node];
@@ -145,7 +166,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else if (core.kind == HIR_STRUCT_LITERAL_EXPR)
         {
-            name_token_ref(type_head_token(node), tag, payload);
+            uint head_token = type_head_token(node);
+            name_token_ref(head_token, tag, payload);
+            // Declaration identity is already available directly from name
+            // resolution. Do not recover it from the legacy scalar type-code
+            // ranges: those ranges overlap once declaration token indices
+            // exceed their historical 2K windows.
+            explicit_aggregate_decl = resolved_path_decl_token(node);
+            if (!valid_token(explicit_aggregate_decl))
+                explicit_aggregate_decl = name_decl_token(head_token);
         }
         else if (core.kind == HIR_PATH_EXPR)
         {
@@ -163,6 +192,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 tag = type_expr_ref_tag[token];
                 payload = type_expr_ref_payload[token];
             }
+            // Type rows, including function returns and declaration fields,
+            // need the resolver's declaration identity for the same reason as
+            // struct literals: scalar type-code windows cannot encode an
+            // unbounded global token index without overlap.
+            explicit_aggregate_decl = resolved_path_decl_token(node);
         }
         else if ((core.kind == HIR_LET_STMT || core.kind == HIR_STMT) &&
                  (hir_payload.a == HIR_STMT_LET ||
@@ -179,11 +213,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     semantic_expr_ref_tag_by_hir[node] = tag;
     semantic_expr_ref_payload_by_hir[node] = payload;
     semantic_aggregate_decl_token_by_hir[node] =
-        tag == TYPE_REF_INSTANCE && valid_token(payload)
+        valid_token(explicit_aggregate_decl) ? explicit_aggregate_decl
+        : tag == TYPE_REF_INSTANCE && valid_token(payload)
             ? type_instance_decl_token[payload]
             : tag == TYPE_REF_SCALAR && payload >= TY_STRUCT_BASE &&
                 payload < TY_ENUM_BASE && valid_token(payload - TY_STRUCT_BASE)
-                ? payload - TY_STRUCT_BASE : INVALID;
+                ? payload - TY_STRUCT_BASE
+            : tag == TYPE_REF_SCALAR && payload >= TY_ENUM_BASE &&
+                valid_token(payload - TY_ENUM_BASE)
+                ? payload - TY_ENUM_BASE : INVALID;
     semantic_aggregate_word_count_by_hir[node] =
         valid_hir(node) && compact_hir_core[node].kind == HIR_CALL_EXPR
             ? semantic_aggregate_word_count_by_hir[node]

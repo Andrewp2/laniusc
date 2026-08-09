@@ -435,6 +435,18 @@ impl<'gpu> GpuCompiler<'gpu> {
         let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
         GpuResidentJobBufferTrim
     }
+
+    /// Releases completed-unit frontend storage after its compact CPU
+    /// interface/object artifacts have been exported. Pipelines and immutable
+    /// tables remain resident, but job-specific lexer, parser, and type-check
+    /// buffers must not overlap the next unit's allocations.
+    pub(in crate::compiler) fn release_completed_unit_frontend_workspace(&self) {
+        self.lexer.release_current_resident_buffers();
+        self.parser.release_current_resident_buffers();
+        self.type_checker.release_current_resident_workspace();
+        crate::gpu::passes_core::release_reflected_bind_group_caches();
+        let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
+    }
 }
 
 #[cfg(test)]
@@ -633,6 +645,26 @@ mod tests {
             (
                 "struct_return",
                 "struct Pair { left: i32, right: i32, } fn make() -> Pair { return Pair { right: 25, left: 17 }; } fn main() -> i32 { let pair: Pair = make(); return pair.left + pair.right; }",
+                42,
+            ),
+            (
+                "same_module_enum_unit_match",
+                "enum Choice { First, Second, } fn main() -> i32 { let value: Choice = Second; return match (value) { First -> 7, Second -> 42, }; }",
+                42,
+            ),
+            (
+                "same_module_enum_payload_arm_constant",
+                "enum Adjustment { Add(i32), Hold, } fn main() -> i32 { let value: Adjustment = Add(41); return match (value) { Add(amount) -> 42, Hold -> 7, }; }",
+                42,
+            ),
+            (
+                "same_module_enum_direct_match",
+                "enum Adjustment { Add(i32), Hold, } fn main() -> i32 { let value: Adjustment = Add(41); return match (value) { Add(amount) -> amount + 1, Hold -> 0, }; }",
+                42,
+            ),
+            (
+                "same_module_enum_return_match",
+                "enum Adjustment { Add(i32), Hold, } fn choose(seed: i32) -> Adjustment { if (seed == 1) { return Add(41); } return Hold; } fn score(value: Adjustment) -> i32 { return match (value) { Add(amount) -> amount + 1, Hold -> 0, }; } fn main() -> i32 { let value: Adjustment = choose(1); return score(value); }",
                 42,
             ),
             (

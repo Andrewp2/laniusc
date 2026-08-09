@@ -358,6 +358,7 @@ pub struct ParserPasses {
         hir::enums::rank::compact_scatter::HirEnumRankCompactScatterPass,
     pub hir_enum_variant_rank_step: hir::enums::variant::rank_step::HirEnumVariantRankStepPass,
     pub hir_enum_variant_scatter: hir::enums::variant::scatter::HirEnumVariantScatterPass,
+    pub hir_match_arm_owner_init: hir::matches::arm::owner_init::HirMatchArmOwnerInitPass,
     pub hir_match_arm_links: hir::matches::arm::links::HirMatchArmLinksPass,
     pub hir_match_rank_prefix_local: hir::matches::rank::prefix_local::HirMatchRankPrefixLocalPass,
     pub hir_match_rank_compact_scatter:
@@ -669,6 +670,8 @@ impl ParserPasses {
             hir_enum_variant_scatter: hir::enums::variant::scatter::HirEnumVariantScatterPass::new(
                 device,
             )?,
+            hir_match_arm_owner_init:
+                hir::matches::arm::owner_init::HirMatchArmOwnerInitPass::new(device)?,
             hir_match_arm_links: hir::matches::arm::links::HirMatchArmLinksPass::new(device)?,
             hir_match_rank_prefix_local:
                 hir::matches::rank::prefix_local::HirMatchRankPrefixLocalPass::new(device)?,
@@ -1031,6 +1034,18 @@ pub fn record_all_passes(
     )?;
     p.hir_array_element_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
+    p.hir_match_arm_owner_init
+        .record_pass(&mut ctx, E1D(n_tree))?;
+    p.hir_semantic_parent_step.record_steps_for_buffers(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_semantic_parent_link_a,
+        &ctx.buffers.hir_match_pattern_owner_arm,
+        &ctx.buffers.hir_semantic_parent_link_b,
+        &ctx.buffers.hir_semantic_parent_value_b,
+        "hir_match_arm_owner_step",
+    )?;
     p.hir_match_arm_links.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_match_rank_prefix_local
         .record_pass(&mut ctx, E1D(n_tree_node_threads))?;
@@ -1284,6 +1299,12 @@ pub fn record_canonical_matches(
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_match_payload_table_count.buffer,
+        0,
+        None,
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_match_pattern_payload_count.buffer,
         0,
         None,
     );

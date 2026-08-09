@@ -17,6 +17,7 @@ StructuredBuffer<uint> compact_match_arm_count;
 StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> compact_match_payload_start;
 StructuredBuffer<uint> compact_match_payload_count;
+StructuredBuffer<uint> compact_match_pattern_payload_count;
 StructuredBuffer<uint> compact_match_payload_row_count;
 StructuredBuffer<HirMatchPayload> compact_match_payloads;
 StructuredBuffer<uint> compact_variant_count;
@@ -110,32 +111,21 @@ void bind_decl(uint use_token, uint decl_token)
     module_value_path_status[use_token] = INVALID;
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void bind_resolved_pattern(uint pattern, uint actual_count)
 {
-    uint arm_i = linear_thread_id(dtid);
-    if (arm_i >= active_arm_count())
+    if (!valid_hir(pattern))
         return;
-
-    HirMatchArm arm = compact_match_arms[arm_i];
-    if (!valid_hir(arm.owner) || !valid_hir(arm.pattern) || !valid_hir(arm.result))
-        return;
-    uint pattern_token = compact_hir_core[arm.pattern].token_start;
+    uint pattern_token = compact_hir_core[pattern].token_start;
     if (!valid_token(pattern_token))
         return;
     if (token_is_wildcard(pattern_token))
-    {
-        bind_decl(pattern_token, pattern_token);
-        visible_type[pattern_token] = TY_UNKNOWN;
         return;
-    }
 
-    uint path_i = path_for_pattern(arm.pattern);
+    uint path_i = path_for_pattern(pattern);
     if (!valid_path(path_i) || resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
         return;
     uint owner_token = path_owner_token[path_i];
-    if (!valid_token(owner_token))
+    if (!valid_token(owner_token) || owner_token != pattern_token)
         return;
 
     uint variant_token;
@@ -144,7 +134,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!enum_variant_decl(resolved_value_decl[path_i], variant_token, enum_token, variant))
         return;
 
-    uint actual_count = compact_match_payload_count[arm_i];
     uint expected_count = compact_variant_payload_count[variant];
     if (actual_count != expected_count)
     {
@@ -154,19 +143,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     bind_decl(owner_token, variant_token);
     visible_type[owner_token] = TY_ENUM_BASE + enum_token;
+}
 
-    if (actual_count == 0u)
-        return;
-    uint start = compact_match_payload_start[arm_i];
-    if (start == INVALID || start >= active_payload_count())
-        return;
-    HirMatchPayload payload = compact_match_payloads[start];
-    if (payload.arm != arm_i || payload.ordinal != 0u || !valid_hir(payload.pattern))
-        return;
-    uint binder_token = compact_hir_core[payload.pattern].token_start;
-    if (valid_token(binder_token))
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint row = linear_thread_id(dtid);
+    if (row < active_arm_count())
     {
-        bind_decl(binder_token, binder_token);
-        visible_type[binder_token] = TY_UNKNOWN;
+        HirMatchArm arm = compact_match_arms[row];
+        if (valid_hir(arm.owner) && valid_hir(arm.pattern) && valid_hir(arm.result))
+        {
+            uint pattern_token = compact_hir_core[arm.pattern].token_start;
+            if (token_is_wildcard(pattern_token))
+                visible_type[pattern_token] = TY_UNKNOWN;
+            else
+                bind_resolved_pattern(arm.pattern, compact_match_payload_count[row]);
+        }
+    }
+
+    if (row < active_payload_count())
+    {
+        HirMatchPayload payload = compact_match_payloads[row];
+        if (valid_hir(payload.pattern))
+            bind_resolved_pattern(
+                payload.pattern,
+                compact_match_pattern_payload_count[payload.pattern]);
     }
 }

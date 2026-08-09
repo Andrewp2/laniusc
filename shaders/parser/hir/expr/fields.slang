@@ -400,15 +400,22 @@ uint range_bound_value_node(uint range_bound)
 
 uint range_bound_node(uint bound_opt)
 {
-    if (!valid_node(bound_opt) || node_kind[bound_opt] != PROD_RANGE_BOUND)
+    if (!valid_node(bound_opt))
         return INVALID;
 
-    uint bound = first_child_node(bound_opt);
+    // `range_bound_opt -> range_bound` retains the wrapper, while the
+    // mandatory bound used by inclusive ranges is lowered directly to the
+    // selected `range_bound_name`/`range_bound_int` production. Normalize
+    // both grammar shapes here so downstream HIR does not depend on whether
+    // the bound was optional in the concrete production.
+    uint bound = node_kind[bound_opt] == PROD_RANGE_BOUND
+        ? first_child_node(bound_opt)
+        : bound_opt;
     if (!valid_node(bound))
         return INVALID;
     if (node_kind[bound] == PROD_RANGE_BOUND_NAME)
         return range_bound_value_node(bound);
-    return bound;
+    return node_kind[bound] == PROD_RANGE_BOUND_INT ? bound : INVALID;
 }
 
 bool publish_range_from_start_expr(uint i)

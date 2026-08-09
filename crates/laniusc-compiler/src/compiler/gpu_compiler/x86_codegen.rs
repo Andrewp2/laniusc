@@ -44,9 +44,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         if sources.is_empty() {
             return Err(x86_empty_source_pack_compile_error());
         }
-        validate_in_memory_source_pack_fits_default_codegen_unit(
+        validate_in_memory_source_pack_fits_codegen_unit(
             "compile source pack to x86_64",
             sources,
+            self.resident_source_unit_limits(),
         )?;
         self.compile_checked_source_pack_with_lowering(
             sources,

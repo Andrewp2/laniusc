@@ -1721,6 +1721,77 @@ fn main() {
 }
 
 #[test]
+fn type_checker_binds_self_receiver_in_source_file_after_non_method_module() {
+    let mut helper = String::from("module helpers::values;\n");
+    for index in 0..512 {
+        writeln!(
+            helper,
+            "pub fn decoy_{index}(value: i32) -> i32 {{ return value + {index}; }}"
+        )
+        .unwrap();
+    }
+    helper.push_str(
+        r#"
+pub fn seed() -> i32 {
+    let values: [i32; 2] = [3, 5];
+    return values[0] + values[1];
+}
+"#,
+    );
+    let policy = r#"
+module helpers::policy;
+
+enum Adjustment {
+    Add(i32),
+    Hold,
+}
+
+pub fn score(seed: i32) -> i32 {
+    let adjustment: Adjustment = Add(seed);
+    return match (adjustment) {
+        Add(amount) -> amount,
+        Hold -> 0,
+    };
+}
+"#;
+    let app = r#"
+module app::main;
+
+import helpers::values;
+
+struct ServiceState {
+    left: i32,
+    right: i32,
+}
+
+impl ServiceState {
+    fn from_parts(left: i32, right: i32) -> ServiceState {
+        return ServiceState { left: left, right: right };
+    }
+
+    fn new(seed: i32) -> ServiceState {
+        return ServiceState::from_parts(seed + 2, seed * 2 + 3);
+    }
+
+    fn adjusted(self, amount: i32) -> ServiceState {
+        return ServiceState::from_parts(self.left + amount, self.right - amount);
+    }
+
+    fn score(self) -> i32 {
+        return self.left * 3 + self.right;
+    }
+}
+
+fn main() -> i32 {
+    let state: ServiceState = ServiceState::new(helpers::values::seed());
+    let adjusted: ServiceState = state.adjusted(2);
+    return adjusted.score();
+}
+"#;
+    assert_gpu_type_check_pack_ok(&[policy, &helper, app]);
+}
+
+#[test]
 fn type_checker_resolves_generic_associated_inherent_functions_on_type_paths() {
     assert_gpu_type_check_ok(
         r#"
@@ -5077,6 +5148,34 @@ fn main() {
 }
 
 #[test]
+fn type_checker_keeps_generic_struct_literal_identity_past_legacy_type_code_windows() {
+    let padding = (0..700)
+        .map(|index| format!("fn padding_{index}(value: i32) -> i32 {{ return value + {index}; }}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = format!(
+        r#"
+{padding}
+
+struct Envelope<T> {{
+    value: T,
+}}
+
+fn read(seed: i32) -> i32 {{
+    let envelope: Envelope<i32> = Envelope {{ value: seed }};
+    return envelope.value;
+}}
+
+fn main() -> i32 {{
+    return read(42);
+}}
+"#
+    );
+
+    assert_gpu_type_check_ok(&source);
+}
+
+#[test]
 fn type_checker_rejects_unbound_generic_array_parameters_on_gpu() {
     assert_gpu_type_check_rejects(
         r#"
@@ -5210,6 +5309,97 @@ fn main() {
     return choose(value);
 }
 "#]);
+}
+
+#[test]
+fn type_checker_binds_nested_enum_patterns_from_compact_pattern_tree() {
+    assert_gpu_type_check_ok(
+        r#"
+enum OuterEvent {
+    Wrapped(InnerEvent),
+    Other,
+}
+
+enum InnerEvent {
+    Pair(i32, i32),
+    Empty,
+}
+
+fn score(value: OuterEvent) -> i32 {
+    return match (value) {
+        Wrapped(Pair(left, right)) -> left + right,
+        Wrapped(Empty) -> 0,
+        Other -> 1,
+    };
+}
+
+fn main() -> i32 {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_assigns_nested_enum_pattern_binders_their_payload_type() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+enum OuterEvent {
+    Wrapped(InnerEvent),
+}
+
+enum InnerEvent {
+    Value(i32),
+}
+
+fn score(value: OuterEvent) -> bool {
+    return match (value) {
+        Wrapped(Value(inner)) -> inner,
+    };
+}
+
+fn main() -> i32 {
+    return 0;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "value type is i32 but this context expects bool",
+            "expected bool, found i32",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_nested_enum_pattern_payload_arity_mismatch_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+enum OuterEvent {
+    Wrapped(InnerEvent),
+}
+
+enum InnerEvent {
+    Pair(i32, bool),
+}
+
+fn score(value: OuterEvent) -> i32 {
+    return match (value) {
+        Wrapped(Pair(left)) -> left,
+    };
+}
+
+fn main() -> i32 {
+    return 0;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "Pair(left)",
+            "value type does not match this context",
+        ],
+    );
 }
 
 #[test]

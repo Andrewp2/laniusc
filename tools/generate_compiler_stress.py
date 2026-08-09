@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Generate semantically matched, fully reachable compiler scaling inputs."""
+"""Generate controlled synthetic compiler stress inputs."""
 
 import argparse
 import hashlib
 import json
 from pathlib import Path
 
-from compile_workload_model import (
+from compiler_stress_bounded_project import (
+    DEFAULT_MAX_MODULE_BYTES,
+    generate_bounded_project,
+)
+from compiler_stress_model import (
     LANGUAGES,
     WORKLOAD_PROFILES,
     build_workload,
@@ -19,8 +23,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--out",
-        default="target/lanius-compile-scaling/sources",
+        default="target/lanius-compiler-stress/sources",
         help="directory for generated source sets",
+    )
+    parser.add_argument(
+        "--layout",
+        choices=("comparative-single-file", "bounded-project"),
+        default="comparative-single-file",
     )
     parser.add_argument(
         "--sizes",
@@ -31,7 +40,7 @@ def main() -> int:
     parser.add_argument(
         "--profile",
         choices=tuple(WORKLOAD_PROFILES),
-        default="mixed",
+        default="mixed-function-sizes",
         help="function-size distribution to generate",
     )
     parser.add_argument(
@@ -39,13 +48,36 @@ def main() -> int:
         type=int,
         help="force the number of reachable leaf functions",
     )
+    parser.add_argument(
+        "--target-bytes",
+        type=int,
+        help="exact bounded-project source bytes",
+    )
+    parser.add_argument(
+        "--max-module-bytes",
+        type=int,
+        default=DEFAULT_MAX_MODULE_BYTES,
+    )
     args = parser.parse_args()
+
+    repo = Path(__file__).resolve().parents[1]
+    out = (repo / args.out).resolve()
+    if args.layout == "bounded-project":
+        if args.target_bytes is None or args.target_bytes <= 0:
+            parser.error("--layout bounded-project requires positive --target-bytes")
+        if args.max_module_bytes <= 0:
+            parser.error("--max-module-bytes must be positive")
+        generate_bounded_project(
+            out,
+            args.target_bytes,
+            args.seed,
+            args.max_module_bytes,
+        )
+        return 0
 
     sizes = parse_sizes(parser, args.sizes)
     if args.functions is not None and args.functions <= 0:
         parser.error("--functions must be positive")
-    repo = Path(__file__).resolve().parents[1]
-    out = (repo / args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
     source_sets = [
@@ -53,7 +85,10 @@ def main() -> int:
         for target_bytes in sizes
     ]
     manifest = {
-        "schema": "lanius.compile-scaling-sources.v3",
+        "schema": "lanius.compiler-stress-sources.v1",
+        "classification": "synthetic_stress",
+        "representative_workload": False,
+        "layout": args.layout,
         "seed": args.seed,
         "profile": args.profile,
         "profile_description": WORKLOAD_PROFILES[args.profile].description,

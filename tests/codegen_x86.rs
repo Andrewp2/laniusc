@@ -1241,6 +1241,81 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_return_match_on_integer_and_boolean_patterns() {
+    assert_source_exit(
+        "return_match_integer_boolean_patterns",
+        r#"
+fn integer_score(value: i32) -> i32 {
+    return match (value) {
+        0 -> 7,
+        1 -> 11,
+        2 -> 13,
+    };
+}
+
+fn boolean_score(value: bool) -> i32 {
+    return match (value) {
+        true -> 3,
+        false -> 5,
+    };
+}
+
+fn main() -> i32 {
+    return integer_score(1) + boolean_score(false);
+}
+"#,
+        16,
+    );
+}
+
+#[test]
+fn x86_executes_first_matching_arm_before_wildcard_default() {
+    assert_source_exit(
+        "return_match_wildcard_default",
+        r#"
+fn classify(value: i32) -> i32 {
+    return match (value) {
+        0 -> 7,
+        _ -> 11,
+    };
+}
+
+fn main() -> i32 {
+    return classify(0) * 10 + classify(3);
+}
+"#,
+        81,
+    );
+}
+
+#[test]
+fn x86_executes_enum_pattern_before_wildcard_default() {
+    assert_source_exit(
+        "return_enum_match_wildcard_default",
+        r#"
+enum Choice {
+    A,
+    B,
+}
+
+fn score(value: Choice) -> i32 {
+    return match (value) {
+        A -> 3,
+        _ -> 5,
+    };
+}
+
+fn main() -> i32 {
+    let first: Choice = A;
+    let second: Choice = B;
+    return score(first) * 10 + score(second);
+}
+"#,
+        35,
+    );
+}
+
+#[test]
 fn x86_rejects_non_return_match_expression_with_diagnostic() {
     let source = r#"
 fn main() {
@@ -1307,73 +1382,31 @@ fn main() {
 }
 
 #[test]
-fn x86_rejects_multi_payload_enum_constructor_with_diagnostic() {
-    let source = r#"
+fn x86_executes_multi_payload_enum_constructor_and_pattern() {
+    assert_source_exit(
+        "x86 multi-payload enum constructor and pattern",
+        r#"
 enum Pairish {
-    Pair(i32, bool),
+    Pair(i32, i32),
     Empty,
 }
 
-fn main() {
-    let value: Pairish = Pair(7, true);
-    return 0;
+fn score(value: Pairish) -> i32 {
+    return match (value) {
+        Pair(left, right) -> left * 10 + right,
+        Empty -> 5,
+    };
 }
-"#
-    .to_owned();
 
-    let err = common::run_gpu_codegen_with_timeout(
-        "x86 multi-payload enum constructor",
-        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
-    )
-    .expect_err(
-        "multi-payload enum constructors should fail closed until x86 payload lowering broadens",
+fn main() -> i32 {
+    let first: Pairish = Pair(7, 3);
+    let second: Pairish = Pair(4, 2);
+    let empty: Pairish = Empty;
+    return score(first) * 2 + score(second) + score(empty);
+}
+"#,
+        193,
     );
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "enum-constructor rejection should use the stable x86 diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "enum-constructor rejection should stay in the native-codegen category: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 multi-payload enum constructor")
-                    && message.contains("native x86 backend"),
-                "diagnostic should name the unsupported enum-constructor boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the enum-constructor source line");
-            assert_eq!(
-                source_line, "    let value: Pairish = Pair(7, true);",
-                "diagnostic should point at the unsupported enum constructor: {message}"
-            );
-            let ctor_start_column = source_line
-                .find("Pair(7")
-                .map(|column| column + 1)
-                .expect("fixture should contain the enum constructor call");
-            let ctor_end_column = ctor_start_column + "Pair".len();
-            assert!(
-                (ctor_start_column..=ctor_end_column).contains(&label.column),
-                "diagnostic column should fall inside the enum constructor name: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
 }
 
 #[test]
@@ -2308,6 +2341,78 @@ fn main() -> i32 {
 }
 
 #[test]
+fn x86_executes_inclusive_numeric_range_for_loop() {
+    assert_source_exit(
+        "inclusive_numeric_range_for_loop",
+        r#"
+fn sum_inclusive(end: i32) -> i32 {
+    let total: i32 = 0;
+    for value in 2 ..= end {
+        total += value;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    return sum_inclusive(5);
+}
+"#,
+        14,
+    );
+}
+
+#[test]
+fn x86_executes_numeric_ranges_without_explicit_start() {
+    assert_source_exit(
+        "numeric_ranges_without_explicit_start",
+        r#"
+fn main() -> i32 {
+    let total: i32 = 0;
+    for value in .. 3 {
+        total += value;
+    }
+    for value in ..= 3 {
+        total += value;
+    }
+    return total;
+}
+"#,
+        9,
+    );
+}
+
+#[test]
+fn x86_executes_unbounded_numeric_ranges_until_break() {
+    assert_source_exit(
+        "unbounded_numeric_ranges_until_break",
+        r#"
+fn sum_from_start() -> i32 {
+    let total: i32 = 0;
+    for value in 2 .. {
+        total += value;
+        if (value == 4) { break; }
+    }
+    return total;
+}
+
+fn sum_from_zero() -> i32 {
+    let total: i32 = 0;
+    for value in .. {
+        total += value;
+        if (value == 2) { break; }
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    return sum_from_start() * 10 + sum_from_zero();
+}
+"#,
+        93,
+    );
+}
+
+#[test]
 fn x86_executes_numeric_range_for_loop_with_struct_field_end() {
     assert_source_exit(
         "numeric_range_for_loop_struct_field_end",
@@ -2619,8 +2724,39 @@ fn main() {
     }
     return total;
 }
+
 "#,
         6,
+    );
+}
+
+#[test]
+fn x86_executes_empty_array_value() {
+    assert_source_exit(
+        "empty_array_value",
+        r#"
+fn main() -> i32 {
+    let values: [i32; 0] = [];
+    return 0;
+}
+"#,
+        0,
+    );
+}
+
+#[test]
+fn x86_executes_empty_struct_value() {
+    assert_source_exit(
+        "empty_struct_value",
+        r#"
+struct EmptyRecord {}
+
+fn main() -> i32 {
+    let value: EmptyRecord = EmptyRecord {};
+    return 0;
+}
+"#,
+        0,
     );
 }
 
@@ -2845,6 +2981,45 @@ fn main() {
 }
 "#,
         9,
+    );
+}
+
+#[test]
+fn x86_keeps_struct_literal_and_return_identity_past_legacy_type_code_windows() {
+    let padding = (0..700)
+        .map(|index| format!("fn padding_{index}(value: i32) -> i32 {{ return value + {index}; }}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = format!(
+        r#"
+{padding}
+
+struct Pair {{
+    left: i32,
+    right: i32,
+}}
+
+impl Pair {{
+    fn from_parts(left: i32, right: i32) -> Pair {{
+        return Pair {{ left: left, right: right }};
+    }}
+
+    fn new(seed: i32) -> Pair {{
+        return Pair::from_parts(seed + 2, seed * 2 + 3);
+    }}
+}}
+
+fn main() -> i32 {{
+    let pair: Pair = Pair::new(7);
+    return pair.left + pair.right;
+}}
+"#
+    );
+
+    assert_source_exit(
+        "struct_literal_and_return_identity_past_legacy_type_code_windows",
+        &source,
+        26,
     );
 }
 

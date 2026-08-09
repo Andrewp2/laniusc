@@ -74,6 +74,10 @@ impl HirMatchArmRankStepPass {
                     &buffers.hir_match_payload_rank_b,
                     &buffers.hir_match_payload_rank_a,
                 ),
+                (
+                    &buffers.hir_match_pattern_parent_b,
+                    &buffers.hir_match_pattern_parent,
+                ),
             ] {
                 src.copy_to(encoder, 0, dst, 0, bytes);
             }
@@ -97,12 +101,14 @@ impl HirMatchArmRankStepPass {
             payload_owner_in,
             payload_link_in,
             payload_rank_in,
+            pattern_parent_in,
             arm_owner_out,
             arm_link_out,
             arm_rank_out,
             payload_owner_out,
             payload_link_out,
             payload_rank_out,
+            pattern_parent_out,
         ) = if read_from_a {
             (
                 &buffers.hir_match_arm_owner_a,
@@ -111,12 +117,14 @@ impl HirMatchArmRankStepPass {
                 &buffers.hir_match_payload_owner_a,
                 &buffers.hir_match_payload_link_a,
                 &buffers.hir_match_payload_rank_a,
+                &buffers.hir_match_pattern_parent,
                 &buffers.hir_match_arm_owner_b,
                 &buffers.hir_match_arm_link_b,
                 &buffers.hir_match_arm_rank_b,
                 &buffers.hir_match_payload_owner_b,
                 &buffers.hir_match_payload_link_b,
                 &buffers.hir_match_payload_rank_b,
+                &buffers.hir_match_pattern_parent_b,
             )
         } else {
             (
@@ -126,12 +134,14 @@ impl HirMatchArmRankStepPass {
                 &buffers.hir_match_payload_owner_b,
                 &buffers.hir_match_payload_link_b,
                 &buffers.hir_match_payload_rank_b,
+                &buffers.hir_match_pattern_parent_b,
                 &buffers.hir_match_arm_owner_a,
                 &buffers.hir_match_arm_link_a,
                 &buffers.hir_match_arm_rank_a,
                 &buffers.hir_match_payload_owner_a,
                 &buffers.hir_match_payload_link_a,
                 &buffers.hir_match_payload_rank_a,
+                &buffers.hir_match_pattern_parent,
             )
         };
 
@@ -185,6 +195,10 @@ impl HirMatchArmRankStepPass {
                 payload_rank_in.as_entire_binding(),
             ),
             (
+                "hir_match_pattern_parent_in".into(),
+                pattern_parent_in.as_entire_binding(),
+            ),
+            (
                 "hir_match_arm_owner_out".into(),
                 arm_owner_out.as_entire_binding(),
             ),
@@ -207,6 +221,10 @@ impl HirMatchArmRankStepPass {
             (
                 "hir_match_payload_rank_out".into(),
                 payload_rank_out.as_entire_binding(),
+            ),
+            (
+                "hir_match_pattern_parent_out".into(),
+                pattern_parent_out.as_entire_binding(),
             ),
         ]);
 

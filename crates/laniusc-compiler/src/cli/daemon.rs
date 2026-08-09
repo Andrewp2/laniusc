@@ -151,6 +151,7 @@ impl SourcePackCache {
         &'a mut self,
         input: &Path,
         stdlib_root: &Path,
+        resident_limits: crate::codegen::unit::CompilationUnitLimits,
     ) -> Result<&'a CachedCompileInput, crate::compiler::CompileError> {
         let cache_hit = self.entry.as_ref().is_some_and(|entry| {
             entry.input == input
@@ -170,7 +171,7 @@ impl SourcePackCache {
 
         let path_manifest = load_entry_path_manifest_with_stdlib(input, stdlib_root)?;
         let file_stamps = source_file_stamps(&path_manifest);
-        let source_pack = cached_compile_input(path_manifest)?;
+        let source_pack = cached_compile_input(path_manifest, resident_limits)?;
         if let Some(file_stamps) = file_stamps {
             self.entry = Some(CachedSourcePack {
                 input: input.to_path_buf(),
@@ -195,8 +196,9 @@ impl SourcePackCache {
 
 fn cached_compile_input(
     path_manifest: ExplicitSourcePackPathManifest,
+    resident_limits: crate::codegen::unit::CompilationUnitLimits,
 ) -> Result<CachedCompileInput, crate::compiler::CompileError> {
-    if path_manifest.requires_bounded_compilation() {
+    if path_manifest.requires_bounded_compilation_with_limits(resident_limits) {
         Ok(CachedCompileInput::Bounded(path_manifest))
     } else {
         Ok(CachedCompileInput::Resident(
@@ -769,7 +771,11 @@ async fn compile_request(
     };
 
     let load_started = Instant::now();
-    let source_pack = match source_pack_cache.load(&input, &stdlib_root) {
+    let source_pack = match source_pack_cache.load(
+        &input,
+        &stdlib_root,
+        compiler.resident_source_unit_limits(),
+    ) {
         Ok(source_pack) => source_pack,
         Err(err) => return compile_error_response(id, started, err),
     };
@@ -1081,8 +1087,9 @@ mod tests {
         fs::write(&entry, "fn main() { return; }\n").expect("write cached entry fixture");
 
         let mut cache = SourcePackCache::default();
+        let resident_limits = crate::codegen::unit::CompilationUnitLimits::default();
         let first = cache
-            .load(&entry, &stdlib_root)
+            .load(&entry, &stdlib_root, resident_limits)
             .expect("load initial cached source pack");
         assert!(first.resident().is_some_and(|source_pack| {
             source_pack
@@ -1094,7 +1101,7 @@ mod tests {
         fs::write(&entry, "fn main() { print(17); return; }\n")
             .expect("change cached entry fixture");
         let second = cache
-            .load(&entry, &stdlib_root)
+            .load(&entry, &stdlib_root, resident_limits)
             .expect("reload changed source pack");
         assert!(second.resident().is_some_and(|source_pack| {
             source_pack
@@ -1108,7 +1115,10 @@ mod tests {
 
     #[test]
     fn daemon_keeps_large_source_packs_path_backed() {
-        let limits = crate::codegen::unit::CompilationUnitLimits::default();
+        let limits = crate::codegen::unit::CompilationUnitLimits {
+            max_source_bytes: 1024,
+            max_source_files: 100,
+        };
         let path_manifest = ExplicitSourcePackPathManifest {
             files: (0..=limits.max_source_files)
                 .map(|index| crate::compiler::ExplicitSourcePathFile {
@@ -1123,7 +1133,7 @@ mod tests {
         };
 
         assert!(matches!(
-            cached_compile_input(path_manifest),
+            cached_compile_input(path_manifest, limits),
             Ok(CachedCompileInput::Bounded(_))
         ));
     }

@@ -113,7 +113,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     if (row < edge_count && interface_edge_written[row] != 1u)
+    {
         atomic_u32_or(interface_status, 0u, 0x20000000u);
+        atomic_u32_min(interface_status, 1u, row);
+    }
     if (row < member_count && interface_member_written[row] != 1u)
         atomic_u32_or(interface_status, 0u, 0x40000000u);
 

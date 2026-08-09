@@ -391,6 +391,7 @@ pub(crate) struct GpuSemanticHirInputs<'a> {
     pub core: &'a LaniusBuffer<crate::parser::buffers::HirCore>,
     pub links: &'a LaniusBuffer<crate::parser::buffers::HirLinks>,
     pub payload: &'a LaniusBuffer<crate::parser::buffers::HirPayload>,
+    pub fn_return_type: &'a LaniusBuffer<u32>,
     pub const_value: &'a LaniusBuffer<u32>,
     pub expr_parent: &'a LaniusBuffer<u32>,
     pub expr_root: &'a LaniusBuffer<u32>,
@@ -399,6 +400,18 @@ pub(crate) struct GpuSemanticHirInputs<'a> {
     pub call_args: &'a LaniusBuffer<crate::parser::buffers::HirCallArg>,
     pub field_count: &'a LaniusBuffer<u32>,
     pub fields: &'a LaniusBuffer<crate::parser::buffers::HirField>,
+    pub variant_count: &'a LaniusBuffer<u32>,
+    pub variants: &'a LaniusBuffer<crate::parser::buffers::HirVariant>,
+    pub variant_payload_start: &'a LaniusBuffer<u32>,
+    pub variant_payload_count: &'a LaniusBuffer<u32>,
+    pub variant_payload_row_count: &'a LaniusBuffer<u32>,
+    pub variant_payloads: &'a LaniusBuffer<crate::parser::buffers::HirVariantPayload>,
+    pub match_arm_count: &'a LaniusBuffer<u32>,
+    pub match_arms: &'a LaniusBuffer<crate::parser::buffers::HirMatchArm>,
+    pub match_payload_start: &'a LaniusBuffer<u32>,
+    pub match_payload_count: &'a LaniusBuffer<u32>,
+    pub match_payload_row_count: &'a LaniusBuffer<u32>,
+    pub match_payloads: &'a LaniusBuffer<crate::parser::buffers::HirMatchPayload>,
     pub array_element_start: &'a LaniusBuffer<u32>,
     pub array_element_count: &'a LaniusBuffer<u32>,
     pub array_element_row_count: &'a LaniusBuffer<u32>,
@@ -422,6 +435,7 @@ impl<'a> From<&'a GpuHirView> for GpuSemanticHirInputs<'a> {
             core: &hir.core,
             links: &hir.links,
             payload: &hir.payload,
+            fn_return_type: &hir.fn_return_type,
             const_value: &hir.const_value,
             expr_parent: &hir.expr_parent,
             expr_root: &hir.expr_root,
@@ -430,6 +444,18 @@ impl<'a> From<&'a GpuHirView> for GpuSemanticHirInputs<'a> {
             call_args: &hir.call_args,
             field_count: &hir.field_count,
             fields: &hir.fields,
+            variant_count: &hir.variant_count,
+            variants: &hir.variants,
+            variant_payload_start: &hir.variant_payload_start,
+            variant_payload_count: &hir.variant_payload_count,
+            variant_payload_row_count: &hir.variant_payload_row_count,
+            variant_payloads: &hir.variant_payloads,
+            match_arm_count: &hir.match_arm_count,
+            match_arms: &hir.match_arms,
+            match_payload_start: &hir.match_payload_start,
+            match_payload_count: &hir.match_payload_count,
+            match_payload_row_count: &hir.match_payload_row_count,
+            match_payloads: &hir.match_payloads,
             array_element_start: &hir.array_element_start,
             array_element_count: &hir.array_element_count,
             array_element_row_count: &hir.array_element_row_count,
@@ -1011,7 +1037,7 @@ impl GpuSemanticLoweringStage {
                     n_hir_nodes: hir_nodes,
                     param_capacity: capacities.parameters,
                     n_tokens: capacities.tokens,
-                    local_capacity: capacities.hir_nodes.max(1),
+                    local_capacity: capacities.local_capacity(),
                 },
             ),
             scan_params: uniform_from_val(
@@ -1244,6 +1270,17 @@ impl GpuSemanticLoweringStage {
         graph_buffer!("hir.array_element_start", hir.array_element_start);
         graph_buffer!("hir.array_element_count", hir.array_element_count);
         graph_buffer!("hir.array_element_row_count", hir.array_element_row_count);
+        graph_buffer!("hir.field_count", hir.field_count);
+        graph_buffer!("hir.variant_count", hir.variant_count);
+        graph_buffer!("hir.variants", hir.variants);
+        graph_buffer!("hir.match_arm_count", hir.match_arm_count);
+        graph_buffer!("hir.match_arms", hir.match_arms);
+        graph_buffer!("hir.match_payload_start", hir.match_payload_start);
+        graph_buffer!("hir.match_payload_count", hir.match_payload_count);
+        graph_buffer!("hir.match_payload_row_count", hir.match_payload_row_count);
+        graph_buffer!("hir.match_payloads", hir.match_payloads);
+        graph_buffer!("hir.call_arg_count", hir.call_arg_count);
+        graph_buffer!("hir.call_args", hir.call_args);
         graph_buffer!("lir.semantic.count_by_hir", &self.counts);
         graph_buffer!("lir.semantic.offset_by_hir", &self.offsets);
         graph_buffer!("lir.semantic.execution_rank_a", &self.execution_rank_a);
@@ -1300,6 +1337,13 @@ impl GpuSemanticLoweringStage {
                     "compact_expr_root",
                     resource("hir.expression_roots"),
                     hir.expr_root,
+                )?,
+                bound("compact_variant_count", resource("hir.variant_count"), hir.variant_count)?,
+                bound("compact_variants", resource("hir.variants"), hir.variants)?,
+                bound(
+                    "compact_variant_payload_count",
+                    resource("hir.variant_payload_count"),
+                    hir.variant_payload_count,
                 )?,
                 bound(
                     "semantic_value_decl_by_hir",
@@ -1413,6 +1457,12 @@ impl GpuSemanticLoweringStage {
                 ("compact_hir_core", hir.core.as_entire_binding()),
                 ("compact_hir_payload", hir.payload.as_entire_binding()),
                 ("compact_expr_root", hir.expr_root.as_entire_binding()),
+                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                ("compact_variants", hir.variants.as_entire_binding()),
+                (
+                    "compact_variant_payload_count",
+                    hir.variant_payload_count.as_entire_binding(),
+                ),
                 (
                     "semantic_value_decl_by_hir",
                     semantic.value_decl_by_hir.as_entire_binding(),
@@ -1511,6 +1561,47 @@ impl GpuSemanticLoweringStage {
                     hir.expr_parent,
                 )?,
                 bound(
+                    "compact_match_arm_count",
+                    resource("hir.match_arm_count"),
+                    hir.match_arm_count,
+                )?,
+                bound("compact_match_arms", resource("hir.match_arms"), hir.match_arms)?,
+                bound(
+                    "compact_match_payload_start",
+                    resource("hir.match_payload_start"),
+                    hir.match_payload_start,
+                )?,
+                bound(
+                    "compact_match_payload_count",
+                    resource("hir.match_payload_count"),
+                    hir.match_payload_count,
+                )?,
+                bound(
+                    "compact_match_payload_row_count",
+                    resource("hir.match_payload_row_count"),
+                    hir.match_payload_row_count,
+                )?,
+                bound(
+                    "compact_match_payloads",
+                    resource("hir.match_payloads"),
+                    hir.match_payloads,
+                )?,
+                bound(
+                    "compact_variant_count",
+                    resource("hir.variant_count"),
+                    hir.variant_count,
+                )?,
+                bound(
+                    "compact_variants",
+                    resource("hir.variants"),
+                    hir.variants,
+                )?,
+                bound(
+                    "semantic_value_id",
+                    resource("typecheck.semantic_value_decls_by_hir"),
+                    semantic.value_decl_by_hir,
+                )?,
+                bound(
                     "semantic_function_id",
                     resource("semantic.function_ids"),
                     &self.function_ids,
@@ -1542,6 +1633,33 @@ impl GpuSemanticLoweringStage {
                 ("compact_hir_core", hir.core.as_entire_binding()),
                 ("compact_hir_payload", hir.payload.as_entire_binding()),
                 ("compact_expr_parent", hir.expr_parent.as_entire_binding()),
+                (
+                    "compact_match_arm_count",
+                    hir.match_arm_count.as_entire_binding(),
+                ),
+                ("compact_match_arms", hir.match_arms.as_entire_binding()),
+                (
+                    "compact_match_payload_start",
+                    hir.match_payload_start.as_entire_binding(),
+                ),
+                (
+                    "compact_match_payload_count",
+                    hir.match_payload_count.as_entire_binding(),
+                ),
+                (
+                    "compact_match_payload_row_count",
+                    hir.match_payload_row_count.as_entire_binding(),
+                ),
+                (
+                    "compact_match_payloads",
+                    hir.match_payloads.as_entire_binding(),
+                ),
+                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                ("compact_variants", hir.variants.as_entire_binding()),
+                (
+                    "semantic_value_id",
+                    semantic.value_decl_by_hir.as_entire_binding(),
+                ),
                 (
                     "semantic_function_id",
                     self.function_ids.as_entire_binding(),
@@ -1586,7 +1704,7 @@ impl GpuSemanticLoweringStage {
             encoder,
             &self.passes.scatter,
             &scatter,
-            self.capacities.hir_nodes,
+            self.capacities.semantic_instructions,
         )?;
 
         self.validate(
@@ -1725,7 +1843,28 @@ impl GpuSemanticLoweringStage {
             self.graph.pass_id("lir.semantic.locals.scatter").unwrap(),
             vec![
                 bound("compact_hir_count", resource("hir.count"), hir.count)?,
+                bound("compact_hir_core", resource("hir.core"), hir.core)?,
                 bound("compact_hir_payload", resource("hir.payload"), hir.payload)?,
+                bound(
+                    "compact_match_payload_row_count",
+                    resource("hir.match_payload_row_count"),
+                    hir.match_payload_row_count,
+                )?,
+                bound(
+                    "compact_match_payloads",
+                    resource("hir.match_payloads"),
+                    hir.match_payloads,
+                )?,
+                bound(
+                    "compact_variant_count",
+                    resource("hir.variant_count"),
+                    hir.variant_count,
+                )?,
+                bound(
+                    "compact_variants",
+                    resource("hir.variants"),
+                    hir.variants,
+                )?,
                 bound(
                     "semantic_local_flag",
                     resource("lir.semantic.local_flags"),
@@ -1747,6 +1886,11 @@ impl GpuSemanticLoweringStage {
                     semantic.value_type_by_hir,
                 )?,
                 bound(
+                    "semantic_value_decl_by_hir",
+                    resource("typecheck.semantic_value_decls_by_hir"),
+                    semantic.value_decl_by_hir,
+                )?,
+                bound(
                     "semantic_lir_functions",
                     resource("lir.semantic.functions"),
                     &self.functions,
@@ -1765,7 +1909,18 @@ impl GpuSemanticLoweringStage {
             &[
                 ("gParams", self.function_params.as_entire_binding()),
                 ("compact_hir_count", hir.count.as_entire_binding()),
+                ("compact_hir_core", hir.core.as_entire_binding()),
                 ("compact_hir_payload", hir.payload.as_entire_binding()),
+                (
+                    "compact_match_payload_row_count",
+                    hir.match_payload_row_count.as_entire_binding(),
+                ),
+                (
+                    "compact_match_payloads",
+                    hir.match_payloads.as_entire_binding(),
+                ),
+                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                ("compact_variants", hir.variants.as_entire_binding()),
                 ("semantic_local_flag", self.local_flags.as_entire_binding()),
                 (
                     "semantic_local_prefix",
@@ -1778,6 +1933,10 @@ impl GpuSemanticLoweringStage {
                 (
                     "semantic_value_type_by_hir",
                     semantic.value_type_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_value_decl_by_hir",
+                    semantic.value_decl_by_hir.as_entire_binding(),
                 ),
                 ("semantic_lir_functions", self.functions.as_entire_binding()),
                 ("semantic_lir_locals", self.locals.as_entire_binding()),
@@ -1850,6 +2009,31 @@ impl GpuSemanticLoweringStage {
                 bound("compact_hir_core", resource("hir.core"), hir.core)?,
                 bound("compact_hir_payload", resource("hir.payload"), hir.payload)?,
                 bound(
+                    "compact_match_payload_row_count",
+                    resource("hir.match_payload_row_count"),
+                    hir.match_payload_row_count,
+                )?,
+                bound(
+                    "compact_match_payloads",
+                    resource("hir.match_payloads"),
+                    hir.match_payloads,
+                )?,
+                bound(
+                    "compact_variant_count",
+                    resource("hir.variant_count"),
+                    hir.variant_count,
+                )?,
+                bound(
+                    "compact_variants",
+                    resource("hir.variants"),
+                    hir.variants,
+                )?,
+                bound(
+                    "semantic_value_id",
+                    resource("typecheck.semantic_value_decls_by_hir"),
+                    semantic.value_decl_by_hir,
+                )?,
+                bound(
                     "semantic_local_flag",
                     resource("lir.semantic.local_flags"),
                     &self.local_flags,
@@ -1865,6 +2049,20 @@ impl GpuSemanticLoweringStage {
                 ("compact_hir_count", hir.count.as_entire_binding()),
                 ("compact_hir_core", hir.core.as_entire_binding()),
                 ("compact_hir_payload", hir.payload.as_entire_binding()),
+                (
+                    "compact_match_payload_row_count",
+                    hir.match_payload_row_count.as_entire_binding(),
+                ),
+                (
+                    "compact_match_payloads",
+                    hir.match_payloads.as_entire_binding(),
+                ),
+                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                ("compact_variants", hir.variants.as_entire_binding()),
+                (
+                    "semantic_value_id",
+                    semantic.value_decl_by_hir.as_entire_binding(),
+                ),
                 ("semantic_local_flag", self.local_flags.as_entire_binding()),
             ],
         )?;
@@ -1882,7 +2080,7 @@ impl GpuSemanticLoweringStage {
                 .unwrap(),
             vec![
                 bound(
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_aggregate_hir_by_name_token",
                     resource("lir.semantic.struct_hir_by_name_token"),
                     &self.struct_hir_by_name_token,
                 )?,
@@ -1925,7 +2123,7 @@ impl GpuSemanticLoweringStage {
             &[
                 ("gParams", self.function_params.as_entire_binding()),
                 (
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_aggregate_hir_by_name_token",
                     self.struct_hir_by_name_token.as_entire_binding(),
                 ),
                 (
@@ -1976,7 +2174,7 @@ impl GpuSemanticLoweringStage {
                 )?,
                 bound("compact_fields", resource("hir.fields"), hir.fields)?,
                 bound(
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_aggregate_hir_by_name_token",
                     resource("lir.semantic.struct_hir_by_name_token"),
                     &self.struct_hir_by_name_token,
                 )?,
@@ -2004,7 +2202,7 @@ impl GpuSemanticLoweringStage {
                 ("compact_field_count", hir.field_count.as_entire_binding()),
                 ("compact_fields", hir.fields.as_entire_binding()),
                 (
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_aggregate_hir_by_name_token",
                     self.struct_hir_by_name_token.as_entire_binding(),
                 ),
                 (
@@ -2051,7 +2249,7 @@ impl GpuSemanticLoweringStage {
                     semantic.aggregate_decl_token_by_hir,
                 )?,
                 bound(
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_aggregate_hir_by_name_token",
                     resource("lir.semantic.struct_hir_by_name_token"),
                     &self.struct_hir_by_name_token,
                 )?,
@@ -2105,7 +2303,7 @@ impl GpuSemanticLoweringStage {
                     semantic.aggregate_decl_token_by_hir.as_entire_binding(),
                 ),
                 (
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_aggregate_hir_by_name_token",
                     self.struct_hir_by_name_token.as_entire_binding(),
                 ),
                 (
@@ -2147,6 +2345,11 @@ impl GpuSemanticLoweringStage {
                 bound("compact_hir_links", resource("hir.links"), hir.links)?,
                 bound("compact_hir_payload", resource("hir.payload"), hir.payload)?,
                 bound(
+                    "compact_fn_return_type",
+                    resource("hir.fn_return_type"),
+                    hir.fn_return_type,
+                )?,
+                bound(
                     "compact_const_value",
                     resource("hir.const_value"),
                     hir.const_value,
@@ -2170,6 +2373,32 @@ impl GpuSemanticLoweringStage {
                     "compact_method_signatures",
                     resource("hir.method_signatures"),
                     hir.method_signatures,
+                )?,
+                bound(
+                    "compact_variant_count",
+                    resource("hir.variant_count"),
+                    hir.variant_count,
+                )?,
+                bound("compact_variants", resource("hir.variants"), hir.variants)?,
+                bound(
+                    "compact_variant_payload_start",
+                    resource("hir.variant_payload_start"),
+                    hir.variant_payload_start,
+                )?,
+                bound(
+                    "compact_variant_payload_count",
+                    resource("hir.variant_payload_count"),
+                    hir.variant_payload_count,
+                )?,
+                bound(
+                    "compact_variant_payload_row_count",
+                    resource("hir.variant_payload_row_count"),
+                    hir.variant_payload_row_count,
+                )?,
+                bound(
+                    "compact_variant_payloads",
+                    resource("hir.variant_payloads"),
+                    hir.variant_payloads,
                 )?,
                 bound(
                     "semantic_function_flag",
@@ -2222,7 +2451,32 @@ impl GpuSemanticLoweringStage {
                     semantic.value_type_by_hir,
                 )?,
                 bound(
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_expr_ref_tag_by_hir",
+                    resource("typecheck.semantic_expr_ref_tags_by_hir"),
+                    semantic.expr_ref_tag_by_hir,
+                )?,
+                bound(
+                    "semantic_expr_ref_payload_by_hir",
+                    resource("typecheck.semantic_expr_ref_payloads_by_hir"),
+                    semantic.expr_ref_payload_by_hir,
+                )?,
+                bound(
+                    "semantic_aggregate_decl_token_by_hir",
+                    resource("typecheck.semantic_aggregate_decl_tokens_by_hir"),
+                    semantic.aggregate_decl_token_by_hir,
+                )?,
+                bound(
+                    "semantic_aggregate_word_count_by_hir",
+                    resource("typecheck.semantic_aggregate_word_counts_by_hir"),
+                    semantic.aggregate_word_count_by_hir,
+                )?,
+                bound(
+                    "semantic_array_length_by_hir",
+                    resource("typecheck.semantic_array_lengths_by_hir"),
+                    semantic.array_length_by_hir,
+                )?,
+                bound(
+                    "semantic_aggregate_hir_by_name_token",
                     resource("lir.semantic.struct_hir_by_name_token"),
                     &self.struct_hir_by_name_token,
                 )?,
@@ -2258,6 +2512,7 @@ impl GpuSemanticLoweringStage {
                 ("compact_hir_core", hir.core.as_entire_binding()),
                 ("compact_hir_links", hir.links.as_entire_binding()),
                 ("compact_hir_payload", hir.payload.as_entire_binding()),
+                ("compact_fn_return_type", hir.fn_return_type.as_entire_binding()),
                 ("compact_const_value", hir.const_value.as_entire_binding()),
                 ("compact_param_ranges", hir.param_ranges.as_entire_binding()),
                 ("compact_method_count", hir.method_count.as_entire_binding()),
@@ -2265,6 +2520,24 @@ impl GpuSemanticLoweringStage {
                 (
                     "compact_method_signatures",
                     hir.method_signatures.as_entire_binding(),
+                ),
+                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                ("compact_variants", hir.variants.as_entire_binding()),
+                (
+                    "compact_variant_payload_start",
+                    hir.variant_payload_start.as_entire_binding(),
+                ),
+                (
+                    "compact_variant_payload_count",
+                    hir.variant_payload_count.as_entire_binding(),
+                ),
+                (
+                    "compact_variant_payload_row_count",
+                    hir.variant_payload_row_count.as_entire_binding(),
+                ),
+                (
+                    "compact_variant_payloads",
+                    hir.variant_payloads.as_entire_binding(),
                 ),
                 (
                     "semantic_function_flag",
@@ -2306,7 +2579,27 @@ impl GpuSemanticLoweringStage {
                     semantic.value_type_by_hir.as_entire_binding(),
                 ),
                 (
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_expr_ref_tag_by_hir",
+                    semantic.expr_ref_tag_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_expr_ref_payload_by_hir",
+                    semantic.expr_ref_payload_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_aggregate_decl_token_by_hir",
+                    semantic.aggregate_decl_token_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_aggregate_word_count_by_hir",
+                    semantic.aggregate_word_count_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_array_length_by_hir",
+                    semantic.array_length_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_aggregate_hir_by_name_token",
                     self.struct_hir_by_name_token.as_entire_binding(),
                 ),
                 (
@@ -2442,6 +2735,17 @@ impl GpuSemanticLoweringStage {
                     hir.array_elements,
                 )?,
                 bound(
+                    "compact_call_arg_count",
+                    resource("hir.call_arg_count"),
+                    hir.call_arg_count,
+                )?,
+                bound("compact_call_args", resource("hir.call_args"), hir.call_args)?,
+                bound(
+                    "semantic_call_kind",
+                    resource("semantic.call_kinds"),
+                    &self.call_kinds,
+                )?,
+                bound(
                     "semantic_expr_type",
                     resource("semantic.expression_types"),
                     semantic.expr_scalar_type_by_hir,
@@ -2462,9 +2766,24 @@ impl GpuSemanticLoweringStage {
                     semantic.aggregate_decl_token_by_hir,
                 )?,
                 bound(
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_aggregate_word_count",
+                    resource("typecheck.semantic_aggregate_word_counts_by_hir"),
+                    semantic.aggregate_word_count_by_hir,
+                )?,
+                bound(
+                    "semantic_array_length",
+                    resource("typecheck.semantic_array_lengths_by_hir"),
+                    semantic.array_length_by_hir,
+                )?,
+                bound(
+                    "semantic_aggregate_hir_by_name_token",
                     resource("lir.semantic.struct_hir_by_name_token"),
                     &self.struct_hir_by_name_token,
+                )?,
+                bound(
+                    "semantic_struct_word_count_by_hir",
+                    resource("lir.semantic.struct_word_count_by_hir"),
+                    &self.struct_word_count_by_hir,
                 )?,
                 bound(
                     "semantic_struct_field_start_by_hir",
@@ -2490,6 +2809,11 @@ impl GpuSemanticLoweringStage {
                     "semantic_lir_offset",
                     resource("lir.semantic.offset_by_hir"),
                     &self.offsets,
+                )?,
+                bound(
+                    "semantic_lir_core",
+                    resource("lir.semantic.core"),
+                    &self.core,
                 )?,
                 bound(
                     "semantic_lir_aggregate_element_total",
@@ -2529,6 +2853,12 @@ impl GpuSemanticLoweringStage {
                     hir.array_elements.as_entire_binding(),
                 ),
                 (
+                    "compact_call_arg_count",
+                    hir.call_arg_count.as_entire_binding(),
+                ),
+                ("compact_call_args", hir.call_args.as_entire_binding()),
+                ("semantic_call_kind", self.call_kinds.as_entire_binding()),
+                (
                     "semantic_expr_type",
                     semantic.expr_scalar_type_by_hir.as_entire_binding(),
                 ),
@@ -2545,8 +2875,20 @@ impl GpuSemanticLoweringStage {
                     semantic.aggregate_decl_token_by_hir.as_entire_binding(),
                 ),
                 (
-                    "semantic_struct_hir_by_name_token",
+                    "semantic_aggregate_word_count",
+                    semantic.aggregate_word_count_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_array_length",
+                    semantic.array_length_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_aggregate_hir_by_name_token",
                     self.struct_hir_by_name_token.as_entire_binding(),
+                ),
+                (
+                    "semantic_struct_word_count_by_hir",
+                    self.struct_word_count_by_hir.as_entire_binding(),
                 ),
                 (
                     "semantic_struct_field_start_by_hir",
@@ -2562,6 +2904,7 @@ impl GpuSemanticLoweringStage {
                 ),
                 ("semantic_lir_count", self.counts.as_entire_binding()),
                 ("semantic_lir_offset", self.offsets.as_entire_binding()),
+                ("semantic_lir_core", self.core.as_entire_binding()),
                 (
                     "semantic_lir_aggregate_element_total",
                     self.aggregate_element_count.as_entire_binding(),
@@ -3142,7 +3485,10 @@ mod tests {
             device,
             passes_core::{map_readback_blocking, pipeline_creation_count},
         },
-        parser::buffers::{HirCallArg, HirCore, HirMethodCore, HirMethodSignature, HirPayload},
+        parser::buffers::{
+            HirCallArg, HirCore, HirMatchArm, HirMatchPayload, HirMethodCore,
+            HirMethodSignature, HirPayload, HirVariant, HirVariantPayload,
+        },
     };
 
     fn words<const N: usize>(records: &[[u32; N]]) -> Vec<u8> {
@@ -3161,8 +3507,9 @@ mod tests {
         let records = records
             .iter()
             .map(|record| {
-                let mut complete = [u32::MAX; 11];
+                let mut complete = [u32::MAX; 14];
                 complete[..10].copy_from_slice(record);
+                complete[11] = 0;
                 complete
             })
             .collect::<Vec<_>>();
@@ -3185,6 +3532,9 @@ mod tests {
             u32::MAX,
             0,
             0,
+            u32::MAX,
+            0,
+            u32::MAX,
             u32::MAX,
         ];
         storage_ro_from_bytes(device, label, &words(&vec![absent; count]), count.max(1))
@@ -3212,6 +3562,100 @@ mod tests {
             1,
         );
         (count, cores, signatures)
+    }
+
+    struct EmptyPatternFamilies {
+        fn_return_type: LaniusBuffer<u32>,
+        variant_count: LaniusBuffer<u32>,
+        variants: LaniusBuffer<HirVariant>,
+        variant_payload_start: LaniusBuffer<u32>,
+        variant_payload_count: LaniusBuffer<u32>,
+        variant_payload_row_count: LaniusBuffer<u32>,
+        variant_payloads: LaniusBuffer<HirVariantPayload>,
+        match_arm_count: LaniusBuffer<u32>,
+        match_arms: LaniusBuffer<HirMatchArm>,
+        match_payload_start: LaniusBuffer<u32>,
+        match_payload_count: LaniusBuffer<u32>,
+        match_payload_row_count: LaniusBuffer<u32>,
+        match_payloads: LaniusBuffer<HirMatchPayload>,
+    }
+
+    fn empty_pattern_families(
+        device: &wgpu::Device,
+        label: &str,
+        hir_capacity: usize,
+    ) -> EmptyPatternFamilies {
+        EmptyPatternFamilies {
+            fn_return_type: storage_ro_from_u32s(
+                device,
+                &format!("{label}.fn_return_type"),
+                &vec![u32::MAX; hir_capacity.max(1)],
+            ),
+            variant_count: storage_ro_from_u32s(
+                device,
+                &format!("{label}.variant_count"),
+                &[0],
+            ),
+            variants: storage_ro_from_bytes::<HirVariant>(
+                device,
+                &format!("{label}.variants"),
+                &words(&[[u32::MAX; 4]]),
+                1,
+            ),
+            variant_payload_start: storage_ro_from_u32s(
+                device,
+                &format!("{label}.variant_payload_start"),
+                &vec![u32::MAX; hir_capacity.max(1)],
+            ),
+            variant_payload_count: storage_ro_from_u32s(
+                device,
+                &format!("{label}.variant_payload_count"),
+                &vec![0; hir_capacity.max(1)],
+            ),
+            variant_payload_row_count: storage_ro_from_u32s(
+                device,
+                &format!("{label}.variant_payload_row_count"),
+                &[0],
+            ),
+            variant_payloads: storage_ro_from_bytes::<HirVariantPayload>(
+                device,
+                &format!("{label}.variant_payloads"),
+                &words(&[[u32::MAX; 4]]),
+                1,
+            ),
+            match_arm_count: storage_ro_from_u32s(
+                device,
+                &format!("{label}.match_arm_count"),
+                &[0],
+            ),
+            match_arms: storage_ro_from_bytes::<HirMatchArm>(
+                device,
+                &format!("{label}.match_arms"),
+                &words(&[[u32::MAX; 4]]),
+                1,
+            ),
+            match_payload_start: storage_ro_from_u32s(
+                device,
+                &format!("{label}.match_payload_start"),
+                &vec![u32::MAX; hir_capacity.max(1)],
+            ),
+            match_payload_count: storage_ro_from_u32s(
+                device,
+                &format!("{label}.match_payload_count"),
+                &vec![0; hir_capacity.max(1)],
+            ),
+            match_payload_row_count: storage_ro_from_u32s(
+                device,
+                &format!("{label}.match_payload_row_count"),
+                &[0],
+            ),
+            match_payloads: storage_ro_from_bytes::<HirMatchPayload>(
+                device,
+                &format!("{label}.match_payloads"),
+                &words(&[[u32::MAX; 4]]),
+                1,
+            ),
+        }
     }
 
     fn read_words(device: &wgpu::Device, buffer: &LaniusBuffer<u8>) -> Vec<u32> {
@@ -4082,6 +4526,7 @@ mod tests {
                 .unwrap();
         let (method_count, method_cores, method_signatures) =
             empty_method_families(&gpu.device, "test.semantic_lir.methods");
+        let patterns = empty_pattern_families(&gpu.device, "test.semantic_lir.patterns", 10);
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -4096,6 +4541,7 @@ mod tests {
                     core: &hir_core,
                     links: &hir_links,
                     payload: &hir_payload,
+                    fn_return_type: &patterns.fn_return_type,
                     const_value: &expr_root,
                     expr_parent: &expr_parent,
                     expr_root: &expr_root,
@@ -4104,6 +4550,18 @@ mod tests {
                     call_args: &call_args,
                     field_count: &family_count,
                     fields: &fields,
+                    variant_count: &patterns.variant_count,
+                    variants: &patterns.variants,
+                    variant_payload_start: &patterns.variant_payload_start,
+                    variant_payload_count: &patterns.variant_payload_count,
+                    variant_payload_row_count: &patterns.variant_payload_row_count,
+                    variant_payloads: &patterns.variant_payloads,
+                    match_arm_count: &patterns.match_arm_count,
+                    match_arms: &patterns.match_arms,
+                    match_payload_start: &patterns.match_payload_start,
+                    match_payload_count: &patterns.match_payload_count,
+                    match_payload_row_count: &patterns.match_payload_row_count,
+                    match_payloads: &patterns.match_payloads,
                     array_element_start: &family_by_hir,
                     array_element_count: &family_by_hir,
                     array_element_row_count: &family_count,
@@ -4377,6 +4835,7 @@ mod tests {
         .unwrap();
         let (method_count, method_cores, method_signatures) =
             empty_method_families(&gpu.device, "test.abi.methods");
+        let patterns = empty_pattern_families(&gpu.device, "test.abi.patterns", 4);
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -4397,8 +4856,21 @@ mod tests {
                     nearest_loop: &no_parent,
                     call_arg_count: &zero_count,
                     call_args: &empty_rows,
+                    fn_return_type: &patterns.fn_return_type,
                     field_count: &zero_count,
                     fields: &empty_fields,
+                    variant_count: &patterns.variant_count,
+                    variants: &patterns.variants,
+                    variant_payload_start: &patterns.variant_payload_start,
+                    variant_payload_count: &patterns.variant_payload_count,
+                    variant_payload_row_count: &patterns.variant_payload_row_count,
+                    variant_payloads: &patterns.variant_payloads,
+                    match_arm_count: &patterns.match_arm_count,
+                    match_arms: &patterns.match_arms,
+                    match_payload_start: &patterns.match_payload_start,
+                    match_payload_count: &patterns.match_payload_count,
+                    match_payload_row_count: &patterns.match_payload_row_count,
+                    match_payloads: &patterns.match_payloads,
                     array_element_start: &zero_by_hir,
                     array_element_count: &zero_by_hir,
                     array_element_row_count: &zero_count,
@@ -4612,6 +5084,7 @@ mod tests {
         .unwrap();
         let (method_count, method_cores, method_signatures) =
             empty_method_families(&gpu.device, "test.family.methods");
+        let patterns = empty_pattern_families(&gpu.device, "test.family.patterns", 4);
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -4632,8 +5105,21 @@ mod tests {
                     nearest_loop: &no_parent,
                     call_arg_count: &zero_count,
                     call_args: &call_args,
+                    fn_return_type: &patterns.fn_return_type,
                     field_count: &field_count,
                     fields: &fields,
+                    variant_count: &patterns.variant_count,
+                    variants: &patterns.variants,
+                    variant_payload_start: &patterns.variant_payload_start,
+                    variant_payload_count: &patterns.variant_payload_count,
+                    variant_payload_row_count: &patterns.variant_payload_row_count,
+                    variant_payloads: &patterns.variant_payloads,
+                    match_arm_count: &patterns.match_arm_count,
+                    match_arms: &patterns.match_arms,
+                    match_payload_start: &patterns.match_payload_start,
+                    match_payload_count: &patterns.match_payload_count,
+                    match_payload_row_count: &patterns.match_payload_row_count,
+                    match_payloads: &patterns.match_payloads,
                     array_element_start: &array_start,
                     array_element_count: &array_count,
                     array_element_row_count: &array_row_count,
@@ -4862,6 +5348,7 @@ mod tests {
         .unwrap();
         let (method_count, method_cores, method_signatures) =
             empty_method_families(&gpu.device, "test.control.methods");
+        let patterns = empty_pattern_families(&gpu.device, "test.control.patterns", 5);
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -4882,8 +5369,21 @@ mod tests {
                     nearest_loop: &expr_root,
                     call_arg_count: &call_arg_count,
                     call_args: &call_args,
+                    fn_return_type: &patterns.fn_return_type,
                     field_count: &family_count,
                     fields: &fields,
+                    variant_count: &patterns.variant_count,
+                    variants: &patterns.variants,
+                    variant_payload_start: &patterns.variant_payload_start,
+                    variant_payload_count: &patterns.variant_payload_count,
+                    variant_payload_row_count: &patterns.variant_payload_row_count,
+                    variant_payloads: &patterns.variant_payloads,
+                    match_arm_count: &patterns.match_arm_count,
+                    match_arms: &patterns.match_arms,
+                    match_payload_start: &patterns.match_payload_start,
+                    match_payload_count: &patterns.match_payload_count,
+                    match_payload_row_count: &patterns.match_payload_row_count,
+                    match_payloads: &patterns.match_payloads,
                     array_element_start: &family_by_hir,
                     array_element_count: &family_by_hir,
                     array_element_row_count: &family_count,

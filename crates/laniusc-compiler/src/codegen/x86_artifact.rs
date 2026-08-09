@@ -100,10 +100,7 @@ impl GpuX86ArtifactStage {
             .map_err(anyhow::Error::msg)?;
         let length = alias_u32("artifact.x86.length", 1)?;
         let words = alias_u32("artifact.x86.bytes", artifact_capacity.div_ceil(4))?;
-        let token_capacity = capacities
-            .tokens
-            .saturating_add(capacities.hir_nodes)
-            .max(1);
+        let token_capacity = capacities.declaration_capacity();
         let function_capacity = capacities.hir_nodes.max(1);
         let params = (0..emit_capacity.div_ceil(TARGET_LIR_PAGE_ROWS))
             .map(|page_id| {

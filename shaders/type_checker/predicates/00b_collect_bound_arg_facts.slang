@@ -161,6 +161,22 @@ void publish_arg_node(uint owner, uint ordinal, uint arg_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
+    if (!valid_node(node))
+        return;
+
+    // A trait implementation's trait type is an ordinary type path, whereas
+    // generic bounds use the bound-path semantic kinds handled below. Publish
+    // this relation before filtering for bound expressions; otherwise the
+    // type path can never reach the implementation-header collector.
+    if (compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_TYPE_PATH)
+    {
+        uint owner_parent = parent_node(node);
+        if (valid_node(owner_parent) &&
+            compact_hir_semantic_facts[owner_parent].semantic_kind == HIR_SEMANTIC_IMPL_TRAIT)
+            atomic_u32_min(predicate_trait_impl_trait_type_node, owner_parent, node);
+        return;
+    }
+
     if (!bound_expr_node(node))
         return;
 
@@ -180,9 +196,4 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (arg_count > 2u)
         publish_status(owner, PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH);
 
-    uint owner_parent = parent_node(node);
-    if (compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_TYPE_PATH &&
-        valid_node(owner_parent) &&
-        compact_hir_semantic_facts[owner_parent].semantic_kind == HIR_SEMANTIC_IMPL_TRAIT)
-        atomic_u32_min(predicate_trait_impl_trait_type_node, owner_parent, node);
 }

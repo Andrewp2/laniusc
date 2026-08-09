@@ -20,6 +20,7 @@ StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<uint> public_decl_index_by_local;
+StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> interface_generic_type_count_by_decl;
@@ -97,9 +98,11 @@ void main(uint3 dtid:SV_DispatchThreadID)
  }
  if(row<min(compact_variant_count[0u],gParams.hir_capacity))
  {
-  HirVariant variant=compact_variants[row];
+ HirVariant variant=compact_variants[row];
   uint owner=variant.owner<gParams.hir_capacity?public_decl_index_by_hir[variant.owner]:INVALID;
-  uint local=variant.name_token<gParams.token_capacity?decl_id_by_name_token[variant.name_token]:INVALID;
+  uint variant_count=min(compact_variant_count[0u],gParams.hir_capacity);
+  uint decl_count=min(decl_count_out[0u],gParams.decl_capacity);
+  uint local=decl_count>=variant_count?decl_count-variant_count+row:INVALID;
   uint persisted=local<gParams.decl_capacity?public_decl_index_by_local[local]:INVALID;
   if(owner<gParams.decl_capacity&&persisted<gParams.decl_capacity)
   {

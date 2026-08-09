@@ -130,11 +130,6 @@ bool valid_path(uint i)
     return i != INVALID && i < active_path_count();
 }
 
-bool is_generic_type(uint ty)
-{
-    return ty >= TY_GENERIC_BASE;
-}
-
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
@@ -298,6 +293,32 @@ uint resolved_method_return_token(uint method_i, uint fn_i)
 {
     uint table_token = valid_token(method_i) ? call_return_type_token[method_i] : INVALID;
     return valid_token(table_token) ? table_token : call_return_type_token[fn_i];
+}
+
+bool has_unsubstituted_generic_return(uint fn_i, uint resolved_ty)
+{
+    if (resolved_ty < TY_GENERIC_BASE || !valid_token(fn_i))
+        return false;
+
+    uint tag = fn_return_ref_tag[fn_i];
+    uint payload = fn_return_ref_payload[fn_i];
+
+    // Nominal types are source-token addressed. Their legacy scalar code can
+    // numerically cross TY_GENERIC_BASE in large source packs, so magnitude is
+    // not sufficient evidence that a return remains generic.
+    if (tag == TYPE_REF_SCALAR)
+        return false;
+
+    if (tag == TYPE_REF_GENERIC_PARAM)
+    {
+        uint slot = generic_param_slot_for_payload(payload);
+        return slot == INVALID || resolved_ty == TY_GENERIC_BASE + slot;
+    }
+
+    // Aggregate refs can encode arrays whose element remains generic. They
+    // are unsupported here until the aggregate substitution path resolves
+    // them to an ordinary scalar type.
+    return tag != TYPE_REF_INVALID;
 }
 
 uint path_id_for_callee_hir(uint callee_hir)
@@ -564,7 +585,7 @@ void resolve_method_call(uint call_hir, uint member_hir)
     uint ret_ty = resolved_method_return_type(method_i, fn_i);
     uint ret_token = resolved_method_return_token(method_i, fn_i);
     if ((ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID) ||
-        is_generic_type(ret_ty))
+        has_unsubstituted_generic_return(fn_i, ret_ty))
     {
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF);
         return;
@@ -646,7 +667,7 @@ void resolve_associated_call(uint call_hir)
     uint ret_ty = resolved_method_return_type(method_i, fn_i);
     uint ret_token = resolved_method_return_token(method_i, fn_i);
     if ((ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID) ||
-        is_generic_type(ret_ty))
+        has_unsubstituted_generic_return(fn_i, ret_ty))
     {
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF);
         return;

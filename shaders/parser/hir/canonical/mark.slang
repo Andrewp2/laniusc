@@ -124,7 +124,8 @@ uint anchor_for(uint node)
         : hir_expr_record[node * 4u + 2u];
     uint right_start = right < gCanonical.raw_capacity ? hir_token_pos[right] : INVALID;
     uint operator_token = canonical_hir_operator_anchor(
-        identity_kind, right_start, gCanonical.canonical_capacity);
+        identity_kind, expr_form, right_start, hir_token_end[node],
+        gCanonical.canonical_capacity);
     uint value_token = hir_expr_record[node * 4u + 3u];
     return canonical_hir_anchor(
         identity_kind, hir_token_pos[node], hir_token_end[node], open, value_token,

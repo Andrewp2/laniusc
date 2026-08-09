@@ -18,12 +18,13 @@ uint x86_aggregate_value_word_count(SemanticLirCore core,
                                     SemanticLirOperands operands)
 {
     return core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW
-        ? operands.b : core.value_word_count;
+        ? max(core.value_word_count, operands.b) : core.value_word_count;
 }
 
 static const uint X86_LIR_TY_FLOAT = 5u;
 uint x86_lir_count(SemanticLirCore core, SemanticLirOperands operands)
 {
+    if (core.op == SEMANTIC_LIR_OP_NOP) return 0u;
     // Expansion is explicit and will become >1 for ABI/control records that
     // require payload rows. Scalar rows currently map one-to-one.
     if (core.op == SEMANTIC_LIR_OP_CONST_STRING) return 2u;

@@ -9,6 +9,7 @@ static const uint TY_STRING = 7u;
 uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands,
                     bool call_index_base)
 {
+    if (core.op == SEMANTIC_LIR_OP_NOP) return 0u;
     // Expression operands are already on the Wasm stack when their semantic
     // owner is lowered. Signed integer negation therefore appends
     // `i32.const -1; i32.mul` and owns two target records.
@@ -16,7 +17,8 @@ uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands,
         (core.flags & SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID) != 0u &&
         (core.flags & SEMANTIC_LIR_FLAG_BRANCH_FALSE) != 0u;
     if (core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
-        return operands.b * 6u + 5u;
+        return operands.b * 6u +
+            ((operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u ? 5u : 0u) + 5u;
     if (core.op == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
     // Strings are represented by the Wasm ABI as `(data_ptr, byte_len)`.
     // A semantic value operation still names one source value, so target

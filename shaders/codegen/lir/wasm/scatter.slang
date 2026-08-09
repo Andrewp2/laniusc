@@ -91,6 +91,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
     {
         uint element_rows = operands.b * 6u;
+        bool tagged_enum = (operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u;
+        uint tag_rows = tagged_enum ? 5u : 0u;
         if (local_row < element_rows)
         {
             uint element = operands.b - 1u - local_row / 6u;
@@ -109,16 +111,27 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : phase == 4u ? WASM_LIR_OP_LOCAL_GET
                 : element_is_f32 ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
             immediate = phase == 0u || phase == 4u ? temporary
-                : phase == 2u ? aggregate_element.ordinal * 4u : 0u;
+                : phase == 2u ? aggregate_element.word_offset * 4u : 0u;
+        }
+        else if (local_row < element_rows + tag_rows)
+        {
+            uint phase = local_row - element_rows;
+            opcode = phase == 0u ? WASM_LIR_OP_GLOBAL_GET
+                : phase == 1u ? WASM_LIR_OP_I32_CONST
+                : phase == 2u ? WASM_LIR_OP_I32_ADD
+                : phase == 3u ? WASM_LIR_OP_I32_CONST
+                : WASM_LIR_OP_I32_STORE;
+            immediate = phase == 3u
+                ? operands.c & SEMANTIC_LIR_AGGREGATE_TAG_MASK : 0u;
         }
         else
         {
-            uint phase = local_row - element_rows;
+            uint phase = local_row - element_rows - tag_rows;
             opcode = phase == 0u || phase == 1u ? WASM_LIR_OP_GLOBAL_GET
                 : phase == 2u ? WASM_LIR_OP_I32_CONST
                 : phase == 3u ? WASM_LIR_OP_I32_ADD
                 : WASM_LIR_OP_GLOBAL_SET;
-            immediate = phase == 2u ? operands.b * 4u : 0u;
+            immediate = phase == 2u ? core.value_word_count * 4u : 0u;
         }
     }
     else if (core.op == SEMANTIC_LIR_OP_LOAD &&

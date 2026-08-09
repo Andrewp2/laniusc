@@ -1247,6 +1247,7 @@ fn print_help() {
     eprintln!(
         "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source] [--source-pack-descriptors] [--source-pack-max-items N] [--source-pack-max-ready-items N] [--source-pack-artifact-root PATH]\n\
          Optional phases: --phase lex|parse|typecheck|wasm|x86.\n\
+         All --source modes are synthetic compiler stress inputs, not representative-program benchmarks.\n\
          Defaults to --lines 5000; use --allow-large for intentional large live runs.\n\
          --source-pack-descriptors prepares module-pack filesystem artifacts and advances the persisted queue with bounded one-item submits.\n\
          Set LANIUS_PERFETTO_TRACE=path.json to write Perfetto-compatible trace-event JSON.\n\

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate, measure, execute, and record the cross-language scaling matrix."""
+"""Measure the controlled cross-language synthetic compiler stress matrix."""
 
 import argparse
 import hashlib
@@ -14,6 +14,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from compiler_stress_model import WORKLOAD_PROFILES
+
 
 CPU_LANGUAGES = ("c", "cpp", "rust", "zig")
 LANES = ("o0", "optimized")
@@ -21,13 +23,15 @@ LANES = ("o0", "optimized")
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", default="target/compile-scaling-matrix")
+    parser.add_argument("--out", default="target/compiler-stress-matrix")
     parser.add_argument("--size", type=int, default=1_000_000)
     parser.add_argument("--seeds", default=",".join(str(seed) for seed in range(20, 40)))
     parser.add_argument("--warm-seed", type=int, default=19)
     parser.add_argument("--order-seed", type=int, default=0x1A91_05)
     parser.add_argument(
-        "--profile", choices=("typical", "mixed", "long-tail"), default="mixed"
+        "--profile",
+        choices=tuple(WORKLOAD_PROFILES),
+        default="mixed-function-sizes",
     )
     args = parser.parse_args()
     seeds = [int(value) for value in args.seeds.split(",")]
@@ -132,7 +136,9 @@ def main() -> int:
 
     summary = summarize(samples)
     write_json(out / "config.json", {
-        "schema": "lanius.compile-scaling-matrix-config.v1",
+        "schema": "lanius.compiler-stress-matrix-config.v1",
+        "classification": "synthetic_stress",
+        "representative_workload": False,
         "size": args.size,
         "seeds": seeds,
         "warm_seed": args.warm_seed,
@@ -146,9 +152,11 @@ def main() -> int:
     })
     write_json(out / "commands.json", command_templates)
     write_json(out / "source_manifest.json", {
-        "schema": "lanius.compile-scaling-source-manifest.v3",
-        "generator_path": "tools/generate_compile_scaling_sources.py",
-        "model_path": "tools/compile_workload_model.py",
+        "schema": "lanius.compiler-stress-source-manifest.v1",
+        "generator_path": "tools/generate_compiler_stress.py",
+        "model_path": "tools/compiler_stress_model.py",
+        "workload_classification": "synthetic_stress",
+        "representative_workload": False,
         "workload_profile": args.profile,
         "variants": source_variants,
     })
@@ -158,8 +166,8 @@ def main() -> int:
         (outputs / f"seed-{seed}.stdout").write_text(expected[seed])
     write_json(out / "machine_info.json", machine_info(ready))
     write_json(out / "provenance.json", provenance)
-    write_json(out / "samples.json", {"schema": "lanius.compile-scaling-samples.v1", "samples": samples})
-    write_json(out / "summary.json", {"schema": "lanius.compile-scaling-summary.v1", "rows": summary})
+    write_json(out / "samples.json", {"schema": "lanius.compiler-stress-samples.v1", "samples": samples})
+    write_json(out / "summary.json", {"schema": "lanius.compiler-stress-summary.v1", "rows": summary})
     write_tsv(out / "results.tsv", samples)
     write_json(out / "manifest.json", manifest(out))
     return 0
@@ -173,8 +181,9 @@ def generate_sources(
     for seed in seeds:
         target = out / f"seed-{seed}"
         run = subprocess.run(
-            ["python3", "tools/generate_compile_scaling_sources.py", "--out", str(target),
-             "--sizes", str(size), "--seed", str(seed), "--profile", profile],
+            ["python3", "tools/generate_compiler_stress.py", "--out", str(target),
+             "--layout", "comparative-single-file", "--sizes", str(size),
+             "--seed", str(seed), "--profile", profile],
             cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         if run.returncode != 0:
@@ -188,7 +197,7 @@ def generate_sources(
 
 def compiler_commands(repo: Path) -> dict:
     return {
-        "schema": "lanius.compile-scaling-command-templates.v1",
+        "schema": "lanius.compiler-stress-command-templates.v1",
         "o0": {
             "c": ["gcc", "-O0", "-g0", "{source}", "-o", "{output}"],
             "cpp": ["g++", "-O0", "-g0", "{source}", "-o", "{output}"],
@@ -294,11 +303,11 @@ def collect_provenance(repo: Path, commands: dict) -> dict:
     for tool in sorted(tools):
         path = Path(shutil.which(tool) or tool).resolve()
         rows[tool] = {"path": str(path), "sha256": sha256_file(path), "version": subprocess.run([str(path), "--version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.splitlines()[0]}
-    return {"schema": "lanius.compile-scaling-provenance.v1", "tools": rows, "runner_sha256": sha256_file(repo / "tools/run_compile_scaling_matrix.py"), "generator_sha256": sha256_file(repo / "tools/generate_compile_scaling_sources.py"), "model_sha256": sha256_file(repo / "tools/compile_workload_model.py")}
+    return {"schema": "lanius.compiler-stress-provenance.v1", "tools": rows, "runner_sha256": sha256_file(repo / "tools/run_compiler_stress_matrix.py"), "generator_sha256": sha256_file(repo / "tools/generate_compiler_stress.py"), "model_sha256": sha256_file(repo / "tools/compiler_stress_model.py")}
 
 
 def machine_info(ready: dict) -> dict:
-    return {"schema": "lanius.compile-scaling-machine.v1", "system": platform.platform(), "cpu": platform.processor(), "logical_cpus": os.cpu_count(), "gpu": command_output(["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader,nounits"]), "daemon_ready": ready}
+    return {"schema": "lanius.compiler-stress-machine.v1", "system": platform.platform(), "cpu": platform.processor(), "logical_cpus": os.cpu_count(), "gpu": command_output(["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader,nounits"]), "daemon_ready": ready}
 
 
 def command_output(command: list[str]) -> str:
@@ -324,7 +333,7 @@ def write_tsv(path: Path, samples: list[dict]) -> None:
 
 def manifest(out: Path) -> dict:
     files = [{"path": str(path.relative_to(out)), "bytes": path.stat().st_size, "sha256": sha256_file(path)} for path in sorted(out.rglob("*")) if path.is_file() and "bin" not in path.relative_to(out).parts and "sources" not in path.relative_to(out).parts and path.name != "manifest.json"]
-    return {"schema": "lanius.compile-scaling-matrix-manifest.v1", "files": files}
+    return {"schema": "lanius.compiler-stress-matrix-manifest.v1", "files": files}
 
 
 def resolve(repo: Path, raw: str) -> Path:

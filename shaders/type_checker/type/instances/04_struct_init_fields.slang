@@ -42,6 +42,8 @@ StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
+StructuredBuffer<uint> resolved_type_decl;
+StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> struct_lit_context_decl_token;
 StructuredBuffer<uint> struct_lit_context_instance;
 
@@ -57,7 +59,7 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_ENUM_BASE = 1048576u;
+static const uint TY_ENUM_BASE = 6144u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
@@ -132,6 +134,21 @@ uint type_head_token_for_node(uint type_node)
     return valid_token(type_head) ? type_head : INVALID;
 }
 
+uint resolved_path_decl_token(uint node)
+{
+    if (!valid_compact_node(node))
+        return INVALID;
+    uint path_i = path_id_by_owner_hir[node];
+    uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+    if (path_i == INVALID || path_i >= path_count)
+        return INVALID;
+    uint declaration = resolved_type_decl[path_i];
+    if (!valid_token(declaration))
+        return INVALID;
+    uint name_token = decl_name_token[declaration];
+    return valid_token(name_token) ? name_token : INVALID;
+}
+
 bool context_for_struct_literal_node(uint literal_node, out uint decl_token, out uint instance_i)
 {
     decl_token = INVALID;
@@ -142,9 +159,14 @@ bool context_for_struct_literal_node(uint literal_node, out uint decl_token, out
     uint contextual_decl = struct_lit_context_decl_token[literal_node];
     uint contextual_instance = struct_lit_context_instance[literal_node];
     uint constructor_token = type_head_token_for_node(literal_node);
-    uint explicit_decl = INVALID;
+    // The resolver owns aggregate declaration identity. `visible_decl` and
+    // the legacy scalar type-code windows remain fallbacks for older type
+    // facts, but neither is authoritative once token indices exceed the old
+    // fixed numeric windows.
+    uint explicit_decl = resolved_path_decl_token(literal_node);
     uint explicit_instance = INVALID;
-    if (valid_token(constructor_token) && valid_token(visible_decl[constructor_token]))
+    if (!valid_token(explicit_decl) && valid_token(constructor_token) &&
+        valid_token(visible_decl[constructor_token]))
         explicit_decl = visible_decl[constructor_token];
     uint constructor_tag = valid_token(constructor_token)
         ? type_expr_ref_tag[constructor_token]
@@ -157,7 +179,7 @@ bool context_for_struct_literal_node(uint literal_node, out uint decl_token, out
         explicit_decl = type_instance_decl_token[constructor_payload];
         explicit_instance = constructor_payload;
     }
-    else if (constructor_tag == TYPE_REF_SCALAR &&
+    else if (!valid_token(explicit_decl) && constructor_tag == TYPE_REF_SCALAR &&
         constructor_payload >= TY_STRUCT_BASE && constructor_payload < TY_ENUM_BASE)
         explicit_decl = constructor_payload - TY_STRUCT_BASE;
 

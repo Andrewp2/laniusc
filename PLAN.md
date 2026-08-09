@@ -75,7 +75,7 @@ Exit condition: temporary GPU allocation follows the compiler graph’s workspac
 
 Keep normal daemon startup lightweight while making repeated compilation jobs allocation-free:
 
-- Configure a default maximum frontend compilation-unit size of 10 MB.
+- Configure a default maximum frontend compilation-unit size of 5 MB.
 - During daemon startup, create every x86 and Wasm pipeline needed for compilation, but do not allocate or retain capacity-scaled compilation workspace buffers.
 - Do not expose a separate prepare or warmup operation. The user starts the daemon and submits ordinary compilation jobs.
 - Start request timing when the daemon receives a compilation job. Include buffer allocation, bind-group creation, capacity growth, compilation, and artifact writing performed for that request.
@@ -94,7 +94,9 @@ Exit condition: no compilation job creates a pipeline; the first job after start
 
 Make project size independent of GPU workspace size:
 
-- Partition source packs into dependency-ready compilation units no larger than 10 MB.
+- Discover the project dependency graph and automatically pack each dependency-ready frontier into the fewest units that fit the active GPU workspace capacity.
+- Treat 5 MB as the default maximum source payload for one unit, not as a required unit size and not as a project or file-count boundary: one large file may occupy a unit alone while hundreds or thousands of small files may share one unit.
+- Do not impose a fixed 64-file frontend boundary. Source-file records contribute to the capacity calculation like every other resource.
 - Do not split an individual source file or language unit at an unsafe semantic boundary.
 - Compile one unit through frontend, type checking, lowering, and object/interface emission.
 - Persist only the compact interface and target artifact needed by dependent units.
@@ -103,7 +105,7 @@ Make project size independent of GPU workspace size:
 - Link emitted objects in bounded batches if total linker input would otherwise scale with project size.
 - Produce an explicit diagnostic when one indivisible unit exceeds capacity.
 
-Exit condition: a 1 GB multi-unit project uses approximately the same peak GPU workspace as a 10 MB project, aside from bounded interface and linking metadata.
+Exit condition: a 1 GB multi-unit project uses approximately the same peak GPU workspace as a 5 MB project, aside from bounded interface and linking metadata.
 
 ## Phase 7: Enforce the memory gates
 
@@ -119,30 +121,36 @@ Extend telemetry to report, for every compilation:
 Run these acceptance workloads:
 
 - 1 MB single-unit x86 and Wasm.
-- 10 MB single-unit x86 and Wasm.
+- 5 MB single-unit x86 and Wasm.
 - 50 MB source pack.
 - 100 MB source pack.
 - 1 GB source pack.
+- Project-shape cases containing 1, 100, and 10,000 source files.
 
 Required results:
 
 - No raw parse or bracket allocation remains live after compact HIR materialization.
-- 1 MB compilation peaks at no more than 512 MB tracked GPU memory.
-- 10 MB compilation peaks at no more than 6 GB.
-- The 10 MB workload succeeds on an 8 GB physical GPU.
+- 1 MB compilation peaks at no more than 1 GB tracked GPU memory.
+- 5 MB compilation peaks at no more than 6 GB.
+- The 5 MB workload succeeds on an 8 GB physical GPU.
 - Increasing total project size from 50 MB to 1 GB does not increase frontend workspace capacity.
 
 If one of these fails, fix the phase responsible for the amplification before doing shader-level micro-optimization.
 
 ## Phase 8: Produce trustworthy performance results
 
-Use generated workloads that resemble real projects:
+Use checked hand-written programs or corpus-derived workloads for representative
+performance claims. Synthetic generation is reserved for controlled scaling and
+pathological stress; its manifests must identify it as non-representative, and
+its results must not become headline language comparisons.
 
-- Most functions around three source lines.
-- A distribution of medium functions.
-- A small long tail reaching thousands of lines, with some functions approaching 10,000 lines.
-- Multiple modules, calls, control flow, arrays, structures, methods, generics, strings, and runtime operations.
-- Different generated programs for each seed with independently computed expected output.
+The generated representative project uses `tools/typical_project_profile.json`
+and `tools/generate_typical_project.py`; its profile is calibrated from checked-out
+Rust, C, and C++ repositories, and its five renderings share one semantic model.
+
+Representative workloads must cover multiple modules, calls, control flow,
+arrays, structures, methods, generics, strings, and runtime operations, with
+exact expected output or checksums.
 
 Measure:
 
@@ -150,10 +158,11 @@ Measure:
 - Median and MAD.
 - Separate daemon load, compile, artifact-write, and end-to-end wall time.
 - x86 and Wasm.
-- 1 MB, 10 MB, 50 MB, and 100 MB direct/project workloads.
+- 1 MB, 5 MB, 50 MB, and 100 MB direct/project workloads.
 - C, C++, Rust, Zig, Lanius, and compatible Pareas inputs.
 - Debug information disabled consistently.
 - Comparable optimization settings and artifact boundaries.
+- Native project-build parallelism for C, C++, Rust, and Zig; do not force a job count or a single compilation unit, and record observed CPU utilization.
 - Exact output or checksum validation for every measured program.
 
 Initial performance targets:
@@ -189,7 +198,7 @@ Run one final reproducible acceptance package containing:
 - Every required runtime facility.
 - Randomly generated valid programs with x86/Wasm behavioral comparison.
 - Invalid programs with stable diagnostics.
-- 1 MB and 10 MB memory results.
+- 1 MB and 5 MB memory results.
 - 50 MB, 100 MB, and 1 GB bounded-project results.
 - Warm resource-creation counters.
 - Compilation benchmark medians and MADs.

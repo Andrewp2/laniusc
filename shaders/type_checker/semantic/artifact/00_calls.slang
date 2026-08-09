@@ -26,10 +26,13 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_path_count;
-StructuredBuffer<HirPath> compact_paths;
-StructuredBuffer<uint> compact_path_segment_count;
-StructuredBuffer<HirPathSegment> compact_path_segments;
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> resolved_value_decl;
+StructuredBuffer<uint> decl_id_by_name_token;
+StructuredBuffer<uint> decl_kind;
+StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> backend_call_fn_index;
 StructuredBuffer<uint> call_dependency_library_id;
@@ -54,14 +57,16 @@ static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint CALLABLE_NONE = 0u;
+static const uint CALLABLE_FUNCTION = 1u;
+static const uint CALLABLE_INTRINSIC = 2u;
+static const uint CALLABLE_DEPENDENCY = 3u;
+static const uint CALLABLE_ENUM_VARIANT = 4u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 uint active_path_count() { return min(gParams.n_hir_nodes, compact_path_count[0u]); }
-uint active_path_segment_count()
-{
-    return min(gParams.n_tokens, compact_path_segment_count[0u]);
-}
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
 
@@ -76,35 +81,52 @@ uint path_node_for_callee(uint callee)
                : INVALID;
 }
 
-uint path_leaf_token_for_callee(uint callee)
-{
-    uint owner = path_node_for_callee(callee);
-    if (!valid_hir(owner)) return INVALID;
-    uint path_i = path_id_by_owner_hir[owner];
-    if (path_i == INVALID || path_i >= active_path_count()) return INVALID;
-    HirPath path = compact_paths[path_i];
-    if (path.owner != owner || path.segment_start == INVALID ||
-        path.segment_count == 0u)
-        return INVALID;
-    uint row = path.segment_start + path.segment_count - 1u;
-    if (row < path.segment_start || row >= active_path_segment_count()) return INVALID;
-    HirPathSegment segment = compact_path_segments[row];
-    return segment.path == path_i && valid_token(segment.name_token)
-               ? segment.name_token
-               : INVALID;
-}
-
 uint callee_token_for_call(uint call)
 {
     uint callee = compact_hir_payload[call].a;
-    uint path_leaf = path_leaf_token_for_callee(callee);
-    if (valid_token(path_leaf)) return path_leaf;
     if (!valid_hir(callee)) return INVALID;
     HirCore core = compact_hir_core[callee];
     HirPayload payload = compact_hir_payload[callee];
     uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
     if (!valid_token(token)) token = core.token_start;
     return valid_token(token) ? token : INVALID;
+}
+
+uint path_for_callee(uint callee)
+{
+    uint owner = path_node_for_callee(callee);
+    if (!valid_hir(owner)) return INVALID;
+    uint path = path_id_by_owner_hir[owner];
+    return path < active_path_count() ? path : INVALID;
+}
+
+bool local_enum_variant_for_call(
+    uint call,
+    out uint variant_hir,
+    out uint variant_ordinal)
+{
+    variant_hir = INVALID;
+    variant_ordinal = INVALID;
+    uint callee = compact_hir_payload[call].a;
+    uint path = path_for_callee(callee);
+    uint decl = path != INVALID ? resolved_value_decl[path] : INVALID;
+    if (decl >= gParams.n_hir_nodes)
+    {
+        uint callee_token = callee_token_for_call(call);
+        uint declaration_token = valid_token(callee_token)
+            ? call_fn_index[callee_token] : INVALID;
+        decl = valid_token(declaration_token)
+            ? decl_id_by_name_token[declaration_token] : INVALID;
+    }
+    if (decl >= gParams.n_hir_nodes || decl_kind[decl] != HIR_ITEM_KIND_ENUM_VARIANT)
+        return false;
+    uint variant = decl_hir_node[decl];
+    uint count = min(compact_variant_count[0u], gParams.n_hir_nodes);
+    if (variant >= count) return false;
+    HirVariant record = compact_variants[variant];
+    variant_hir = variant;
+    variant_ordinal = record.ordinal;
+    return true;
 }
 
 CheckedCallArtifact empty_call()
@@ -121,6 +143,9 @@ CheckedCallArtifact empty_call()
     call.arg_count = 0u;
     call.return_ref_tag = 0u;
     call.return_ref_payload = INVALID;
+    call.callable_kind = CALLABLE_NONE;
+    call.callable_hir = INVALID;
+    call.callable_ordinal = INVALID;
     return call;
 }
 
@@ -139,6 +164,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint callee_token = callee_token_for_call(row);
         if (valid_token(callee_token))
         {
+            uint local_variant_hir;
+            uint local_variant_ordinal;
+            bool local_variant = local_enum_variant_for_call(
+                row, local_variant_hir, local_variant_ordinal);
             call.target_token = backend_call_fn_index[callee_token];
             if (call_dependency_library_id[callee_token] != INVALID)
             {
@@ -148,6 +177,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 call.dependency_host_service = call_dependency_host_service[callee_token];
             }
             call.intrinsic_tag = call_intrinsic_tag[callee_token];
+            if (call.intrinsic_tag != 0u)
+                call.callable_kind = CALLABLE_INTRINSIC;
+            else if (local_variant)
+            {
+                call.callable_kind = CALLABLE_ENUM_VARIANT;
+                call.callable_hir = local_variant_hir;
+                call.callable_ordinal = local_variant_ordinal;
+                call.target_token = INVALID;
+            }
+            else if (call.target_token != INVALID)
+                call.callable_kind = CALLABLE_FUNCTION;
+            else if (call.dependency_library_id != INVALID)
+                call.callable_kind = CALLABLE_DEPENDENCY;
+            else
+            {
+                // Unresolved callables remain explicit so lowering can reject
+                // them at the checked semantic boundary.
+            }
             call.return_type = call_return_type[callee_token];
             semantic_aggregate_word_count_by_hir[row] =
                 call_return_aggregate_word_count[callee_token];

@@ -8,9 +8,8 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<uint> compact_variant_payload_row_count;
-StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<HirVariantPayload> compact_variant_payloads;
-StructuredBuffer<uint> decl_id_by_name_token;
+StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> public_decl_index_by_local;
 StructuredBuffer<uint> interface_type_parent;
 RWStructuredBuffer<uint> interface_type_seed_owner;
@@ -30,8 +29,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirVariantPayload payload = compact_variant_payloads[row];
     uint variant_count = min(compact_variant_count[0u], gParams.hir_capacity);
     if (payload.variant >= variant_count) return;
-    uint name_token = compact_variants[payload.variant].name_token;
-    uint local = name_token < gParams.token_capacity ? decl_id_by_name_token[name_token] : INVALID;
+    uint decl_count = min(decl_count_out[0u], gParams.decl_capacity);
+    uint local = decl_count >= variant_count
+        ? decl_count - variant_count + payload.variant : INVALID;
     uint owner = local < gParams.decl_capacity ? public_decl_index_by_local[local] : INVALID;
     if (owner >= gParams.decl_capacity) return;
     if (!type_node(payload.type_node) || interface_type_parent[payload.type_node] != INVALID)

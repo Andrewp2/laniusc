@@ -396,3 +396,123 @@ where
 
     Ok(HandleBuildExecutionResult { linked_output })
 }
+
+/// Executes a path-backed GPU build without the durable work-queue protocol.
+///
+/// The daemon owns this execution, so there is no worker claim to recover after
+/// a process failure. Intermediate artifacts remain path handles, while source
+/// and link inputs are still presented in capacity-bounded batches.
+pub(in crate::compiler) async fn execute_path_batched_link_build_async<E>(
+    source_pack: &ExplicitSourcePackPathManifest,
+    build_plan: &SourcePackBuildPlan,
+    batch_limits: SourcePackJobBatchLimits,
+    executor: &mut E,
+) -> Result<HandleBuildExecutionResult<E::LinkedOutputArtifact>, CompileError>
+where
+    E: AsyncPagedArtifactBuildExecutor,
+    E::LibraryInterfaceArtifact: Clone,
+    E::CodegenObjectArtifact: Clone,
+{
+    let mut library_interfaces = (0..build_plan.schedule.jobs.len())
+        .map(|_| None)
+        .collect::<Vec<Option<E::LibraryInterfaceArtifact>>>();
+    let mut codegen_objects = (0..build_plan.schedule.jobs.len())
+        .map(|_| None)
+        .collect::<Vec<Option<E::CodegenObjectArtifact>>>();
+    let mut linked_output = None;
+    let execution_batches = build_plan
+        .schedule
+        .try_execution_batches(batch_limits)
+        .map_err(schedule_error)?;
+    let dependency_batch_size = batch_limits.max_jobs_per_batch.max(1);
+
+    for batch in execution_batches.batches {
+        for job_index in batch.job_indices {
+            let job = schedule_job(&build_plan.schedule, job_index)?;
+            match job.phase {
+                SourcePackJobPhase::LibraryFrontend => {
+                    let dependencies = collect_interface_handle_clones(
+                        &library_interfaces,
+                        &build_plan.schedule,
+                        job,
+                    )?;
+                    let mut handle = executor
+                        .begin_library_interface(job, source_pack.source_files_for_job(job))
+                        .await?;
+                    for dependency_batch in dependencies.chunks(dependency_batch_size) {
+                        executor
+                            .add_library_interface_dependency_batch(
+                                job,
+                                &mut handle,
+                                dependency_batch,
+                            )
+                            .await?;
+                    }
+                    library_interfaces[job.job_index] =
+                        Some(executor.finish_library_interface(job, handle).await?);
+                }
+                SourcePackJobPhase::Codegen => {
+                    let library_job_index = codegen_library_job_index(job)?;
+                    let library_interface = produced_handle(
+                        &library_interfaces,
+                        library_job_index,
+                        &format!("source-pack codegen job {} owning interface", job.job_index),
+                    )?;
+                    let dependencies = collect_interface_handle_clones_excluding(
+                        &library_interfaces,
+                        &build_plan.schedule,
+                        job,
+                        Some(library_job_index),
+                    )?;
+                    let mut handle = executor
+                        .begin_codegen_object(
+                            job,
+                            source_pack.source_files_for_job(job),
+                            &library_interface,
+                        )
+                        .await?;
+                    for dependency_batch in dependencies.chunks(dependency_batch_size) {
+                        executor
+                            .add_codegen_object_dependency_batch(job, &mut handle, dependency_batch)
+                            .await?;
+                    }
+                    codegen_objects[job.job_index] =
+                        Some(executor.finish_codegen_object(job, handle).await?);
+                }
+                SourcePackJobPhase::Link => {
+                    let mut handle = executor.begin_link_codegen_objects(job).await?;
+                    for link_batch in build_plan.link_interface_batches(batch_limits).batches {
+                        let interfaces = collect_link_interface_handle_clones_for_batch(
+                            &library_interfaces,
+                            build_plan,
+                            &link_batch,
+                        )?;
+                        executor
+                            .link_library_interface_batch(
+                                job,
+                                &mut handle,
+                                &link_batch,
+                                &interfaces,
+                            )
+                            .await?;
+                    }
+                    for link_batch in build_plan.link_object_batches(batch_limits).batches {
+                        let objects = collect_link_object_handle_clones_for_batch(
+                            &codegen_objects,
+                            build_plan,
+                            &link_batch,
+                        )?;
+                        executor
+                            .link_codegen_object_batch(job, &mut handle, &link_batch, &objects)
+                            .await?;
+                    }
+                    linked_output = Some(executor.finish_link_codegen_objects(job, handle).await?);
+                }
+            }
+        }
+    }
+
+    Ok(HandleBuildExecutionResult {
+        linked_output: linked_output.ok_or_else(missing_link_job_error)?,
+    })
+}

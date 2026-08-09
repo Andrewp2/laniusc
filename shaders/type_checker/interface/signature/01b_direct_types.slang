@@ -26,6 +26,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         atomic_u32_or(interface_status, 0u, 4096u);
         atomic_u32_min(interface_status, 1u, persisted);
+        atomic_u32_min(interface_status, 2u, 2u);
         return;
     }
     interface_signature_type_by_decl[persisted] = index;

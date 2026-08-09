@@ -32,7 +32,7 @@ StructuredBuffer<uint> semantic_function_id_by_token;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<uint> semantic_control_depth_by_hir;
 StructuredBuffer<uint> semantic_member_field_ordinal;
-StructuredBuffer<uint> semantic_struct_hir_by_name_token;
+StructuredBuffer<uint> semantic_aggregate_hir_by_name_token;
 StructuredBuffer<uint> semantic_struct_word_count_by_hir;
 StructuredBuffer<uint> semantic_struct_field_start_by_hir;
 StructuredBuffer<uint> semantic_struct_field_word_offset_by_row;
@@ -42,15 +42,170 @@ StructuredBuffer<uint> compact_nearest_loop;
 StructuredBuffer<uint> compact_array_element_start;
 StructuredBuffer<uint> compact_array_element_owner_count;
 StructuredBuffer<uint> compact_array_element_row_count;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<HirMatchArm> compact_match_arms;
+StructuredBuffer<uint> compact_match_payload_start;
+StructuredBuffer<uint> compact_match_payload_count;
+StructuredBuffer<uint> compact_match_payload_row_count;
+StructuredBuffer<HirMatchPayload> compact_match_payloads;
 StructuredBuffer<uint> semantic_lir_count;
 StructuredBuffer<uint> semantic_lir_offset;
 StructuredBuffer<uint> semantic_execution_rank;
 
+uint active_match_arm_count()
+{
+    return min(compact_match_arm_count[0u], gParams.n_hir_nodes);
+}
+
+uint active_match_payload_count()
+{
+    return min(compact_match_payload_row_count[0u], gParams.n_hir_nodes);
+}
+
+uint match_payload_for_pattern(uint node)
+{
+    uint lo = 0u;
+    uint hi = active_match_payload_count();
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_match_payloads[mid].pattern < node) lo = mid + 1u;
+        else hi = mid;
+    }
+    if (lo >= active_match_payload_count() ||
+        compact_match_payloads[lo].pattern != node)
+        return LIR_INVALID;
+    uint declaration_token = semantic_value_id[node];
+    uint variant_count = min(compact_variant_count[0u], gParams.n_hir_nodes);
+    uint variant_lo = 0u;
+    uint variant_hi = variant_count;
+    while (variant_lo < variant_hi)
+    {
+        uint mid = variant_lo + (variant_hi - variant_lo) / 2u;
+        if (compact_variants[mid].name_token < declaration_token)
+            variant_lo = mid + 1u;
+        else
+            variant_hi = mid;
+    }
+    return variant_lo < variant_count &&
+        compact_variants[variant_lo].name_token == declaration_token
+            ? LIR_INVALID : lo;
+}
+
+uint match_arm_for_result_node(uint node, uint hir_count)
+{
+    uint token = compact_hir_core[node].token_start;
+    uint lo = 0u;
+    uint hi = active_match_arm_count();
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        uint result = compact_match_arms[mid].result;
+        uint start = result < hir_count
+            ? compact_hir_core[result].token_start : 0xffffffffu;
+        if (start <= token) lo = mid + 1u;
+        else hi = mid;
+    }
+    if (lo == 0u) return LIR_INVALID;
+    uint arm_row = lo - 1u;
+    uint result = compact_match_arms[arm_row].result;
+    if (result >= hir_count) return LIR_INVALID;
+    HirCore span = compact_hir_core[result];
+    HirCore candidate = compact_hir_core[node];
+    return candidate.token_start >= span.token_start &&
+        candidate.token_end <= span.token_end ? arm_row : LIR_INVALID;
+}
+
+uint variant_ordinal_for_pattern(uint pattern, uint hir_count)
+{
+    if (pattern >= hir_count) return LIR_INVALID;
+    uint declaration_token = semantic_value_id[pattern];
+    uint count = min(compact_variant_count[0u], gParams.n_hir_nodes);
+    uint lo = 0u;
+    uint hi = count;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_variants[mid].name_token < declaration_token) lo = mid + 1u;
+        else hi = mid;
+    }
+    return lo < count && compact_variants[lo].name_token == declaration_token
+        ? compact_variants[lo].ordinal : LIR_INVALID;
+}
+
+bool scalar_match_pattern(uint pattern, uint hir_count)
+{
+    if (pattern >= hir_count) return false;
+    HirCore core = compact_hir_core[pattern];
+    HirPayload payload = compact_hir_payload[pattern];
+    return core.kind == HIR_LITERAL_EXPR &&
+        (payload.a == HIR_EXPR_INT || payload.a == HIR_EXPR_TRUE ||
+         payload.a == HIR_EXPR_FALSE);
+}
+
+bool wildcard_match_pattern(uint pattern, uint hir_count)
+{
+    if (pattern >= hir_count) return false;
+    HirCore core = compact_hir_core[pattern];
+    // The checker gives `_` a self-binding declaration identity. Do not
+    // constrain this to one expression wrapper kind: compact HIR is allowed
+    // to canonicalize a pattern name as either a name or a one-segment path.
+    return semantic_value_id[pattern] == core.token_start;
+}
+
+uint scalar_match_pattern_value(uint pattern, uint hir_count)
+{
+    if (!scalar_match_pattern(pattern, hir_count)) return LIR_INVALID;
+    HirPayload payload = compact_hir_payload[pattern];
+    if (payload.a == HIR_EXPR_TRUE) return 1u;
+    if (payload.a == HIR_EXPR_FALSE) return 0u;
+    return payload.b;
+}
+
+uint semantic_materialized_op(uint node, uint local_row, uint local_count)
+{
+    if (match_payload_for_pattern(node) != LIR_INVALID)
+        return local_row == 0u ? SEMANTIC_LIR_OP_VALUE_GET
+            : local_row == 1u ? SEMANTIC_LIR_OP_LOAD : SEMANTIC_LIR_OP_VALUE_SET;
+    if (compact_hir_core[node].kind == HIR_MATCH_EXPR &&
+        local_row >= 3u && local_row + 1u < local_count)
+    {
+        uint phase = (local_row - 3u) % 12u;
+        uint arm_row = compact_hir_payload[node].b + (local_row - 3u) / 12u;
+        uint pattern = arm_row < active_match_arm_count()
+            ? compact_match_arms[arm_row].pattern : LIR_INVALID;
+        bool scalar = scalar_match_pattern(pattern, gParams.n_hir_nodes);
+        bool wildcard = wildcard_match_pattern(pattern, gParams.n_hir_nodes);
+        if (phase == 2u && (scalar || wildcard)) return SEMANTIC_LIR_OP_NOP;
+        if (phase == 3u && scalar) return SEMANTIC_LIR_OP_VALUE_GET;
+        if (phase == 3u && wildcard) return SEMANTIC_LIR_OP_CONST_I32;
+        if (phase == 4u)
+        {
+            uint variant = variant_ordinal_for_pattern(pattern, gParams.n_hir_nodes);
+            return variant != LIR_INVALID || scalar || wildcard
+                ? SEMANTIC_LIR_OP_CONST_I32 : SEMANTIC_LIR_OP_INVALID;
+        }
+    }
+    return semantic_lir_local_op(
+        compact_hir_core[node], compact_hir_payload[node], local_row, local_count);
+}
+
 uint lir_for_hir(uint node, uint hir_count)
 {
-    return node != LIR_INVALID && node < hir_count && semantic_lir_count[node] != 0u
-        ? semantic_lir_offset[node]
-        : LIR_INVALID;
+    if (node == LIR_INVALID || node >= hir_count || semantic_lir_count[node] == 0u)
+        return LIR_INVALID;
+    uint first = semantic_lir_offset[node];
+    // Structured match control begins at `first`, but the expression's value
+    // is materialized by the final synthetic VALUE_GET row. Consumers of the
+    // HIR identity must observe that value-producing row, just as they observe
+    // the sole row of an ordinary expression.
+    return compact_hir_core[node].kind == HIR_MATCH_EXPR
+        ? first + semantic_lir_count[node] - 1u : first;
 }
 
 uint lir_for_value_hir(uint node, uint hir_count)
@@ -78,10 +233,11 @@ uint semantic_type_for_hir(uint node, uint hir_count)
 
 uint aggregate_word_count_for_type(uint type_id, uint hir_count)
 {
-    if (type_id < 4096u || type_id >= 1048576u) return 0u;
-    uint name_token = type_id - 4096u;
+    if (type_id < 4096u || type_id >= 8192u) return 0u;
+    uint name_token = type_id >= 6144u
+        ? type_id - 6144u : type_id - 4096u;
     if (name_token >= gParams.n_tokens) return 0u;
-    uint struct_hir = semantic_struct_hir_by_name_token[name_token];
+    uint struct_hir = semantic_aggregate_hir_by_name_token[name_token];
     return struct_hir < hir_count
         ? semantic_struct_word_count_by_hir[struct_hir] : 0u;
 }
@@ -103,7 +259,7 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
     uint name_token = semantic_aggregate_decl_token[node];
     if (name_token < gParams.n_tokens)
     {
-        uint struct_hir = semantic_struct_hir_by_name_token[name_token];
+        uint struct_hir = semantic_aggregate_hir_by_name_token[name_token];
         if (struct_hir < hir_count)
             return semantic_struct_word_count_by_hir[struct_hir];
     }
@@ -121,6 +277,21 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
         semantic_type_for_hir(node, hir_count), hir_count);
 }
 
+uint enum_constructor_word_count(uint node, HirPayload payload, uint hir_count)
+{
+    uint total = 1u; // discriminant
+    uint call_arg_total = min(compact_call_arg_count[0u], gParams.n_hir_nodes);
+    for (uint ordinal = 0u; ordinal < payload.c; ordinal += 1u)
+    {
+        uint row = payload.b + ordinal;
+        if (row < payload.b || row >= call_arg_total) return 0u;
+        HirCallArg argument = compact_call_args[row];
+        if (argument.call != node || argument.ordinal != ordinal) return 0u;
+        total += max(aggregate_word_count_for_hir(argument.value, hir_count), 1u);
+    }
+    return total;
+}
+
 void member_word_layout(uint receiver, uint ordinal, uint hir_count,
                         out uint word_offset, out uint word_count)
 {
@@ -129,7 +300,7 @@ void member_word_layout(uint receiver, uint ordinal, uint hir_count,
     if (receiver >= hir_count) return;
     uint decl_token = semantic_aggregate_decl_token[receiver];
     if (decl_token >= gParams.n_tokens) return;
-    uint struct_hir = semantic_struct_hir_by_name_token[decl_token];
+    uint struct_hir = semantic_aggregate_hir_by_name_token[decl_token];
     if (struct_hir >= hir_count) return;
     uint start = semantic_struct_field_start_by_hir[struct_hir];
     uint field_row = start != LIR_INVALID ? start + ordinal : LIR_INVALID;
@@ -207,10 +378,62 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
         ? semantic_array_length[payload.c] : LIR_INVALID;
     SemanticLoopRecipe loop_recipe = semantic_loop_recipe(
         hir, payload, iterable_form, iterable_kind, array_length);
-    bool direct_range_for = loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE;
+    bool direct_range_for = loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE ||
+        loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO ||
+        loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE ||
+        loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO;
     bool range_value_for = loop_recipe.kind == SEMANTIC_LOOP_RECIPE_RANGE_VALUE;
     bool range_for = direct_range_for || range_value_for;
     bool array_for = loop_recipe.kind == SEMANTIC_LOOP_RECIPE_ARRAY;
+    uint payload_row = match_payload_for_pattern(node);
+    if (payload_row != LIR_INVALID)
+    {
+        HirMatchPayload binding = compact_match_payloads[payload_row];
+        HirMatchArm arm = compact_match_arms[binding.arm];
+        HirCore result = compact_hir_core[arm.result];
+        schedule.execution_region = result.token_start;
+        schedule.execution_rank = 0u;
+        // Payload extraction belongs inside the selected arm. Match phases
+        // occupy ties 3..10 at the result start, with IF_BEGIN at tie 10;
+        // binding rows follow it and precede the result expression.
+        schedule.execution_tie = 11u + binding.ordinal * 3u + local_row;
+        return schedule;
+    }
+    if (hir.kind == HIR_MATCH_EXPR)
+    {
+        if (local_row + 1u == local_count)
+        {
+            schedule.execution_region = hir.token_end > hir.token_start
+                ? hir.token_end - 1u : hir.token_end;
+            // The match closing token is after every arm region. At that
+            // boundary, rank the result read before the enclosing statement
+            // effect, whose rank is derived from the completed expression.
+            schedule.execution_rank = 0u;
+            schedule.execution_tie = 0u;
+            return schedule;
+        }
+        if (local_row <= 2u)
+        {
+            uint first_arm = payload.b;
+            HirCore first_result = first_arm < active_match_arm_count()
+                ? compact_hir_core[compact_match_arms[first_arm].result] : hir;
+            schedule.execution_region = first_result.token_start;
+            schedule.execution_rank = 0u;
+            schedule.execution_tie = local_row;
+            return schedule;
+        }
+        uint arm_row = payload.b + (local_row - 3u) / 12u;
+        HirMatchArm arm = compact_match_arms[arm_row];
+        HirCore result = compact_hir_core[arm.result];
+        uint phase = (local_row - 3u) % 12u;
+        schedule.execution_region = phase <= 7u
+            ? result.token_start
+            : result.token_end > result.token_start
+                ? result.token_end - 1u : result.token_end;
+        schedule.execution_rank = phase <= 7u ? 0u : 0xffffffffu;
+        schedule.execution_tie = phase <= 7u ? phase + 3u : phase - 8u;
+        return schedule;
+    }
     if (range_for || array_for)
     {
         HirPayload range;
@@ -223,16 +446,25 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
         uint end_node = range.c;
         uint start_token = bounded_token(start_node, hir_count, hir.token_start);
         uint end_token = bounded_token(end_node, hir_count, start_token);
-        if (local_row == 0u)
+        bool starts_from_zero =
+            loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO ||
+            loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO;
+        bool unbounded =
+            loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE ||
+            loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO;
+        uint header_last_row = unbounded ? (starts_from_zero ? 3u : 2u)
+            : starts_from_zero ? 8u : 7u;
+        uint body_begin_row = header_last_row + 1u;
+        if (local_row <= (starts_from_zero ? 1u : 0u))
             schedule.execution_region = start_token;
-        else if (local_row <= 7u)
+        else if (local_row <= header_last_row)
             schedule.execution_region = end_token;
-        else if (local_row == 8u ||
+        else if (local_row == body_begin_row ||
                  ((array_for || range_value_for) && local_row <= 12u))
         {
             schedule.execution_region = bounded_token(payload.d, hir_count, hir.token_start);
             schedule.execution_rank = 0u;
-            schedule.execution_tie = local_row - 8u;
+            schedule.execution_tie = local_row - body_begin_row;
             return schedule;
         }
         else
@@ -286,13 +518,18 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
     bool aggregate_root = root != LIR_INVALID && root < hir_count &&
         (root_core.kind == HIR_ARRAY_EXPR ||
          root_core.kind == HIR_STRUCT_LITERAL_EXPR);
+    bool completed_match_root = root != LIR_INVALID && root < hir_count &&
+        root_core.kind == HIR_MATCH_EXPR && (!expression_row || node == root);
     // Aggregate elements are independent expression roots in compact HIR.
     // Their owner becomes executable only at the closing boundary, after all
     // element regions. Statements consuming the aggregate share that same
     // completion region and follow it through the ordinary expression/effect
     // tie ordering.
     schedule.execution_region = root != LIR_INVALID && root < hir_count
-        ? (aggregate_root ? root_core.token_end : root_core.token_start)
+        ? ((aggregate_root || completed_match_root)
+            ? (root_core.token_end > root_core.token_start
+                ? root_core.token_end - 1u : root_core.token_end)
+            : root_core.token_start)
         : hir.token_start;
     // Source-ordered tree postorder is the common schedule contract for both
     // register targets and Wasm's operand stack. A child finishes no later
@@ -306,6 +543,13 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
     schedule.execution_tie = expression_row
         ? 0x7fffffffu - min(semantic_execution_rank[node], 0x7fffffffu)
         : 0xffffffffu;
+
+    uint result_arm = match_arm_for_result_node(node, hir_count);
+    if (result_arm != LIR_INVALID)
+    {
+        HirCore result = compact_hir_core[compact_match_arms[result_arm].result];
+        schedule.execution_region = result.token_start;
+    }
 
     if (semantic_lir_is_control(hir, payload))
     {
@@ -412,7 +656,10 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         ? semantic_array_length[payload.c] : LIR_INVALID;
     SemanticLoopRecipe loop_recipe = semantic_loop_recipe(
         hir, payload, iterable_form, iterable_kind, array_length);
-    bool direct_range_for = loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE;
+    bool direct_range_for = loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE ||
+        loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO ||
+        loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE ||
+        loop_recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO;
     bool range_value_for = loop_recipe.kind == SEMANTIC_LOOP_RECIPE_RANGE_VALUE;
     bool range_for = direct_range_for || range_value_for;
     bool array_for = loop_recipe.kind == SEMANTIC_LOOP_RECIPE_ARRAY;
@@ -425,7 +672,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         range_payload = compact_hir_payload[payload.c];
 
     uint row = first_row + local_row;
-    uint op = semantic_lir_local_op(hir, payload, local_row, local_count);
+    uint op = semantic_materialized_op(node, local_row, local_count);
     uint constant_reference_hir = constant_reference_for_hir(node, hir_count);
     bool imported_constant = imported_constant_for_hir(node, hir_count);
     if (constant_reference_hir != LIR_INVALID || imported_constant)
@@ -443,6 +690,8 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     if (op == SEMANTIC_LIR_OP_VALUE_GET && hir.kind == HIR_CALL_EXPR &&
         semantic_call_kind[node] == 1u)
         op = SEMANTIC_LIR_OP_CALL;
+    if (op == SEMANTIC_LIR_OP_VALUE_GET && semantic_call_kind[node] == 5u)
+        op = SEMANTIC_LIR_OP_AGGREGATE_NEW;
     if (loop_recipe.kind != SEMANTIC_LOOP_RECIPE_NONE)
         op = semantic_loop_recipe_op(loop_recipe.kind, local_row);
     if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 2u)
@@ -451,20 +700,62 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         op = SEMANTIC_LIR_OP_CALL_HOST;
     else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 4u)
         op = SEMANTIC_LIR_OP_CALL_SYMBOL;
+    else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 5u)
+        op = SEMANTIC_LIR_OP_AGGREGATE_NEW;
+
+    uint match_payload_row = match_payload_for_pattern(node);
+    bool match_binding = match_payload_row != LIR_INVALID;
+    bool match_expression = hir.kind == HIR_MATCH_EXPR;
+    bool match_result_get = match_expression && local_row + 1u == local_count;
+    bool match_scrutinee_set = match_expression && local_row == 0u;
+    bool match_arm_instruction = match_expression && local_row >= 3u &&
+        !match_result_get;
+    uint match_phase = match_arm_instruction
+        ? (local_row - 3u) % 12u : LIR_INVALID;
 
     SemanticLirCore core;
     core.op = op;
     core.type_id = semantic_type_for_hir(node, hir_count);
     semantic_type_ref_for_hir(node, hir_count,
         core.type_ref_tag, core.type_ref_payload);
-    if (op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_VALUE_SET ||
-        op == SEMANTIC_LIR_OP_STORE)
+    if (match_scrutinee_set)
+    {
+        core.type_id = SEMANTIC_LIR_TY_POINTER;
+        core.type_ref_tag = 1u;
+        core.type_ref_payload = SEMANTIC_LIR_TY_POINTER;
+    }
+    else if (match_expression && !match_result_get)
+    {
+        core.type_id = match_phase == 2u ? SEMANTIC_LIR_TY_POINTER : 3u;
+        core.type_ref_tag = 1u;
+        core.type_ref_payload = core.type_id;
+    }
+    else if (match_binding)
+    {
+        HirMatchPayload binding = compact_match_payloads[match_payload_row];
+        HirMatchArm arm = compact_match_arms[binding.arm];
+        uint match_node = arm.owner;
+        if (local_row == 0u)
+        {
+            core.type_id = SEMANTIC_LIR_TY_POINTER;
+            core.type_ref_tag = 1u;
+            core.type_ref_payload = SEMANTIC_LIR_TY_POINTER;
+        }
+        else
+        {
+            core.type_id = semantic_value_type[node];
+            semantic_type_ref_for_hir(node, hir_count,
+                core.type_ref_tag, core.type_ref_payload);
+        }
+    }
+    if ((op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_VALUE_SET ||
+         op == SEMANTIC_LIR_OP_STORE) && !match_expression)
         core.type_id = semantic_value_type[node];
     // A declaration-setting row represents the value being stored, while the
     // statement node itself need not carry an expression type. Preserve the
     // checked RHS reference here so target ABIs can distinguish instantiated
     // aggregates from scalar values without reconstructing declaration syntax.
-    if (op == SEMANTIC_LIR_OP_VALUE_SET && payload.c < hir_count)
+    if (op == SEMANTIC_LIR_OP_VALUE_SET && !match_expression && payload.c < hir_count)
         semantic_type_ref_for_hir(payload.c, hir_count,
             core.type_ref_tag, core.type_ref_payload);
     if (semantic_lir_is_assignment(hir, payload) && payload.b < hir_count)
@@ -507,7 +798,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     // Comparisons produce bool but machine selection depends on the operand
     // representation. The semantic instruction type therefore records the
     // compared value type for this opcode.
-    if (op == SEMANTIC_LIR_OP_COMPARE && payload.b < hir_count)
+    if (op == SEMANTIC_LIR_OP_COMPARE && !match_expression && payload.b < hir_count)
     {
         core.type_id = semantic_type_for_hir(payload.b, hir_count);
         semantic_type_ref_for_hir(payload.b, hir_count,
@@ -515,7 +806,8 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     }
     core.source_hir = node;
     core.flags = 0u;
-    uint value_node = op == SEMANTIC_LIR_OP_VALUE_SET && payload.c < hir_count
+    uint value_node = match_scrutinee_set ? payload.a
+        : op == SEMANTIC_LIR_OP_VALUE_SET && payload.c < hir_count
         ? payload.c : node;
     if (op == SEMANTIC_LIR_OP_STORE && assignment_lhs < hir_count)
         value_node = assignment_lhs;
@@ -524,11 +816,17 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         core.value_word_count = aggregate_word_count_for_hir(node, hir_count);
     if (core.value_word_count == 0u)
         core.value_word_count = aggregate_word_count_for_type(core.type_id, hir_count);
+    if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW && semantic_call_kind[node] == 5u)
+        core.value_word_count = hir.kind == HIR_CALL_EXPR
+            ? enum_constructor_word_count(node, payload, hir_count) : 1u;
     if ((op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_STORE) &&
         (hir.kind == HIR_INDEX_EXPR || assignment_indexed))
         core.flags |= SEMANTIC_LIR_FLAG_INDEXED;
     if ((op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_STORE) &&
         (hir.kind == HIR_MEMBER_EXPR || assignment_field))
+        core.flags |= SEMANTIC_LIR_FLAG_FIELD;
+    if ((match_expression && !match_result_get && op == SEMANTIC_LIR_OP_LOAD) ||
+        (match_binding && local_row == 1u))
         core.flags |= SEMANTIC_LIR_FLAG_FIELD;
     if (op == SEMANTIC_LIR_OP_INVALID) core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
     if (compound_assignment && !assignment_field && !assignment_indexed &&
@@ -575,7 +873,110 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     operands.c = LIR_INVALID;
     uint layout_word_offset = LIR_INVALID;
 
-    if (loop_recipe.kind != SEMANTIC_LOOP_RECIPE_NONE)
+    if (match_expression)
+    {
+        uint result_declaration = gParams.n_tokens + node;
+        uint scrutinee_declaration = gParams.n_tokens + hir_count + node;
+        uint matched_declaration = gParams.n_tokens + hir_count * 2u + node;
+        if (match_result_get)
+            operands.a = result_declaration;
+        else if (match_scrutinee_set)
+        {
+            operands.a = scrutinee_declaration;
+            operands.b = lir_for_value_hir(payload.a, hir_count);
+        }
+        else if (local_row == 1u)
+            operands.a = 0u;
+        else if (local_row == 2u)
+        {
+            operands.a = matched_declaration;
+            operands.b = first_row + 1u;
+        }
+        else
+        {
+            uint arm_row = payload.b + (local_row - 3u) / 12u;
+            HirMatchArm arm = compact_match_arms[arm_row];
+            uint arm_first = first_row + 3u + (arm_row - payload.b) * 12u;
+            uint variant = variant_ordinal_for_pattern(arm.pattern, hir_count);
+            bool scalar_pattern = scalar_match_pattern(arm.pattern, hir_count);
+            bool wildcard_pattern = wildcard_match_pattern(arm.pattern, hir_count);
+            if (match_phase == 0u)
+                operands.a = matched_declaration;
+            else if (match_phase == 1u)
+                operands.a = arm_first;
+            else if (match_phase == 2u)
+                operands.a = scrutinee_declaration;
+            else if (match_phase == 3u)
+            {
+                if (scalar_pattern)
+                    operands.a = scrutinee_declaration;
+                else if (wildcard_pattern)
+                    operands.a = 1u;
+                else
+                {
+                    operands.a = arm_first + 2u;
+                    operands.b = 0u;
+                    layout_word_offset = 0u;
+                }
+            }
+            else if (match_phase == 4u)
+                operands.a = wildcard_pattern ? 1u : scalar_pattern
+                    ? scalar_match_pattern_value(arm.pattern, hir_count)
+                    : variant;
+            else if (match_phase == 5u)
+            {
+                operands.a = arm_first + 3u;
+                operands.b = arm_first + 4u;
+                operands.c = 0u;
+            }
+            else if (match_phase == 6u)
+            {
+                operands.a = arm_first + 1u;
+                operands.b = arm_first + 5u;
+            }
+            else if (match_phase == 7u)
+            {
+                operands.a = arm_first + 6u;
+                operands.b = arm_first + 11u;
+                operands.c = 0u;
+            }
+            else if (match_phase == 8u)
+            {
+                operands.a = result_declaration;
+                operands.b = lir_for_value_hir(arm.result, hir_count);
+            }
+            else if (match_phase == 9u)
+                operands.a = 1u;
+            else if (match_phase == 10u)
+            {
+                operands.a = matched_declaration;
+                operands.b = arm_first + 9u;
+            }
+        }
+    }
+    else if (match_binding)
+    {
+        HirMatchPayload binding = compact_match_payloads[match_payload_row];
+        HirMatchArm arm = compact_match_arms[binding.arm];
+        uint match_node = arm.owner;
+        uint scrutinee_declaration = gParams.n_tokens + hir_count + match_node;
+        uint word_offset = 1u + binding.ordinal;
+        if (local_row == 0u)
+            operands.a = scrutinee_declaration;
+        else if (local_row == 1u)
+        {
+            operands.a = first_row;
+            operands.b = word_offset;
+            operands.c = 1u;
+            layout_word_offset = word_offset;
+        }
+        else
+        {
+            operands.a = semantic_value_id[node];
+            operands.b = first_row + 1u;
+        }
+    }
+    else if (loop_recipe.kind != SEMANTIC_LOOP_RECIPE_NONE)
     {
         SemanticLoopOperandRecipe recipe =
             semantic_loop_operand_recipe(loop_recipe.kind, local_row);
@@ -694,10 +1095,20 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     else if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
     {
         bool array = hir.kind == HIR_ARRAY_EXPR;
+        bool enum_constructor = semantic_call_kind[node] == 5u;
         operands.a = array ? compact_array_element_start[node]
-                           : compact_array_element_row_count[0u] + payload.b;
-        operands.b = array ? compact_array_element_owner_count[node] : payload.c;
-        operands.c = array ? 0u : 1u;
+            : enum_constructor
+                ? compact_array_element_row_count[0u] + compact_field_count[0u] +
+                    (hir.kind == HIR_CALL_EXPR ? payload.b : 0u)
+                : compact_array_element_row_count[0u] + payload.b;
+        operands.b = array ? compact_array_element_owner_count[node]
+            : enum_constructor && hir.kind != HIR_CALL_EXPR ? 0u : payload.c;
+        // High bit distinguishes a tagged enum aggregate; low bits contain
+        // the checked declaration ordinal. Struct literals retain their
+        // existing nonzero marker and arrays retain zero.
+        operands.c = enum_constructor
+            ? SEMANTIC_LIR_AGGREGATE_ENUM | semantic_call_target[node]
+            : array ? 0u : 1u;
     }
     else if (op == SEMANTIC_LIR_OP_LOAD && (hir.kind == HIR_MEMBER_EXPR || assignment_field))
     {
@@ -732,8 +1143,14 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
                 compact_hir_payload[compact_nearest_loop[node]]);
             uint loop_rows = semantic_lir_count[compact_nearest_loop[node]];
             uint continue_offset = loop_rows == 17u ? 9u
+                : loop_rows == 18u ? 10u
+                : loop_rows == 12u ? 4u
+                : loop_rows == 13u ? 5u
                 : loop_rows == 21u ? 14u : 1u;
             uint break_offset = loop_rows == 17u ? 16u
+                : loop_rows == 18u ? 17u
+                : loop_rows == 12u ? 11u
+                : loop_rows == 13u ? 12u
                 : loop_rows == 21u ? 20u : 5u;
             operands.a += expanded_loop
                 ? (hir.kind == HIR_CONTINUE_STMT ? continue_offset : break_offset)
@@ -762,9 +1179,11 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     // Operation payload belongs in operands, never in the semantic flag
     // namespace. Comparison predicates range from 0..5 and previously
     // collided with UNSUPPORTED/SYNTHETIC_CONTROL/BRANCH_CONTINUE.
-    if (op == SEMANTIC_LIR_OP_COMPARE)
+    if (op == SEMANTIC_LIR_OP_COMPARE && !match_expression)
         operands.c = range_for || array_for
-            ? ((range_payload.a == HIR_EXPR_RANGE_INCLUSIVE || iterable_kind == 2u) ? 4u : 2u)
+            ? ((range_payload.a == HIR_EXPR_RANGE_INCLUSIVE ||
+                range_payload.a == HIR_EXPR_RANGE_TO_INCLUSIVE || iterable_kind == 2u)
+                ? 4u : 2u)
             : comparison_predicate(payload.a);
 
     SemanticLirRow result;

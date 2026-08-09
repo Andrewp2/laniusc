@@ -7,7 +7,16 @@
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    uint count = min(compact_predicate_count[0u], gParams.n_hir_nodes);
+    if (row >= count)
+        return;
+
+    HirPredicate predicate = compact_predicates[row];
+    if ((predicate.metadata & 0xffu) != 1u)
+        return;
+
+    uint node = predicate.bound;
     if (!valid_node(node))
         return;
 
@@ -17,33 +26,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_REFERENCE)
         mark_direct_bound_syntax_tokens(node);
 
-    uint list_node = INVALID;
-    if (compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_PATH ||
-        compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_REFERENCE)
-        list_node = predicate_list_for_direct_bound(node);
-
-    if (!valid_node(list_node))
-    {
-        if (unsupported_direct_bound_list_relation(node))
-        {
-            uint owner_decl = generic_decl_owner_for_node(node);
-            predicate_bound_token[node] =
-                compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_PATH
-                ? bound_path_leaf_token(node)
-                : compact_hir_core[node].token_start;
-            predicate_status[node] =
-                valid_node(owner_decl) &&
-                !callable_generic_decl_item_kind(compact_item_kind_for_node(owner_decl))
-                    ? PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND
-                    : PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION;
-        }
-        return;
-    }
-
-    uint owner_decl = compact_hir_semantic_facts[node].predicate_owner;
+    uint owner_decl = predicate.owner;
     if (!valid_node(owner_decl))
         owner_decl = generic_decl_owner_for_node(node);
-    uint subject_token = predicate_subject_token_for_list(list_node);
+    uint subject_token = predicate.subject;
     uint bound_token = compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_BOUND_PATH
         ? bound_path_leaf_token(node)
         : compact_hir_core[node].token_start;
@@ -58,13 +44,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    if (!valid_node(owner_decl) || !valid_token(subject_token))
+    if (!valid_node(owner_decl))
     {
-        predicate_status[node] =
-            valid_node(owner_decl) &&
-            !callable_generic_decl_item_kind(compact_item_kind_for_node(owner_decl))
-                ? PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND
-                : PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION;
+        predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND;
+        return;
+    }
+    if (!valid_token(subject_token))
+    {
+        predicate_status[node] = PREDICATE_STATUS_INVALID_SUBJECT;
         return;
     }
 
@@ -76,9 +63,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (!generic_type_param_declared_on(owner_decl, subject_token))
     {
-        predicate_status[node] = direct_type_param_bound_list(list_node)
-            ? PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION
-            : PREDICATE_STATUS_INVALID_SUBJECT;
+        predicate_status[node] = PREDICATE_STATUS_INVALID_SUBJECT;
         return;
     }
 

@@ -39,7 +39,9 @@ uint semantic_anchor(uint node) {
     uint open = valid(callee) ? hir_token_end[callee] : INVALID;
     uint right = assignment ? hir_stmt_record[node * 4u + 2u] : hir_expr_record[node * 4u + 2u];
     uint right_start = valid(right) ? hir_token_pos[right] : INVALID;
-    uint operator_token = canonical_hir_operator_anchor(identity_kind, right_start, gCanonical.canonical_capacity);
+    uint operator_token = canonical_hir_operator_anchor(
+        identity_kind, expr_form, right_start, hir_token_end[node],
+        gCanonical.canonical_capacity);
     return canonical_hir_anchor(identity_kind, hir_token_pos[node], hir_token_end[node], open,
         hir_expr_record[node * 4u + 3u], operator_token, gCanonical.canonical_capacity);
 }

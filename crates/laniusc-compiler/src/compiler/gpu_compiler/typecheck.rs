@@ -62,9 +62,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         sources: &[S],
     ) -> Result<(), CompileError> {
-        validate_in_memory_source_pack_fits_default_codegen_unit(
+        validate_in_memory_source_pack_fits_codegen_unit(
             "type check source pack",
             sources,
+            self.resident_source_unit_limits(),
         )?;
         self.type_check_explicit_source_pack(sources).await
     }
@@ -77,9 +78,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
     ) -> Result<(), CompileError> {
-        validate_in_memory_source_pack_fits_default_codegen_unit(
+        validate_in_memory_source_pack_fits_codegen_unit(
             "type check source pack with dependencies",
             sources,
+            self.resident_source_unit_limits(),
         )?;
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
@@ -102,9 +104,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         library_id: u32,
         sources: &[S],
     ) -> Result<crate::compiler::GpuSemanticInterfaceArtifact, CompileError> {
-        validate_in_memory_source_pack_fits_default_codegen_unit(
+        validate_in_memory_source_pack_fits_codegen_unit(
             "semantic interface source pack",
             sources,
+            self.resident_source_unit_limits(),
         )?;
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
@@ -152,9 +155,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
     ) -> Result<crate::compiler::GpuSemanticInterfaceArtifact, CompileError> {
-        validate_in_memory_source_pack_fits_default_codegen_unit(
+        validate_in_memory_source_pack_fits_codegen_unit(
             "semantic interface source pack with dependencies",
             sources,
+            self.resident_source_unit_limits(),
         )?;
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
@@ -184,9 +188,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         dependency_pages: &[Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
     ) -> Result<crate::compiler::GpuSemanticInterfaceArtifact, CompileError> {
-        validate_in_memory_source_pack_fits_default_codegen_unit(
+        validate_in_memory_source_pack_fits_codegen_unit(
             "semantic interface source pack with dependency pages",
             sources,
+            self.resident_source_unit_limits(),
         )?;
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
@@ -213,9 +218,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         source_pack: &ExplicitSourcePack,
     ) -> Result<(), CompileError> {
-        validate_in_memory_source_pack_fits_default_codegen_unit(
+        validate_in_memory_source_pack_fits_codegen_unit(
             "type check source pack",
             &source_pack.sources,
+            self.resident_source_unit_limits(),
         )?;
         self.type_check_explicit_source_pack_with_paths(
             &source_pack.sources,
@@ -261,10 +267,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let parser_tree_capacity = self
                         .parser
                         .partial_parse_resident_tree_capacity(token_capacity, &self.parse_tables);
-                    let parser_feature_flags =
-                        crate::lexer::features::parser_allocation_features(
-                            bufs.parser_feature_flags_value,
-                        );
+                    let parser_feature_flags = crate::lexer::features::parser_allocation_features(
+                        bufs.parser_feature_flags_value,
+                    );
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.parser-boundary.encoder"),
@@ -475,9 +480,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         if target == SourcePackArtifactTarget::X86_64 && sources.is_empty() {
             return Err(super::x86_codegen::x86_empty_source_pack_compile_error());
         }
-        validate_in_memory_source_pack_fits_default_codegen_unit(
+        validate_in_memory_source_pack_fits_codegen_unit(
             "compile source-pack unit",
             sources,
+            self.resident_source_unit_limits(),
         )?;
         let object_request = match target {
             SourcePackArtifactTarget::X86_64 => LoweringObjectRequest::X86_64 {
@@ -575,10 +581,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .parser
                         .partial_parse_resident_tree_capacity(token_capacity, &self.parse_tables);
                     record_host_timer.stamp("parser_capacity");
-                    let parser_feature_flags =
-                        crate::lexer::features::parser_allocation_features(
-                            bufs.parser_feature_flags_value,
-                        );
+                    let parser_feature_flags = crate::lexer::features::parser_allocation_features(
+                        bufs.parser_feature_flags_value,
+                    );
                     let mut parser_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.typecheck.source_pack.parser-boundary.encoder"),

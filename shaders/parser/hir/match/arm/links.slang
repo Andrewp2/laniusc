@@ -41,6 +41,7 @@ RWStructuredBuffer<uint> hir_match_arm_rank_b;
 RWStructuredBuffer<uint> hir_match_payload_owner_b;
 RWStructuredBuffer<uint> hir_match_payload_link_b;
 RWStructuredBuffer<uint> hir_match_payload_rank_b;
+RWStructuredBuffer<uint> hir_match_pattern_parent;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -203,8 +204,10 @@ uint owner_pattern_for_payload_container(uint container)
 
 uint owner_seed_for_payload_container(uint container)
 {
-    uint owner_pattern = owner_pattern_for_payload_container(container);
-    uint arm = parent_node(owner_pattern);
+    uint payload_pattern = payload_pattern_from_container(container);
+    uint arm = valid_node(payload_pattern)
+        ? hir_match_pattern_owner_arm[payload_pattern]
+        : INVALID;
     return valid_node(arm) && node_kind[arm] == PROD_MATCH_ARM ? arm : INVALID;
 }
 
@@ -255,6 +258,7 @@ void seed_payload_pattern(uint node)
     uint prod = valid_node(container) ? node_kind[container] : INVALID;
     if (prod == PROD_PATTERNS_SOME)
     {
+        hir_match_pattern_parent[node] = owner_pattern_for_payload_container(container);
         hir_match_payload_owner_a[node] =
             owner_seed_for_payload_container(container);
         return;
@@ -292,6 +296,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_match_payload_owner_b[node] = INVALID;
     hir_match_payload_link_b[node] = INVALID;
     hir_match_payload_rank_b[node] = 0u;
+    hir_match_pattern_parent[node] = INVALID;
 
     if (!valid_node(node))
         return;

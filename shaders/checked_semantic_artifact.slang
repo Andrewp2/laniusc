@@ -15,4 +15,12 @@ struct CheckedCallArtifact
     uint arg_count;
     uint return_ref_tag;
     uint return_ref_payload;
+    // Checked callable classification. This distinguishes ordinary functions
+    // from call-shaped language constructs such as enum constructors before
+    // target-independent lowering sees the record.
+    uint callable_kind;
+    // Dense local declaration-family HIR row and declaration-specific
+    // ordinal. Both are INVALID when the callable is not a local declaration.
+    uint callable_hir;
+    uint callable_ordinal;
 };

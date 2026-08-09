@@ -9,11 +9,12 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
-RWStructuredBuffer<uint> semantic_struct_hir_by_name_token;
+RWStructuredBuffer<uint> semantic_aggregate_hir_by_name_token;
 RWStructuredBuffer<uint> semantic_struct_field_count_by_hir;
 RWStructuredBuffer<uint> semantic_struct_field_start_by_hir;
 
 static const uint HIR_STRUCT_ITEM = 27u;
+static const uint HIR_ENUM_ITEM = 26u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 [shader("compute")]
@@ -22,11 +23,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (row < hir_count && compact_hir_core[row].kind == HIR_STRUCT_ITEM)
+    if (row < hir_count &&
+        (compact_hir_core[row].kind == HIR_STRUCT_ITEM ||
+         compact_hir_core[row].kind == HIR_ENUM_ITEM))
     {
         uint name_token = compact_hir_payload[row].b;
         if (name_token < gParams.n_tokens)
-            semantic_struct_hir_by_name_token[name_token] = row;
+            semantic_aggregate_hir_by_name_token[name_token] = row;
     }
 
     uint field_count = min(compact_field_count[0u], gParams.n_hir_nodes);

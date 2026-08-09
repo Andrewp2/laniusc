@@ -7,6 +7,7 @@ struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_match_arm_count;
 StructuredBuffer<HirMatchArm> compact_match_arms;
@@ -17,6 +18,11 @@ StructuredBuffer<uint> compact_variant_payload_start;
 StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> compact_variant_payload_row_count;
 StructuredBuffer<HirVariantPayload> compact_variant_payloads;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_owner_token;
+StructuredBuffer<uint> resolved_value_decl;
+StructuredBuffer<uint> resolved_value_status;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> module_value_path_status;
 StructuredBuffer<uint> decl_id_by_name_token;
@@ -37,6 +43,8 @@ StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_name_id;
 RWStructuredBuffer<uint> visible_type;
 
 static const uint INVALID = 0xffffffffu;
@@ -52,6 +60,8 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
+static const uint PATH_RESOLVE_STATUS_OK = 0u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -63,8 +73,57 @@ uint active_arm_count() { return min(compact_match_arm_count[0u], gParams.n_hir_
 uint active_payload_count() { return min(compact_match_payload_row_count[0u], gParams.n_hir_nodes); }
 uint active_variant_count() { return min(compact_variant_count[0u], gParams.n_hir_nodes); }
 uint active_variant_payload_count() { return min(compact_variant_payload_row_count[0u], gParams.n_hir_nodes); }
+uint active_path_count() { return min(path_count_out[0u], gParams.n_hir_nodes); }
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
+bool valid_path(uint path) { return path != INVALID && path < active_path_count(); }
+
+bool token_is_wildcard(uint token)
+{
+    return valid_token(token) && name_id_by_token[token] != INVALID &&
+           name_id_by_token[token] == language_name_id[LANGUAGE_SYMBOL_WILDCARD];
+}
+
+uint path_for_pattern(uint pattern)
+{
+    if (!valid_hir(pattern))
+        return INVALID;
+    uint path = path_id_by_owner_hir[pattern];
+    if (valid_path(path))
+        return path;
+    uint child = compact_hir_links[pattern].first_child;
+    path = valid_hir(child) ? path_id_by_owner_hir[child] : INVALID;
+    return valid_path(path) ? path : INVALID;
+}
+
+bool resolved_enum_variant(
+    uint pattern,
+    out uint variant_token,
+    out uint enum_token,
+    out uint variant)
+{
+    variant_token = INVALID;
+    enum_token = INVALID;
+    variant = INVALID;
+    uint path = path_for_pattern(pattern);
+    if (!valid_path(path) || resolved_value_status[path] != PATH_RESOLVE_STATUS_OK)
+        return false;
+    uint pattern_token = compact_hir_core[pattern].token_start;
+    if (!valid_token(pattern_token) || path_owner_token[path] != pattern_token)
+        return false;
+    uint decl_i = resolved_value_decl[path];
+    if (decl_i >= gParams.n_hir_nodes ||
+        decl_kind[decl_i] != HIR_ITEM_KIND_ENUM_VARIANT)
+        return false;
+    uint enum_decl_i = decl_parent_type_decl[decl_i];
+    if (enum_decl_i >= gParams.n_hir_nodes || decl_kind[enum_decl_i] != HIR_ITEM_KIND_ENUM)
+        return false;
+    variant_token = decl_name_token[decl_i];
+    enum_token = decl_name_token[enum_decl_i];
+    variant = decl_hir_node[decl_i];
+    return valid_token(variant_token) && valid_token(enum_token) &&
+           variant < active_variant_count();
+}
 
 uint type_ref_to_type_code(uint tag, uint payload)
 {
@@ -185,12 +244,20 @@ uint payload_type(HirMatchPayload payload_row)
     if (payload_row.arm >= active_arm_count())
         return TY_UNKNOWN;
     HirMatchArm arm = compact_match_arms[payload_row.arm];
+    if (!valid_hir(payload_row.parent_pattern))
+        return TY_UNKNOWN;
+    uint variant_token;
     uint enum_token;
     uint variant;
-    if (!enum_variant_for_arm(arm, enum_token, variant))
+    if (!resolved_enum_variant(
+            payload_row.parent_pattern,
+            variant_token,
+            enum_token,
+            variant))
         return TY_UNKNOWN;
-    uint instance_i;
-    if (!scrutinee_context_for_match(arm.owner, enum_token, instance_i))
+    uint instance_i = INVALID;
+    if (payload_row.parent_pattern == arm.pattern &&
+        !scrutinee_context_for_match(arm.owner, enum_token, instance_i))
         return TY_UNKNOWN;
     uint count = compact_variant_payload_count[variant];
     uint start = compact_variant_payload_start[variant];
@@ -221,6 +288,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     uint binder_token = compact_hir_core[payload.pattern].token_start;
     if (!valid_token(binder_token))
+        return;
+    uint variant_token;
+    uint enum_token;
+    uint variant;
+    if (resolved_enum_variant(
+            payload.pattern,
+            variant_token,
+            enum_token,
+            variant) ||
+        token_is_wildcard(binder_token))
         return;
     visible_decl[binder_token] = binder_token;
     module_value_path_status[binder_token] = INVALID;

@@ -3016,6 +3016,18 @@ fn build_graph(
             PassAccess::read("decl_record_flag", _module_record_family_flag),
             PassAccess::read("module_record_prefix", module_record_prefix),
             PassAccess::read("decl_count_out", decl_count_out),
+            // The resident recorder sorts and validates import edges between
+            // import resolution and declaration-key construction. That radix
+            // operation reads these import relations while writing the shared
+            // module-path radix workspace below. Keeping both sides on this
+            // schedule boundary prevents arena packing and lifetime coloring
+            // from treating them as non-overlapping.
+            PassAccess::read("import_count_out", import_record_count_out),
+            PassAccess::read("import_module_id", _import_module_id),
+            PassAccess::read("import_target_module_id", _import_target_module_id),
+            PassAccess::read("import_status", _import_status),
+            PassAccess::read("import_edge_key_order", _import_edge_key_order),
+            PassAccess::write("import_edge_key_order_tmp", _import_edge_key_order_tmp),
             // Module construction temporarily stores namespace flags in the
             // future type-instance argument columns. Naming both the runtime
             // role and the graph resource makes that early lifetime explicit.
@@ -3487,6 +3499,8 @@ fn build_graph(
                     "compact_expr_scalar_type" => final_scalar,
                     "type_instance_decl_token" => _type_instance_decl_token: Read,
                     "type_instance_aggregate_word_count" => _type_instance_aggregate_word_count: Read,
+                    "resolved_type_decl" => _resolved_type_decl: Read,
+                    "decl_name_token" => decl_name_token: Read,
                     "semantic_expr_ref_tag_by_hir" => semantic_expr_ref_tag_by_hir: Write,
                     "semantic_expr_ref_payload_by_hir" => semantic_expr_ref_payload_by_hir: Write,
                     "semantic_aggregate_decl_token_by_hir" => semantic_aggregate_decl_token_by_hir: Write,
@@ -4362,6 +4376,12 @@ fn build_graph(
         reflected_bindings![
             "call_fn_index" => _call_fn_index: Read,
             "backend_call_fn_index" => backend_call_fn_index: Read,
+            "compact_variant_count" => _compact_variant_count: Read,
+            "compact_variants" => _compact_variants: Read,
+            "resolved_value_decl" => _resolved_value_decl: Read,
+            "decl_id_by_name_token" => decl_id_by_name_token: Read,
+            "decl_kind" => decl_kind: Read,
+            "decl_hir_node" => _decl_hir_node: Read,
             "call_dependency_library_id" => _call_dependency_library_id: Read,
             "call_dependency_unit_id" => _call_dependency_unit_id: Read,
             "call_dependency_local_index" => _call_dependency_local_index: Read,

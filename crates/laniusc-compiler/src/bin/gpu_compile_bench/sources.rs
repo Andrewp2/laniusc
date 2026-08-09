@@ -1,3 +1,8 @@
+//! Synthetic compiler stress sources for isolating phase and capacity behavior.
+//!
+//! These shapes are deliberately controllable and sometimes pathological.
+//! They are not representative-program benchmarks.
+
 use std::rc::Rc;
 
 use laniusc_compiler::codegen::unit::SourcePackLibraryDependency;

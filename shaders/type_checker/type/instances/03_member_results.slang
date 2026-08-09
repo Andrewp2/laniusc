@@ -64,7 +64,6 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
 
 static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_ENUM_BASE = 6144u;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
@@ -113,7 +112,10 @@ bool valid_token(uint token)
 
 uint scalar_struct_decl_token(uint payload)
 {
-    if (payload >= TY_STRUCT_BASE && payload < TY_ENUM_BASE)
+    // Struct scalar codes are source-token addressed. Do not impose the old
+    // 2,048-token interval here: validate the decoded declaration against the
+    // compact HIR item kind in struct_node_for_decl_token instead.
+    if (payload >= TY_STRUCT_BASE)
         return payload - TY_STRUCT_BASE;
     return INVALID;
 }

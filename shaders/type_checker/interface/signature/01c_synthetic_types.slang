@@ -27,7 +27,7 @@ static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
-void fail(uint detail) { atomic_u32_or(interface_status, 0u, 4096u); atomic_u32_min(interface_status, 1u, detail); }
+void fail(uint detail) { atomic_u32_or(interface_status, 0u, 4096u); atomic_u32_min(interface_status, 1u, detail); atomic_u32_min(interface_status, 2u, 3u); }
 void write_type(uint index, uint kind, uint lo, uint hi, uint first_edge, uint edge_count, uint nominal_unit)
 {
     uint base = index * TYPE_WORDS;

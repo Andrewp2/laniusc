@@ -116,7 +116,7 @@ public struct HirMatchPayload
     public uint arm;
     public uint pattern;
     public uint ordinal;
-    public uint file_id;
+    public uint parent_pattern;
 }
 
 public struct HirArrayElement

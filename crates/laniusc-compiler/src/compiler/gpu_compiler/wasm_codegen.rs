@@ -27,9 +27,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         sources: &[S],
     ) -> Result<Vec<u8>, CompileError> {
-        validate_in_memory_source_pack_fits_default_codegen_unit(
+        validate_in_memory_source_pack_fits_codegen_unit(
             "compile source pack to WASM",
             sources,
+            self.resident_source_unit_limits(),
         )?;
         self.compile_checked_source_pack_with_lowering(sources, None, LoweringTarget::Wasm)
             .await

@@ -41,6 +41,169 @@ fn main() -> bool {
 }
 
 #[test]
+fn wasm_executes_all_numeric_range_forms_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let total: i32 = 0;
+    for value in 2 ..= 5 { total += value; }
+    for value in .. 3 { total += value; }
+    for value in ..= 3 { total += value; }
+    for value in 2 .. {
+        total += value;
+        if (value == 4) { break; }
+    }
+    for value in .. {
+        total += value;
+        if (value == 2) { break; }
+    }
+    return total;
+}
+"#,
+    )
+    .expect("all numeric range forms should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM numeric range forms",
+        "numeric_range_forms",
+        &wasm,
+    );
+    assert_eq!(status, 35);
+}
+
+#[test]
+fn wasm_executes_integer_and_boolean_match_patterns_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn integer_score(value: i32) -> i32 {
+    return match (value) {
+        0 -> 7,
+        1 -> 11,
+        2 -> 13,
+    };
+}
+
+fn boolean_score(value: bool) -> i32 {
+    return match (value) {
+        true -> 3,
+        false -> 5,
+    };
+}
+
+fn main() -> i32 {
+    return integer_score(1) + boolean_score(false);
+}
+"#,
+    )
+    .expect("integer and boolean match patterns should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM integer and boolean match patterns",
+        "integer_boolean_match_patterns",
+        &wasm,
+    );
+    assert_eq!(status, 16);
+}
+
+#[test]
+fn wasm_executes_first_matching_arm_before_wildcard_default_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn classify(value: i32) -> i32 {
+    return match (value) {
+        0 -> 7,
+        _ -> 11,
+    };
+}
+
+fn main() -> i32 {
+    return classify(0) * 10 + classify(3);
+}
+"#,
+    )
+    .expect("wildcard default match should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM wildcard default match",
+        "wildcard_default_match",
+        &wasm,
+    );
+    assert_eq!(status, 81);
+}
+
+#[test]
+fn wasm_executes_enum_pattern_before_wildcard_default_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+enum Choice {
+    A,
+    B,
+}
+
+fn score(value: Choice) -> i32 {
+    return match (value) {
+        A -> 3,
+        _ -> 5,
+    };
+}
+
+fn main() -> i32 {
+    let first: Choice = A;
+    let second: Choice = B;
+    return score(first) * 10 + score(second);
+}
+"#,
+    )
+    .expect("enum wildcard default match should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM enum wildcard default match",
+        "enum_wildcard_default_match",
+        &wasm,
+    );
+    assert_eq!(status, 35);
+}
+
+#[test]
+fn wasm_executes_multi_payload_enum_constructor_and_pattern_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+enum Pairish {
+    Pair(i32, i32),
+    Empty,
+}
+
+fn score(value: Pairish) -> i32 {
+    return match (value) {
+        Pair(left, right) -> left * 10 + right,
+        Empty -> 5,
+    };
+}
+
+fn main() -> i32 {
+    let first: Pairish = Pair(7, 3);
+    let second: Pairish = Pair(4, 2);
+    let empty: Pairish = Empty;
+    return score(first) * 2 + score(second) + score(empty);
+}
+"#,
+    )
+    .expect("multi-payload enum constructor and pattern should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM multi-payload enum constructor and pattern",
+        "multi_payload_enum_constructor_pattern",
+        &wasm,
+    );
+    assert_eq!(status, 193);
+}
+
+#[test]
 fn wasm_executes_intrinsic_print_stdout_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(
@@ -2687,6 +2850,7 @@ fn main() {
     print(total);
     return 0;
 }
+
 "#,
     )
     .expect("array literal indexed accumulation should compile to WASM");
@@ -2697,6 +2861,48 @@ fn main() {
         &wasm,
     );
     assert_eq!(stdout, "14\n");
+}
+
+#[test]
+fn wasm_executes_empty_array_value() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let values: [i32; 0] = [];
+    return 0;
+}
+"#,
+    )
+    .expect("empty array value should compile to WASM");
+    let status = common::run_wasm_main_return_with_node(
+        "WASM empty array value",
+        "empty_array_value",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn wasm_executes_empty_struct_value() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct EmptyRecord {}
+
+fn main() -> i32 {
+    let value: EmptyRecord = EmptyRecord {};
+    return 0;
+}
+"#,
+    )
+    .expect("empty struct value should compile to WASM");
+    let status = common::run_wasm_main_return_with_node(
+        "WASM empty struct value",
+        "empty_struct_value",
+        &wasm,
+    );
+    assert_eq!(status, 0);
 }
 
 #[test]

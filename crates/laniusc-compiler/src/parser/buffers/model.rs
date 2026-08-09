@@ -176,7 +176,7 @@ pub struct HirMatchPayload {
     pub arm: u32,
     pub pattern: u32,
     pub ordinal: u32,
-    pub file_id: u32,
+    pub parent_pattern: u32,
 }
 
 #[repr(C)]
@@ -313,6 +313,8 @@ pub struct GpuHirView {
     pub match_arms: LaniusBuffer<HirMatchArm>,
     pub match_payload_start: LaniusBuffer<u32>,
     pub match_payload_count: LaniusBuffer<u32>,
+    /// Number of immediate child patterns keyed by dense pattern HIR id.
+    pub match_pattern_payload_count: LaniusBuffer<u32>,
     pub match_payload_row_count: LaniusBuffer<u32>,
     pub match_payloads: LaniusBuffer<HirMatchPayload>,
     pub array_element_start: LaniusBuffer<u32>,
@@ -379,6 +381,7 @@ impl GpuHirView {
             (&self.match_arms).into(),
             (&self.match_payload_start).into(),
             (&self.match_payload_count).into(),
+            (&self.match_pattern_payload_count).into(),
             (&self.match_payload_row_count).into(),
             (&self.match_payloads).into(),
             (&self.array_element_start).into(),
@@ -752,6 +755,7 @@ pub struct ParserBuffers {
     pub hir_match_pattern_to_arm: LaniusBuffer<u32>,
     pub hir_match_compact_payload_start: LaniusBuffer<u32>,
     pub hir_match_compact_payload_count: LaniusBuffer<u32>,
+    pub hir_match_pattern_payload_count: LaniusBuffer<u32>,
     pub hir_match_payload_table_count: LaniusBuffer<u32>,
     pub hir_match_payload_family_flag: LaniusBuffer<u32>,
     pub hir_match_payload_rows: LaniusBuffer<HirMatchPayload>,
@@ -892,6 +896,8 @@ pub struct ParserBuffers {
     pub hir_match_payload_owner_b: LaniusBuffer<u32>,
     pub hir_match_payload_link_a: LaniusBuffer<u32>,
     pub hir_match_payload_link_b: LaniusBuffer<u32>,
+    pub hir_match_pattern_parent: LaniusBuffer<u32>,
+    pub hir_match_pattern_parent_b: LaniusBuffer<u32>,
     pub hir_match_payload_rank_a: LaniusBuffer<u32>,
     pub hir_match_payload_rank_b: LaniusBuffer<u32>,
     pub hir_match_rank_flag: LaniusBuffer<u32>,
@@ -1062,6 +1068,7 @@ impl GpuHirView {
             match_arms: buffers.hir_match_arm_rows.clone(),
             match_payload_start: buffers.hir_match_compact_payload_start.clone(),
             match_payload_count: buffers.hir_match_compact_payload_count.clone(),
+            match_pattern_payload_count: buffers.hir_match_pattern_payload_count.clone(),
             match_payload_row_count: buffers.hir_match_payload_table_count.clone(),
             match_payloads: buffers.hir_match_payload_rows.clone(),
             array_element_start: buffers.hir_array_compact_element_start.clone(),

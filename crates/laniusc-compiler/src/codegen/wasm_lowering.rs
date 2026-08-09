@@ -195,8 +195,8 @@ impl GpuWasmLirStage {
         let param_widths = alias_u32("lir.wasm.param_widths", capacities.parameters)?;
         let param_prefix = alias_u32("lir.wasm.param_prefix", capacities.parameters)?;
         let param_value_total = alias_u32("lir.wasm.param_value_total", 1)?;
-        let local_widths = alias_u32("lir.wasm.local_widths", capacities.hir_nodes)?;
-        let local_prefix = alias_u32("lir.wasm.local_prefix", capacities.hir_nodes)?;
+        let local_widths = alias_u32("lir.wasm.local_widths", capacities.local_capacity())?;
+        let local_prefix = alias_u32("lir.wasm.local_prefix", capacities.local_capacity())?;
         let local_value_total = alias_u32("lir.wasm.local_value_total", 1)?;
         let abi_functions = workspace
             .alias(
@@ -205,10 +205,7 @@ impl GpuWasmLirStage {
                 capacities.hir_nodes.max(1) as usize,
             )
             .map_err(anyhow::Error::msg)?;
-        let value_capacity = capacities
-            .tokens
-            .saturating_add(capacities.hir_nodes)
-            .max(1);
+        let value_capacity = capacities.declaration_capacity();
         let count_pass = load(device, "lir.wasm.count", "codegen/lir/wasm/count")?;
         let scatter_pass = load(device, "lir.wasm.scatter", "codegen/lir/wasm/scatter")?;
         let validate_pass = load(device, "lir.wasm.validate", "codegen/lir/wasm/validate")?;
@@ -250,7 +247,7 @@ impl GpuWasmLirStage {
             &WasmAbiParams {
                 function_capacity: capacities.hir_nodes.max(1),
                 param_capacity: capacities.parameters.max(1),
-                local_capacity: capacities.hir_nodes.max(1),
+                local_capacity: capacities.local_capacity(),
                 n_tokens: value_capacity,
             },
         );

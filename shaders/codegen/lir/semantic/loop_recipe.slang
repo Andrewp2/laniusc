@@ -6,6 +6,9 @@ static const uint SEMANTIC_LOOP_RECIPE_NONE = 0u;
 static const uint SEMANTIC_LOOP_RECIPE_DIRECT_RANGE = 1u;
 static const uint SEMANTIC_LOOP_RECIPE_RANGE_VALUE = 2u;
 static const uint SEMANTIC_LOOP_RECIPE_ARRAY = 3u;
+static const uint SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO = 4u;
+static const uint SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE = 5u;
+static const uint SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO = 6u;
 
 struct SemanticLoopRecipe
 {
@@ -49,6 +52,13 @@ SemanticLoopRecipe semantic_loop_recipe(HirCore core, HirPayload payload,
     if (iterable_form == HIR_EXPR_RANGE ||
         iterable_form == HIR_EXPR_RANGE_INCLUSIVE)
         recipe.kind = SEMANTIC_LOOP_RECIPE_DIRECT_RANGE;
+    else if (iterable_form == HIR_EXPR_RANGE_TO ||
+             iterable_form == HIR_EXPR_RANGE_TO_INCLUSIVE)
+        recipe.kind = SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO;
+    else if (iterable_form == HIR_EXPR_RANGE_FROM)
+        recipe.kind = SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE;
+    else if (iterable_form == HIR_EXPR_RANGE_FULL)
+        recipe.kind = SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO;
     else if (iterable_kind == 1u || iterable_kind == 2u)
         recipe.kind = SEMANTIC_LOOP_RECIPE_RANGE_VALUE;
     else if (iterable_kind == 3u || array_length != LIR_INVALID)
@@ -57,7 +67,13 @@ SemanticLoopRecipe semantic_loop_recipe(HirCore core, HirPayload payload,
         return recipe;
 
     recipe.row_count = recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE
-        ? 17u : 21u;
+        ? 17u
+        : recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO
+        ? 18u
+        : recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE
+        ? 12u
+        : recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO
+        ? 13u : 21u;
     return recipe;
 }
 
@@ -105,6 +121,55 @@ uint semantic_loop_recipe_op(uint recipe, uint row)
         SEMANTIC_LIR_OP_CONTROL_END,
         SEMANTIC_LIR_OP_CONTROL_END,
     };
+    static const uint direct_range_from_zero_ops[18] = {
+        SEMANTIC_LIR_OP_CONST_I32,
+        SEMANTIC_LIR_OP_VALUE_SET,
+        SEMANTIC_LIR_OP_VALUE_SET,
+        SEMANTIC_LIR_OP_BLOCK_BEGIN,
+        SEMANTIC_LIR_OP_LOOP_BEGIN,
+        SEMANTIC_LIR_OP_VALUE_GET,
+        SEMANTIC_LIR_OP_VALUE_GET,
+        SEMANTIC_LIR_OP_COMPARE,
+        SEMANTIC_LIR_OP_BRANCH_IF,
+        SEMANTIC_LIR_OP_BLOCK_BEGIN,
+        SEMANTIC_LIR_OP_CONTROL_END,
+        SEMANTIC_LIR_OP_VALUE_GET,
+        SEMANTIC_LIR_OP_CONST_I32,
+        SEMANTIC_LIR_OP_ADD,
+        SEMANTIC_LIR_OP_STORE,
+        SEMANTIC_LIR_OP_BRANCH,
+        SEMANTIC_LIR_OP_CONTROL_END,
+        SEMANTIC_LIR_OP_CONTROL_END,
+    };
+    static const uint direct_unbounded_range_ops[12] = {
+        SEMANTIC_LIR_OP_VALUE_SET,
+        SEMANTIC_LIR_OP_BLOCK_BEGIN,
+        SEMANTIC_LIR_OP_LOOP_BEGIN,
+        SEMANTIC_LIR_OP_BLOCK_BEGIN,
+        SEMANTIC_LIR_OP_CONTROL_END,
+        SEMANTIC_LIR_OP_VALUE_GET,
+        SEMANTIC_LIR_OP_CONST_I32,
+        SEMANTIC_LIR_OP_ADD,
+        SEMANTIC_LIR_OP_STORE,
+        SEMANTIC_LIR_OP_BRANCH,
+        SEMANTIC_LIR_OP_CONTROL_END,
+        SEMANTIC_LIR_OP_CONTROL_END,
+    };
+    static const uint direct_unbounded_range_from_zero_ops[13] = {
+        SEMANTIC_LIR_OP_CONST_I32,
+        SEMANTIC_LIR_OP_VALUE_SET,
+        SEMANTIC_LIR_OP_BLOCK_BEGIN,
+        SEMANTIC_LIR_OP_LOOP_BEGIN,
+        SEMANTIC_LIR_OP_BLOCK_BEGIN,
+        SEMANTIC_LIR_OP_CONTROL_END,
+        SEMANTIC_LIR_OP_VALUE_GET,
+        SEMANTIC_LIR_OP_CONST_I32,
+        SEMANTIC_LIR_OP_ADD,
+        SEMANTIC_LIR_OP_STORE,
+        SEMANTIC_LIR_OP_BRANCH,
+        SEMANTIC_LIR_OP_CONTROL_END,
+        SEMANTIC_LIR_OP_CONTROL_END,
+    };
     static const uint array_ops[21] = {
         SEMANTIC_LIR_OP_CONST_I32,
         SEMANTIC_LIR_OP_VALUE_SET,
@@ -133,6 +198,12 @@ uint semantic_loop_recipe_op(uint recipe, uint row)
         return direct_range_ops[row];
     if (recipe == SEMANTIC_LOOP_RECIPE_RANGE_VALUE && row < 21u)
         return range_value_ops[row];
+    if (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO && row < 18u)
+        return direct_range_from_zero_ops[row];
+    if (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE && row < 12u)
+        return direct_unbounded_range_ops[row];
+    if (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO && row < 13u)
+        return direct_unbounded_range_from_zero_ops[row];
     if (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row < 21u)
         return array_ops[row];
     return SEMANTIC_LIR_OP_INVALID;
@@ -196,6 +267,74 @@ SemanticLoopOperandRecipe semantic_loop_operand_recipe(uint recipe, uint row)
         LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
         LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
     };
+    static const uint direct_range_from_zero_a[18] = {
+        LOOP_OPERAND_ZERO, LOOP_OPERAND_BINDING_DECL,
+        LOOP_OPERAND_SYNTHETIC_DECL, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_BINDING_DECL, LOOP_OPERAND_SYNTHETIC_DECL,
+        LOOP_OPERAND_ROW_BASE + 5u, LOOP_OPERAND_ROW_BASE + 7u,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_BINDING_DECL,
+        LOOP_OPERAND_ONE, LOOP_OPERAND_ROW_BASE + 11u,
+        LOOP_OPERAND_BINDING_DECL, LOOP_OPERAND_ROW_BASE + 4u,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint direct_range_from_zero_b[18] = {
+        LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 0u,
+        LOOP_OPERAND_RANGE_END, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 6u,
+        LOOP_OPERAND_ONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 12u,
+        LOOP_OPERAND_ROW_BASE + 13u, LOOP_OPERAND_ZERO,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint direct_range_from_zero_c[18] = {
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 17u,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint direct_unbounded_range_a[12] = {
+        LOOP_OPERAND_BINDING_DECL, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_BINDING_DECL,
+        LOOP_OPERAND_ONE, LOOP_OPERAND_ROW_BASE + 5u,
+        LOOP_OPERAND_BINDING_DECL, LOOP_OPERAND_ROW_BASE + 2u,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint direct_unbounded_range_b[12] = {
+        LOOP_OPERAND_RANGE_START, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 6u,
+        LOOP_OPERAND_ROW_BASE + 7u, LOOP_OPERAND_ZERO,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint direct_unbounded_range_c[12] = {
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint direct_unbounded_range_from_zero_a[13] = {
+        LOOP_OPERAND_ZERO, LOOP_OPERAND_BINDING_DECL,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_BINDING_DECL, LOOP_OPERAND_ONE,
+        LOOP_OPERAND_ROW_BASE + 6u, LOOP_OPERAND_BINDING_DECL,
+        LOOP_OPERAND_ROW_BASE + 3u, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint direct_unbounded_range_from_zero_b[13] = {
+        LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 0u,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_ROW_BASE + 7u, LOOP_OPERAND_ROW_BASE + 8u,
+        LOOP_OPERAND_ZERO, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint direct_unbounded_range_from_zero_c[13] = {
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE,
+    };
     static const uint array_a[21] = {
         LOOP_OPERAND_ZERO, LOOP_OPERAND_SYNTHETIC_DECL,
         LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_SYNTHETIC_DECL,
@@ -242,6 +381,24 @@ SemanticLoopOperandRecipe semantic_loop_operand_recipe(uint recipe, uint row)
         result.b = range_value_b[row];
         result.c = range_value_c[row];
     }
+    else if (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO && row < 18u)
+    {
+        result.a = direct_range_from_zero_a[row];
+        result.b = direct_range_from_zero_b[row];
+        result.c = direct_range_from_zero_c[row];
+    }
+    else if (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE && row < 12u)
+    {
+        result.a = direct_unbounded_range_a[row];
+        result.b = direct_unbounded_range_b[row];
+        result.c = direct_unbounded_range_c[row];
+    }
+    else if (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO && row < 13u)
+    {
+        result.a = direct_unbounded_range_from_zero_a[row];
+        result.b = direct_unbounded_range_from_zero_b[row];
+        result.c = direct_unbounded_range_from_zero_c[row];
+    }
     else if (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row < 21u)
     {
         result.a = array_a[row]; result.b = array_b[row]; result.c = array_c[row];
@@ -259,10 +416,14 @@ uint semantic_loop_recipe_flags(uint recipe, uint row)
 
     bool conditional_branch =
         (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE && row == 7u) ||
+        (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO && row == 8u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_RANGE_VALUE && row == 11u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row == 7u);
     bool back_edge =
         (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE && row == 14u) ||
+        (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO && row == 15u) ||
+        (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE && row == 9u) ||
+        (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO && row == 10u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_RANGE_VALUE && row == 18u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row == 18u);
     if (conditional_branch || back_edge)

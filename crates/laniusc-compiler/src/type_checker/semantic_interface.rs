@@ -200,7 +200,9 @@ impl GpuTypeChecker {
             state
                 .typecheck_graph
                 .u32_buffer("semantic_function_host_service_by_hir")?,
-            state.typecheck_graph.u32_buffer("semantic_type_ref_tag_by_hir")?,
+            state
+                .typecheck_graph
+                .u32_buffer("semantic_type_ref_tag_by_hir")?,
             state
                 .typecheck_graph
                 .u32_buffer("semantic_type_ref_payload_by_hir")?,
@@ -1015,6 +1017,8 @@ impl GpuTypeChecker {
             "compact_type_arg_count" => hir.compact_type_arg_count,
             "compact_type_arg_ranges" => hir.compact_type_arg_ranges,
             "compact_type_args" => hir.compact_type_args,
+            "compact_generic_param_count" => hir.compact_generic_param_count,
+            "compact_generic_params" => hir.compact_generic_params,
             "compact_path_count" => hir.compact_path_count,
             "compact_paths" => hir.compact_paths,
             "compact_path_segment_count" => hir.compact_path_segment_count,
@@ -1028,6 +1032,7 @@ impl GpuTypeChecker {
             "compact_method_signatures" => hir.compact_method_signatures,
             "compact_variants" => hir.compact_variants,
             "decl_hir_node" => inputs.decl_hir_node,
+            "decl_count_out" => inputs.decl_count_out,
             "decl_id_by_name_token" => inputs.decl_id_by_name_token,
             "decl_kind" => inputs.decl_kind,
             "decl_parent_type_decl" => inputs.decl_parent_type_decl,

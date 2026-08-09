@@ -172,7 +172,7 @@ fn grid_checksum_benchmark_artifacts_are_checked() {
 }
 
 #[test]
-fn grid_checksum_sources_match_generator() {
+fn grid_checksum_sources_match_benchmark_definition() {
     let repo = repo_root();
     let out_rel = Path::new("target")
         .join("benchmark-artifact-regeneration")
@@ -181,15 +181,15 @@ fn grid_checksum_sources_match_generator() {
     let _ = fs::remove_dir_all(&out_abs);
 
     let output = Command::new("python3")
-        .arg("tools/generate_benchmark_artifacts.py")
+        .arg("tools/run_grid_checksum_benchmark.py")
         .arg("--out")
         .arg(&out_rel)
         .current_dir(&repo)
         .output()
-        .expect("run benchmark artifact generator");
+        .expect("run grid-checksum benchmark materializer");
     assert!(
         output.status.success(),
-        "benchmark artifact generator should succeed\nstdout:\n{}\nstderr:\n{}",
+        "grid-checksum benchmark materializer should succeed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -197,7 +197,7 @@ fn grid_checksum_sources_match_generator() {
     assert_eq!(
         read_json(out_abs.join("generator_config.json")),
         read_json(artifact_root().join("generator_config.json")),
-        "checked generator config should match regenerated config"
+        "checked benchmark config should match regenerated config"
     );
     for language in LANGUAGES {
         let source = source_name(language);
@@ -205,148 +205,7 @@ fn grid_checksum_sources_match_generator() {
         let checked = sha256_file(&artifact_root().join("src").join(source));
         assert_eq!(
             regenerated, checked,
-            "checked {language} benchmark source hash should match generator output"
-        );
-    }
-}
-
-#[test]
-fn compile_scaling_1101000_artifacts_are_checked_and_reproducible() {
-    let repo = repo_root();
-    let root = repo.join("benchmark_artifacts/compile_scaling_1101000");
-    let config = read_json(root.join("config.json"));
-    assert_eq!(config["schema"], "lanius.compile-scaling-matrix-config.v1");
-    assert_eq!(config["size"], 1_101_000);
-    assert_eq!(
-        config["seeds"],
-        serde_json::json!([20, 21, 22, 23, 24, 25, 26])
-    );
-    assert_eq!(config["warm_seed"], 19);
-    assert_eq!(
-        config["sample_policy"],
-        "all samples retained; median is primary, min/max/MAD are reported"
-    );
-    assert_eq!(
-        config["validation_policy"],
-        "every artifact must execute with exact model-derived stdout"
-    );
-    assert!(
-        config["daemon_warmup_policy"]
-            .as_str()
-            .unwrap()
-            .contains("contiguous randomized hot-daemon batch")
-    );
-
-    let commands = read_json(root.join("commands.json"));
-    assert_eq!(
-        commands["schema"],
-        "lanius.compile-scaling-command-templates.v1"
-    );
-    for lane in ["o0", "optimized"] {
-        let map = commands[lane].as_object().expect("lane command map");
-        assert_no_debug_info_flags(map);
-        for language in ["rust", "c", "cpp", "zig"] {
-            assert_command_array(&commands[lane], language, lane);
-        }
-    }
-    assert_command_array(&commands, "lanius_daemon", "compile scaling");
-    assert!(
-        commands["o0"]["c"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|v| v == "-O0")
-    );
-    assert!(
-        commands["optimized"]["c"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|v| v == "-O2")
-    );
-
-    let source_manifest = read_json(root.join("source_manifest.json"));
-    assert_eq!(
-        source_manifest["schema"],
-        "lanius.compile-scaling-source-manifest.v2"
-    );
-    for seed in 19..=26 {
-        let variant = &source_manifest["variants"][seed.to_string()];
-        assert_eq!(variant["target_lanius_bytes"], 1_101_000);
-        assert_eq!(variant["workload"]["all_functions_reachable"], true);
-        assert!(
-            variant["workload"]["reachable_function_count"]
-                .as_u64()
-                .unwrap()
-                > 1_900
-        );
-        for family in ["array", "bitwise", "loop", "nested_branch", "struct"] {
-            assert!(
-                variant["workload"]["leaf_family_counts"][family]
-                    .as_u64()
-                    .unwrap()
-                    > 0
-            );
-        }
-    }
-
-    let samples = read_json(root.join("samples.json"));
-    let rows = samples["samples"].as_array().expect("raw samples");
-    assert_eq!(rows.len(), 63);
-    assert_eq!(
-        rows.iter()
-            .filter(|row| row["language"] == "lanius")
-            .count(),
-        7
-    );
-    let orders = rows
-        .iter()
-        .map(|row| row["order"].as_u64().unwrap())
-        .collect::<BTreeSet<_>>();
-    assert_eq!(orders.len(), 63);
-    for row in rows {
-        assert!(row["wall_ms"].as_f64().unwrap() > 0.0);
-        let seed = row["seed"].as_u64().unwrap();
-        let expected = fs::read(root.join("outputs").join(format!("seed-{seed}.stdout"))).unwrap();
-        assert_eq!(row["stdout_sha256"], sha256_bytes(&expected));
-    }
-
-    let provenance = read_json(root.join("provenance.json"));
-    assert_eq!(
-        provenance["runner_sha256"],
-        sha256_file(&repo.join("tools/run_compile_scaling_matrix.py"))
-    );
-    assert_eq!(
-        provenance["generator_sha256"],
-        sha256_file(&repo.join("tools/generate_compile_scaling_sources.py"))
-    );
-    assert_eq!(
-        provenance["model_sha256"],
-        sha256_file(&repo.join("tools/compile_workload_model.py"))
-    );
-
-    let summary = read_json(root.join("summary.json"));
-    assert_eq!(summary["schema"], "lanius.compile-scaling-summary.v1");
-    assert_eq!(summary["rows"].as_array().unwrap().len(), 9);
-    let lanius = summary["rows"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["language"] == "lanius")
-        .unwrap();
-    assert_eq!(lanius["lane"], "hot_daemon");
-    assert_eq!(lanius["samples"], 7);
-    let manifest = read_json(root.join("manifest.json"));
-    assert_eq!(
-        manifest["schema"],
-        "lanius.compile-scaling-matrix-manifest.v1"
-    );
-    for file in manifest["files"].as_array().unwrap() {
-        let relative = file["path"].as_str().unwrap();
-        assert_eq!(sha256_file(&root.join(relative)), file["sha256"]);
-        assert_eq!(
-            fs::metadata(root.join(relative)).unwrap().len(),
-            file["bytes"].as_u64().unwrap()
+            "checked {language} benchmark source hash should match the benchmark definition"
         );
     }
 }

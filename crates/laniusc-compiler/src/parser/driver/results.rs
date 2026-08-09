@@ -443,7 +443,7 @@ pub struct ResidentParseResult {
     pub hir_compact_match_payload_arm: Vec<u32>,
     pub hir_compact_match_payload_pattern: Vec<u32>,
     pub hir_compact_match_payload_ordinal: Vec<u32>,
-    pub hir_compact_match_payload_file_id: Vec<u32>,
+    pub hir_compact_match_payload_parent_pattern: Vec<u32>,
     pub hir_compact_array_element_start: Vec<u32>,
     pub hir_compact_array_element_count: Vec<u32>,
     pub hir_compact_array_element_array: Vec<u32>,

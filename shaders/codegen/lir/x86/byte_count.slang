@@ -161,7 +161,8 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
         return x86_move64_from_fixed_bytes(7u, locations.result);
     if (core.op == X86_LIR_OP_AGGREGATE_ADDR) return 14u;
     if (core.op == X86_LIR_OP_AGGREGATE_INIT)
-        return x86_move64_to_fixed_bytes(locations.a, 0u) +
+        return ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u
+                ? 5u : x86_move64_to_fixed_bytes(locations.a, 0u)) +
             ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u ? 7u : 0u) +
             x86_move64_from_fixed_bytes(0u, locations.c);
     if (core.op == X86_LIR_OP_INDEX_LOAD)
@@ -236,7 +237,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
         InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
     }
-    if ((core.op == X86_LIR_OP_AGGREGATE_INIT && operands.a >= total) ||
+    if ((core.op == X86_LIR_OP_AGGREGATE_INIT &&
+         (operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
+         operands.a >= total) ||
         (core.op == X86_LIR_OP_INDEX_LOAD &&
          (operands.a >= total || operands.b >= total)) ||
         (core.op == X86_LIR_OP_FIELD_LOAD && operands.a >= total))

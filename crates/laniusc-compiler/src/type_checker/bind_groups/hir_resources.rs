@@ -10,10 +10,7 @@ pub(super) fn register_hir_resources<'a>(
     resources.buffer("compact_hir_core", &hir.core);
     resources.buffer("compact_hir_links", &hir.links);
     resources.buffer("compact_hir_payload", &hir.payload);
-    resources.buffer(
-        "type_decl_hir_node_by_token",
-        &hir.type_decl_by_name_token,
-    );
+    resources.buffer("type_decl_hir_node_by_token", &hir.type_decl_by_name_token);
     resources.buffer("compact_hir_semantic_facts", &hir.semantic_facts);
     resources.buffer("compact_hir_scope_end", &hir.scope_end);
     resources.buffer("compact_hir_nearest_loop", &hir.nearest_loop);
@@ -61,6 +58,10 @@ pub(super) fn register_hir_resources<'a>(
     resources.buffer("compact_match_arms", &hir.match_arms);
     resources.buffer("compact_match_payload_start", &hir.match_payload_start);
     resources.buffer("compact_match_payload_count", &hir.match_payload_count);
+    resources.buffer(
+        "compact_match_pattern_payload_count",
+        &hir.match_pattern_payload_count,
+    );
     resources.buffer(
         "compact_match_payload_row_count",
         &hir.match_payload_row_count,

@@ -1974,11 +1974,9 @@ impl GpuTypeChecker {
             semantic_type_ref_tag_by_hir: &semantic_type_ref_tag_by_hir,
             semantic_type_ref_payload_by_hir: &semantic_type_ref_payload_by_hir,
             semantic_type_generic_param_slot_by_hir: &semantic_type_generic_param_slot_by_hir,
-            semantic_type_external_library_id_by_hir:
-                &semantic_type_external_library_id_by_hir,
+            semantic_type_external_library_id_by_hir: &semantic_type_external_library_id_by_hir,
             semantic_type_external_unit_id_by_hir: &semantic_type_external_unit_id_by_hir,
-            semantic_type_external_local_index_by_hir:
-                &semantic_type_external_local_index_by_hir,
+            semantic_type_external_local_index_by_hir: &semantic_type_external_local_index_by_hir,
             resolved_dependency_library_id: module_path
                 .dependency_visibility
                 .as_deref()

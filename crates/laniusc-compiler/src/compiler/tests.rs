@@ -296,9 +296,10 @@ fn assert_progress_page_matches_model(
 fn in_memory_source_pack_validation_rejects_oversized_default_codegen_units() {
     let limits = CompilationUnitLimits::default().normalized();
     let too_many_files = vec![""; limits.max_source_files + 1];
-    let too_many_files_err = validate_in_memory_source_pack_fits_default_codegen_unit(
+    let too_many_files_err = validate_in_memory_source_pack_fits_codegen_unit(
         "test in-memory source pack",
         &too_many_files,
+        limits,
     )
     .expect_err("too many in-memory source files should be rejected");
     let too_many_files_diagnostic = match too_many_files_err {
@@ -322,9 +323,10 @@ fn in_memory_source_pack_validation_rejects_oversized_default_codegen_units() {
     assert!(!rendered.contains("frontend error:"));
 
     let oversized_file = "x".repeat(limits.max_source_bytes + 1);
-    let oversized_file_err = validate_in_memory_source_pack_fits_default_codegen_unit(
+    let oversized_file_err = validate_in_memory_source_pack_fits_codegen_unit(
         "test in-memory source pack",
         &[oversized_file.as_str()],
+        limits,
     )
     .expect_err("oversized in-memory source file should be rejected");
     let oversized_file_diagnostic = match oversized_file_err {
@@ -349,9 +351,10 @@ fn in_memory_source_pack_validation_rejects_oversized_default_codegen_units() {
     let half_plus_one = limits.max_source_bytes / 2 + 1;
     let first = "x".repeat(half_plus_one);
     let second = "y".repeat(half_plus_one);
-    let oversized_total_err = validate_in_memory_source_pack_fits_default_codegen_unit(
+    let oversized_total_err = validate_in_memory_source_pack_fits_codegen_unit(
         "test in-memory source pack",
         &[first.as_str(), second.as_str()],
+        limits,
     )
     .expect_err("total in-memory source bytes above the default codegen unit should be rejected");
     let oversized_total_diagnostic = match oversized_total_err {
@@ -6075,6 +6078,43 @@ fn work_queue_worker_run_honors_zero_item_limit() {
     assert_eq!(run.linked_output_path, None);
 
     std::fs::remove_dir_all(&root).expect("remove zero-item work queue run test dir");
+}
+
+#[test]
+fn daemon_local_path_executes_many_bounded_units_without_a_durable_work_queue() {
+    const UNIT_COUNT: usize = 205;
+    const UNIT_BYTES: usize = 1024;
+    let source_pack = ExplicitSourcePackPathManifest {
+        files: (0..UNIT_COUNT)
+            .map(|index| ExplicitSourcePathFile {
+                library_id: 7,
+                path: PathBuf::from(format!("unit-{index}.lani")),
+                byte_len: UNIT_BYTES,
+                modified_unix_nanos: None,
+                line_count: Some(1),
+            })
+            .collect(),
+        library_dependencies: Vec::new(),
+    };
+    let limits = CompilationUnitLimits {
+        max_source_bytes: UNIT_BYTES,
+        max_source_files: 1,
+    };
+    let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
+    let build_plan = source_pack.bounded_frontend_build_plan(limits);
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+
+    let result = pollster::block_on(execute_path_batched_link_build_async(
+        &source_pack,
+        &build_plan,
+        batch_limits,
+        &mut executor,
+    ))
+    .expect("daemon-local bounded execution should complete");
+
+    assert_eq!(result.linked_output, b"linked:205:205");
+    assert_eq!(build_plan.schedule.frontend_job_count(), UNIT_COUNT);
+    assert_eq!(build_plan.schedule.codegen_job_count(), UNIT_COUNT);
 }
 
 mod work_queue_artifacts;

@@ -9,6 +9,9 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_expr_root;
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
+StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
@@ -36,6 +39,8 @@ static const uint SEMANTIC_CALL_FUNCTION = 1u;
 static const uint SEMANTIC_CALL_INTRINSIC = 2u;
 static const uint SEMANTIC_CALL_HOST = 3u;
 static const uint SEMANTIC_CALL_SYMBOL = 4u;
+static const uint SEMANTIC_CALL_ENUM_CONSTRUCTOR = 5u;
+static const uint CHECKED_CALLABLE_ENUM_VARIANT = 4u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
@@ -44,6 +49,19 @@ static const uint HIR_EXPR_NAME = 2u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
+
+uint unit_variant_ordinal(uint declaration_token)
+{
+    uint count = min(compact_variant_count[0u], gParams.n_hir_nodes);
+    for (uint row = 0u; row < count; row += 1u)
+    {
+        HirVariant variant = compact_variants[row];
+        if (variant.name_token == declaration_token &&
+            compact_variant_payload_count[row] == 0u)
+            return variant.ordinal;
+    }
+    return INVALID;
+}
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -85,7 +103,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (core.kind == HIR_CALL_EXPR && valid_token(core.token_start))
     {
         CheckedCallArtifact checked = semantic_calls_by_hir[node];
-        if (checked.intrinsic_tag != 0u)
+        if (checked.callable_kind == CHECKED_CALLABLE_ENUM_VARIANT)
+        {
+            semantic_call_kind[node] = SEMANTIC_CALL_ENUM_CONSTRUCTOR;
+            semantic_call_target[node] = checked.callable_ordinal;
+            semantic_call_result_type[node] = checked.return_type;
+        }
+        else if (checked.intrinsic_tag != 0u)
         {
             semantic_call_kind[node] = SEMANTIC_CALL_INTRINSIC;
             semantic_call_target[node] = checked.intrinsic_tag;
@@ -127,21 +151,35 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 }
             }
         }
-        semantic_call_arg_count_by_hir[node] = checked.arg_count +
-            (semantic_call_receiver[node] != INVALID ? 1u : 0u);
+        semantic_call_arg_count_by_hir[node] =
+            semantic_call_kind[node] == SEMANTIC_CALL_ENUM_CONSTRUCTOR
+                ? 0u
+                : checked.arg_count +
+                    (semantic_call_receiver[node] != INVALID ? 1u : 0u);
     }
     else if ((core.kind == HIR_NAME_EXPR || payload.a == HIR_EXPR_NAME) &&
              semantic_value_id[node] < gParams.n_tokens)
     {
-        uint target = semantic_function_id_by_token[semantic_value_id[node]];
-        if (target < count)
+        uint declaration = semantic_value_id[node];
+        uint variant_ordinal = unit_variant_ordinal(declaration);
+        if (variant_ordinal != INVALID)
         {
-            uint target_hir = semantic_lir_functions[target].hir_function;
-            if (target_hir < count && compact_hir_core[target_hir].kind == HIR_CONST_ITEM)
+            semantic_call_kind[node] = SEMANTIC_CALL_ENUM_CONSTRUCTOR;
+            semantic_call_target[node] = variant_ordinal;
+            semantic_call_result_type[node] = semantic_value_type[node];
+        }
+        else
+        {
+            uint target = semantic_function_id_by_token[declaration];
+            if (target < count)
             {
-                semantic_call_kind[node] = SEMANTIC_CALL_FUNCTION;
-                semantic_call_target[node] = target;
-                semantic_call_result_type[node] = semantic_value_type[node];
+                uint target_hir = semantic_lir_functions[target].hir_function;
+                if (target_hir < count && compact_hir_core[target_hir].kind == HIR_CONST_ITEM)
+                {
+                    semantic_call_kind[node] = SEMANTIC_CALL_FUNCTION;
+                    semantic_call_target[node] = target;
+                    semantic_call_result_type[node] = semantic_value_type[node];
+                }
             }
         }
     }

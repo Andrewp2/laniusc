@@ -82,7 +82,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (row >= element_total) break;
             words += semantic_lir_aggregate_elements[row].word_count;
         }
-        operation_rows = 1u + words;
+        operation_rows = 1u + max(core.value_word_count, words);
     }
     target_lir_count[scheduled_row] = operation_rows +
         argument_rows + result_words + return_words + copy_words;

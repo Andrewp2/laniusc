@@ -48,18 +48,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < explicit_count)
     {
         HirCallArg source = compact_call_args[row];
-        uint receiver_shift = source.call < gParams.n_hir_nodes &&
-            semantic_call_receiver[source.call] != INVALID ? 1u : 0u;
-        uint destination = source.call < gParams.n_hir_nodes
-            ? semantic_call_arg_prefix_by_hir[source.call] + receiver_shift + source.ordinal
-            : INVALID;
-        SemanticLirCallArg result;
-        result.call_instruction = lir_for_hir(source.call);
-        result.value_instruction = lir_for_hir(source.value);
-        result.ordinal = source.ordinal + receiver_shift;
-        result.value_metadata = value_metadata_for_hir(source.value);
-        if (destination < gParams.n_call_args)
-            semantic_lir_call_args[destination] = result;
+        if (source.call < gParams.n_hir_nodes &&
+            semantic_call_arg_count_by_hir[source.call] != 0u)
+        {
+            uint receiver_shift = semantic_call_receiver[source.call] != INVALID ? 1u : 0u;
+            uint destination = semantic_call_arg_prefix_by_hir[source.call] +
+                receiver_shift + source.ordinal;
+            SemanticLirCallArg result;
+            result.call_instruction = lir_for_hir(source.call);
+            result.value_instruction = lir_for_hir(source.value);
+            result.ordinal = source.ordinal + receiver_shift;
+            result.value_metadata = value_metadata_for_hir(source.value);
+            if (destination < gParams.n_call_args)
+                semantic_lir_call_args[destination] = result;
+        }
     }
 
     if (row < gParams.n_hir_nodes &&

@@ -66,6 +66,8 @@ pub(super) fn semantic_interface_hir_buffers(
         compact_type_arg_count: &hir.type_arg_count,
         compact_type_args: &hir.type_args,
         compact_type_arg_ranges: &hir.type_arg_ranges,
+        compact_generic_param_count: &hir.generic_param_count,
+        compact_generic_params: &hir.generic_params,
         compact_path_count: &hir.path_count,
         compact_paths: &hir.paths,
         compact_path_segment_count: &hir.path_segment_count,

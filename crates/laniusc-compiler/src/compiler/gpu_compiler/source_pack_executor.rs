@@ -258,6 +258,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 None,
             ),
         };
+        self.compiler.release_completed_unit_frontend_workspace();
         if report_memory {
             let live = crate::gpu::buffers::tracked_buffer_allocation_stats();
             let peak = crate::gpu::buffers::tracked_buffer_allocation_peak_stats();
@@ -1637,6 +1638,32 @@ impl<'compiler, 'gpu> AsyncHierarchicalLinkExecutor
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn indivisible_oversized_source_file_has_an_explicit_capacity_diagnostic() {
+        let job = SourcePackJob {
+            job_index: 3,
+            phase: SourcePackJobPhase::LibraryFrontend,
+            phase_unit_index: 3,
+            library_job_index: None,
+            library_id: 7,
+            first_source_index: 0,
+            source_file_count: 1,
+            source_bytes: DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES + 1,
+            source_lines: 1,
+            oversized_source_file: true,
+            dependency_job_indices: Vec::new(),
+        };
+        let error = validate_gpu_source_pack_descriptor_job_source_file_records(
+            "library-interface",
+            &job,
+            &[],
+        )
+        .expect_err("an indivisible oversized source file must not reach GPU compilation");
+        let message = format!("{error:?}");
+        assert!(message.contains("exceeding the configured frontend compilation-unit capacity"));
+        assert!(message.contains("split the file or raise the per-unit capacity explicitly"));
+    }
 
     #[test]
     fn dependency_input_preserves_work_queue_page_boundaries() {

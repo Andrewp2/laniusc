@@ -615,6 +615,17 @@ impl CompilerGraphWorkspace {
                     assignment.name
                 )
             })?;
+            if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
+                eprintln!(
+                    "compiler_graph_import label={label} slot={} resource={} allocation={:?} offset={} bytes={} slot_bytes={}",
+                    slot.slot,
+                    assignment.name,
+                    buffer.allocation_id(),
+                    buffer.byte_offset,
+                    buffer.byte_size,
+                    slot.bytes,
+                );
+            }
             imports.push((resource, buffer.alias::<u8>(buffer.byte_size as usize)));
         }
         Self::new_with_imports(device, label, graph, &imports)
@@ -686,10 +697,7 @@ impl CompilerGraphWorkspace {
                     .collect::<Vec<_>>();
                 eprintln!(
                     "compiler_graph_arena label={label} arena={} slot={} offset={} bytes={} resources={resources:?}",
-                    placement.arena,
-                    placement.slot,
-                    placement.byte_offset,
-                    placement.byte_size,
+                    placement.arena, placement.slot, placement.byte_offset, placement.byte_size,
                 );
             }
         }
@@ -2613,10 +2621,12 @@ impl CompilerGraphBuilder {
     /// Gives graph-owned workspace a stable, non-colored allocation for a
     /// relation whose complete physical schedule is not represented yet.
     pub fn dedicate_workspace(&mut self, resource: ResourceId) -> Result<(), String> {
-        let desc = self
-            .resources
-            .get_mut(resource.index())
-            .ok_or_else(|| format!("cannot dedicate unknown compiler resource {}", resource.index()))?;
+        let desc = self.resources.get_mut(resource.index()).ok_or_else(|| {
+            format!(
+                "cannot dedicate unknown compiler resource {}",
+                resource.index()
+            )
+        })?;
         if desc.class != ResourceClass::Workspace {
             return Err(format!(
                 "compiler resource `{}` has ownership class {:?}; only workspace can be dedicated",

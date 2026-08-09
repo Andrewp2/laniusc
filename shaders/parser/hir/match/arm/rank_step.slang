@@ -17,6 +17,7 @@ StructuredBuffer<uint> hir_match_arm_rank_in;
 StructuredBuffer<uint> hir_match_payload_owner_in;
 StructuredBuffer<uint> hir_match_payload_link_in;
 StructuredBuffer<uint> hir_match_payload_rank_in;
+StructuredBuffer<uint> hir_match_pattern_parent_in;
 StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> hir_match_rank_node;
 StructuredBuffer<uint> hir_match_rank_count;
@@ -27,6 +28,7 @@ RWStructuredBuffer<uint> hir_match_arm_rank_out;
 RWStructuredBuffer<uint> hir_match_payload_owner_out;
 RWStructuredBuffer<uint> hir_match_payload_link_out;
 RWStructuredBuffer<uint> hir_match_payload_rank_out;
+RWStructuredBuffer<uint> hir_match_pattern_parent_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -80,6 +82,12 @@ void jump_payload(uint node)
     uint owner = hir_match_payload_owner_in[node];
     uint link = hir_match_payload_link_in[node];
     uint rank = hir_match_payload_rank_in[node];
+    uint parent_pattern = hir_match_pattern_parent_in[node];
+    if (!valid_node(parent_pattern) && valid_node(link) && link != node)
+        parent_pattern = hir_match_pattern_parent_in[link];
+    hir_match_pattern_parent_out[node] = valid_node(parent_pattern)
+        ? parent_pattern
+        : INVALID;
 
     if (valid_node(owner) || !valid_node(link) || link == node)
     {
@@ -123,6 +131,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_match_payload_owner_out[node] = INVALID;
         hir_match_payload_link_out[node] = INVALID;
         hir_match_payload_rank_out[node] = 0u;
+        hir_match_pattern_parent_out[node] = INVALID;
         return;
     }
 
@@ -134,6 +143,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_match_payload_owner_out[node] = INVALID;
         hir_match_payload_link_out[node] = INVALID;
         hir_match_payload_rank_out[node] = 0u;
+        hir_match_pattern_parent_out[node] = INVALID;
         return;
     }
 

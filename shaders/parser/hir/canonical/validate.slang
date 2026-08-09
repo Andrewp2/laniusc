@@ -335,13 +335,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         HirMatchPayload payload = hir_match_payloads[row];
         if (payload.arm >= match_arm_count) match_payload_reason |= 131072u;
         if (payload.pattern >= count) match_payload_reason |= 262144u;
-        if (payload.arm < match_arm_count)
-        {
-            uint start = hir_match_payload_start[payload.arm];
-            uint family_count = hir_match_payload_count[payload.arm];
-            if (start == INVALID || payload.ordinal >= family_count || start + payload.ordinal != row)
-                match_payload_reason |= 524288u;
-        }
+        if (payload.parent_pattern >= count) match_payload_reason |= 262144u;
     }
     uint array_element_reason = 0u;
     if (row < array_element_count)
