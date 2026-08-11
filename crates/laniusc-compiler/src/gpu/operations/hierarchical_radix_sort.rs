@@ -35,9 +35,6 @@ struct HierarchicalRadixSortPasses<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct HierarchicalRadixSortKernels {
     pub histogram: &'static str,
-    pub bucket_local: &'static str,
-    pub bucket_chunks: &'static str,
-    pub bucket_apply: &'static str,
     pub scatter: &'static str,
 }
 
@@ -45,9 +42,9 @@ impl HierarchicalRadixSortKernels {
     fn resolve(self, kernels: &KernelRegistry) -> HierarchicalRadixSortPasses<'_> {
         HierarchicalRadixSortPasses {
             histogram: kernels.kernel(self.histogram),
-            bucket_local: kernels.kernel(self.bucket_local),
-            bucket_chunks: kernels.kernel(self.bucket_chunks),
-            bucket_apply: kernels.kernel(self.bucket_apply),
+            bucket_local: kernels.kernel("type_checker/names/radix/00b/hierarchical/local"),
+            bucket_chunks: kernels.kernel("type_checker/names/radix/00b/hierarchical/chunks"),
+            bucket_apply: kernels.kernel("type_checker/names/radix/00b/hierarchical/apply"),
             bucket_bases: kernels.kernel("type_checker/names/radix/00c/bucket/bases"),
             scatter: kernels.kernel(self.scatter),
         }
@@ -60,9 +57,18 @@ impl HierarchicalRadixSortKernels {
     ) -> Result<(), String> {
         for step in [passes.order_to_temporary, passes.temporary_to_order] {
             graph.assign_kernel(step.histogram, self.histogram)?;
-            graph.assign_kernel(step.bucket_local, self.bucket_local)?;
-            graph.assign_kernel(step.bucket_chunks, self.bucket_chunks)?;
-            graph.assign_kernel(step.bucket_apply, self.bucket_apply)?;
+            graph.assign_kernel(
+                step.bucket_local,
+                "type_checker/names/radix/00b/hierarchical/local",
+            )?;
+            graph.assign_kernel(
+                step.bucket_chunks,
+                "type_checker/names/radix/00b/hierarchical/chunks",
+            )?;
+            graph.assign_kernel(
+                step.bucket_apply,
+                "type_checker/names/radix/00b/hierarchical/apply",
+            )?;
             graph.assign_kernel(
                 step.bucket_bases,
                 "type_checker/names/radix/00c/bucket/bases",
@@ -286,7 +292,7 @@ where
                 registry,
                 &[
                     ("gParams", step_params.as_entire_binding()),
-                    (plan.resources.count, count.as_entire_binding()),
+                    ("radix_count", count.as_entire_binding()),
                     ("radix_block_histogram", histogram_rows.as_entire_binding()),
                     (
                         "radix_block_bucket_prefix",
@@ -302,7 +308,7 @@ where
                 registry,
                 &[
                     ("gParams", step_params.as_entire_binding()),
-                    (plan.resources.count, count.as_entire_binding()),
+                    ("radix_count", count.as_entire_binding()),
                     ("radix_block_histogram", histogram_rows.as_entire_binding()),
                     ("radix_bucket_total", bucket_total.as_entire_binding()),
                 ],
@@ -314,7 +320,7 @@ where
                 registry,
                 &[
                     ("gParams", step_params.as_entire_binding()),
-                    (plan.resources.count, count.as_entire_binding()),
+                    ("radix_count", count.as_entire_binding()),
                     ("radix_block_histogram", histogram_rows.as_entire_binding()),
                     (
                         "radix_block_bucket_prefix",

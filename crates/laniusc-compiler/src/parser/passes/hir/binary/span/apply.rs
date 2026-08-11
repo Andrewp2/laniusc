@@ -55,6 +55,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirBinarySpanApp
                     b.ll1_status.as_entire_binding()
                 },
             ),
+            (
+                "hir_semantic_count".into(),
+                b.hir_semantic_count.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_dense_node".into(),
+                b.hir_semantic_dense_node.as_entire_binding(),
+            ),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
                 "hir_expr_record".into(),

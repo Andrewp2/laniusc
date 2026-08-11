@@ -46,6 +46,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
             (
+                "candidate_raw_by_anchor".into(),
+                b.hir_canonical_anchor_owner.as_entire_binding(),
+            ),
+            (
                 "family_flag".into(),
                 b.hir_generic_param_family_flag.as_entire_binding(),
             ),

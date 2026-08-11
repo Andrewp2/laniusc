@@ -549,7 +549,11 @@ pub struct ParserBuffers {
     pub pack_emit_prefix_a: LaniusBuffer<u32>,
     pub pack_emit_prefix_b: LaniusBuffer<u32>,
     pub pack_offset_scan_steps: Vec<PackOffsetScanStep>,
+    pub(crate) pack_totals_blocks_params:
+        LaniusBuffer<super::super::passes::pack::totals::blocks::Params>,
     pub pack_total_reduce_steps: Vec<PackTotalReduceStep>,
+    pub(crate) pack_totals_status_params:
+        LaniusBuffer<super::super::passes::pack::totals::status::Params>,
     pub partial_parse_status: LaniusBuffer<u32>,
     pub tables_blob: LaniusBuffer<u32>,
     pub out_sc: LaniusBuffer<u32>,
@@ -596,6 +600,9 @@ pub struct ParserBuffers {
     pub tree_match_dispatch_args: LaniusBuffer<u32>,
     pub tree_struct_dispatch_args: LaniusBuffer<u32>,
     pub tree_pointer_jump_dispatch_args: LaniusBuffer<u32>,
+    /// Raw-depth-bounded schedule for nearest-ancestor searches whose seed
+    /// shaders inspect a fixed local span before global pointer jumping.
+    pub hir_canonical_parent_dispatch_args: LaniusBuffer<u32>,
     pub hir_semantic_dispatch_args: LaniusBuffer<u32>,
     pub hir_semantic_depth_block_max: LaniusBuffer<u32>,
     pub hir_semantic_pointer_jump_dispatch_args: LaniusBuffer<u32>,
@@ -638,6 +645,7 @@ pub struct ParserBuffers {
     pub hir_kind: LaniusBuffer<u32>,
     pub hir_semantic_block_count: LaniusBuffer<u32>,
     pub hir_semantic_prefix_scan_steps: Vec<HirSemanticPrefixScanStep>,
+    pub hir_canonical_prefix_scan_steps: Vec<HirSemanticPrefixScanStep>,
     pub hir_semantic_flag: LaniusBuffer<u32>,
     pub hir_semantic_local_prefix: LaniusBuffer<u32>,
     pub hir_semantic_block_prefix_a: LaniusBuffer<u32>,
@@ -667,6 +675,8 @@ pub struct ParserBuffers {
     // -------- Canonical dense HIR phase boundary --------
     pub hir_canonical_params:
         LaniusBuffer<super::super::passes::hir::canonical::CanonicalHirParams>,
+    pub hir_canonical_scan_params:
+        LaniusBuffer<super::super::passes::hir::canonical::CanonicalScanParams>,
     pub hir_canonical_count: LaniusBuffer<u32>,
     pub hir_canonical_status: LaniusBuffer<u32>,
     /// Winning raw-node-plus-one for each source-token anchor. Zero means no

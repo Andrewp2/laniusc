@@ -729,6 +729,29 @@ pub struct LoweringCapacities {
 }
 
 impl LoweringCapacities {
+    const REUSE_GRANULARITY: u32 = 4 * 1024;
+
+    fn capacity_bucket(value: u32) -> u32 {
+        value
+            .max(1)
+            .div_ceil(Self::REUSE_GRANULARITY)
+            .saturating_mul(Self::REUSE_GRANULARITY)
+    }
+
+    pub(crate) fn bucketed(self) -> Self {
+        Self {
+            source_bytes: Self::capacity_bucket(self.source_bytes),
+            tokens: Self::capacity_bucket(self.tokens),
+            hir_nodes: Self::capacity_bucket(self.hir_nodes),
+            semantic_instructions: Self::capacity_bucket(self.semantic_instructions),
+            call_arguments: Self::capacity_bucket(self.call_arguments),
+            parameters: Self::capacity_bucket(self.parameters),
+            aggregate_elements: Self::capacity_bucket(self.aggregate_elements),
+            target_instructions: Self::capacity_bucket(self.target_instructions),
+            artifact_bytes: Self::capacity_bucket(self.artifact_bytes),
+        }
+    }
+
     fn bytes<T>(count: u32) -> u64 {
         u64::from(count.max(1)) * std::mem::size_of::<T>() as u64
     }
@@ -762,7 +785,7 @@ impl LoweringCapacities {
     }
 
     pub(crate) fn grow_to_cover(self, required: Self) -> Self {
-        let grow = |current: u32, needed: u32| needed.max(current.saturating_mul(2));
+        let grow = |current: u32, needed: u32| Self::capacity_bucket(needed.max(current));
         Self {
             source_bytes: grow(self.source_bytes, required.source_bytes),
             tokens: grow(self.tokens, required.tokens),
@@ -5003,7 +5026,7 @@ mod tests {
     }
 
     #[test]
-    fn lowering_capacity_growth_reuses_covering_workspace_and_doubles_on_growth() {
+    fn lowering_capacity_growth_reuses_covering_workspace_with_bounded_headroom() {
         let initial =
             LoweringCapacities::from_frontend_unit(1_000, 400, 100, LoweringTarget::X86_64)
                 .unwrap();
@@ -5015,9 +5038,15 @@ mod tests {
         assert!(!initial.covers(required));
         let grown = initial.grow_to_cover(required);
         assert!(grown.covers(required));
-        assert_eq!(grown.source_bytes, 2_000);
-        assert_eq!(grown.hir_nodes, 200);
-        assert_eq!(grown.semantic_instructions, 1_000);
+        assert_eq!(grown.source_bytes, 4_096);
+        assert_eq!(grown.hir_nodes, 4_096);
+        assert_eq!(grown.semantic_instructions, 4_096);
+        assert!(
+            grown.covers(
+                LoweringCapacities::from_frontend_unit(1_002, 402, 102, LoweringTarget::X86_64,)
+                    .unwrap()
+            )
+        );
     }
 
     #[test]
@@ -5313,10 +5342,7 @@ mod tests {
             )
             .unwrap();
             graph
-                .validate_complete_pass_reflection(
-                    graph.pass_id(pass_name).unwrap(),
-                    &reflection,
-                )
+                .validate_complete_pass_reflection(graph.pass_id(pass_name).unwrap(), &reflection)
                 .unwrap();
         }
     }
@@ -5394,10 +5420,7 @@ mod tests {
             )
             .unwrap();
             graph
-                .validate_complete_pass_reflection(
-                    graph.pass_id(pass_name).unwrap(),
-                    &reflection,
-                )
+                .validate_complete_pass_reflection(graph.pass_id(pass_name).unwrap(), &reflection)
                 .unwrap();
         }
     }
@@ -5522,20 +5545,14 @@ mod tests {
                 "artifact.x86.object.definitions",
                 "codegen/lir/x86/object_definitions",
             ),
-            (
-                "artifact.x86.object.bytes",
-                "codegen/lir/x86/object_bytes",
-            ),
+            ("artifact.x86.object.bytes", "codegen/lir/x86/object_bytes"),
         ] {
             let reflection = crate::reflection::parse_reflection_from_file(
                 crate::shader_artifacts::artifact_path(&format!("{artifact}.reflect.json")),
             )
             .unwrap();
             graph
-                .validate_complete_pass_reflection(
-                    graph.pass_id(pass_name).unwrap(),
-                    &reflection,
-                )
+                .validate_complete_pass_reflection(graph.pass_id(pass_name).unwrap(), &reflection)
                 .unwrap();
         }
     }

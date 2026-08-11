@@ -5,6 +5,8 @@ ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;
 StructuredBuffer<uint> family_block_prefix;
+StructuredBuffer<uint> canonical_count;
+StructuredBuffer<uint> canonical_dense_to_raw;
 StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_token_file_id;
 StructuredBuffer<uint> hir_type_arg_owner;
@@ -16,18 +18,20 @@ RWStructuredBuffer<uint> canonical_status;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
-uint block_count() { return (gCanonical.raw_capacity + 255u) / 256u; }
+uint block_count() { return (gCanonical.canonical_capacity + 255u) / 256u; }
 uint mapped(uint raw) { return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID; }
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID) {
-    uint raw = tid(dtid);
+    uint dense = tid(dtid);
     uint total = inclusive_scan_total(block_count(), family_block_prefix);
-    if (raw == 0u) family_count[0u] = total;
-    if (raw >= gCanonical.raw_capacity || family_flag[raw] == 0u) return;
-    uint block = raw / 256u;
+    if (dense == 0u) family_count[0u] = total;
+    if (dense >= min(canonical_count[0u], gCanonical.canonical_capacity) ||
+        family_flag[dense] == 0u) return;
+    uint raw = canonical_dense_to_raw[dense];
+    uint block = dense / 256u;
     uint base = block == 0u ? 0u : family_block_prefix[block - 1u];
-    uint row = base + family_local_prefix[raw];
+    uint row = base + family_local_prefix[dense];
     if (row >= gCanonical.canonical_capacity) {
         uint ignored;
         InterlockedMax(canonical_status[0u], 3u, ignored);

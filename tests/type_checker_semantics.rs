@@ -1554,6 +1554,60 @@ fn main() {
 }
 
 #[test]
+fn type_checker_type_decl_index_ignores_expression_payload_kinds() {
+    let sources = (0..12)
+        .map(|module| {
+            let mut source = format!(
+                r#"
+module regression::decl_index_{module};
+
+struct State{module} {{
+    left: i32,
+    right: i32,
+}}
+
+impl State{module} {{
+    fn adjusted(self, amount: i32) -> State{module} {{
+        return State{module} {{
+            left: self.left + amount,
+            right: self.right - amount,
+        }};
+    }}
+}}
+
+"#,
+            );
+            for function in 0..24 {
+                writeln!(
+                    source,
+                    r#"fn compare_{module}_{function}(value: i32) -> i32 {{
+    let result: i32 = value;
+    if (result == {function}) {{ result = result + 1; }}
+    if (result != {module}) {{ result = result + 2; }}
+    if (result > {function}) {{ result = result - 1; }}
+    return result;
+}}
+"#,
+                )
+                .unwrap();
+            }
+            writeln!(
+                source,
+                r#"fn use_state_{module}(state: State{module}) -> i32 {{
+    let next: State{module} = state.adjusted({module});
+    return next.left + next.right;
+}}"#,
+            )
+            .unwrap();
+            source
+        })
+        .collect::<Vec<_>>();
+    let source_refs = sources.iter().map(String::as_str).collect::<Vec<_>>();
+
+    assert_gpu_type_check_pack_ok(&source_refs);
+}
+
+#[test]
 fn type_checker_accepts_struct_function_parameters_and_returns() {
     let src = r#"
 struct Pair {
@@ -5173,6 +5227,64 @@ fn main() -> i32 {{
     );
 
     assert_gpu_type_check_ok(&source);
+}
+
+#[test]
+fn type_checker_infers_generic_function_results_from_named_instance_arguments() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Envelope<T> {
+    value: T,
+}
+
+fn unwrap<T>(envelope: Envelope<T>) -> T {
+    return envelope.value;
+}
+
+fn main() -> i32 {
+    let envelope: Envelope<i32> = Envelope { value: 42 };
+    return unwrap(envelope);
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_keeps_same_named_generic_member_resolution_module_local() {
+    assert_gpu_type_check_pack_ok(&[
+        r#"
+module first;
+
+struct Envelope<T> {
+    value: T,
+}
+
+fn unwrap<T>(envelope: Envelope<T>) -> T {
+    return envelope.value;
+}
+
+fn first_value() -> i32 {
+    let envelope: Envelope<i32> = Envelope { value: 17 };
+    return unwrap(envelope);
+}
+"#,
+        r#"
+module second;
+
+struct Envelope<T> {
+    value: T,
+}
+
+fn unwrap<T>(envelope: Envelope<T>) -> T {
+    return envelope.value;
+}
+
+fn second_value() -> i32 {
+    let envelope: Envelope<i32> = Envelope { value: 29 };
+    return unwrap(envelope);
+}
+"#,
+    ]);
 }
 
 #[test]

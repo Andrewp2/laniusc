@@ -40,5 +40,13 @@ macro_rules! decl_index_pass {
     };
 }
 
-decl_index_pass!(HirCanonicalDeclIndexClearPass, "clear", "hir_canonical_decl_index_clear");
-decl_index_pass!(HirCanonicalDeclIndexScatterPass, "scatter", "hir_canonical_decl_index_scatter");
+decl_index_pass!(
+    HirCanonicalDeclIndexClearPass,
+    "clear",
+    "hir_canonical_decl_index_clear"
+);
+decl_index_pass!(
+    HirCanonicalDeclIndexScatterPass,
+    "scatter",
+    "hir_canonical_decl_index_scatter"
+);

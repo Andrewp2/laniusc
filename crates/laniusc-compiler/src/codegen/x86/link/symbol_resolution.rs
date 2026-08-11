@@ -1,5 +1,4 @@
 use anyhow::{Result, anyhow, bail};
-use wgpu::util::DeviceExt;
 
 use super::{
     GpuX86LinkInput,
@@ -9,14 +8,7 @@ use super::{
 };
 use crate::codegen::x86::{
     GpuX86Linker,
-    support::{
-        dispatch_compute_pass,
-        reflected_bind_group,
-        storage_u32_rw,
-        u32_words_bytes,
-        uniform_u32_words,
-        workgroup_grid_1d,
-    },
+    support::{dispatch_compute_pass, reflected_bind_group, u32_words_bytes, workgroup_grid_1d},
 };
 
 const SYMBOL_PARTITION_BYTES_PER_COLUMN: usize = 4 * 1024 * 1024;
@@ -89,8 +81,9 @@ fn resolve_partition(
     }
     let query_capacity = partition.relocation_indices.len().min(max_queries).max(1);
     let first_query_count = partition.relocation_indices.len().min(max_queries);
-    let params = uniform_u32_words(
+    let params = generator.reusable_uniform_u32(
         device,
+        queue,
         "codegen.x86.link.symbol_partition.params",
         &[
             definition_count as u32,
@@ -99,44 +92,45 @@ fn resolve_partition(
             0,
         ],
     );
-    let definitions = input_u32(
+    let definitions = generator.reusable_input_u32(
         device,
+        queue,
         "codegen.x86.link.symbol_partition.definitions",
         &definition_words,
-        wgpu::BufferUsages::STORAGE,
     );
-    let queries = storage_u32_rw(
+    let queries = generator.reusable_storage_u32(
         device,
         "codegen.x86.link.symbol_partition.queries",
         query_capacity * 4,
         wgpu::BufferUsages::COPY_DST,
     );
-    let hash_table = storage_u32_rw(
+    let hash_table = generator.reusable_storage_u32(
         device,
         "codegen.x86.link.symbol_partition.hash_table",
         hash_capacity,
         wgpu::BufferUsages::empty(),
     );
-    let definition_values = storage_u32_rw(
+    let definition_values = generator.reusable_storage_u32(
         device,
         "codegen.x86.link.symbol_partition.definition_values",
         definition_count.max(1),
         wgpu::BufferUsages::empty(),
     );
-    let resolved_values = storage_u32_rw(
+    let resolved_values = generator.reusable_storage_u32(
         device,
         "codegen.x86.link.symbol_partition.resolved_values",
         query_capacity,
         wgpu::BufferUsages::COPY_SRC,
     );
-    let status = storage_u32_rw(
+    let status = generator.reusable_storage_u32(
         device,
         "codegen.x86.link.symbol_partition.status",
         4,
         wgpu::BufferUsages::COPY_SRC,
     );
-    let status_readback = readback(device, "rb.codegen.x86.link.symbol_partition.status", 16);
-    let values_readback = readback(
+    let status_readback =
+        generator.reusable_readback(device, "rb.codegen.x86.link.symbol_partition.status", 16);
+    let values_readback = generator.reusable_readback(
         device,
         "rb.codegen.x86.link.symbol_partition.values",
         query_capacity * 4,
@@ -307,12 +301,12 @@ fn resolve_partition(
             encoder.copy_buffer_to_buffer(
                 &resolved_values.buffer,
                 0,
-                &values_readback,
+                &values_readback.buffer,
                 0,
                 (batch.len() * 4) as u64,
             );
         }
-        encoder.copy_buffer_to_buffer(&status.buffer, 0, &status_readback, 0, 16);
+        encoder.copy_buffer_to_buffer(&status.buffer, 0, &status_readback.buffer, 0, 16);
         crate::gpu::passes_core::submit_with_progress(
             queue,
             "codegen.x86.link.symbol_partition",
@@ -321,8 +315,8 @@ fn resolve_partition(
         read_partition_batch(
             device,
             input,
-            &status_readback,
-            &values_readback,
+            &status_readback.buffer,
+            &values_readback.buffer,
             batch,
             resolved,
         )?;
@@ -420,33 +414,6 @@ fn rewrite_symbol_target(
         .checked_add(relocation.target_offset)
         .ok_or_else(|| anyhow!("x86 resolved symbol target offset overflows u32"))?;
     Ok(())
-}
-
-fn input_u32(
-    device: &wgpu::Device,
-    label: &str,
-    words: &[u32],
-    usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    let contents = if words.is_empty() {
-        u32_words_bytes(&[0])
-    } else {
-        u32_words_bytes(words)
-    };
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: &contents,
-        usage,
-    })
-}
-
-fn readback(device: &wgpu::Device, label: &str, byte_len: usize) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label),
-        size: byte_len.max(4) as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    })
 }
 
 #[cfg(test)]

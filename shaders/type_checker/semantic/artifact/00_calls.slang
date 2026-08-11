@@ -186,10 +186,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 call.callable_ordinal = local_variant_ordinal;
                 call.target_token = INVALID;
             }
-            else if (call.target_token != INVALID)
-                call.callable_kind = CALLABLE_FUNCTION;
             else if (call.dependency_library_id != INVALID)
                 call.callable_kind = CALLABLE_DEPENDENCY;
+            else if (call.target_token != INVALID)
+                call.callable_kind = CALLABLE_FUNCTION;
             else
             {
                 // Unresolved callables remain explicit so lowering can reject

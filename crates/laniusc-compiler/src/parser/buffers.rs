@@ -47,14 +47,16 @@ use storage::{
     dispatch_args_buffer,
     dispatch_args_schedule_buffer,
     dispatch_args_schedule_with_count_buffer,
-    workspace_subrange,
     reuse_or_allocate_u32_workspace,
     u32_workspace_subrange,
+    workspace_subrange,
 };
 pub(crate) use storage::{dispatch_args_schedule_count_offset, pointer_jump_step_capacity};
 
 use crate::gpu::buffers::{
     LaniusBuffer,
+    ResettableRowDomain,
+    ResettableRowDomainGuard,
     TrackedBufferView,
     readback_bytes,
     storage_ro_from_bytes,
@@ -62,6 +64,10 @@ use crate::gpu::buffers::{
     storage_rw_for_array,
     uniform_from_val,
 };
+
+const RESET_TOKEN_ROWS: ResettableRowDomain = ResettableRowDomain::new(1);
+const RESET_PACKED_STREAM_ROWS: ResettableRowDomain = ResettableRowDomain::new(2);
+const RESET_TREE_ROWS: ResettableRowDomain = ResettableRowDomain::new(3);
 
 pub(crate) fn write_uniform<T>(queue: &wgpu::Queue, buffer: &LaniusBuffer<T>, value: &T)
 where
@@ -87,6 +93,31 @@ impl ParserBuffers {
         let n_pairs = n_tokens.saturating_sub(1);
         self.total_sc = n_pairs.saturating_mul(self.resident_sc_width);
         self.total_emit = n_pairs.saturating_mul(self.resident_emit_width);
+        write_uniform(
+            queue,
+            &self.pack_totals_blocks_params,
+            &super::passes::pack::totals::blocks::Params { n_pairs },
+        );
+        write_uniform(
+            queue,
+            &self.pack_totals_status_params,
+            &super::passes::pack::totals::status::Params {
+                n_pairs,
+                emit_capacity: self.tree_capacity,
+            },
+        );
+        let mut total_items = n_pairs.div_ceil(256).max(1);
+        for step in &mut self.pack_total_reduce_steps {
+            step.item_count = total_items;
+            write_uniform(
+                queue,
+                &step.params,
+                &super::passes::pack::totals::reduce::Params {
+                    item_count: total_items,
+                },
+            );
+            total_items = total_items.div_ceil(256).max(1);
+        }
         write_uniform(
             queue,
             &self.params_llp,
@@ -173,17 +204,49 @@ impl ParserBuffers {
         );
     }
 
-    /// Restores writable job storage to the zeroed state guaranteed for a
-    /// fresh WGPU allocation. Logical aliases share an allocation identity,
-    /// so each physical buffer is cleared at most once.
-    pub(crate) fn clear_job_storage(&self, encoder: &mut wgpu::CommandEncoder) {
+    fn active_reset_bytes(
+        &self,
+        buffer: &crate::gpu::buffers::ResettableBuffer,
+        active_tree_capacity: u32,
+    ) -> u64 {
+        let rows = buffer.allocated_rows;
+        if rows == 0 || buffer.byte_size == 0 || buffer.byte_size % rows as u64 != 0 {
+            return buffer.byte_size;
+        }
+        let active_rows = match buffer.row_domain {
+            Some(RESET_TOKEN_ROWS) => self.n_tokens as usize,
+            Some(RESET_PACKED_STREAM_ROWS) => self.total_sc as usize,
+            Some(RESET_TREE_ROWS) => active_tree_capacity as usize,
+            _ => rows,
+        }
+        .min(rows)
+        .max(1);
+        (buffer.byte_size / rows as u64)
+            .saturating_mul(active_rows as u64)
+            .next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT)
+            .min(buffer.byte_size)
+    }
+
+    /// Restores the rows visible to the current job. Fixed-size summaries and
+    /// arena allocations are cleared in full; explicitly declared token-,
+    /// packed-stream-, and tree-indexed allocations clear only their active
+    /// logical prefix.
+    pub(crate) fn clear_job_storage(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        active_tree_capacity: u32,
+    ) -> u64 {
+        let mut cleared_bytes = 0u64;
         for buffer in &self.resettable_buffers {
-            if buffer.byte_size == 0 {
+            let byte_size = self.active_reset_bytes(buffer, active_tree_capacity);
+            if byte_size == 0 {
                 continue;
             }
-            debug_assert_eq!(buffer.byte_size % wgpu::COPY_BUFFER_ALIGNMENT, 0);
-            encoder.clear_buffer(&buffer.buffer, 0, Some(buffer.byte_size));
+            debug_assert_eq!(byte_size % wgpu::COPY_BUFFER_ALIGNMENT, 0);
+            encoder.clear_buffer(&buffer.buffer, 0, Some(byte_size));
+            cleared_bytes = cleared_bytes.saturating_add(byte_size);
         }
+        cleared_bytes
     }
 
     pub(crate) fn resettable_storage_totals(&self) -> (usize, u64) {
@@ -234,6 +297,8 @@ impl ParserBuffers {
         let token_input_capacity = n_tokens.saturating_sub(2).max(1);
         let token_delimiter_n_blocks = token_input_capacity.div_ceil(256).max(1);
         let pair_capacity = n_pairs.max(1);
+        let _token_reset_rows =
+            ResettableRowDomainGuard::enter(RESET_TOKEN_ROWS, n_tokens as usize);
         let ll1_status = storage_rw_for_array::<u32>(device, "parser.ll1_status", 6);
         let ll1_status_readback =
             readback_bytes(device, "rb.parser.recorded_ll1_hir.status", 32, 32);
@@ -718,11 +783,28 @@ impl ParserBuffers {
             storage_rw_for_array::<u32>(device, "pack.emit_prefix_b", n_pack_pairs);
         let pack_offset_scan_steps =
             make_pack_offset_scan_steps(device, n_tokens.saturating_sub(1));
+        let pack_totals_blocks_params = uniform_from_val(
+            device,
+            "pack.totals_blocks.params",
+            &super::passes::pack::totals::blocks::Params {
+                n_pairs: n_tokens.saturating_sub(1),
+            },
+        );
         let pack_total_reduce_steps =
             make_pack_total_reduce_steps(device, n_tokens.saturating_sub(1));
+        let pack_totals_status_params = uniform_from_val(
+            device,
+            "pack.totals_status.params",
+            &super::passes::pack::totals::status::Params {
+                n_pairs: n_tokens.saturating_sub(1),
+                emit_capacity,
+            },
+        );
         let partial_parse_status =
             storage_rw_for_array::<u32>(device, "pack.partial_parse_status", 6);
         let tables_blob = storage_ro_from_u32s(device, "pack.tables_blob", &blob);
+        let _packed_stream_reset_rows =
+            ResettableRowDomainGuard::enter(RESET_PACKED_STREAM_ROWS, total_sc.max(1) as usize);
         let out_sc = storage_rw_for_array::<u32>(device, "pack.out_sc", total_sc.max(1) as usize);
         let out_emit = storage_rw_for_array::<u32>(device, "pack.out_emit", emit_capacity as usize);
         let out_emit_pos =
@@ -831,6 +913,8 @@ impl ParserBuffers {
         );
 
         // ---------- Tree parent recovery ----------
+        let _tree_reset_rows =
+            ResettableRowDomainGuard::enter(RESET_TREE_ROWS, tree_capacity as usize);
         let family_capacities = ParserFamilyCapacities::new(tree_capacity, parser_feature_flags);
         let tree_n_node_blocks = tree_capacity.div_ceil(WG).max(1);
         let tree_n_prefix_blocks = tree_capacity.saturating_add(1).div_ceil(WG).max(1);
@@ -858,6 +942,15 @@ impl ParserBuffers {
             device,
             "parser.tree_pointer_jump_dispatch_args",
             pointer_jump_step_capacity(tree_capacity) as usize,
+        );
+        let canonical_parent_step_capacity =
+            super::passes::hir::semantic::parent::step::pointer_jump_steps_after_local_span(
+                tree_capacity,
+            );
+        let hir_canonical_parent_dispatch_args = dispatch_args_schedule_buffer(
+            device,
+            "parser.hir_canonical_parent_dispatch_args",
+            canonical_parent_step_capacity as usize,
         );
         let hir_semantic_dispatch_args =
             dispatch_args_buffer(device, "parser.hir_semantic_dispatch_args");
@@ -1082,8 +1175,7 @@ impl ParserBuffers {
             "parser.hir_semantic_block_count",
             tree_n_node_blocks as usize,
         );
-        let hir_semantic_prefix_scan_steps =
-            make_hir_semantic_prefix_scan_steps(device, tree_n_node_blocks);
+        let hir_semantic_prefix_scan_steps = make_hir_prefix_scan_steps(device, tree_n_node_blocks);
         // Raw type records still alias the parser prefix arrays in resident
         // compilation, and remain live through type checking during the HIR
         // migration. Keep canonical-family scan storage distinct until every
@@ -2412,6 +2504,15 @@ impl ParserBuffers {
                 records_use_token_rows: u32::from(!retain_debug_hir_buffers),
             },
         );
+        let hir_canonical_scan_params = uniform_from_val(
+            device,
+            "parser.hir_canonical.scan_params",
+            &super::passes::hir::canonical::CanonicalScanParams {
+                item_count: hir_canonical_capacity,
+            },
+        );
+        let hir_canonical_prefix_scan_steps =
+            make_hir_prefix_scan_steps(device, hir_canonical_capacity.div_ceil(WG).max(1));
         let hir_canonical_count =
             storage_rw_for_array::<u32>(device, "parser.hir_canonical_count", 1);
         let hir_canonical_status =
@@ -2965,7 +3066,9 @@ impl ParserBuffers {
             pack_emit_prefix_a,
             pack_emit_prefix_b,
             pack_offset_scan_steps,
+            pack_totals_blocks_params,
             pack_total_reduce_steps,
+            pack_totals_status_params,
             partial_parse_status,
             tables_blob,
             out_sc,
@@ -3011,6 +3114,7 @@ impl ParserBuffers {
             tree_match_dispatch_args,
             tree_struct_dispatch_args,
             tree_pointer_jump_dispatch_args,
+            hir_canonical_parent_dispatch_args,
             hir_semantic_dispatch_args,
             hir_semantic_depth_block_max,
             hir_semantic_pointer_jump_dispatch_args,
@@ -3102,6 +3206,7 @@ impl ParserBuffers {
             hir_kind,
             hir_semantic_block_count,
             hir_semantic_prefix_scan_steps,
+            hir_canonical_prefix_scan_steps,
             hir_semantic_flag,
             hir_semantic_local_prefix,
             hir_semantic_block_prefix_a,
@@ -3129,6 +3234,7 @@ impl ParserBuffers {
             hir_semantic_child_index_rank_b,
             hir_semantic_count,
             hir_canonical_params,
+            hir_canonical_scan_params,
             hir_canonical_count,
             hir_canonical_status,
             hir_canonical_anchor_owner,

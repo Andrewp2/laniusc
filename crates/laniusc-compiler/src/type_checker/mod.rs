@@ -42,6 +42,7 @@ use wgpu::util::DeviceExt;
 
 use crate::gpu::{
     buffers::{
+        CapacityBufferCache,
         LaniusBuffer,
         TrackedBufferView,
         storage_ro_from_bytes,
@@ -71,10 +72,8 @@ use crate::gpu::{
         DispatchDim,
         InputElements,
         PassData,
-        count_recorded_compute_pass,
         plan_workgroups,
         recorded_compute_pass_count,
-        reset_recorded_compute_pass_count,
     },
     resource_registry::{
         ResourceMap,
@@ -273,6 +272,8 @@ pub struct GpuTypeChecker {
     status_readback: LaniusBuffer<u32>,
     resident_workspace: Mutex<Option<ResidentTypeCheckWorkspace>>,
     current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,
+    dependency_interface_state: Mutex<Option<GpuDependencyInterfaceState>>,
+    semantic_interface_buffers: CapacityBufferCache,
 }
 
 /// Marker returned when type-check work has been recorded into a command
@@ -294,6 +295,61 @@ struct ResidentTypeCheckCacheKey {
 }
 
 impl ResidentTypeCheckCacheKey {
+    const ROW_CAPACITY_GRANULARITY: u32 = 4 * 1024;
+    const FILE_CAPACITY_GRANULARITY: u32 = 64;
+
+    fn capacity_bucket(value: u32, granularity: u32) -> u32 {
+        value
+            .max(1)
+            .div_ceil(granularity)
+            .saturating_mul(granularity)
+    }
+
+    fn bucketed(self) -> Self {
+        let rows = Self::ROW_CAPACITY_GRANULARITY;
+        Self {
+            source_byte_capacity: Self::capacity_bucket(self.source_byte_capacity, rows),
+            source_file_capacity: Self::capacity_bucket(
+                self.source_file_capacity,
+                Self::FILE_CAPACITY_GRANULARITY,
+            ),
+            token_capacity: Self::capacity_bucket(self.token_capacity, rows),
+            hir_node_capacity: Self::capacity_bucket(self.hir_node_capacity, rows),
+            parser_hir_node_capacity: Self::capacity_bucket(self.parser_hir_node_capacity, rows),
+            module_record_capacity: Self::capacity_bucket(self.module_record_capacity, rows),
+            call_param_row_capacity: Self::capacity_bucket(self.call_param_row_capacity, rows),
+            call_arg_row_capacity: Self::capacity_bucket(self.call_arg_row_capacity, rows),
+            parser_feature_flags: self.parser_feature_flags,
+            input_fingerprint: self.input_fingerprint,
+        }
+    }
+
+    fn grow_to_cover(self, required: Self) -> Self {
+        Self {
+            source_byte_capacity: self.source_byte_capacity.max(required.source_byte_capacity),
+            source_file_capacity: self.source_file_capacity.max(required.source_file_capacity),
+            token_capacity: self.token_capacity.max(required.token_capacity),
+            hir_node_capacity: self.hir_node_capacity.max(required.hir_node_capacity),
+            parser_hir_node_capacity: self
+                .parser_hir_node_capacity
+                .max(required.parser_hir_node_capacity),
+            module_record_capacity: self
+                .module_record_capacity
+                .max(required.module_record_capacity),
+            call_param_row_capacity: self
+                .call_param_row_capacity
+                .max(required.call_param_row_capacity),
+            call_arg_row_capacity: self
+                .call_arg_row_capacity
+                .max(required.call_arg_row_capacity),
+            parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
+            // Buffer identities describe the bindings used by the replacement
+            // workspace. Capacities and optional storage remain monotonic even
+            // when one upstream slot grows and changes that identity.
+            input_fingerprint: required.input_fingerprint,
+        }
+    }
+
     fn covers(self, required: Self) -> bool {
         self.input_fingerprint == required.input_fingerprint
             && self.source_byte_capacity >= required.source_byte_capacity
@@ -306,6 +362,45 @@ impl ResidentTypeCheckCacheKey {
             && self.call_arg_row_capacity >= required.call_arg_row_capacity
             && self.parser_feature_flags & required.parser_feature_flags
                 == required.parser_feature_flags
+    }
+}
+
+#[cfg(test)]
+mod resident_typecheck_cache_key_tests {
+    use super::ResidentTypeCheckCacheKey;
+
+    fn key(capacity: u32, features: u32, fingerprint: u64) -> ResidentTypeCheckCacheKey {
+        ResidentTypeCheckCacheKey {
+            source_byte_capacity: capacity,
+            source_file_capacity: capacity,
+            token_capacity: capacity,
+            hir_node_capacity: capacity,
+            parser_hir_node_capacity: capacity,
+            module_record_capacity: capacity,
+            call_param_row_capacity: capacity,
+            call_arg_row_capacity: capacity,
+            parser_feature_flags: features,
+            input_fingerprint: fingerprint,
+        }
+    }
+
+    #[test]
+    fn replacement_workspace_retains_capacity_and_optional_feature_storage() {
+        let allocation = key(100, 0b0101, 11).grow_to_cover(key(80, 0b1010, 22));
+        assert_eq!(allocation.source_byte_capacity, 100);
+        assert_eq!(allocation.parser_feature_flags, 0b1111);
+        assert_eq!(allocation.input_fingerprint, 22);
+        assert!(allocation.covers(key(80, 0b0010, 22)));
+        assert!(allocation.covers(key(100, 0b0101, 22)));
+    }
+
+    #[test]
+    fn bucketed_workspace_capacity_covers_ordinary_source_edits() {
+        let allocation = key(5_238_075, 0b0101, 11).bucketed();
+        let mut edited = key(5_238_075, 0b0101, 11);
+        edited.source_byte_capacity = 5_238_111;
+        assert_eq!(allocation.source_byte_capacity, 5_238_784);
+        assert!(allocation.covers(edited));
     }
 }
 

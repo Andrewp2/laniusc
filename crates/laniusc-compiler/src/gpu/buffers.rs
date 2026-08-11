@@ -12,6 +12,148 @@ use std::{
 
 thread_local! {
     static RESETTABLE_BUFFER_COLLECTOR: RefCell<Option<Vec<ResettableBuffer>>> = const { RefCell::new(None) };
+    static RESETTABLE_ROW_DOMAIN: RefCell<Option<(ResettableRowDomain, usize)>> = const { RefCell::new(None) };
+    static UNIFORM_BUFFER_ARENA: RefCell<Option<UniformBufferArena>> = const { RefCell::new(None) };
+}
+
+const DEFAULT_UNIFORM_ARENA_BYTES: u64 = 1024 * 1024;
+
+struct UniformBufferArena {
+    label: String,
+    alignment: u64,
+    max_buffer_size: u64,
+    logical_bindings: u64,
+    arenas: Vec<(LaniusBuffer<u8>, u64)>,
+}
+
+impl UniformBufferArena {
+    fn allocate(&mut self, device: &wgpu::Device, bytes: &[u8]) -> Option<LaniusBuffer<u8>> {
+        let binding_bytes = u64::try_from(bytes.len()).ok()?.max(4).next_multiple_of(4);
+        if binding_bytes > u64::from(device.limits().max_uniform_buffer_binding_size) {
+            return None;
+        }
+
+        let mut placement = self.arenas.last().and_then(|(arena, used)| {
+            let offset = used.next_multiple_of(self.alignment);
+            (offset.checked_add(binding_bytes)? <= arena.byte_size as u64)
+                .then_some((self.arenas.len() - 1, offset))
+        });
+        if placement.is_none() {
+            let arena_bytes = DEFAULT_UNIFORM_ARENA_BYTES
+                .max(binding_bytes.next_multiple_of(self.alignment))
+                .min(self.max_buffer_size);
+            if arena_bytes < binding_bytes {
+                return None;
+            }
+            let index = self.arenas.len();
+            let label = format!("{}.{}", self.label, index);
+            let raw = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&label),
+                size: arena_bytes,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: true,
+            });
+            self.arenas.push((
+                LaniusBuffer::new_labeled((raw, arena_bytes), arena_bytes as usize, label),
+                0,
+            ));
+            placement = Some((index, 0));
+        }
+
+        let (arena_index, offset) = placement?;
+        let (arena, used) = &mut self.arenas[arena_index];
+        {
+            let mut mapped = arena
+                .buffer
+                .slice(offset..offset + binding_bytes)
+                .get_mapped_range_mut();
+            mapped.slice(..bytes.len()).copy_from_slice(bytes);
+            mapped.slice(bytes.len()..).fill(0);
+        }
+        *used = offset + binding_bytes;
+        self.logical_bindings += 1;
+        arena
+            .subrange::<u8>(offset, binding_bytes, bytes.len())
+            .ok()
+    }
+}
+
+/// Packs immutable uniform parameters created by `build` into aligned ranges
+/// of a small number of physical buffers. Reflected bind groups still bind
+/// each parameter's exact logical range; only the WGPU allocation identity is
+/// shared. This avoids making every tiny pass parameter permanently enlarge
+/// command-encoder resource-tracking tables.
+pub(crate) fn with_uniform_buffer_arena<T>(
+    device: &wgpu::Device,
+    label: &str,
+    build: impl FnOnce() -> T,
+) -> T {
+    let limits = device.limits();
+    UNIFORM_BUFFER_ARENA.with(|arena| {
+        assert!(arena.borrow().is_none(), "nested uniform-buffer arena");
+        *arena.borrow_mut() = Some(UniformBufferArena {
+            label: label.to_owned(),
+            alignment: u64::from(limits.min_uniform_buffer_offset_alignment.max(1)),
+            max_buffer_size: limits.max_buffer_size,
+            logical_bindings: 0,
+            arenas: Vec::new(),
+        });
+    });
+    let value = build();
+    let arena = UNIFORM_BUFFER_ARENA.with(|arena| {
+        arena
+            .borrow_mut()
+            .take()
+            .expect("uniform-buffer arena disappeared")
+    });
+    if crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
+        eprintln!(
+            "gpu_uniform_arena label=\"{}\" logical_bindings={} physical_buffers={} reserved_bytes={} used_bytes={}",
+            arena.label,
+            arena.logical_bindings,
+            arena.arenas.len(),
+            arena
+                .arenas
+                .iter()
+                .map(|(buffer, _)| buffer.byte_size as u64)
+                .sum::<u64>(),
+            arena.arenas.iter().map(|(_, used)| *used).sum::<u64>(),
+        );
+    }
+    for (buffer, _) in arena.arenas {
+        buffer.buffer.unmap();
+    }
+    value
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ResettableRowDomain(u32);
+
+impl ResettableRowDomain {
+    pub(crate) const fn new(id: u32) -> Self {
+        Self(id)
+    }
+}
+
+pub(crate) struct ResettableRowDomainGuard {
+    previous: Option<(ResettableRowDomain, usize)>,
+}
+
+impl ResettableRowDomainGuard {
+    pub(crate) fn enter(domain: ResettableRowDomain, allocated_rows: usize) -> Self {
+        let previous = RESETTABLE_ROW_DOMAIN.with(|current| {
+            current
+                .borrow_mut()
+                .replace((domain, allocated_rows.max(1)))
+        });
+        Self { previous }
+    }
+}
+
+impl Drop for ResettableRowDomainGuard {
+    fn drop(&mut self) {
+        RESETTABLE_ROW_DOMAIN.with(|current| *current.borrow_mut() = self.previous);
+    }
 }
 
 #[derive(Clone)]
@@ -19,6 +161,8 @@ pub(crate) struct ResettableBuffer {
     pub(crate) buffer: wgpu::Buffer,
     pub(crate) byte_size: u64,
     pub(crate) allocation_id: u64,
+    pub(crate) row_domain: Option<ResettableRowDomain>,
+    pub(crate) allocated_rows: usize,
 }
 
 impl ResettableBuffer {
@@ -60,6 +204,10 @@ pub(crate) fn register_resettable_buffer<T>(buffer: &LaniusBuffer<T>) {
         let Some(buffers) = collector.as_mut() else {
             return;
         };
+        let declared_rows = RESETTABLE_ROW_DOMAIN.with(|current| *current.borrow());
+        let row_domain = declared_rows
+            .filter(|(_, allocated_rows)| *allocated_rows == buffer.count)
+            .map(|(domain, _)| domain);
         buffers.push(ResettableBuffer {
             buffer: buffer.buffer.clone(),
             // Resetting is allocation-wide: one collected entry represents
@@ -68,6 +216,8 @@ pub(crate) fn register_resettable_buffer<T>(buffer: &LaniusBuffer<T>) {
             allocation_id: buffer
                 .allocation_id()
                 .expect("resettable buffers must have tracked allocation identities"),
+            row_domain,
+            allocated_rows: buffer.count,
         });
     });
 }
@@ -671,6 +821,14 @@ where
     ub.write(value)
         .expect("failed to write value into UniformBuffer");
     let bytes = ub.as_ref();
+    if let Some(buffer) = UNIFORM_BUFFER_ARENA.with(|arena| {
+        arena
+            .borrow_mut()
+            .as_mut()
+            .and_then(|arena| arena.allocate(device, bytes))
+    }) {
+        return buffer.reinterpret(1);
+    }
     let raw = create_buffer_init_checked(
         device,
         label,
@@ -702,6 +860,169 @@ where
     });
     queue.write_buffer(&raw, 0, bytes);
     LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label)
+}
+
+struct CachedCapacityBuffer {
+    buffer: LaniusBuffer<u8>,
+    usage: wgpu::BufferUsages,
+}
+
+/// Name-keyed GPU allocations that grow to cover a requested byte range and
+/// then retain their physical identity. Sequential compiler jobs can update
+/// and rebind logical subranges without reconstructing the underlying buffer.
+#[derive(Default)]
+pub(crate) struct CapacityBufferCache {
+    buffers: Mutex<HashMap<String, CachedCapacityBuffer>>,
+}
+
+impl CapacityBufferCache {
+    fn ensure_buffer<'a>(
+        device: &wgpu::Device,
+        label: &str,
+        byte_size: usize,
+        usage: wgpu::BufferUsages,
+        buffers: &'a mut HashMap<String, CachedCapacityBuffer>,
+    ) -> &'a CachedCapacityBuffer {
+        let replace = buffers
+            .get(label)
+            .map(|cached| cached.buffer.byte_size < byte_size || !cached.usage.contains(usage))
+            .unwrap_or(true);
+        if replace {
+            let raw = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: byte_size as u64,
+                usage,
+                mapped_at_creation: false,
+            });
+            buffers.insert(
+                label.to_owned(),
+                CachedCapacityBuffer {
+                    buffer: LaniusBuffer::new_labeled((raw, byte_size as u64), byte_size, label),
+                    usage,
+                },
+            );
+        }
+        &buffers[label]
+    }
+
+    pub(crate) fn buffer<T>(
+        &self,
+        device: &wgpu::Device,
+        label: &str,
+        byte_size: usize,
+        count: usize,
+        usage: wgpu::BufferUsages,
+    ) -> LaniusBuffer<T> {
+        let byte_size = byte_size.max(4).next_multiple_of(4);
+        let mut buffers = self.buffers.lock().expect("capacity buffer cache poisoned");
+        Self::ensure_buffer(device, label, byte_size, usage, &mut buffers)
+            .buffer
+            .subrange(0, byte_size as u64, count)
+            .expect("cached buffer covers its requested logical range")
+    }
+
+    /// Returns the complete retained allocation after growing it to cover the
+    /// requested range. Bind groups should use this view when active counts
+    /// are supplied separately, keeping binding identity stable as jobs vary
+    /// within the retained capacity.
+    pub(crate) fn binding_capacity<T>(
+        &self,
+        device: &wgpu::Device,
+        label: &str,
+        required_byte_size: usize,
+        usage: wgpu::BufferUsages,
+    ) -> LaniusBuffer<T> {
+        let required_byte_size = required_byte_size.max(4).next_multiple_of(4);
+        let mut buffers = self.buffers.lock().expect("capacity buffer cache poisoned");
+        let cached = Self::ensure_buffer(device, label, required_byte_size, usage, &mut buffers);
+        let element_size = std::mem::size_of::<T>().max(1);
+        cached
+            .buffer
+            .subrange(
+                0,
+                cached.buffer.byte_size as u64,
+                cached.buffer.byte_size / element_size,
+            )
+            .expect("complete capacity buffer view is in bounds")
+    }
+
+    pub(crate) fn initialized_u32(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &str,
+        words: &[u32],
+        extra_usage: wgpu::BufferUsages,
+    ) -> LaniusBuffer<u32> {
+        let mut bytes = Vec::with_capacity(words.len() * 4);
+        for word in words {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        let buffer = self.buffer(
+            device,
+            label,
+            bytes.len(),
+            words.len(),
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST
+                | extra_usage,
+        );
+        buffer.write(queue, 0, &bytes);
+        buffer
+    }
+
+    pub(crate) fn storage_u32(
+        &self,
+        device: &wgpu::Device,
+        label: &str,
+        count: usize,
+        extra_usage: wgpu::BufferUsages,
+    ) -> LaniusBuffer<u32> {
+        self.buffer(
+            device,
+            label,
+            count.max(1) * std::mem::size_of::<u32>(),
+            count.max(1),
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST
+                | extra_usage,
+        )
+    }
+
+    pub(crate) fn uniform<T>(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &str,
+        value: &T,
+    ) -> LaniusBuffer<T>
+    where
+        T: encase::ShaderType + encase::internal::WriteInto,
+    {
+        let mut encoded = encase::UniformBuffer::new(Vec::<u8>::new());
+        encoded
+            .write(value)
+            .expect("failed to write value into UniformBuffer");
+        let bytes = encoded.as_ref();
+        let buffer = self.buffer(
+            device,
+            label,
+            bytes.len(),
+            1,
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        );
+        buffer.write(queue, 0, bytes);
+        buffer
+    }
+
+    pub(crate) fn clear(&self) {
+        self.buffers
+            .lock()
+            .expect("capacity buffer cache poisoned")
+            .clear();
+    }
 }
 
 /// Creates an alignment-padded uniform table for one dynamically offset

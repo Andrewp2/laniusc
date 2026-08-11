@@ -34,6 +34,12 @@ pub struct CanonicalHirParams {
     pub records_use_token_rows: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Default, ShaderType)]
+pub struct CanonicalScanParams {
+    pub item_count: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;

@@ -1,6 +1,6 @@
 use super::{GpuParser, ResidentParserBufferCache, support::table_fingerprint};
 use crate::{
-    gpu::buffers::collect_resettable_buffers,
+    gpu::buffers::{collect_resettable_buffers, with_uniform_buffer_arena},
     lexer::features::CONSERVATIVE_PARSER_FEATURES,
     parser::{buffers::ParserBuffers, tables::PrecomputedParseTables},
 };
@@ -14,38 +14,41 @@ struct ResidentParserAllocation {
 }
 
 impl ResidentParserAllocation {
-    fn grow_to_cover(self, required: Self) -> Self {
-        let same_feature_shape = self.parser_feature_flags == required.parser_feature_flags;
+    const GRANULARITY: u32 = 4 * 1024;
+
+    fn capacity_bucket(value: u32) -> u32 {
+        value
+            .max(1)
+            .div_ceil(Self::GRANULARITY)
+            .saturating_mul(Self::GRANULARITY)
+    }
+
+    fn bucketed(self) -> Self {
         Self {
-            // A feature-shape transition changes which optional HIR families
-            // are real storage versus sentinels.  Do not retain the previous
-            // unit's larger physical shape across that boundary: rebuilding at
-            // the current unit's dimensions prevents stale family rows from
-            // being addressed by the new parser.  For an unchanged shape the
-            // resident workspace remains capacity-reusable and grows only as
-            // required.
-            token_capacity: if same_feature_shape {
-                self.token_capacity.max(required.token_capacity)
-            } else {
-                required.token_capacity
-            },
-            source_capacity: if same_feature_shape {
-                self.source_capacity.max(required.source_capacity)
-            } else {
-                required.source_capacity
-            },
-            tree_capacity: if same_feature_shape {
-                self.tree_capacity.max(required.tree_capacity)
-            } else {
-                required.tree_capacity
-            },
-            // Feature flags select which optional HIR families are allocated and
-            // which parser-family passes are valid for the current source unit.
-            // They are not a monotonic capacity dimension: carrying a previous
-            // unit's bits into this allocation makes absent families look
-            // present after a cache transition.  The capacities themselves stay
-            // monotonic; the feature mask is exactly the current requirement.
-            parser_feature_flags: required.parser_feature_flags,
+            token_capacity: Self::capacity_bucket(self.token_capacity),
+            source_capacity: Self::capacity_bucket(self.source_capacity),
+            tree_capacity: Self::capacity_bucket(self.tree_capacity),
+            parser_feature_flags: self.parser_feature_flags,
+        }
+    }
+
+    fn covers(self, required: Self) -> bool {
+        self.token_capacity >= required.token_capacity
+            && self.source_capacity >= required.source_capacity
+            && self.tree_capacity >= required.tree_capacity
+            && self.parser_feature_flags & required.parser_feature_flags
+                == required.parser_feature_flags
+    }
+
+    fn grow_to_cover(self, required: Self) -> Self {
+        Self {
+            token_capacity: self.token_capacity.max(required.token_capacity),
+            source_capacity: self.source_capacity.max(required.source_capacity),
+            tree_capacity: self.tree_capacity.max(required.tree_capacity),
+            // This mask describes allocated optional-family storage, not the
+            // current job. ParserBuffers::parser_feature_flags is set to the
+            // current job below, after the reusable allocation is selected.
+            parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
         }
     }
 }
@@ -165,7 +168,8 @@ impl GpuParser {
         });
         let allocation = cached_allocation
             .map(|cached| cached.grow_to_cover(required))
-            .unwrap_or(required);
+            .unwrap_or(required)
+            .bucketed();
         let needs_allocate = cached_allocation != Some(allocation);
 
         if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
@@ -197,19 +201,25 @@ impl GpuParser {
             let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
 
             let action_table_bytes = tables.to_action_header_grid_bytes();
-            let (mut buffers, resettable_buffers) = collect_resettable_buffers(|| {
-                ParserBuffers::new_resident_capacity_with_source_and_tree_capacity_debug_and_features(
-                    &self.device,
-                    allocation.token_capacity,
-                    allocation.source_capacity,
-                    tables.n_kinds,
-                    &action_table_bytes,
-                    tables,
-                    Some(allocation.tree_capacity),
-                    retain_debug_hir_buffers,
-                    allocation.parser_feature_flags,
-                )
-            });
+            let (mut buffers, resettable_buffers) = with_uniform_buffer_arena(
+                &self.device,
+                "parser.uniform_arena",
+                || {
+                    collect_resettable_buffers(|| {
+                        ParserBuffers::new_resident_capacity_with_source_and_tree_capacity_debug_and_features(
+                            &self.device,
+                            allocation.token_capacity,
+                            allocation.source_capacity,
+                            tables.n_kinds,
+                            &action_table_bytes,
+                            tables,
+                            Some(allocation.tree_capacity),
+                            retain_debug_hir_buffers,
+                            allocation.parser_feature_flags,
+                        )
+                    })
+                },
+            );
             buffers.resettable_buffers = resettable_buffers;
             *slot = Some(ResidentParserBufferCache {
                 token_capacity: allocation.token_capacity,
@@ -237,6 +247,77 @@ impl GpuParser {
         cached.buffers.parser_feature_flags = parser_feature_flags;
         &cached.buffers
     }
+
+    /// Whether the current parser allocation can record this job without
+    /// replacing any buffer identities.
+    pub(crate) fn current_resident_allocation_covers(
+        &self,
+        token_capacity: u32,
+        source_capacity: u32,
+        tables: &PrecomputedParseTables,
+        tree_capacity: u32,
+        retain_debug_hir_buffers: bool,
+        parser_feature_flags: u32,
+    ) -> bool {
+        let fingerprint = table_fingerprint(tables);
+        let required = ResidentParserAllocation {
+            token_capacity: token_capacity.max(1),
+            source_capacity: source_capacity.max(1),
+            tree_capacity: tree_capacity.max(1),
+            parser_feature_flags,
+        };
+        self.resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned")
+            .as_ref()
+            .is_some_and(|cached| {
+                cached.table_fingerprint == fingerprint
+                    && cached.retain_debug_hir_buffers == retain_debug_hir_buffers
+                    && ResidentParserAllocation {
+                        token_capacity: cached.token_capacity,
+                        source_capacity: cached.buffers.source_capacity,
+                        tree_capacity: cached.buffers.tree_capacity,
+                        parser_feature_flags: cached.parser_feature_flags,
+                    }
+                    .covers(required)
+            })
+    }
+
+    /// Returns the retained tree capacity when every other parser-allocation
+    /// dimension already covers the next job. Callers may attempt the parse
+    /// directly and grow from the parser's exact overflow status when needed.
+    pub(crate) fn reusable_tree_capacity(
+        &self,
+        token_capacity: u32,
+        source_capacity: u32,
+        tables: &PrecomputedParseTables,
+        retain_debug_hir_buffers: bool,
+        parser_feature_flags: u32,
+    ) -> Option<u32> {
+        let fingerprint = table_fingerprint(tables);
+        let required = ResidentParserAllocation {
+            token_capacity: token_capacity.max(1),
+            source_capacity: source_capacity.max(1),
+            tree_capacity: 1,
+            parser_feature_flags,
+        };
+        self.resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned")
+            .as_ref()
+            .filter(|cached| {
+                cached.table_fingerprint == fingerprint
+                    && cached.retain_debug_hir_buffers == retain_debug_hir_buffers
+                    && ResidentParserAllocation {
+                        token_capacity: cached.token_capacity,
+                        source_capacity: cached.buffers.source_capacity,
+                        tree_capacity: cached.buffers.tree_capacity,
+                        parser_feature_flags: cached.parser_feature_flags,
+                    }
+                    .covers(required)
+            })
+            .map(|cached| cached.buffers.tree_capacity)
+    }
 }
 
 #[cfg(test)]
@@ -244,7 +325,7 @@ mod tests {
     use super::ResidentParserAllocation;
 
     #[test]
-    fn resident_allocation_grows_without_shrinking_any_capacity() {
+    fn resident_allocation_grows_without_shrinking_capacity_or_optional_storage() {
         let first = ResidentParserAllocation {
             token_capacity: 300,
             source_capacity: 1_000,
@@ -261,9 +342,9 @@ mod tests {
             first.grow_to_cover(next),
             ResidentParserAllocation {
                 token_capacity: 320,
-                source_capacity: 900,
-                tree_capacity: 650,
-                parser_feature_flags: 0b1100,
+                source_capacity: 1_000,
+                tree_capacity: 700,
+                parser_feature_flags: 0b1111,
             }
         );
     }
@@ -291,5 +372,22 @@ mod tests {
                 parser_feature_flags: 0b0011,
             }
         );
+    }
+
+    #[test]
+    fn resident_allocation_buckets_small_growth_without_reallocation() {
+        let allocation = ResidentParserAllocation {
+            token_capacity: 1_300_051,
+            source_capacity: 5_100_001,
+            tree_capacity: 26_001_020,
+            parser_feature_flags: 0b0110,
+        }
+        .bucketed();
+        assert!(allocation.covers(ResidentParserAllocation {
+            token_capacity: 1_300_067,
+            source_capacity: 5_100_080,
+            tree_capacity: 26_001_340,
+            parser_feature_flags: 0b0010,
+        }));
     }
 }

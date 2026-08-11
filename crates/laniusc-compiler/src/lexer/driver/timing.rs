@@ -1,7 +1,7 @@
 use crate::gpu::timer::MINIMUM_TIME_TO_NOT_ELIDE_MS;
 
 /// Prints and records GPU timing spans for combined lexer/compile submissions.
-pub(super) fn print_timer_trace(
+pub(crate) fn print_timer_trace(
     stamps: &[(String, u64)],
     period_ns: f32,
     gpu_anchor: std::time::Instant,

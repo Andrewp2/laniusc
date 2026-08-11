@@ -247,10 +247,8 @@ impl ParserHirFunctionReturnReadbacks {
 
         let hir_token_pos = read_u32_vec_padded(&self.hir_token_pos, tree_len, INVALID);
         let hir_item_kind = read_u32_vec_padded(&self.hir_item_kind, tree_len, 0);
-        let hir_item_name_token_words = read_u32_vec(
-            &self.hir_item_name_token,
-            bufs.hir_item_name_token.count,
-        );
+        let hir_item_name_token_words =
+            read_u32_vec(&self.hir_item_name_token, bufs.hir_item_name_token.count);
         let hir_item_name_token = (0..tree_len)
             .map(|node| {
                 if hir_item_kind[node] == 0 {
@@ -268,17 +266,9 @@ impl ParserHirFunctionReturnReadbacks {
             hir_kind: read_u32_vec_padded(&self.hir_kind, tree_len, 0),
             hir_token_pos,
             hir_token_end: read_u32_vec_padded(&self.hir_token_end, tree_len, INVALID),
-            hir_node_file_id: read_u32_vec_padded(
-                &self.hir_node_file_id,
-                tree_len,
-                INVALID,
-            ),
+            hir_node_file_id: read_u32_vec_padded(&self.hir_node_file_id, tree_len, INVALID),
             hir_type_form: read_u32_vec_padded(&self.hir_type_form, tree_len, 0),
-            hir_type_file_id: read_u32_vec_padded(
-                &self.hir_type_file_id,
-                tree_len,
-                INVALID,
-            ),
+            hir_type_file_id: read_u32_vec_padded(&self.hir_type_file_id, tree_len, INVALID),
             hir_fn_return_type_node: read_u32_vec_padded(
                 &self.hir_fn_return_type_node,
                 tree_len,
@@ -296,11 +286,7 @@ impl ParserHirFunctionReturnReadbacks {
             ),
             hir_item_kind,
             hir_item_name_token,
-            hir_item_file_id: read_u32_vec_padded(
-                &self.hir_item_file_id,
-                tree_len,
-                INVALID,
-            ),
+            hir_item_file_id: read_u32_vec_padded(&self.hir_item_file_id, tree_len, INVALID),
         };
         validate_hir_source_address_records(
             &decoded.hir_kind,

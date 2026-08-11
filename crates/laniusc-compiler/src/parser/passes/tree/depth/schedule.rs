@@ -34,6 +34,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeDepthSchedul
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
             ("gTree".into(), b.tree_span_params.as_entire_binding()),
+            ("gHir".into(), b.hir_params.as_entire_binding()),
             (
                 "tree_active_dispatch_args".into(),
                 b.tree_active_dispatch_args.as_entire_binding(),
@@ -45,6 +46,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeDepthSchedul
             (
                 "tree_pointer_jump_dispatch_args".into(),
                 b.tree_pointer_jump_dispatch_args.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_parent_dispatch_args".into(),
+                b.hir_canonical_parent_dispatch_args.as_entire_binding(),
             ),
         ])
     }

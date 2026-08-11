@@ -539,6 +539,23 @@ impl ExplicitSourcePackPathManifest {
         self.job_plan(limits).bounded_frontend_build_plan()
     }
 
+    /// Builds a bounded plan from caller-retained contiguous unit boundaries.
+    /// The caller is responsible for validating the current byte/file totals;
+    /// library totals and dependency edges are always rebuilt from this
+    /// manifest so only partition boundaries are reused.
+    pub(in crate::compiler) fn bounded_frontend_build_plan_with_units(
+        &self,
+        units: CompilationUnitPlan,
+    ) -> SourcePackBuildPlan {
+        let files = self.source_file_input_iter().collect::<Vec<_>>();
+        SourcePackJobPlan {
+            libraries: LibraryUnitPlan::from_files(&files),
+            units,
+            library_dependencies: self.library_dependencies.clone(),
+        }
+        .bounded_frontend_build_plan()
+    }
+
     /// Builds a compact generic-target artifact manifest for this path manifest.
     pub fn compact_build_artifact_manifest(
         &self,

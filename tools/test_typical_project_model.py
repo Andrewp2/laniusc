@@ -9,11 +9,38 @@ import unittest
 from pathlib import Path
 
 from generate_typical_project import generate
+from run_typical_lanius_matrix import benchmark_edit_variants, daemon_commands
 from typical_project_constructs import ARCHETYPES, archetype_for_module
 from typical_project_model import LANGUAGES, build_project, project_tree, render_project
 
 
 class TypicalProjectModelTests(unittest.TestCase):
+    def test_compiler_matrix_uses_checked_same_size_edits(self) -> None:
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temporary:
+            root = Path(temporary)
+            project = root / "typical-project-6"
+            generate(project, 6, 19)
+            edits = benchmark_edit_variants(Path.cwd(), project, 4)
+            self.assertEqual(len(edits), 4)
+            self.assertEqual(len({edit["new"] for edit in edits}), 4)
+            for index, edit in enumerate(edits):
+                self.assertNotEqual(edit["old"], edit["new"])
+                self.assertEqual(len(edit["old"].encode()), len(edit["new"].encode()))
+                if index:
+                    self.assertEqual(edit["old"], edits[index - 1]["new"])
+
+            requests = daemon_commands(Path.cwd(), project, "x86_64", 3)["lanius"][
+                "requests"
+            ]
+            measured = [
+                request for request in requests if request["id"].startswith("edit-")
+            ]
+            self.assertEqual(len(measured), 4)
+            self.assertEqual(measured[0]["id"], "edit-warmup")
+            self.assertEqual(measured[0]["benchmark_source_edit"], edits[0])
+            self.assertEqual(measured[1]["benchmark_source_edit"], edits[1])
+            self.assertEqual(requests[-2]["id"], "restore-source")
+
     def test_generation_is_deterministic(self) -> None:
         first = build_project(91, 12)
         second = build_project(91, 12)
@@ -57,7 +84,9 @@ class TypicalProjectModelTests(unittest.TestCase):
         self.assertIn("validate_window", rendered)
         self.assertNotIn("padding", rendered.lower())
 
-    def test_archetypes_follow_declared_weights_after_small_project_breadth(self) -> None:
+    def test_archetypes_follow_declared_weights_after_small_project_breadth(
+        self,
+    ) -> None:
         project = build_project(87, 100)
         counts = project.structure()["archetype_counts"]
         self.assertEqual(set(counts), set(ARCHETYPES))
@@ -72,7 +101,9 @@ class TypicalProjectModelTests(unittest.TestCase):
                 archetype,
             )
 
-    def test_six_file_lanius_project_contains_every_promised_common_construct(self) -> None:
+    def test_six_file_lanius_project_contains_every_promised_common_construct(
+        self,
+    ) -> None:
         project = build_project(19, 6)
         structure = project.structure()
         self.assertTrue(structure["required_constructs_covered"])
@@ -161,7 +192,7 @@ class TypicalProjectModelTests(unittest.TestCase):
             "public_enum": "pub enum PublicChoice",
             "public_trait": "pub trait PublicPolicy<T>",
             "public_impl": "pub impl PublicRecord",
-            "public_extern": "pub extern \"lanius_std\" fn argc()",
+            "public_extern": 'pub extern "lanius_std" fn argc()',
             "empty_array_literal": "let empty_values: [i32; 0] = [];",
             "empty_struct_declaration": "struct EmptyRecord {}",
         }

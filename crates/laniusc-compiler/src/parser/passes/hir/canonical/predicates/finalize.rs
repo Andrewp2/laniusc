@@ -48,6 +48,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPred
             ),
             ("hir_core".into(), b.hir_core.as_entire_binding()),
             (
+                "canonical_count".into(),
+                b.hir_canonical_count.as_entire_binding(),
+            ),
+            (
+                "canonical_dense_to_raw".into(),
+                b.hir_canonical_dense_to_raw.as_entire_binding(),
+            ),
+            (
                 "family_flag".into(),
                 b.hir_method_family_flag.as_entire_binding(),
             ),

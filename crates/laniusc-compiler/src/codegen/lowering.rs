@@ -1338,7 +1338,11 @@ impl GpuSemanticLoweringStage {
                     resource("hir.expression_roots"),
                     hir.expr_root,
                 )?,
-                bound("compact_variant_count", resource("hir.variant_count"), hir.variant_count)?,
+                bound(
+                    "compact_variant_count",
+                    resource("hir.variant_count"),
+                    hir.variant_count,
+                )?,
                 bound("compact_variants", resource("hir.variants"), hir.variants)?,
                 bound(
                     "compact_variant_payload_count",
@@ -1457,7 +1461,10 @@ impl GpuSemanticLoweringStage {
                 ("compact_hir_core", hir.core.as_entire_binding()),
                 ("compact_hir_payload", hir.payload.as_entire_binding()),
                 ("compact_expr_root", hir.expr_root.as_entire_binding()),
-                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                (
+                    "compact_variant_count",
+                    hir.variant_count.as_entire_binding(),
+                ),
                 ("compact_variants", hir.variants.as_entire_binding()),
                 (
                     "compact_variant_payload_count",
@@ -1565,7 +1572,11 @@ impl GpuSemanticLoweringStage {
                     resource("hir.match_arm_count"),
                     hir.match_arm_count,
                 )?,
-                bound("compact_match_arms", resource("hir.match_arms"), hir.match_arms)?,
+                bound(
+                    "compact_match_arms",
+                    resource("hir.match_arms"),
+                    hir.match_arms,
+                )?,
                 bound(
                     "compact_match_payload_start",
                     resource("hir.match_payload_start"),
@@ -1591,11 +1602,7 @@ impl GpuSemanticLoweringStage {
                     resource("hir.variant_count"),
                     hir.variant_count,
                 )?,
-                bound(
-                    "compact_variants",
-                    resource("hir.variants"),
-                    hir.variants,
-                )?,
+                bound("compact_variants", resource("hir.variants"), hir.variants)?,
                 bound(
                     "semantic_value_id",
                     resource("typecheck.semantic_value_decls_by_hir"),
@@ -1654,7 +1661,10 @@ impl GpuSemanticLoweringStage {
                     "compact_match_payloads",
                     hir.match_payloads.as_entire_binding(),
                 ),
-                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                (
+                    "compact_variant_count",
+                    hir.variant_count.as_entire_binding(),
+                ),
                 ("compact_variants", hir.variants.as_entire_binding()),
                 (
                     "semantic_value_id",
@@ -1860,11 +1870,7 @@ impl GpuSemanticLoweringStage {
                     resource("hir.variant_count"),
                     hir.variant_count,
                 )?,
-                bound(
-                    "compact_variants",
-                    resource("hir.variants"),
-                    hir.variants,
-                )?,
+                bound("compact_variants", resource("hir.variants"), hir.variants)?,
                 bound(
                     "semantic_local_flag",
                     resource("lir.semantic.local_flags"),
@@ -1919,7 +1925,10 @@ impl GpuSemanticLoweringStage {
                     "compact_match_payloads",
                     hir.match_payloads.as_entire_binding(),
                 ),
-                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                (
+                    "compact_variant_count",
+                    hir.variant_count.as_entire_binding(),
+                ),
                 ("compact_variants", hir.variants.as_entire_binding()),
                 ("semantic_local_flag", self.local_flags.as_entire_binding()),
                 (
@@ -2023,11 +2032,7 @@ impl GpuSemanticLoweringStage {
                     resource("hir.variant_count"),
                     hir.variant_count,
                 )?,
-                bound(
-                    "compact_variants",
-                    resource("hir.variants"),
-                    hir.variants,
-                )?,
+                bound("compact_variants", resource("hir.variants"), hir.variants)?,
                 bound(
                     "semantic_value_id",
                     resource("typecheck.semantic_value_decls_by_hir"),
@@ -2057,7 +2062,10 @@ impl GpuSemanticLoweringStage {
                     "compact_match_payloads",
                     hir.match_payloads.as_entire_binding(),
                 ),
-                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                (
+                    "compact_variant_count",
+                    hir.variant_count.as_entire_binding(),
+                ),
                 ("compact_variants", hir.variants.as_entire_binding()),
                 (
                     "semantic_value_id",
@@ -2512,7 +2520,10 @@ impl GpuSemanticLoweringStage {
                 ("compact_hir_core", hir.core.as_entire_binding()),
                 ("compact_hir_links", hir.links.as_entire_binding()),
                 ("compact_hir_payload", hir.payload.as_entire_binding()),
-                ("compact_fn_return_type", hir.fn_return_type.as_entire_binding()),
+                (
+                    "compact_fn_return_type",
+                    hir.fn_return_type.as_entire_binding(),
+                ),
                 ("compact_const_value", hir.const_value.as_entire_binding()),
                 ("compact_param_ranges", hir.param_ranges.as_entire_binding()),
                 ("compact_method_count", hir.method_count.as_entire_binding()),
@@ -2521,7 +2532,10 @@ impl GpuSemanticLoweringStage {
                     "compact_method_signatures",
                     hir.method_signatures.as_entire_binding(),
                 ),
-                ("compact_variant_count", hir.variant_count.as_entire_binding()),
+                (
+                    "compact_variant_count",
+                    hir.variant_count.as_entire_binding(),
+                ),
                 ("compact_variants", hir.variants.as_entire_binding()),
                 (
                     "compact_variant_payload_start",
@@ -2739,7 +2753,11 @@ impl GpuSemanticLoweringStage {
                     resource("hir.call_arg_count"),
                     hir.call_arg_count,
                 )?,
-                bound("compact_call_args", resource("hir.call_args"), hir.call_args)?,
+                bound(
+                    "compact_call_args",
+                    resource("hir.call_args"),
+                    hir.call_args,
+                )?,
                 bound(
                     "semantic_call_kind",
                     resource("semantic.call_kinds"),
@@ -3449,10 +3467,13 @@ pub(super) fn record_direct_with_offsets(
         InputElements::Elements1D(elements),
         pass.thread_group_size,
     )?;
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(&pass.shader_id),
-        timestamp_writes: None,
-    });
+    let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(&pass.shader_id),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     compute.dispatch_workgroups(x, y, z);
@@ -3486,8 +3507,15 @@ mod tests {
             passes_core::{map_readback_blocking, pipeline_creation_count},
         },
         parser::buffers::{
-            HirCallArg, HirCore, HirMatchArm, HirMatchPayload, HirMethodCore,
-            HirMethodSignature, HirPayload, HirVariant, HirVariantPayload,
+            HirCallArg,
+            HirCore,
+            HirMatchArm,
+            HirMatchPayload,
+            HirMethodCore,
+            HirMethodSignature,
+            HirPayload,
+            HirVariant,
+            HirVariantPayload,
         },
     };
 
@@ -3591,11 +3619,7 @@ mod tests {
                 &format!("{label}.fn_return_type"),
                 &vec![u32::MAX; hir_capacity.max(1)],
             ),
-            variant_count: storage_ro_from_u32s(
-                device,
-                &format!("{label}.variant_count"),
-                &[0],
-            ),
+            variant_count: storage_ro_from_u32s(device, &format!("{label}.variant_count"), &[0]),
             variants: storage_ro_from_bytes::<HirVariant>(
                 device,
                 &format!("{label}.variants"),
@@ -3699,9 +3723,9 @@ mod tests {
     }
 
     #[test]
-    fn physical_gpu_stably_sorts_wasm_schedule_across_workgroups() {
+    fn physical_gpu_stably_sorts_wasm_schedule_across_scan_hierarchy() {
         let gpu = device::global();
-        let count = 600u32;
+        let count = 70_000u32;
         let blocks = count.div_ceil(256);
         let slots = blocks * 256;
         let key_words = (0..count)

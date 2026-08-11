@@ -24,6 +24,62 @@ pub(crate) struct GpuDependencyInterfacePages {
     pages: Vec<PackedGpuDependencyInterfacePage>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GpuDependencyInterfaceCapacities {
+    words: usize,
+    modules: u32,
+    declarations: u32,
+    types: u32,
+    members: u32,
+    module_lookup: u32,
+}
+
+impl GpuDependencyInterfaceCapacities {
+    fn for_pages(pages: &[PackedGpuDependencyInterfacePage]) -> Self {
+        Self {
+            words: pages
+                .iter()
+                .map(|page| page.words.len())
+                .max()
+                .unwrap_or(1)
+                .max(1),
+            modules: pages
+                .iter()
+                .map(|page| page.module_count)
+                .max()
+                .unwrap_or(0),
+            declarations: pages
+                .iter()
+                .map(|page| page.declaration_count)
+                .max()
+                .unwrap_or(0),
+            types: pages.iter().map(|page| page.type_count).max().unwrap_or(0),
+            members: pages
+                .iter()
+                .map(|page| page.member_count)
+                .max()
+                .unwrap_or(0),
+            module_lookup: pages
+                .iter()
+                .map(|page| page.module_lookup_capacity)
+                .max()
+                .unwrap_or(1)
+                .max(1),
+        }
+    }
+
+    fn grow_to_cover(self, required: Self) -> Self {
+        Self {
+            words: self.words.max(required.words),
+            modules: self.modules.max(required.modules),
+            declarations: self.declarations.max(required.declarations),
+            types: self.types.max(required.types),
+            members: self.members.max(required.members),
+            module_lookup: self.module_lookup.max(required.module_lookup),
+        }
+    }
+}
+
 /// CPU-packed contents of one dependency page. Packing is separate from GPU
 /// allocation so several logical pages can share one physical words/lookup
 /// slot once page recording is enabled.
@@ -36,8 +92,7 @@ pub(crate) struct PackedGpuDependencyInterfacePage {
     pub(crate) words: Vec<u32>,
 }
 
-const HEADER_WORDS: usize = 25;
-const PAGE_FLAGS_OFFSET: usize = 24;
+const HEADER_WORDS: usize = 28;
 const MODULE_LIBRARY_OFFSET: usize = 8;
 const MODULE_UNIT_OFFSET: usize = 9;
 const MODULE_LOCAL_OFFSET: usize = 10;
@@ -54,6 +109,10 @@ const NAME_BYTE_OFFSET: usize = 20;
 const TYPE_LIBRARY_OFFSET: usize = 21;
 const TYPE_UNIT_OFFSET: usize = 22;
 const TYPE_LOCAL_OFFSET: usize = 23;
+const MODULE_DECLARATION_START_OFFSET: usize = 24;
+const MODULE_DECLARATION_COUNT_OFFSET: usize = 25;
+const MODULE_DECLARATION_ORDER_OFFSET: usize = 26;
+const PAGE_FLAGS_OFFSET: usize = 27;
 
 impl PackedGpuDependencyInterfacePage {
     pub(crate) fn new(
@@ -85,6 +144,8 @@ impl PackedGpuDependencyInterfacePage {
                 "dependency module lookup capacity overflows u32"
             ));
         }
+        let (module_declaration_start, module_declaration_count, module_declaration_order) =
+            build_module_declaration_index(module_count, &batch.declarations)?;
         let mut words = vec![0; HEADER_WORDS];
         words[..8].copy_from_slice(&[
             u32::try_from(batch.library_ids.len()).unwrap_or(u32::MAX),
@@ -169,6 +230,21 @@ impl PackedGpuDependencyInterfacePage {
         append_table(&mut words, TYPE_LIBRARY_OFFSET, &batch.type_library_id)?;
         append_table(&mut words, TYPE_UNIT_OFFSET, &batch.type_unit_id)?;
         append_table(&mut words, TYPE_LOCAL_OFFSET, &batch.type_local_index)?;
+        append_table(
+            &mut words,
+            MODULE_DECLARATION_START_OFFSET,
+            &module_declaration_start,
+        )?;
+        append_table(
+            &mut words,
+            MODULE_DECLARATION_COUNT_OFFSET,
+            &module_declaration_count,
+        )?;
+        append_table(
+            &mut words,
+            MODULE_DECLARATION_ORDER_OFFSET,
+            &module_declaration_order,
+        )?;
         append_records(
             &mut words,
             TYPE_EDGE_OFFSET,
@@ -207,17 +283,57 @@ impl PackedGpuDependencyInterfacePage {
     }
 }
 
+fn build_module_declaration_index(
+    module_count: u32,
+    declarations: &[crate::compiler::GpuSemanticInterfaceDeclarationRecord],
+) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
+    let mut counts = vec![0u32; module_count as usize];
+    for (declaration_index, declaration) in declarations.iter().enumerate() {
+        let count = counts.get_mut(declaration.module as usize).ok_or_else(|| {
+            anyhow::anyhow!(
+                "dependency declaration {declaration_index} references module {} outside {module_count}",
+                declaration.module
+            )
+        })?;
+        *count = count
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("dependency module declaration count exceeds u32"))?;
+    }
+    let mut starts = Vec::with_capacity(counts.len());
+    let mut total = 0u32;
+    for &count in &counts {
+        starts.push(total);
+        total = total
+            .checked_add(count)
+            .ok_or_else(|| anyhow::anyhow!("dependency declaration index exceeds u32"))?;
+    }
+    let mut cursors = starts.clone();
+    let mut order = vec![0u32; declarations.len()];
+    for (declaration_index, declaration) in declarations.iter().enumerate() {
+        let cursor = &mut cursors[declaration.module as usize];
+        let slot = *cursor as usize;
+        order[slot] = u32::try_from(declaration_index)
+            .map_err(|_| anyhow::anyhow!("dependency declaration index exceeds u32"))?;
+        *cursor += 1;
+    }
+    Ok((starts, counts, order))
+}
+
 impl GpuDependencyInterfacePages {
-    pub(crate) fn new(
+    pub(crate) fn new_reusing(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         current_library_id: u32,
         current_unit_id: u32,
         interface_pages: &[&[GpuSemanticInterfaceArtifact]],
+        resident_state: &mut Option<GpuDependencyInterfaceState>,
     ) -> Result<Self> {
-        if interface_pages.is_empty() {
-            anyhow::bail!("dependency page slot requires at least one page");
-        }
+        let empty_page: &[GpuSemanticInterfaceArtifact] = &[];
+        let interface_pages = if interface_pages.is_empty() {
+            std::slice::from_ref(&empty_page)
+        } else {
+            interface_pages
+        };
         let mut pages = interface_pages
             .iter()
             .map(|interfaces| {
@@ -232,7 +348,24 @@ impl GpuDependencyInterfacePages {
         for (index, page) in pages.iter_mut().enumerate() {
             page.words[PAGE_FLAGS_OFFSET] = u32::from(index == 0) | (u32::from(index == last) << 1);
         }
-        let state = GpuDependencyInterfaceState::from_packed_pages(device, &pages)?;
+        let required = GpuDependencyInterfaceCapacities::for_pages(&pages);
+        let allocation = resident_state
+            .as_ref()
+            .map(GpuDependencyInterfaceState::capacities)
+            .map(|capacity| capacity.grow_to_cover(required))
+            .unwrap_or(required);
+        if resident_state
+            .as_ref()
+            .is_none_or(|state| state.capacities() != allocation)
+        {
+            *resident_state = Some(GpuDependencyInterfaceState::with_capacities(
+                device, allocation,
+            ));
+        }
+        let state = resident_state
+            .as_ref()
+            .expect("dependency resident state allocated")
+            .clone();
         let pages = Self { state, pages };
         pages.write(queue, 0)?;
         Ok(pages)
@@ -256,63 +389,43 @@ impl GpuDependencyInterfacePages {
 }
 
 impl GpuDependencyInterfaceState {
-    pub(crate) fn from_packed_pages(
-        device: &wgpu::Device,
-        pages: &[PackedGpuDependencyInterfacePage],
-    ) -> Result<Self> {
-        if pages.is_empty() {
-            anyhow::bail!("dependency page slot requires at least one page");
+    fn capacities(&self) -> GpuDependencyInterfaceCapacities {
+        GpuDependencyInterfaceCapacities {
+            words: self.words.count,
+            modules: self.module_count,
+            declarations: self.declaration_count,
+            types: self.type_count,
+            members: self.member_count,
+            module_lookup: self.module_lookup_capacity,
         }
-        let word_capacity = pages
-            .iter()
-            .map(|page| page.words.len())
-            .max()
-            .unwrap_or(1)
-            .max(1);
-        let module_count = pages
-            .iter()
-            .map(|page| page.module_count)
-            .max()
-            .unwrap_or(0);
-        let declaration_count = pages
-            .iter()
-            .map(|page| page.declaration_count)
-            .max()
-            .unwrap_or(0);
-        let type_count = pages.iter().map(|page| page.type_count).max().unwrap_or(0);
-        let member_count = pages
-            .iter()
-            .map(|page| page.member_count)
-            .max()
-            .unwrap_or(0);
-        let module_lookup_capacity = pages
-            .iter()
-            .map(|page| page.module_lookup_capacity)
-            .max()
-            .unwrap_or(1)
-            .max(1);
+    }
+
+    fn with_capacities(
+        device: &wgpu::Device,
+        capacities: GpuDependencyInterfaceCapacities,
+    ) -> Self {
         let words = upload_words(
             device,
             "type_check.dependencies.words",
-            &vec![0; word_capacity],
+            &vec![0; capacities.words],
         );
         let module_lookup = typed_storage_u32_fill_rw(
             device,
             "type_check.dependencies.module_lookup",
-            module_lookup_capacity as usize,
+            capacities.module_lookup as usize,
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
 
-        Ok(Self {
-            module_count,
-            declaration_count,
-            type_count,
-            member_count,
-            module_lookup_capacity,
+        Self {
+            module_count: capacities.modules,
+            declaration_count: capacities.declarations,
+            type_count: capacities.types,
+            member_count: capacities.members,
+            module_lookup_capacity: capacities.module_lookup,
             words,
             module_lookup,
-        })
+        }
     }
 
     pub(crate) fn write_page(
@@ -361,4 +474,70 @@ fn append_records<'a, T: 'a, const N: usize>(
 
 fn upload_words(device: &wgpu::Device, label: &str, words: &[u32]) -> LaniusBuffer<u32> {
     storage_ro_from_u32s(device, label, if words.is_empty() { &[0] } else { words })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GpuDependencyInterfaceCapacities, build_module_declaration_index};
+    use crate::compiler::GpuSemanticInterfaceDeclarationRecord;
+
+    fn declaration(module: u32) -> GpuSemanticInterfaceDeclarationRecord {
+        GpuSemanticInterfaceDeclarationRecord {
+            module,
+            name_hash_lo: 0,
+            name_hash_hi: 0,
+            name_byte_start: 0,
+            name_byte_len: 0,
+            namespace: 2,
+            kind: 4,
+            signature_type: 0,
+            first_member: 0,
+            member_count: 0,
+            owner_declaration: u32::MAX,
+            flags: 0,
+            value_lo: 0,
+            value_hi: 0,
+        }
+    }
+
+    #[test]
+    fn module_declaration_index_groups_arbitrary_interface_order() {
+        let declarations = [2, 0, 2, 1, 0].map(declaration);
+        let (starts, counts, order) =
+            build_module_declaration_index(3, &declarations).expect("build module index");
+        assert_eq!(starts, [0, 2, 3]);
+        assert_eq!(counts, [2, 1, 2]);
+        assert_eq!(order, [1, 4, 3, 0, 2]);
+    }
+
+    #[test]
+    fn resident_dependency_slot_grows_without_shrinking_other_domains() {
+        let resident = GpuDependencyInterfaceCapacities {
+            words: 100,
+            modules: 8,
+            declarations: 20,
+            types: 30,
+            members: 40,
+            module_lookup: 16,
+        };
+        let required = GpuDependencyInterfaceCapacities {
+            words: 120,
+            modules: 4,
+            declarations: 24,
+            types: 12,
+            members: 50,
+            module_lookup: 8,
+        };
+        assert_eq!(
+            resident.grow_to_cover(required),
+            GpuDependencyInterfaceCapacities {
+                words: 120,
+                modules: 8,
+                declarations: 24,
+                types: 30,
+                members: 50,
+                module_lookup: 16,
+            }
+        );
+    }
 }

@@ -1,9 +1,12 @@
 // Build capacity-stable pointer-jump commands from actual raw parse-tree depth.
 struct Params { uint n; uint uses_status_count; uint n_prefix_blocks; uint max_tree_leaf_base; };
 ConstantBuffer<Params> gTree;
+struct HirParams { uint n; uint uses_status_count; uint semantic_parent_local_ancestor_span; uint retain_debug_rows; };
+ConstantBuffer<HirParams> gHir;
 StructuredBuffer<uint> tree_active_dispatch_args;
 StructuredBuffer<uint> tree_depth_block_max;
 RWStructuredBuffer<uint> tree_pointer_jump_dispatch_args;
+RWStructuredBuffer<uint> hir_canonical_parent_dispatch_args;
 
 static const uint WG_SIZE = 256u;
 groupshared uint lane_max_depth[WG_SIZE];
@@ -44,5 +47,24 @@ void main(uint3 lane: SV_GroupThreadID)
         tree_pointer_jump_dispatch_args[out + 0u] = enabled ? tree_active_dispatch_args[0u] : 0u;
         tree_pointer_jump_dispatch_args[out + 1u] = enabled ? tree_active_dispatch_args[1u] : 0u;
         tree_pointer_jump_dispatch_args[out + 2u] = enabled ? tree_active_dispatch_args[2u] : 0u;
+    }
+
+    uint local_span = max(1u, gHir.semantic_parent_local_ancestor_span);
+    uint local_required_steps = step_capacity(
+        (lane_max_depth[0u] + 1u + local_span - 1u) / local_span);
+    uint local_capacity = step_capacity(
+        (gTree.n + local_span - 1u) / local_span);
+    uint local_scheduled_steps = local_required_steps +
+        ((local_required_steps ^ local_capacity) & 1u);
+    for (uint step = lane.x; step < local_capacity; step += WG_SIZE)
+    {
+        uint out = step * 3u;
+        bool enabled = step < local_scheduled_steps;
+        hir_canonical_parent_dispatch_args[out + 0u] =
+            enabled ? tree_active_dispatch_args[0u] : 0u;
+        hir_canonical_parent_dispatch_args[out + 1u] =
+            enabled ? tree_active_dispatch_args[1u] : 0u;
+        hir_canonical_parent_dispatch_args[out + 2u] =
+            enabled ? tree_active_dispatch_args[2u] : 0u;
     }
 }

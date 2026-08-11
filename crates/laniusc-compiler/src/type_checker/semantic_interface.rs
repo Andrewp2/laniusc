@@ -1,10 +1,7 @@
 use super::*;
 use crate::{
     compiler::{GPU_SEMANTIC_INTERFACE_VERSION, GpuSemanticInterfaceArtifact},
-    gpu::{
-        buffers::readback_bytes,
-        readback::{PagedReadback, read_u32_words},
-    },
+    gpu::readback::{PagedReadback, read_u32_words},
 };
 
 pub(super) const MODULE_WORDS: usize = 2;
@@ -17,6 +14,8 @@ pub(super) const MEMBER_WORDS: usize = 10;
 #[allow(clippy::too_many_arguments)]
 fn graph_prefix_scan(
     device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    buffer_cache: &CapacityBufferCache,
     kernels: &KernelRegistry,
     label: &'static str,
     params: PrefixScanParams,
@@ -46,8 +45,10 @@ fn graph_prefix_scan(
         ("scan_hierarchy", workspace.hierarchy),
     ]);
     graph.validate_semantic_interface_scan(scan, &resources)?;
-    PrefixScanOperation::with_workspace(
+    PrefixScanOperation::with_reusable_workspace(
         device,
+        queue,
+        buffer_cache,
         kernels,
         label,
         params,
@@ -148,6 +149,7 @@ impl GpuTypeChecker {
     pub fn record_semantic_interface(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         library_id: u32,
         unit_id: u32,
@@ -288,6 +290,7 @@ impl GpuTypeChecker {
         };
         self.record_semantic_interface_from_buffers(
             device,
+            queue,
             encoder,
             library_id,
             unit_id,
@@ -304,6 +307,7 @@ impl GpuTypeChecker {
     fn record_semantic_interface_from_buffers(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         library_id: u32,
         unit_id: u32,
@@ -355,7 +359,9 @@ impl GpuTypeChecker {
         let (name_ref_prefix, scan_total) = typecheck_graph
             .semantic_interface_scan_outputs(compiler_graph::SemanticInterfaceScan::Names)?;
         let scan_count = initialized_u32_buffer(
+            &self.semantic_interface_buffers,
             device,
+            queue,
             "type_check.interface.scan_count",
             &[name_ref_count],
             wgpu::BufferUsages::STORAGE,
@@ -370,13 +376,17 @@ impl GpuTypeChecker {
             [tgsx, tgsy, 1],
         )?;
         let scan_dispatch_args = initialized_u32_buffer(
+            &self.semantic_interface_buffers,
             device,
+            queue,
             "type_check.interface.scan_dispatch_args",
             &[dispatch_x, dispatch_y, dispatch_z],
             wgpu::BufferUsages::INDIRECT,
         );
         let scan = graph_prefix_scan(
             device,
+            queue,
+            &self.semantic_interface_buffers,
             &self.passes,
             "type_check.interface.name_scan",
             PrefixScanParams {
@@ -401,13 +411,17 @@ impl GpuTypeChecker {
             [tgsx, tgsy, 1],
         )?;
         let module_scan_dispatch_args = initialized_u32_buffer(
+            &self.semantic_interface_buffers,
             device,
+            queue,
             "type_check.interface.module_scan_dispatch_args",
             &[module_dispatch_x, module_dispatch_y, module_dispatch_z],
             wgpu::BufferUsages::INDIRECT,
         );
         let module_scan = graph_prefix_scan(
             device,
+            queue,
+            &self.semantic_interface_buffers,
             &self.passes,
             "type_check.interface.module_segment_scan",
             PrefixScanParams {
@@ -429,26 +443,29 @@ impl GpuTypeChecker {
         let module_segments = workspace("semantic_interface.module_segments")?;
         let declarations = workspace("semantic_interface.declarations")?;
         let name_word_capacity = (name_byte_capacity as usize).div_ceil(4);
-        let name_byte_words = typed_storage_u32_rw(
+        let name_byte_words = self.semantic_interface_buffers.storage_u32(
             device,
             "type_check.interface.name_byte_words",
             name_word_capacity,
             wgpu::BufferUsages::COPY_DST,
         );
-        let counts = typed_storage_u32_rw(
+        let counts = self.semantic_interface_buffers.storage_u32(
             device,
             "type_check.interface.counts",
             COUNT_WORDS,
             wgpu::BufferUsages::COPY_DST,
         );
         let status = initialized_u32_buffer(
+            &self.semantic_interface_buffers,
             device,
+            queue,
             "type_check.interface.status",
             &[0, u32::MAX, u32::MAX, u32::MAX],
             wgpu::BufferUsages::STORAGE,
         );
         let type_topology = self.record_semantic_interface_type_topology(
             device,
+            queue,
             encoder,
             library_id,
             unit_id,
@@ -512,8 +529,9 @@ impl GpuTypeChecker {
         identity_resources.buffer("language_symbol_bytes", inputs.language_symbol_bytes);
         identity_resources.buffer("interface_name_byte_words", &name_byte_words);
 
-        let size_params = uniform_from_val(
+        let size_params = self.semantic_interface_buffers.uniform(
             device,
+            queue,
             "type_check.interface.identity_size_params",
             &SemanticInterfaceIdentitySizeParams {
                 name_capacity,
@@ -533,8 +551,9 @@ impl GpuTypeChecker {
             &[("gParams", size_params.as_entire_binding())],
         )?;
 
-        let record_params = uniform_from_val(
+        let record_params = self.semantic_interface_buffers.uniform(
             device,
+            queue,
             "type_check.interface.identity_record_params",
             &SemanticInterfaceIdentityRecordParams {
                 library_id,
@@ -557,8 +576,9 @@ impl GpuTypeChecker {
             &[("gParams", record_params.as_entire_binding())],
         )?;
 
-        let byte_params = uniform_from_val(
+        let byte_params = self.semantic_interface_buffers.uniform(
             device,
+            queue,
             "type_check.interface.identity_byte_params",
             &SemanticInterfaceIdentityByteParams {
                 name_capacity,
@@ -631,31 +651,36 @@ impl GpuTypeChecker {
             );
         }
         let artifact_word_capacity = artifact_capacity.div_ceil(4);
-        let artifact_words = typed_storage_u32_rw(
+        let artifact_words = self.semantic_interface_buffers.storage_u32(
             device,
             "type_check.interface.artifact.words",
             artifact_word_capacity,
             wgpu::BufferUsages::COPY_SRC,
         );
-        let artifact_length = typed_storage_u32_rw(
+        let artifact_length = self.semantic_interface_buffers.storage_u32(
             device,
             "type_check.interface.artifact.length",
             1,
             wgpu::BufferUsages::COPY_SRC,
         );
-        let metadata_readback = readback_bytes(
+        let metadata_readback = self.semantic_interface_buffers.buffer(
             device,
             "type_check.interface.artifact.metadata.readback",
             20,
             20,
+            wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         );
-        let artifact_readback = PagedReadback::new(
+        let artifact_readback =
+            PagedReadback::from_staging(self.semantic_interface_buffers.buffer(
+                device,
+                "type_check.interface.artifact.readback",
+                artifact_capacity.min(4 << 20),
+                artifact_capacity.min(4 << 20),
+                wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            ));
+        let artifact_params = self.semantic_interface_buffers.uniform(
             device,
-            "type_check.interface.artifact.readback",
-            artifact_capacity.min(4 << 20),
-        );
-        let artifact_params = uniform_from_val(
-            device,
+            queue,
             "type_check.interface.artifact.params",
             &SemanticInterfaceArtifactParams {
                 module_capacity,
@@ -766,6 +791,7 @@ impl GpuTypeChecker {
     fn record_semantic_interface_type_topology(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         library_id: u32,
         unit_id: u32,
@@ -790,8 +816,9 @@ impl GpuTypeChecker {
             anyhow::anyhow!("semantic-interface type-edge capacity overflows u32")
         })?;
         let n_blocks = capacity.div_ceil(256).max(1);
-        let params = uniform_from_val(
+        let params = self.semantic_interface_buffers.uniform(
             device,
+            queue,
             "type_check.interface.type_topology.params",
             &SemanticInterfaceTypeTopologyParams {
                 hir_capacity: capacity,
@@ -815,7 +842,9 @@ impl GpuTypeChecker {
         let (reverse_prefix, count) = typecheck_graph
             .semantic_interface_scan_outputs(compiler_graph::SemanticInterfaceScan::TypeOrder)?;
         let scan_count = initialized_u32_buffer(
+            &self.semantic_interface_buffers,
             device,
+            queue,
             "type_check.interface.type_topology.scan_count",
             &[capacity],
             wgpu::BufferUsages::STORAGE,
@@ -845,7 +874,9 @@ impl GpuTypeChecker {
         let complete_type_count = workspace("semantic_interface.complete_type_count")?;
         let complete_edge_total = workspace("semantic_interface.complete_edge_total")?;
         let signature_scan_count = initialized_u32_buffer(
+            &self.semantic_interface_buffers,
             device,
+            queue,
             "type_check.interface.signature.scan_count",
             &[signature_capacity],
             wgpu::BufferUsages::STORAGE,
@@ -888,7 +919,9 @@ impl GpuTypeChecker {
             ],
         )?;
         let signature_dispatch_args = initialized_u32_buffer(
+            &self.semantic_interface_buffers,
             device,
+            queue,
             "type_check.interface.signature.dispatch_args",
             &[
                 signature_dispatch_x,
@@ -899,6 +932,8 @@ impl GpuTypeChecker {
         );
         let signature_type_scan = graph_prefix_scan(
             device,
+            queue,
+            &self.semantic_interface_buffers,
             &self.passes,
             "type_check.interface.signature.type_scan",
             signature_scan_params,
@@ -913,6 +948,8 @@ impl GpuTypeChecker {
         )?;
         let signature_edge_scan = graph_prefix_scan(
             device,
+            queue,
+            &self.semantic_interface_buffers,
             &self.passes,
             "type_check.interface.signature.edge_scan",
             signature_scan_params,
@@ -927,6 +964,8 @@ impl GpuTypeChecker {
         )?;
         let member_scan = graph_prefix_scan(
             device,
+            queue,
+            &self.semantic_interface_buffers,
             &self.passes,
             "type_check.interface.members.scan",
             signature_scan_params,
@@ -949,7 +988,9 @@ impl GpuTypeChecker {
             [tgsx, tgsy, 1],
         )?;
         let dispatch_args = initialized_u32_buffer(
+            &self.semantic_interface_buffers,
             device,
+            queue,
             "type_check.interface.type_topology.dispatch_args",
             &[dispatch_x, dispatch_y, dispatch_z],
             wgpu::BufferUsages::INDIRECT,
@@ -961,6 +1002,8 @@ impl GpuTypeChecker {
         };
         let scan = graph_prefix_scan(
             device,
+            queue,
+            &self.semantic_interface_buffers,
             &self.passes,
             "type_check.interface.type_topology.scan",
             scan_params,
@@ -975,6 +1018,8 @@ impl GpuTypeChecker {
         )?;
         let edge_scan = graph_prefix_scan(
             device,
+            queue,
+            &self.semantic_interface_buffers,
             &self.passes,
             "type_check.interface.type_topology.edge_scan",
             scan_params,
@@ -1737,22 +1782,12 @@ fn semantic_interface_artifact_capacity(
 }
 
 fn initialized_u32_buffer(
+    cache: &CapacityBufferCache,
     device: &wgpu::Device,
+    queue: &wgpu::Queue,
     label: &str,
     words: &[u32],
     extra_usage: wgpu::BufferUsages,
 ) -> LaniusBuffer<u32> {
-    let mut bytes = Vec::with_capacity(words.len() * 4);
-    for word in words {
-        bytes.extend_from_slice(&word.to_le_bytes());
-    }
-    let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: &bytes,
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::COPY_DST
-            | extra_usage,
-    });
-    LaniusBuffer::new_labeled((raw, bytes.len() as u64), words.len(), label)
+    cache.initialized_u32(device, queue, label, words, extra_usage)
 }

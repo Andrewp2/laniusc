@@ -12,7 +12,7 @@ uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID) {
     uint row = tid(dtid);
-    if (row >= gCanonical.raw_capacity) return;
+    if (row >= gCanonical.canonical_capacity) return;
     uint count = min(segment_count[0u], gCanonical.canonical_capacity);
     family_flag[row] = row < count && path_segments[row].ordinal == 0u ? 1u : 0u;
 }

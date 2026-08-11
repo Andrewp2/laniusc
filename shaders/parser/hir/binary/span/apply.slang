@@ -9,6 +9,8 @@ struct Params
 ConstantBuffer<Params> gHirExpr;
 
 StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> hir_semantic_count;
+StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_binary_span_start_a;
@@ -44,6 +46,11 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
+uint active_semantic_count()
+{
+    return min(hir_semantic_count[0u], gHirExpr.n);
+}
+
 uint expr_record(uint node, uint field)
 {
     return hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + field];
@@ -58,13 +65,16 @@ bool binary_form(uint form)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= active_semantic_count())
+        return;
+    uint node = hir_semantic_dense_node[row];
     if (!valid_node(node) || hir_kind[node] != HIR_BINARY_EXPR)
         return;
     if (!binary_form(expr_record(node, HIR_EXPR_RECORD_FORM)))
         return;
 
-    uint start = hir_binary_span_start_a[node];
+    uint start = hir_binary_span_start_a[row];
     uint current = hir_token_pos[node];
     if (start != INVALID && (current == INVALID || start < current))
         hir_token_pos[node] = start;

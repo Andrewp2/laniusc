@@ -2010,10 +2010,8 @@ impl ResidentTreeReadbacks {
         let hir_kind = self.hir_kind.read_words(tree_len)?;
         let hir_token_pos = self.hir_token_pos.read_words(tree_len)?;
         let hir_item_kind = self.hir_item_kind.read_words(tree_len)?;
-        let hir_item_decl_token = crate::parser::readback::project_hir_item_decl_tokens(
-            &hir_item_kind,
-            &hir_token_pos,
-        );
+        let hir_item_decl_token =
+            crate::parser::readback::project_hir_item_decl_tokens(&hir_item_kind, &hir_token_pos);
         let result = ResidentParseResult {
             ll1: Ll1AcceptResult {
                 accepted: ll1_words[0] != 0,

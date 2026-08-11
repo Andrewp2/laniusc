@@ -1084,6 +1084,42 @@ fn parser_semantic_tokens_match_type_argument_close_across_token_blocks() {
 }
 
 #[test]
+fn parser_matches_else_block_across_token_block_boundary() {
+    let mut source = String::from("fn choose(value: i32) -> i32 {\n");
+    // Each typed declaration contributes seven raw tokens. The final inferred
+    // declaration contributes five, placing the `else` block opener at lane
+    // 254 of a 256-token GPU block and its closing brace in the next block.
+    for i in 0..142 {
+        source.push_str(&format!("    let p{i}: i32 = {i};\n"));
+    }
+    source.push_str("    let boundary_pad = 0;\n");
+    source.push_str("    if (value > 0) { return 1; } else { return 2; }\n}\n");
+
+    let kinds = parser_semantic_token_kinds_for_source(&source);
+    let else_index = kinds
+        .iter()
+        .position(|&kind| kind == TokenKind::Else as u32)
+        .expect("generated source should contain an else token");
+    assert_eq!(
+        else_index % 256,
+        253,
+        "fixture must keep the else block opener at GPU token-block lane 254"
+    );
+    assert_eq!(
+        kinds[else_index + 5],
+        TokenKind::RBrace as u32,
+        "the else closing brace must not inherit the preceding if block's delimiter kind"
+    );
+
+    let parsed = parse_resident_source(&source);
+    assert!(
+        parsed.ll1.accepted,
+        "an else block crossing a GPU token-block boundary should parse: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+}
+
+#[test]
 fn parser_semantic_tokens_keep_empty_array_struct_field_boundaries() {
     let source = r#"
 struct Pair { field0: i32, field1: i32 }

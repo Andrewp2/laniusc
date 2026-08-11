@@ -8,7 +8,7 @@ use log::warn;
 mod global;
 mod inputs;
 mod readback;
-mod timing;
+pub(crate) mod timing;
 
 pub use global::{get_global_lexer, lex_on_gpu, try_global_lexer};
 use readback::read_resident_tokens;

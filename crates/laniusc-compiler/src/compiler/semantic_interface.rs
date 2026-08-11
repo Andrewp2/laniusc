@@ -228,7 +228,7 @@ impl GpuSemanticInterfaceArtifact {
         self.validate_identities()?;
         // Declaration local indices are assigned by the GPU public-declaration
         // compaction pass.  That order is the stable identity order consumed
-        // by dependency lookup; it need not be grouped by module because every
+        // dependency lookup; it need not be grouped by module because every
         // record carries its explicit module index and lookup hashes that key.
         for (index, declaration) in self.declarations.iter().enumerate() {
             validate_optional_index(

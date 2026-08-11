@@ -375,6 +375,21 @@ fn x86_executes_representative_scalar_programs() {
 }
 
 #[test]
+fn x86_executes_local_assigned_after_declaration() {
+    assert_source_exit(
+        "local_assigned_after_declaration",
+        r#"
+fn main() -> i32 {
+    let deferred: i32;
+    deferred = 42;
+    return deferred;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
 fn x86_executes_void_main_return_as_zero_exit() {
     assert_source_exit(
         "void_main_return",
@@ -1285,6 +1300,48 @@ fn main() -> i32 {
 }
 "#,
         81,
+    );
+}
+
+#[test]
+fn x86_source_pack_projects_wildcard_identity_into_semantic_lowering() {
+    let sources = [
+        r#"
+module helpers::classify;
+
+pub fn classify(value: i32) -> i32 {
+    return match (value) {
+        0 -> 7,
+        1 -> 11,
+        _ -> 13,
+    };
+}
+"#,
+        r#"
+module app::main;
+
+import helpers::classify;
+
+fn main() -> i32 {
+    return helpers::classify::classify(0) * 10 +
+        helpers::classify::classify(5);
+}
+"#,
+    ];
+
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 source-pack wildcard semantic identity",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("source-pack wildcard match should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 source-pack wildcard semantic identity",
+        "x86_source_pack_wildcard_semantic_identity",
+        &bytes,
+        83,
     );
 }
 

@@ -49,25 +49,6 @@ uint declaration_module(uint declaration_i)
     return dependency_declaration_word(declaration_i * DECL_WORDS);
 }
 
-uint lower_module_bound(uint module_i)
-{
-    uint first = 0u;
-    uint count = dependency_declaration_count();
-    while (count != 0u)
-    {
-        uint step = count >> 1u;
-        uint probe = first + step;
-        if (declaration_module(probe) < module_i)
-        {
-            first = probe + 1u;
-            count -= step + 1u;
-        }
-        else
-            count = step;
-    }
-    return first;
-}
-
 uint import_for_visible_row(uint visible_i)
 {
     uint first = 0u;
@@ -104,7 +85,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (local_i >= dependency_visible_count[import_i])
         return;
     uint target = import_target_dependency_module_id[import_i * IMPORT_IDENTITY_STRIDE];
-    uint declaration_i = lower_module_bound(target) + local_i;
+    if (target >= dependency_module_count())
+        return;
+    uint ordered_i = dependency_module_declaration_start(target) + local_i;
+    uint declaration_i = dependency_module_declaration(ordered_i);
     if (declaration_i >= dependency_declaration_count() ||
         declaration_module(declaration_i) != target)
         return;

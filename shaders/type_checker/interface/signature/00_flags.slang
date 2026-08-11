@@ -27,6 +27,7 @@ static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint HIR_ITEM_KIND_TRAIT = 10u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
@@ -67,7 +68,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         interface_signature_type_flag[persisted] = 1u;
         interface_signature_edge_count[persisted] = compact_param_ranges[hir].count + 1u;
     }
-    else if (kind == HIR_ITEM_KIND_STRUCT || kind == HIR_ITEM_KIND_ENUM)
+    else if (kind == HIR_ITEM_KIND_STRUCT || kind == HIR_ITEM_KIND_ENUM ||
+             kind == HIR_ITEM_KIND_TRAIT)
         interface_signature_type_flag[persisted] = 1u;
     else if (kind == HIR_ITEM_KIND_ENUM_VARIANT)
     {

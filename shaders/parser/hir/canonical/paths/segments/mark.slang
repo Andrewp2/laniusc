@@ -6,6 +6,8 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> path_segment_owner;
 StructuredBuffer<uint> raw_to_hir;
+StructuredBuffer<uint> hir_token_pos;
+RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
 
 static const uint INVALID = 0xffffffffu;
@@ -22,8 +24,12 @@ bool path_segment(uint production) {
 void main(uint3 dtid: SV_DispatchThreadID) {
     uint raw = tid(dtid);
     if (raw >= gCanonical.raw_capacity) return;
-    family_flag[raw] = 0u;
     if (raw >= active_count() || !path_segment(node_kind[raw])) return;
     uint owner = path_segment_owner[raw];
-    family_flag[raw] = owner < gCanonical.raw_capacity && raw_to_hir[owner] != INVALID ? 1u : 0u;
+    uint anchor = hir_token_pos[raw];
+    if (owner >= gCanonical.raw_capacity || raw_to_hir[owner] == INVALID ||
+        anchor >= gCanonical.canonical_capacity) return;
+    uint ignored;
+    InterlockedMax(candidate_raw_by_anchor[anchor], raw + 1u, ignored);
+    InterlockedMax(family_flag[anchor], 1u, ignored);
 }

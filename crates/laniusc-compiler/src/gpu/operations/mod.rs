@@ -8,7 +8,7 @@ use super::{
         DispatchDim,
         InputElements,
         PassData,
-        count_recorded_compute_pass,
+        begin_counted_compute_pass,
         defer_compute_direct_with_offsets,
         defer_compute_indirect,
         plan_workgroups,
@@ -59,7 +59,6 @@ fn record_direct_with_offsets(
     n_elements: u32,
     dynamic_offsets: &[u32],
 ) -> Result<()> {
-    count_recorded_compute_pass();
     let [x, y, _] = pass.thread_group_size;
     let groups = plan_workgroups(
         DispatchDim::D1,
@@ -69,10 +68,13 @@ fn record_direct_with_offsets(
     if defer_compute_direct_with_offsets(pass, bind_group, groups, dynamic_offsets) {
         return Ok(());
     }
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     compute.dispatch_workgroups(groups.0, groups.1, groups.2);
@@ -97,7 +99,6 @@ fn record_indirect_with_offsets(
     dispatch_args: &LaniusBuffer<u32>,
     dynamic_offsets: &[u32],
 ) -> Result<()> {
-    count_recorded_compute_pass();
     if defer_compute_indirect(
         pass,
         bind_group,
@@ -107,10 +108,13 @@ fn record_indirect_with_offsets(
     ) {
         return Ok(());
     }
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     compute.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);

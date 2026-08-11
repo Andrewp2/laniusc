@@ -55,7 +55,6 @@ pub(in crate::type_checker) fn record_compute(
     label: &str,
     n_elements: u32,
 ) -> Result<()> {
-    count_recorded_compute_pass();
     let [tgsx, tgsy, _] = pass.thread_group_size;
     let (gx, gy, gz) = plan_workgroups(
         DispatchDim::D1,
@@ -65,10 +64,13 @@ pub(in crate::type_checker) fn record_compute(
     if crate::gpu::passes_core::defer_compute_direct(pass, bind_group, (gx, gy, gz)) {
         return Ok(());
     }
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     compute.dispatch_workgroups(gx, gy, gz);
@@ -83,7 +85,6 @@ pub(in crate::type_checker) fn record_compute_indirect(
     label: &str,
     dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<()> {
-    count_recorded_compute_pass();
     if crate::gpu::passes_core::defer_compute_indirect(
         pass,
         bind_group,
@@ -93,10 +94,13 @@ pub(in crate::type_checker) fn record_compute_indirect(
     ) {
         return Ok(());
     }
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     compute.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
@@ -114,7 +118,6 @@ pub(in crate::type_checker) fn record_compute_indirect_offset(
     dispatch_args: &LaniusBuffer<u32>,
     dispatch_offset: u64,
 ) -> Result<()> {
-    count_recorded_compute_pass();
     crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
         encoder,
         pass,

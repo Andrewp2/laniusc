@@ -6,6 +6,8 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> payload_owner_arm;
+StructuredBuffer<uint> hir_token_pos;
+RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
@@ -23,12 +25,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint raw = tid(dtid);
     if (raw >= gCanonical.raw_capacity) return;
     if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_MATCHES))
-    {
-        family_flag[raw] = 0u;
         return;
-    }
     uint owner = payload_owner_arm[raw];
     bool valid_owner = owner < active_count() && node_kind[owner] == PROD_MATCH_ARM;
-    family_flag[raw] = raw < active_count() && is_pattern_production(node_kind[raw]) &&
-                       valid_owner ? 1u : 0u;
+    if (raw >= active_count() || !is_pattern_production(node_kind[raw]) || !valid_owner) return;
+    uint anchor = hir_token_pos[raw];
+    if (anchor >= gCanonical.canonical_capacity) return;
+    uint ignored;
+    InterlockedMax(candidate_raw_by_anchor[anchor], raw + 1u, ignored);
+    InterlockedMax(family_flag[anchor], 1u, ignored);
 }

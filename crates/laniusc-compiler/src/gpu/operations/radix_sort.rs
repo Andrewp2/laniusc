@@ -20,9 +20,11 @@ use crate::gpu::{
         ResourceDomain,
     },
     kernels::KernelRegistry,
-    passes_core::{ComputePassBatch, PassData, count_recorded_compute_pass},
+    passes_core::{ComputePassBatch, PassData},
     resource_registry::{ResourceMap, buffer_from_resources, reflected_bind_group_with_overrides},
 };
+
+const STANDARD_RADIX_MAX_BLOCKS: u32 = 4096;
 
 /// Identifies kernels participating in a repeated radix/key-scheduling step
 /// from their reflected operation contract. The kernel registry uses this to
@@ -778,6 +780,25 @@ where
         })
     }
 
+    pub(crate) fn new_adaptive<F>(
+        device: &wgpu::Device,
+        kernels: &KernelRegistry,
+        registry: &HashMap<String, wgpu::BindingResource<'_>>,
+        block_count: u32,
+        standard: RadixSortPlan<'_>,
+        hierarchical: HierarchicalRadixSortPlan<'_>,
+        make_params: F,
+    ) -> Result<Self>
+    where
+        F: Fn(u32) -> P,
+    {
+        if block_count <= STANDARD_RADIX_MAX_BLOCKS {
+            Self::new(device, kernels, registry, standard, make_params)
+        } else {
+            Self::new_hierarchical(device, kernels, registry, hierarchical, make_params)
+        }
+    }
+
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         match &self.schedule {
             RadixSortSchedule::Standard(sort) => sort.record(encoder),
@@ -845,7 +866,6 @@ where
                 "batched radix sorts selected incompatible algorithms"
             ));
         }
-        count_recorded_compute_pass();
         let mut small = ComputePassBatch::begin(encoder, "type_check.radix_sort.batch.small");
         for sort in &sorts {
             record_batch_dispatch(
@@ -870,7 +890,6 @@ where
 
     for step in 0..steps {
         let direction = step % 2;
-        count_recorded_compute_pass();
         let mut histogram =
             ComputePassBatch::begin(encoder, "type_check.radix_sort.batch.histogram");
         for sort in &sorts {
@@ -884,7 +903,6 @@ where
         }
         drop(histogram);
 
-        count_recorded_compute_pass();
         let mut prefix =
             ComputePassBatch::begin(encoder, "type_check.radix_sort.batch.bucket_prefix");
         for sort in &sorts {
@@ -900,7 +918,6 @@ where
         }
         drop(prefix);
 
-        count_recorded_compute_pass();
         let mut bases =
             ComputePassBatch::begin(encoder, "type_check.radix_sort.batch.bucket_bases");
         for sort in &sorts {
@@ -916,7 +933,6 @@ where
         }
         drop(bases);
 
-        count_recorded_compute_pass();
         let mut scatter = ComputePassBatch::begin(encoder, "type_check.radix_sort.batch.scatter");
         for sort in &sorts {
             record_batch_dispatch(

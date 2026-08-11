@@ -12,7 +12,6 @@ StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_method_signature_flags;
 StructuredBuffer<uint> raw_to_hir;
-RWStructuredBuffer<uint> family_flag;
 RWStructuredBuffer<uint> subject_link_a;
 RWStructuredBuffer<uint> subject_anchor_a;
 RWStructuredBuffer<uint> owner_link_a;
@@ -23,7 +22,6 @@ static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 uint active_count() { return gCanonical.uses_status_count != 0u ? min(gCanonical.raw_capacity, tree_count_status[5u]) : gCanonical.raw_capacity; }
 bool valid(uint node) { return node != INVALID && node < active_count(); }
-bool bound_type(uint prod) { return prod == PROD_BOUND_TYPE_IDENT || prod == PROD_BOUND_TYPE_REF; }
 bool subject_anchor(uint prod) { return prod == PROD_ENUM_TYPE_PARAM || prod == PROD_WHERE_TYPE_BOUND; }
 static const uint HIR_ITEM_KIND_FN = 4u;
 static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
@@ -56,14 +54,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = tid(dtid);
     if (node >= gCanonical.raw_capacity) return;
-    family_flag[node] = 0u;
     subject_link_a[node] = INVALID;
     subject_anchor_a[node] = INVALID;
     owner_link_a[node] = INVALID;
     owner_value_a[node] = INVALID;
     if (!valid(node)) return;
-    family_flag[node] = bound_type(node_kind[node]) ? 1u : 0u;
-
     bool found_subject = subject_anchor(node_kind[node]);
     bool found_owner = generic_decl_node(node);
     if (found_subject) subject_anchor_a[node] = node;

@@ -8,7 +8,7 @@ struct Params
 
 ConstantBuffer<Params> gHirExpr;
 
-StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_binary_span_link_in;
 StructuredBuffer<uint> hir_binary_span_start_in;
 
@@ -24,46 +24,39 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_node_count()
+uint active_row_count()
 {
-    return gHirExpr.uses_status_count != 0u ? min(gHirExpr.n, tree_count_status[5u]) : gHirExpr.n;
+    return min(gHirExpr.n, hir_semantic_count[0u]);
 }
 
-bool valid_node(uint node)
+bool valid_row(uint row)
 {
-    return node != INVALID && node < active_node_count();
+    return row != INVALID && row < active_row_count();
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    if (node >= gHirExpr.n)
+    uint row = linear_thread_id(dtid);
+    if (row >= active_row_count())
         return;
 
-    if (!valid_node(node))
+    uint link = hir_binary_span_link_in[row];
+    uint start = hir_binary_span_start_in[row];
+    if (!valid_row(link) || link == row)
     {
-        hir_binary_span_link_out[node] = INVALID;
-        hir_binary_span_start_out[node] = INVALID;
-        return;
-    }
-
-    uint link = hir_binary_span_link_in[node];
-    uint start = hir_binary_span_start_in[node];
-    if (!valid_node(link) || link == node)
-    {
-        hir_binary_span_link_out[node] = INVALID;
-        hir_binary_span_start_out[node] = start;
+        hir_binary_span_link_out[row] = INVALID;
+        hir_binary_span_start_out[row] = start;
         return;
     }
 
     uint linked_start = hir_binary_span_start_in[link];
     uint linked_link = hir_binary_span_link_in[link];
-    hir_binary_span_start_out[node] =
+    hir_binary_span_start_out[row] =
         linked_start != INVALID && (start == INVALID || linked_start < start)
             ? linked_start
             : start;
-    hir_binary_span_link_out[node] =
-        valid_node(linked_link) && linked_link != node ? linked_link : INVALID;
+    hir_binary_span_link_out[row] =
+        valid_row(linked_link) && linked_link != row ? linked_link : INVALID;
 }

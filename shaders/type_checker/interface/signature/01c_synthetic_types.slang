@@ -24,6 +24,7 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint HIR_ITEM_KIND_TRAIT = 10u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
@@ -58,7 +59,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else
     {
         uint nominal = persisted;
-        if (kind != HIR_ITEM_KIND_STRUCT && kind != HIR_ITEM_KIND_ENUM)
+        if (kind != HIR_ITEM_KIND_STRUCT && kind != HIR_ITEM_KIND_ENUM &&
+            kind != HIR_ITEM_KIND_TRAIT)
         { fail(persisted); return; }
         if (nominal >= public_count) { fail(persisted); return; }
         write_type(type_index, TYPE_KIND_DECLARATION, gParams.library_id, nominal, 0u, 0u, gParams.unit_id);

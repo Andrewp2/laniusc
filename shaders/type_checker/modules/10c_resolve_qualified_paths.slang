@@ -34,7 +34,7 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_prefix_id;
 StructuredBuffer<uint> path_owner_module_id;
-StructuredBuffer<uint> module_table_count_out;
+StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
 StructuredBuffer<uint> module_key_canonical_id;
 StructuredBuffer<uint> import_count_out;
@@ -82,7 +82,7 @@ uint module_capacity()
 
 uint active_module_count()
 {
-    return min(module_table_count_out[0], module_capacity());
+    return min(module_count_out[0], module_capacity());
 }
 
 uint active_import_count()

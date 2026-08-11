@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     gpu::{
-        buffers::{LaniusBuffer, readback_bytes},
+        buffers::{LaniusBuffer, readback_bytes, with_uniform_buffer_arena},
         compiler_graph::CompilerGraphWorkspace,
         passes_core::map_readback_blocking,
     },
@@ -144,7 +144,8 @@ impl GpuLoweringWorkspaceCache {
         hir_nodes: u32,
     ) -> Result<Arc<GpuLoweringPipeline>, String> {
         let required =
-            LoweringCapacities::from_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?;
+            LoweringCapacities::from_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?
+                .bucketed();
         let mut current = self
             .current
             .lock()
@@ -157,6 +158,13 @@ impl GpuLoweringWorkspaceCache {
         let capacities = current.as_ref().map_or(required, |pipeline| {
             pipeline.capacities.grow_to_cover(required)
         });
+        // Reflected bind groups in the old pipeline own every lowering arena.
+        // Destroy that complete identity graph before allocating its
+        // replacement; otherwise a small capacity increase transiently makes
+        // both multi-gigabyte workspaces resident.
+        let old = current.take();
+        drop(old);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
         let pipeline = Arc::new(
             GpuLoweringPipeline::new(device, capacities, self.target)
                 .map_err(|err| err.to_string())?,
@@ -197,6 +205,20 @@ impl GpuLoweringWorkspaceCache {
 
 impl GpuLoweringPipeline {
     pub(crate) fn new(
+        device: &wgpu::Device,
+        capacities: LoweringCapacities,
+        target: LoweringTarget,
+    ) -> Result<Self> {
+        let label = match target {
+            LoweringTarget::X86_64 => "codegen.x86.lowering.uniform_arena",
+            LoweringTarget::Wasm => "codegen.wasm.lowering.uniform_arena",
+        };
+        with_uniform_buffer_arena(device, label, || {
+            Self::new_with_uniform_arena(device, capacities, target)
+        })
+    }
+
+    fn new_with_uniform_arena(
         device: &wgpu::Device,
         capacities: LoweringCapacities,
         target: LoweringTarget,

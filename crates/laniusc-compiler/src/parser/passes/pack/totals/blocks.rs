@@ -4,10 +4,7 @@ use anyhow::Result;
 use encase::ShaderType;
 
 use crate::{
-    gpu::{
-        buffers::{LaniusBuffer, uniform_from_val},
-        passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
-    },
+    gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
     parser::buffers::ParserBuffers,
 };
 
@@ -38,10 +35,11 @@ impl PackTotalsBlocksPass {
         buffers: &ParserBuffers,
     ) -> Result<()> {
         let n_pairs = buffers.n_tokens.saturating_sub(1);
-        let params: LaniusBuffer<Params> =
-            uniform_from_val(device, "pack.totals_blocks.params", &Params { n_pairs });
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params.as_entire_binding()),
+            (
+                "gParams".into(),
+                buffers.pack_totals_blocks_params.as_entire_binding(),
+            ),
             (
                 "token_count".into(),
                 buffers.token_count.as_entire_binding(),

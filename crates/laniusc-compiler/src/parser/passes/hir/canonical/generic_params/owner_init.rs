@@ -49,6 +49,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("parent".into(), b.parent.as_entire_binding()),
             ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "hir_method_signature_flags".into(),
                 b.hir_method_signature_flags.as_entire_binding(),
@@ -58,8 +59,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
             (
-                "family_flag".into(),
-                b.hir_generic_param_family_flag.as_entire_binding(),
+                "candidate_raw_by_anchor".into(),
+                b.hir_canonical_anchor_owner.as_entire_binding(),
             ),
             (
                 "owner_link_a".into(),

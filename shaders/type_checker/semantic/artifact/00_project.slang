@@ -20,6 +20,7 @@ StructuredBuffer<uint> resolved_dependency_local_index;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> compact_path_count;
 StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> compact_path_segment_count;
@@ -28,7 +29,6 @@ StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
-StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> name_id_by_token;
@@ -74,12 +74,19 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint HOST_SERVICE_FIRST = 20u;
 static const uint HOST_SERVICE_END = 63u;
 static const uint LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR = 52u;
+static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint DECL_WORDS = 14u;
 
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+bool token_is_wildcard(uint token)
+{
+    return valid_token(token) && name_id_by_token[token] != INVALID &&
+        name_id_by_token[token] == language_name_id[LANGUAGE_SYMBOL_WILDCARD];
 }
 
 uint type_leaf_token(uint row, HirCore core, HirPayload payload)
@@ -131,6 +138,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
             {
                 declaration = visible_decl[payload.d];
                 type_id = visible_type[payload.d];
+                if (token_is_wildcard(core.token_start))
+                {
+                    declaration = core.token_start;
+                    type_id = 0u;
+                }
             }
             else if ((core.kind == HIR_LET_STMT ||
                       (core.kind == HIR_STMT &&
@@ -173,7 +185,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_value_const_by_hir[row] = const_value;
         semantic_value_const_present_by_hir[row] = const_present;
         uint token = row < hir_count ? compact_hir_core[row].token_start : INVALID;
-        semantic_enclosing_fn_by_hir[row] = valid_token(token) ? enclosing_fn[token] : 0u;
+        uint nearest_fn = row < hir_count ? compact_hir_nearest_fn[row] : INVALID;
+        semantic_enclosing_fn_by_hir[row] = nearest_fn < hir_count ? nearest_fn + 1u : 0u;
         semantic_function_return_type_by_hir[row] = valid_token(token) ? call_return_type[token] : 0u;
         semantic_function_entrypoint_by_hir[row] = valid_token(token) ? fn_entrypoint_tag[token] : 0u;
         semantic_function_host_service_by_hir[row] = row < hir_count

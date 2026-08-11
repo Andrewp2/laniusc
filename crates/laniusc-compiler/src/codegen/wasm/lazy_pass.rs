@@ -24,6 +24,7 @@ pub(crate) struct LazyWasmPass {
     reflection: Arc<SlangReflection>,
     pipeline: Mutex<Option<Arc<wgpu::ComputePipeline>>>,
     device: Arc<wgpu::Device>,
+    _reflected_bind_groups: Arc<dyn Send + Sync>,
 }
 
 impl LazyWasmPass {
@@ -46,10 +47,13 @@ impl LazyWasmPass {
         })?;
         let reflection: SlangReflection =
             parse_reflection_from_bytes(&reflection_json).map_err(anyhow::Error::msg)?;
-        let bind_group_layouts = bgls_from_reflection(device, &reflection)?
-            .into_iter()
-            .map(Arc::new)
-            .collect();
+        let bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>> =
+            bgls_from_reflection(device, &reflection)?
+                .into_iter()
+                .map(Arc::new)
+                .collect();
+        let reflected_bind_groups =
+            crate::gpu::passes_core::retain_reflected_bind_group_cache(&bind_group_layouts);
         Ok(Self {
             stage,
             label,
@@ -59,6 +63,7 @@ impl LazyWasmPass {
             reflection: Arc::new(reflection),
             pipeline: Mutex::new(None),
             device: device.clone(),
+            _reflected_bind_groups: reflected_bind_groups,
         })
     }
 

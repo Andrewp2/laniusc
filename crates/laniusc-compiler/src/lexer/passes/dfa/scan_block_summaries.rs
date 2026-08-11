@@ -127,10 +127,13 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
         )?;
 
         if can_batch {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some(Self::NAME),
-                timestamp_writes: None,
-            });
+            let mut pass = crate::gpu::passes_core::begin_counted_compute_pass(
+                encoder,
+                &wgpu::ComputePassDescriptor {
+                    label: Some(Self::NAME),
+                    timestamp_writes: None,
+                },
+            );
             for r in 0..rounds {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, &bg, &[scan_params.dynamic_offset(r as usize)]);
@@ -144,10 +147,13 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                 // One 256-thread workgroup per block; only the first N_STATES lanes carry
                 // DFA state vectors, matching the shader guard.
                 // Tell the planner each "element" already maps 1:1 to a group.
-                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some(Self::NAME),
-                    timestamp_writes: None,
-                });
+                let mut pass = crate::gpu::passes_core::begin_counted_compute_pass(
+                    encoder,
+                    &wgpu::ComputePassDescriptor {
+                        label: Some(Self::NAME),
+                        timestamp_writes: None,
+                    },
+                );
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, &bg, &[scan_params.dynamic_offset(r as usize)]);
                 pass.dispatch_workgroups(gx, gy, gz);

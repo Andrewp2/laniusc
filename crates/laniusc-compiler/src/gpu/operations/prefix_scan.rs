@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 
 use super::{record_direct, record_indirect};
 use crate::gpu::{
-    buffers::{LaniusBuffer, TrackedBufferView, uniform_from_val},
+    buffers::{CapacityBufferCache, LaniusBuffer, TrackedBufferView, uniform_from_val},
     compiler_graph::{
         PrefixScanPairSpec,
         PrefixScanResources,
@@ -10,7 +10,7 @@ use crate::gpu::{
         PrefixScanWorkspace,
     },
     kernels::KernelRegistry,
-    passes_core::{ComputePassBatch, PassData, bind_group, count_recorded_compute_pass},
+    passes_core::{ComputePassBatch, PassData, bind_group},
     resource_registry::ResourceMap,
     scan::{
         HierarchicalScanLevel,
@@ -34,6 +34,21 @@ fn standard_passes(kernels: &KernelRegistry) -> PrefixScanPasses<'_> {
         hierarchy_up: kernels.kernel("scan/counted/01_hierarchy_up"),
         hierarchy_down: kernels.kernel("scan/counted/02_hierarchy_down"),
         apply: kernels.kernel("scan/counted/02_apply"),
+    }
+}
+
+fn scan_uniform<T>(
+    device: &wgpu::Device,
+    reusable: Option<(&wgpu::Queue, &CapacityBufferCache)>,
+    label: &str,
+    value: &T,
+) -> LaniusBuffer<T>
+where
+    T: encase::ShaderType + encase::internal::WriteInto,
+{
+    match reusable {
+        Some((queue, cache)) => cache.uniform(device, queue, label, value),
+        None => uniform_from_val(device, label, value),
     }
 }
 
@@ -99,8 +114,10 @@ impl PrefixScanOperation {
         )
     }
 
-    pub(crate) fn with_workspace(
+    pub(crate) fn with_reusable_workspace(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        cache: &CapacityBufferCache,
         kernels: &KernelRegistry,
         label: &'static str,
         params: PrefixScanParams,
@@ -113,6 +130,7 @@ impl PrefixScanOperation {
     ) -> Result<Self> {
         Self::new(
             device,
+            Some((queue, cache)),
             label,
             params,
             standard_passes(kernels),
@@ -157,6 +175,7 @@ impl PrefixScanOperation {
         let n_items = resources.logical_u32_count(names.input)?;
         Self::new(
             device,
+            None,
             label,
             PrefixScanParams {
                 n_items,
@@ -180,13 +199,14 @@ impl PrefixScanOperation {
 
     fn new(
         device: &wgpu::Device,
+        reusable: Option<(&wgpu::Queue, &CapacityBufferCache)>,
         label: &'static str,
         params: PrefixScanParams,
         passes: PrefixScanPasses<'_>,
         buffers: PrefixScanBuffers<'_>,
     ) -> Result<Self> {
         let levels = hierarchical_scan_levels(params.n_blocks);
-        let params_buffer = uniform_from_val(device, &format!("{label}.params"), &params);
+        let params_buffer = scan_uniform(device, reusable, &format!("{label}.params"), &params);
         let bind =
             |suffix: &str, pass: &PassData, bindings: &[(&str, wgpu::BindingResource<'_>)]| {
                 bind_group::create_bind_group_from_bindings(
@@ -217,8 +237,9 @@ impl PrefixScanOperation {
                          level: HierarchicalScanLevel,
                          parent: Option<HierarchicalScanLevel>|
          -> Result<HierarchyStep> {
-            let level_params = uniform_from_val(
+            let level_params = scan_uniform(
                 device,
+                reusable,
                 &format!("{label}.{suffix}.{index}.params"),
                 &PrefixScanHierarchyParams {
                     n_items: params.n_items,
@@ -410,7 +431,6 @@ fn pair_indirect<'a>(
     right_args: &'a wgpu::Buffer,
     label: &'static str,
 ) {
-    count_recorded_compute_pass();
     let mut batch = ComputePassBatch::begin(encoder, label);
     batch.record_raw_indirect(pass, left, left_args);
     batch.record_raw_indirect(pass, right, right_args);
@@ -423,7 +443,6 @@ fn pair_steps<'a>(
     right: Option<&'a HierarchyStep>,
     label: &'static str,
 ) -> Result<()> {
-    count_recorded_compute_pass();
     let mut batch = ComputePassBatch::begin(encoder, label);
     if let Some(step) = left {
         batch.record_raw(pass, &step.group, step.work_items)?;

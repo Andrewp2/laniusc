@@ -348,29 +348,38 @@ mod tests {
                 label: Some("test.if_depth.encoder"),
             });
         {
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("test.if_depth.mark"),
-                timestamp_writes: None,
-            });
+            let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor {
+                    label: Some("test.if_depth.mark"),
+                    timestamp_writes: None,
+                },
+            );
             compute.set_pipeline(&mark_pass.pipeline);
             compute.set_bind_group(0, Some(&mark_group), &[]);
             compute.dispatch_workgroups(1, 1, 1);
         }
         encoder.copy_buffer_to_buffer(&delta.buffer, 0, &delta_readback.buffer, 0, 64 * 4);
         {
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("test.if_depth.local"),
-                timestamp_writes: None,
-            });
+            let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor {
+                    label: Some("test.if_depth.local"),
+                    timestamp_writes: None,
+                },
+            );
             compute.set_pipeline(&local_pass.pipeline);
             compute.set_bind_group(0, Some(&local_group), &[]);
             compute.dispatch_workgroups(1, 1, 1);
         }
         {
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("test.if_depth.apply"),
-                timestamp_writes: None,
-            });
+            let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor {
+                    label: Some("test.if_depth.apply"),
+                    timestamp_writes: None,
+                },
+            );
             compute.set_pipeline(&apply_pass.pipeline);
             compute.set_bind_group(0, Some(&apply_group), &[]);
             compute.dispatch_workgroups(1, 1, 1);

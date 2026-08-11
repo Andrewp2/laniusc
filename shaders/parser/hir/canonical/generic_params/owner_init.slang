@@ -6,9 +6,10 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_item_kind;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_method_signature_flags;
 StructuredBuffer<uint> raw_to_hir;
-RWStructuredBuffer<uint> family_flag;
+RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> owner_link_a;
 RWStructuredBuffer<uint> owner_value_a;
 
@@ -49,17 +50,32 @@ bool generic_param_candidate(uint node)
     return prod == PROD_ENUM_TYPE_PARAM || prod == PROD_ENUM_CONST_PARAM;
 }
 
+uint generic_param_name(uint node)
+{
+    uint token = hir_token_pos[node];
+    return node_kind[node] == PROD_ENUM_TYPE_PARAM
+        ? token
+        : (token == INVALID ? INVALID : token + 1u);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = tid(dtid);
     if (node >= gCanonical.raw_capacity) return;
-    family_flag[node] = 0u;
     owner_link_a[node] = INVALID;
     owner_value_a[node] = INVALID;
     if (!valid(node)) return;
-    family_flag[node] = generic_param_candidate(node) ? 1u : 0u;
+    if (generic_param_candidate(node))
+    {
+        uint anchor = generic_param_name(node);
+        if (anchor < gCanonical.canonical_capacity)
+        {
+            uint ignored;
+            InterlockedMax(candidate_raw_by_anchor[anchor], node + 1u, ignored);
+        }
+    }
     if (generic_decl_node(node))
     {
         owner_value_a[node] = node;

@@ -24,7 +24,7 @@ pub(super) use lazy_pass::{LazyWasmPass, create_wasm_bind_group};
 pub(crate) mod link;
 pub(crate) use link::GpuWasmLinkInput;
 
-use crate::gpu::device;
+use crate::gpu::{buffers::CapacityBufferCache, device};
 
 /// Daemon-resident GPU linker pipelines for durable Wasm objects.
 pub struct GpuWasmLinker {
@@ -34,6 +34,7 @@ pub struct GpuWasmLinker {
     link_symbol_define_pass: LazyWasmPass,
     link_resolve_pass: LazyWasmPass,
     link_relocate_pass: LazyWasmPass,
+    job_buffers: CapacityBufferCache,
 }
 
 impl GpuWasmLinker {
@@ -101,9 +102,14 @@ impl GpuWasmLinker {
             link_symbol_define_pass: finish_pass!(link_symbol_define_pass, "link_symbol_define"),
             link_resolve_pass: finish_pass!(link_resolve_pass, "link_resolve"),
             link_relocate_pass: finish_pass!(link_relocate_pass, "link_relocate"),
+            job_buffers: CapacityBufferCache::default(),
         };
         gpu.persist_pipeline_cache();
         Ok(linker)
+    }
+
+    pub(crate) fn release_job_buffers(&self) {
+        self.job_buffers.clear();
     }
 }
 

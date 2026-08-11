@@ -28,6 +28,13 @@ pub(crate) struct GpuX86RelocatableObjectLayout {
     pub serialized_byte_len: u64,
 }
 
+/// Object columns needed for symbol resolution without copying section payloads.
+pub(crate) struct GpuX86LinkObjectMetadata {
+    pub relocations: Vec<GpuX86RelocationRecord>,
+    pub symbols: Vec<GpuX86ObjectSymbolRecord>,
+    pub identity_bytes: Vec<u8>,
+}
+
 impl GpuX86RelocatableObjectLayout {
     pub(crate) fn from_header_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < GPU_X86_OBJECT_HEADER_BYTES || bytes[..8] != GPU_X86_OBJECT_MAGIC {
@@ -90,6 +97,119 @@ impl GpuX86RelocatableObjectLayout {
             .checked_add(self.rodata_byte_len as u64)
             .ok_or_else(|| "x86 object rodata payload end overflows u64".to_string())?;
         Ok((text_start..text_end, text_end..rodata_end))
+    }
+}
+
+impl GpuX86LinkObjectMetadata {
+    pub(crate) fn from_file(
+        path: &std::path::Path,
+        expected_layout: GpuX86RelocatableObjectLayout,
+    ) -> Result<Self, String> {
+        use std::io::{Read, Seek, SeekFrom};
+
+        let mut file = std::fs::File::open(path)
+            .map_err(|err| format!("open x86 object {}: {err}", path.display()))?;
+        let file_len = file
+            .metadata()
+            .map_err(|err| format!("stat x86 object {}: {err}", path.display()))?
+            .len();
+        if file_len != expected_layout.serialized_byte_len {
+            return Err(format!(
+                "x86 object {} has {file_len} bytes but its layout describes {}",
+                path.display(),
+                expected_layout.serialized_byte_len
+            ));
+        }
+        let mut header = [0u8; GPU_X86_OBJECT_HEADER_BYTES];
+        file.read_exact(&mut header)
+            .map_err(|err| format!("read x86 object header {}: {err}", path.display()))?;
+        let actual_layout = GpuX86RelocatableObjectLayout::from_header_bytes(&header)?;
+        if actual_layout != expected_layout {
+            return Err(format!(
+                "x86 object {} changed after layout validation",
+                path.display()
+            ));
+        }
+        let (_, rodata_range) = expected_layout.payload_byte_ranges()?;
+        let metadata_len = expected_layout
+            .serialized_byte_len
+            .checked_sub(rodata_range.end)
+            .ok_or_else(|| "x86 object metadata length underflows".to_string())?;
+        let metadata_len = usize::try_from(metadata_len)
+            .map_err(|_| "x86 object metadata length exceeds usize".to_string())?;
+        file.seek(SeekFrom::Start(rodata_range.end))
+            .map_err(|err| format!("seek x86 object metadata {}: {err}", path.display()))?;
+        let mut metadata = vec![0; metadata_len];
+        file.read_exact(&mut metadata)
+            .map_err(|err| format!("read x86 object metadata {}: {err}", path.display()))?;
+        Self::from_metadata_bytes(expected_layout, &metadata)
+    }
+
+    fn from_metadata_bytes(
+        layout: GpuX86RelocatableObjectLayout,
+        bytes: &[u8],
+    ) -> Result<Self, String> {
+        let mut cursor = 0usize;
+        let mut relocations = Vec::with_capacity(layout.relocation_count as usize);
+        for _ in 0..layout.relocation_count {
+            let kind = GpuX86RelocationKind::from_u32(read_u32(bytes, &mut cursor)?)?;
+            let site_section = GpuX86ObjectSection::from_u32(read_u32(bytes, &mut cursor)?)?;
+            let site_offset = read_u32(bytes, &mut cursor)?;
+            let target_kind = GpuX86RelocationTargetKind::from_u32(read_u32(bytes, &mut cursor)?)?;
+            let target_index = read_u32(bytes, &mut cursor)?;
+            let target_offset = read_u32(bytes, &mut cursor)?;
+            let addend_lo = read_u32(bytes, &mut cursor)? as u64;
+            let addend_hi = read_u32(bytes, &mut cursor)? as u64;
+            relocations.push(GpuX86RelocationRecord {
+                kind,
+                site_section,
+                site_offset,
+                target_kind,
+                target_index,
+                target_offset,
+                addend: ((addend_hi << 32) | addend_lo) as i64,
+            });
+        }
+        let mut symbols = Vec::with_capacity(layout.symbol_count as usize);
+        for _ in 0..layout.symbol_count {
+            symbols.push(GpuX86ObjectSymbolRecord {
+                identity_hash_lo: read_u32(bytes, &mut cursor)?,
+                identity_hash_hi: read_u32(bytes, &mut cursor)?,
+                identity_byte_start: read_u32(bytes, &mut cursor)?,
+                identity_byte_len: read_u32(bytes, &mut cursor)?,
+                section: GpuX86ObjectSection::from_u32(read_u32(bytes, &mut cursor)?)?,
+                offset: read_u32(bytes, &mut cursor)?,
+                size: read_u32(bytes, &mut cursor)?,
+                flags: read_u32(bytes, &mut cursor)?,
+            });
+        }
+        let identity_bytes = read_bytes(
+            bytes,
+            &mut cursor,
+            layout.identity_byte_len as usize,
+            "identity",
+        )?
+        .to_vec();
+        if cursor != bytes.len() {
+            return Err(format!(
+                "x86 object has {} trailing bytes",
+                bytes.len() - cursor
+            ));
+        }
+        validate_link_object_columns(
+            layout.version,
+            layout.entry_offset,
+            layout.text_byte_len as usize,
+            layout.rodata_byte_len as usize,
+            &relocations,
+            &symbols,
+            &identity_bytes,
+        )?;
+        Ok(Self {
+            relocations,
+            symbols,
+            identity_bytes,
+        })
     }
 }
 
@@ -198,108 +318,20 @@ impl GpuX86RelocatableObject {
     /// Validates all section ranges, relocation targets, and collision-safe
     /// symbol identities.
     pub fn validate(&self) -> Result<(), String> {
-        if self.version != GPU_X86_OBJECT_VERSION {
-            return Err(format!(
-                "x86 object version {} is unsupported; expected {}",
-                self.version, GPU_X86_OBJECT_VERSION
-            ));
-        }
         checked_u32_len("text byte", self.text.len())?;
         checked_u32_len("rodata byte", self.rodata.len())?;
         checked_u32_len("relocation", self.relocations.len())?;
         checked_u32_len("symbol", self.symbols.len())?;
         checked_u32_len("identity byte", self.identity_bytes.len())?;
-        if let Some(entry_offset) = self.entry_offset {
-            if entry_offset as usize >= self.text.len() {
-                return Err(format!(
-                    "x86 object entry offset {entry_offset} exceeds text length {}",
-                    self.text.len()
-                ));
-            }
-        }
-
-        for (index, relocation) in self.relocations.iter().enumerate() {
-            let site_len = self.section_len(relocation.site_section).ok_or_else(|| {
-                format!("x86 object relocation {index} has an undefined site section")
-            })?;
-            let site = relocation.site_offset as usize;
-            if site.checked_add(4).is_none_or(|end| end > site_len) {
-                return Err(format!(
-                    "x86 object relocation {index} site {}..{} exceeds section length {site_len}",
-                    site,
-                    site.saturating_add(4)
-                ));
-            }
-            match relocation.target_kind {
-                GpuX86RelocationTargetKind::SectionOffset => {
-                    let section = GpuX86ObjectSection::from_u32(relocation.target_index)?;
-                    let target_len = self.section_len(section).ok_or_else(|| {
-                        format!("x86 object relocation {index} targets an undefined section")
-                    })?;
-                    if relocation.target_offset as usize > target_len {
-                        return Err(format!(
-                            "x86 object relocation {index} target offset {} exceeds section length {target_len}",
-                            relocation.target_offset
-                        ));
-                    }
-                }
-                GpuX86RelocationTargetKind::Symbol => {
-                    if relocation.target_index as usize >= self.symbols.len() {
-                        return Err(format!(
-                            "x86 object relocation {index} symbol {} exceeds symbol count {}",
-                            relocation.target_index,
-                            self.symbols.len()
-                        ));
-                    }
-                    if relocation.target_offset != 0 {
-                        return Err(format!(
-                            "x86 object relocation {index} symbol target has a nonzero section offset"
-                        ));
-                    }
-                }
-            }
-        }
-
-        for (index, symbol) in self.symbols.iter().enumerate() {
-            let start = symbol.identity_byte_start as usize;
-            let len = symbol.identity_byte_len as usize;
-            let end = start.checked_add(len).ok_or_else(|| {
-                format!("x86 object symbol {index} identity byte range overflows")
-            })?;
-            if len == 0 || end > self.identity_bytes.len() {
-                return Err(format!(
-                    "x86 object symbol {index} identity byte range {start}..{end} is invalid"
-                ));
-            }
-            let expected = stable_name_hash(&self.identity_bytes[start..end]);
-            if expected != (symbol.identity_hash_lo, symbol.identity_hash_hi) {
-                return Err(format!(
-                    "x86 object symbol {index} identity hash does not match its canonical bytes"
-                ));
-            }
-            match symbol.section {
-                GpuX86ObjectSection::Undefined => {
-                    if symbol.offset != 0 || symbol.size != 0 {
-                        return Err(format!(
-                            "x86 object undefined symbol {index} has a section range"
-                        ));
-                    }
-                }
-                section => {
-                    let section_len = self.section_len(section).expect("defined section");
-                    let start = symbol.offset as usize;
-                    let end = start.checked_add(symbol.size as usize).ok_or_else(|| {
-                        format!("x86 object symbol {index} section range overflows")
-                    })?;
-                    if end > section_len {
-                        return Err(format!(
-                            "x86 object symbol {index} range {start}..{end} exceeds section length {section_len}"
-                        ));
-                    }
-                }
-            }
-        }
-        Ok(())
+        validate_link_object_columns(
+            self.version,
+            self.entry_offset,
+            self.text.len(),
+            self.rodata.len(),
+            &self.relocations,
+            &self.symbols,
+            &self.identity_bytes,
+        )
     }
 
     /// Serializes this object to the versioned binary artifact format.
@@ -447,14 +479,114 @@ impl GpuX86RelocatableObject {
         object.validate()?;
         Ok(object)
     }
+}
 
-    fn section_len(&self, section: GpuX86ObjectSection) -> Option<usize> {
-        match section {
-            GpuX86ObjectSection::Undefined => None,
-            GpuX86ObjectSection::Text => Some(self.text.len()),
-            GpuX86ObjectSection::Rodata => Some(self.rodata.len()),
+fn validate_link_object_columns(
+    version: u32,
+    entry_offset: Option<u32>,
+    text_len: usize,
+    rodata_len: usize,
+    relocations: &[GpuX86RelocationRecord],
+    symbols: &[GpuX86ObjectSymbolRecord],
+    identity_bytes: &[u8],
+) -> Result<(), String> {
+    if version != GPU_X86_OBJECT_VERSION {
+        return Err(format!(
+            "x86 object version {version} is unsupported; expected {GPU_X86_OBJECT_VERSION}"
+        ));
+    }
+    if entry_offset.is_some_and(|offset| offset as usize >= text_len) {
+        return Err(format!(
+            "x86 object entry offset {} exceeds text length {text_len}",
+            entry_offset.expect("checked as present")
+        ));
+    }
+    let section_len = |section| match section {
+        GpuX86ObjectSection::Undefined => None,
+        GpuX86ObjectSection::Text => Some(text_len),
+        GpuX86ObjectSection::Rodata => Some(rodata_len),
+    };
+    for (index, relocation) in relocations.iter().enumerate() {
+        let site_len = section_len(relocation.site_section).ok_or_else(|| {
+            format!("x86 object relocation {index} has an undefined site section")
+        })?;
+        let site = relocation.site_offset as usize;
+        if site.checked_add(4).is_none_or(|end| end > site_len) {
+            return Err(format!(
+                "x86 object relocation {index} site {}..{} exceeds section length {site_len}",
+                site,
+                site.saturating_add(4)
+            ));
+        }
+        match relocation.target_kind {
+            GpuX86RelocationTargetKind::SectionOffset => {
+                let section = GpuX86ObjectSection::from_u32(relocation.target_index)?;
+                let target_len = section_len(section).ok_or_else(|| {
+                    format!("x86 object relocation {index} targets an undefined section")
+                })?;
+                if relocation.target_offset as usize > target_len {
+                    return Err(format!(
+                        "x86 object relocation {index} target offset {} exceeds section length {target_len}",
+                        relocation.target_offset
+                    ));
+                }
+            }
+            GpuX86RelocationTargetKind::Symbol => {
+                if relocation.target_index as usize >= symbols.len() {
+                    return Err(format!(
+                        "x86 object relocation {index} symbol {} exceeds symbol count {}",
+                        relocation.target_index,
+                        symbols.len()
+                    ));
+                }
+                if relocation.target_offset != 0 {
+                    return Err(format!(
+                        "x86 object relocation {index} symbol target has a nonzero section offset"
+                    ));
+                }
+            }
         }
     }
+    for (index, symbol) in symbols.iter().enumerate() {
+        let start = symbol.identity_byte_start as usize;
+        let len = symbol.identity_byte_len as usize;
+        let end = start
+            .checked_add(len)
+            .ok_or_else(|| format!("x86 object symbol {index} identity byte range overflows"))?;
+        if len == 0 || end > identity_bytes.len() {
+            return Err(format!(
+                "x86 object symbol {index} identity byte range {start}..{end} is invalid"
+            ));
+        }
+        let expected = stable_name_hash(&identity_bytes[start..end]);
+        if expected != (symbol.identity_hash_lo, symbol.identity_hash_hi) {
+            return Err(format!(
+                "x86 object symbol {index} identity hash does not match its canonical bytes"
+            ));
+        }
+        match symbol.section {
+            GpuX86ObjectSection::Undefined => {
+                if symbol.offset != 0 || symbol.size != 0 {
+                    return Err(format!(
+                        "x86 object undefined symbol {index} has a section range"
+                    ));
+                }
+            }
+            section => {
+                let section_len = section_len(section).expect("defined section");
+                let start = symbol.offset as usize;
+                let end = start
+                    .checked_add(symbol.size as usize)
+                    .ok_or_else(|| format!("x86 object symbol {index} section range overflows"))?;
+                if end > section_len {
+                    return Err(format!(
+                        "x86 object symbol {index} range {start}..{end} exceeds section length {section_len}"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn checked_u32_len(label: &str, len: usize) -> Result<(), String> {

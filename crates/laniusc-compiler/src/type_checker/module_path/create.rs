@@ -38,7 +38,7 @@ pub(in crate::type_checker) fn create_with_passes(
         import_visible_n_blocks,
         ..
     } = layout;
-    let buffers = Buffers::new(device, graph, layout, &inputs)?;
+    let buffers = Buffers::new(graph, layout, &inputs)?;
     let resource_buffers = buffers.clone();
     let mut module_resources = resources.clone();
     resource_buffers.register_resources(&mut module_resources);

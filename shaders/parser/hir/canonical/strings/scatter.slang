@@ -1,5 +1,4 @@
 import hir_records;
-import canonical_hir_identity;
 
 struct Params {
     uint raw_capacity;
@@ -11,12 +10,7 @@ struct Params {
 
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> raw_to_hir;
-StructuredBuffer<uint> canonical_anchor_owner;
-StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_token_file_id;
 StructuredBuffer<uint> raw_string_count;
 StructuredBuffer<uint> raw_string_node;
@@ -29,22 +23,6 @@ RWStructuredBuffer<uint> canonical_status;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
-uint semantic_anchor(uint raw)
-{
-    uint kind = hir_kind[raw];
-    uint expr_form = hir_expr_record[raw * 4u];
-    uint identity_kind = canonical_hir_identity_kind(kind, expr_form, false);
-    uint callee = hir_call_callee_node[raw];
-    uint open = callee < gCanonical.raw_capacity ? hir_token_end[callee] : INVALID;
-    uint right = hir_expr_record[raw * 4u + 2u];
-    uint right_start = right < gCanonical.raw_capacity ? hir_token_pos[right] : INVALID;
-    uint operator_token = canonical_hir_operator_anchor(
-        identity_kind, expr_form, right_start, hir_token_end[raw],
-        gCanonical.canonical_capacity);
-    uint value_token = hir_expr_record[raw * 4u + 3u];
-    return canonical_hir_anchor(identity_kind, hir_token_pos[raw], hir_token_end[raw], open, value_token,
-                                operator_token, gCanonical.canonical_capacity);
-}
 uint mapped(uint raw)
 {
     return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID;

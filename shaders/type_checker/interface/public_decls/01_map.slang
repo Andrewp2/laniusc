@@ -1,5 +1,6 @@
 // Persist the compact public declaration order before module-path scratch is
-// reused by later type-instance passes.
+// reused by later type-instance passes. The interface stores the module-sorted
+// type partition followed by the module-sorted value partition.
 
 struct Params
 {

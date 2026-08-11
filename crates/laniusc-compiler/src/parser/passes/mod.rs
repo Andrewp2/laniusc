@@ -85,7 +85,7 @@ fn record_canonical_scan(
     let resources = HashMap::from([
         (
             "gScan".into(),
-            ctx.buffers.hir_canonical_params.as_entire_binding(),
+            ctx.buffers.hir_canonical_scan_params.as_entire_binding(),
         ),
         (
             "input".into(),
@@ -108,9 +108,32 @@ fn record_canonical_scan(
         &passes.exclusive_u32_local_scan,
         construct.label(),
         DispatchDim::D1,
-        InputElements::Elements1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)),
+        InputElements::Elements1D(ctx.buffers.hir_canonical_capacity),
         &resources,
     )
+}
+
+/// Proof that every pass consuming raw expression records has been recorded.
+/// Canonical identity takes ownership of the expression arena, so callers
+/// cannot cross that boundary without first obtaining this marker.
+pub(crate) struct RawExpressionRecordsFinalized(());
+
+pub(crate) fn record_raw_expression_spans(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    passes: &ParserPasses,
+    semantic_dispatch_args: &wgpu::Buffer,
+    tree_dispatch_args: &wgpu::Buffer,
+) -> Result<RawExpressionRecordsFinalized> {
+    passes
+        .hir_call_fields
+        .record_pass_indirect(ctx, semantic_dispatch_args)?;
+    passes
+        .hir_call_spans
+        .record_pass_indirect(ctx, semantic_dispatch_args)?;
+    passes
+        .hir_range_spans
+        .record_pass_indirect(ctx, tree_dispatch_args)?;
+    Ok(RawExpressionRecordsFinalized(()))
 }
 
 fn parser_clear_buffer<'a>(
@@ -259,8 +282,7 @@ pub struct ParserPasses {
     pub hir_canonical_expr_forest_root_step:
         hir::canonical::expr_forest::root_step::HirCanonicalExprForestRootStepPass,
     pub hir_canonical_validate: hir::canonical::validate::HirCanonicalValidatePass,
-    pub hir_canonical_decl_index_clear:
-        hir::canonical::decl_index::HirCanonicalDeclIndexClearPass,
+    pub hir_canonical_decl_index_clear: hir::canonical::decl_index::HirCanonicalDeclIndexClearPass,
     pub hir_canonical_decl_index_scatter:
         hir::canonical::decl_index::HirCanonicalDeclIndexScatterPass,
     pub hir_canonical_call_arg_mark: hir::canonical::call_args::mark::HirCanonicalCallArgMarkPass,
@@ -868,7 +890,7 @@ pub fn record_all_passes(
         ctx.device,
         ctx.encoder,
         ctx.buffers,
-        &ctx.buffers.tree_pointer_jump_dispatch_args,
+        &tree_active_dispatch_args,
     )?;
     p.hir_enum_match_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_enum_variant_links
@@ -957,15 +979,15 @@ pub fn record_all_passes(
         &ctx.buffers.tree_pointer_jump_dispatch_args,
     )?;
     p.hir_binary_spans
-        .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_binary_span_step.record_steps_indirect(
         ctx.device,
         ctx.encoder,
         ctx.buffers,
-        &tree_active_dispatch_args,
+        &hir_semantic_dispatch_args,
     )?;
     p.hir_binary_span_apply
-        .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_member_fields
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_index_spans
@@ -974,11 +996,12 @@ pub fn record_all_passes(
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_stmt_fields
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
-    p.hir_call_fields
-        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
-    p.hir_call_spans
-        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
-    p.hir_range_spans.record_pass(&mut ctx, E1D(n_tree))?;
+    let raw_expression_records = record_raw_expression_spans(
+        &mut ctx,
+        p,
+        &hir_semantic_dispatch_args,
+        &tree_active_dispatch_args,
+    )?;
     p.hir_call_arg_links.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_list_rank_prefix_local.record_for_owner_link(
         ctx.device,
@@ -1005,7 +1028,7 @@ pub fn record_all_passes(
     p.hir_call_arg_ordinal_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_canonical_call_arg_mark
-        .record_pass(&mut ctx, E1D(n_tree))?;
+        .record_pass(&mut ctx, E1D(n_canonical))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     p.hir_array_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_array_element_links
@@ -1080,7 +1103,7 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_struct_field_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
-    record_canonical_hir_identity(&mut ctx, p)?;
+    record_canonical_hir_identity(&mut ctx, p, raw_expression_records)?;
     p.hir_canonical_identity_aliases
         .record_pass(&mut ctx, E1D(n_tree))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
@@ -1105,34 +1128,15 @@ pub fn record_all_passes(
     }
     p.hir_context_relations_scatter
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
-    p.hir_stmt_scope
-        .record_pass(&mut ctx, E1D(n_canonical))?;
+    p.hir_stmt_scope.record_pass(&mut ctx, E1D(n_canonical))?;
     record_canonical_variants(&mut ctx, p)?;
     record_canonical_call_arguments(&mut ctx, p)?;
     record_canonical_array_elements(&mut ctx, p)?;
     record_canonical_matches(&mut ctx, p)?;
-    record_canonical_hir_materialization(&mut ctx, p)?;
+    let mut no_materialization_timer = None;
+    record_canonical_hir_materialization(&mut ctx, p, &mut no_materialization_timer)?;
 
     Ok(())
-}
-
-/// Materializes the durable, token-bounded HIR after all raw-tree-derived
-/// records have been finalized. The raw-to-dense maps and pointer-jump rows
-/// are phase-local workspace and may be overwritten by later phases.
-pub fn record_canonical_hir(
-    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
-    p: &ParserPasses,
-) -> Result<(), anyhow::Error> {
-    record_canonical_hir_identity(ctx, p)?;
-    p.hir_canonical_identity_aliases
-        .record_pass(ctx, InputElements::Elements1D(ctx.buffers.tree_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    record_canonical_variants(ctx, p)?;
-    record_canonical_call_arguments(ctx, p)?;
-    record_canonical_array_elements(ctx, p)?;
-    record_canonical_matches(ctx, p)?;
-    record_canonical_fields(ctx, p)?;
-    record_canonical_hir_materialization(ctx, p)
 }
 
 /// Compacts enum variants and their payload types before the shared raw-family
@@ -1149,13 +1153,25 @@ pub fn record_canonical_variants(
         0,
         None,
     );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_variant_family_flag.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
     p.hir_canonical_variant_mark
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::Variant)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_variant_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
 
     parser_clear_buffer(
@@ -1164,15 +1180,27 @@ pub fn record_canonical_variants(
         0,
         None,
     );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_variant_payload_family_flag.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
     p.hir_canonical_variant_payload_owner_init
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     p.hir_semantic_parent_step
         .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
     record_canonical_scan(ctx, p, CanonicalConstruct::VariantPayload)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_variant_payload_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     p.hir_canonical_variant_payload_ordinal
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
@@ -1182,9 +1210,10 @@ pub fn record_canonical_variants(
 
 /// Selects token-anchored semantic nodes and establishes the stable dense/raw
 /// identity maps before later HIR enrichment allocates family metadata.
-pub fn record_canonical_hir_identity(
+pub(crate) fn record_canonical_hir_identity(
     ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
     p: &ParserPasses,
+    _raw_expression_records: RawExpressionRecordsFinalized,
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1D;
 
@@ -1241,7 +1270,7 @@ pub fn record_canonical_call_arguments(
     );
     record_canonical_scan(ctx, p, CanonicalConstruct::CallArgument)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_call_arg_scatter
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
@@ -1262,13 +1291,25 @@ pub fn record_canonical_array_elements(
         0,
         None,
     );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_array_element_family_flag.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
     p.hir_canonical_array_element_mark
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::ArrayElement)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_array_element_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     Ok(())
 }
@@ -1281,21 +1322,62 @@ pub fn record_canonical_matches(
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1D;
 
+    clear_canonical_match_outputs(ctx);
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_match_arm_family_flag.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    p.hir_canonical_match_arm_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    record_canonical_scan(ctx, p, CanonicalConstruct::MatchArm)?;
+    p.hir_semantic_prefix_blocks
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_match_arm_scatter
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_match_payload_family_flag.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    p.hir_canonical_match_payload_mark
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    record_canonical_scan(ctx, p, CanonicalConstruct::MatchPayload)?;
+    p.hir_semantic_prefix_blocks
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_canonical_match_payload_scatter
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    Ok(())
+}
+
+/// Publishes an empty compact match family when feature classification proved
+/// that the source unit contains no match expressions. This avoids recording
+/// the raw-tree match pipeline or binding its intentionally one-row absent
+/// family sentinels as tree-sized writable arrays.
+pub fn clear_canonical_match_outputs(ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>) {
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_match_arm_table_count.buffer,
         0,
         None,
     );
-    p.hir_canonical_match_arm_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::MatchArm)?;
-    p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_match_arm_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_match_payload_table_count.buffer,
@@ -1308,15 +1390,6 @@ pub fn record_canonical_matches(
         0,
         None,
     );
-    p.hir_canonical_match_payload_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::MatchPayload)?;
-    p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_match_payload_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    Ok(())
 }
 
 /// Compacts declaration and literal fields after struct list ranking. Field
@@ -1334,13 +1407,25 @@ pub fn record_canonical_fields(
         0,
         None,
     );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_field_family_flag.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
     p.hir_canonical_field_mark
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::Field)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_field_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     Ok(())
 }
@@ -1351,6 +1436,7 @@ pub fn record_canonical_fields(
 pub fn record_canonical_hir_materialization(
     ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
     p: &ParserPasses,
+    timer_ref: &mut Option<&mut GpuTimer>,
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1D;
 
@@ -1364,6 +1450,7 @@ pub fn record_canonical_hir_materialization(
     p.hir_canonical_nav
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.hir_canonical.core_nav");
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_canonical_expr_parent_encoded.buffer,
@@ -1383,6 +1470,7 @@ pub fn record_canonical_hir_materialization(
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     p.hir_canonical_expr_forest_root_step
         .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.hir_canonical.expr_forest");
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_param_table_count.buffer,
@@ -1390,12 +1478,12 @@ pub fn record_canonical_hir_materialization(
         None,
     );
     p.hir_canonical_param_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::Parameter)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_param_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     parser_clear_buffer(
         ctx.encoder,
@@ -1404,44 +1492,72 @@ pub fn record_canonical_hir_materialization(
         None,
     );
     p.hir_canonical_type_arg_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::TypeArgument)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_type_arg_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    stamp_parser_timer(
+        timer_ref,
+        ctx.encoder,
+        "parser.hir_canonical.params_and_type_args",
+    );
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_generic_param_table_count.buffer,
         0,
         None,
     );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
     p.hir_canonical_generic_param_owner_init
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     p.hir_semantic_parent_step
         .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_generic_param_finalize
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::GenericParameter)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_generic_param_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    stamp_parser_timer(
+        timer_ref,
+        ctx.encoder,
+        "parser.hir_canonical.generic_params",
+    );
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_path_segment_table_count.buffer,
         0,
         None,
     );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_path_segment_family_flag.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
     p.hir_canonical_path_segment_mark
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::PathSegment)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_path_segment_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     parser_clear_buffer(
         ctx.encoder,
@@ -1450,16 +1566,17 @@ pub fn record_canonical_hir_materialization(
         None,
     );
     p.hir_canonical_path_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::Path)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_path_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     p.hir_canonical_string_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.hir_canonical.paths");
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_method_table_count.buffer,
@@ -1467,12 +1584,12 @@ pub fn record_canonical_hir_materialization(
         None,
     );
     p.hir_canonical_method_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::Method)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_method_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     parser_clear_buffer(
         ctx.encoder,
@@ -1495,13 +1612,18 @@ pub fn record_canonical_hir_materialization(
         "hir_canonical_predicate_owner_step",
     )?;
     p.hir_canonical_predicate_finalize
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::Predicate)?;
     p.hir_semantic_prefix_blocks
-        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_predicate_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    stamp_parser_timer(
+        timer_ref,
+        ctx.encoder,
+        "parser.hir_canonical.methods_and_predicates",
+    );
     p.hir_canonical_validate
         // The validation rows are canonical-HIR bounded, but the same pass
         // also publishes the raw semantic-row alias map. Dispatch across the
@@ -1515,6 +1637,11 @@ pub fn record_canonical_hir_materialization(
     p.hir_canonical_decl_index_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    stamp_parser_timer(
+        timer_ref,
+        ctx.encoder,
+        "parser.hir_canonical.validation_and_decl_index",
+    );
     crate::gpu::buffers::record_tracked_buffer_phase_snapshot("compact_hir_materialized");
     Ok(())
 }
@@ -1531,26 +1658,26 @@ pub fn record_stack_effect_validation(
     parser_clear_buffer(ctx.encoder, &ctx.buffers.depths_out, 0, None);
 
     p.b01.record_pass(ctx, E1D(n_sc))?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram");
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram");
     p.b02.record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram_scan");
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram_scan");
     p.b03.record_pass(ctx, E1D(n_sc))?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.offsets");
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.offsets");
     p.b_min_tree
         .record_build(ctx.device, ctx.encoder, ctx.buffers)?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.min_tree");
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.min_tree");
     if ctx.buffers.emit_stack_matches {
         p.b_clear_matches.record_pass(ctx, E1D(n_sc))?;
     }
     p.pse04.record_pass(ctx, E1D(n_sc))?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.pair_pse");
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.pair_pse");
     p.status_from_brackets.record_pass(ctx, E1D(1))?;
-    stamp_stack_effect_timer(timer_ref, ctx.encoder, "parser.stack_effect.status");
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.status");
 
     Ok(())
 }
 
-fn stamp_stack_effect_timer(
+fn stamp_parser_timer(
     timer_ref: &mut Option<&mut GpuTimer>,
     encoder: &mut wgpu::CommandEncoder,
     label: &'static str,

@@ -1661,10 +1661,13 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         }
     }
     {
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("parser.syntax.pass"),
-            timestamp_writes: None,
-        });
+        let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+            encoder,
+            &wgpu::ComputePassDescriptor {
+                label: Some("parser.syntax.pass"),
+                timestamp_writes: None,
+            },
+        );
         compute.set_pipeline(&pass.pipeline);
         compute.set_bind_group(0, Some(&bind_group), &[]);
         let (gx, gy, gz) = plan_compute(pass, token_capacity.max(512))?;
@@ -2090,10 +2093,13 @@ fn record_compute(
     n_elements: u32,
 ) -> Result<()> {
     let (gx, gy, gz) = plan_compute(pass, n_elements)?;
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     compute.dispatch_workgroups(gx, gy, gz);

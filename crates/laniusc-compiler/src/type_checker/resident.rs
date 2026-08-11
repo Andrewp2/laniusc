@@ -178,17 +178,20 @@ struct TypeCheckRecordHostTimer {
     enabled: bool,
     start: std::time::Instant,
     last: std::time::Instant,
-    last_compute_passes: u32,
+    baseline_compute_passes: u64,
+    last_compute_passes: u64,
 }
 
 impl TypeCheckRecordHostTimer {
     fn new() -> Self {
         let now = std::time::Instant::now();
+        let compute_passes = recorded_compute_pass_count();
         Self {
             enabled: crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false),
             start: now,
             last: now,
-            last_compute_passes: 0,
+            baseline_compute_passes: compute_passes,
+            last_compute_passes: compute_passes,
         }
     }
 
@@ -201,8 +204,9 @@ impl TypeCheckRecordHostTimer {
         let total_ms = now.duration_since(self.start).as_secs_f64() * 1000.0;
         let compute_passes = recorded_compute_pass_count();
         let stage_compute_passes = compute_passes.saturating_sub(self.last_compute_passes);
+        let total_compute_passes = compute_passes.saturating_sub(self.baseline_compute_passes);
         eprintln!(
-            "[gpu_compile_host_timer] typecheck.record.{stage}: {dt_ms:.3}ms (total {total_ms:.3}ms compute_passes={stage_compute_passes} total_compute_passes={compute_passes})"
+            "[gpu_compile_host_timer] typecheck.record.{stage}: {dt_ms:.3}ms (total {total_ms:.3}ms compute_passes={stage_compute_passes} total_compute_passes={total_compute_passes})"
         );
         self.last = now;
         self.last_compute_passes = compute_passes;
@@ -247,6 +251,8 @@ impl GpuTypeChecker {
             status_readback,
             resident_workspace: Mutex::new(None),
             current_semantic_artifact: Mutex::new(None),
+            dependency_interface_state: Mutex::new(None),
+            semantic_interface_buffers: CapacityBufferCache::default(),
         })
     }
 
@@ -261,6 +267,32 @@ impl GpuTypeChecker {
             .resident_workspace
             .lock()
             .expect("GpuTypeChecker.resident_workspace poisoned") = None;
+        *self
+            .dependency_interface_state
+            .lock()
+            .expect("GpuTypeChecker.dependency_interface_state poisoned") = None;
+        self.semantic_interface_buffers.clear();
+    }
+
+    pub(crate) fn dependency_interface_pages(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        current_library_id: u32,
+        current_unit_id: u32,
+        interface_pages: &[&[crate::compiler::GpuSemanticInterfaceArtifact]],
+    ) -> Result<GpuDependencyInterfacePages> {
+        GpuDependencyInterfacePages::new_reusing(
+            device,
+            queue,
+            current_library_id,
+            current_unit_id,
+            interface_pages,
+            &mut self
+                .dependency_interface_state
+                .lock()
+                .expect("GpuTypeChecker.dependency_interface_state poisoned"),
+        )
     }
 
     /// Records resident type checking with parser-owned HIR item metadata.
@@ -341,7 +373,6 @@ impl GpuTypeChecker {
         self.status_buf.write(queue, 0, &status_init_bytes());
         let dependency_interfaces = dependency_pages.map(GpuDependencyInterfacePages::state);
         let mut host_timer = TypeCheckRecordHostTimer::new();
-        reset_recorded_compute_pass_count();
         host_timer.stamp("params");
 
         let mut fingerprint_buffers = vec![
@@ -377,7 +408,8 @@ impl GpuTypeChecker {
             call_arg_row_capacity,
             parser_feature_flags,
             input_fingerprint,
-        };
+        }
+        .bucketed();
 
         {
             let mut resident_workspace_guard = self
@@ -388,12 +420,10 @@ impl GpuTypeChecker {
                 .as_ref()
                 .map(|state| !state.can_reuse_for(cache_key))
                 .unwrap_or(true);
-            // The semantic input fingerprint changes for every compilation
-            // unit, so a resident state is rebuilt at the current unit's
-            // logical capacities. Retaining a larger prior layout without
-            // rewriting every pass parameter makes stale domain sizes look
-            // like live module/HIR rows to subsequent jobs.
-            let allocation = cache_key;
+            let allocation = resident_workspace_guard
+                .as_ref()
+                .map(|state| state.cache_key.grow_to_cover(cache_key))
+                .unwrap_or(cache_key);
             let resident_cache_trace =
                 crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false);
             if (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
@@ -458,20 +488,25 @@ impl GpuTypeChecker {
                     .expect("GpuTypeChecker.current_semantic_artifact poisoned")
                     .take();
                 resident_workspace_guard.take();
-                let (state, resettable_buffers) =
-                    crate::gpu::buffers::collect_resettable_buffers(|| {
-                        self.create_resident_workspace(
-                            device,
-                            allocation,
-                            token_buf,
-                            token_count_buf,
-                            token_file_id_buf,
-                            source_buf,
-                            hir_items,
-                            &self.passes,
-                            dependency_interfaces,
-                        )
-                    });
+                let (state, resettable_buffers) = crate::gpu::buffers::with_uniform_buffer_arena(
+                    device,
+                    "type_check.uniform_arena",
+                    || {
+                        crate::gpu::buffers::collect_resettable_buffers(|| {
+                            self.create_resident_workspace(
+                                device,
+                                allocation,
+                                token_buf,
+                                token_count_buf,
+                                token_file_id_buf,
+                                source_buf,
+                                hir_items,
+                                &self.passes,
+                                dependency_interfaces,
+                            )
+                        })
+                    },
+                );
                 let mut state = state?;
                 state.resettable_buffers = resettable_buffers;
                 *resident_workspace_guard = Some(state);

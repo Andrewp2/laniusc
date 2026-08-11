@@ -34,7 +34,7 @@ static const uint PATH_KIND_VALUE = 3u;
 static const uint PATH_KIND_TYPE = 4u;
 static const uint PATH_KIND_BOUND_TYPE = 5u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
-uint block_count() { return (gCanonical.raw_capacity + 255u) / 256u; }
+uint block_count() { return (gCanonical.canonical_capacity + 255u) / 256u; }
 
 uint semantic_path_kind(uint raw)
 {

@@ -52,11 +52,9 @@ fn assert_gpu_type_check_rejects(src: &str) {
 
 #[test]
 fn range_interface_preserves_generic_fields_and_methods() {
-    let artifact = common::semantic_interface_with_timeout(
-        7,
-        &[include_str!("../stdlib/core/range.lani")],
-    )
-    .unwrap();
+    let artifact =
+        common::semantic_interface_with_timeout(7, &[include_str!("../stdlib/core/range.lani")])
+            .unwrap();
     let declaration = artifact
         .declarations
         .iter()
@@ -89,6 +87,40 @@ fn range_interface_preserves_generic_fields_and_methods() {
     );
 }
 
+#[test]
+fn semantic_interface_exports_public_generic_traits() {
+    let artifact = common::semantic_interface_with_timeout(
+        13,
+        &[r#"module contracts::policy;
+pub trait Policy<T> {
+    pub fn apply(value: T) -> i32;
+}
+"#],
+    )
+    .expect("public generic trait must have a complete semantic interface");
+    let declaration = artifact
+        .declarations
+        .iter()
+        .find(|declaration| {
+            semantic_interface_name(
+                &artifact.name_bytes,
+                declaration.name_byte_start,
+                declaration.name_byte_len,
+            ) == "Policy"
+        })
+        .expect("Policy must be exported");
+    assert_eq!(declaration.kind, 10);
+    assert_eq!(
+        artifact.types[declaration.signature_type as usize].kind,
+        GpuSemanticInterfaceTypeKind::Declaration as u32,
+    );
+    let members = &artifact.members[declaration.first_member as usize
+        ..(declaration.first_member + declaration.member_count) as usize];
+    assert!(members.iter().any(|member| {
+        member.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+    }));
+}
+
 fn assert_gpu_type_check_accepts(src: &str) {
     common::type_check_source_with_timeout(src)
         .unwrap_or_else(|err| panic!("source should pass GPU type checking: {err:?}"));
@@ -109,6 +141,32 @@ fn assert_gpu_type_check_pack_rejects(sources: &[&str]) {
 fn assert_gpu_type_check_pack_accepts(sources: &[&str]) {
     common::type_check_source_pack_with_timeout(sources)
         .unwrap_or_else(|err| panic!("source pack should pass GPU type checking: {err:?}"));
+}
+
+#[test]
+fn single_file_user_unit_uses_compact_module_count_after_stdlib_unit() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let entry = common::TempArtifact::new("laniusc_module_count", "single_file", Some("lani"));
+    entry.write_str(
+        r#"module app::main;
+
+import alloc::allocator;
+import std::env;
+import std::fs;
+import std::io;
+import std::process;
+import std::random;
+import std::time;
+
+fn main() -> i32 { return 0; }
+"#,
+    );
+
+    common::block_on_gpu_with_timeout(
+        "single-file user unit after multi-module standard-library unit",
+        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    )
+    .expect("the user unit must consume its compact module count, not dependency capacity");
 }
 
 fn semantic_interface_name<'a>(bytes: &'a [u8], start: u32, len: u32) -> &'a str {

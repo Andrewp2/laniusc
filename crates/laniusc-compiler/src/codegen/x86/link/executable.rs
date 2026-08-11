@@ -1,20 +1,11 @@
 use std::io::{Seek, SeekFrom, Write};
 
 use anyhow::{Result, bail};
-use wgpu::util::DeviceExt;
 
 use super::{GpuX86LinkInput, paged::GpuX86PagedExecutablePlan};
 use crate::codegen::x86::{
     GpuX86Linker,
-    support::{
-        dispatch_compute_pass,
-        reflected_bind_group,
-        storage_u32_copy,
-        storage_u32_rw,
-        u32_words_bytes,
-        uniform_u32_words,
-        workgroup_grid_1d,
-    },
+    support::{dispatch_compute_pass, reflected_bind_group, u32_words_bytes, workgroup_grid_1d},
 };
 
 const RELOCATION_RECORD_BYTES_PER_COLUMN: usize = 16;
@@ -72,7 +63,10 @@ impl GpuX86Linker {
         input: &GpuX86LinkInput,
         consume_page: impl FnMut(u32, &[u8]) -> Result<()>,
     ) -> Result<usize> {
+        let timing = std::env::var_os("LANIUS_X86_LINK_TIMING").is_some();
+        let started = std::time::Instant::now();
         let resolved_relocations = self.resolve_symbol_relocations(device, queue, input)?;
+        let symbols_resolved = started.elapsed();
         if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
             eprintln!("[x86_object_identity] resolved_relocations={resolved_relocations:?}");
         }
@@ -81,6 +75,7 @@ impl GpuX86Linker {
             device.limits().max_storage_buffer_binding_size as u64,
         )
         .map_err(anyhow::Error::msg)?;
+        let output_planned = started.elapsed();
         let output_len = output_plan.output_len;
         let output_capacity = output_len.div_ceil(4).saturating_mul(4).max(4);
         let output_capacity_u32 = u32::try_from(output_capacity)
@@ -88,9 +83,15 @@ impl GpuX86Linker {
 
         let object_layout =
             self.resolve_object_layout_chunks(device, queue, input, output_capacity_u32)?;
-        let relocation_status = storage_u32_copy(device, "codegen.x86.link.relocation_status", 4);
+        let layout_resolved = started.elapsed();
+        let relocation_status = self.reusable_storage_u32(
+            device,
+            "codegen.x86.link.relocation_status",
+            4,
+            wgpu::BufferUsages::COPY_SRC,
+        );
 
-        self.emit_executable_pages(
+        let result = self.emit_executable_pages(
             device,
             queue,
             input,
@@ -103,7 +104,22 @@ impl GpuX86Linker {
                 relocation_status: &relocation_status.buffer,
             },
             consume_page,
-        )
+        );
+        if timing {
+            eprintln!(
+                "x86_link_timing phase=total objects={} relocations={} pages={} output_bytes={} symbols_ms={:.3} plan_ms={:.3} layout_ms={:.3} pages_ms={:.3} total_ms={:.3}",
+                input.objects.len(),
+                resolved_relocations.len(),
+                output_plan.pages.len(),
+                output_plan.output_len,
+                symbols_resolved.as_secs_f64() * 1000.0,
+                (output_planned - symbols_resolved).as_secs_f64() * 1000.0,
+                (layout_resolved - output_planned).as_secs_f64() * 1000.0,
+                (started.elapsed() - layout_resolved).as_secs_f64() * 1000.0,
+                started.elapsed().as_secs_f64() * 1000.0,
+            );
+        }
+        result
     }
 
     fn emit_executable_pages(
@@ -120,7 +136,9 @@ impl GpuX86Linker {
         let output_capacity_u32 = u32::try_from(output_capacity)
             .map_err(|_| anyhow::anyhow!("x86 linked output exceeds the 32-bit ELF model"))?;
         let mut emitted_len = 0usize;
-        for page in &plan.pages {
+        let timing = std::env::var_os("LANIUS_X86_LINK_TIMING").is_some();
+        for (page_index, page) in plan.pages.iter().enumerate() {
+            let started = std::time::Instant::now();
             if emitted_len != page.output_base as usize {
                 bail!(
                     "x86 output pages are not dense: next base {}, current length {}",
@@ -135,23 +153,36 @@ impl GpuX86Linker {
             let rodata_bytes = input
                 .read_rodata_range(page.rodata_input.clone())
                 .map_err(anyhow::Error::msg)?;
-            let text_input = storage_input_bytes(device, "codegen.x86.link.page.text", &text_bytes);
-            let rodata_input =
-                storage_input_bytes(device, "codegen.x86.link.page.rodata", &rodata_bytes);
-            let output = storage_u32_rw(
+            let sources_read = started.elapsed();
+            let text_input =
+                self.reusable_input_bytes(device, queue, "codegen.x86.link.page.text", &text_bytes);
+            let rodata_input = self.reusable_input_bytes(
+                device,
+                queue,
+                "codegen.x86.link.page.rodata",
+                &rodata_bytes,
+            );
+            let output = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.page.output",
                 page_capacity / 4,
                 wgpu::BufferUsages::COPY_SRC,
             );
-            let output_status = storage_u32_copy(device, "codegen.x86.link.page.output_status", 4);
-            let elf_params = uniform_u32_words(
+            let output_status = self.reusable_storage_u32(
                 device,
+                "codegen.x86.link.page.output_status",
+                4,
+                wgpu::BufferUsages::COPY_SRC,
+            );
+            let elf_params = self.reusable_uniform_u32(
+                device,
+                queue,
                 "codegen.x86.link.page.elf_params",
                 &[page.output_base, page.output_len, output_capacity_u32, 0],
             );
-            let copy_params = uniform_u32_words(
+            let copy_params = self.reusable_uniform_u32(
                 device,
+                queue,
                 "codegen.x86.link.page.copy_params",
                 &[
                     input.objects.len() as u32,
@@ -195,26 +226,30 @@ impl GpuX86Linker {
                 device.limits().max_storage_buffer_binding_size as usize,
             )?
             .min(page.relocation_indices.len().max(1));
-            let relocation_a = storage_u32_rw(
+            let relocation_a = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.page.relocation_a",
                 max_relocations_per_batch * 4,
                 wgpu::BufferUsages::COPY_DST,
             );
-            let relocation_b = storage_u32_rw(
+            let relocation_b = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.page.relocation_b",
                 max_relocations_per_batch * 4,
                 wgpu::BufferUsages::COPY_DST,
             );
-            let relocation_c = storage_u32_rw(
+            let relocation_c = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.page.relocation_c",
                 max_relocations_per_batch * 4,
                 wgpu::BufferUsages::COPY_DST,
             );
-            let relocation_params =
-                uniform_u32_words(device, "codegen.x86.link.page.relocation_params", &[0; 8]);
+            let relocation_params = self.reusable_uniform_u32(
+                device,
+                queue,
+                "codegen.x86.link.page.relocation_params",
+                &[0; 8],
+            );
             let relocate_group = reflected_bind_group(
                 device,
                 Some("codegen.x86.link.page.relocate.bind_group"),
@@ -238,12 +273,9 @@ impl GpuX86Linker {
                 0,
                 &u32_words_bytes(&[1, 0, u32::MAX, page.relocation_indices.len() as u32]),
             );
-            let readback = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rb.codegen.x86.link.page"),
-                size: (page_capacity + 32) as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
+            let readback =
+                self.reusable_readback(device, "rb.codegen.x86.link.page", page_capacity + 32);
+            let resources_prepared = started.elapsed();
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("codegen.x86.link.page.encoder"),
             });
@@ -271,6 +303,7 @@ impl GpuX86Linker {
                 "codegen.x86.link.page.initialize",
                 encoder.finish(),
             );
+            let initialized = started.elapsed();
             for (batch_index, indices) in page
                 .relocation_indices
                 .chunks(max_relocations_per_batch)
@@ -316,10 +349,17 @@ impl GpuX86Linker {
                     encoder.finish(),
                 );
             }
+            let relocations_submitted = started.elapsed();
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("codegen.x86.link.page.readback.encoder"),
             });
-            encoder.copy_buffer_to_buffer(&output.buffer, 0, &readback, 0, page_capacity as u64);
+            encoder.copy_buffer_to_buffer(
+                &output.buffer,
+                0,
+                &readback.buffer,
+                0,
+                page_capacity as u64,
+            );
             for (index, status) in [&output_status.buffer, resolved.relocation_status]
                 .into_iter()
                 .enumerate()
@@ -327,7 +367,7 @@ impl GpuX86Linker {
                 encoder.copy_buffer_to_buffer(
                     status,
                     0,
-                    &readback,
+                    &readback.buffer,
                     (page_capacity + index * 16) as u64,
                     16,
                 );
@@ -337,6 +377,7 @@ impl GpuX86Linker {
                 "codegen.x86.link.page",
                 encoder.finish(),
             );
+            let readback_submitted = started.elapsed();
             let slice = readback.slice(..);
             crate::gpu::passes_core::wait_for_readback_map(
                 device,
@@ -344,6 +385,7 @@ impl GpuX86Linker {
                 "codegen.x86.link.page",
                 std::time::Duration::from_secs(30),
             )?;
+            let mapped_ready = started.elapsed();
             let mapped = slice.get_mapped_range();
             let output_status_words = crate::gpu::readback::read_u32_words::<4>(
                 &mapped[page_capacity..page_capacity + 16],
@@ -360,9 +402,28 @@ impl GpuX86Linker {
                 bail!("x86 GPU linker relocation failed with status {relocation_status_words:?}");
             }
             consume_page(page.output_base, &mapped[..page.output_len as usize])?;
+            let consumed = started.elapsed();
             emitted_len += page.output_len as usize;
             drop(mapped);
             readback.unmap();
+            if timing {
+                eprintln!(
+                    "x86_link_timing phase=page index={} output_bytes={} text_bytes={} rodata_bytes={} relocations={} source_read_ms={:.3} resources_ms={:.3} initialize_submit_ms={:.3} relocate_submit_ms={:.3} readback_submit_ms={:.3} gpu_wait_ms={:.3} output_write_ms={:.3} total_ms={:.3}",
+                    page_index,
+                    page.output_len,
+                    page.text_input.len(),
+                    page.rodata_input.len(),
+                    page.relocation_indices.len(),
+                    sources_read.as_secs_f64() * 1000.0,
+                    (resources_prepared - sources_read).as_secs_f64() * 1000.0,
+                    (initialized - resources_prepared).as_secs_f64() * 1000.0,
+                    (relocations_submitted - initialized).as_secs_f64() * 1000.0,
+                    (readback_submitted - relocations_submitted).as_secs_f64() * 1000.0,
+                    (mapped_ready - readback_submitted).as_secs_f64() * 1000.0,
+                    (consumed - mapped_ready).as_secs_f64() * 1000.0,
+                    started.elapsed().as_secs_f64() * 1000.0,
+                );
+            }
         }
         Ok(emitted_len)
     }
@@ -455,29 +516,6 @@ fn max_relocation_batch_records(max_storage_buffer_binding_size: usize) -> Resul
         );
     }
     Ok(records.min(u32::MAX as usize))
-}
-
-pub(super) fn storage_input_u32(device: &wgpu::Device, label: &str, words: &[u32]) -> wgpu::Buffer {
-    let contents = if words.is_empty() {
-        u32_words_bytes(&[0])
-    } else {
-        u32_words_bytes(words)
-    };
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: &contents,
-        usage: wgpu::BufferUsages::STORAGE,
-    })
-}
-
-fn storage_input_bytes(device: &wgpu::Device, label: &str, bytes: &[u8]) -> wgpu::Buffer {
-    let mut padded = bytes.to_vec();
-    padded.resize(padded.len().div_ceil(4).max(1) * 4, 0);
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: &padded,
-        usage: wgpu::BufferUsages::STORAGE,
-    })
 }
 
 #[cfg(test)]

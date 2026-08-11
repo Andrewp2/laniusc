@@ -48,6 +48,63 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
     }
 
+    /// Compile a path-backed source pack directly to its final file.
+    ///
+    /// Bounded builds already produce a file-backed linked artifact. Moving
+    /// that artifact into place avoids reading the complete output into a
+    /// `Vec<u8>` and immediately writing the same bytes again in the daemon.
+    pub(crate) async fn compile_path_manifest_to_file(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+        target: SourcePackArtifactTarget,
+        output: &Path,
+    ) -> Result<u64, CompileError> {
+        let limits = self.resident_source_unit_limits();
+        if self.path_manifest_uses_bounded_build(source_pack, limits) {
+            let artifact = self
+                .compile_path_manifest_bounded_artifact(source_pack, target, limits)
+                .await?;
+            let byte_len = fs::metadata(&artifact.path)
+                .map_err(|err| {
+                    source_pack_artifact_store_error(format!(
+                        "stat bounded source-pack linked output {}: {err}",
+                        artifact.path.display()
+                    ))
+                })?
+                .len();
+            replace_file(&artifact.path, output)?;
+            set_executable_if_needed(output, target)?;
+            return Ok(byte_len);
+        }
+
+        let bytes = self.compile_path_manifest(source_pack, target).await?;
+        fs::write(output, &bytes).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "write compiled output {}: {err}",
+                output.display()
+            ))
+        })?;
+        set_executable_if_needed(output, target)?;
+        u64::try_from(bytes.len()).map_err(|_| {
+            source_pack_artifact_store_error("compiled output length does not fit u64")
+        })
+    }
+
+    fn path_manifest_uses_bounded_build(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+        limits: CompilationUnitLimits,
+    ) -> bool {
+        source_pack
+            .files
+            .iter()
+            .map(|file| file.library_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            > 1
+            || source_pack.requires_bounded_compilation_with_limits(limits)
+    }
+
     async fn compile_path_manifest(
         &self,
         source_pack: &ExplicitSourcePackPathManifest,
@@ -61,15 +118,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         // wrong unit.  Use the same bounded-unit executor for this case; it is
         // still capacity-bounded and is the only path that persists semantic
         // interfaces between libraries.
-        let has_multiple_libraries = source_pack
-            .files
-            .iter()
-            .map(|file| file.library_id)
-            .collect::<std::collections::BTreeSet<_>>()
-            .len()
-            > 1;
-        let bounded =
-            has_multiple_libraries || source_pack.requires_bounded_compilation_with_limits(limits);
+        let bounded = self.path_manifest_uses_bounded_build(source_pack, limits);
         let report_memory = crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false);
         if report_memory {
             crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
@@ -121,9 +170,39 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: SourcePackArtifactTarget,
         limits: CompilationUnitLimits,
     ) -> Result<Vec<u8>, CompileError> {
+        let started = std::time::Instant::now();
+        let artifact = self
+            .compile_path_manifest_bounded_artifact(source_pack, target, limits)
+            .await?;
+        let executed = started.elapsed();
+        let bytes = fs::read(&artifact.path).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "read bounded source-pack linked output {}: {err}",
+                artifact.path.display()
+            ))
+        })?;
+        if std::env::var_os("LANIUS_SOURCE_PACK_TIMING").is_some() {
+            eprintln!(
+                "source_pack_timing phase=bounded_final_read target={target:?} final_read_ms={:.3}",
+                (started.elapsed() - executed).as_secs_f64() * 1000.0,
+            );
+        }
+        Ok(bytes)
+    }
+
+    async fn compile_path_manifest_bounded_artifact(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+        target: SourcePackArtifactTarget,
+        limits: CompilationUnitLimits,
+    ) -> Result<CompletedBoundedArtifact, CompileError> {
+        let timing = std::env::var_os("LANIUS_SOURCE_PACK_TIMING").is_some();
+        let started = std::time::Instant::now();
         let artifact_root = TemporaryBoundedArtifactRoot::create()?;
         let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
-        let build_plan = source_pack.bounded_frontend_build_plan(limits);
+        let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
+        let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
+        let planned = started.elapsed();
         let mut executor = GpuSourcePackArtifactExecutor::new(self, artifact_root.path(), target);
         let linked_output_path = execute_path_batched_link_build_async(
             source_pack,
@@ -134,11 +213,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await?
         .linked_output
         .path;
+        let executed = started.elapsed();
 
-        // The bounded executor returns the linked-output contract; its
-        // emitted-byte record points at the concrete target artifact.
-        // Return those bytes to the public compile API rather than exposing
-        // the JSON descriptor itself.
         let descriptor_bytes = fs::read(&linked_output_path).map_err(|err| {
             source_pack_artifact_store_error(format!(
                 "read bounded source-pack linked-output descriptor {}: {err}",
@@ -164,13 +240,71 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
             })?;
         let artifact_path = artifact_path(artifact_root.path(), storage_key)?;
-        fs::read(&artifact_path).map_err(|err| {
-            source_pack_artifact_store_error(format!(
-                "read bounded source-pack linked output {}: {err}",
-                artifact_path.display()
-            ))
+        if timing {
+            eprintln!(
+                "source_pack_timing phase=bounded_total target={target:?} plan_ms={:.3} execute_ms={:.3} total_ms={:.3}",
+                planned.as_secs_f64() * 1000.0,
+                (executed - planned).as_secs_f64() * 1000.0,
+                started.elapsed().as_secs_f64() * 1000.0,
+            );
+        }
+        Ok(CompletedBoundedArtifact {
+            path: artifact_path,
+            _root: artifact_root,
         })
     }
+}
+
+struct CompletedBoundedArtifact {
+    path: PathBuf,
+    _root: TemporaryBoundedArtifactRoot,
+}
+
+fn replace_file(source: &Path, destination: &Path) -> Result<(), CompileError> {
+    match fs::rename(source, destination) {
+        Ok(()) => Ok(()),
+        Err(rename_error) if rename_error.kind() == std::io::ErrorKind::CrossesDevices => {
+            fs::copy(source, destination).map_err(|copy_error| {
+                source_pack_artifact_store_error(format!(
+                    "move compiled output {} to {}: rename failed ({rename_error}); copy failed ({copy_error})",
+                    source.display(),
+                    destination.display()
+                ))
+            })?;
+            Ok(())
+        }
+        Err(rename_error) => Err(source_pack_artifact_store_error(format!(
+            "move compiled output {} to {}: {rename_error}",
+            source.display(),
+            destination.display()
+        ))),
+    }
+}
+
+fn set_executable_if_needed(
+    path: &Path,
+    target: SourcePackArtifactTarget,
+) -> Result<(), CompileError> {
+    #[cfg(unix)]
+    if target == SourcePackArtifactTarget::X86_64 {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(path)
+            .map_err(|err| {
+                source_pack_artifact_store_error(format!(
+                    "stat compiled output {}: {err}",
+                    path.display()
+                ))
+            })?
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "chmod compiled output {}: {err}",
+                path.display()
+            ))
+        })?;
+    }
+    Ok(())
 }
 
 struct TemporaryBoundedArtifactRoot {
@@ -197,7 +331,7 @@ impl TemporaryBoundedArtifactRoot {
         Ok(Self { path })
     }
 
-    fn path(&self) -> &Path {
+    fn path(&self) -> &std::path::Path {
         &self.path
     }
 }
@@ -326,5 +460,25 @@ mod tests {
             assert!(units.max_unit_source_bytes() <= limits.max_source_bytes);
             assert!(units.max_unit_source_files() <= limits.max_source_files);
         }
+    }
+
+    #[test]
+    fn bounded_output_replaces_existing_destination() {
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-bounded-output-test-{}-{}",
+            std::process::id(),
+            NEXT_BOUNDED_BUILD_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).expect("create bounded output test directory");
+        let source = root.join("linked-artifact");
+        let destination = root.join("requested-output");
+        fs::write(&source, b"new artifact").expect("write linked artifact");
+        fs::write(&destination, b"old artifact").expect("write old output");
+
+        replace_file(&source, &destination).expect("place linked artifact at output");
+
+        assert_eq!(fs::read(&destination).unwrap(), b"new artifact");
+        assert!(!source.exists());
+        fs::remove_dir_all(root).expect("remove bounded output test directory");
     }
 }

@@ -41,6 +41,9 @@ static const uint SEMANTIC_CALL_HOST = 3u;
 static const uint SEMANTIC_CALL_SYMBOL = 4u;
 static const uint SEMANTIC_CALL_ENUM_CONSTRUCTOR = 5u;
 static const uint CHECKED_CALLABLE_ENUM_VARIANT = 4u;
+static const uint CHECKED_CALLABLE_FUNCTION = 1u;
+static const uint CHECKED_CALLABLE_INTRINSIC = 2u;
+static const uint CHECKED_CALLABLE_DEPENDENCY = 3u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
@@ -109,12 +112,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             semantic_call_target[node] = checked.callable_ordinal;
             semantic_call_result_type[node] = checked.return_type;
         }
-        else if (checked.intrinsic_tag != 0u)
+        else if (checked.callable_kind == CHECKED_CALLABLE_INTRINSIC)
         {
             semantic_call_kind[node] = SEMANTIC_CALL_INTRINSIC;
             semantic_call_target[node] = checked.intrinsic_tag;
         }
-        else
+        else if (checked.callable_kind == CHECKED_CALLABLE_FUNCTION)
         {
             uint target = valid_token(checked.target_token)
                 ? semantic_function_id_by_token[checked.target_token] : INVALID;
@@ -128,27 +131,27 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 semantic_call_result_type[node] = function.result_type;
                 semantic_call_receiver[node] = checked.receiver_hir;
             }
-            else
+        }
+        else if (checked.callable_kind == CHECKED_CALLABLE_DEPENDENCY)
+        {
+            if (checked.dependency_library_id != INVALID &&
+                checked.dependency_unit_id != INVALID &&
+                checked.dependency_local_index != INVALID)
             {
-                if (checked.dependency_library_id != INVALID &&
-                    checked.dependency_unit_id != INVALID &&
-                    checked.dependency_local_index != INVALID)
+                if (checked.dependency_host_service != INVALID)
                 {
-                    if (checked.dependency_host_service != INVALID)
-                    {
-                        semantic_call_kind[node] = SEMANTIC_CALL_HOST;
-                        semantic_call_target[node] = checked.dependency_host_service;
-                    }
-                    else
-                    {
-                        semantic_call_kind[node] = SEMANTIC_CALL_SYMBOL;
-                        semantic_call_symbol_library_id[node] = checked.dependency_library_id;
-                        semantic_call_symbol_unit_id[node] = checked.dependency_unit_id;
-                        semantic_call_symbol_local_index[node] = checked.dependency_local_index;
-                    }
-                    semantic_call_result_type[node] = checked.return_type;
-                    semantic_call_receiver[node] = checked.receiver_hir;
+                    semantic_call_kind[node] = SEMANTIC_CALL_HOST;
+                    semantic_call_target[node] = checked.dependency_host_service;
                 }
+                else
+                {
+                    semantic_call_kind[node] = SEMANTIC_CALL_SYMBOL;
+                    semantic_call_symbol_library_id[node] = checked.dependency_library_id;
+                    semantic_call_symbol_unit_id[node] = checked.dependency_unit_id;
+                    semantic_call_symbol_local_index[node] = checked.dependency_local_index;
+                }
+                semantic_call_result_type[node] = checked.return_type;
+                semantic_call_receiver[node] = checked.receiver_hir;
             }
         }
         semantic_call_arg_count_by_hir[node] =

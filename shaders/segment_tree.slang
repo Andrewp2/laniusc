@@ -472,9 +472,22 @@ public bool range_search_tree_last_index_before<
             index))
         return true;
 
+    // The adjacent block is both the common cross-block case and the only
+    // block whose row data is needed before consulting the hierarchy. Search
+    // it directly, then exclude it from the tree query. Besides avoiding a
+    // tree traversal for short delimiter spans, this makes the block/row
+    // boundary identical to the same-block path.
+    if (block > 0u &&
+        range_search_last_index_in_block_before<TValue, TQuery, TRows, TPredicate>(
+            block * block_size,
+            block - 1u,
+            query,
+            index))
+        return true;
+
     uint candidate_block;
     if (!range_search_tree_last_block_before<TValue, TQuery, TTree, TPredicate>(
-            block,
+            block > 0u ? block - 1u : 0u,
             query,
             candidate_block))
         return false;

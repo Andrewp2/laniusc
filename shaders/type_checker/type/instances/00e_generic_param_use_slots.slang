@@ -7,7 +7,6 @@
 
 import hir_records;
 import status;
-import fixed.compact_method;
 
 struct Params
 {
@@ -22,9 +21,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> compact_hir_nearest_fn;
-StructuredBuffer<uint> compact_method_count;
-StructuredBuffer<CompactMethodCore> compact_method_cores;
+StructuredBuffer<uint> generic_decl_owner_by_node_a;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_row_count;
@@ -106,45 +103,11 @@ bool owner_has_generic_params(uint owner_token)
             type_decl_const_param_count_by_owner_token[owner_token] != 0u);
 }
 
-uint compact_impl_owner_token(uint fn_dense)
-{
-    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (fn_dense == INVALID || fn_dense >= hir_count)
-        return INVALID;
-    uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
-    uint row = compact_method_row_for_hir(
-        compact_method_cores, method_count, fn_dense);
-    if (row >= method_count)
-        return INVALID;
-    CompactMethodCore method = compact_method_cores[row];
-    if (method.node != fn_dense || method.impl_node >= hir_count)
-        return INVALID;
-    uint token = compact_hir_core[method.impl_node].token_start;
-    return valid_token(token) ? token : INVALID;
-}
-
 uint generic_decl_scope_token_for_type_node(uint node)
 {
-    uint fallback_owner_token = INVALID;
-    uint current = node;
-    for (uint hop = 0u; hop < 256u; hop += 1u)
-    {
-        if (!valid_node(current))
-            break;
-        uint owner_token = generic_owner_token(current);
-        if (fallback_owner_token == INVALID)
-            fallback_owner_token = owner_token;
-        if (owner_has_generic_params(owner_token))
-            return owner_token;
-        uint parent = compact_hir_core[current].parent;
-        if (parent == current || parent == INVALID)
-            break;
-        current = parent;
-    }
-
-    uint fn_dense = valid_node(node) ? compact_hir_nearest_fn[node] : INVALID;
-    uint impl_token = compact_impl_owner_token(fn_dense);
-    return owner_has_generic_params(impl_token) ? impl_token : fallback_owner_token;
+    if (!valid_node(node))
+        return INVALID;
+    return generic_owner_token(generic_decl_owner_by_node_a[node]);
 }
 
 bool generic_param_key_less(uint row, uint owner, uint name_id)

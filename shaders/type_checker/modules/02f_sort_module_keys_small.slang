@@ -14,7 +14,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> module_table_count_out;
+StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> module_key_canonical_id;
 RWStructuredBuffer<uint> radix_order;
 
@@ -25,7 +25,7 @@ groupshared uint shared_order[256];
 
 uint active_module_count()
 {
-    return min(module_table_count_out[0u], gParams.module_capacity);
+    return min(module_count_out[0u], gParams.module_capacity);
 }
 
 bool module_key_less(uint left, uint right, uint active_count)

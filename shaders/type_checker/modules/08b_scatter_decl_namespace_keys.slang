@@ -30,7 +30,6 @@ StructuredBuffer<uint> decl_value_key_prefix;
 RWStructuredBuffer<uint> decl_type_key_to_decl_id;
 RWStructuredBuffer<uint> decl_value_key_to_decl_id;
 
-static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -52,15 +51,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gParams.decl_capacity)
         return;
 
-    decl_type_key_to_decl_id[i] = INVALID;
-    decl_value_key_to_decl_id[i] = INVALID;
-
     if (i >= active_decl_count())
         return;
 
     uint decl_i = sorted_decl_key_order[i];
     if (decl_i >= active_decl_count())
         return;
+
+    // Each active namespace prefix is a bijection onto [0, namespace_count).
+    // Do not clear destination rows in this dispatch: there is no device-wide
+    // barrier between workgroups, so a late clear can overwrite an earlier
+    // compact scatter. Rows at or beyond the published count are unobservable.
 
     CompactScatterSlot type_slot = compact_scatter_slot(decl_type_key_flag[i], decl_type_key_prefix[i]);
     if (type_slot.active != 0u)

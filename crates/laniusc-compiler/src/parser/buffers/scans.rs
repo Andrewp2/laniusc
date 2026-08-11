@@ -174,7 +174,7 @@ pub(super) fn make_tree_prefix_scan_steps(
 }
 
 /// Creates semantic-HIR prefix scan steps over tree blocks.
-pub(super) fn make_hir_semantic_prefix_scan_steps(
+pub(super) fn make_hir_prefix_scan_steps(
     device: &wgpu::Device,
     n_blocks: u32,
 ) -> Vec<HirSemanticPrefixScanStep> {

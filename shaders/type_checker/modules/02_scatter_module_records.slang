@@ -31,7 +31,6 @@ RWStructuredBuffer<uint> module_owner_hir;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint INVALID = 0xffffffffu;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -44,19 +43,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
 
-    if (i < gParams.module_capacity)
-    {
-        module_file_id[i] = INVALID;
-        module_path_id[i] = INVALID;
-        module_owner_hir[i] = INVALID;
-    }
-
     if (i >= gParams.hir_node_capacity)
         return;
 
     CompactScatterSlot slot = compact_scatter_slot(module_record_flag[i], module_record_prefix[i]);
     if (slot.active == 0u || slot.dst >= gParams.module_capacity)
         return;
+
+    // Active prefixes cover every row below the published module count.
+    // Clearing compact destinations in this dispatch races with scatters from
+    // other workgroups; rows beyond the count are never consumed.
 
     module_file_id[slot.dst] = compact_hir_links[i].file_id;
     module_path_id[slot.dst] = path_id_by_owner_hir[i];

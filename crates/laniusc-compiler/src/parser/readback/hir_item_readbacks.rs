@@ -1689,10 +1689,7 @@ impl ParserHirItemReadbacks {
                 &self.hir_canonical_payload,
                 tree_len.saturating_mul(4),
             ),
-            hir_canonical_nearest_fn: read_u32_vec(
-                &self.hir_canonical_nearest_fn,
-                tree_len,
-            ),
+            hir_canonical_nearest_fn: read_u32_vec(&self.hir_canonical_nearest_fn, tree_len),
             hir_type_form: read_u32_vec(&self.hir_type_form, tree_len),
             hir_type_value_node: read_u32_vec(&self.hir_type_value_node, tree_len),
             hir_type_len_token: read_u32_vec(&self.hir_type_len_token, tree_len),

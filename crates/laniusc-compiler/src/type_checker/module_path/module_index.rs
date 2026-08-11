@@ -81,8 +81,8 @@ pub(in crate::type_checker) fn create_module_index(
         &[
             ("gParams", module_key_build_params.as_entire_binding()),
             (
-                "module_table_count_out",
-                buffers.module_table_count_out.as_entire_binding(),
+                "module_count_out",
+                buffers.module_count_out.as_entire_binding(),
             ),
             ("module_path_id", buffers.module_path_id.as_entire_binding()),
             (
@@ -140,14 +140,14 @@ pub(in crate::type_checker) fn create_module_index(
         &passes.kernel("type_checker/names/radix/dispatch_args"),
         "type_check.modules.module_key_radix_dispatch",
         &module_key_radix_dispatch_params,
-        &buffers.module_table_count_out,
+        &buffers.module_count_out,
         &buffers.module_key_radix_dispatch_args,
     )?;
 
     let module_key_resources = HashMap::from([
         (
-            "module_table_count_out".to_owned(),
-            buffers.module_table_count_out.as_entire_binding(),
+            "module_count_out".to_owned(),
+            buffers.module_count_out.as_entire_binding(),
         ),
         (
             "module_key_canonical_id".to_owned(),
@@ -201,7 +201,7 @@ pub(in crate::type_checker) fn create_module_index(
                 bucket_bases: RadixDispatchDomain::Direct(256),
             },
             resources: RadixSortResources {
-                count: "module_table_count_out",
+                count: "module_count_out",
                 order: "module_key_order",
                 temporary_order: "module_key_order_tmp",
                 histogram: "module_key_radix_block_histogram",
@@ -236,8 +236,8 @@ pub(in crate::type_checker) fn create_module_index(
         &[
             ("gParams", validate_module_params.as_entire_binding()),
             (
-                "module_table_count_out",
-                buffers.module_table_count_out.as_entire_binding(),
+                "module_count_out",
+                buffers.module_count_out.as_entire_binding(),
             ),
             (
                 "sorted_module_key_order",

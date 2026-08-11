@@ -29,7 +29,7 @@ static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_LITERAL_EXPR = 23u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
-uint block_count() { return (gCanonical.raw_capacity + 255u) / 256u; }
+uint block_count() { return (gCanonical.canonical_capacity + 255u) / 256u; }
 uint mapped(uint raw) {
     return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID;
 }
@@ -51,9 +51,11 @@ void main(uint3 dtid: SV_DispatchThreadID) {
     uint ordinal = hir_call_arg_ordinal[raw];
     uint call_count = hir_call_arg_count[call_raw];
     if (ordinal >= call_count) return;
-    uint call_block = call_raw / 256u;
+    uint call = mapped(call_raw);
+    if (call >= gCanonical.canonical_capacity) return;
+    uint call_block = call / 256u;
     uint call_base = call_block == 0u ? 0u : family_block_prefix[call_block - 1u];
-    uint call_start = call_base + family_local_prefix[call_raw];
+    uint call_start = call_base + family_local_prefix[call];
     uint row = call_start + ordinal;
     if (row >= gCanonical.canonical_capacity) {
         uint ignored;
@@ -61,7 +63,6 @@ void main(uint3 dtid: SV_DispatchThreadID) {
         InterlockedMax(canonical_status[3u], raw + 1u, ignored);
         return;
     }
-    uint call = mapped(call_raw);
     HirCallArg arg;
     arg.call = call;
     arg.value = expression(raw);

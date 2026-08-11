@@ -34,7 +34,11 @@ impl PackTotalsReducePass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
     ) -> Result<()> {
-        for step in &buffers.pack_total_reduce_steps {
+        for step in buffers
+            .pack_total_reduce_steps
+            .iter()
+            .take_while(|step| step.item_count > 1)
+        {
             self.record_step(device, encoder, buffers, step)?;
         }
         Ok(())

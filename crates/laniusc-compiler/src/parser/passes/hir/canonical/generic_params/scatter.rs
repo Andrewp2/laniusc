@@ -50,6 +50,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 "family_block_prefix".into(),
                 b.hir_semantic_block_prefix_a.as_entire_binding(),
             ),
+            (
+                "candidate_raw_by_anchor".into(),
+                b.hir_canonical_anchor_owner.as_entire_binding(),
+            ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (

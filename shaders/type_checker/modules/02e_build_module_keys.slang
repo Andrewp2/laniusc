@@ -17,7 +17,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> module_table_count_out;
+StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> module_path_id;
 StructuredBuffer<uint> module_owner_hir;
 StructuredBuffer<uint> path_segment_count;
@@ -42,7 +42,7 @@ static const uint ERR_INVALID_MODULE_PATH = 20u;
 
 uint active_module_count()
 {
-    return min(module_table_count_out[0u], gParams.module_capacity);
+    return min(module_count_out[0u], gParams.module_capacity);
 }
 
 [shader("compute")]

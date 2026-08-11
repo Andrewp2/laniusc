@@ -82,7 +82,7 @@ StructuredBuffer<uint> decl_hir_node;
 #endif
 StructuredBuffer<uint> decl_visibility;
 #if PREDICATE_BOUND_PATH_RESOLUTION
-StructuredBuffer<uint> module_table_count_out;
+StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
 StructuredBuffer<uint> module_key_canonical_id;
 StructuredBuffer<uint> decl_type_key_count_out;
@@ -512,7 +512,7 @@ uint path_record_count()
 #if PREDICATE_BOUND_PATH_RESOLUTION
 uint module_record_count()
 {
-    return min(module_table_count_out[0], gParams.n_hir_nodes);
+    return min(module_count_out[0], gParams.n_hir_nodes);
 }
 
 uint type_decl_key_record_count()

@@ -49,7 +49,7 @@ uint active_struct_field_order_count()
 
 uint active_compact_hir_count()
 {
-    return min(compact_hir_count[0u], gParams.token_capacity);
+    return min(compact_hir_count[0u], gParams.hir_node_capacity);
 }
 
 bool valid_field_key_row(uint row)

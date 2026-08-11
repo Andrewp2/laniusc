@@ -37,12 +37,12 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPara
                 b.hir_canonical_params.as_entire_binding(),
             ),
             (
-                "tree_count_status".into(),
-                if b.tree_count_uses_status {
-                    b.partial_parse_status.as_entire_binding()
-                } else {
-                    b.ll1_status.as_entire_binding()
-                },
+                "canonical_count".into(),
+                b.hir_canonical_count.as_entire_binding(),
+            ),
+            (
+                "canonical_dense_to_raw".into(),
+                b.hir_canonical_dense_to_raw.as_entire_binding(),
             ),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (

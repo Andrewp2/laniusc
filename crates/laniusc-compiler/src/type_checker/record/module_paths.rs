@@ -381,7 +381,6 @@ fn record_module_path_stage(
             encoder,
             "typecheck.modules.sort_import_visible_keys.done",
         );
-        count_recorded_compute_pass();
         {
             let mut batch = crate::gpu::passes_core::ComputePassBatch::begin(
                 encoder,

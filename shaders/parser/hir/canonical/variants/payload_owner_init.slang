@@ -5,6 +5,8 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_token_pos;
+RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
 RWStructuredBuffer<uint> owner_link_a;
 RWStructuredBuffer<uint> owner_value_a;
@@ -31,11 +33,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint raw = tid(dtid);
     if (raw >= gCanonical.raw_capacity) return;
-    family_flag[raw] = 0u;
     owner_link_a[raw] = INVALID;
     owner_value_a[raw] = INVALID;
     if (!valid(raw)) return;
-    family_flag[raw] = payload_candidate(raw) ? 1u : 0u;
+    if (payload_candidate(raw))
+    {
+        uint anchor = hir_token_pos[raw];
+        if (anchor < gCanonical.canonical_capacity)
+        {
+            uint ignored;
+            InterlockedMax(candidate_raw_by_anchor[anchor], raw + 1u, ignored);
+            InterlockedMax(family_flag[anchor], 1u, ignored);
+        }
+    }
     if (variant_node(raw))
     {
         owner_value_a[raw] = raw;

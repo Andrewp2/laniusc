@@ -1,10 +1,12 @@
 use std::io::{Seek, SeekFrom, Write};
 
 use anyhow::{Result, anyhow};
-use wgpu::util::DeviceExt;
 
 use super::{GpuWasmLinkInput, paged::GpuWasmPagedExecutablePlan};
-use crate::codegen::wasm::{GpuWasmLinker, create_wasm_bind_group, workgroup_grid_1d};
+use crate::{
+    codegen::wasm::{GpuWasmLinker, create_wasm_bind_group, workgroup_grid_1d},
+    gpu::buffers::LaniusBuffer,
+};
 
 impl GpuWasmLinker {
     /// Emits and relocates a complete multi-unit Wasm module on the GPU.
@@ -62,36 +64,44 @@ impl GpuWasmLinker {
             .map_err(|_| anyhow!("Wasm output length {output_len} exceeds u32"))?;
         let hash_capacity_u32 = 1;
         let symbols = input_u32(
+            self,
             device,
+            queue,
             "codegen.wasm.link.symbols",
             &[],
             wgpu::BufferUsages::STORAGE,
         );
         let hash_table = input_u32(
+            self,
             device,
+            queue,
             "codegen.wasm.link.hash_table",
             &[u32::MAX],
             wgpu::BufferUsages::STORAGE,
         );
         let definitions = input_u32(
+            self,
             device,
+            queue,
             "codegen.wasm.link.definitions",
             &[u32::MAX],
             wgpu::BufferUsages::STORAGE,
         );
         let status = input_u32(
+            self,
             device,
+            queue,
             "codegen.wasm.link.status",
             &[1, 0, u32::MAX, 0],
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         );
 
-        let status_readback = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.codegen.wasm.link.status"),
-            size: 16,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let status_readback = self.job_buffers.binding_capacity::<u8>(
+            device,
+            "rb.codegen.wasm.link.status",
+            16,
+            wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        );
         for page in &output_plan.pages {
             let max_relocations_per_batch =
                 (device.limits().max_storage_buffer_binding_size as usize / 32).max(1);
@@ -117,7 +127,9 @@ impl GpuWasmLinker {
                 page.data_input.start as u32,
             )?;
             let params = input_u32(
+                self,
                 device,
+                queue,
                 "codegen.wasm.link.page.params",
                 &params_words,
                 wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -125,16 +137,35 @@ impl GpuWasmLinker {
             let type_page = input
                 .read_type_range(page.type_input.clone())
                 .map_err(anyhow::Error::msg)?;
-            let types = input_bytes(device, "codegen.wasm.link.page.types", &type_page);
+            let types = input_bytes(
+                self,
+                device,
+                queue,
+                "codegen.wasm.link.page.types",
+                &type_page,
+            );
             let body_page = input
                 .read_body_range(page.body_input.clone())
                 .map_err(anyhow::Error::msg)?;
-            let bodies = input_bytes(device, "codegen.wasm.link.page.bodies", &body_page);
+            let bodies = input_bytes(
+                self,
+                device,
+                queue,
+                "codegen.wasm.link.page.bodies",
+                &body_page,
+            );
             let data_page = input
                 .read_data_range(page.data_input.clone())
                 .map_err(anyhow::Error::msg)?;
-            let data = input_bytes(device, "codegen.wasm.link.page.data", &data_page);
+            let data = input_bytes(
+                self,
+                device,
+                queue,
+                "codegen.wasm.link.page.data",
+                &data_page,
+            );
             let relocations = rw_u32(
+                self,
                 device,
                 "codegen.wasm.link.page.relocations",
                 relocation_buffer_records.saturating_mul(8),
@@ -142,6 +173,7 @@ impl GpuWasmLinker {
             );
             let output_words = (page.output_len as usize).div_ceil(4);
             let output = rw_u32(
+                self,
                 device,
                 "codegen.wasm.link.page.output",
                 output_words,
@@ -175,12 +207,12 @@ impl GpuWasmLinker {
                     ("out_words", output.as_entire_binding()),
                 ],
             )?;
-            let output_readback = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rb.codegen.wasm.link.page.output"),
-                size: (output_words * 4) as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
+            let output_readback = self.job_buffers.binding_capacity::<u8>(
+                device,
+                "rb.codegen.wasm.link.page.output",
+                output_words * 4,
+                wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            );
             let batch_count = relocation_batches.len().max(1);
             for batch_index in 0..batch_count {
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -332,10 +364,13 @@ pub(super) fn dispatch(
 ) -> Result<()> {
     let pipeline = pass.pipeline()?;
     let grid = workgroup_grid_1d(groups);
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pipeline);
     compute.set_bind_group(0, group, &[]);
     compute.dispatch_workgroups(grid.0, grid.1, 1);
@@ -343,44 +378,60 @@ pub(super) fn dispatch(
 }
 
 pub(super) fn input_u32(
+    linker: &GpuWasmLinker,
     device: &wgpu::Device,
+    queue: &wgpu::Queue,
     label: &str,
     words: &[u32],
     usage: wgpu::BufferUsages,
-) -> wgpu::Buffer {
+) -> LaniusBuffer<u32> {
     let fallback = [0u32];
     let words = if words.is_empty() {
         &fallback[..]
     } else {
         words
     };
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: bytemuck_words(words),
-        usage,
-    })
+    let bytes = bytemuck_words(words);
+    let buffer = linker.job_buffers.binding_capacity::<u32>(
+        device,
+        label,
+        bytes.len(),
+        usage | wgpu::BufferUsages::COPY_DST,
+    );
+    buffer.write(queue, 0, bytes);
+    buffer
 }
-fn input_bytes(device: &wgpu::Device, label: &str, bytes: &[u8]) -> wgpu::Buffer {
+fn input_bytes(
+    linker: &GpuWasmLinker,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    bytes: &[u8],
+) -> LaniusBuffer<u8> {
     let mut data = bytes.to_vec();
     data.resize(data.len().div_ceil(4).max(1) * 4, 0);
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: &data,
-        usage: wgpu::BufferUsages::STORAGE,
-    })
+    let buffer = linker.job_buffers.binding_capacity::<u8>(
+        device,
+        label,
+        data.len(),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+    );
+    buffer.write(queue, 0, &data);
+    buffer
 }
 pub(super) fn rw_u32(
+    linker: &GpuWasmLinker,
     device: &wgpu::Device,
     label: &str,
     count: usize,
     extra: wgpu::BufferUsages,
-) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label),
-        size: (count.max(1) * 4) as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | extra,
-        mapped_at_creation: false,
-    })
+) -> LaniusBuffer<u32> {
+    linker.job_buffers.binding_capacity::<u32>(
+        device,
+        label,
+        count.max(1) * 4,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | extra,
+    )
 }
 pub(super) fn bytemuck_words(words: &[u32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(words.as_ptr().cast(), words.len() * 4) }

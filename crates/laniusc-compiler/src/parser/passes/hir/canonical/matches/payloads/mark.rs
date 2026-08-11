@@ -44,6 +44,11 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalMatc
                 "payload_owner_arm".into(),
                 b.hir_match_payload_owner_arm.as_entire_binding(),
             ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
+            (
+                "candidate_raw_by_anchor".into(),
+                b.hir_canonical_anchor_owner.as_entire_binding(),
+            ),
             (
                 "family_flag".into(),
                 b.hir_match_payload_family_flag.as_entire_binding(),

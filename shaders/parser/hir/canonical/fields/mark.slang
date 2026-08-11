@@ -7,6 +7,8 @@ StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> decl_owner;
 StructuredBuffer<uint> literal_owner;
+StructuredBuffer<uint> hir_token_pos;
+RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
@@ -20,12 +22,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint raw = tid(dtid);
     if (raw >= gCanonical.raw_capacity) return;
     if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_STRUCTS))
-    {
-        family_flag[raw] = 0u;
         return;
-    }
     uint prod = raw < active_count() ? node_kind[raw] : INVALID;
     bool declaration = prod == PROD_STRUCT_FIELD && decl_owner[raw] != INVALID;
     bool initializer = prod == PROD_STRUCT_LIT_FIELD && literal_owner[raw] != INVALID;
-    family_flag[raw] = declaration || initializer ? 1u : 0u;
+    if (!declaration && !initializer) return;
+    uint anchor = hir_token_pos[raw];
+    if (anchor >= gCanonical.canonical_capacity) return;
+    uint ignored;
+    InterlockedMax(candidate_raw_by_anchor[anchor], raw + 1u, ignored);
+    InterlockedMax(family_flag[anchor], 1u, ignored);
 }

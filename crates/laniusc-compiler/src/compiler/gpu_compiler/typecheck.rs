@@ -16,6 +16,22 @@ enum DependencyInterfacePages<'a> {
     Paged(&'a [Vec<crate::compiler::GpuSemanticInterfaceArtifact>]),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FrontendWorkspaceReplacement {
+    Lexer,
+    Parser,
+}
+
+#[derive(Clone, Copy)]
+struct ParserBoundaryInput<'a> {
+    token_capacity: u32,
+    token_buffer: &'a wgpu::Buffer,
+    token_count_buffer: &'a wgpu::Buffer,
+    token_file_id_buffer: Option<&'a wgpu::Buffer>,
+    source_capacity: u32,
+    source_buffer: &'a wgpu::Buffer,
+}
+
 impl<'a> DependencyInterfacePages<'a> {
     fn is_empty(self) -> bool {
         match self {
@@ -38,6 +54,169 @@ impl<'a> DependencyInterfacePages<'a> {
 }
 
 impl<'gpu> GpuCompiler<'gpu> {
+    fn release_for_frontend_workspace_replacement(
+        &self,
+        device: &wgpu::Device,
+        replacement: FrontendWorkspaceReplacement,
+    ) {
+        self.type_checker.release_current_resident_workspace();
+        if let Ok(cache) = &self.wasm_lowering {
+            cache.release();
+        }
+        if let Ok(cache) = &self.x86_lowering {
+            cache.release();
+        }
+        self.parser.release_current_resident_buffers();
+        if replacement == FrontendWorkspaceReplacement::Lexer {
+            self.lexer.release_current_resident_buffers();
+        }
+        crate::gpu::passes_core::release_reflected_bind_group_caches();
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    }
+
+    fn run_parser_boundary(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        input: ParserBoundaryInput<'_>,
+        tree_capacity: u32,
+        parser_feature_flags: u32,
+        submission_label: &'static str,
+        host_timer: &mut CompilerHostTimer,
+    ) -> anyhow::Result<crate::parser::driver::Ll1AcceptResult> {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some(submission_label),
+        });
+        let timing_enabled = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+            && device.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+        let mut owned_parser_timer = timing_enabled.then(|| GpuTimer::new(device, queue, 2_048));
+        if let Some(timer) = owned_parser_timer.as_mut() {
+            timer.stamp(&mut encoder, "parser.begin");
+        }
+        let mut parser_timer = owned_parser_timer.as_mut();
+        let (check, recorded) = self
+            .parser
+            .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
+                &mut encoder,
+                input.token_capacity,
+                input.token_buffer,
+                input.token_count_buffer,
+                input.token_file_id_buffer,
+                input.source_capacity,
+                input.source_buffer,
+                &self.parse_tables,
+                Some(tree_capacity),
+                parser_feature_flags,
+                &mut parser_timer,
+                |_parse_bufs, encoder, timer| {
+                    if let Some(timer) = timer.as_deref_mut() {
+                        timer.stamp(encoder, "parser.ll1_hir.done");
+                    }
+                    Ok::<_, anyhow::Error>(())
+                },
+            )?;
+        recorded?;
+        drop(parser_timer);
+        host_timer.stamp("parser_record");
+        if let Some(timer) = owned_parser_timer.as_mut() {
+            timer.stamp(&mut encoder, "parser.end");
+            timer.resolve(&mut encoder);
+        }
+        let command_buffer = encoder.finish();
+        host_timer.stamp("parser_encoder_finish");
+        let gpu_anchor = std::time::Instant::now();
+        crate::gpu::passes_core::submit_with_progress(queue, submission_label, command_buffer);
+        host_timer.stamp("parser_submit");
+        let result = check.read_status_result(device);
+        host_timer.stamp("parser_status");
+        if let Some(timer) = owned_parser_timer.as_ref()
+            && let Some(stamps) = timer.try_read(device)
+        {
+            crate::lexer::driver::timing::print_timer_trace(&stamps, timer.period_ns(), gpu_anchor);
+        }
+        result
+    }
+
+    fn run_parser_boundary_with_capacity_reuse(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        input: ParserBoundaryInput<'_>,
+        parser_feature_flags: u32,
+        submission_label: &'static str,
+        host_timer: &mut CompilerHostTimer,
+    ) -> anyhow::Result<(u32, crate::parser::driver::Ll1AcceptResult)> {
+        let reusable_capacity = self.parser.reusable_tree_capacity(
+            input.token_capacity,
+            input.source_capacity,
+            &self.parse_tables,
+            false,
+            parser_feature_flags,
+        );
+        let tree_capacity = match reusable_capacity {
+            Some(capacity) => capacity,
+            None => {
+                self.parser
+                    .measure_resident_partial_parse_capacity(
+                        input.token_capacity,
+                        input.token_buffer,
+                        input.token_count_buffer,
+                        input.token_file_id_buffer,
+                        &self.parse_tables,
+                    )?
+                    .tree_capacity
+            }
+        };
+        host_timer.stamp(if reusable_capacity.is_some() {
+            "parser_capacity_reused"
+        } else {
+            "parser_capacity_measured"
+        });
+
+        if !self.parser.current_resident_allocation_covers(
+            input.token_capacity,
+            input.source_capacity,
+            &self.parse_tables,
+            tree_capacity,
+            false,
+            parser_feature_flags,
+        ) {
+            self.release_for_frontend_workspace_replacement(
+                device,
+                FrontendWorkspaceReplacement::Parser,
+            );
+        }
+        let mut result = self.run_parser_boundary(
+            device,
+            queue,
+            input,
+            tree_capacity,
+            parser_feature_flags,
+            submission_label,
+            host_timer,
+        )?;
+
+        if !result.accepted && result.error_code == 3 && result.detail > tree_capacity {
+            let grown_capacity = result.detail;
+            self.release_for_frontend_workspace_replacement(
+                device,
+                FrontendWorkspaceReplacement::Parser,
+            );
+            result = self.run_parser_boundary(
+                device,
+                queue,
+                input,
+                grown_capacity,
+                parser_feature_flags,
+                submission_label,
+                host_timer,
+            )?;
+            host_timer.stamp("parser_capacity_retry");
+            return Ok((grown_capacity, result));
+        }
+        Ok((tree_capacity, result))
+    }
+
     /// Type-check one in-memory source string using `<source>` as the diagnostic
     /// path.
     pub async fn type_check_source(&self, src: &str) -> Result<(), CompileError> {
@@ -264,50 +443,29 @@ impl<'gpu> GpuCompiler<'gpu> {
                 src,
                 |device, queue, bufs, token_count, encoder, mut timer| {
                     let token_capacity = token_count.max(1);
-                    let parser_tree_capacity = self
-                        .parser
-                        .partial_parse_resident_tree_capacity(token_capacity, &self.parse_tables);
                     let parser_feature_flags = crate::lexer::features::parser_allocation_features(
                         bufs.parser_feature_flags_value,
                     );
-                    let mut parser_encoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("compiler.typecheck.parser-boundary.encoder"),
-                        });
-                    let mut parser_timer: Option<&mut GpuTimer> = None;
-                    let (parser_check, parser_recorded) = self
-                        .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
-                            &mut parser_encoder,
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            bufs.n,
-                            &bufs.in_bytes,
-                            &self.parse_tables,
-                            Some(parser_tree_capacity),
-                            parser_feature_flags,
-                            &mut parser_timer,
-                            |_parse_bufs, encoder, timer| {
-                                if let Some(timer) = timer.as_deref_mut() {
-                                    timer.stamp(encoder, "parser.ll1_hir.done");
-                                }
-                                Ok::<_, CompileError>(())
+                    let mut parser_host_timer = CompilerHostTimer::new("compile.source.parser");
+                    let (parser_tree_capacity, ll1) = self
+                        .run_parser_boundary_with_capacity_reuse(
+                            device,
+                            queue,
+                            ParserBoundaryInput {
+                                token_capacity,
+                                token_buffer: &bufs.tokens_out,
+                                token_count_buffer: &bufs.token_count,
+                                token_file_id_buffer: Some(&bufs.token_file_id),
+                                source_capacity: bufs.n,
+                                source_buffer: &bufs.in_bytes,
                             },
+                            parser_feature_flags,
+                            "compiler.typecheck.parser-boundary",
+                            &mut parser_host_timer,
                         )
                         .map_err(|err| {
                             parser_execution_failed_for_source(&diagnostic_path, src, err)
                         })?;
-                    parser_recorded?;
-                    crate::gpu::passes_core::submit_with_progress(
-                        queue,
-                        "compiler.typecheck.parser-boundary",
-                        parser_encoder.finish(),
-                    );
-                    let ll1 = parser_check.read_status_result(device).map_err(|err| {
-                        parser_execution_failed_for_source(&diagnostic_path, src, err)
-                    })?;
                     if !ll1.accepted {
                         let parser_failure = self
                             .parser
@@ -317,6 +475,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 Some(parser_tree_capacity),
                                 ll1,
                             );
+                        debug_parser_rejection(&parser_failure);
                         return Err(parser_failure_to_compile_error_for_source(
                             device,
                             queue,
@@ -546,22 +705,42 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<CheckedSourcePackArtifacts, CompileError> {
         let diagnostic_files = source_pack_diagnostic_files(sources, source_paths);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
+        let source_bytes = sources.iter().try_fold(0u32, |total, source| {
+            let len = u32::try_from(source.as_ref().len()).map_err(|_| {
+                CompileError::GpuFrontend("source-pack file exceeds lexer capacity".to_string())
+            })?;
+            total.checked_add(len).ok_or_else(|| {
+                CompileError::GpuFrontend("source-pack byte length exceeds lexer capacity".into())
+            })
+        })?;
+        let source_files = u32::try_from(sources.len()).map_err(|_| {
+            CompileError::GpuFrontend("source pack has too many files for the lexer".into())
+        })?;
+        if !self
+            .lexer
+            .current_resident_source_pack_capacity_covers(source_bytes, source_files)
+        {
+            self.release_for_frontend_workspace_replacement(
+                &self.gpu.device,
+                FrontendWorkspaceReplacement::Lexer,
+            );
+        }
         let dependency_page_slices = dependency_interfaces.slices();
         let dependency_pages = match library_id {
-            Some(_) if dependency_interfaces.is_empty() => None,
             Some(library_id) => Some(
-                gpu_type_checker::GpuDependencyInterfacePages::new(
-                    &self.gpu.device,
-                    &self.gpu.queue,
-                    library_id,
-                    unit_id,
-                    &dependency_page_slices,
-                )
-                .map_err(|err| {
-                    CompileError::GpuFrontend(format!(
-                        "dependency semantic-interface preparation failed: {err}"
-                    ))
-                })?,
+                self.type_checker
+                    .dependency_interface_pages(
+                        &self.gpu.device,
+                        &self.gpu.queue,
+                        library_id,
+                        unit_id,
+                        &dependency_page_slices,
+                    )
+                    .map_err(|err| {
+                        CompileError::GpuFrontend(format!(
+                            "dependency semantic-interface preparation failed: {err}"
+                        ))
+                    })?,
             ),
             None if dependency_interfaces.is_empty() => None,
             None => {
@@ -577,54 +756,28 @@ impl<'gpu> GpuCompiler<'gpu> {
                     let mut record_host_timer =
                         CompilerHostTimer::new("compile.source-pack.record");
                     let token_capacity = token_count.max(1);
-                    let parser_tree_capacity = self
-                        .parser
-                        .partial_parse_resident_tree_capacity(token_capacity, &self.parse_tables);
-                    record_host_timer.stamp("parser_capacity");
                     let parser_feature_flags = crate::lexer::features::parser_allocation_features(
                         bufs.parser_feature_flags_value,
                     );
-                    let mut parser_encoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("compiler.typecheck.source_pack.parser-boundary.encoder"),
-                        });
-                    let mut parser_timer: Option<&mut GpuTimer> = None;
-                    let (parser_check, parser_recorded) = self
-                        .parser
-                        .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
-                            &mut parser_encoder,
-                            token_capacity,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            Some(&bufs.token_file_id),
-                            bufs.n,
-                            &bufs.in_bytes,
-                            &self.parse_tables,
-                            Some(parser_tree_capacity),
-                            parser_feature_flags,
-                            &mut parser_timer,
-                            |_parse_bufs, encoder, timer| {
-                                if let Some(timer) = timer.as_deref_mut() {
-                                    timer.stamp(encoder, "parser.ll1_hir.done");
-                                }
-                                Ok::<_, CompileError>(())
+                    let (parser_tree_capacity, ll1) = self
+                        .run_parser_boundary_with_capacity_reuse(
+                            device,
+                            queue,
+                            ParserBoundaryInput {
+                                token_capacity,
+                                token_buffer: &bufs.tokens_out,
+                                token_count_buffer: &bufs.token_count,
+                                token_file_id_buffer: Some(&bufs.token_file_id),
+                                source_capacity: bufs.n,
+                                source_buffer: &bufs.in_bytes,
                             },
+                            parser_feature_flags,
+                            "compiler.typecheck.source_pack.parser-boundary",
+                            &mut record_host_timer,
                         )
                         .map_err(|err| {
                             parser_execution_failed_for_source_pack(&diagnostic_files, err)
                         })?;
-                    parser_recorded?;
-                    record_host_timer.stamp("parser_record");
-                    crate::gpu::passes_core::submit_with_progress(
-                        queue,
-                        "compiler.typecheck.source_pack.parser-boundary",
-                        parser_encoder.finish(),
-                    );
-                    record_host_timer.stamp("parser_submit");
-                    let ll1 = parser_check.read_status_result(device).map_err(|err| {
-                        parser_execution_failed_for_source_pack(&diagnostic_files, err)
-                    })?;
-                    record_host_timer.stamp("parser_status");
                     if !ll1.accepted {
                         let parser_failure = self
                             .parser
@@ -634,6 +787,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 Some(parser_tree_capacity),
                                 ll1,
                             );
+                        debug_parser_rejection(&parser_failure);
                         return Err(parser_failure_to_compile_error_for_source_pack(
                             device,
                             queue,
@@ -690,6 +844,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             self.type_checker
                                 .record_semantic_interface(
                                     device,
+                                    queue,
                                     encoder,
                                     library_id,
                                     unit_id,
@@ -895,6 +1050,24 @@ impl<'gpu> GpuCompiler<'gpu> {
     }
 }
 
+fn debug_parser_rejection(failure: &crate::parser::driver::ParserFailure) {
+    if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_none() {
+        return;
+    }
+    let status = failure.ll1();
+    let start = status.error_pos.saturating_sub(4) as usize;
+    let context = failure.semantic_token_kinds().map(|kinds| {
+        let end = (status.error_pos as usize)
+            .saturating_add(5)
+            .min(kinds.len());
+        kinds.get(start.min(end)..end).unwrap_or_default()
+    });
+    eprintln!(
+        "GPU parser rejection: error_pos={} code={} detail={} steps={} emit_len={} semantic_kinds={context:?}",
+        status.error_pos, status.error_code, status.detail, status.steps, status.emit_len,
+    );
+}
+
 struct RecordedTypeCheckWithDiagnosticBuffers {
     type_check: gpu_type_checker::RecordedTypeCheck,
     diagnostic_tokens: DiagnosticTokenBuffer,
@@ -936,11 +1109,13 @@ struct CheckedSourcePackArtifacts {
     wasm_object: Option<crate::codegen::wasm::GpuWasmRelocatableObject>,
 }
 
+#[derive(Clone)]
 pub(in crate::compiler) struct CompiledSourcePackUnit {
     pub(in crate::compiler) interface: crate::compiler::GpuSemanticInterfaceArtifact,
     pub(in crate::compiler) object: CompiledSourcePackObject,
 }
 
+#[derive(Clone)]
 pub(in crate::compiler) enum CompiledSourcePackObject {
     X86_64(crate::codegen::x86::GpuX86RelocatableObject),
     Wasm(crate::codegen::wasm::GpuWasmRelocatableObject),

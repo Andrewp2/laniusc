@@ -102,10 +102,8 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     // capacity is bounded by the token domain rather than the raw parse tree.
     let struct_field_capacity = token_capacity.max(1);
     let struct_field_n_blocks = struct_field_capacity.div_ceil(256).max(1);
-    let struct_field_radix_bytes =
-        struct_field_key_radix_bytes(struct_field_capacity, token_capacity);
-    let struct_field_radix_steps =
-        struct_field_key_radix_steps(struct_field_capacity, token_capacity);
+    let struct_field_radix_bytes = struct_field_key_radix_bytes(hir_node_capacity, token_capacity);
+    let struct_field_radix_steps = struct_field_key_radix_steps(hir_node_capacity, token_capacity);
     let generic_parameter_sorts = GenericParameterSorts::new(
         device,
         passes,
@@ -161,7 +159,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             },
         ),
         |key_step| StructFieldKeyRadixParams {
-            hir_node_capacity: struct_field_capacity,
+            hir_node_capacity,
             token_capacity,
             n_blocks: struct_field_n_blocks,
             key_step,
@@ -383,4 +381,31 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             resources,
         )?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{struct_field_key_radix_bytes, struct_field_key_radix_steps};
+
+    #[test]
+    fn struct_field_keys_are_sized_for_dense_hir_owner_ids() {
+        let token_capacity = 60_000;
+        let hir_node_capacity = 70_000;
+
+        assert_eq!(
+            struct_field_key_radix_bytes(hir_node_capacity, token_capacity),
+            3,
+            "the owner component must retain HIR IDs beyond the two-byte token domain",
+        );
+        assert_eq!(
+            struct_field_key_radix_steps(hir_node_capacity, token_capacity),
+            10,
+            "three three-byte fields require an even ten-pass ping-pong sort",
+        );
+        assert_eq!(
+            struct_field_key_radix_bytes(token_capacity, token_capacity),
+            2,
+            "the regression must cross a real radix-width boundary",
+        );
+    }
 }

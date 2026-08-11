@@ -59,7 +59,7 @@ use crate::{
     },
     lexer::{GpuToken, features::CONSERVATIVE_PARSER_FEATURES},
     parser::{
-        buffers::{ActionHeader, ParserBuffers, resident_partial_parse_tree_capacity_for_tables},
+        buffers::{ActionHeader, ParserBuffers},
         debug::DebugOutput,
         passes::{self, ParserPasses},
         readback,
@@ -522,11 +522,15 @@ impl GpuParser {
             "parser.resident.batch",
         );
 
-        bufs.clear_job_storage(encoder);
+        let active_tree_capacity = tree_capacity_override
+            .unwrap_or(bufs.tree_capacity)
+            .min(bufs.tree_capacity)
+            .max(1);
+        let cleared_bytes = bufs.clear_job_storage(encoder, active_tree_capacity);
         if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
             let (allocations, bytes) = bufs.resettable_storage_totals();
             eprintln!(
-                "[gpu_compile_host_timer] parser.workspace_clear: allocations={allocations} bytes={bytes}"
+                "[gpu_compile_host_timer] parser.workspace_clear: allocations={allocations} active_bytes={cleared_bytes} resident_bytes={bytes}"
             );
         }
 
@@ -621,6 +625,34 @@ impl GpuParser {
         token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
     ) -> Result<ResidentParserCapacity> {
+        // Once a full parser workspace exists, use its partial-parse storage
+        // to size ordinary edits. This preserves every buffer and bind-group
+        // identity while still measuring the changed token stream on the GPU.
+        // The partial parser reports the required output size even when it
+        // exceeds the resident tree capacity, so callers can grow safely.
+        {
+            let mut resident = self
+                .resident_buffers
+                .lock()
+                .expect("parser.resident_buffers poisoned");
+            if let Some(cached) = resident.as_mut().filter(|cached| {
+                cached.table_fingerprint == table_fingerprint(tables)
+                    && cached.token_capacity >= token_capacity.max(1)
+            }) {
+                cached
+                    .buffers
+                    .set_active_token_capacity(&self.queue, token_capacity.max(1));
+                return self.measure_partial_parse_capacity_with_buffers(
+                    token_capacity,
+                    token_buf,
+                    token_count_buf,
+                    token_file_id_buf,
+                    &cached.buffers,
+                    "parser.partial-parse-capacity.resident",
+                );
+            }
+        }
+
         // This probe uses a temporary parser allocation. Cached token-front-end
         // bind groups may still reference the preceding resident allocation,
         // so invalidate them before recording into the temporary buffers.
@@ -644,6 +676,39 @@ impl GpuParser {
             Some(1),
         );
 
+        let result = self.measure_partial_parse_capacity_with_buffers(
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            token_file_id_buf,
+            bufs,
+            "parser.partial-parse-tree-capacity",
+        );
+
+        // The capacity probe deliberately uses temporary parser buffers, but
+        // token-frontend bind groups are cached on `GpuParser`. Do not let
+        // those bind groups outlive the temporary buffers and get reused by
+        // the following full resident parse when GPU buffer ids are recycled.
+        *self
+            .resident_token_kind_bind_groups
+            .lock()
+            .expect("parser.resident_token_kind_bind_groups poisoned") = None;
+        self.bg_cache
+            .lock()
+            .expect("parser.bg_cache poisoned")
+            .clear();
+        result
+    }
+
+    fn measure_partial_parse_capacity_with_buffers(
+        &self,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: Option<&wgpu::Buffer>,
+        bufs: &ParserBuffers,
+        submission_label: &'static str,
+    ) -> Result<ResidentParserCapacity> {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -673,17 +738,12 @@ impl GpuParser {
         }
         self.record_resident_partial_parse_status(&mut encoder, bufs)?;
 
-        let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.parser.partial_parse_tree_capacity.status"),
-            size: 28,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let status_readback = &bufs.ll1_status_readback.buffer;
         parser_copy_buffer_to_buffer(
             &mut encoder,
             &bufs.partial_parse_status,
             0,
-            &status_readback,
+            status_readback,
             0,
             24,
         );
@@ -691,13 +751,13 @@ impl GpuParser {
             &mut encoder,
             &bufs.token_feature_flags,
             0,
-            &status_readback,
+            status_readback,
             24,
             4,
         );
         crate::gpu::passes_core::submit_with_progress(
             &self.queue,
-            "parser.partial-parse-tree-capacity",
+            submission_label,
             encoder.finish(),
         );
 
@@ -712,19 +772,6 @@ impl GpuParser {
         drop(mapped);
         status_readback.unmap();
 
-        // The capacity probe deliberately uses temporary parser buffers, but
-        // token-frontend bind groups are cached on `GpuParser`. Do not let
-        // those bind groups outlive the temporary buffers and get reused by
-        // the following full resident parse when GPU buffer ids are recycled.
-        *self
-            .resident_token_kind_bind_groups
-            .lock()
-            .expect("parser.resident_token_kind_bind_groups poisoned") = None;
-        self.bg_cache
-            .lock()
-            .expect("parser.bg_cache poisoned")
-            .clear();
-
         let emit_capacity = if words[0] == 0 && words[2] == 3 {
             words[3]
         } else {
@@ -734,15 +781,6 @@ impl GpuParser {
             tree_capacity: emit_capacity.max(1),
             parser_feature_flags: words[6],
         })
-    }
-
-    /// Computes a conservative resident tree capacity from token capacity and tables.
-    pub fn partial_parse_resident_tree_capacity(
-        &self,
-        token_capacity: u32,
-        tables: &PrecomputedParseTables,
-    ) -> u32 {
-        resident_partial_parse_tree_capacity_for_tables(token_capacity.max(1), tables)
     }
 
     /// Borrows current resident parser buffers sized for the provided token capacity.
@@ -1406,10 +1444,13 @@ fn record_parser_compute(
     if crate::gpu::passes_core::defer_compute_direct(pass, bind_group, (gx, gy, gz)) {
         return Ok(());
     }
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     compute.dispatch_workgroups(gx, gy, gz);

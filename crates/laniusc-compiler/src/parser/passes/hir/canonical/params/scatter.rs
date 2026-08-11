@@ -49,6 +49,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPara
                 b.hir_semantic_block_prefix_a.as_entire_binding(),
             ),
             (
+                "canonical_count".into(),
+                b.hir_canonical_count.as_entire_binding(),
+            ),
+            (
+                "canonical_dense_to_raw".into(),
+                b.hir_canonical_dense_to_raw.as_entire_binding(),
+            ),
+            (
                 "raw_to_hir".into(),
                 b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),

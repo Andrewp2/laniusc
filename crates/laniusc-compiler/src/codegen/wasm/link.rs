@@ -547,6 +547,17 @@ mod tests {
         let module = generator
             .link_executable(&gpu.device, &gpu.queue, &input)
             .expect("GPU Wasm link");
+        let buffers_before = crate::gpu::buffers::buffer_creation_count();
+        let bind_groups_before = crate::gpu::passes_core::bind_group_creation_count();
+        let repeated = generator
+            .link_executable(&gpu.device, &gpu.queue, &input)
+            .expect("repeated GPU Wasm link");
+        assert_eq!(repeated, module);
+        assert_eq!(crate::gpu::buffers::buffer_creation_count(), buffers_before);
+        assert_eq!(
+            crate::gpu::passes_core::bind_group_creation_count(),
+            bind_groups_before
+        );
         assert_eq!(&module[..8], b"\0asm\x01\0\0\0");
         assert!(module.windows(5).any(|bytes| bytes == padded(1)));
         let node = which::which("node").expect("Node runtime for linked Wasm validation");

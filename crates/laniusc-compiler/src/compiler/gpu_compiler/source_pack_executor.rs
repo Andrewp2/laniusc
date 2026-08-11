@@ -1,4 +1,8 @@
-use super::{typecheck::CompiledSourcePackObject, *};
+use super::{
+    typecheck::CompiledSourcePackObject,
+    unit_cache::{CompiledUnitCacheHintKey, CompiledUnitCacheKey},
+    *,
+};
 
 /// Source-pack executor that emits GPU artifact descriptors into a filesystem store.
 ///
@@ -214,16 +218,15 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         &self,
         handle: GpuSourcePackLibraryInterfaceBuildHandle,
     ) -> Result<ArtifactPath, CompileError> {
+        let timing = std::env::var_os("LANIUS_SOURCE_PACK_TIMING").is_some();
+        let started = std::time::Instant::now();
         self.validate_job_source_file_records(
             "library-interface",
             &handle.job,
             &handle.source_files,
         )?;
-        let sources = read_explicit_source_path_files(
-            "source-pack library-interface job",
-            &handle.source_files,
-        )?;
         let dependency_pages = self.load_semantic_interface_pages(&handle.dependencies)?;
+        let dependencies_loaded = started.elapsed();
         let report_memory = crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false);
         let unit_id = u32::try_from(handle.job.phase_unit_index).map_err(|_| {
             source_pack_artifact_store_error(format!(
@@ -231,34 +234,108 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 handle.job.job_index, handle.job.phase_unit_index
             ))
         })?;
-        let compiled = (self.target != SourcePackArtifactTarget::Generic).then(|| {
-            self.compiler
-                .compile_source_pack_unit_with_dependency_pages(
-                    &sources,
+        let cache_hint = if self.target != SourcePackArtifactTarget::Generic {
+            CompiledUnitCacheHintKey::new(
+                self.target,
+                handle.job.library_id,
+                unit_id,
+                &handle.source_files,
+                &dependency_pages,
+            )
+            .map_err(source_pack_artifact_store_error)?
+        } else {
+            None
+        };
+        let hint_built = started.elapsed();
+        let hinted = cache_hint
+            .as_ref()
+            .and_then(|hint| self.compiler.cached_compiled_unit_by_hint(hint));
+        let sources = if hinted.is_none() {
+            Some(read_explicit_source_path_files(
+                "source-pack library-interface job",
+                &handle.source_files,
+            )?)
+        } else {
+            None
+        };
+        let sources_loaded = started.elapsed();
+        if std::env::var_os("LANIUS_DEBUG_SOURCE_PACK_FILES").is_some() {
+            eprintln!(
+                "[source-pack-debug] job={} library={} unit={} files={:?}",
+                handle.job.job_index,
+                handle.job.library_id,
+                handle.job.phase_unit_index,
+                handle
+                    .source_files
+                    .iter()
+                    .map(|file| file.path.clone())
+                    .collect::<Vec<_>>(),
+            );
+        }
+        let cache_key = (self.target != SourcePackArtifactTarget::Generic && hinted.is_none())
+            .then(|| {
+                CompiledUnitCacheKey::new(
+                    self.target,
                     handle.job.library_id,
                     unit_id,
+                    sources
+                        .as_deref()
+                        .expect("cache miss must load source text"),
                     &dependency_pages,
-                    self.target,
                 )
+                .map_err(source_pack_artifact_store_error)
+            })
+            .transpose()?;
+        let key_built = started.elapsed();
+        let cached = hinted.or_else(|| {
+            cache_key
+                .as_ref()
+                .and_then(|key| self.compiler.cached_compiled_unit(key))
         });
-        let (interface, object) = match compiled {
-            Some(compiled) => {
-                let compiled = compiled.await?;
-                (compiled.interface, Some(compiled.object))
+        let cache_hit = cached.is_some();
+        let compiled = match (cached, cache_key.as_ref()) {
+            (Some(compiled), _) => Some(compiled),
+            (None, Some(key)) => {
+                let compiled = self
+                    .compiler
+                    .compile_source_pack_unit_with_dependency_pages(
+                        sources
+                            .as_deref()
+                            .expect("cache miss must load source text"),
+                        handle.job.library_id,
+                        unit_id,
+                        &dependency_pages,
+                        self.target,
+                    )
+                    .await?;
+                self.compiler.cache_compiled_unit(
+                    cache_hint
+                        .clone()
+                        .expect("concrete compiled unit must have a cache hint"),
+                    key.clone(),
+                    compiled.clone(),
+                );
+                Some(compiled)
             }
+            (None, None) => None,
+        };
+        let (interface, object) = match compiled {
+            Some(compiled) => (compiled.interface, Some(compiled.object)),
             None => (
                 self.compiler
                     .semantic_interface_for_source_pack_unit_with_dependency_pages(
                         handle.job.library_id,
                         unit_id,
-                        &sources,
+                        sources
+                            .as_deref()
+                            .expect("generic unit must load source text"),
                         &dependency_pages,
                     )
                     .await?,
                 None,
             ),
         };
-        self.compiler.release_completed_unit_frontend_workspace();
+        let compiled = started.elapsed();
         if report_memory {
             let live = crate::gpu::buffers::tracked_buffer_allocation_stats();
             let peak = crate::gpu::buffers::tracked_buffer_allocation_peak_stats();
@@ -272,19 +349,6 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 dependency_pages.iter().map(Vec::len).sum::<usize>(),
                 live.bytes,
                 peak.bytes,
-            );
-        }
-        if std::env::var_os("LANIUS_DEBUG_SOURCE_PACK_FILES").is_some() {
-            eprintln!(
-                "[source-pack-debug] job={} library={} unit={} files={:?}",
-                handle.job.job_index,
-                handle.job.library_id,
-                handle.job.phase_unit_index,
-                handle
-                    .source_files
-                    .iter()
-                    .map(|file| file.path.clone())
-                    .collect::<Vec<_>>(),
             );
         }
         let interface_bytes = interface.to_bytes().map_err(|reason| {
@@ -350,11 +414,27 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             &handle.job,
             &descriptor,
         )?;
-        self.write_planned_descriptor_artifact(
+        let result = self.write_planned_descriptor_artifact(
             SourcePackArtifactKind::LibraryInterface,
             &handle.job,
             &descriptor,
-        )
+        );
+        if timing {
+            eprintln!(
+                "source_pack_timing phase=unit job={} unit={} cache_hit={} dependencies_ms={:.3} hint_ms={:.3} sources_ms={:.3} key_ms={:.3} compile_or_lookup_ms={:.3} artifacts_ms={:.3} total_ms={:.3}",
+                handle.job.job_index,
+                handle.job.phase_unit_index,
+                cache_hit,
+                dependencies_loaded.as_secs_f64() * 1000.0,
+                (hint_built - dependencies_loaded).as_secs_f64() * 1000.0,
+                (sources_loaded - hint_built).as_secs_f64() * 1000.0,
+                (key_built - sources_loaded).as_secs_f64() * 1000.0,
+                (compiled - key_built).as_secs_f64() * 1000.0,
+                (started.elapsed() - compiled).as_secs_f64() * 1000.0,
+                started.elapsed().as_secs_f64() * 1000.0,
+            );
+        }
+        result
     }
 
     /// Finishes a codegen-object job by validating its semantic inputs and
@@ -689,14 +769,18 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         object_descriptors: &[ArtifactPath],
         key_suffix: &str,
     ) -> Result<(ArtifactPath, usize), CompileError> {
+        let timing = std::env::var_os("LANIUS_SOURCE_PACK_TIMING").is_some();
+        let started = std::time::Instant::now();
         let (artifact, artifact_label) = self.linked_output_artifact_destination(key_suffix)?;
         let object_artifacts = self.resolve_codegen_object_artifacts(object_descriptors)?;
+        let objects_resolved = started.elapsed();
         let device_limits = self.compiler.gpu.device.limits();
         let max_page_bytes = (device_limits.max_storage_buffer_binding_size as u64)
             .min(device_limits.max_buffer_size);
         match self.target {
             SourcePackArtifactTarget::X86_64 => {
                 let layouts = self.load_x86_codegen_object_layouts(&object_artifacts)?;
+                let layouts_loaded = started.elapsed();
                 let _plan = crate::codegen::link_layout::GpuLinkLayoutPlan::for_x86(
                     &layouts,
                     max_page_bytes,
@@ -717,6 +801,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                         "prepare {context} for x86_64: {reason}"
                     ))
                 })?;
+                let input_prepared = started.elapsed();
                 let linker = self.compiler.x86_linker().map_err(|reason| {
                     source_pack_artifact_store_error(format!(
                         "initialize x86_64 linker for {context}: {reason}"
@@ -742,10 +827,22 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                             })
                     },
                 )?;
+                if timing {
+                    eprintln!(
+                        "source_pack_timing phase=link target=x86_64 objects={} resolve_ms={:.3} layouts_ms={:.3} input_ms={:.3} gpu_and_output_ms={:.3} total_ms={:.3}",
+                        object_artifacts.len(),
+                        objects_resolved.as_secs_f64() * 1000.0,
+                        (layouts_loaded - objects_resolved).as_secs_f64() * 1000.0,
+                        (input_prepared - layouts_loaded).as_secs_f64() * 1000.0,
+                        (started.elapsed() - input_prepared).as_secs_f64() * 1000.0,
+                        started.elapsed().as_secs_f64() * 1000.0,
+                    );
+                }
                 Ok((artifact, byte_len))
             }
             SourcePackArtifactTarget::Wasm => {
                 let layouts = self.load_wasm_codegen_object_layouts(&object_artifacts)?;
+                let layouts_loaded = started.elapsed();
                 let _plan = crate::codegen::link_layout::GpuLinkLayoutPlan::for_wasm(
                     &layouts,
                     max_page_bytes,
@@ -755,6 +852,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                         "plan {context} for bounded Wasm linking: {reason}"
                     ))
                 })?;
+                let input_prepared = started.elapsed();
                 let link_input = wasm::GpuWasmLinkInput::for_executable_files(
                     object_artifacts
                         .iter()
@@ -791,6 +889,17 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                             })
                     },
                 )?;
+                if timing {
+                    eprintln!(
+                        "source_pack_timing phase=link target=wasm objects={} resolve_ms={:.3} layouts_ms={:.3} input_ms={:.3} gpu_and_output_ms={:.3} total_ms={:.3}",
+                        object_artifacts.len(),
+                        objects_resolved.as_secs_f64() * 1000.0,
+                        (layouts_loaded - objects_resolved).as_secs_f64() * 1000.0,
+                        (input_prepared - layouts_loaded).as_secs_f64() * 1000.0,
+                        (started.elapsed() - input_prepared).as_secs_f64() * 1000.0,
+                        started.elapsed().as_secs_f64() * 1000.0,
+                    );
+                }
                 Ok((artifact, byte_len))
             }
             SourcePackArtifactTarget::Generic => Err(source_pack_artifact_store_error(format!(

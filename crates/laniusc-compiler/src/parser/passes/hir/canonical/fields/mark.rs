@@ -54,6 +54,11 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalFiel
                 "literal_owner".into(),
                 b.hir_struct_lit_field_parent_lit.as_entire_binding(),
             ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
+            (
+                "candidate_raw_by_anchor".into(),
+                b.hir_canonical_anchor_owner.as_entire_binding(),
+            ),
             (
                 "family_flag".into(),
                 b.hir_field_family_flag.as_entire_binding(),

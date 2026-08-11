@@ -6,6 +6,8 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> arm_owner_match;
+StructuredBuffer<uint> hir_token_pos;
+RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
 RWStructuredBuffer<uint> raw_to_arm;
 static const uint INVALID = 0xffffffffu;
@@ -20,10 +22,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (raw >= gCanonical.raw_capacity) return;
     raw_to_arm[raw] = INVALID;
     if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_MATCHES))
-    {
-        family_flag[raw] = 0u;
         return;
-    }
-    family_flag[raw] = raw < active_count() && node_kind[raw] == PROD_MATCH_ARM &&
-                       arm_owner_match[raw] != INVALID ? 1u : 0u;
+    if (raw >= active_count() || node_kind[raw] != PROD_MATCH_ARM ||
+        arm_owner_match[raw] == INVALID) return;
+    uint anchor = hir_token_pos[raw];
+    if (anchor >= gCanonical.canonical_capacity) return;
+    uint ignored;
+    InterlockedMax(candidate_raw_by_anchor[anchor], raw + 1u, ignored);
+    InterlockedMax(family_flag[anchor], 1u, ignored);
 }

@@ -4,6 +4,16 @@ use log::warn;
 use super::GpuLexer;
 use crate::lexer::{buffers, buffers::GpuBuffers};
 
+const SOURCE_BYTE_CAPACITY_GRANULARITY: u32 = 4 * 1024;
+const SOURCE_FILE_CAPACITY_GRANULARITY: u32 = 64;
+
+fn capacity_bucket(value: u32, granularity: u32) -> u32 {
+    value
+        .max(1)
+        .div_ceil(granularity)
+        .saturating_mul(granularity)
+}
+
 #[derive(Debug, Clone)]
 struct SourceFileMetadata {
     starts: Vec<u32>,
@@ -44,6 +54,24 @@ fn build_source_pack<S: AsRef<str>>(sources: &[S]) -> Result<(Vec<u8>, SourceFil
 }
 
 impl GpuLexer {
+    /// Returns whether the resident source-pack allocation can accept the
+    /// requested input without changing any buffer identity.
+    pub(crate) fn current_resident_source_pack_capacity_covers(
+        &self,
+        source_bytes: u32,
+        source_files: u32,
+    ) -> bool {
+        let guard = self
+            .buffers
+            .lock()
+            .expect("GpuLexer.buffers mutex poisoned");
+        guard.as_ref().is_some_and(|bufs| {
+            source_bytes as usize <= bufs.in_bytes.byte_size
+                && source_bytes as usize <= bufs.in_bytes.count
+                && source_files as usize <= bufs.source_file_start.count
+        })
+    }
+
     /// Prepares resident buffers and metadata for one source string.
     pub(super) fn prepare_buffers_for_input<'a>(
         &'a self,
@@ -75,7 +103,10 @@ impl GpuLexer {
         };
 
         if guard.is_none() {
-            *guard = Some(recreate(aligned_len.max(1)));
+            *guard = Some(recreate(capacity_bucket(
+                aligned_len,
+                SOURCE_BYTE_CAPACITY_GRANULARITY,
+            )));
         }
 
         {
@@ -90,9 +121,12 @@ impl GpuLexer {
             let cap_bytes = bufs.in_bytes.byte_size as u32;
             let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
 
-            let needs_resize = desired_cap != cap_bytes || nb_dfa != cap_nb_dfa || n > cap_n;
+            let needs_resize = desired_cap > cap_bytes || nb_dfa > cap_nb_dfa || n > cap_n;
             if needs_resize {
-                let mut new_bufs = recreate(desired_cap);
+                let mut new_bufs = recreate(capacity_bucket(
+                    desired_cap,
+                    SOURCE_BYTE_CAPACITY_GRANULARITY,
+                ));
                 self.write_current_lex_inputs(
                     &mut new_bufs,
                     input_bytes,
@@ -153,7 +187,10 @@ impl GpuLexer {
         };
 
         if guard.is_none() {
-            *guard = Some(recreate(aligned_len.max(1), source_file_capacity));
+            *guard = Some(recreate(
+                capacity_bucket(aligned_len, SOURCE_BYTE_CAPACITY_GRANULARITY),
+                capacity_bucket(source_file_capacity, SOURCE_FILE_CAPACITY_GRANULARITY),
+            ));
         }
 
         {
@@ -169,12 +206,15 @@ impl GpuLexer {
             let cap_files = bufs.source_file_start.count as u32;
             let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
 
-            let needs_resize = desired_cap != cap_bytes
-                || nb_dfa != cap_nb_dfa
+            let needs_resize = desired_cap > cap_bytes
+                || nb_dfa > cap_nb_dfa
                 || n > cap_n
-                || source_file_capacity != cap_files;
+                || source_file_capacity > cap_files;
             if needs_resize {
-                let mut new_bufs = recreate(desired_cap, source_file_capacity.max(1));
+                let mut new_bufs = recreate(
+                    capacity_bucket(desired_cap, SOURCE_BYTE_CAPACITY_GRANULARITY),
+                    capacity_bucket(source_file_capacity, SOURCE_FILE_CAPACITY_GRANULARITY),
+                );
                 self.write_source_pack_lex_inputs(
                     &mut new_bufs,
                     &input_bytes,
@@ -339,4 +379,28 @@ fn set_runtime_sizes(bufs: &mut buffers::GpuBuffers, n: u32, nb_dfa: u32, nb_sum
     bufs.n = n;
     bufs.nb_dfa = nb_dfa;
     bufs.nb_sum = nb_sum;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        SOURCE_BYTE_CAPACITY_GRANULARITY,
+        SOURCE_FILE_CAPACITY_GRANULARITY,
+        capacity_bucket,
+    };
+
+    #[test]
+    fn source_capacity_buckets_cover_ordinary_edits() {
+        assert_eq!(capacity_bucket(1, SOURCE_BYTE_CAPACITY_GRANULARITY), 4096);
+        assert_eq!(
+            capacity_bucket(4096, SOURCE_BYTE_CAPACITY_GRANULARITY),
+            4096
+        );
+        assert_eq!(
+            capacity_bucket(4097, SOURCE_BYTE_CAPACITY_GRANULARITY),
+            8192
+        );
+        assert_eq!(capacity_bucket(1, SOURCE_FILE_CAPACITY_GRANULARITY), 64);
+        assert_eq!(capacity_bucket(65, SOURCE_FILE_CAPACITY_GRANULARITY), 128);
+    }
 }

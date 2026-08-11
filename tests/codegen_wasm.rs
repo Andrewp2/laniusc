@@ -3,6 +3,28 @@ mod common;
 use std::{fmt::Write as _, path::PathBuf};
 
 #[test]
+fn wasm_executes_local_assigned_after_declaration_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let deferred: i32;
+    deferred = 42;
+    return deferred;
+}
+"#,
+    )
+    .expect("a local declared before its assignment should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM local assigned after declaration",
+        "local_assigned_after_declaration",
+        &wasm,
+    );
+    assert_eq!(status, 42);
+}
+
+#[test]
 fn wasm_executes_scalar_constant_return_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

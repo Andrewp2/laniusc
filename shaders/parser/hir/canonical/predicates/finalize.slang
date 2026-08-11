@@ -11,6 +11,8 @@ StructuredBuffer<uint> hir_to_raw;
 StructuredBuffer<uint> type_root_owner;
 StructuredBuffer<uint> subject_anchor;
 StructuredBuffer<HirCore> hir_core;
+StructuredBuffer<uint> canonical_count;
+StructuredBuffer<uint> canonical_dense_to_raw;
 RWStructuredBuffer<uint> family_flag;
 
 static const uint INVALID = 0xffffffffu;
@@ -56,7 +58,11 @@ bool trait_impl_bound(uint raw)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint raw = tid(dtid);
-    if (raw >= gCanonical.raw_capacity) return;
-    family_flag[raw] = direct_generic_bound(raw) || trait_impl_bound(raw) ? 1u : 0u;
+    uint dense = tid(dtid);
+    if (dense >= gCanonical.canonical_capacity) return;
+    uint raw = dense < min(canonical_count[0u], gCanonical.canonical_capacity)
+        ? canonical_dense_to_raw[dense]
+        : INVALID;
+    family_flag[dense] = valid_raw(raw) &&
+        (direct_generic_bound(raw) || trait_impl_bound(raw)) ? 1u : 0u;
 }

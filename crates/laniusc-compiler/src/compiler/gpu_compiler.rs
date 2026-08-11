@@ -13,6 +13,8 @@ mod x86_codegen;
 
 mod helpers;
 mod host_timer;
+mod stable_unit_plan;
+mod unit_cache;
 use helpers::{
     StageExecutionFailure,
     first_nonempty_source_span,
@@ -59,6 +61,8 @@ pub struct GpuCompiler<'gpu> {
     pub(super) x86_linker: Result<Box<x86::GpuX86Linker>, String>,
     pub(super) wasm_lowering: Result<Box<GpuLoweringWorkspaceCache>, String>,
     pub(super) x86_lowering: Result<Box<GpuLoweringWorkspaceCache>, String>,
+    stable_unit_plan: std::sync::Mutex<Option<stable_unit_plan::StableUnitPlan>>,
+    compiled_unit_cache: std::sync::Mutex<unit_cache::CompiledUnitCache>,
     _codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
 }
 
@@ -365,6 +369,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                 x86_linker,
                 wasm_lowering,
                 x86_lowering,
+                stable_unit_plan: std::sync::Mutex::new(None),
+                compiled_unit_cache: std::sync::Mutex::new(unit_cache::CompiledUnitCache::default()),
                 _codegen_kernels: codegen_kernels,
             })
         })
@@ -431,21 +437,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         if let Ok(cache) = &self.x86_lowering {
             cache.release();
         }
+        if let Ok(linker) = &self.x86_linker {
+            linker.release_job_buffers();
+        }
+        if let Ok(linker) = &self.wasm_linker {
+            linker.release_job_buffers();
+        }
         crate::gpu::passes_core::release_reflected_bind_group_caches();
         let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
         GpuResidentJobBufferTrim
-    }
-
-    /// Releases completed-unit frontend storage after its compact CPU
-    /// interface/object artifacts have been exported. Pipelines and immutable
-    /// tables remain resident, but job-specific lexer, parser, and type-check
-    /// buffers must not overlap the next unit's allocations.
-    pub(in crate::compiler) fn release_completed_unit_frontend_workspace(&self) {
-        self.lexer.release_current_resident_buffers();
-        self.parser.release_current_resident_buffers();
-        self.type_checker.release_current_resident_workspace();
-        crate::gpu::passes_core::release_reflected_bind_group_caches();
-        let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
     }
 }
 

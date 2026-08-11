@@ -29,6 +29,7 @@ use super::support::{
     workgroup_grid_1d,
 };
 use super::{
+    GpuX86LinkObjectMetadata,
     GpuX86Linker,
     GpuX86RelocatableObject,
     GpuX86RelocatableObjectLayout,
@@ -125,20 +126,17 @@ impl GpuX86LinkInput {
         );
         let mut object_count = 0usize;
         for (object_index, (path, layout)) in files.into_iter().enumerate() {
-            let object_bytes = std::fs::read(&path)
-                .map_err(|err| format!("read x86 link object {}: {err}", path.display()))?;
-            let object = GpuX86RelocatableObject::from_bytes(&object_bytes)
+            let metadata = GpuX86LinkObjectMetadata::from_file(&path, layout)
                 .map_err(|reason| format!("parse x86 link object {}: {reason}", path.display()))?;
-            let parsed_layout = GpuX86RelocatableObjectLayout::from_header_bytes(
-                &object_bytes[..super::GPU_X86_OBJECT_HEADER_BYTES],
+            input.append_object_columns(
+                object_index,
+                layout.entry_offset,
+                layout.text_byte_len,
+                layout.rodata_byte_len,
+                &metadata.relocations,
+                &metadata.symbols,
+                &metadata.identity_bytes,
             )?;
-            if parsed_layout != layout {
-                return Err(format!(
-                    "x86 link object {} changed after layout validation",
-                    path.display()
-                ));
-            }
-            input.append_object(object_index, &object)?;
             let (text_range, rodata_range) = layout.payload_byte_ranges()?;
             input.text.push_file_segment(path.clone(), text_range)?;
             input.rodata.push_file_segment(path, rodata_range)?;
@@ -170,12 +168,33 @@ impl GpuX86LinkInput {
         object: &GpuX86RelocatableObject,
     ) -> Result<(), String> {
         object.validate()?;
+        self.append_object_columns(
+            object_index,
+            object.entry_offset,
+            object.text.len() as u32,
+            object.rodata.len() as u32,
+            &object.relocations,
+            &object.symbols,
+            &object.identity_bytes,
+        )
+    }
+
+    fn append_object_columns(
+        &mut self,
+        object_index: usize,
+        entry_offset: Option<u32>,
+        text_len: u32,
+        rodata_len: u32,
+        relocations: &[super::GpuX86RelocationRecord],
+        symbols: &[super::GpuX86ObjectSymbolRecord],
+        identity_bytes: &[u8],
+    ) -> Result<(), String> {
         let object_index = checked_u32_count("object", object_index)?;
         let text_input_start = checked_u32_count("flat text byte", self.text_len())?;
         let rodata_input_start = checked_u32_count("flat rodata byte", self.rodata_len())?;
         let relocation_start = checked_u32_count("flat relocation", self.relocations.len())?;
         let symbol_start = checked_u32_count("flat symbol", self.symbols.len())?;
-        if let Some(entry_offset) = object.entry_offset {
+        if let Some(entry_offset) = entry_offset {
             if self.entry_object_index != u32::MAX {
                 return Err(format!(
                     "x86 link has multiple entry objects: {} and {object_index}",
@@ -183,9 +202,9 @@ impl GpuX86LinkInput {
                 ));
             }
             self.entry_object_index = object_index;
-            debug_assert!(entry_offset < object.text.len() as u32);
+            debug_assert!(entry_offset < text_len);
         }
-        for relocation in &object.relocations {
+        for relocation in relocations {
             let target_index = match relocation.target_kind {
                 GpuX86RelocationTargetKind::SectionOffset => relocation.target_index,
                 GpuX86RelocationTargetKind::Symbol => symbol_start
@@ -205,13 +224,12 @@ impl GpuX86LinkInput {
                 addend_hi: ((relocation.addend as u64) >> 32) as u32,
             });
         }
-        for (symbol_index, symbol) in object.symbols.iter().enumerate() {
+        for (symbol_index, symbol) in symbols.iter().enumerate() {
             let identity_start = symbol.identity_byte_start as usize;
             let identity_end = identity_start
                 .checked_add(symbol.identity_byte_len as usize)
                 .ok_or_else(|| "x86 link symbol identity range overflows".to_string())?;
-            let identity = object
-                .identity_bytes
+            let identity = identity_bytes
                 .get(identity_start..identity_end)
                 .ok_or_else(|| "x86 link symbol identity range is invalid".to_string())?;
             if identity.len() != X86_LINK_SYMBOL_IDENTITY_BYTES {
@@ -237,14 +255,14 @@ impl GpuX86LinkInput {
         checked_u32_count("flat symbol", self.symbols.len())?;
         self.objects.push(GpuX86LinkObjectRecord {
             text_input_start,
-            text_len: object.text.len() as u32,
+            text_len,
             rodata_input_start,
-            rodata_len: object.rodata.len() as u32,
+            rodata_len,
             relocation_start,
-            relocation_count: object.relocations.len() as u32,
+            relocation_count: relocations.len() as u32,
             symbol_start,
-            symbol_count: object.symbols.len() as u32,
-            entry_offset: object.entry_offset.unwrap_or(u32::MAX),
+            symbol_count: symbols.len() as u32,
+            entry_offset: entry_offset.unwrap_or(u32::MAX),
         });
         Ok(())
     }

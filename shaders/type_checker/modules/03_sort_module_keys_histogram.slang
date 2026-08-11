@@ -22,7 +22,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> module_table_count_out;
+StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> module_key_canonical_id;
 StructuredBuffer<uint> radix_order_in;
 
@@ -39,7 +39,7 @@ uint linear_group_id(uint3 gid)
 
 uint active_module_count()
 {
-    return min(module_table_count_out[0], gParams.module_capacity);
+    return min(module_count_out[0], gParams.module_capacity);
 }
 
 uint module_key_radix_key(uint module_i, uint key_step)

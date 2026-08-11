@@ -49,10 +49,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
             (
-                "family_flag".into(),
-                b.hir_method_family_flag.as_entire_binding(),
-            ),
-            (
                 "subject_link_a".into(),
                 b.hir_semantic_parent_link_a.as_entire_binding(),
             ),

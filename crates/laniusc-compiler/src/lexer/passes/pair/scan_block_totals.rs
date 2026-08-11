@@ -124,10 +124,13 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         )?;
 
         if can_batch {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some(Self::NAME),
-                timestamp_writes: None,
-            });
+            let mut pass = crate::gpu::passes_core::begin_counted_compute_pass(
+                encoder,
+                &wgpu::ComputePassDescriptor {
+                    label: Some(Self::NAME),
+                    timestamp_writes: None,
+                },
+            );
             for (r, _) in scan_steps.iter().enumerate() {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, &bg, &[scan_params.dynamic_offset(r)]);
@@ -138,10 +141,13 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 #[cfg(not(feature = "gpu-debug"))]
                 let _ = step;
                 // One workgroup per PAIR block; planner must not divide by tgsx.
-                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some(Self::NAME),
-                    timestamp_writes: None,
-                });
+                let mut pass = crate::gpu::passes_core::begin_counted_compute_pass(
+                    encoder,
+                    &wgpu::ComputePassDescriptor {
+                        label: Some(Self::NAME),
+                        timestamp_writes: None,
+                    },
+                );
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, &bg, &[scan_params.dynamic_offset(r)]);
                 pass.dispatch_workgroups(gx, gy, gz);

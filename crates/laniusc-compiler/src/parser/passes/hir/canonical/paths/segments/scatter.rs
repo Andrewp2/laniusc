@@ -40,6 +40,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPath
                 b.hir_semantic_block_prefix_a.as_entire_binding(),
             ),
             (
+                "candidate_raw_by_anchor".into(),
+                b.hir_canonical_anchor_owner.as_entire_binding(),
+            ),
+            (
                 "path_segment_owner".into(),
                 b.hir_path_segment_owner_a.as_entire_binding(),
             ),

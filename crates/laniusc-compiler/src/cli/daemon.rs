@@ -1,7 +1,8 @@
 #[cfg(unix)]
 use std::os::unix::net::UnixListener;
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
+    ffi::OsString,
     fs,
     io::{self, BufRead, Write},
     path::{Path, PathBuf},
@@ -23,11 +24,13 @@ use super::common::{
     unsupported_cli_option_value_error,
 };
 use crate::{
+    codegen::unit::SourcePackArtifactTarget,
     compiler::{
         ExplicitSourcePack,
         ExplicitSourcePackPathManifest,
         GpuCompiler,
         GpuCompilerBackends,
+        load_entry_path_manifest_with_source_root_and_stdlib,
         load_entry_path_manifest_with_stdlib,
         load_explicit_source_pack_from_path_manifest,
     },
@@ -39,7 +42,10 @@ use crate::{
             bind_group_creation_counts_by_label,
             bind_group_timing_counters,
             bind_group_timing_enabled,
+            compute_pass_breakdown_enabled,
             pipeline_creation_count,
+            recorded_compute_pass_count,
+            recorded_compute_pass_counts_by_label,
         },
     },
 };
@@ -109,6 +115,8 @@ struct DaemonRequest {
     output: Option<PathBuf>,
     #[serde(default)]
     stdlib_root: Option<PathBuf>,
+    #[serde(default)]
+    source_root: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -121,8 +129,16 @@ struct SourceFileStamp {
 struct CachedSourcePack {
     input: PathBuf,
     stdlib_root: PathBuf,
+    source_root: Option<PathBuf>,
     source_pack: CachedCompileInput,
     file_stamps: Vec<SourceFileStamp>,
+    directory_snapshots: Vec<SourceDirectorySnapshot>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SourceDirectorySnapshot {
+    path: PathBuf,
+    source_entries: Vec<(OsString, bool)>,
 }
 
 enum CachedCompileInput {
@@ -138,6 +154,14 @@ impl CachedCompileInput {
             Self::Bounded(_) => None,
         }
     }
+
+    #[cfg(test)]
+    fn bounded(&self) -> Option<&ExplicitSourcePackPathManifest> {
+        match self {
+            Self::Bounded(source_pack) => Some(source_pack),
+            Self::Resident(_) => None,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -151,33 +175,45 @@ impl SourcePackCache {
         &'a mut self,
         input: &Path,
         stdlib_root: &Path,
+        source_root: Option<&Path>,
         resident_limits: crate::codegen::unit::CompilationUnitLimits,
     ) -> Result<&'a CachedCompileInput, crate::compiler::CompileError> {
-        let cache_hit = self.entry.as_ref().is_some_and(|entry| {
+        let same_project = self.entry.as_ref().is_some_and(|entry| {
             entry.input == input
                 && entry.stdlib_root == stdlib_root
-                && file_stamps_match(&entry.file_stamps)
+                && entry.source_root.as_deref() == source_root
         });
-        if cache_hit {
+        if same_project && self.reuse_or_refresh_bounded_file_metadata() {
             return Ok(&self
                 .entry
                 .as_ref()
-                .expect("source-pack cache hit lost its entry")
+                .expect("reused source-pack cache entry disappeared")
                 .source_pack);
         }
 
         self.entry = None;
         self.transient = None;
 
-        let path_manifest = load_entry_path_manifest_with_stdlib(input, stdlib_root)?;
+        let path_manifest = match source_root {
+            Some(source_root) => load_entry_path_manifest_with_source_root_and_stdlib(
+                input,
+                source_root,
+                stdlib_root,
+            )?,
+            None => load_entry_path_manifest_with_stdlib(input, stdlib_root)?,
+        };
         let file_stamps = source_file_stamps(&path_manifest);
+        let directory_snapshots =
+            source_directory_snapshots(&path_manifest, input, stdlib_root, source_root);
         let source_pack = cached_compile_input(path_manifest, resident_limits)?;
-        if let Some(file_stamps) = file_stamps {
+        if let (Some(file_stamps), Some(directory_snapshots)) = (file_stamps, directory_snapshots) {
             self.entry = Some(CachedSourcePack {
                 input: input.to_path_buf(),
                 stdlib_root: stdlib_root.to_path_buf(),
+                source_root: source_root.map(Path::to_path_buf),
                 source_pack,
                 file_stamps,
+                directory_snapshots,
             });
             Ok(&self
                 .entry
@@ -192,13 +228,55 @@ impl SourcePackCache {
                 .expect("stored transient source pack disappeared"))
         }
     }
+
+    fn reuse_or_refresh_bounded_file_metadata(&mut self) -> bool {
+        let Some(entry) = self.entry.as_mut() else {
+            return false;
+        };
+        if !directory_snapshots_match(&entry.directory_snapshots) {
+            return false;
+        }
+        let Some(changes) = file_stamp_changes(&entry.file_stamps) else {
+            return false;
+        };
+        if changes.is_empty() {
+            return true;
+        }
+        let CachedCompileInput::Bounded(source_pack) = &mut entry.source_pack else {
+            return false;
+        };
+        for (index, stamp) in changes {
+            let Some(file) = source_pack.files.get_mut(index) else {
+                return false;
+            };
+            let Ok(byte_len) = usize::try_from(stamp.len) else {
+                return false;
+            };
+            file.byte_len = byte_len;
+            file.modified_unix_nanos = stamp
+                .modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|duration| duration.as_nanos());
+            file.line_count = None;
+            entry.file_stamps[index] = stamp;
+        }
+        true
+    }
 }
 
 fn cached_compile_input(
     path_manifest: ExplicitSourcePackPathManifest,
     resident_limits: crate::codegen::unit::CompilationUnitLimits,
 ) -> Result<CachedCompileInput, crate::compiler::CompileError> {
-    if path_manifest.requires_bounded_compilation_with_limits(resident_limits) {
+    let library_count = path_manifest
+        .files
+        .iter()
+        .map(|file| file.library_id)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    if library_count > 1 || path_manifest.requires_bounded_compilation_with_limits(resident_limits)
+    {
         Ok(CachedCompileInput::Bounded(path_manifest))
     } else {
         Ok(CachedCompileInput::Resident(
@@ -218,18 +296,107 @@ fn source_file_stamps(
 }
 
 fn source_file_stamp(path: &Path) -> Option<SourceFileStamp> {
-    let metadata = fs::metadata(path).ok()?;
+    let (len, modified) = source_file_stamp_values(path)?;
     Some(SourceFileStamp {
         path: path.to_path_buf(),
-        len: metadata.len(),
-        modified: metadata.modified().ok()?,
+        len,
+        modified,
     })
 }
 
+fn source_file_stamp_values(path: &Path) -> Option<(u64, SystemTime)> {
+    let metadata = fs::metadata(path).ok()?;
+    Some((metadata.len(), metadata.modified().ok()?))
+}
+
+#[cfg(test)]
 fn file_stamps_match(stamps: &[SourceFileStamp]) -> bool {
-    stamps
+    file_stamp_changes(stamps).is_some_and(|changes| changes.is_empty())
+}
+
+fn file_stamp_changes(stamps: &[SourceFileStamp]) -> Option<Vec<(usize, SourceFileStamp)>> {
+    let mut changes = Vec::new();
+    for (index, expected) in stamps.iter().enumerate() {
+        let (len, modified) = source_file_stamp_values(&expected.path)?;
+        if len != expected.len || modified != expected.modified {
+            changes.push((
+                index,
+                SourceFileStamp {
+                    path: expected.path.clone(),
+                    len,
+                    modified,
+                },
+            ));
+        }
+    }
+    Some(changes)
+}
+
+fn source_directory_snapshots(
+    source_pack: &ExplicitSourcePackPathManifest,
+    input: &Path,
+    stdlib_root: &Path,
+    source_root: Option<&Path>,
+) -> Option<Vec<SourceDirectorySnapshot>> {
+    let roots = [input.parent(), Some(stdlib_root), source_root]
+        .into_iter()
+        .flatten()
+        .flat_map(|root| {
+            let canonical = fs::canonicalize(root).ok();
+            std::iter::once(root.to_path_buf()).chain(canonical)
+        })
+        .collect::<Vec<_>>();
+    let mut directories = BTreeSet::new();
+    for file in &source_pack.files {
+        let Some(parent) = file.path.parent() else {
+            continue;
+        };
+        directories.insert(parent.to_path_buf());
+        for root in &roots {
+            if !parent.starts_with(root) {
+                continue;
+            }
+            let mut ancestor = parent;
+            while ancestor != root {
+                let Some(next) = ancestor.parent() else {
+                    break;
+                };
+                ancestor = next;
+                directories.insert(ancestor.to_path_buf());
+            }
+        }
+    }
+    directories
+        .into_iter()
+        .map(|path| source_directory_snapshot(&path))
+        .collect()
+}
+
+fn source_directory_snapshot(path: &Path) -> Option<SourceDirectorySnapshot> {
+    let mut source_entries = fs::read_dir(path)
+        .ok()?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let file_type = entry.file_type().ok()?;
+            let is_directory = file_type.is_dir();
+            let is_lanius_source = entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "lani");
+            (is_directory || is_lanius_source).then(|| (entry.file_name(), is_directory))
+        })
+        .collect::<Vec<_>>();
+    source_entries.sort_unstable();
+    Some(SourceDirectorySnapshot {
+        path: path.to_path_buf(),
+        source_entries,
+    })
+}
+
+fn directory_snapshots_match(snapshots: &[SourceDirectorySnapshot]) -> bool {
+    snapshots
         .iter()
-        .all(|expected| source_file_stamp(&expected.path).as_ref() == Some(expected))
+        .all(|expected| source_directory_snapshot(&expected.path).as_ref() == Some(expected))
 }
 
 pub(super) fn run(args: Vec<String>) -> Result<(), CliError> {
@@ -428,6 +595,7 @@ async fn run_session(
             "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
             "wgpu_resources": wgpu_resource_metrics(),
             "compute_pipelines_created": pipeline_creation_count(),
+            "recorded_compute_passes": recorded_compute_pass_count(),
             "idle_buffer_timeout_ms": options
                 .idle_buffer_timeout
                 .map(|timeout| timeout.as_millis() as u64),
@@ -489,6 +657,7 @@ async fn run_session(
                     "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
                     "resident_set_bytes": resident_set_bytes(),
                     "wgpu_resources": wgpu_resource_metrics(),
+                    "recorded_compute_passes": recorded_compute_pass_count(),
                 }),
             )?;
             continue;
@@ -504,6 +673,7 @@ async fn run_session(
                     "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
                     "resident_set_bytes": resident_set_bytes(),
                     "wgpu_resources": wgpu_resource_metrics(),
+                    "recorded_compute_passes": recorded_compute_pass_count(),
                 }),
             )?;
             continue;
@@ -521,6 +691,9 @@ async fn run_session(
         // A compilation is active rather than idle. Cancel the previous idle
         // deadline before it can contend for the resident pipeline lock.
         reaper.disarm();
+        let compute_passes_before = recorded_compute_pass_count();
+        let compute_pass_breakdown_before =
+            compute_pass_breakdown_enabled().then(recorded_compute_pass_counts_by_label);
         let resources_before = job_resource_creation_counts();
         let bind_group_timing_before = bind_group_timing_counters();
         let bind_group_job = crate::gpu::passes_core::begin_reflected_bind_group_job();
@@ -530,6 +703,11 @@ async fn run_session(
         let mut response =
             compile_request(&compiler, options, &mut source_pack_cache, request).await;
         let resources_after = job_resource_creation_counts();
+        let recorded_compute_passes_during_job =
+            recorded_compute_pass_count().saturating_sub(compute_passes_before);
+        let compute_pass_breakdown_after = compute_pass_breakdown_before
+            .as_ref()
+            .map(|_| recorded_compute_pass_counts_by_label());
         let bind_group_timing =
             bind_group_timing_counters().saturating_sub(bind_group_timing_before);
         let created = resources_after.saturating_sub(resources_before);
@@ -551,6 +729,19 @@ async fn run_session(
                 resources_after.to_json(),
             );
             response.insert("resources_created_during_job".into(), created.to_json());
+            response.insert(
+                "recorded_compute_passes_during_job".into(),
+                json!(recorded_compute_passes_during_job),
+            );
+            if let (Some(before), Some(after)) = (
+                &compute_pass_breakdown_before,
+                &compute_pass_breakdown_after,
+            ) {
+                response.insert(
+                    "recorded_compute_pass_breakdown".into(),
+                    compute_pass_delta_rows(after, before),
+                );
+            }
             if bind_group_timing_enabled() {
                 response.insert(
                     "bind_group_timing_ms".into(),
@@ -618,6 +809,22 @@ fn job_resource_creation_counts() -> JobResourceCreationCounts {
         bind_groups: bind_group_creation_count(),
         compute_pipelines: pipeline_creation_count(),
     }
+}
+
+fn compute_pass_delta_rows(after: &HashMap<String, u64>, before: &HashMap<String, u64>) -> Value {
+    let mut rows = after
+        .iter()
+        .filter_map(|(label, &count)| {
+            let delta = count.saturating_sub(before.get(label).copied().unwrap_or(0));
+            (delta > 0).then(|| (label, delta))
+        })
+        .collect::<Vec<_>>();
+    rows.sort_unstable_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0)));
+    Value::Array(
+        rows.into_iter()
+            .map(|(label, count)| json!({"label": label, "passes": count}))
+            .collect(),
+    )
 }
 
 struct JobResourceCreationBreakdown {
@@ -769,11 +976,13 @@ async fn compile_request(
             "compile request needs stdlib_root or daemon --stdlib-root".into(),
         );
     };
+    let source_root = request.source_root;
 
     let load_started = Instant::now();
     let source_pack = match source_pack_cache.load(
         &input,
         &stdlib_root,
+        source_root.as_deref(),
         compiler.resident_source_unit_limits(),
     ) {
         Ok(source_pack) => source_pack,
@@ -781,35 +990,48 @@ async fn compile_request(
     };
     let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;
     crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
+    let unit_cache_before = compiler.compiled_unit_cache_stats();
     let compile_started = Instant::now();
+    enum EmittedArtifact {
+        Bytes(Vec<u8>),
+        File(u64),
+    }
+
     let emitted = match (emit.as_str(), source_pack) {
-        ("wasm", CachedCompileInput::Resident(source_pack)) => {
-            compiler
-                .compile_source_pack_manifest_to_wasm(source_pack)
-                .await
-        }
-        ("wasm", CachedCompileInput::Bounded(source_pack)) => {
-            compiler.compile_path_manifest_to_wasm(source_pack).await
-        }
-        ("x86_64", CachedCompileInput::Resident(source_pack)) => {
-            compiler
-                .compile_source_pack_manifest_to_x86_64(source_pack)
-                .await
-        }
-        ("x86_64", CachedCompileInput::Bounded(source_pack)) => {
-            compiler.compile_path_manifest_to_x86_64(source_pack).await
-        }
+        ("wasm", CachedCompileInput::Resident(source_pack)) => compiler
+            .compile_source_pack_manifest_to_wasm(source_pack)
+            .await
+            .map(EmittedArtifact::Bytes),
+        ("wasm", CachedCompileInput::Bounded(source_pack)) => compiler
+            .compile_path_manifest_to_file(source_pack, SourcePackArtifactTarget::Wasm, &output)
+            .await
+            .map(EmittedArtifact::File),
+        ("x86_64", CachedCompileInput::Resident(source_pack)) => compiler
+            .compile_source_pack_manifest_to_x86_64(source_pack)
+            .await
+            .map(EmittedArtifact::Bytes),
+        ("x86_64", CachedCompileInput::Bounded(source_pack)) => compiler
+            .compile_path_manifest_to_file(source_pack, SourcePackArtifactTarget::X86_64, &output)
+            .await
+            .map(EmittedArtifact::File),
         _ => unreachable!("backend support check accepted an unknown target"),
     };
     let compile_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
-    let bytes = match emitted {
-        Ok(bytes) => bytes,
+    let unit_cache_after = compiler.compiled_unit_cache_stats();
+    let emitted = match emitted {
+        Ok(emitted) => emitted,
         Err(err) => return compile_error_response(id, started, err),
     };
     let write_started = Instant::now();
-    if let Err(err) = write_artifact(&output, &bytes, &emit) {
-        return job_error(id, started, err);
-    }
+    let output_bytes = match emitted {
+        EmittedArtifact::Bytes(bytes) => {
+            if let Err(err) = write_artifact(&output, &bytes, &emit) {
+                return job_error(id, started, err);
+            }
+            bytes.len() as u64
+        }
+        EmittedArtifact::File(byte_len) => byte_len,
+    };
     let write_ms = write_started.elapsed().as_secs_f64() * 1000.0;
     json!({
         "schema": DAEMON_SCHEMA,
@@ -817,10 +1039,18 @@ async fn compile_request(
         "ok": true,
         "emit": emit,
         "input": input,
+        "source_root": source_root,
         "output": output,
-        "output_bytes": bytes.len(),
+        "output_bytes": output_bytes,
         "load_ms": load_ms,
         "compile_ms": compile_ms,
+        "compiled_unit_cache": {
+            "hits_during_job": unit_cache_after.hits.saturating_sub(unit_cache_before.hits),
+            "misses_during_job": unit_cache_after.misses.saturating_sub(unit_cache_before.misses),
+            "evictions_during_job": unit_cache_after.evictions.saturating_sub(unit_cache_before.evictions),
+            "entries_after_job": unit_cache_after.entries,
+            "resident_bytes_after_job": unit_cache_after.resident_bytes,
+        },
         "write_ms": write_ms,
         "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
         "resident_set_bytes": resident_set_bytes(),
@@ -977,6 +1207,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn compute_pass_breakdown_reports_sorted_per_job_deltas() {
+        let before = HashMap::from([("parser".to_owned(), 20), ("typecheck".to_owned(), 100)]);
+        let after = HashMap::from([
+            ("parser".to_owned(), 23),
+            ("typecheck".to_owned(), 107),
+            ("lowering".to_owned(), 5),
+        ]);
+
+        assert_eq!(
+            compute_pass_delta_rows(&after, &before),
+            json!([
+                {"label": "typecheck", "passes": 7},
+                {"label": "lowering", "passes": 5},
+                {"label": "parser", "passes": 3},
+            ])
+        );
+    }
+
+    #[test]
     fn daemon_options_select_one_backend_and_default_stdlib() {
         let options = parse_options(vec![
             "--stdio".into(),
@@ -991,6 +1240,15 @@ mod tests {
             options.idle_buffer_timeout,
             Some(Duration::from_millis(DEFAULT_IDLE_BUFFER_TIMEOUT_MS))
         );
+    }
+
+    #[test]
+    fn daemon_compile_request_accepts_a_project_source_root() {
+        let request: DaemonRequest = serde_json::from_str(
+            r#"{"id":"project","command":"compile","input":"main.lani","output":"app","source_root":"src"}"#,
+        )
+        .expect("daemon compile request with source root should deserialize");
+        assert_eq!(request.source_root, Some(PathBuf::from("src")));
     }
 
     #[test]
@@ -1089,7 +1347,7 @@ mod tests {
         let mut cache = SourcePackCache::default();
         let resident_limits = crate::codegen::unit::CompilationUnitLimits::default();
         let first = cache
-            .load(&entry, &stdlib_root, resident_limits)
+            .load(&entry, &stdlib_root, None, resident_limits)
             .expect("load initial cached source pack");
         assert!(first.resident().is_some_and(|source_pack| {
             source_pack
@@ -1101,7 +1359,7 @@ mod tests {
         fs::write(&entry, "fn main() { print(17); return; }\n")
             .expect("change cached entry fixture");
         let second = cache
-            .load(&entry, &stdlib_root, resident_limits)
+            .load(&entry, &stdlib_root, None, resident_limits)
             .expect("reload changed source pack");
         assert!(second.resident().is_some_and(|source_pack| {
             source_pack
@@ -1111,6 +1369,83 @@ mod tests {
         }));
 
         fs::remove_dir_all(root).expect("remove source cache fixture tree");
+    }
+
+    #[test]
+    fn bounded_source_pack_cache_refreshes_edits_and_rediscovers_new_files() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should follow the Unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-daemon-bounded-cache-{}-{unique}",
+            std::process::id()
+        ));
+        let stdlib_root = root.join("stdlib");
+        let source_root = root.join("src");
+        let entry = root.join("main.lani");
+        let unit = source_root.join("unit.lani");
+        fs::create_dir_all(&stdlib_root).expect("create bounded cache stdlib fixture");
+        fs::create_dir_all(&source_root).expect("create bounded cache source fixture");
+        fs::write(&entry, "import unit;\nfn main() { return; }\n")
+            .expect("write bounded cache entry");
+        fs::write(&unit, "module unit;\nfn unit() { return; }\n")
+            .expect("write bounded cache unit");
+
+        let mut cache = SourcePackCache::default();
+        let limits = crate::codegen::unit::CompilationUnitLimits {
+            max_source_bytes: 1,
+            max_source_files: 1,
+        };
+        let initial_count = cache
+            .load(&entry, &stdlib_root, Some(&source_root), limits)
+            .expect("load initial bounded source pack")
+            .bounded()
+            .expect("tiny limits should select bounded input")
+            .files
+            .len();
+
+        let changed_source = "module unit;\nfn unit() { print(123456); return; }\n";
+        fs::write(&unit, changed_source).expect("change bounded cache unit");
+        let refreshed = cache
+            .load(&entry, &stdlib_root, Some(&source_root), limits)
+            .expect("incrementally refresh bounded source pack")
+            .bounded()
+            .expect("refreshed input should remain bounded");
+        assert_eq!(refreshed.files.len(), initial_count);
+        assert_eq!(
+            refreshed
+                .files
+                .iter()
+                .find(|file| file
+                    .path
+                    .file_name()
+                    .is_some_and(|name| name == "unit.lani"))
+                .expect("refreshed unit remains in manifest")
+                .byte_len,
+            changed_source.len()
+        );
+
+        fs::write(
+            source_root.join("added.lani"),
+            "module added;\nfn added() { return; }\n",
+        )
+        .expect("add bounded cache source");
+        fs::write(
+            &entry,
+            "import unit;\nimport added;\nfn main() { return; }\n",
+        )
+        .expect("import added bounded cache source");
+        let rediscovered_count = cache
+            .load(&entry, &stdlib_root, Some(&source_root), limits)
+            .expect("rediscover bounded source pack after source addition")
+            .bounded()
+            .expect("rediscovered input should remain bounded")
+            .files
+            .len();
+        assert_eq!(rediscovered_count, initial_count + 1);
+
+        fs::remove_dir_all(root).expect("remove bounded source cache fixture tree");
     }
 
     #[test]
@@ -1129,6 +1464,38 @@ mod tests {
                     line_count: None,
                 })
                 .collect(),
+            library_dependencies: Vec::new(),
+        };
+
+        assert!(matches!(
+            cached_compile_input(path_manifest, limits),
+            Ok(CachedCompileInput::Bounded(_))
+        ));
+    }
+
+    #[test]
+    fn daemon_keeps_multiple_library_identities_path_backed() {
+        let limits = crate::codegen::unit::CompilationUnitLimits {
+            max_source_bytes: 1024,
+            max_source_files: 100,
+        };
+        let path_manifest = ExplicitSourcePackPathManifest {
+            files: vec![
+                crate::compiler::ExplicitSourcePathFile {
+                    library_id: 0,
+                    path: PathBuf::from("stdlib.lani"),
+                    byte_len: 1,
+                    modified_unix_nanos: None,
+                    line_count: None,
+                },
+                crate::compiler::ExplicitSourcePathFile {
+                    library_id: 1,
+                    path: PathBuf::from("main.lani"),
+                    byte_len: 1,
+                    modified_unix_nanos: None,
+                    line_count: None,
+                },
+            ],
             library_dependencies: Vec::new(),
         };
 

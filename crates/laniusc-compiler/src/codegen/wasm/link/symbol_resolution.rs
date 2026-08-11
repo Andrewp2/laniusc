@@ -99,30 +99,37 @@ fn resolve_partition(
         0,
     )?;
     let params = input_u32(
+        generator,
         device,
+        queue,
         "codegen.wasm.link.resolve.params",
         &params_words,
         wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     );
     let symbols = input_u32(
+        generator,
         device,
+        queue,
         "codegen.wasm.link.resolve.symbols",
         &symbol_words,
         wgpu::BufferUsages::STORAGE,
     );
     let hash_table = rw_u32(
+        generator,
         device,
         "codegen.wasm.link.resolve.hash_table",
         hash_capacity,
         wgpu::BufferUsages::empty(),
     );
     let definitions = rw_u32(
+        generator,
         device,
         "codegen.wasm.link.resolve.definitions",
         definition_count,
         wgpu::BufferUsages::empty(),
     );
     let status = rw_u32(
+        generator,
         device,
         "codegen.wasm.link.resolve.status",
         4,
@@ -130,29 +137,31 @@ fn resolve_partition(
     );
     let relocation_capacity = first_batch_len.max(1);
     let relocations = rw_u32(
+        generator,
         device,
         "codegen.wasm.link.resolve.relocations",
         relocation_capacity * 8,
         wgpu::BufferUsages::empty(),
     );
     let resolved_targets = rw_u32(
+        generator,
         device,
         "codegen.wasm.link.resolve.targets",
         relocation_capacity,
         wgpu::BufferUsages::COPY_SRC,
     );
-    let status_readback = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("rb.codegen.wasm.link.resolve.status"),
-        size: 16,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let targets_readback = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("rb.codegen.wasm.link.resolve.targets"),
-        size: (relocation_capacity * 4) as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
+    let status_readback = generator.job_buffers.binding_capacity::<u8>(
+        device,
+        "rb.codegen.wasm.link.resolve.status",
+        16,
+        wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+    );
+    let targets_readback = generator.job_buffers.binding_capacity::<u8>(
+        device,
+        "rb.codegen.wasm.link.resolve.targets",
+        relocation_capacity * 4,
+        wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+    );
     let common = |pass: &crate::codegen::wasm::LazyWasmPass, label| {
         create_wasm_bind_group(
             device,

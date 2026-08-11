@@ -48,19 +48,35 @@ impl MethodKeyPipeline {
             typed_buffer_from_resources(resources, "method_token_dispatch_args")?;
         let radix_prefix_dispatch_args =
             typed_buffer_from_resources(resources, "method_radix_prefix_dispatch_args")?;
-        let sort = compiler_graph::METHOD_KEY_RADIX_SORT.operation(
+        let row_dispatch = RadixSortDispatch {
+            small: RadixDispatchDomain::Indirect(&radix_bases_dispatch_args),
+            rows: RadixDispatchDomain::Indirect(&token_dispatch_args),
+            bucket_prefix: RadixDispatchDomain::Indirect(&radix_prefix_dispatch_args),
+            bucket_bases: RadixDispatchDomain::Indirect(&radix_bases_dispatch_args),
+        };
+        let sort = RadixSortOperation::new_adaptive(
             device,
             passes,
             resources,
-            capacity,
-            METHOD_KEY_SMALL_SORT_CAPACITY,
-            METHOD_KEY_RADIX_STEPS,
-            RadixSortDispatch {
-                small: RadixDispatchDomain::Indirect(&radix_bases_dispatch_args),
-                rows: RadixDispatchDomain::Indirect(&token_dispatch_args),
-                bucket_prefix: RadixDispatchDomain::Indirect(&radix_prefix_dispatch_args),
-                bucket_bases: RadixDispatchDomain::Indirect(&radix_bases_dispatch_args),
-            },
+            n_blocks,
+            compiler_graph::METHOD_KEY_RADIX_SORT.plan(
+                capacity,
+                METHOD_KEY_SMALL_SORT_CAPACITY,
+                METHOD_KEY_RADIX_STEPS,
+                row_dispatch,
+            ),
+            compiler_graph::METHOD_KEY_HIERARCHICAL_RADIX_SORT.plan(
+                METHOD_KEY_RADIX_STEPS,
+                HierarchicalRadixSortDispatch {
+                    rows: &token_dispatch_args,
+                    bucket_work_items: n_blocks
+                        .div_ceil(256)
+                        .saturating_mul(NAME_RADIX_BUCKETS)
+                        .saturating_mul(256),
+                    bucket_chunk_work_items: NAME_RADIX_BUCKETS.saturating_mul(256),
+                    bucket_count: 256,
+                },
+            ),
             params,
         )?;
 

@@ -38,11 +38,32 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
-            buffers,
             &buffers.hir_semantic_block_count,
             &buffers.hir_semantic_block_prefix_a,
             &buffers.hir_semantic_block_prefix_b,
+            &buffers.hir_semantic_prefix_scan_steps,
+            buffers.tree_n_node_blocks,
             "hir_semantic_prefix_01_blocks",
+        )
+    }
+
+    /// Records a prefix scan over token-bounded canonical HIR rows.
+    pub fn record_compact_scan(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+    ) -> Result<()> {
+        let n_blocks = buffers.hir_canonical_capacity.div_ceil(256).max(1);
+        self.record_scan_inner(
+            device,
+            encoder,
+            &buffers.hir_semantic_block_count,
+            &buffers.hir_semantic_block_prefix_a,
+            &buffers.hir_semantic_block_prefix_b,
+            &buffers.hir_canonical_prefix_scan_steps,
+            n_blocks,
+            "hir_canonical_prefix_01_blocks",
         )
     }
 
@@ -56,10 +77,11 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
-            buffers,
             &buffers.hir_struct_rank_block_sum,
             &buffers.hir_struct_rank_block_prefix_a,
             &buffers.hir_struct_rank_block_prefix_b,
+            &buffers.hir_semantic_prefix_scan_steps,
+            buffers.tree_n_node_blocks,
             "hir_struct_rank_prefix_01_blocks",
         )
     }
@@ -74,10 +96,11 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
-            buffers,
             &buffers.hir_list_rank_block_sum,
             &buffers.hir_list_rank_block_prefix_a,
             &buffers.hir_list_rank_block_prefix_b,
+            &buffers.hir_semantic_prefix_scan_steps,
+            buffers.tree_n_node_blocks,
             "hir_list_rank_prefix_01_blocks",
         )
     }
@@ -92,10 +115,11 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
-            buffers,
             &buffers.hir_enum_rank_block_sum,
             &buffers.hir_enum_rank_block_prefix_a,
             &buffers.hir_enum_rank_block_prefix_b,
+            &buffers.hir_semantic_prefix_scan_steps,
+            buffers.tree_n_node_blocks,
             "hir_enum_rank_prefix_01_blocks",
         )
     }
@@ -110,10 +134,11 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
-            buffers,
             &buffers.hir_match_rank_block_sum,
             &buffers.hir_match_rank_block_prefix_a,
             &buffers.hir_match_rank_block_prefix_b,
+            &buffers.hir_semantic_prefix_scan_steps,
+            buffers.tree_n_node_blocks,
             "hir_match_rank_prefix_01_blocks",
         )
     }
@@ -122,13 +147,14 @@ impl HirSemanticPrefixBlocksPass {
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
         block_sum: &crate::gpu::buffers::LaniusBuffer<u32>,
         block_prefix_a: &crate::gpu::buffers::LaniusBuffer<u32>,
         block_prefix_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        steps: &[crate::parser::buffers::HirSemanticPrefixScanStep],
+        n_blocks: u32,
         label: &'static str,
     ) -> Result<()> {
-        for step in &buffers.hir_semantic_prefix_scan_steps {
+        for step in steps {
             let prefix_in = if step.read_from_a {
                 block_prefix_a
             } else {
@@ -166,7 +192,7 @@ impl HirSemanticPrefixBlocksPass {
             let [tgsx, tgsy, _] = self.data.thread_group_size;
             let (gx, gy, gz) = plan_workgroups(
                 DispatchDim::D1,
-                InputElements::Elements1D(buffers.tree_n_node_blocks),
+                InputElements::Elements1D(n_blocks),
                 [tgsx, tgsy, 1],
             )?;
             crate::gpu::passes_core::record_or_defer_compute_direct(

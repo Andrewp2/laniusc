@@ -224,7 +224,9 @@ uint semantic_lir_op(HirCore core, HirPayload payload)
     if (core.kind == HIR_LET_STMT ||
         (core.kind == HIR_STMT &&
          (payload.a == HIR_STMT_LET || payload.a == HIR_STMT_CONST)))
-        return SEMANTIC_LIR_OP_VALUE_SET;
+        return payload.c == LIR_INVALID
+            ? SEMANTIC_LIR_OP_INVALID
+            : SEMANTIC_LIR_OP_VALUE_SET;
     if (core.kind == HIR_RETURN_STMT ||
         (core.kind == HIR_STMT && payload.a == HIR_STMT_RETURN))
         return SEMANTIC_LIR_OP_RETURN;

@@ -69,7 +69,6 @@ module_path_buffers! {
     pub(super) record_scan_prefix_a: LaniusBuffer<u32>,
     pub(super) record_scan_prefix_b: LaniusBuffer<u32>,
     pub(super) module_count_out: LaniusBuffer<u32>,
-    pub(super) module_table_count_out: LaniusBuffer<u32>,
     pub(super) import_count_out: LaniusBuffer<u32>,
     pub(super) decl_count_out: LaniusBuffer<u32>,
     pub(super) module_file_id: LaniusBuffer<u32>,
@@ -203,7 +202,6 @@ module_path_buffers! {
 impl Buffers {
     /// Allocates module/path storage and aliases dead scratch buffers where safe.
     pub(super) fn new(
-        device: &wgpu::Device,
         graph: &compiler_graph::TypeCheckCompilerGraph,
         layout: Layout,
         inputs: &CreateInputs<'_>,
@@ -272,13 +270,6 @@ impl Buffers {
             .alias(NAME_RADIX_BUCKETS as usize);
         module_storage_buffers!(graph;
             module_count_out: 1;
-        );
-        let module_table_count_out = typed_storage_u32_fill_rw(
-            device,
-            "type_check.modules.module_table_capacity",
-            1,
-            layout.module_capacity_u32,
-            wgpu::BufferUsages::empty(),
         );
         module_storage_buffers!(graph;
             import_count_out: 1;
@@ -492,7 +483,6 @@ impl Buffers {
             record_scan_prefix_a,
             record_scan_prefix_b,
             module_count_out,
-            module_table_count_out,
             import_count_out,
             decl_count_out,
             module_file_id,

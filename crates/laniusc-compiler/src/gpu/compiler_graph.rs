@@ -1639,6 +1639,27 @@ pub struct HierarchicalRadixSortGraphPasses {
     pub temporary_to_order: HierarchicalRadixSortGraphStepPasses,
 }
 
+impl HierarchicalRadixSortGraphPasses {
+    pub fn names(self) -> [&'static str; 12] {
+        let a = self.order_to_temporary;
+        let b = self.temporary_to_order;
+        [
+            a.histogram,
+            a.bucket_local,
+            a.bucket_chunks,
+            a.bucket_apply,
+            a.bucket_bases,
+            a.scatter,
+            b.histogram,
+            b.bucket_local,
+            b.bucket_chunks,
+            b.bucket_apply,
+            b.bucket_bases,
+            b.scatter,
+        ]
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RadixSortGraphSchedule {
     Standard(RadixSortGraphPasses),
@@ -1749,7 +1770,7 @@ fn hierarchical_radix_sort_step_passes(
             phase,
             dispatch_domain,
             accesses: vec![
-                PassAccess::read(name(r.count), r.count),
+                PassAccess::read("radix_count", r.count),
                 PassAccess::read_write("radix_block_histogram", r.histogram),
                 PassAccess::write("radix_block_bucket_prefix", r.bucket_prefix),
                 PassAccess::write("radix_bucket_total", r.bucket_total),
@@ -1760,7 +1781,7 @@ fn hierarchical_radix_sort_step_passes(
             phase,
             dispatch_domain,
             accesses: vec![
-                PassAccess::read(name(r.count), r.count),
+                PassAccess::read("radix_count", r.count),
                 PassAccess::read_write("radix_block_histogram", r.histogram),
                 PassAccess::read_write("radix_bucket_total", r.bucket_total),
             ],
@@ -1770,7 +1791,7 @@ fn hierarchical_radix_sort_step_passes(
             phase,
             dispatch_domain,
             accesses: vec![
-                PassAccess::read(name(r.count), r.count),
+                PassAccess::read("radix_count", r.count),
                 PassAccess::read("radix_block_histogram", r.histogram),
                 PassAccess::read_write("radix_block_bucket_prefix", r.bucket_prefix),
             ],

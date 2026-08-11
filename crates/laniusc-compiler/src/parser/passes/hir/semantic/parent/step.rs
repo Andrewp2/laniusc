@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::{
-    gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
+    gpu::passes_core::{PassData, bind_group},
     parser::{buffers::ParserBuffers, passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN},
 };
 
@@ -19,7 +19,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirSemanticParentStepPass {
-    /// Records all semantic parent propagation steps with direct dispatch sizing.
+    /// Records all semantic parent propagation steps using the raw-depth schedule.
     pub fn record_steps(
         &self,
         device: &wgpu::Device,
@@ -59,7 +59,7 @@ impl HirSemanticParentStepPass {
                 (link_b, value_b, link_a, value_a)
             };
             self.record_step(
-                device, encoder, buffers, link_in, value_in, link_out, value_out, label,
+                device, encoder, buffers, link_in, value_in, link_out, value_out, step, label,
             )?;
         }
 
@@ -83,6 +83,7 @@ impl HirSemanticParentStepPass {
         value_in: &crate::gpu::buffers::LaniusBuffer<u32>,
         link_out: &crate::gpu::buffers::LaniusBuffer<u32>,
         value_out: &crate::gpu::buffers::LaniusBuffer<u32>,
+        step: u32,
         label: &'static str,
     ) -> Result<()> {
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
@@ -125,37 +126,38 @@ impl HirSemanticParentStepPass {
             &resources,
         )?;
 
-        let [tgsx, tgsy, _] = self.data.thread_group_size;
-        let groups = plan_workgroups(
-            DispatchDim::D1,
-            InputElements::Elements1D(buffers.tree_capacity),
-            [tgsx, tgsy, 1],
-        )?;
-        crate::gpu::passes_core::record_or_defer_compute_direct(
+        crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
             encoder,
             &self.data,
             &bind_group,
             label,
-            groups,
+            &buffers.hir_canonical_parent_dispatch_args,
+            u64::from(step) * 3 * std::mem::size_of::<u32>() as u64,
         );
         Ok(())
     }
 }
 
 pub(crate) fn pointer_jump_steps_after_local_span(items: u32) -> u32 {
-    let mut span = 1u32;
-    let mut steps = 0u32;
-    let target = items.max(1).div_ceil(SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN);
-    while span < target {
-        span = span.saturating_mul(2);
-        steps += 1;
-    }
-    steps
+    crate::parser::buffers::pointer_jump_step_capacity(
+        items.max(1).div_ceil(SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::pointer_jump_steps_after_local_span;
+    use crate::parser::{
+        buffers::pointer_jump_step_capacity,
+        passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+    };
+
+    fn scheduled_steps(items: u32, max_depth: u32) -> u32 {
+        let span = SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN;
+        let required = pointer_jump_step_capacity((max_depth + 1).div_ceil(span));
+        let capacity = pointer_jump_steps_after_local_span(items);
+        required + ((required ^ capacity) & 1)
+    }
 
     #[test]
     fn local_walk_reduces_global_pointer_jump_rounds_without_losing_depth_coverage() {
@@ -165,5 +167,20 @@ mod tests {
         assert_eq!(pointer_jump_steps_after_local_span(64), 1);
         assert_eq!(pointer_jump_steps_after_local_span(65), 2);
         assert_eq!(pointer_jump_steps_after_local_span(1_687_524), 16);
+    }
+
+    #[test]
+    fn actual_depth_schedule_preserves_capacity_ping_pong_parity() {
+        let items = 1_687_524;
+        let capacity = pointer_jump_steps_after_local_span(items);
+        for max_depth in [0, 31, 32, 63, 64, 95, 96, 511, 65_535] {
+            let scheduled = scheduled_steps(items, max_depth);
+            assert!(scheduled <= capacity);
+            assert_eq!(scheduled % 2, capacity % 2);
+        }
+        assert_eq!(scheduled_steps(items, 31), 0);
+        assert_eq!(scheduled_steps(items, 32), 2);
+        assert_eq!(scheduled_steps(items, 64), 2);
+        assert_eq!(scheduled_steps(items, 96), 2);
     }
 }

@@ -7,6 +7,7 @@ ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;
 StructuredBuffer<uint> family_block_prefix;
+StructuredBuffer<uint> candidate_raw_by_anchor;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_file_id;
@@ -23,7 +24,7 @@ static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 static const uint GENERIC_PARAM_KIND_CONST = 2u;
 
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
-uint block_count() { return (gCanonical.raw_capacity + 255u) / 256u; }
+uint block_count() { return (gCanonical.canonical_capacity + 255u) / 256u; }
 
 uint name_token(uint raw, uint prod)
 {
@@ -38,17 +39,20 @@ uint name_token(uint raw, uint prod)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint raw = tid(dtid);
+    uint anchor = tid(dtid);
     uint total = inclusive_scan_total(block_count(), family_block_prefix);
-    if (raw == 0u) family_count[0u] = total;
-    if (raw >= gCanonical.raw_capacity || family_flag[raw] == 0u) return;
+    if (anchor == 0u) family_count[0u] = total;
+    if (anchor >= gCanonical.canonical_capacity || family_flag[anchor] == 0u) return;
+    uint encoded = candidate_raw_by_anchor[anchor];
+    uint raw = encoded == 0u ? INVALID : encoded - 1u;
+    if (raw >= gCanonical.raw_capacity) return;
 
     uint owner_raw = owner_value[raw];
     uint prod = node_kind[raw];
 
-    uint block = raw / 256u;
+    uint block = anchor / 256u;
     uint base = block == 0u ? 0u : family_block_prefix[block - 1u];
-    uint row = base + family_local_prefix[raw];
+    uint row = base + family_local_prefix[anchor];
     if (row >= gCanonical.canonical_capacity)
     {
         uint ignored;

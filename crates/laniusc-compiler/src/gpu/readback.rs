@@ -20,6 +20,10 @@ impl PagedReadback {
         }
     }
 
+    pub(crate) fn from_staging(staging: LaniusBuffer<u8>) -> Self {
+        Self { staging }
+    }
+
     pub(crate) fn read(
         &self,
         device: &wgpu::Device,

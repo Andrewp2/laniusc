@@ -3,13 +3,7 @@ use anyhow::{Result, anyhow, bail};
 use super::GpuX86LinkInput;
 use crate::codegen::x86::{
     GpuX86Linker,
-    support::{
-        dispatch_compute_pass,
-        reflected_bind_group,
-        storage_u32_rw,
-        uniform_u32_words,
-        workgroup_grid_1d,
-    },
+    support::{dispatch_compute_pass, reflected_bind_group, workgroup_grid_1d},
 };
 
 const OBJECT_LAYOUT_BYTES_PER_INPUT_RECORD: usize = 16;
@@ -66,60 +60,63 @@ impl GpuX86Linker {
                 ]);
                 entry_words.push(object.entry_offset);
             }
-            let object_sections = super::executable::storage_input_u32(
+            let object_sections = self.reusable_input_u32(
                 device,
+                queue,
                 "codegen.x86.link.layout_chunk.object_sections",
                 &section_words,
             );
-            let object_entries = super::executable::storage_input_u32(
+            let object_entries = self.reusable_input_u32(
                 device,
+                queue,
                 "codegen.x86.link.layout_chunk.object_entries",
                 &entry_words,
             );
-            let local_prefix = storage_u32_rw(
+            let local_prefix = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.layout_chunk.local_prefix",
                 chunk_count * 2,
                 wgpu::BufferUsages::empty(),
             );
-            let block_sum = storage_u32_rw(
+            let block_sum = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.layout_chunk.block_sum",
                 block_count * 2,
                 wgpu::BufferUsages::empty(),
             );
-            let block_prefix_a = storage_u32_rw(
+            let block_prefix_a = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.layout_chunk.block_prefix_a",
                 block_count * 2,
                 wgpu::BufferUsages::empty(),
             );
-            let block_prefix_b = storage_u32_rw(
+            let block_prefix_b = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.layout_chunk.block_prefix_b",
                 block_count * 2,
                 wgpu::BufferUsages::empty(),
             );
-            let chunk_bases = storage_u32_rw(
+            let chunk_bases = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.layout_chunk.object_bases",
                 chunk_count * 2,
                 wgpu::BufferUsages::COPY_SRC,
             );
-            let elf_layout = storage_u32_rw(
+            let elf_layout = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.layout_chunk.elf_layout",
                 8,
                 wgpu::BufferUsages::empty(),
             );
-            let layout_status = storage_u32_rw(
+            let layout_status = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.layout_chunk.status",
                 4,
                 wgpu::BufferUsages::empty(),
             );
-            let params = uniform_u32_words(
+            let params = self.reusable_uniform_u32(
                 device,
+                queue,
                 "codegen.x86.link.layout_chunk.params",
                 &[
                     chunk_count as u32,
@@ -154,9 +151,12 @@ impl GpuX86Linker {
             let mut scan_params = Vec::with_capacity(scan_steps.len());
             let mut scan_groups = Vec::with_capacity(scan_steps.len());
             for (step_index, step) in scan_steps.iter().copied().enumerate() {
-                scan_params.push(uniform_u32_words(
+                let scan_param_label =
+                    format!("codegen.x86.link.layout_chunk.scan.params.{step_index}");
+                scan_params.push(self.reusable_uniform_u32(
                     device,
-                    "codegen.x86.link.layout_chunk.scan.params",
+                    queue,
+                    &scan_param_label,
                     &[chunk_count as u32, block_count as u32, step, 0],
                 ));
                 let (prefix_in, prefix_out) = if step_index & 1 == 0 {
@@ -222,12 +222,11 @@ impl GpuX86Linker {
                     ("layout_status", layout_status.buffer.as_entire_binding()),
                 ],
             )?;
-            let readback = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rb.codegen.x86.link.layout_chunk.object_bases"),
-                size: (chunk_count * 8) as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
+            let readback = self.reusable_readback(
+                device,
+                "rb.codegen.x86.link.layout_chunk.object_bases",
+                chunk_count * 8,
+            );
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("codegen.x86.link.layout_chunk.encoder"),
             });
@@ -260,7 +259,7 @@ impl GpuX86Linker {
             encoder.copy_buffer_to_buffer(
                 &chunk_bases.buffer,
                 0,
-                &readback,
+                &readback.buffer,
                 0,
                 (chunk_count * 8) as u64,
             );

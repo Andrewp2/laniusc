@@ -1,5 +1,5 @@
 // Canonical shader view of a packed semantic-interface page.
-// Header words 0..7 are table counts, 8..23 are word offsets, and 24
+// Header words 0..7 are table counts, 8..26 are word offsets, and 27
 // identifies the first/final logical page streamed through the GPU slot.
 
 StructuredBuffer<uint> dependency_words;
@@ -20,7 +20,10 @@ static const uint DEPENDENCY_NAME_BYTE_OFFSET = 20u;
 static const uint DEPENDENCY_TYPE_LIBRARY_OFFSET = 21u;
 static const uint DEPENDENCY_TYPE_UNIT_OFFSET = 22u;
 static const uint DEPENDENCY_TYPE_LOCAL_OFFSET = 23u;
-static const uint DEPENDENCY_PAGE_FLAGS_OFFSET = 24u;
+static const uint DEPENDENCY_MODULE_DECLARATION_START_OFFSET = 24u;
+static const uint DEPENDENCY_MODULE_DECLARATION_COUNT_OFFSET = 25u;
+static const uint DEPENDENCY_MODULE_DECLARATION_ORDER_OFFSET = 26u;
+static const uint DEPENDENCY_PAGE_FLAGS_OFFSET = 27u;
 
 bool dependency_is_first_page()
 {
@@ -85,6 +88,21 @@ uint dependency_module_word(uint index)
 uint dependency_module_segment_word(uint index)
 {
     return dependency_table_word(DEPENDENCY_MODULE_SEGMENT_OFFSET, index);
+}
+
+uint dependency_module_declaration_start(uint module_i)
+{
+    return dependency_table_word(DEPENDENCY_MODULE_DECLARATION_START_OFFSET, module_i);
+}
+
+uint dependency_module_declaration_count(uint module_i)
+{
+    return dependency_table_word(DEPENDENCY_MODULE_DECLARATION_COUNT_OFFSET, module_i);
+}
+
+uint dependency_module_declaration(uint ordered_i)
+{
+    return dependency_table_word(DEPENDENCY_MODULE_DECLARATION_ORDER_OFFSET, ordered_i);
 }
 
 uint dependency_declaration_library_id(uint index)

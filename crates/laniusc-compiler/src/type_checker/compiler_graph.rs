@@ -325,9 +325,6 @@ pub(super) const STRUCT_FIELD_RADIX_SORT: HierarchicalRadixSortDefinition =
         ),
         kernels: HierarchicalRadixSortKernels {
             histogram: "type_checker/type/instances/02b_sort_struct_field_keys",
-            bucket_local: "type_checker/type/instances/02b1_struct_field_bucket_local",
-            bucket_chunks: "type_checker/type/instances/02b2_struct_field_bucket_chunks",
-            bucket_apply: "type_checker/type/instances/02b3_struct_field_bucket_apply",
             scatter: "type_checker/type/instances/02c_sort_struct_field_keys_scatter",
         },
         resources: RadixSortResources {
@@ -369,6 +366,26 @@ pub(super) const METHOD_KEY_RADIX_SORT: RadixSortDefinition = RadixSortDefinitio
     },
     dispatch_args: "method_token_dispatch_args",
 };
+pub(super) const METHOD_KEY_HIERARCHICAL_RADIX_SORT: HierarchicalRadixSortDefinition =
+    HierarchicalRadixSortDefinition {
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::Declarations,
+        passes: hierarchical_radix_sort_graph_passes!("type_check.methods.keys.sort"),
+        kernels: HierarchicalRadixSortKernels {
+            histogram: "type_checker/methods/04_sort_keys",
+            scatter: "type_checker/methods/04b_sort_keys_scatter",
+        },
+        resources: RadixSortResources {
+            count: "token_count",
+            order: "method_key_to_fn_token",
+            temporary_order: "method_key_order_tmp",
+            histogram: "method_key_radix_block_histogram",
+            bucket_prefix: "method_key_radix_block_bucket_prefix",
+            bucket_total: "method_key_radix_bucket_total",
+            bucket_base: "method_key_radix_bucket_base",
+        },
+        dispatch_args: "method_token_dispatch_args",
+    };
 pub(super) const METHOD_KEY_VALIDATION_PASS: &str = "type_check.methods.keys.validate";
 pub(super) const CONDITIONS_AGGREGATE_ARGS_FINAL_PASS: &str =
     "type_check.conditions.aggregate_args.final";
@@ -2241,24 +2258,12 @@ fn build_graph(
     graph_resources!(graph, Input {
         _compact_generic_param_count as "compact_generic_param_count" in HirNodes => 4;
         _compact_generic_params as "compact_generic_params" in HirNodes => token_rows * 16;
+        _compact_generic_param_ranges as "compact_generic_param_ranges" in HirNodes => hir_rows * 8;
         _compact_variant_count as "compact_variant_count" in HirNodes => 4;
         _compact_variants as "compact_variants" in HirNodes => token_rows * 16;
         _compact_variant_payload_row_count as "compact_variant_payload_row_count" in HirNodes => 4;
         _compact_variant_payloads as "compact_variant_payloads" in HirNodes => token_rows * 16;
     });
-    // These module/path tables are produced and consumed by type-check passes.
-    // They used to be described as external inputs because their buffers were
-    // allocated beside the bind-group construction code.  Once the compiler
-    // graph owns their storage, retaining that classification would leave them
-    // without a physical workspace slot.
-    graph.add_storage(
-        "module_table_count_out",
-        ResourceDomain::Declarations,
-        // Immutable capacity sentinel supplied by module-path setup. This is
-        // configuration, not per-pass temporary storage.
-        ResourceClass::Input,
-        4,
-    )?;
     graph.add_storage(
         "module_key_canonical_id",
         ResourceDomain::Declarations,
@@ -3768,7 +3773,7 @@ fn build_graph(
     )?;
     STRUCT_FIELD_RADIX_SORT.register(
         &mut graph,
-        struct_field_key_radix_steps(token_capacity, token_capacity),
+        struct_field_key_radix_steps(hir_capacity, token_capacity),
         &[
             "compact_hir_count",
             "compact_hir_core",
@@ -4085,7 +4090,7 @@ fn build_graph(
             "method_key_duplicate_of" => method_key_duplicate_of: Write,
         ],
     )?;
-    METHOD_KEY_RADIX_SORT.register(
+    METHOD_KEY_HIERARCHICAL_RADIX_SORT.register(
         &mut graph,
         METHOD_KEY_RADIX_STEPS,
         &[
@@ -4537,6 +4542,32 @@ fn build_graph(
         CALLS_ARGUMENT_MATCH_INITIALIZE.name,
         SEMANTIC_ARTIFACT_PROJECT_PASS,
     )?;
+    // Compact parameter rows are produced before the handwritten resident
+    // recorder runs visibility, member, and module reconciliation. Those
+    // intervening invocations are not all graph nodes yet, so the ordinary
+    // producer-to-first-match lifetime can be colored over by scratch that is
+    // actually used after parameter scatter. Keep the compact parameter table
+    // live from call initialization through its final matching consumer.
+    for name in [
+        "call_param_count",
+        "call_param_row_count_out",
+        "call_param_row_fn_token",
+        "call_param_row_ordinal",
+        "call_param_row_type",
+        "call_param_row_ref_tag",
+        "call_param_row_ref_payload",
+        "call_param_row_start",
+        "call_param_row_count",
+    ] {
+        let resource = graph
+            .resource_id(name)
+            .ok_or_else(|| format!("missing compact call-parameter resource {name}"))?;
+        graph.fence_resource_lifetime(
+            resource,
+            CALLS_CLEAR.name,
+            SEMANTIC_ARTIFACT_PROJECT_PASS,
+        )?;
+    }
     // Direct-call generic inference, method lookup, type-instance path
     // projection, type-alias forwarding, and predicate collection still read
     // these declaration arity tables after generic use-slot resolution. Keep
@@ -5128,6 +5159,19 @@ mod tests {
                     .index(),
             "generic-owner propagation completes before type-instance collection",
         );
+        let generic_use_pass = graph
+            .pass(
+                graph
+                    .pass_id(TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS)
+                    .unwrap(),
+            )
+            .unwrap();
+        assert!(
+            generic_use_pass.accesses.iter().any(|access| {
+                access.binding == "generic_decl_owner_by_node_a" && access.mode == AccessMode::Read
+            }),
+            "generic uses must consume the propagated declaration-owner relation"
+        );
         for resource in [
             resource("generic_param_count_out"),
             resource("generic_param_owner_token"),
@@ -5586,10 +5630,10 @@ mod tests {
         let hash_rows = graph.pass_id(TYPE_INSTANCE_ARG_HASH_ROWS_PASS).unwrap();
         let method_key_seed = graph.pass_id(METHOD_KEY_SEED_PASS).unwrap();
         let method_key_sort_first = graph
-            .pass_id(METHOD_KEY_RADIX_SORT.passes.names()[0])
+            .pass_id(METHOD_KEY_HIERARCHICAL_RADIX_SORT.passes.names()[0])
             .unwrap();
         let method_key_sort_last = graph
-            .pass_id(METHOD_KEY_RADIX_SORT.passes.names()[7])
+            .pass_id(METHOD_KEY_HIERARCHICAL_RADIX_SORT.passes.names()[11])
             .unwrap();
         let method_key_validation = graph.pass_id(METHOD_KEY_VALIDATION_PASS).unwrap();
         let mark_call_keys = graph.pass_id(METHODS_MARK_CALL_KEYS.name).unwrap();
@@ -6061,6 +6105,29 @@ mod tests {
                 .is_some()
         );
         assert!(graph.pass_id(CALLS_ARGUMENT_MATCH_CONSUME.name).is_some());
+        let calls_clear = graph.pass_id(CALLS_CLEAR.name).unwrap();
+        let semantic_boundary = graph.pass_id(SEMANTIC_ARTIFACT_PROJECT_PASS).unwrap();
+        for name in [
+            "call_param_count",
+            "call_param_row_count_out",
+            "call_param_row_fn_token",
+            "call_param_row_ordinal",
+            "call_param_row_type",
+            "call_param_row_ref_tag",
+            "call_param_row_ref_payload",
+            "call_param_row_start",
+            "call_param_row_count",
+        ] {
+            let lifetime = graph.lifetime(resource(name)).unwrap();
+            assert_eq!(
+                lifetime.first_pass, calls_clear,
+                "compact parameter resource {name} must survive the unmodeled resident schedule from call initialization",
+            );
+            assert_eq!(
+                lifetime.last_pass, semantic_boundary,
+                "compact parameter resource {name} must survive every repeated call-matching invocation",
+            );
+        }
         assert_ne!(
             slot(resource("call_arg_row_scan_local_prefix")),
             slot(resource("call_arg_row_scan_input")),

@@ -25,6 +25,10 @@ use crate::reflection::{
 
 static PIPELINE_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
+static RECORDED_COMPUTE_PASS_COUNT: AtomicU64 = AtomicU64::new(0);
+static RECORDED_COMPUTE_PASSES_BY_LABEL: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<String, u64>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 static BIND_GROUP_RESOURCE_PLAN_NS: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_CACHE_NS: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_WGPU_CREATE_NS: AtomicU64 = AtomicU64::new(0);
@@ -114,6 +118,16 @@ fn register_reflected_bind_group_cache(
     }
 }
 
+/// Registers layouts owned outside `PassData` with the allocation-identity
+/// bind-group cache and returns an opaque owner that keeps the cache alive.
+pub(crate) fn retain_reflected_bind_group_cache(
+    layouts: &[Arc<wgpu::BindGroupLayout>],
+) -> Arc<dyn Send + Sync> {
+    let cache = Arc::new(std::sync::Mutex::new(ReflectedBindGroupCache::default()));
+    register_reflected_bind_group_cache(layouts, &cache);
+    cache
+}
+
 /// Releases every automatically derived bind group while keeping prepared
 /// pipelines and layouts alive. The daemon calls this at its idle trim
 /// boundary after dropping capacity-dependent workspace owners.
@@ -176,23 +190,81 @@ fn relabel_pass_data(mut pass: PassData, label: &str) -> PassData {
     pass
 }
 
-thread_local! {
-    static RECORDED_COMPUTE_PASS_COUNT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+/// Returns the process-wide monotonic number of physical compute passes
+/// recorded by the compiler.
+pub(crate) fn recorded_compute_pass_count() -> u64 {
+    RECORDED_COMPUTE_PASS_COUNT.load(Ordering::Relaxed)
 }
 
-/// Resets the current thread's recorded compute-pass counter.
-pub(crate) fn reset_recorded_compute_pass_count() {
-    RECORDED_COMPUTE_PASS_COUNT.set(0);
+pub(crate) fn compute_pass_breakdown_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        crate::gpu::env::env_bool_strict("LANIUS_GPU_COMPUTE_PASS_BREAKDOWN", false)
+    })
 }
 
-/// Returns the number of compute passes recorded on the current thread.
-pub(crate) fn recorded_compute_pass_count() -> u32 {
-    RECORDED_COMPUTE_PASS_COUNT.get()
+pub(crate) fn recorded_compute_pass_counts_by_label() -> HashMap<String, u64> {
+    RECORDED_COMPUTE_PASSES_BY_LABEL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
-/// Counts one logical compute-pass recording operation.
-pub(crate) fn count_recorded_compute_pass() {
-    RECORDED_COMPUTE_PASS_COUNT.set(RECORDED_COMPUTE_PASS_COUNT.get().saturating_add(1));
+/// Starts a compute pass and accounts for it at the only boundary that creates
+/// one. Callers must use this instead of `CommandEncoder::begin_compute_pass`
+/// so phase-local helpers and batched operations cannot escape telemetry.
+pub(crate) fn begin_counted_compute_pass<'encoder>(
+    encoder: &'encoder mut wgpu::CommandEncoder,
+    descriptor: &wgpu::ComputePassDescriptor<'_>,
+) -> wgpu::ComputePass<'encoder> {
+    RECORDED_COMPUTE_PASS_COUNT.fetch_add(1, Ordering::Relaxed);
+    if compute_pass_breakdown_enabled() {
+        let label = descriptor.label.unwrap_or("<unlabeled>");
+        let mut counts = RECORDED_COMPUTE_PASSES_BY_LABEL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *counts.entry(label.to_owned()).or_default() += 1;
+    }
+    encoder.begin_compute_pass(descriptor)
+}
+
+#[cfg(test)]
+mod compute_pass_counting_tests {
+    use std::{fs, path::Path};
+
+    fn visit_rust_sources(path: &Path, visit: &mut impl FnMut(&Path, &str)) {
+        for entry in fs::read_dir(path).expect("read compiler source directory") {
+            let path = entry.expect("read compiler source entry").path();
+            if path.is_dir() {
+                visit_rust_sources(&path, visit);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let source = fs::read_to_string(&path).expect("read compiler Rust source");
+                visit(&path, &source);
+            }
+        }
+    }
+
+    #[test]
+    fn every_compute_pass_uses_the_counted_boundary() {
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let raw_begin = format!(".{}_{}_{}(", "begin", "compute", "pass");
+        let mut raw_calls = Vec::new();
+        visit_rust_sources(&source_root, &mut |path, source| {
+            for (line_index, line) in source.lines().enumerate() {
+                if line.contains(&raw_begin) {
+                    raw_calls.push((path.to_owned(), line_index + 1, line.trim().to_owned()));
+                }
+            }
+        });
+
+        assert_eq!(
+            raw_calls.len(),
+            1,
+            "raw compute-pass boundaries: {raw_calls:#?}"
+        );
+        assert!(raw_calls[0].0.ends_with("gpu/passes_core.rs"));
+        assert_eq!(raw_calls[0].2, format!("encoder{raw_begin}descriptor)"));
+    }
 }
 
 /// Returns the number of compute pipelines created by this process.
@@ -453,10 +525,13 @@ pub(crate) fn record_or_defer_compute_direct(
         return;
     }
     flush_deferred_compute(encoder);
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     compute.dispatch_workgroups(groups.0, groups.1, groups.2);
@@ -484,14 +559,25 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
     dispatch_args: &wgpu::Buffer,
     dispatch_offset: u64,
 ) {
+    let dispatch_end = dispatch_offset
+        .checked_add(3 * std::mem::size_of::<u32>() as u64)
+        .expect("indirect dispatch argument range overflow");
+    assert!(
+        dispatch_end <= dispatch_args.size(),
+        "compute pass `{label}` dispatch arguments {dispatch_offset}..{dispatch_end} exceed buffer size {}",
+        dispatch_args.size(),
+    );
     if defer_compute_indirect(pass, bind_group, dispatch_args, dispatch_offset, &[]) {
         return;
     }
     flush_deferred_compute(encoder);
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     compute.dispatch_workgroups_indirect(dispatch_args, dispatch_offset);
@@ -512,10 +598,13 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
     let host_timing = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
     let started = host_timing.then(Instant::now);
     let command_count = commands.len();
-    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: None,
-    });
+    let mut compute = begin_counted_compute_pass(
+        encoder,
+        &wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        },
+    );
     for command in &commands {
         match command {
             DeferredComputeCommand::Direct {
@@ -1735,11 +1824,10 @@ pub mod bind_group {
                 continue;
             };
             let offset = binding.offset;
-            let end = offset.saturating_add(
-                binding
-                    .size
-                    .map_or_else(|| binding.buffer.size().saturating_sub(offset), |size| size.get()),
-            );
+            let end = offset.saturating_add(binding.size.map_or_else(
+                || binding.buffer.size().saturating_sub(offset),
+                |size| size.get(),
+            ));
             for prior in &buffers {
                 let ranges_overlap = offset < prior.end && prior.offset < end;
                 if binding.buffer == prior.buffer && ranges_overlap && writable != prior.writable {
@@ -2171,10 +2259,13 @@ pub(crate) fn record_reflected_compute(
     let [x, y, _] = kernel.thread_group_size;
     let groups = plan_workgroups(dim, input, [x, y, 1])?;
     if !defer_compute_direct_bind_groups(kernel, &bind_groups, groups) {
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(invocation),
-            timestamp_writes: None,
-        });
+        let mut compute = begin_counted_compute_pass(
+            encoder,
+            &wgpu::ComputePassDescriptor {
+                label: Some(invocation),
+                timestamp_writes: None,
+            },
+        );
         compute.set_pipeline(&kernel.pipeline);
         for (index, group) in bind_groups.iter().enumerate() {
             compute.set_bind_group(index as u32, Some(group.as_ref()), &[]);
@@ -2199,10 +2290,13 @@ pub struct ComputePassBatch<'encoder> {
 impl<'encoder> ComputePassBatch<'encoder> {
     /// Begins a batched compute pass.
     pub fn begin(encoder: &'encoder mut wgpu::CommandEncoder, label: &'static str) -> Self {
-        let pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(label),
-            timestamp_writes: None,
-        });
+        let pass = begin_counted_compute_pass(
+            encoder,
+            &wgpu::ComputePassDescriptor {
+                label: Some(label),
+                timestamp_writes: None,
+            },
+        );
         Self {
             pass,
             retained_bind_groups: Vec::new(),
@@ -2377,12 +2471,13 @@ pub trait Pass<Buffers, DebugOutput> {
         );
 
         if !defer_compute_direct_bind_groups(pd, &bind_groups, (gx, gy, gz)) {
-            let mut pass = ctx
-                .encoder
-                .begin_compute_pass(&wgpu::ComputePassDescriptor {
+            let mut pass = begin_counted_compute_pass(
+                ctx.encoder,
+                &wgpu::ComputePassDescriptor {
                     label: Some(Self::NAME),
                     timestamp_writes: None,
-                });
+                },
+            );
             pass.set_pipeline(&pd.pipeline);
             for (i, bg) in bind_groups.iter().enumerate() {
                 pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
@@ -2423,12 +2518,13 @@ pub trait Pass<Buffers, DebugOutput> {
         )?;
 
         if !defer_compute_indirect_bind_groups(pd, &bind_groups, dispatch_args) {
-            let mut pass = ctx
-                .encoder
-                .begin_compute_pass(&wgpu::ComputePassDescriptor {
+            let mut pass = begin_counted_compute_pass(
+                ctx.encoder,
+                &wgpu::ComputePassDescriptor {
                     label: Some(Self::NAME),
                     timestamp_writes: None,
-                });
+                },
+            );
             pass.set_pipeline(&pd.pipeline);
             for (i, bg) in bind_groups.iter().enumerate() {
                 pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);

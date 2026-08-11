@@ -4,9 +4,12 @@
 //! pipeline. This module retains only the durable object contract and the GPU
 //! linker used to combine independently compiled units.
 
+use std::{collections::HashMap, sync::Mutex};
+
 use anyhow::Result;
 
 use crate::gpu::{
+    buffers::CapacityBufferCache,
     device,
     passes_core::{PassData, make_traced_main_pass},
 };
@@ -15,7 +18,11 @@ mod link;
 pub(crate) use link::GpuX86LinkInput;
 
 mod object;
-pub(crate) use object::{GPU_X86_OBJECT_HEADER_BYTES, GpuX86RelocatableObjectLayout};
+pub(crate) use object::{
+    GPU_X86_OBJECT_HEADER_BYTES,
+    GpuX86LinkObjectMetadata,
+    GpuX86RelocatableObjectLayout,
+};
 pub use object::{
     GPU_X86_OBJECT_VERSION,
     GpuX86ObjectSection,
@@ -41,6 +48,13 @@ pub struct GpuX86Linker {
     link_symbol_partition_resolve_pass: PassData,
     link_relocate_pass: PassData,
     elf_write_pass: PassData,
+    job_buffers: CapacityBufferCache,
+    input_shadows: Mutex<HashMap<String, X86InputShadow>>,
+}
+
+struct X86InputShadow {
+    allocation_id: Option<u64>,
+    bytes: Vec<u8>,
 }
 
 impl GpuX86Linker {
@@ -109,6 +123,8 @@ impl GpuX86Linker {
                 "codegen/x86/elf/write.spv",
                 "codegen/x86/elf/write.reflect.json"
             ),
+            job_buffers: CapacityBufferCache::default(),
+            input_shadows: Mutex::new(HashMap::new()),
         };
         gpu.persist_pipeline_cache();
         Ok(linker)
