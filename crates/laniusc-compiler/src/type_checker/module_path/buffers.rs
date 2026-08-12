@@ -79,13 +79,8 @@ module_path_buffers! {
     pub(super) module_key_segment_count: LaniusBuffer<u32>,
     pub(super) module_key_segment_base: LaniusBuffer<u32>,
     pub(super) module_key_segment_name_id: LaniusBuffer<u32>,
-    pub(super) module_key_to_module_id: LaniusBuffer<u32>,
-    pub(super) module_key_order_tmp: LaniusBuffer<u32>,
-    pub(super) module_key_radix_dispatch_args: LaniusBuffer<u32>,
-    pub(super) module_key_radix_block_histogram: LaniusBuffer<u32>,
-    pub(super) module_key_radix_block_bucket_prefix: LaniusBuffer<u32>,
-    pub(super) module_key_radix_bucket_total: LaniusBuffer<u32>,
-    pub(super) module_key_radix_bucket_base: LaniusBuffer<u32>,
+    pub(super) module_by_canonical_id: LaniusBuffer<u32>,
+    pub(super) module_dispatch_args: LaniusBuffer<u32>,
     pub(super) module_id_by_file_id: LaniusBuffer<u32>,
     pub(super) import_module_file_id: LaniusBuffer<u32>,
     pub(super) import_path_id: LaniusBuffer<u32>,
@@ -94,9 +89,7 @@ module_path_buffers! {
     pub(super) import_module_id: LaniusBuffer<u32>,
     pub(super) import_target_module_id: LaniusBuffer<u32>,
     pub(super) import_status: LaniusBuffer<u32>,
-    pub(super) import_edge_key_order: LaniusBuffer<u32>,
-    pub(super) import_edge_key_order_tmp: LaniusBuffer<u32>,
-    pub(super) import_edge_key_radix_dispatch_args: LaniusBuffer<u32>,
+    pub(super) import_edge_set_state: LaniusBuffer<u32>,
     pub(super) decl_module_file_id: LaniusBuffer<u32>,
     pub(super) decl_module_id: LaniusBuffer<u32>,
     pub(super) decl_name_token: LaniusBuffer<u32>,
@@ -126,6 +119,7 @@ module_path_buffers! {
     pub(super) decl_value_key_count_out: LaniusBuffer<u32>,
     pub(super) decl_type_key_to_decl_id: LaniusBuffer<u32>,
     pub(super) decl_value_key_to_decl_id: LaniusBuffer<u32>,
+    pub(super) decl_lookup_state: LaniusBuffer<u32>,
     pub(super) interface_public_decl_count: LaniusBuffer<u32>,
     pub(super) interface_public_decl_local_id: LaniusBuffer<u32>,
     pub(super) interface_public_decl_index_by_local: LaniusBuffer<u32>,
@@ -136,33 +130,19 @@ module_path_buffers! {
     pub(super) import_visible_value_prefix: LaniusBuffer<u32>,
     pub(super) import_visible_type_count_out: LaniusBuffer<u32>,
     pub(super) import_visible_value_count_out: LaniusBuffer<u32>,
-    pub(super) import_visible_type_module_id: LaniusBuffer<u32>,
-    pub(super) import_visible_type_name_id: LaniusBuffer<u32>,
-    pub(super) import_visible_type_decl_id: LaniusBuffer<u32>,
-    pub(super) import_visible_type_key_order: LaniusBuffer<u32>,
-    pub(super) import_visible_type_key_order_tmp: LaniusBuffer<u32>,
     pub(super) import_visible_type_key_module_id: LaniusBuffer<u32>,
     pub(super) import_visible_type_key_name_id: LaniusBuffer<u32>,
     pub(super) import_visible_type_key_to_decl_id: LaniusBuffer<u32>,
+    pub(super) import_visible_type_lookup_state: LaniusBuffer<u32>,
     pub(super) import_visible_type_status: LaniusBuffer<u32>,
     pub(super) import_visible_type_duplicate_of: LaniusBuffer<u32>,
-    pub(super) import_visible_type_key_radix_dispatch_args: LaniusBuffer<u32>,
-    pub(super) import_visible_value_module_id: LaniusBuffer<u32>,
-    pub(super) import_visible_value_name_id: LaniusBuffer<u32>,
-    pub(super) import_visible_value_decl_id: LaniusBuffer<u32>,
-    pub(super) import_visible_value_key_order: LaniusBuffer<u32>,
-    pub(super) import_visible_value_key_order_tmp: LaniusBuffer<u32>,
     pub(super) import_visible_value_key_module_id: LaniusBuffer<u32>,
     pub(super) import_visible_value_key_name_id: LaniusBuffer<u32>,
     pub(super) import_visible_value_key_to_decl_id: LaniusBuffer<u32>,
+    pub(super) import_visible_value_lookup_state: LaniusBuffer<u32>,
     pub(super) import_visible_value_status: LaniusBuffer<u32>,
     pub(super) import_visible_value_duplicate_of: LaniusBuffer<u32>,
-    pub(super) import_visible_value_key_radix_dispatch_args: LaniusBuffer<u32>,
     pub(super) import_visible_validate_dispatch_args: LaniusBuffer<u32>,
-    pub(super) import_visible_key_radix_block_histogram: LaniusBuffer<u32>,
-    pub(super) import_visible_key_radix_block_bucket_prefix: LaniusBuffer<u32>,
-    pub(super) import_visible_key_radix_bucket_total: LaniusBuffer<u32>,
-    pub(super) import_visible_key_radix_bucket_base: LaniusBuffer<u32>,
     pub(super) resolved_type_decl: LaniusBuffer<u32>,
     pub(super) resolved_value_decl: LaniusBuffer<u32>,
     pub(super) resolved_type_status: LaniusBuffer<u32>,
@@ -264,10 +244,10 @@ impl Buffers {
             .alias(key_radix_histogram_len);
         let key_radix_bucket_total = inputs
             .module_path_key_radix_bucket_total
-            .alias(NAME_RADIX_BUCKETS as usize);
+            .alias(RADIX_U8_BUCKET_COUNT as usize);
         let key_radix_bucket_base = inputs
             .module_path_key_radix_bucket_base
-            .alias(NAME_RADIX_BUCKETS as usize);
+            .alias(RADIX_U8_BUCKET_COUNT as usize);
         module_storage_buffers!(graph;
             module_count_out: 1;
         );
@@ -284,14 +264,8 @@ impl Buffers {
         );
         let module_key_segment_name_id = path_segment_name_id.clone();
         module_storage_buffers!(graph;
-            module_key_to_module_id: module_capacity;
-            module_key_order_tmp: module_capacity;
-            module_key_radix_dispatch_args [INDIRECT]: 3;
+            module_dispatch_args [INDIRECT]: 3;
         );
-        let module_key_radix_block_histogram = key_radix_block_histogram.clone();
-        let module_key_radix_block_bucket_prefix = key_radix_block_bucket_prefix.clone();
-        let module_key_radix_bucket_total = key_radix_bucket_total.clone();
-        let module_key_radix_bucket_base = key_radix_bucket_base.clone();
         module_storage_buffers!(graph;
             module_id_by_file_id: module_capacity;
             import_module_file_id: import_record_capacity;
@@ -307,9 +281,9 @@ impl Buffers {
             .transpose()?;
         let import_status = graph.u32_buffer("import_status")?;
         module_storage_buffers!(graph;
-            import_edge_key_order: import_record_capacity;
-            import_edge_key_order_tmp: import_record_capacity;
-            import_edge_key_radix_dispatch_args [INDIRECT]: 3;
+            import_edge_set_state: import_record_capacity
+                .checked_mul(2)
+                .expect("import-edge set capacity overflow");
         );
         // Declaration tables are retained through module/path resolution, but they
         // are not part of the x86 handoff. Use parser token/tree workspaces that
@@ -373,6 +347,7 @@ impl Buffers {
         // Module-path value-key lookup is consumed inside typecheck and is not
         // retained by the x86 handoff. Reuse dead parser list-workspace rows.
         let decl_value_key_to_decl_id = graph.u32_buffer("decl_value_key_to_decl_id")?;
+        let decl_lookup_state = graph.u32_buffer("decl_lookup_state")?;
         // Persisted semantic-interface declaration identity crosses the point
         // where namespace/public-key scratch is reused by type instances.
         module_storage_buffers!(graph;
@@ -388,34 +363,24 @@ impl Buffers {
         let import_visible_type_count_out = inputs.import_visible_type_count_out.clone();
         let import_visible_value_count_out = inputs.import_visible_value_count_out.clone();
         module_storage_buffers!(graph;
-            import_visible_type_module_id: import_visible_capacity;
-            import_visible_type_name_id: import_visible_capacity;
-            import_visible_type_decl_id: import_visible_capacity;
-            import_visible_type_key_order: import_visible_capacity;
-            import_visible_type_key_order_tmp: import_visible_capacity;
             import_visible_type_key_module_id: import_visible_capacity;
             import_visible_type_key_name_id: import_visible_capacity;
             import_visible_type_key_to_decl_id: import_visible_capacity;
+            import_visible_type_lookup_state: import_visible_capacity
+                .checked_mul(2)
+                .expect("import-visible type lookup capacity overflow");
             import_visible_type_status: import_visible_capacity;
             import_visible_type_duplicate_of: import_visible_capacity;
-            import_visible_type_key_radix_dispatch_args [INDIRECT]: 3;
-            import_visible_value_module_id: import_visible_capacity;
-            import_visible_value_name_id: import_visible_capacity;
-            import_visible_value_decl_id: import_visible_capacity;
-            import_visible_value_key_order: import_visible_capacity;
-            import_visible_value_key_order_tmp: import_visible_capacity;
             import_visible_value_key_module_id: import_visible_capacity;
             import_visible_value_key_name_id: import_visible_capacity;
             import_visible_value_key_to_decl_id: import_visible_capacity;
+            import_visible_value_lookup_state: import_visible_capacity
+                .checked_mul(2)
+                .expect("import-visible value lookup capacity overflow");
             import_visible_value_status: import_visible_capacity;
             import_visible_value_duplicate_of: import_visible_capacity;
-            import_visible_value_key_radix_dispatch_args [INDIRECT]: 3;
             import_visible_validate_dispatch_args [INDIRECT]: 3;
         );
-        let import_visible_key_radix_block_histogram = key_radix_block_histogram;
-        let import_visible_key_radix_block_bucket_prefix = key_radix_block_bucket_prefix;
-        let import_visible_key_radix_bucket_total = key_radix_bucket_total;
-        let import_visible_key_radix_bucket_base = key_radix_bucket_base;
         let resolved_type_decl = graph.u32_buffer("resolved_type_decl")?;
         let resolved_value_decl = graph.u32_buffer("resolved_value_decl")?;
         let resolved_type_status = graph.u32_buffer("resolved_type_status")?;
@@ -445,6 +410,9 @@ impl Buffers {
         module_storage_buffers!(graph;
             path_prefix_table_state: path_prefix_table_capacity;
         );
+        // Canonical ids are path-prefix table slots. After prefix interning is
+        // finalized, reuse that exact allocation as the direct module lookup.
+        let module_by_canonical_id = graph.u32_buffer("module_by_canonical_id")?;
         let path_prefix_round_count =
             u32::BITS - token_capacity.max(1).saturating_sub(1).leading_zeros();
         module_storage_buffers!(graph;
@@ -493,13 +461,8 @@ impl Buffers {
             module_key_segment_count,
             module_key_segment_base,
             module_key_segment_name_id,
-            module_key_to_module_id,
-            module_key_order_tmp,
-            module_key_radix_dispatch_args,
-            module_key_radix_block_histogram,
-            module_key_radix_block_bucket_prefix,
-            module_key_radix_bucket_total,
-            module_key_radix_bucket_base,
+            module_by_canonical_id,
+            module_dispatch_args,
             module_id_by_file_id,
             import_module_file_id,
             import_path_id,
@@ -509,9 +472,7 @@ impl Buffers {
             import_target_module_id,
             import_target_dependency_module_id,
             import_status,
-            import_edge_key_order,
-            import_edge_key_order_tmp,
-            import_edge_key_radix_dispatch_args,
+            import_edge_set_state,
             decl_module_file_id,
             decl_module_id,
             decl_name_token,
@@ -541,6 +502,7 @@ impl Buffers {
             decl_value_key_count_out,
             decl_type_key_to_decl_id,
             decl_value_key_to_decl_id,
+            decl_lookup_state,
             interface_public_decl_count,
             interface_public_decl_local_id,
             interface_public_decl_index_by_local,
@@ -551,33 +513,19 @@ impl Buffers {
             import_visible_value_prefix,
             import_visible_type_count_out,
             import_visible_value_count_out,
-            import_visible_type_module_id,
-            import_visible_type_name_id,
-            import_visible_type_decl_id,
-            import_visible_type_key_order,
-            import_visible_type_key_order_tmp,
             import_visible_type_key_module_id,
             import_visible_type_key_name_id,
             import_visible_type_key_to_decl_id,
+            import_visible_type_lookup_state,
             import_visible_type_status,
             import_visible_type_duplicate_of,
-            import_visible_type_key_radix_dispatch_args,
-            import_visible_value_module_id,
-            import_visible_value_name_id,
-            import_visible_value_decl_id,
-            import_visible_value_key_order,
-            import_visible_value_key_order_tmp,
             import_visible_value_key_module_id,
             import_visible_value_key_name_id,
             import_visible_value_key_to_decl_id,
+            import_visible_value_lookup_state,
             import_visible_value_status,
             import_visible_value_duplicate_of,
-            import_visible_value_key_radix_dispatch_args,
             import_visible_validate_dispatch_args,
-            import_visible_key_radix_block_histogram,
-            import_visible_key_radix_block_bucket_prefix,
-            import_visible_key_radix_bucket_total,
-            import_visible_key_radix_bucket_base,
             resolved_type_decl,
             resolved_value_decl,
             resolved_type_status,

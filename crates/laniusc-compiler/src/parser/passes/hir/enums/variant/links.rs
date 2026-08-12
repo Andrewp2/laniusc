@@ -99,6 +99,74 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumVariantLi
                 "hir_variant_payload_rank_b".into(),
                 b.hir_variant_payload_rank_b.as_entire_binding(),
             ),
+            (
+                "hir_variant_parent_enum".into(),
+                b.hir_variant_parent_enum.as_entire_binding(),
+            ),
+            (
+                "hir_variant_ordinal".into(),
+                b.hir_variant_ordinal.as_entire_binding(),
+            ),
+            (
+                "hir_variant_payload_start".into(),
+                b.hir_variant_payload_start.as_entire_binding(),
+            ),
+            (
+                "hir_variant_payload_count".into(),
+                b.hir_variant_payload_count.as_entire_binding(),
+            ),
+            (
+                "hir_variant_payload_node".into(),
+                b.hir_variant_payload_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_scrutinee_node".into(),
+                b.hir_match_scrutinee_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_arm_start".into(),
+                b.hir_match_arm_start.as_entire_binding(),
+            ),
+            (
+                "hir_match_arm_count".into(),
+                b.hir_match_arm_count.as_entire_binding(),
+            ),
+            (
+                "hir_match_arm_next".into(),
+                b.hir_match_arm_next.as_entire_binding(),
+            ),
+            (
+                "hir_match_arm_pattern_node".into(),
+                b.hir_match_arm_pattern_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_pattern_owner_arm".into(),
+                b.hir_match_pattern_owner_arm.as_entire_binding(),
+            ),
+            (
+                "hir_match_arm_payload_start".into(),
+                b.hir_match_arm_payload_start.as_entire_binding(),
+            ),
+            (
+                "hir_match_arm_payload_count".into(),
+                b.hir_match_arm_payload_count.as_entire_binding(),
+            ),
+            (
+                "hir_match_arm_result_node".into(),
+                b.hir_match_arm_result_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_payload_owner_arm".into(),
+                b.hir_match_payload_owner_arm.as_entire_binding(),
+            ),
+            (
+                "hir_match_payload_match_node".into(),
+                b.hir_match_payload_match_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_payload_ordinal".into(),
+                b.hir_match_payload_ordinal.as_entire_binding(),
+            ),
         ])
     }
 }

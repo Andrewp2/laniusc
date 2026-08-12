@@ -8,6 +8,7 @@
 import hir_records;
 import hir_expr_semantics;
 import status;
+import type_checker.type.instances.struct_field_lookup;
 
 struct Params
 {
@@ -32,7 +33,7 @@ StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> struct_field_key_order;
+StructuredBuffer<uint> struct_field_lookup_state;
 StructuredBuffer<uint> struct_lit_context_decl_token;
 StructuredBuffer<uint> struct_init_field_ordinal;
 
@@ -148,28 +149,19 @@ bool valid_struct_field_key_row(uint field_row)
            name_id_by_token[token_i] != INVALID;
 }
 
-bool same_decl_field_key(uint left_row, uint right_row)
+void validate_struct_field_key_row(uint row)
 {
-    if (!valid_struct_field_key_row(left_row) ||
-        !valid_struct_field_key_row(right_row))
-        return false;
-
-    HirField left = compact_fields[left_row];
-    HirField right = compact_fields[right_row];
-    return left.owner == right.owner &&
-           name_id_by_token[left.name_token] == name_id_by_token[right.name_token];
-}
-
-void validate_sorted_struct_field_key_row(uint row)
-{
-    if (row == 0u || row >= active_compact_field_count())
+    uint count = active_compact_field_count();
+    if (!valid_struct_field_key_row(row))
         return;
-
-    uint left_row = struct_field_key_order[row - 1u];
-    uint right_row = struct_field_key_order[row];
-    if (same_decl_field_key(left_row, right_row))
+    HirField field = compact_fields[row];
+    uint name_id = name_id_by_token[field.name_token];
+    uint representative = struct_field_lookup_find(
+        field.owner, name_id, count, gParams.n_tokens,
+        compact_fields, name_id_by_token, struct_field_lookup_state);
+    if (representative != INVALID && representative != row)
     {
-        uint token_i = compact_fields[right_row].name_token;
+        uint token_i = field.name_token;
         record_error(valid_token(token_i) ? token_i : 0u, ERR_INVALID_MEMBER_ACCESS, 1u);
     }
 }
@@ -453,7 +445,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    validate_sorted_struct_field_key_row(node);
+    validate_struct_field_key_row(node);
 
     if (valid_compact_node(node) && compact_hir_core[node].kind == HIR_MEMBER_EXPR)
         validate_member_expr_node(node);

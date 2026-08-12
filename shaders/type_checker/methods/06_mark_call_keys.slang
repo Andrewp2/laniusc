@@ -21,8 +21,8 @@
 //   spelling.
 
 import hir_records;
-import fixed.key;
-import range_query;
+import type_checker.modules.decl_lookup;
+import type_checker.modules.import_visible_lookup;
 
 struct Params
 {
@@ -68,10 +68,11 @@ StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> path_owner_module_id;
 StructuredBuffer<uint> resolved_type_decl;
-StructuredBuffer<uint> decl_type_key_count_out;
-StructuredBuffer<uint> decl_type_key_to_decl_id;
+StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
+StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> decl_lookup_state;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> import_visible_type_count_out;
@@ -79,6 +80,7 @@ StructuredBuffer<uint> import_visible_type_key_module_id;
 StructuredBuffer<uint> import_visible_type_key_name_id;
 StructuredBuffer<uint> import_visible_type_key_to_decl_id;
 StructuredBuffer<uint> import_visible_type_status;
+StructuredBuffer<uint> import_visible_type_lookup_state;
 StructuredBuffer<uint> module_value_path_call_open;
 StructuredBuffer<uint> module_value_path_call_path_id;
 StructuredBuffer<uint> module_value_path_associated_method_token;
@@ -107,6 +109,7 @@ StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 RWStructuredBuffer<uint> type_instance_state;
 
 static const uint INVALID = 0xffffffffu;
+static const uint HIR_ITEM_NAMESPACE_TYPE = 3u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_ERROR = 4u;
@@ -172,14 +175,9 @@ uint active_path_count()
     return min(path_count_out[0], gParams.n_hir_nodes);
 }
 
-uint active_decl_type_count()
-{
-    return min(decl_type_key_count_out[0], gParams.n_hir_nodes);
-}
-
 uint active_import_visible_type_count()
 {
-    return min(import_visible_type_count_out[0], gParams.n_hir_nodes);
+    return min(import_visible_type_count_out[0], gParams.n_tokens);
 }
 
 bool valid_node(uint i)
@@ -333,85 +331,16 @@ uint module_for_token(uint token_i)
     return file_id == 0u || file_id == INVALID ? 0u : INVALID;
 }
 
-public struct DeclLookupKey
-{
-    uint module_id;
-    uint name_id;
-}
-
-public struct DeclFixedKey : IFixedU32RowKey<DeclLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint decl_i = decl_type_key_to_decl_id[row];
-        uint value = INVALID;
-        if (decl_i < gParams.n_hir_nodes)
-            value = lane == 0u ? decl_module_id[decl_i] : decl_name_id[decl_i];
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-
-    public static uint key_lane(DeclLookupKey key, uint lane)
-    {
-        uint value = lane == 0u ? key.module_id : key.name_id;
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-}
-
-public struct DeclKeyCompare : IRowQueryCompare<DeclLookupKey>
-{
-    public static int compare(uint row, DeclLookupKey key)
-    {
-        return fixed_u32_row_key_compare<DeclLookupKey, DeclFixedKey>(
-            row,
-            key,
-            2u);
-    }
-}
-
 uint find_local_type_decl(uint module_id, uint name_id)
 {
     if (module_id == INVALID || name_id == INVALID)
         return INVALID;
 
-    DeclLookupKey key;
-    key.module_id = module_id;
-    key.name_id = name_id;
-    uint row = find_equal_query<DeclLookupKey, DeclKeyCompare>(active_decl_type_count(), key);
-    return row == INVALID ? INVALID : decl_type_key_to_decl_id[row];
-}
-
-public struct ImportVisibleLookupKey
-{
-    uint module_id;
-    uint name_id;
-}
-
-public struct ImportVisibleFixedKey : IFixedU32RowKey<ImportVisibleLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint value = lane == 0u
-            ? import_visible_type_key_module_id[row]
-            : import_visible_type_key_name_id[row];
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-
-    public static uint key_lane(ImportVisibleLookupKey key, uint lane)
-    {
-        uint value = lane == 0u ? key.module_id : key.name_id;
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-}
-
-public struct ImportVisibleCompare : IRowQueryCompare<ImportVisibleLookupKey>
-{
-    public static int compare(uint row, ImportVisibleLookupKey key)
-    {
-        return fixed_u32_row_key_compare<ImportVisibleLookupKey, ImportVisibleFixedKey>(
-            row,
-            key,
-            2u);
-    }
+    return decl_lookup_find(
+        module_id, HIR_ITEM_NAMESPACE_TYPE, name_id,
+        min(decl_count_out[0], gParams.n_hir_nodes),
+        decl_module_id, decl_namespace, decl_name_id,
+        decl_lookup_state);
 }
 
 uint find_imported_type_decl(uint module_id, uint name_id)
@@ -419,13 +348,15 @@ uint find_imported_type_decl(uint module_id, uint name_id)
     if (module_id == INVALID || name_id == INVALID)
         return INVALID;
 
-    ImportVisibleLookupKey key;
-    key.module_id = module_id;
-    key.name_id = name_id;
-    uint row =
-        find_equal_query<ImportVisibleLookupKey, ImportVisibleCompare>(
-            active_import_visible_type_count(),
-            key);
+    uint row = import_visible_lookup_find(
+        module_id,
+        name_id,
+        active_import_visible_type_count(),
+        gParams.n_tokens,
+        import_visible_type_key_module_id,
+        import_visible_type_key_name_id,
+        import_visible_type_key_to_decl_id,
+        import_visible_type_lookup_state);
     if (row == INVALID || import_visible_type_status[row] != IMPORT_VISIBLE_STATUS_OK)
         return INVALID;
     return import_visible_type_key_to_decl_id[row];

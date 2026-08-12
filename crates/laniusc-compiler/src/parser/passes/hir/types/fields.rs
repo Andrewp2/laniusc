@@ -26,14 +26,14 @@ pub const HIR_TYPE_FORM_SLICE: u32 = 3;
 /// Reference type form.
 pub const HIR_TYPE_FORM_REF: u32 = 4;
 
-/// Parser pass that fills type form, path, length, and type-argument records.
+/// Fills type records and seeds the independent type-path leaf relation.
 pub struct HirTypeFieldsPass {
     data: PassData,
 }
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirTypeFieldsPass,
-    label: "hir_type_fields",
+    label: "hir_type_fields_and_path_leaf_links",
     shader: "parser/hir/type/fields"
 );
 
@@ -99,6 +99,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeFieldsPas
             (
                 "hir_type_arg_next".into(),
                 b.hir_type_arg_next.as_entire_binding(),
+            ),
+            (
+                "hir_type_path_leaf_link_a".into(),
+                b.hir_type_path_leaf_link_a.as_entire_binding(),
+            ),
+            (
+                "hir_type_path_leaf_value_a".into(),
+                b.hir_type_path_leaf_value_a.as_entire_binding(),
             ),
         ])
     }

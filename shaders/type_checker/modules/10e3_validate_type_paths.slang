@@ -41,6 +41,7 @@ static const uint PATH_RECORD_KIND_MODULE = 1u;
 static const uint PATH_RECORD_KIND_IMPORT = 2u;
 static const uint PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR = 5u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT = 4u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 
 static const uint ERR_UNKNOWN_TYPE = 1u;
@@ -77,10 +78,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (kind == PATH_RECORD_KIND_HIR_TYPE_EXPR)
     {
+        uint resolved_status = resolved_type_status[path_i];
+        if (resolved_status == PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT)
+        {
+            record_error(error_token, ERR_UNKNOWN_TYPE, resolved_status);
+            return;
+        }
         if (path_segment_count[path_i] <= 1u)
             return;
 
-        uint resolved_status = resolved_type_status[path_i];
         if (resolved_status != PATH_RESOLVE_STATUS_OK)
         {
             record_error(error_token, ERR_UNKNOWN_TYPE, resolved_status);
@@ -96,6 +102,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint value_status = resolved_value_status[path_i];
+    if (value_status == PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT)
+    {
+        // An unresolved one-segment name may still be a lexical declaration,
+        // and a qualified path may later prove to be a call or associated item.
+        // Two distinct imported declarations with the same exact key cannot be
+        // disambiguated by any of those consumers, so preserve the resolver's
+        // definitive error at this boundary.
+        record_error(error_token, ERR_UNRESOLVED_IDENT, value_status);
+        return;
+    }
     if (value_status != PATH_RESOLVE_STATUS_OK)
     {
         // Qualified value-path status is carried in module_value_path_status so

@@ -1,10 +1,16 @@
-use crate::gpu::buffers::LaniusBuffer;
+use crate::{gpu::buffers::LaniusBuffer, parser::passes::pack::offsets::HierarchyParams};
 
-/// One ping-pong scan step for packed stream offsets.
-pub struct PackOffsetScanStep {
+/// Capacity-dependent paired hierarchy for packed stream offsets.
+pub struct PackOffsetScanPlan {
     pub params: LaniusBuffer<super::super::passes::pack::offsets::Params>,
-    pub read_from_a: bool,
-    pub write_to_a: bool,
+    pub up: Vec<PackOffsetHierarchyStep>,
+    pub down: Vec<PackOffsetHierarchyStep>,
+}
+
+/// One level of the paired stack-change/emit offset hierarchy.
+pub struct PackOffsetHierarchyStep {
+    pub params: LaniusBuffer<HierarchyParams>,
+    pub work_items: u32,
 }
 
 /// One reduction step for packed stream total counts.
@@ -15,25 +21,29 @@ pub struct PackTotalReduceStep {
     pub write_to_a: bool,
 }
 
-/// One ping-pong scan step for token delimiter context.
-pub struct TokenDelimiterScanStep {
-    pub params: LaniusBuffer<super::TokenDelimiterParams>,
-    pub read_from_a: bool,
-    pub write_to_a: bool,
+/// Capacity-dependent hierarchy shared by associative token-block scans.
+pub struct TokenBlockScanPlan {
+    pub up: Vec<TokenBlockScanStep>,
+    pub down: Vec<TokenBlockScanStep>,
 }
 
-/// One ping-pong scan step for semantic-HIR prefix counts.
-pub struct HirSemanticPrefixScanStep {
-    pub params: LaniusBuffer<super::super::passes::hir::semantic::prefix::blocks::Params>,
-    pub read_from_a: bool,
-    pub write_to_a: bool,
+/// One level of an associative token-block scan.
+pub struct TokenBlockScanStep {
+    pub params: LaniusBuffer<TokenBlockScanHierarchyParams>,
+    pub work_items: u32,
 }
 
-/// One ping-pong scan step over bracket block prefixes.
-pub struct BracketsBlockPrefixScanStep {
-    pub params: LaniusBuffer<super::super::passes::brackets::scan_block_prefix::Params>,
-    pub read_from_a: bool,
-    pub write_to_a: bool,
+#[repr(C)]
+#[derive(Clone, Copy, encase::ShaderType)]
+pub struct TokenBlockScanHierarchyParams {
+    pub n_blocks: u32,
+    pub level_divisor: u32,
+    pub level_offset: u32,
+    pub parent_divisor: u32,
+    pub parent_offset: u32,
+    pub reserved0: u32,
+    pub reserved1: u32,
+    pub reserved2: u32,
 }
 
 /// One ping-pong scan step for tree prefix counts.

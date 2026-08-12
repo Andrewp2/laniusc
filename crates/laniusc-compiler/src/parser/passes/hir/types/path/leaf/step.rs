@@ -4,10 +4,10 @@ use anyhow::Result;
 
 use crate::{
     gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
-    parser::buffers::ParserBuffers,
+    parser::{buffers::ParserBuffers, passes::hir::bounded_walk_step_capacity},
 };
 
-/// Pointer-jump pass that resolves the leaf node for each HIR type path.
+/// Bounded-walk pass that resolves the leaf node for each HIR type path.
 pub struct HirTypePathLeafStepPass {
     data: PassData,
 }
@@ -45,18 +45,11 @@ impl HirTypePathLeafStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_schedule: Option<&wgpu::Buffer>,
+        dispatch_args: Option<&wgpu::Buffer>,
     ) -> Result<()> {
-        let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
+        let steps = bounded_walk_step_capacity(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(
-                device,
-                encoder,
-                buffers,
-                step % 2 == 0,
-                dispatch_schedule,
-                u64::from(step) * 3 * std::mem::size_of::<u32>() as u64,
-            )?;
+            self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
         }
 
         if steps % 2 == 1 {
@@ -85,8 +78,7 @@ impl HirTypePathLeafStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         read_from_a: bool,
-        dispatch_schedule: Option<&wgpu::Buffer>,
-        dispatch_offset: u64,
+        dispatch_args: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let (link_in, value_in, link_out, value_out) = if read_from_a {
             (
@@ -144,14 +136,13 @@ impl HirTypePathLeafStepPass {
             &resources,
         )?;
 
-        if let Some(dispatch_schedule) = dispatch_schedule {
-            crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
+        if let Some(dispatch_args) = dispatch_args {
+            crate::gpu::passes_core::record_or_defer_compute_indirect(
                 encoder,
                 &self.data,
                 &bind_group,
                 "hir_type_path_leaf_step",
-                dispatch_schedule,
-                dispatch_offset,
+                dispatch_args,
             );
         } else {
             let [tgsx, tgsy, _] = self.data.thread_group_size;
@@ -170,15 +161,4 @@ impl HirTypePathLeafStepPass {
         }
         Ok(())
     }
-}
-
-fn pointer_jump_steps_for_items(items: u32) -> u32 {
-    let mut span = 1u32;
-    let mut steps = 0u32;
-    let target = items.max(1);
-    while span < target {
-        span = span.saturating_mul(2);
-        steps += 1;
-    }
-    steps
 }

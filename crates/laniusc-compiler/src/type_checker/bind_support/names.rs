@@ -31,15 +31,17 @@ pub(in crate::type_checker) fn create_name_bind_groups(
 
     let mut name_resources = compaction_resources.to_binding_map();
 
-    let hash_work_items = name_blocks.max(1).saturating_mul(NAME_RADIX_BUCKETS);
+    let hash_work_items = name_blocks
+        .max(1)
+        .saturating_mul(NAME_HASH_TABLE_ROWS_PER_BLOCK);
     let hash_params = uniform_from_val(
         device,
         "type_check.names.hash.params",
-        &NameRadixParams {
+        &NameHashParams {
             name_count: name_capacity,
             source_len,
-            n_blocks: hash_work_items,
-            radix_byte_offset: 0,
+            table_half_capacity: hash_work_items,
+            reserved: 0,
         },
     );
     name_resources.insert("gParams".into(), hash_params.as_entire_binding());

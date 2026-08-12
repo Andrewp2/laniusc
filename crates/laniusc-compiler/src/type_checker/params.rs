@@ -61,6 +61,45 @@ pub(in crate::type_checker) struct PathPrefixRoundParams {
     pub(in crate::type_checker) reserved1: u32,
 }
 
+/// Capacities for the direct canonical-path-id to module-row table.
+///
+/// Canonical path ids are slots in the prefix interner, whose table contains
+/// two slots per possible path segment.  Keeping that domain distinct from
+/// path records and module rows prevents consumers from accidentally bounding
+/// a canonical id by an unrelated compact-record capacity.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct ModuleLookupParams {
+    pub(in crate::type_checker) path_capacity: u32,
+    pub(in crate::type_checker) path_segment_capacity: u32,
+    pub(in crate::type_checker) module_capacity: u32,
+    pub(in crate::type_checker) reserved: u32,
+}
+
+/// Capacities and feature state used while resolving imports.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct ImportResolveParams {
+    pub(in crate::type_checker) import_capacity: u32,
+    pub(in crate::type_checker) path_capacity: u32,
+    pub(in crate::type_checker) path_segment_capacity: u32,
+    pub(in crate::type_checker) module_capacity: u32,
+    pub(in crate::type_checker) dependency_interfaces_present: u32,
+    pub(in crate::type_checker) reserved0: u32,
+    pub(in crate::type_checker) reserved1: u32,
+    pub(in crate::type_checker) reserved2: u32,
+}
+
+/// Capacities for resolving multi-segment value and type paths.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct QualifiedPathResolveParams {
+    pub(in crate::type_checker) record_capacity: u32,
+    pub(in crate::type_checker) path_segment_capacity: u32,
+    pub(in crate::type_checker) module_capacity: u32,
+    pub(in crate::type_checker) reserved: u32,
+}
+
 /// Capacity packet for semantic-interface identity sizing.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -182,17 +221,14 @@ pub(in crate::type_checker) struct VisibleDeclTreeParams {
     pub(in crate::type_checker) reserved2: u32,
 }
 
-/// Uniform for one byte pass of name radix sorting.
-///
-/// Names are sorted by source bytes plus kind; `radix_byte_offset` selects the
-/// byte currently being histogrammed/scattered.
+/// Uniform for exact source-name hashing.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct NameRadixParams {
+pub(in crate::type_checker) struct NameHashParams {
     pub(in crate::type_checker) name_count: u32,
     pub(in crate::type_checker) source_len: u32,
-    pub(in crate::type_checker) n_blocks: u32,
-    pub(in crate::type_checker) radix_byte_offset: u32,
+    pub(in crate::type_checker) table_half_capacity: u32,
+    pub(in crate::type_checker) reserved: u32,
 }
 
 /// Uniform for shaders that turn a counted row total into dispatch arguments.
@@ -228,7 +264,7 @@ pub(in crate::type_checker) struct RecordFamilyFlagParams {
     pub(in crate::type_checker) reserved1: u32,
 }
 
-/// Uniform for radix-sorting module, declaration, import, and visible keys.
+/// Uniform shared by declaration-grouping and visible-declaration radix sorts.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 pub(in crate::type_checker) struct ModuleKeyRadixParams {
@@ -236,35 +272,6 @@ pub(in crate::type_checker) struct ModuleKeyRadixParams {
     pub(in crate::type_checker) reserved: u32,
     pub(in crate::type_checker) n_blocks: u32,
     pub(in crate::type_checker) key_step: u32,
-}
-
-/// Uniform for radix-sorting predicate keys.
-///
-/// `mode` selects the predicate key shape: owner, impl, method contract, or
-/// method parameter.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct PredicateKeyParams {
-    pub(in crate::type_checker) predicate_capacity: u32,
-    pub(in crate::type_checker) token_capacity: u32,
-    pub(in crate::type_checker) n_blocks: u32,
-    pub(in crate::type_checker) key_step: u32,
-    pub(in crate::type_checker) mode: u32,
-    pub(in crate::type_checker) reserved: u32,
-}
-
-/// Uniform for radix-sorting struct-field keys and generic field lookups.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct StructFieldKeyRadixParams {
-    pub(in crate::type_checker) hir_node_capacity: u32,
-    pub(in crate::type_checker) token_capacity: u32,
-    pub(in crate::type_checker) n_blocks: u32,
-    pub(in crate::type_checker) key_step: u32,
-    pub(in crate::type_checker) radix_bytes: u32,
-    pub(in crate::type_checker) reserved0: u32,
-    pub(in crate::type_checker) reserved1: u32,
-    pub(in crate::type_checker) reserved2: u32,
 }
 
 /// Number of cached words reserved per compacted call-parameter row.
@@ -317,8 +324,10 @@ pub(in crate::type_checker) fn type_alias_passes_required(parser_feature_flags: 
     parser_feature_flags & crate::lexer::features::PARSER_FEATURE_TYPE_ALIASES != 0
 }
 
-/// Whether aggregate field lookup needs its struct-field key radix table.
-pub(in crate::type_checker) fn struct_field_key_passes_required(parser_feature_flags: u32) -> bool {
+/// Whether aggregate field lookup needs its exact struct-field index.
+pub(in crate::type_checker) fn struct_field_index_passes_required(
+    parser_feature_flags: u32,
+) -> bool {
     parser_feature_flags & crate::lexer::features::PARSER_FEATURE_STRUCTS != 0
 }
 
@@ -392,8 +401,11 @@ pub(in crate::type_checker) fn aggregate_passes_required(parser_feature_flags: u
         != 0
 }
 
-/// Bucket count for byte-wise radix sorting plus an end-of-name bucket.
-pub(in crate::type_checker) const NAME_RADIX_BUCKETS: u32 = 257;
+/// Globally materialized bucket count for byte-wise radix sorting. The
+/// inactive-row sentinel exists only in workgroup-local scatter storage.
+pub(in crate::type_checker) const RADIX_U8_BUCKET_COUNT: u32 = 256;
+/// Exact-name hash slots allocated per 256-row source-name block, per table half.
+pub(in crate::type_checker) const NAME_HASH_TABLE_ROWS_PER_BLOCK: u32 = 257;
 /// Number of builtin symbols materialized before user names are resolved.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 68;
 /// Concatenated builtin symbol spelling table.
@@ -476,31 +488,17 @@ pub(in crate::type_checker) const LANGUAGE_DECL_TAGS: &[u32] = &[
     LANGUAGE_DECL_TAG_I32_ARRAY_DATA_PTR,
     8, // ptr
 ];
-/// Full byte-step count for exact canonical module-prefix ids.
-pub(in crate::type_checker) const MODULE_KEY_RADIX_STEPS: u32 = 4;
-/// Largest source-file table sorted cooperatively by one 256-lane workgroup.
-pub(in crate::type_checker) const MODULE_KEY_SMALL_SORT_CAPACITY: u32 = 256;
-/// Packs the per-field byte widths and even pass count for declaration keys.
+/// Returns the byte width and byte-step count for stable declaration grouping.
 ///
-/// Declaration order is `(module_id, namespace, name_id)`, so the LSD radix
-/// schedule consumes name bytes first, the one-byte namespace tag second, and
-/// module bytes last. The returned pass count is even so the final order lands
-/// in the canonical ping/pong buffer.
+/// Declaration lookup is exact and hash-indexed. Sorting is retained only to
+/// group declarations by module for deterministic interface/import traversal,
+/// so the radix key contains `module_id` alone.
 pub(in crate::type_checker) fn decl_key_radix_layout(
-    token_capacity: u32,
+    _token_capacity: u32,
     module_capacity: u32,
 ) -> (u32, u32) {
-    let name_bytes = radix_bytes_for_max_key(
-        token_capacity
-            .saturating_add(LANGUAGE_SYMBOL_COUNT)
-            .saturating_add(1),
-    );
-    let namespace_bytes = 1;
     let module_bytes = radix_bytes_for_max_key(module_capacity.saturating_add(1));
-    let packed_widths = name_bytes | (namespace_bytes << 4) | (module_bytes << 8);
-    let steps = name_bytes + namespace_bytes + module_bytes;
-    let even_steps = steps + (steps & 1);
-    (packed_widths, even_steps)
+    (module_bytes, module_bytes)
 }
 
 fn radix_bytes_for_max_key(max_key: u32) -> u32 {
@@ -514,57 +512,34 @@ fn radix_bytes_for_max_key(max_key: u32) -> u32 {
         4
     }
 }
+
 /// Largest compact module relation sorted by one cooperative 256-lane workgroup.
 pub(in crate::type_checker) const MODULE_RELATION_SMALL_SORT_CAPACITY: u32 = 2048;
-/// Byte-step count for import-edge sorting.
-pub(in crate::type_checker) const IMPORT_EDGE_KEY_RADIX_STEPS: u32 = 8;
-/// Byte-step count for visible-import sorting.
-pub(in crate::type_checker) const IMPORT_VISIBLE_KEY_RADIX_STEPS: u32 = 8;
-/// Byte-step count for method-key sorting.
-pub(in crate::type_checker) const METHOD_KEY_RADIX_STEPS: u32 = 24;
-/// Largest token-indexed method table sorted cooperatively by one 256-lane workgroup.
-pub(in crate::type_checker) const METHOD_KEY_SMALL_SORT_CAPACITY: u32 = 2048;
-/// Largest compact generic-parameter table sorted cooperatively in one dispatch.
-pub(in crate::type_checker) const GENERIC_PARAM_SMALL_SORT_CAPACITY: u32 = 2048;
 /// Largest compact visible-declaration table sorted by one cooperative workgroup.
 pub(in crate::type_checker) const VISIBLE_DECL_SMALL_SORT_CAPACITY: u32 = 2048;
-/// Largest sparse predicate table sorted by one 32 KiB cooperative workgroup.
-pub(in crate::type_checker) const PREDICATE_KEY_SMALL_SORT_CAPACITY: u32 = 8192;
-/// Predicate key mode for grouping predicates by owner.
-pub(in crate::type_checker) const PREDICATE_KEY_MODE_OWNER: u32 = 0;
-/// Predicate key mode for impl lookup.
-pub(in crate::type_checker) const PREDICATE_KEY_MODE_IMPL: u32 = 1;
-/// Predicate key mode for method-contract lookup.
-pub(in crate::type_checker) const PREDICATE_KEY_MODE_METHOD_CONTRACT: u32 = 2;
-/// Predicate key mode for method-parameter lookup.
-pub(in crate::type_checker) const PREDICATE_KEY_MODE_METHOD_PARAM: u32 = 3;
-/// Byte-step count for predicate-owner keys.
-pub(in crate::type_checker) const PREDICATE_OWNER_KEY_RADIX_STEPS: u32 = 8;
-/// Byte-step count for predicate-impl keys.
-pub(in crate::type_checker) const PREDICATE_IMPL_KEY_RADIX_STEPS: u32 = 20;
-/// Byte-step count for predicate method-contract keys.
-pub(in crate::type_checker) const PREDICATE_METHOD_CONTRACT_KEY_RADIX_STEPS: u32 = 12;
-/// Byte-step count for predicate method-parameter keys.
-pub(in crate::type_checker) const PREDICATE_METHOD_PARAM_KEY_RADIX_STEPS: u32 = 12;
-const VISIBLE_DECL_KEY_FIELD_COUNT: u32 = 3;
-const VISIBLE_DECL_KEY_MAX_RADIX_STEPS: u32 = 12;
+const VISIBLE_DECL_KEY_MAX_RADIX_STEPS: u32 = 8;
 /// Number of visible-declaration rows summarized into one scope-tree leaf.
 pub(in crate::type_checker) const HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: u32 = 64;
 
-/// Returns the number of bytes needed to sort visible-declaration keys.
-pub(in crate::type_checker) fn visible_decl_key_radix_bytes(decl_capacity: u32) -> u32 {
+/// Returns the significant bit width of each visible-declaration key field.
+pub(in crate::type_checker) fn visible_decl_key_radix_bits(decl_capacity: u32) -> u32 {
     let max_key = decl_capacity
         .saturating_add(LANGUAGE_SYMBOL_COUNT)
         .saturating_add(1)
         .max(1);
-    radix_bytes_for_max_key(max_key)
+    (u32::BITS - max_key.leading_zeros()).max(1)
 }
 
-/// Returns the even radix-step count used for visible-declaration key sorting.
+/// Returns the radix-step count used for visible-declaration key sorting.
+/// Lookup compares `(owner, name, token)`. Visible rows are compacted in token
+/// order and the radix scatter is stable, so sorting `(owner, name)` preserves
+/// token as the implicit final tie-breaker. The two bounded fields are
+/// bit-packed before byte extraction so capacity rounding cannot add an
+/// otherwise useless byte pass per field.
 pub(in crate::type_checker) fn visible_decl_key_radix_steps(decl_capacity: u32) -> u32 {
-    let steps = visible_decl_key_radix_bytes(decl_capacity) * VISIBLE_DECL_KEY_FIELD_COUNT;
-    let even_steps = if steps % 2 == 0 { steps } else { steps + 1 };
-    even_steps.min(VISIBLE_DECL_KEY_MAX_RADIX_STEPS)
+    let bits = visible_decl_key_radix_bits(decl_capacity).saturating_mul(2);
+    let steps = bits.div_ceil(8);
+    steps.min(VISIBLE_DECL_KEY_MAX_RADIX_STEPS)
 }
 
 #[cfg(test)]
@@ -579,9 +554,11 @@ mod tests {
         match_passes_required,
         member_passes_required,
         method_passes_required,
-        struct_field_key_passes_required,
+        struct_field_index_passes_required,
         struct_init_passes_required,
         type_alias_passes_required,
+        visible_decl_key_radix_bits,
+        visible_decl_key_radix_steps,
     };
     use crate::lexer::features::{
         PARSER_FEATURE_ARRAYS,
@@ -596,18 +573,29 @@ mod tests {
     };
 
     #[test]
-    fn declaration_radix_layout_uses_field_specific_safe_widths() {
-        assert_eq!(decl_key_radix_layout(0, 0), (0x111, 4));
-        assert_eq!(decl_key_radix_layout(312_822, 69_510), (0x313, 8));
-        assert_eq!(decl_key_radix_layout(u32::MAX, u32::MAX), (0x414, 10));
+    fn declaration_radix_layout_groups_only_by_module() {
+        assert_eq!(decl_key_radix_layout(0, 0), (1, 1));
+        assert_eq!(decl_key_radix_layout(312_822, 69_510), (3, 3));
+        assert_eq!(decl_key_radix_layout(u32::MAX, u32::MAX), (4, 4));
+    }
+
+    #[test]
+    fn visible_declaration_radix_matches_owner_name_token_lookup_order() {
+        assert_eq!(visible_decl_key_radix_bits(128), 8);
+        assert_eq!(visible_decl_key_radix_steps(128), 2);
+        assert_eq!(visible_decl_key_radix_bits(4_096), 13);
+        assert_eq!(visible_decl_key_radix_steps(4_096), 4);
+        assert_eq!(visible_decl_key_radix_bits(100_000), 17);
+        assert_eq!(visible_decl_key_radix_steps(100_000), 5);
+        assert_eq!(visible_decl_key_radix_steps(u32::MAX), 8);
     }
 
     #[test]
     fn struct_field_key_passes_follow_the_parser_struct_feature() {
-        assert!(!struct_field_key_passes_required(0));
-        assert!(!struct_field_key_passes_required(PARSER_FEATURE_ARRAYS));
-        assert!(struct_field_key_passes_required(PARSER_FEATURE_STRUCTS));
-        assert!(struct_field_key_passes_required(u32::MAX));
+        assert!(!struct_field_index_passes_required(0));
+        assert!(!struct_field_index_passes_required(PARSER_FEATURE_ARRAYS));
+        assert!(struct_field_index_passes_required(PARSER_FEATURE_STRUCTS));
+        assert!(struct_field_index_passes_required(u32::MAX));
     }
 
     #[test]

@@ -41,33 +41,33 @@ macro_rules! typecheck_operation {
 }
 
 mod call_argument_matching;
-mod call_claim_keys;
+mod call_claim_index;
 mod call_generic_claim_validation;
 mod calls;
 mod conditions;
-mod generic_parameter_sorts;
+mod generic_parameter_index;
 mod methods;
 mod module_paths;
 mod names;
 mod predicate_diagnostics;
-mod predicate_keys;
 mod returns;
+mod struct_field_index;
 mod type_instances;
 mod visible;
 mod visible_decls;
 
 pub(super) use call_argument_matching::*;
-pub(super) use call_claim_keys::*;
+pub(super) use call_claim_index::*;
 pub(super) use call_generic_claim_validation::*;
 pub(super) use calls::*;
 pub(super) use conditions::*;
-pub(super) use generic_parameter_sorts::*;
+pub(super) use generic_parameter_index::*;
 pub(super) use methods::*;
 pub(super) use module_paths::*;
 pub(super) use names::*;
 pub(super) use predicate_diagnostics::*;
-pub(super) use predicate_keys::*;
 pub(super) use returns::*;
+pub(super) use struct_field_index::*;
 pub(super) use type_instances::*;
 pub(super) use visible::*;
 pub(super) use visible_decls::*;

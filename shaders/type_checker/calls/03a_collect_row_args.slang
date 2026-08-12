@@ -70,11 +70,9 @@ RWStructuredBuffer<uint> call_generic_claim_slot;
 RWStructuredBuffer<uint> call_generic_claim_type;
 RWStructuredBuffer<uint> call_generic_claim_ref_tag;
 RWStructuredBuffer<uint> call_generic_claim_ref_payload;
-RWStructuredBuffer<uint> call_generic_claim_order;
 RWStructuredBuffer<uint> call_const_claim_callee;
 RWStructuredBuffer<uint> call_const_claim_slot;
 RWStructuredBuffer<uint> call_const_claim_len;
-RWStructuredBuffer<uint> call_const_claim_order;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -1027,11 +1025,9 @@ void clear_generic_claim(uint row)
     call_generic_claim_type[row] = TY_UNKNOWN;
     call_generic_claim_ref_tag[row] = TYPE_REF_INVALID;
     call_generic_claim_ref_payload[row] = INVALID;
-    call_generic_claim_order[row] = row;
     call_const_claim_callee[row] = INVALID;
     call_const_claim_slot[row] = INVALID;
     call_const_claim_len[row] = INVALID;
-    call_const_claim_order[row] = row;
 }
 
 void emit_generic_claim(uint row, uint callee_i, uint slot, uint arg_ty)

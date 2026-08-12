@@ -1,9 +1,8 @@
-// Append compact match-payload binders to the visible declaration table.
+// Publish compact match-payload binders by source-token anchor.
 //
-// The raw semantic-HIR scan deliberately excludes match payloads. Each compact
-// payload row is already a dense binder HIR id associated with a compact arm;
-// this pass writes it at raw_decl_count + payload_row without rediscovering the
-// relation through parser-node indices.
+// Ordinary declarations and match binders share one token-indexed descriptor
+// table. A later token-domain scan/scatter therefore materializes both kinds
+// directly in source order.
 
 import hir_records;
 import atomics;
@@ -25,15 +24,10 @@ StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> compact_match_payload_row_count;
 StructuredBuffer<HirMatchPayload> compact_match_payloads;
 StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> enclosing_fn;
-StructuredBuffer<uint> hir_visible_decl_count_out;
 
 RWStructuredBuffer<uint> hir_value_decl_name_present;
-RWStructuredBuffer<uint> hir_visible_decl_owner_fn;
-RWStructuredBuffer<uint> hir_visible_decl_name_id;
-RWStructuredBuffer<uint> hir_visible_decl_token;
-RWStructuredBuffer<uint> hir_visible_decl_scope_end;
-RWStructuredBuffer<uint> hir_visible_decl_node;
+RWStructuredBuffer<uint> hir_visible_decl_flag;
+RWStructuredBuffer<uint> hir_visible_decl_source_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -66,8 +60,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirMatchPayload payload = compact_match_payloads[row];
     if (payload.arm >= active_arm_count() || !valid_hir(payload.pattern))
         return;
-    HirMatchArm arm = compact_match_arms[payload.arm];
-    if (!valid_hir(arm.result))
+    if (!valid_hir(compact_match_arms[payload.arm].result))
         return;
 
     uint binder_token = compact_hir_core[payload.pattern].token_start;
@@ -77,20 +70,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (name_id == INVALID || name_id >= gParams.n_tokens + LANGUAGE_SYMBOL_COUNT)
         return;
 
-    uint raw_count = min(hir_visible_decl_count_out[0u], gParams.n_tokens);
-    uint dst = raw_count + row;
-    if (dst < raw_count || dst >= gParams.n_tokens)
-        return;
-
-    uint result_end = compact_hir_core[arm.result].token_end;
-    uint scope_end = result_end == INVALID || result_end == 0u
-        ? active_token_count()
-        : min(result_end, active_token_count());
     atomic_u32_or(hir_value_decl_name_present, name_id, 1u);
-    hir_visible_decl_owner_fn[dst] = enclosing_fn[binder_token];
-    hir_visible_decl_name_id[dst] = name_id;
-    hir_visible_decl_token[dst] = binder_token;
-    hir_visible_decl_scope_end[dst] = scope_end;
-    // There is no local-initializer exclusion relation for a match binder.
-    hir_visible_decl_node[dst] = INVALID;
+    uint encoded = 0x80000000u | (row + 1u);
+    uint prior = atomic_u32_compare_exchange(
+        hir_visible_decl_source_by_token,
+        binder_token,
+        0u,
+        encoded);
+    if (prior == 0u || prior == encoded)
+        hir_visible_decl_flag[binder_token] = 1u;
 }

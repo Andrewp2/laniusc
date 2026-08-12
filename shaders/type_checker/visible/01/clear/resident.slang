@@ -17,6 +17,8 @@ StructuredBuffer<uint> token_count;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> visible_type;
 RWStructuredBuffer<uint> hir_value_decl_name_present;
+RWStructuredBuffer<uint> hir_visible_decl_flag;
+RWStructuredBuffer<uint> hir_visible_decl_source_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TY_UNKNOWN = 0u;
@@ -47,4 +49,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     visible_decl[i] = INVALID;
     visible_type[i] = TY_UNKNOWN;
+    hir_visible_decl_flag[i] = 0u;
+    hir_visible_decl_source_by_token[i] = 0u;
 }

@@ -1,6 +1,6 @@
 /// Struct field list passes.
 pub mod field;
-/// Struct declaration field extraction pass.
+/// Struct declaration and literal metadata initialization pass.
 pub mod fields;
 /// Struct literal span pass.
 pub mod lit_spans;

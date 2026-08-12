@@ -1,4 +1,4 @@
-// One race-free pointer-doubling round over non-generic alias declarations.
+// One race-free bounded parent walk over non-generic alias declarations.
 
 struct Params
 {
@@ -22,7 +22,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (decl_i >= gParams.n_hir_nodes)
         return;
     uint parent = alias_root_decl_in[decl_i];
-    alias_root_decl_out[decl_i] = parent < gParams.n_hir_nodes
-        ? alias_root_decl_in[parent]
-        : decl_i;
+    [unroll]
+    for (uint step = 0u; step < 15u && parent < gParams.n_hir_nodes; ++step)
+    {
+        uint next = alias_root_decl_in[parent];
+        if (next == parent)
+            break;
+        parent = next;
+    }
+    alias_root_decl_out[decl_i] = parent < gParams.n_hir_nodes ? parent : decl_i;
 }

@@ -7,8 +7,7 @@ use super::super::*;
 pub(in crate::type_checker) struct VisibleDeclSort {
     _dispatch_params: LaniusBuffer<ModuleKeyRadixParams>,
     dispatch: wgpu::BindGroup,
-    dispatch_args: LaniusBuffer<u32>,
-    seed: wgpu::BindGroup,
+    uses_radix: bool,
     sort: RadixSortOperation<ModuleKeyRadixParams>,
 }
 
@@ -23,10 +22,11 @@ impl VisibleDeclSort {
         let dispatch_args =
             typed_buffer_from_resources(resources, "hir_visible_decl_key_radix_dispatch_args")?;
         let capacity = capacity.max(1);
-        let radix_bytes = visible_decl_key_radix_bytes(capacity);
+        let radix_bits = visible_decl_key_radix_bits(capacity);
+        let radix_steps = visible_decl_key_radix_steps(capacity);
         let params = |key_step| ModuleKeyRadixParams {
             module_capacity: capacity,
-            reserved: radix_bytes,
+            reserved: radix_bits,
             n_blocks,
             key_step,
         };
@@ -38,7 +38,7 @@ impl VisibleDeclSort {
         let dispatch = reflected_bind_group_with_overrides(
             device,
             "type_check.visible.declarations.dispatch",
-            &passes.kernel("type_checker/names/radix/dispatch_args"),
+            &passes.kernel("radix/dispatch_args"),
             resources,
             &[
                 ("gParams", dispatch_params.as_entire_binding()),
@@ -49,24 +49,18 @@ impl VisibleDeclSort {
                 ("radix_dispatch_args", dispatch_args.as_entire_binding()),
             ],
         )?;
-        let seed = reflected_bind_group_with_overrides(
-            device,
-            "type_check.visible.declarations.seed",
-            &passes.kernel("type_checker/visible/03d_seed_hir_decl_order"),
-            resources,
-            &[("gParams", dispatch_params.as_entire_binding())],
-        )?;
+        let uses_radix = capacity > VISIBLE_DECL_SMALL_SORT_CAPACITY;
         let sort = compiler_graph::VISIBLE_RADIX_SORT.operation(
             device,
             passes,
             resources,
             capacity,
             VISIBLE_DECL_SMALL_SORT_CAPACITY,
-            visible_decl_key_radix_steps(capacity),
+            radix_steps,
             RadixSortDispatch {
                 small: RadixDispatchDomain::Direct(256),
                 rows: RadixDispatchDomain::Indirect(&dispatch_args),
-                bucket_prefix: RadixDispatchDomain::Direct(NAME_RADIX_BUCKETS * 256),
+                bucket_prefix: RadixDispatchDomain::Direct(RADIX_U8_BUCKET_COUNT * 256),
                 bucket_bases: RadixDispatchDomain::Direct(256),
             },
             params,
@@ -75,8 +69,7 @@ impl VisibleDeclSort {
         Ok(Self {
             _dispatch_params: dispatch_params,
             dispatch,
-            dispatch_args: typed_alias_storage_u32(&dispatch_args, 3),
-            seed,
+            uses_radix,
             sort,
         })
     }
@@ -86,20 +79,15 @@ impl VisibleDeclSort {
         passes: &TypeCheckPasses,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()> {
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/names/radix/dispatch_args"),
-            &self.dispatch,
-            "type_check.visible.hir_decl_key_radix_dispatch_args",
-            1,
-        )?;
-        record_compute_indirect(
-            encoder,
-            &passes.kernel("type_checker/visible/03d_seed_hir_decl_order"),
-            &self.seed,
-            "type_check.visible.seed_hir_decl_order",
-            &self.dispatch_args,
-        )?;
+        if self.uses_radix {
+            record_compute(
+                encoder,
+                &passes.kernel("radix/dispatch_args"),
+                &self.dispatch,
+                "type_check.visible.hir_decl_key_radix_dispatch_args",
+                1,
+            )?;
+        }
         self.sort.record(encoder)
     }
 }

@@ -6,6 +6,7 @@ import dependency_interface;
 import hir_records;
 import gpu_index;
 import status;
+import type_checker.calls.claim_lookup;
 
 struct Params
 {
@@ -52,7 +53,8 @@ StructuredBuffer<uint> call_generic_claim_slot;
 StructuredBuffer<uint> call_generic_claim_type;
 StructuredBuffer<uint> call_generic_claim_ref_tag;
 StructuredBuffer<uint> call_generic_claim_ref_payload;
-StructuredBuffer<uint> call_generic_claim_order;
+StructuredBuffer<uint> call_generic_claim_lookup_head;
+StructuredBuffer<uint> call_generic_claim_lookup_next;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> call_result_instance;
@@ -289,11 +291,25 @@ uint generic_claim_capacity()
         : base * GENERIC_CLAIM_CAPACITY_MULTIPLIER;
 }
 
-bool claim_key_less(uint row, uint callee, uint slot)
+uint concrete_claim_row(uint callee, uint slot, uint count)
 {
-    uint row_callee = call_generic_claim_callee[row];
-    return row_callee < callee ||
-        (row_callee == callee && call_generic_claim_slot[row] < slot);
+    uint bucket = call_claim_lookup_bucket(callee, slot, count);
+    uint link = call_generic_claim_lookup_head[bucket];
+    uint result = INVALID;
+    for (uint step = 0u; step < count && link != 0u; step += 1u)
+    {
+        uint row = link - 1u;
+        if (row >= count)
+            break;
+        if (call_generic_claim_callee[row] == callee &&
+            call_generic_claim_slot[row] == slot &&
+            (call_generic_claim_type[row] != 0u || call_generic_claim_ref_tag[row] != 0u))
+        {
+            result = min(result, row);
+        }
+        link = call_generic_claim_lookup_next[row];
+    }
+    return result;
 }
 
 void substitute_direct_generic_call(uint call_node)
@@ -324,24 +340,8 @@ void substitute_direct_generic_call(uint call_node)
         return;
     uint slot = dependency_type_word(return_base + 1u);
     uint count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
-    uint lo = 0u;
-    uint hi = count;
-    for (uint step = 0u; step < 32u; step += 1u)
-    {
-        if (lo >= hi)
-            break;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint row = call_generic_claim_order[mid];
-        if (row >= count || !claim_key_less(row, callee_token, slot))
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-    if (lo >= count)
-        return;
-    uint row = call_generic_claim_order[lo];
-    if (row >= count || call_generic_claim_callee[row] != callee_token ||
-        call_generic_claim_slot[row] != slot)
+    uint row = concrete_claim_row(callee_token, slot, count);
+    if (row == INVALID)
         return;
     uint inferred = call_generic_claim_type[row];
     uint inferred_tag = call_generic_claim_ref_tag[row];

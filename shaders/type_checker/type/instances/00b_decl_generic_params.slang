@@ -31,10 +31,9 @@ RWStructuredBuffer<uint> generic_param_count_out;
 RWStructuredBuffer<uint> generic_param_owner_token;
 RWStructuredBuffer<uint> generic_param_name_id;
 RWStructuredBuffer<uint> generic_param_token;
-RWStructuredBuffer<uint> generic_param_node;
 RWStructuredBuffer<uint> generic_param_kind;
-RWStructuredBuffer<uint> generic_param_key_order;
-RWStructuredBuffer<uint> generic_param_slot_order;
+RWStructuredBuffer<uint> generic_type_param_flag;
+RWStructuredBuffer<uint> generic_const_param_flag;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -76,6 +75,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row >= count)
         return;
 
+    // The workspace is reused across jobs. Invalid compact rows still
+    // contribute zero to both scans so diagnostics cannot leave stale flags
+    // in the slot-assignment relation.
+    generic_type_param_flag[row] = 0u;
+    generic_const_param_flag[row] = 0u;
+
     HirGenericParam parameter = compact_generic_params[row];
     if (parameter.owner >= compact_hir_count[0u] || !valid_token(parameter.name_token) ||
         (parameter.kind != GENERIC_PARAM_KIND_TYPE &&
@@ -105,10 +110,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     generic_param_owner_token[row] = owner_token;
     generic_param_name_id[row] = name_id_by_token[parameter.name_token];
     generic_param_token[row] = parameter.name_token;
-    generic_param_node[row] = row;
     generic_param_kind[row] = parameter.kind;
-    generic_param_key_order[row] = row;
-    generic_param_slot_order[row] = row;
+    generic_type_param_flag[row] = parameter.kind == GENERIC_PARAM_KIND_TYPE ? 1u : 0u;
+    generic_const_param_flag[row] = parameter.kind == GENERIC_PARAM_KIND_CONST ? 1u : 0u;
 
     increment_owner_count(owner_token, parameter.kind);
     if (parameter.kind == GENERIC_PARAM_KIND_TYPE)

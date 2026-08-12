@@ -26,16 +26,12 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
         "type_check.visible.compact_hir_dispatch_args",
         1,
     )?;
-    groups
-        .hir_declarations
-        .record_staged(encoder, |stage, encoder| {
-            let label = match stage {
-                CompactionStage::Mark => "typecheck.visible.mark_hir_decl_names.done",
-                CompactionStage::Scan => "typecheck.visible.hir_decl_scan.done",
-                CompactionStage::Scatter => "typecheck.visible.scatter_hir_decl_records.done",
-            };
-            stamp_typecheck_timer(&mut timer, encoder, label);
-        })?;
+    groups.mark_hir_declarations.record(encoder)?;
+    stamp_typecheck_timer(
+        &mut timer,
+        encoder,
+        "typecheck.visible.mark_hir_decl_names.done",
+    );
     record_compute(
         encoder,
         &passes.kernel("type_checker/count/dispatch_args"),
@@ -43,24 +39,19 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
         "type_check.visible.match_payload_dispatch_args",
         1,
     )?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/visible/03c2_scatter_match_payload_decls"),
-        &groups.scatter_match_payload_decls,
-        "type_check.visible.scatter_match_payload_decls",
-        &groups.match_payload_dispatch_args,
-    )?;
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/visible/03c3_finalize_decl_count"),
-        &groups.finalize_decl_count,
-        "type_check.visible.finalize_decl_count",
-        1,
-    )?;
+    groups.mark_match_payload_declarations.record(encoder)?;
     stamp_typecheck_timer(
         &mut timer,
         encoder,
-        "typecheck.visible.scatter_match_payload_decls.done",
+        "typecheck.visible.mark_match_payload_decls.done",
+    );
+    groups.declaration_scan.record(encoder)?;
+    stamp_typecheck_timer(&mut timer, encoder, "typecheck.visible.decl_scan.done");
+    groups.scatter_declarations.record(encoder)?;
+    stamp_typecheck_timer(
+        &mut timer,
+        encoder,
+        "typecheck.visible.scatter_decl_records.done",
     );
     groups.declarations.record(passes, encoder)?;
     stamp_typecheck_timer(

@@ -117,11 +117,19 @@ pub(super) fn make_tokens_generic_shr_00_raw_apply_pass(device: &wgpu::Device) -
     )
 }
 
-pub(super) fn make_tokens_generic_shr_02_scan_pass(device: &wgpu::Device) -> Result<PassData> {
+pub(super) fn make_tokens_generic_shr_02_scan_up_pass(device: &wgpu::Device) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(
         device,
-        "parser_tokens_generic_shr_02_scan",
-        shader: "parser/tokens/generic/shr/02_scan"
+        "parser_tokens_generic_shr_02_scan_up",
+        shader: "parser/tokens/generic/shr/02_scan_up"
+    )
+}
+
+pub(super) fn make_tokens_generic_shr_02_scan_down_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_generic_shr_02_scan_down",
+        shader: "parser/tokens/generic/shr/02_scan_down"
     )
 }
 
@@ -175,11 +183,35 @@ pub(super) fn make_token_delimiters_01_pass(device: &wgpu::Device) -> Result<Pas
 }
 
 /// Loads the delimiter-depth scan pass for parser tokens.
-pub(super) fn make_token_delimiters_02_pass(device: &wgpu::Device) -> Result<PassData> {
+pub(super) fn make_token_delimiters_02_scan_up_pass(device: &wgpu::Device) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(
         device,
-        "parser_tokens_delimiters_02_scan",
-        shader: "parser/tokens/delimiters/02_scan"
+        "parser_tokens_delimiters_02_scan_up",
+        shader: "parser/tokens/delimiters/02_scan_up"
+    )
+}
+
+pub(super) fn make_token_delimiters_02_scan_down_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_delimiters_02_scan_down",
+        shader: "parser/tokens/delimiters/02_scan_down"
+    )
+}
+
+pub(super) fn make_token_statement_event_scan_up_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_context_scan_up",
+        shader: "parser/tokens/context/scan_up"
+    )
+}
+
+pub(super) fn make_token_statement_event_scan_down_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_context_scan_down",
+        shader: "parser/tokens/context/scan_down"
     )
 }
 
@@ -282,58 +314,25 @@ pub(super) fn make_tokens_match_pattern_02_apply_pass(device: &wgpu::Device) -> 
     )
 }
 
-/// Loads the parenthesis depth-block pass.
-pub(super) fn make_tokens_paren_match_01_depth_blocks_pass(
+/// Loads the combined delimiter depth-block pass.
+pub(super) fn make_tokens_delimiter_match_01_depth_blocks_pass(
     device: &wgpu::Device,
 ) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(
         device,
-        "parser_tokens_paren_match_01_depth_blocks",
-        shader: "parser/tokens/paren_match_01_depth_blocks"
+        "parser_tokens_delimiter_match_01_depth_blocks",
+        shader: "parser/tokens/delimiter_match/01_depth_blocks"
     )
 }
 
-/// Loads the brace depth-block pass.
-pub(super) fn make_tokens_brace_match_01_depth_blocks_pass(
+/// Loads the combined delimiter minimum-tree pass.
+pub(super) fn make_tokens_delimiter_match_02_build_min_tree_pass(
     device: &wgpu::Device,
 ) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(
         device,
-        "parser_tokens_brace_match_01_depth_blocks",
-        shader: "parser/tokens/brace/match/01_depth_blocks"
-    )
-}
-
-/// Loads the bracket depth-block pass.
-pub(super) fn make_tokens_bracket_match_01_depth_blocks_pass(
-    device: &wgpu::Device,
-) -> Result<PassData> {
-    crate::gpu::passes_core::make_main_pass!(
-        device,
-        "parser_tokens_bracket_match_01_depth_blocks",
-        shader: "parser/tokens/bracket/match/01_depth_blocks"
-    )
-}
-
-/// Loads the angle-bracket depth-block pass.
-pub(super) fn make_tokens_angle_match_01_depth_blocks_pass(
-    device: &wgpu::Device,
-) -> Result<PassData> {
-    crate::gpu::passes_core::make_main_pass!(
-        device,
-        "parser_tokens_angle_match_01_depth_blocks",
-        shader: "parser/tokens/angle_match_01_depth_blocks"
-    )
-}
-
-/// Loads the brace minimum-depth tree construction pass.
-pub(super) fn make_tokens_brace_match_02_build_min_tree_pass(
-    device: &wgpu::Device,
-) -> Result<PassData> {
-    crate::gpu::passes_core::make_main_pass!(
-        device,
-        "parser_tokens_brace_match_02_build_min_tree",
-        shader: "parser/tokens/brace/match/02_build_min_tree"
+        "parser_tokens_delimiter_match_02_build_min_tree",
+        shader: "parser/tokens/delimiter_match/02_build_min_tree"
     )
 }
 

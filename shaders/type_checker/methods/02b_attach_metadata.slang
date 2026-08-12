@@ -122,27 +122,27 @@ uint receiver_ref_token_for_type_hir(uint type_hir)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    if (i >= active_token_count())
-        return;
-
-    uint method_row = method_decl_method_row[i];
+    uint method_row = linear_thread_id(dtid);
     uint method_count = min(compact_method_count[0u], gParams.n_hir_nodes);
     if (method_row >= method_count)
         return;
 
     HirMethodCore core = compact_method_cores[method_row];
+    uint fn_token = core.name_token;
+    if (fn_token >= active_token_count() || method_decl_method_row[fn_token] != method_row)
+        return;
+
     HirMethodSignature signature = compact_method_signatures[method_row];
     if (!valid_hir(core.impl_node))
         return;
     uint type_i = receiver_ref_token_for_type_hir(signature.impl_receiver_type);
 
-    method_decl_receiver_ref_tag[i] =
+    method_decl_receiver_ref_tag[fn_token] =
         type_i == INVALID || type_i >= active_token_count() ? TYPE_REF_INVALID
                                                             : type_expr_ref_tag[type_i];
-    method_decl_receiver_ref_payload[i] =
+    method_decl_receiver_ref_payload[fn_token] =
         type_i == INVALID || type_i >= active_token_count() ? INVALID : type_expr_ref_payload[type_i];
     uint file_id = compact_hir_links[core.impl_node].file_id;
-    method_decl_module_id[i] = module_for_file(file_id);
-    method_decl_name_id[i] = name_id_for_token(method_decl_name_token[i]);
+    method_decl_module_id[fn_token] = module_for_file(file_id);
+    method_decl_name_id[fn_token] = name_id_for_token(method_decl_name_token[fn_token]);
 }

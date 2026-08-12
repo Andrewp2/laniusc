@@ -4,13 +4,10 @@
 // - Dispatch after local unqualified resolution and imported visibility table
 //   validation.
 // - This pass resolves still-unresolved one-segment HIR path expressions
-//   against sorted imported-public declaration tables for the owner module.
-// - It does not scan source bytes, use hashes, perform CPU lookup, or apply
-//   same-source shortcuts.
+//   against the exact imported-public declaration index for the owner module.
 
-import fixed.key;
 import gpu_index;
-import range_query;
+import type_checker.modules.import_visible_lookup;
 
 struct Params
 {
@@ -33,6 +30,7 @@ StructuredBuffer<uint> import_visible_key_module_id;
 StructuredBuffer<uint> import_visible_key_name_id;
 StructuredBuffer<uint> import_visible_key_to_decl_id;
 StructuredBuffer<uint> import_visible_status;
+StructuredBuffer<uint> import_visible_lookup_state;
 
 RWStructuredBuffer<uint> resolved_decl;
 RWStructuredBuffer<uint> resolved_status;
@@ -71,46 +69,17 @@ uint active_visible_count()
     return min(import_visible_count_out[0], visible_capacity());
 }
 
-public struct VisibleLookupKey
-{
-    uint module_id;
-    uint name_id;
-}
-
-public struct VisibleFixedKey : IFixedU32RowKey<VisibleLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint value = lane == 0u
-            ? import_visible_key_module_id[row]
-            : import_visible_key_name_id[row];
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-
-    public static uint key_lane(VisibleLookupKey key, uint lane)
-    {
-        uint value = lane == 0u ? key.module_id : key.name_id;
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-}
-
-public struct VisibleKeyCompare : IRowQueryCompare<VisibleLookupKey>
-{
-    public static int compare(uint row, VisibleLookupKey key)
-    {
-        return fixed_u32_row_key_compare<VisibleLookupKey, VisibleFixedKey>(
-            row,
-            key,
-            2u);
-    }
-}
-
 uint find_visible_row(uint module_id, uint name_id)
 {
-    VisibleLookupKey key;
-    key.module_id = module_id;
-    key.name_id = name_id;
-    return find_equal_query<VisibleLookupKey, VisibleKeyCompare>(active_visible_count(), key);
+    return import_visible_lookup_find(
+        module_id,
+        name_id,
+        active_visible_count(),
+        visible_capacity(),
+        import_visible_key_module_id,
+        import_visible_key_name_id,
+        import_visible_key_to_decl_id,
+        import_visible_lookup_state);
 }
 
 [shader("compute")]

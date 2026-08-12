@@ -7,6 +7,7 @@
 import hir_records;
 import fixed.compact_method;
 import atomics;
+import type_checker.predicates.method_contract_lookup;
 
 struct Params
 {
@@ -38,6 +39,9 @@ RWStructuredBuffer<uint> predicate_method_contract_return_type_node;
 RWStructuredBuffer<uint> predicate_method_contract_visibility;
 RWStructuredBuffer<uint> predicate_method_contract_status;
 RWStructuredBuffer<uint> predicate_method_contract_param_type_node;
+RWStructuredBuffer<uint> predicate_method_contract_owner_count;
+RWStructuredBuffer<uint> predicate_method_contract_lookup_head;
+RWStructuredBuffer<uint> predicate_method_contract_lookup_next;
 RWStructuredBuffer<uint> hir_value_decl_name_present;
 
 static const uint INVALID = 0xffffffffu;
@@ -95,6 +99,29 @@ uint contract_status(uint flags, bool structurally_valid)
     return PREDICATE_STATUS_OK;
 }
 
+void index_method_contract(uint method, uint owner, uint name_id)
+{
+    uint method_count = active_method_count();
+    if (method_count == 0u)
+        return;
+
+    atomic_u32_add(predicate_method_contract_owner_count, owner, 1u);
+    uint bucket = method_contract_lookup_bucket(owner, name_id, method_count);
+    uint prior = predicate_method_contract_lookup_head[bucket];
+    for (;;)
+    {
+        predicate_method_contract_lookup_next[method] = prior;
+        uint observed = atomic_u32_compare_exchange(
+            predicate_method_contract_lookup_head,
+            bucket,
+            prior,
+            method + 1u);
+        if (observed == prior)
+            return;
+        prior = observed;
+    }
+}
+
 void publish_method(uint row)
 {
     if (row >= active_method_count())
@@ -133,6 +160,8 @@ void publish_method(uint row)
         valid_hir(return_type) ? return_type : INVALID;
     predicate_method_contract_visibility[core.node] = signature.metadata & 0xffffu;
     predicate_method_contract_status[core.node] = contract_status(flags, valid_contract);
+    if (valid_contract)
+        index_method_contract(core.node, core.owner, name_id);
 }
 
 void publish_param(uint row)

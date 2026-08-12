@@ -1,6 +1,6 @@
 // Turn the GPU-collected semantic feature summary into indirect dispatch grids.
 // Optional semantic families receive zero workgroups when no relevant HIR was
-// observed. Fixed-size radix helpers get their exact enabled grids as well.
+// observed. Predicate lookup helpers get their exact enabled grids as well.
 
 struct Params
 {
@@ -15,23 +15,20 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> hir_active_count;
 StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<uint> compact_predicate_count;
 StructuredBuffer<uint> semantic_feature_flags;
 RWStructuredBuffer<uint> method_token_dispatch_args;
 RWStructuredBuffer<uint> method_hir_dispatch_args;
 RWStructuredBuffer<uint> method_compact_dispatch_args;
 RWStructuredBuffer<uint> method_token_hir_dispatch_args;
-RWStructuredBuffer<uint> method_radix_prefix_dispatch_args;
-RWStructuredBuffer<uint> method_radix_bases_dispatch_args;
 RWStructuredBuffer<uint> predicate_token_dispatch_args;
 RWStructuredBuffer<uint> predicate_hir_dispatch_args;
-RWStructuredBuffer<uint> predicate_radix_prefix_dispatch_args;
-RWStructuredBuffer<uint> predicate_radix_bases_dispatch_args;
+RWStructuredBuffer<uint> predicate_compact_dispatch_args;
 RWStructuredBuffer<uint> predicate_single_dispatch_args;
 RWStructuredBuffer<uint> match_hir_dispatch_args;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint RADIX_BUCKETS = 257u;
 static const uint SEMANTIC_FEATURE_METHODS = 1u << 0u;
 static const uint SEMANTIC_FEATURE_PREDICATES = 1u << 1u;
 static const uint SEMANTIC_FEATURE_MATCH = 1u << 2u;
@@ -77,9 +74,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint active_tokens = active_token_count();
     uint active_hir = active_hir_node_count();
     uint active_methods = min(compact_method_count[0u], gParams.n_hir_nodes);
+    uint active_predicates = min(compact_predicate_count[0u], gParams.n_hir_nodes);
     bool methods = feature_enabled(SEMANTIC_FEATURE_METHODS);
     bool predicates = feature_enabled(SEMANTIC_FEATURE_PREDICATES);
-    // Method-contract validation shares the predicate-family radix and HIR
+    // Method-contract validation shares the predicate-family lookup and HIR
     // passes, but a trait declaration can have methods without producing any
     // compact predicate rows. Keep that scheduling dependency explicit.
     bool predicate_or_method_work = predicates || methods;
@@ -89,16 +87,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     write_record_args(method_hir_dispatch_args, active_hir, methods);
     write_record_args(method_compact_dispatch_args, active_methods, methods);
     write_record_args(method_token_hir_dispatch_args, max(active_tokens, active_hir), methods);
-    write_fixed_args(method_radix_prefix_dispatch_args, RADIX_BUCKETS, methods);
-    write_fixed_args(method_radix_bases_dispatch_args, 1u, methods);
-
     write_record_args(predicate_token_dispatch_args, active_tokens, predicates);
     write_record_args(predicate_hir_dispatch_args, active_hir, predicate_or_method_work);
-    write_fixed_args(
-        predicate_radix_prefix_dispatch_args,
-        RADIX_BUCKETS,
-        predicate_or_method_work);
-    write_fixed_args(predicate_radix_bases_dispatch_args, 1u, predicate_or_method_work);
+    write_record_args(predicate_compact_dispatch_args, active_predicates, predicates);
     write_fixed_args(predicate_single_dispatch_args, 1u, predicate_or_method_work);
     write_record_args(match_hir_dispatch_args, active_hir, match_syntax);
 }

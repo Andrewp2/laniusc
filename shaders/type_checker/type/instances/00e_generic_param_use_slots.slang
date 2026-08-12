@@ -7,6 +7,7 @@
 
 import hir_records;
 import status;
+import type_checker.type.instances.generic_param_lookup;
 
 struct Params
 {
@@ -21,6 +22,8 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<HirGenericParam> compact_generic_params;
+StructuredBuffer<HirRange> compact_generic_param_ranges;
 StructuredBuffer<uint> generic_decl_owner_by_node_a;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
@@ -33,10 +36,10 @@ StructuredBuffer<uint> generic_param_count_out;
 StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_token;
-StructuredBuffer<uint> generic_param_node;
 StructuredBuffer<uint> generic_param_kind;
-StructuredBuffer<uint> generic_param_key_order;
-StructuredBuffer<uint> generic_param_slot_order;
+StructuredBuffer<uint> generic_param_lookup_state;
+StructuredBuffer<uint> generic_type_param_prefix;
+StructuredBuffer<uint> generic_const_param_prefix;
 
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;
@@ -110,14 +113,6 @@ uint generic_decl_scope_token_for_type_node(uint node)
     return generic_owner_token(generic_decl_owner_by_node_a[node]);
 }
 
-bool generic_param_key_less(uint row, uint owner, uint name_id)
-{
-    uint row_owner = generic_param_owner_token[row];
-    if (row_owner != owner)
-        return row_owner < owner;
-    return generic_param_name_id[row] < name_id;
-}
-
 bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
 {
     return row < active_generic_param_count() &&
@@ -126,28 +121,18 @@ bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
            generic_param_kind[row] == kind;
 }
 
-bool same_duplicate_key(uint left, uint right)
+void validate_duplicate_generic_param_key(uint row)
 {
-    if (!valid_row(left) || !valid_row(right))
-        return false;
-    if (generic_param_token[left] == generic_param_token[right])
-        return false;
-    uint owner = generic_param_owner_token[right];
-    uint name = generic_param_name_id[right];
-    return owner != INVALID &&
-           name != INVALID &&
-           generic_param_owner_token[left] == owner &&
-           generic_param_name_id[left] == name;
-}
-
-void validate_duplicate_generic_param_key(uint sorted_i)
-{
-    if (sorted_i == 0u || sorted_i >= active_generic_param_count())
+    uint count = active_generic_param_count();
+    if (row >= count)
         return;
-
-    uint row = generic_param_key_order[sorted_i];
-    uint previous = generic_param_key_order[sorted_i - 1u];
-    if (!same_duplicate_key(previous, row))
+    uint representative = generic_param_lookup_find(
+        generic_param_owner_token[row], generic_param_name_id[row],
+        count, gParams.n_tokens,
+        generic_param_owner_token, generic_param_name_id,
+        generic_param_lookup_state);
+    if (representative == INVALID || representative == row ||
+        generic_param_token[representative] == generic_param_token[row])
         return;
 
     uint token = generic_param_token[row];
@@ -155,107 +140,21 @@ void validate_duplicate_generic_param_key(uint sorted_i)
         record_min_token_error(status, token, ERR_BAD_HIR, GENERIC_STATUS_DUPLICATE_PARAM);
 }
 
-bool generic_param_slot_key_less(uint row, uint owner, uint kind, uint node)
-{
-    if (!valid_row(row))
-        return false;
-
-    uint row_owner = generic_param_owner_token[row];
-    if (row_owner != owner)
-        return row_owner < owner;
-    uint row_kind = generic_param_kind[row];
-    if (row_kind != kind)
-        return row_kind < kind;
-    return generic_param_node[row] < node;
-}
-
-bool generic_param_slot_segment_matches(uint row, uint owner, uint kind)
-{
-    return valid_row(row) &&
-           generic_param_owner_token[row] == owner &&
-           generic_param_kind[row] == kind;
-}
-
-uint generic_param_slot_segment_start(uint owner, uint kind)
-{
-    uint count = active_generic_param_count();
-    uint lo = 0u;
-    uint hi = count;
-    for (uint step = 0u; step < 32u; step += 1u)
-    {
-        if (lo >= hi)
-            continue;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint row = generic_param_slot_order[mid];
-        if (row >= count || !generic_param_slot_key_less(row, owner, kind, 0u))
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-
-    if (lo >= count)
-        return INVALID;
-    uint row = generic_param_slot_order[lo];
-    return generic_param_slot_segment_matches(row, owner, kind) ? lo : INVALID;
-}
-
-uint generic_param_slot_order_index_for_row(uint row)
-{
-    if (!valid_row(row))
-        return INVALID;
-
-    uint owner = generic_param_owner_token[row];
-    uint kind = generic_param_kind[row];
-    uint node = generic_param_node[row];
-    uint count = active_generic_param_count();
-    uint lo = 0u;
-    uint hi = count;
-    for (uint step = 0u; step < 32u; step += 1u)
-    {
-        if (lo >= hi)
-            continue;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint mid_row = generic_param_slot_order[mid];
-        if (mid_row >= count || !generic_param_slot_key_less(mid_row, owner, kind, node))
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-
-    if (lo >= count || generic_param_slot_order[lo] != row)
-        return INVALID;
-    return lo;
-}
-
-uint generic_param_slot_from_order_index(uint sorted_i)
-{
-    if (sorted_i >= active_generic_param_count())
-        return INVALID;
-
-    uint row = generic_param_slot_order[sorted_i];
-    if (!valid_row(row))
-        return INVALID;
-
-    uint owner = generic_param_owner_token[row];
-    uint kind = generic_param_kind[row];
-    uint start = generic_param_slot_segment_start(owner, kind);
-    if (start == INVALID || sorted_i < start)
-        return INVALID;
-
-    uint slot = sorted_i - start;
-    uint count = kind == GENERIC_PARAM_KIND_CONST
-        ? type_decl_const_param_count_by_owner_token[owner]
-        : type_decl_generic_param_count_by_owner_token[owner];
-    return slot < count ? slot : INVALID;
-}
-
 uint slot_for_row(uint row)
 {
     if (!valid_row(row))
         return INVALID;
-
-    uint sorted_i = generic_param_slot_order_index_for_row(row);
-    return sorted_i == INVALID ? INVALID : generic_param_slot_from_order_index(sorted_i);
+    HirGenericParam parameter = compact_generic_params[row];
+    if (!valid_node(parameter.owner))
+        return INVALID;
+    HirRange range = compact_generic_param_ranges[parameter.owner];
+    if (range.count == 0u || range.start == INVALID ||
+        row < range.start || row >= range.start + range.count)
+        return INVALID;
+    uint kind = generic_param_kind[row];
+    return kind == GENERIC_PARAM_KIND_CONST
+        ? generic_const_param_prefix[row] - generic_const_param_prefix[range.start]
+        : generic_type_param_prefix[row] - generic_type_param_prefix[range.start];
 }
 
 void publish_generic_type_use_for_owner(uint owner_token, uint use_token)
@@ -298,12 +197,8 @@ void publish_compact_variant_payload_use_slot(uint row)
     publish_generic_type_use_for_owner(owner_token, use_token);
 }
 
-void publish_decl_generic_param_slot(uint sorted_i)
+void publish_decl_generic_param_slot(uint row)
 {
-    if (sorted_i >= active_generic_param_count())
-        return;
-
-    uint row = generic_param_slot_order[sorted_i];
     if (!valid_row(row))
         return;
 
@@ -311,7 +206,7 @@ void publish_decl_generic_param_slot(uint sorted_i)
     if (!valid_token(token))
         return;
 
-    uint slot = generic_param_slot_from_order_index(sorted_i);
+    uint slot = slot_for_row(row);
     if (slot == INVALID)
         return;
 
@@ -332,23 +227,10 @@ uint generic_param_row_for_name(uint owner_token, uint name_token, uint kind)
         return INVALID;
 
     uint count = active_generic_param_count();
-    uint lo = 0u;
-    uint hi = count;
-    for (uint step = 0u; step < 32u; step += 1u)
-    {
-        if (lo >= hi)
-            continue;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint row = generic_param_key_order[mid];
-        if (row >= count || !generic_param_key_less(row, owner_token, name_id))
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-
-    if (lo >= count)
-        return INVALID;
-    uint row = generic_param_key_order[lo];
+    uint row = generic_param_lookup_find(
+        owner_token, name_id, count, gParams.n_tokens,
+        generic_param_owner_token, generic_param_name_id,
+        generic_param_lookup_state);
     return generic_param_key_matches(row, owner_token, name_id, kind) ? row : INVALID;
 }
 

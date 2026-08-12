@@ -1,80 +1,12 @@
 use super::super::*;
 
-const GENERIC_PARAM_KEY_FIELD_COUNT: u32 = 3;
-const GENERIC_PARAM_KEY_MAX_RADIX_STEPS: u32 = 12;
-const STRUCT_FIELD_KEY_FIELD_COUNT: u32 = 3;
-const STRUCT_FIELD_KEY_MAX_RADIX_STEPS: u32 = 12;
-
-/// Returns the byte width needed for each generic-parameter key field.
-pub(in crate::type_checker) fn generic_param_key_radix_bytes(
-    param_capacity: u32,
-    hir_node_capacity: u32,
-) -> u32 {
-    let max_key = param_capacity
-        .max(hir_node_capacity)
-        .saturating_add(LANGUAGE_SYMBOL_COUNT)
-        .saturating_add(1)
-        .max(1);
-    if max_key <= 0xff {
-        1
-    } else if max_key <= 0xffff {
-        2
-    } else if max_key <= 0x00ff_ffff {
-        3
-    } else {
-        4
-    }
-}
-
-/// Returns the even radix step count for sorting generic-parameter keys.
-pub(in crate::type_checker) fn generic_param_key_radix_steps(
-    param_capacity: u32,
-    hir_node_capacity: u32,
-) -> u32 {
-    let steps = generic_param_key_radix_bytes(param_capacity, hir_node_capacity)
-        * GENERIC_PARAM_KEY_FIELD_COUNT;
-    let even_steps = if steps % 2 == 0 { steps } else { steps + 1 };
-    even_steps.min(GENERIC_PARAM_KEY_MAX_RADIX_STEPS)
-}
-
-/// Returns the byte width needed for each struct-field key field.
-pub(in crate::type_checker) fn struct_field_key_radix_bytes(
-    hir_node_capacity: u32,
-    token_capacity: u32,
-) -> u32 {
-    let max_key = hir_node_capacity
-        .max(token_capacity.saturating_add(LANGUAGE_SYMBOL_COUNT))
-        .saturating_add(1)
-        .max(1);
-    if max_key <= 0xff {
-        1
-    } else if max_key <= 0xffff {
-        2
-    } else if max_key <= 0x00ff_ffff {
-        3
-    } else {
-        4
-    }
-}
-
-/// Returns the even radix step count for sorting struct-field keys.
-pub(in crate::type_checker) fn struct_field_key_radix_steps(
-    hir_node_capacity: u32,
-    token_capacity: u32,
-) -> u32 {
-    let steps = struct_field_key_radix_bytes(hir_node_capacity, token_capacity)
-        * STRUCT_FIELD_KEY_FIELD_COUNT;
-    let even_steps = if steps % 2 == 0 { steps } else { steps + 1 };
-    even_steps.min(STRUCT_FIELD_KEY_MAX_RADIX_STEPS)
-}
-
 /// Returns the propagation passes needed to attach generic params to owners.
 pub(in crate::type_checker) fn generic_decl_owner_step_count(hir_node_capacity: u32) -> u32 {
     let mut covered_depth = 1u32;
     let mut steps = 0u32;
     let target = hir_node_capacity.max(1);
     while covered_depth < target {
-        covered_depth = covered_depth.saturating_mul(2);
+        covered_depth = covered_depth.saturating_mul(16);
         steps = steps.saturating_add(1);
     }
     if steps % 2 == 0 {
@@ -93,82 +25,11 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     token_capacity: u32,
     hir_node_capacity: u32,
 ) -> Result<TypeInstanceBindGroups> {
-    let param_capacity = token_capacity.max(1);
-    let param_n_blocks = param_capacity.div_ceil(256).max(1);
-    let radix_bytes = generic_param_key_radix_bytes(param_capacity, hir_node_capacity);
-    let radix_steps = generic_param_key_radix_steps(param_capacity, hir_node_capacity);
     let owner_steps = generic_decl_owner_step_count(hir_node_capacity);
-    // Every compact field row has a distinct source-token anchor, so its
-    // capacity is bounded by the token domain rather than the raw parse tree.
-    let struct_field_capacity = token_capacity.max(1);
-    let struct_field_n_blocks = struct_field_capacity.div_ceil(256).max(1);
-    let struct_field_radix_bytes = struct_field_key_radix_bytes(hir_node_capacity, token_capacity);
-    let struct_field_radix_steps = struct_field_key_radix_steps(hir_node_capacity, token_capacity);
-    let generic_parameter_sorts = GenericParameterSorts::new(
-        device,
-        passes,
-        resources,
-        param_capacity,
-        param_n_blocks,
-        radix_bytes,
-        radix_steps,
-    )?;
-    let struct_field_radix_params = uniform_from_val(
-        device,
-        "type_check.type_instances.struct_field_key_radix.dispatch.params",
-        &ModuleKeyRadixParams {
-            module_capacity: struct_field_capacity,
-            reserved: struct_field_radix_bytes,
-            n_blocks: struct_field_n_blocks,
-            key_step: 0,
-        },
-    );
-    let struct_field_key_radix_dispatch = resources.reflected_bind_group_with_overrides(
-        device,
-        "type_check.type_instances.struct_field_key_radix_dispatch",
-        &passes.kernel("type_checker/type/instances/02a_struct_field_radix_dispatch"),
-        &[
-            ("gParams", struct_field_radix_params.as_entire_binding()),
-            (
-                "compact_field_count",
-                resources["compact_field_count"].clone(),
-            ),
-            (
-                "radix_dispatch_args",
-                resources["struct_field_key_radix_dispatch_args"].clone(),
-            ),
-        ],
-    )?;
-
-    let struct_field_key_radix_dispatch_args =
-        typed_buffer_from_resources(resources, "struct_field_key_radix_dispatch_args")?;
-    let sort_struct_fields = RadixSortOperation::new_hierarchical(
-        device,
-        passes,
-        resources,
-        compiler_graph::STRUCT_FIELD_RADIX_SORT.plan(
-            struct_field_radix_steps,
-            HierarchicalRadixSortDispatch {
-                rows: &struct_field_key_radix_dispatch_args,
-                bucket_work_items: struct_field_n_blocks
-                    .div_ceil(256)
-                    .saturating_mul(NAME_RADIX_BUCKETS)
-                    .saturating_mul(256),
-                bucket_chunk_work_items: NAME_RADIX_BUCKETS.saturating_mul(256),
-                bucket_count: 256,
-            },
-        ),
-        |key_step| StructFieldKeyRadixParams {
-            hir_node_capacity,
-            token_capacity,
-            n_blocks: struct_field_n_blocks,
-            key_step,
-            radix_bytes: struct_field_radix_bytes,
-            reserved0: 0,
-            reserved1: 0,
-            reserved2: 0,
-        },
-    )?;
+    let generic_parameter_index =
+        GenericParameterIndex::new(device, graph, passes, resources, token_capacity.max(1))?;
+    let struct_field_index =
+        StructFieldIndex::new(device, graph, passes, resources, token_capacity.max(1))?;
 
     let mut propagate_generic_decl_owner = Vec::with_capacity(owner_steps as usize);
     for step in 0..owner_steps {
@@ -249,21 +110,14 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             &passes.kernel("type_checker/type/instances/00b_decl_generic_params"),
             resources,
         )?,
-        generic_parameter_sorts,
+        generic_parameter_index,
         generic_param_use_slots: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_generic_param_use_slots",
             &passes.kernel("type_checker/type/instances/00e_generic_param_use_slots"),
             resources,
         )?,
-        seed_struct_field_keys: reflected_bind_group_from_resources(
-            device,
-            "type_check_resident_type_instances_seed_struct_field_keys",
-            &passes.kernel("type_checker/type/instances/02_seed_struct_field_keys"),
-            resources,
-        )?,
-        struct_field_key_radix_dispatch,
-        sort_struct_fields,
+        struct_field_index,
         collect: reflected_bind_group_from_resources(
             device,
             "type_check_resident_type_instances_collect",
@@ -381,31 +235,4 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             resources,
         )?,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{struct_field_key_radix_bytes, struct_field_key_radix_steps};
-
-    #[test]
-    fn struct_field_keys_are_sized_for_dense_hir_owner_ids() {
-        let token_capacity = 60_000;
-        let hir_node_capacity = 70_000;
-
-        assert_eq!(
-            struct_field_key_radix_bytes(hir_node_capacity, token_capacity),
-            3,
-            "the owner component must retain HIR IDs beyond the two-byte token domain",
-        );
-        assert_eq!(
-            struct_field_key_radix_steps(hir_node_capacity, token_capacity),
-            10,
-            "three three-byte fields require an even ten-pass ping-pong sort",
-        );
-        assert_eq!(
-            struct_field_key_radix_bytes(token_capacity, token_capacity),
-            2,
-            "the regression must cross a real radix-width boundary",
-        );
-    }
 }

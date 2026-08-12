@@ -20,7 +20,6 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) declaration_field_count: LaniusBuffer<u32>,
     pub(in crate::type_checker) call_compare_scan_input: LaniusBuffer<u32>,
     pub(in crate::type_checker) call_compare_dispatch_args: LaniusBuffer<u32>,
-    pub(in crate::type_checker) canonical_type_subtree: Box<DependencyCanonicalTypeSubtreeState>,
     _retained_buffers: Box<[LaniusBuffer<u32>]>,
     pub(in crate::type_checker) canonical_type_jump_rounds: u32,
     pub(in crate::type_checker) scan: PrefixScanOperation,
@@ -39,9 +38,9 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) validate_call_results_group: wgpu::BindGroup,
     pub(in crate::type_checker) validate_call_type_args_group: wgpu::BindGroup,
     pub(in crate::type_checker) call_compare_dispatch_group: wgpu::BindGroup,
-    pub(in crate::type_checker) init_canonical_type_roots_group: wgpu::BindGroup,
-    pub(in crate::type_checker) jump_canonical_type_roots_a_to_b_group: wgpu::BindGroup,
-    pub(in crate::type_checker) jump_canonical_type_roots_b_to_a_group: wgpu::BindGroup,
+    pub(in crate::type_checker) init_canonical_type_index_group: wgpu::BindGroup,
+    pub(in crate::type_checker) jump_canonical_type_index_a_to_b_group: wgpu::BindGroup,
+    pub(in crate::type_checker) jump_canonical_type_index_b_to_a_group: wgpu::BindGroup,
     pub(in crate::type_checker) project_types_group: wgpu::BindGroup,
     pub(in crate::type_checker) clear_declaration_generic_arity_group: wgpu::BindGroup,
     pub(in crate::type_checker) count_declaration_generic_arity_group: wgpu::BindGroup,
@@ -52,12 +51,6 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) _value_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _canonical_type_params: LaniusBuffer<DependencyCanonicalTypeParams>,
     pub(in crate::type_checker) _call_compare_dispatch_params: LaniusBuffer<CountDispatchParams>,
-}
-
-pub(in crate::type_checker) struct DependencyCanonicalTypeSubtreeState {
-    pub(in crate::type_checker) init_group: wgpu::BindGroup,
-    pub(in crate::type_checker) jump_a_to_b_group: wgpu::BindGroup,
-    pub(in crate::type_checker) jump_b_to_a_group: wgpu::BindGroup,
 }
 
 pub(in crate::type_checker) fn create(
@@ -237,15 +230,16 @@ pub(in crate::type_checker) fn create(
     )?;
     let canonical_type_roots_a = graph.u32_buffer("dependency_canonical_type_roots_a")?;
     let canonical_type_roots_b = graph.u32_buffer("dependency_canonical_type_roots_b")?;
-    let canonical_type_subtree_scratch =
-        graph.u32_buffer("dependency_canonical_type_subtree_scratch")?;
+    let canonical_type_subtree_a = graph.u32_buffer("dependency_canonical_type_subtree_a")?;
+    let canonical_type_subtree_b = graph.u32_buffer("dependency_canonical_type_subtree_b")?;
     let declaration_generic_arity = graph.u32_buffer("dependency_declaration_generic_arity")?;
     let declaration_field_count = graph.u32_buffer("dependency_declaration_field_count")?;
-    let canonical_type_jump_rounds = if dependencies.type_count <= 1 {
-        0
-    } else {
-        u32::BITS - (dependencies.type_count - 1).leading_zeros()
-    };
+    let mut canonical_type_jump_rounds = 0u32;
+    let mut canonical_type_jump_reach = 1u32;
+    while canonical_type_jump_reach < dependencies.type_count.max(1) {
+        canonical_type_jump_reach = canonical_type_jump_reach.saturating_mul(16);
+        canonical_type_jump_rounds += 1;
+    }
     let clear_capacity = import_capacity
         .max(visible_capacity)
         .max(lookup_capacity)
@@ -408,7 +402,7 @@ pub(in crate::type_checker) fn create(
         &resolved_value_decl,
         &buffers.resolved_value_status,
     )?;
-    let init_canonical_type_roots_group = resources.reflected_bind_group_with_overrides(
+    let init_canonical_type_index_group = resources.reflected_bind_group_with_overrides(
         device,
         "type_check_dependencies_09_init_canonical_type_roots",
         &passes.kernel("type_checker/dependencies/09_init_canonical_type_roots"),
@@ -418,11 +412,17 @@ pub(in crate::type_checker) fn create(
                 "canonical_type_roots",
                 canonical_type_roots_a.as_entire_binding(),
             ),
+            (
+                "canonical_type_subtree_start",
+                canonical_type_subtree_a.as_entire_binding(),
+            ),
         ],
     )?;
     let make_jump_group = |label: &'static str,
-                           input: &LaniusBuffer<u32>,
-                           output: &LaniusBuffer<u32>|
+                           roots_in: &LaniusBuffer<u32>,
+                           roots_out: &LaniusBuffer<u32>,
+                           subtree_in: &LaniusBuffer<u32>,
+                           subtree_out: &LaniusBuffer<u32>|
      -> Result<wgpu::BindGroup> {
         resources.reflected_bind_group_with_overrides(
             device,
@@ -430,72 +430,39 @@ pub(in crate::type_checker) fn create(
             &passes.kernel("type_checker/dependencies/10_jump_canonical_type_roots"),
             &[
                 ("gParams", canonical_type_params.as_entire_binding()),
-                ("canonical_type_roots_in", input.as_entire_binding()),
-                ("canonical_type_roots_out", output.as_entire_binding()),
-            ],
-        )
-    };
-    let jump_canonical_type_roots_a_to_b_group = make_jump_group(
-        "type_check_dependencies_10_jump_canonical_type_roots_a_to_b",
-        &canonical_type_roots_a,
-        &canonical_type_roots_b,
-    )?;
-    let jump_canonical_type_roots_b_to_a_group = make_jump_group(
-        "type_check_dependencies_10_jump_canonical_type_roots_b_to_a",
-        &canonical_type_roots_b,
-        &canonical_type_roots_a,
-    )?;
-    let (canonical_type_roots, canonical_type_root_scratch) = if canonical_type_jump_rounds % 2 == 0
-    {
-        (&canonical_type_roots_a, &canonical_type_roots_b)
-    } else {
-        (&canonical_type_roots_b, &canonical_type_roots_a)
-    };
-    let init_canonical_type_subtree_start_group = resources.reflected_bind_group_with_overrides(
-        device,
-        "type_check_dependencies_09a_init_canonical_type_subtree_start",
-        &passes.kernel("type_checker/dependencies/09a_init_canonical_type_subtree_start"),
-        &[
-            ("gParams", canonical_type_params.as_entire_binding()),
-            (
-                "canonical_type_subtree_start",
-                canonical_type_root_scratch.as_entire_binding(),
-            ),
-        ],
-    )?;
-    let make_subtree_jump_group = |label: &'static str,
-                                   input: &LaniusBuffer<u32>,
-                                   output: &LaniusBuffer<u32>|
-     -> Result<wgpu::BindGroup> {
-        resources.reflected_bind_group_with_overrides(
-            device,
-            label,
-            &passes.kernel("type_checker/dependencies/10a_jump_canonical_type_subtree_start"),
-            &[
-                ("gParams", canonical_type_params.as_entire_binding()),
-                ("canonical_type_subtree_start_in", input.as_entire_binding()),
+                ("canonical_type_roots_in", roots_in.as_entire_binding()),
+                ("canonical_type_roots_out", roots_out.as_entire_binding()),
+                (
+                    "canonical_type_subtree_start_in",
+                    subtree_in.as_entire_binding(),
+                ),
                 (
                     "canonical_type_subtree_start_out",
-                    output.as_entire_binding(),
+                    subtree_out.as_entire_binding(),
                 ),
             ],
         )
     };
-    let jump_canonical_type_subtree_start_a_to_b_group = make_subtree_jump_group(
-        "type_check_dependencies_10a_jump_canonical_type_subtree_start_a_to_b",
-        canonical_type_root_scratch,
-        &canonical_type_subtree_scratch,
+    let jump_canonical_type_index_a_to_b_group = make_jump_group(
+        "type_check_dependencies_10_jump_canonical_type_roots_a_to_b",
+        &canonical_type_roots_a,
+        &canonical_type_roots_b,
+        &canonical_type_subtree_a,
+        &canonical_type_subtree_b,
     )?;
-    let jump_canonical_type_subtree_start_b_to_a_group = make_subtree_jump_group(
-        "type_check_dependencies_10a_jump_canonical_type_subtree_start_b_to_a",
-        &canonical_type_subtree_scratch,
-        canonical_type_root_scratch,
+    let jump_canonical_type_index_b_to_a_group = make_jump_group(
+        "type_check_dependencies_10_jump_canonical_type_roots_b_to_a",
+        &canonical_type_roots_b,
+        &canonical_type_roots_a,
+        &canonical_type_subtree_b,
+        &canonical_type_subtree_a,
     )?;
-    let canonical_type_subtree_start = if canonical_type_jump_rounds % 2 == 0 {
-        canonical_type_root_scratch
-    } else {
-        &canonical_type_subtree_scratch
-    };
+    let (canonical_type_roots, canonical_type_subtree_start) =
+        if canonical_type_jump_rounds % 2 == 0 {
+            (&canonical_type_roots_a, &canonical_type_subtree_a)
+        } else {
+            (&canonical_type_roots_b, &canonical_type_subtree_b)
+        };
     let project_types_group = resources.reflected_bind_group_with_overrides(
         device,
         "type_check_dependencies_11_project_types",
@@ -780,11 +747,6 @@ pub(in crate::type_checker) fn create(
         declaration_field_count: declaration_field_count.clone(),
         call_compare_scan_input,
         call_compare_dispatch_args,
-        canonical_type_subtree: Box::new(DependencyCanonicalTypeSubtreeState {
-            init_group: init_canonical_type_subtree_start_group,
-            jump_a_to_b_group: jump_canonical_type_subtree_start_a_to_b_group,
-            jump_b_to_a_group: jump_canonical_type_subtree_start_b_to_a_group,
-        }),
         _retained_buffers: Box::new([
             count,
             prefix,
@@ -801,7 +763,8 @@ pub(in crate::type_checker) fn create(
             call_compare_error_token,
             canonical_type_roots_a,
             canonical_type_roots_b,
-            canonical_type_subtree_scratch,
+            canonical_type_subtree_a,
+            canonical_type_subtree_b,
             declaration_generic_arity,
             declaration_field_count,
         ]),
@@ -822,9 +785,9 @@ pub(in crate::type_checker) fn create(
         validate_call_results_group,
         validate_call_type_args_group,
         call_compare_dispatch_group,
-        init_canonical_type_roots_group,
-        jump_canonical_type_roots_a_to_b_group,
-        jump_canonical_type_roots_b_to_a_group,
+        init_canonical_type_index_group,
+        jump_canonical_type_index_a_to_b_group,
+        jump_canonical_type_index_b_to_a_group,
         project_types_group,
         clear_declaration_generic_arity_group,
         count_declaration_generic_arity_group,

@@ -1,8 +1,8 @@
 // GPU declaration namespace table marking.
 //
 // Scheduling contract:
-// - Dispatch after declaration-key radix sort and duplicate validation.
-// - The input order is the sorted declaration-key table. This pass marks valid
+// - Dispatch after module grouping and exact duplicate validation.
+// - The input order is stably grouped by module. This pass marks valid
 //   type/value declarations by namespace so GPU prefix scans can allocate
 //   compact lookup tables without source scans or token-local semantic logic.
 // - It does not resolve imports, expand visibility, resolve type/value paths,

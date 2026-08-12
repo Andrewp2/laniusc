@@ -16,8 +16,6 @@ use crate::{
             CompilerGraphAllocations,
             CompilerGraphBuilder,
             CompilerPhase,
-            HierarchicalRadixSortGraphPasses,
-            HierarchicalRadixSortGraphStepPasses,
             MaterializedCompilerGraph,
             PassAccess,
             PassDesc,
@@ -68,29 +66,6 @@ macro_rules! prefix_scan_graph_passes {
             hierarchy_up_rest: concat!($label, ".hierarchy_up.rest"),
             hierarchy_down: concat!($label, ".hierarchy_down"),
             apply: concat!($label, ".apply"),
-        }
-    };
-}
-
-macro_rules! hierarchical_radix_sort_graph_passes {
-    ($label:literal) => {
-        HierarchicalRadixSortGraphPasses {
-            order_to_temporary: HierarchicalRadixSortGraphStepPasses {
-                histogram: concat!($label, ".histogram.a"),
-                bucket_local: concat!($label, ".bucket_local.a"),
-                bucket_chunks: concat!($label, ".bucket_chunks.a"),
-                bucket_apply: concat!($label, ".bucket_apply.a"),
-                bucket_bases: concat!($label, ".bucket_bases.a"),
-                scatter: concat!($label, ".scatter.a"),
-            },
-            temporary_to_order: HierarchicalRadixSortGraphStepPasses {
-                histogram: concat!($label, ".histogram.b"),
-                bucket_local: concat!($label, ".bucket_local.b"),
-                bucket_chunks: concat!($label, ".bucket_chunks.b"),
-                bucket_apply: concat!($label, ".bucket_apply.b"),
-                bucket_bases: concat!($label, ".bucket_bases.b"),
-                scatter: concat!($label, ".scatter.b"),
-            },
         }
     };
 }
@@ -235,6 +210,35 @@ pub(super) const TYPE_INSTANCE_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
         hierarchy: "type_instance_arg_row_scan_prefix_b",
     },
 };
+pub(super) const GENERIC_PARAM_SLOT_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
+    left_label: "type_check.generic_params.type_slots",
+    right_label: "type_check.generic_params.const_slots",
+    phase: CompilerPhase::TypeCheck,
+    dispatch_domain: ResourceDomain::Declarations,
+    passes: prefix_scan_graph_passes!("type_check.generic_params.slot_scan"),
+    left: PrefixScanResources {
+        count: "generic_param_count_out",
+        input: "generic_type_param_flag",
+        output_prefix: "generic_type_param_prefix",
+        total: "generic_type_param_count_out",
+        dispatch_args: "hir_active_dispatch_args",
+        local_prefix: "generic_type_param_scan_local_prefix",
+        block_sum: "generic_type_param_scan_block_sum",
+        block_prefix: "generic_type_param_scan_prefix_a",
+        hierarchy: "generic_type_param_scan_prefix_b",
+    },
+    right: PrefixScanResources {
+        count: "generic_param_count_out",
+        input: "generic_const_param_flag",
+        output_prefix: "generic_const_param_prefix",
+        total: "generic_const_param_count_out",
+        dispatch_args: "hir_active_dispatch_args",
+        local_prefix: "generic_const_param_scan_local_prefix",
+        block_sum: "generic_const_param_scan_block_sum",
+        block_prefix: "generic_const_param_scan_prefix_a",
+        hierarchy: "generic_const_param_scan_prefix_b",
+    },
+};
 pub(super) const TYPE_INSTANCE_ARG_ROW_CLEAR_PASS: &str = "type_check.type_instance_arg_rows.clear";
 pub(super) const LANGUAGE_NAMES_CLEAR_PASS: &str = "type_check.language_names.clear";
 pub(super) const NAMES_SCAN: PrefixScanSpec = PrefixScanSpec {
@@ -266,78 +270,8 @@ pub(super) const TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_B_TO_A_PASS: &str =
     "type_check.type_instances.propagate_generic_owner.b_to_a";
 pub(super) const TYPE_INSTANCES_DECL_GENERIC_PARAMS_PASS: &str =
     "type_check.type_instances.decl_generic_params";
-pub(super) const TYPE_INSTANCES_GENERIC_PARAM_SORT_DISPATCH_PASS: &str =
-    "type_check.type_instances.generic_params.sort_dispatch";
-pub(super) const TYPE_INSTANCES_GENERIC_PARAM_SORT_SMALL_PASS: &str =
-    "type_check.type_instances.generic_params.sort_small";
-pub(super) const GENERIC_PARAMETER_RADIX_SORTS: RadixSortPairDefinition = RadixSortPairDefinition {
-    key: RadixSortDefinition {
-        phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::Declarations,
-        passes: radix_sort_graph_passes!("type_check.type_instances.generic_params.key"),
-        kernels: RadixSortKernels::new(
-            "type_checker/type/instances/00c_sort_generic_param_keys",
-            "type_checker/type/instances/00d_sort_generic_param_keys_scatter",
-        ),
-        resources: RadixSortResources {
-            count: "generic_param_count_out",
-            order: "generic_param_key_order",
-            temporary_order: "generic_param_key_order_tmp",
-            histogram: "generic_param_key_radix_block_histogram",
-            bucket_prefix: "generic_param_key_radix_block_bucket_prefix",
-            bucket_total: "generic_param_key_radix_bucket_total",
-            bucket_base: "generic_param_key_radix_bucket_base",
-        },
-        dispatch_args: "generic_param_key_radix_dispatch_args",
-    },
-    slot: RadixSortDefinition {
-        phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::Declarations,
-        passes: radix_sort_graph_passes!("type_check.type_instances.generic_params.slot"),
-        kernels: RadixSortKernels::new(
-            "type_checker/type/instances/00c2_sort_generic_param_slots",
-            "type_checker/type/instances/00d2_sort_generic_param_slots_scatter",
-        ),
-        resources: RadixSortResources {
-            count: "generic_param_count_out",
-            order: "generic_param_slot_order",
-            temporary_order: "generic_param_slot_order_tmp",
-            histogram: "generic_param_slot_radix_block_histogram",
-            bucket_prefix: "generic_param_slot_radix_block_bucket_prefix",
-            bucket_total: "generic_param_slot_radix_bucket_total",
-            bucket_base: "generic_param_slot_radix_bucket_base",
-        },
-        dispatch_args: "generic_param_key_radix_dispatch_args",
-    },
-};
 pub(super) const TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS: &str =
     "type_check.type_instances.generic_params.use_slots";
-const TYPE_INSTANCES_STRUCT_FIELD_SORT_SEED_PASS: &str =
-    "type_check.type_instances.struct_fields.sort.seed";
-const TYPE_INSTANCES_STRUCT_FIELD_SORT_PREPARE_PASS: &str =
-    "type_check.type_instances.struct_fields.sort.prepare";
-pub(super) const STRUCT_FIELD_RADIX_SORT: HierarchicalRadixSortDefinition =
-    HierarchicalRadixSortDefinition {
-        phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::Declarations,
-        passes: hierarchical_radix_sort_graph_passes!(
-            "type_check.type_instances.struct_fields.sort"
-        ),
-        kernels: HierarchicalRadixSortKernels {
-            histogram: "type_checker/type/instances/02b_sort_struct_field_keys",
-            scatter: "type_checker/type/instances/02c_sort_struct_field_keys_scatter",
-        },
-        resources: RadixSortResources {
-            count: "compact_field_count",
-            order: "struct_field_key_order",
-            temporary_order: "struct_field_key_order_tmp",
-            histogram: "struct_field_key_radix_block_histogram",
-            bucket_prefix: "struct_field_key_radix_block_bucket_prefix",
-            bucket_total: "struct_field_key_radix_bucket_total",
-            bucket_base: "struct_field_key_radix_bucket_base",
-        },
-        dispatch_args: "struct_field_key_radix_dispatch_args",
-    };
 const TYPE_INSTANCE_CORE_COLLECT_INITIAL_PASS: &str =
     "type_check.type_instances.core.collect.initial";
 const TYPE_INSTANCE_CORE_COLLECT_PROJECTED_PASS: &str =
@@ -345,48 +279,6 @@ const TYPE_INSTANCE_CORE_COLLECT_PROJECTED_PASS: &str =
 pub(super) const TYPE_INSTANCE_ARG_ROW_POPULATE_PASS: &str =
     "type_check.type_instance_arg_rows.populate";
 pub(super) const TYPE_INSTANCE_ARG_HASH_ROWS_PASS: &str = "type_check.type_instance_arg_rows.hash";
-pub(super) const METHOD_KEY_SEED_PASS: &str = "type_check.methods.keys.seed";
-pub(super) const METHOD_KEY_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
-    phase: CompilerPhase::TypeCheck,
-    dispatch_domain: ResourceDomain::Declarations,
-    passes: radix_sort_graph_passes!("type_check.methods.keys.sort"),
-    kernels: RadixSortKernels::new(
-        "type_checker/methods/04_sort_keys",
-        "type_checker/methods/04b_sort_keys_scatter",
-    )
-    .with_small("type_checker/methods/03b_sort_key_order_small"),
-    resources: RadixSortResources {
-        count: "token_count",
-        order: "method_key_to_fn_token",
-        temporary_order: "method_key_order_tmp",
-        histogram: "method_key_radix_block_histogram",
-        bucket_prefix: "method_key_radix_block_bucket_prefix",
-        bucket_total: "method_key_radix_bucket_total",
-        bucket_base: "method_key_radix_bucket_base",
-    },
-    dispatch_args: "method_token_dispatch_args",
-};
-pub(super) const METHOD_KEY_HIERARCHICAL_RADIX_SORT: HierarchicalRadixSortDefinition =
-    HierarchicalRadixSortDefinition {
-        phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::Declarations,
-        passes: hierarchical_radix_sort_graph_passes!("type_check.methods.keys.sort"),
-        kernels: HierarchicalRadixSortKernels {
-            histogram: "type_checker/methods/04_sort_keys",
-            scatter: "type_checker/methods/04b_sort_keys_scatter",
-        },
-        resources: RadixSortResources {
-            count: "token_count",
-            order: "method_key_to_fn_token",
-            temporary_order: "method_key_order_tmp",
-            histogram: "method_key_radix_block_histogram",
-            bucket_prefix: "method_key_radix_block_bucket_prefix",
-            bucket_total: "method_key_radix_bucket_total",
-            bucket_base: "method_key_radix_bucket_base",
-        },
-        dispatch_args: "method_token_dispatch_args",
-    };
-pub(super) const METHOD_KEY_VALIDATION_PASS: &str = "type_check.methods.keys.validate";
 pub(super) const CONDITIONS_AGGREGATE_ARGS_FINAL_PASS: &str =
     "type_check.conditions.aggregate_args.final";
 pub(super) const SEMANTIC_CALLS_PROJECT_PASS: &str = "type_check.semantic_artifact.calls";
@@ -440,6 +332,7 @@ pub(super) const FN_CONTEXT_APPLY_PASS: &str = "type_check.fn_context.apply";
 pub(super) const CALLS_BACKEND_TARGETS_PASS: &str = "type_check.calls.backend_targets";
 pub(super) const VISIBLE_CLEAR_PASS: &str = "type_check.visible.clear";
 const VISIBLE_SEMANTIC_DISPATCH_PASS: &str = "type_check.visible.semantic_dispatch";
+const VISIBLE_MATCH_DISPATCH_PASS: &str = "type_check.visible.match_payload_dispatch";
 const VISIBLE_SCAN_PASS: &str = "type_check.visible.decl_scan";
 const VISIBLE_SCAN_UP_FIRST_PASS: &str = "type_check.visible.decl_scan.hierarchy_up.first";
 const VISIBLE_SCAN_UP_REST_PASS: &str = "type_check.visible.decl_scan.hierarchy_up.rest";
@@ -447,7 +340,7 @@ const VISIBLE_SCAN_DOWN_PASS: &str = "type_check.visible.decl_scan.hierarchy_dow
 const VISIBLE_SCAN_APPLY_PASS: &str = "type_check.visible.decl_scan.apply";
 pub(super) const VISIBLE_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
-    dispatch_domain: ResourceDomain::HirNodes,
+    dispatch_domain: ResourceDomain::Tokens,
     passes: PrefixScanGraphPasses {
         local: VISIBLE_SCAN_PASS,
         hierarchy_up_first: VISIBLE_SCAN_UP_FIRST_PASS,
@@ -456,11 +349,11 @@ pub(super) const VISIBLE_SCAN: PrefixScanSpec = PrefixScanSpec {
         apply: VISIBLE_SCAN_APPLY_PASS,
     },
     resources: PrefixScanResources {
-        count: "compact_hir_count",
+        count: "token_count",
         input: "hir_visible_decl_flag",
         output_prefix: "hir_visible_decl_prefix",
         total: "hir_visible_decl_count_out",
-        dispatch_args: "compact_hir_dispatch_args",
+        dispatch_args: "token_active_dispatch_args",
         local_prefix: "hir_visible_decl_scan_local_prefix",
         block_sum: "hir_visible_decl_scan_block_sum",
         block_prefix: "hir_visible_decl_scan_prefix_a",
@@ -501,8 +394,6 @@ pub(super) const PREDICATES_COLLECT_BOUND_ARG_FACTS_PASS: &str =
     "type_check.predicates.collect_bound_arg_facts";
 pub(super) const PREDICATES_COLLECT_METHOD_CONTRACTS_PASS: &str =
     "type_check.predicates.collect_method_contracts";
-pub(super) const PREDICATES_BUILD_METHOD_OWNER_RANGES_PASS: &str =
-    "type_check.predicates.build_method_owner_ranges";
 pub(super) const PREDICATES_COLLECT_PASS: &str = "type_check.predicates.collect";
 pub(super) const PREDICATES_VALIDATE_BOUND_ARGS_PASS: &str =
     "type_check.predicates.validate_bound_args";
@@ -518,103 +409,6 @@ pub(super) const PREDICATES_REDUCE_METHOD_VALIDATION_ERRORS_PASS: &str =
 pub(super) const PREDICATES_COUNT_OBLIGATION_PAIRS_PASS: &str =
     "type_check.predicates.count_obligation_pairs";
 
-macro_rules! predicate_key_definition {
-    ($name:ident, $label:literal, $mode:expr, $steps:expr, $order:literal, $temporary:literal) => {
-        pub(super) const $name: PredicateKeyDefinition = PredicateKeyDefinition {
-            label: $label,
-            mode: $mode,
-            steps: $steps,
-            seed_pass: concat!($label, ".seed"),
-            small_pass: concat!($label, ".small"),
-            sort: RadixSortDefinition {
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::HirNodes,
-                passes: RadixSortGraphPasses {
-                    order_to_temporary: RadixSortGraphStepPasses {
-                        histogram: concat!($label, ".radix.histogram.a"),
-                        bucket_prefix: concat!($label, ".radix.prefix.a"),
-                        bucket_bases: concat!($label, ".radix.bases.a"),
-                        scatter: concat!($label, ".radix.scatter.a"),
-                    },
-                    temporary_to_order: RadixSortGraphStepPasses {
-                        histogram: concat!($label, ".radix.histogram.b"),
-                        bucket_prefix: concat!($label, ".radix.prefix.b"),
-                        bucket_bases: concat!($label, ".radix.bases.b"),
-                        scatter: concat!($label, ".radix.scatter.b"),
-                    },
-                },
-                kernels: RadixSortKernels::new(
-                    "type_checker/predicates/01c_sort_keys",
-                    "type_checker/predicates/01d_sort_keys_scatter",
-                )
-                .with_small("type_checker/predicates/01b2_sort_keys_small"),
-                resources: RadixSortResources {
-                    count: "hir_active_count",
-                    order: $order,
-                    temporary_order: $temporary,
-                    histogram: "predicate_key_radix_block_histogram",
-                    bucket_prefix: "predicate_key_radix_block_bucket_prefix",
-                    bucket_total: "predicate_key_radix_bucket_total",
-                    bucket_base: "predicate_key_radix_bucket_base",
-                },
-                dispatch_args: "predicate_hir_dispatch_args",
-            },
-        };
-    };
-}
-
-predicate_key_definition!(
-    PREDICATE_METHOD_CONTRACT_KEYS,
-    "type_check.predicates.method_contract_keys",
-    PREDICATE_KEY_MODE_METHOD_CONTRACT,
-    PREDICATE_METHOD_CONTRACT_KEY_RADIX_STEPS,
-    "predicate_method_contract_key_order",
-    "predicate_method_contract_key_order_tmp"
-);
-predicate_key_definition!(
-    PREDICATE_METHOD_PARAM_KEYS,
-    "type_check.predicates.method_param_keys",
-    PREDICATE_KEY_MODE_METHOD_PARAM,
-    PREDICATE_METHOD_PARAM_KEY_RADIX_STEPS,
-    "predicate_method_param_key_order",
-    "predicate_method_param_key_order_tmp"
-);
-predicate_key_definition!(
-    PREDICATE_OWNER_KEYS,
-    "type_check.predicates.owner_keys",
-    PREDICATE_KEY_MODE_OWNER,
-    PREDICATE_OWNER_KEY_RADIX_STEPS,
-    "predicate_owner_key_order",
-    "predicate_owner_key_order_tmp"
-);
-predicate_key_definition!(
-    PREDICATE_IMPL_KEYS,
-    "type_check.predicates.impl_keys",
-    PREDICATE_KEY_MODE_IMPL,
-    PREDICATE_IMPL_KEY_RADIX_STEPS,
-    "predicate_impl_key_order",
-    "predicate_impl_key_order_tmp"
-);
-
-const PREDICATE_KEY_INPUTS: [&str; 17] = [
-    "compact_hir_count",
-    "compact_hir_core",
-    "visible_type",
-    "type_expr_ref_tag",
-    "type_expr_ref_payload",
-    "type_generic_param_slot_by_token",
-    "predicate_owner_node",
-    "predicate_subject_token",
-    "predicate_bound_decl_id",
-    "predicate_bound_arg_count",
-    "predicate_bound_first_arg_token",
-    "predicate_bound_second_arg_token",
-    "predicate_status",
-    "compact_param_count",
-    "compact_params",
-    "predicate_method_contract_owner_hir",
-    "predicate_method_contract_name_id",
-];
 pub(super) const PREDICATES_OBLIGATION_PAIR_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
     dispatch_domain: ResourceDomain::HirNodes,
@@ -636,7 +430,7 @@ pub(super) const PREDICATES_OBLIGATION_PAIR_DISPATCH_PASS: &str =
 pub(super) const PREDICATES_VALIDATE_OBLIGATION_PAIRS_PASS: &str =
     "type_check.predicates.validate_obligation_pairs";
 
-pub(super) const REGISTERED_PREDICATE_DIRECT_PASSES: [&str; 14] = [
+pub(super) const REGISTERED_PREDICATE_DIRECT_PASSES: [&str; 13] = [
     PREDICATES_CLEAR_SYNTAX_TOKENS_PASS,
     PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS,
     PREDICATES_COLLECT_BOUND_ARG_FACTS_PASS,
@@ -644,7 +438,6 @@ pub(super) const REGISTERED_PREDICATE_DIRECT_PASSES: [&str; 14] = [
     PREDICATES_COLLECT_PASS,
     PREDICATES_VALIDATE_BOUND_ARGS_PASS,
     PREDICATES_COLLECT_IMPLS_PASS,
-    PREDICATES_BUILD_METHOD_OWNER_RANGES_PASS,
     PREDICATES_EMIT_METHOD_VALIDATION_ROWS_PASS,
     PREDICATES_EMIT_METHOD_PARAM_VALIDATION_ROWS_PASS,
     PREDICATES_VALIDATE_METHOD_TYPE_ARG_ROWS_PASS,
@@ -655,11 +448,13 @@ pub(super) const REGISTERED_PREDICATE_DIRECT_PASSES: [&str; 14] = [
 pub(super) const REGISTERED_PREDICATE_LOGICAL_PASSES: [&str; 1] =
     [PREDICATES_OBLIGATION_PAIR_DISPATCH_PASS];
 
-pub(super) const REGISTERED_VISIBLE_PASSES: [&str; 7] = [
+pub(super) const REGISTERED_VISIBLE_PASSES: [&str; 9] = [
     VISIBLE_CLEAR_PASS,
     VISIBLE_SEMANTIC_DISPATCH_PASS,
-    VISIBLE_DECL_COMPACTION.mark.name,
-    VISIBLE_DECL_COMPACTION.scatter.name,
+    VISIBLE_MATCH_DISPATCH_PASS,
+    VISIBLE_HIR_DECL_MARK.name,
+    VISIBLE_MATCH_DECL_MARK.name,
+    VISIBLE_DECL_SCATTER.name,
     VISIBLE_SORT_PASS,
     VISIBLE_SCOPE_TREE_PASS,
     VISIBLE_NAMES_PASS,
@@ -712,46 +507,8 @@ pub(super) const GENERIC_CLAIM_SCAN: PrefixScanSpec = PrefixScanSpec {
         hierarchy: "call_generic_claim_scan_prefix_b",
     },
 };
-const GENERIC_CLAIM_SORT_PREPARE_PASS: &str = "type_check.calls.generic_claims.sort.prepare";
-pub(super) const GENERIC_CLAIM_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
-    phase: CompilerPhase::TypeCheck,
-    dispatch_domain: ResourceDomain::CallArguments,
-    passes: radix_sort_graph_passes!("type_check.calls.generic_claims.sort"),
-    kernels: RadixSortKernels::new(
-        "type_checker/calls/03a2_sort_generic_claims",
-        "type_checker/calls/03a3_sort_generic_claims_scatter",
-    ),
-    resources: RadixSortResources {
-        count: "call_generic_claim_count_out",
-        order: "call_generic_claim_order",
-        temporary_order: "call_generic_claim_order_tmp",
-        histogram: "call_generic_claim_radix_block_histogram",
-        bucket_prefix: "call_generic_claim_radix_block_bucket_prefix",
-        bucket_total: "call_generic_claim_radix_bucket_total",
-        bucket_base: "call_generic_claim_radix_bucket_base",
-    },
-    dispatch_args: "call_generic_claim_radix_dispatch_args",
-};
-const CONST_CLAIM_SORT_PREPARE_PASS: &str = "type_check.calls.const_claims.sort.prepare";
-pub(super) const CONST_CLAIM_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
-    phase: CompilerPhase::TypeCheck,
-    dispatch_domain: ResourceDomain::CallArguments,
-    passes: radix_sort_graph_passes!("type_check.calls.const_claims.sort"),
-    kernels: RadixSortKernels::new(
-        "type_checker/calls/03a2_sort_generic_claims",
-        "type_checker/calls/03a3_sort_generic_claims_scatter",
-    ),
-    resources: RadixSortResources {
-        count: "call_arg_row_count_out",
-        order: "call_const_claim_order",
-        temporary_order: "call_const_claim_order_tmp",
-        histogram: "call_generic_claim_radix_block_histogram",
-        bucket_prefix: "call_generic_claim_radix_block_bucket_prefix",
-        bucket_total: "call_generic_claim_radix_bucket_total",
-        bucket_base: "call_generic_claim_radix_bucket_base",
-    },
-    dispatch_args: "call_const_claim_radix_dispatch_args",
-};
+const GENERIC_CLAIM_INDEX_PREPARE_PASS: &str = "type_check.calls.generic_claims.index.prepare";
+const CONST_CLAIM_INDEX_PREPARE_PASS: &str = "type_check.calls.const_claims.index.prepare";
 pub(super) const REQUIRED_GENERIC_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
     dispatch_domain: ResourceDomain::HirNodes,
@@ -1522,35 +1279,14 @@ impl TypeCheckCompilerGraph {
         ])
     }
 
-    /// Proves that the compact generic-parameter producer, both sort orders,
-    /// and use-site resolver bind the physical allocations selected by the
-    /// graph. The scalable path deliberately aliases generic binding names to
-    /// the shared radix workspace used by the recorded bind groups.
+    /// Proves that compact generic-row production and use-site resolution bind
+    /// the physical allocations selected by the graph. The lookup and scans
+    /// validate themselves when their operation objects are constructed.
     pub(super) fn validate_registered_generic_param_bindings(
         &self,
         resources: &ResourceMap<'_>,
     ) -> Result<()> {
         resources.validate_graph_pass(TYPE_INSTANCES_DECL_GENERIC_PARAMS_PASS, &[])?;
-        resources.validate_graph_pass(
-            TYPE_INSTANCES_GENERIC_PARAM_SORT_DISPATCH_PASS,
-            &[
-                ("name_count_in", "generic_param_count_out"),
-                (
-                    "radix_dispatch_args",
-                    "generic_param_key_radix_dispatch_args",
-                ),
-            ],
-        )?;
-
-        if self
-            .materialized
-            .graph()
-            .pass_id(TYPE_INSTANCES_GENERIC_PARAM_SORT_SMALL_PASS)
-            .is_some()
-        {
-            resources.validate_graph_pass(TYPE_INSTANCES_GENERIC_PARAM_SORT_SMALL_PASS, &[])?;
-        }
-
         resources.validate_graph_pass(TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS, &[])
     }
 
@@ -1764,7 +1500,7 @@ fn build_graph(
             .max(1),
     )
     .div_ceil(256)
-        * u64::from(NAME_RADIX_BUCKETS);
+        * u64::from(RADIX_U8_BUCKET_COUNT);
     let call_arg_rows = u64::from(call_arg_capacity.max(1));
     let call_param_rows = u64::from(call_param_capacity.max(1));
     let predicate_rows = u64::from(predicate_capacity.max(1));
@@ -1773,8 +1509,6 @@ fn build_graph(
     let call_arg_blocks = call_arg_rows.div_ceil(256);
     let predicate_blocks = predicate_rows.div_ceil(256);
     let claim_rows = u64::from(generic_claim_capacity.max(1));
-    let claim_blocks = claim_rows.div_ceil(256);
-    let claim_histogram_rows = claim_blocks * u64::from(NAME_RADIX_BUCKETS);
     let dependency_visible_rows = u64::from(dependency_capacity.visible_rows.max(1));
     let dependency_lookup_rows = u64::from(dependency_capacity.lookup_rows.max(1));
     let dependency_type_rows = u64::from(dependency_capacity.type_rows.max(1));
@@ -1814,6 +1548,10 @@ fn build_graph(
         _compact_array_element_count as "compact_array_element_count" in HirNodes => hir_rows * 4;
         _compact_array_element_row_count as "compact_array_element_row_count" in Declarations => 4;
         _compact_array_elements as "compact_array_elements" in Declarations => hir_rows * 16;
+        _compact_match_arm_count as "compact_match_arm_count" in HirNodes => 4;
+        _compact_match_arms as "compact_match_arms" in HirNodes => hir_rows * 16;
+        compact_match_payload_row_count in HirNodes => 4;
+        _compact_match_payloads as "compact_match_payloads" in HirNodes => hir_rows * 16;
     });
 
     // Function return references are initialized by the physical type-instance
@@ -1890,33 +1628,16 @@ fn build_graph(
         u64::from(u32::BITS - token_capacity.max(1).saturating_sub(1).leading_zeros()).max(1);
     graph_resources!(graph, Resident {
         _module_status as "module_status" in Declarations => module_rows * 4;
-        _module_key_to_module_id as "module_key_to_module_id" in Declarations => module_rows * 4;
-        _module_key_order_tmp as "module_key_order_tmp" in Declarations => module_rows * 4;
-        _module_key_radix_dispatch_args as "module_key_radix_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _import_edge_key_order_tmp as "import_edge_key_order_tmp" in Declarations => record_rows * 4;
-        _import_edge_key_radix_dispatch_args as "import_edge_key_radix_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _module_dispatch_args as "module_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _import_edge_set_state as "import_edge_set_state" in Declarations => record_rows * 8;
         _interface_public_decl_count as "interface_public_decl_count" in Declarations => 4;
         _interface_public_decl_local_id as "interface_public_decl_local_id" in Declarations => record_rows * 4;
         _interface_public_decl_index_by_local as "interface_public_decl_index_by_local" in Declarations => record_rows * 4;
         _interface_public_decl_index_by_hir as "interface_public_decl_index_by_hir" in HirNodes => hir_rows * 4;
-        _import_visible_type_module_id as "import_visible_type_module_id" in Declarations => import_visible_rows * 4;
-        _import_visible_type_name_id as "import_visible_type_name_id" in Declarations => import_visible_rows * 4;
-        _import_visible_type_decl_id as "import_visible_type_decl_id" in Declarations => import_visible_rows * 4;
-        _import_visible_type_key_order as "import_visible_type_key_order" in Declarations => import_visible_rows * 4;
-        _import_visible_type_key_order_tmp as "import_visible_type_key_order_tmp" in Declarations => import_visible_rows * 4;
+        _import_visible_type_lookup_state as "import_visible_type_lookup_state" in Declarations => import_visible_rows * 8;
         _import_visible_type_duplicate_of as "import_visible_type_duplicate_of" in Declarations => import_visible_rows * 4;
-        _import_visible_type_key_radix_dispatch_args as "import_visible_type_key_radix_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _import_visible_value_module_id as "import_visible_value_module_id" in Declarations => import_visible_rows * 4;
-        _import_visible_value_name_id as "import_visible_value_name_id" in Declarations => import_visible_rows * 4;
-        _import_visible_value_decl_id as "import_visible_value_decl_id" in Declarations => import_visible_rows * 4;
-        _import_visible_value_key_order as "import_visible_value_key_order" in Declarations => import_visible_rows * 4;
-        _import_visible_value_key_order_tmp as "import_visible_value_key_order_tmp" in Declarations => import_visible_rows * 4;
+        _import_visible_value_lookup_state as "import_visible_value_lookup_state" in Declarations => import_visible_rows * 8;
         _import_visible_value_duplicate_of as "import_visible_value_duplicate_of" in Declarations => import_visible_rows * 4;
-        _import_visible_value_key_radix_dispatch_args as "import_visible_value_key_radix_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _import_visible_value_radix_block_histogram as "import_visible_value_radix_block_histogram" in Declarations => module_path_key_radix_rows * 4;
-        _import_visible_value_radix_block_bucket_prefix as "import_visible_value_radix_block_bucket_prefix" in Declarations => module_path_key_radix_rows * 4;
-        _import_visible_value_radix_bucket_total as "import_visible_value_radix_bucket_total" in Declarations => u64::from(NAME_RADIX_BUCKETS) * 4;
-        _import_visible_value_radix_bucket_base as "import_visible_value_radix_bucket_base" in Declarations => u64::from(NAME_RADIX_BUCKETS) * 4;
         _import_visible_validate_dispatch_args as "import_visible_validate_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _path_prefix_id_b as "path_prefix_id_b" in Tokens => token_rows * 4;
         _path_prefix_table_state as "path_prefix_table_state" in Tokens => token_rows * 8;
@@ -1924,6 +1645,7 @@ fn build_graph(
         _path_prefix_round_dispatch_args as "path_prefix_round_dispatch_args" in DispatchArguments [StorageIndirect] => path_prefix_rounds * 12;
         _path_dispatch_args as "path_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
     });
+    graph.add_resource_alias("module_by_canonical_id", _path_prefix_table_state)?;
     graph_resources!(graph, Workspace {
         predicate_syntax_token in Tokens => predicate_rows * 4;
         _type_expr_ref_tag as "type_expr_ref_tag" in Tokens => token_rows * 4;
@@ -1946,7 +1668,11 @@ fn build_graph(
         _language_name_id as "language_name_id" in Declarations => LANGUAGE_SYMBOL_COUNT as u64 * 4;
         _language_decl_name_id as "language_decl_name_id" in Declarations => LANGUAGE_DECL_COUNT as u64 * 4;
     });
-    graph_resources!(graph, Workspace {
+    // These tiny language lookup tables are initialized once per job and are
+    // consumed throughout type checking. Keep them out of phase-colored
+    // scratch: recorder branches and dependency-page work may interleave
+    // consumers that cannot safely share their physical storage.
+    graph_resources!(graph, Resident {
         _language_type_code_by_name_id as "language_type_code_by_name_id" in Declarations => name_rows * 4;
         _language_entrypoint_tag_by_name_id as "language_entrypoint_tag_by_name_id" in Declarations => name_rows * 4;
         _language_intrinsic_tag_by_name_id as "language_intrinsic_tag_by_name_id" in Declarations => name_rows * 4;
@@ -1955,8 +1681,8 @@ fn build_graph(
         _compact_predicate_count as "compact_predicate_count" in Declarations => 4;
         _compact_predicates as "compact_predicates" in Declarations => hir_rows * 16;
         _token_file_id as "token_file_id" in Tokens => token_rows * 4;
-        compact_field_count in Declarations => 4;
-        compact_fields in Declarations => hir_rows * 16;
+        _compact_field_count as "compact_field_count" in Declarations => 4;
+        _compact_fields as "compact_fields" in Declarations => hir_rows * 16;
     });
     graph_resources!(graph, Resident {
         _module_type_path_type as "module_type_path_type" in Tokens => token_rows * 4;
@@ -2024,37 +1750,11 @@ fn build_graph(
         _method_decl_visibility as "method_decl_visibility" in Declarations => token_rows * 4;
         _method_decl_signature_flags as "method_decl_signature_flags" in Declarations => token_rows * 4;
     });
-    let struct_field_sort_resources = graph.add_radix_sort_resources(
-        compact_field_count,
-        vec![
-            compact_hir_count,
-            compact_hir_core,
-            compact_fields,
-            name_id_by_token,
-        ],
-        ResourceDomain::Declarations,
-        token_rows,
-        256,
-        u64::from(NAME_RADIX_BUCKETS),
-        RadixSortGraphResourceNames {
-            order: "struct_field_key_order",
-            temporary_order: "struct_field_key_order_tmp",
-            dispatch_args: "struct_field_key_radix_dispatch_args",
-            histogram: "struct_field_key_radix_block_histogram",
-            bucket_prefix: "struct_field_key_radix_block_bucket_prefix",
-            bucket_total: "struct_field_key_radix_bucket_total",
-            bucket_base: "struct_field_key_radix_bucket_base",
-        },
-    )?;
-    let struct_field_key_order = struct_field_sort_resources.order;
-    struct_field_sort_resources.temporary_order;
-    let struct_field_key_radix_dispatch_args = struct_field_sort_resources.dispatch_args;
-    struct_field_sort_resources.histogram;
-    struct_field_sort_resources.bucket_prefix;
-    struct_field_sort_resources.bucket_total;
-    struct_field_sort_resources.bucket_base;
+    graph_resources!(graph, Workspace {
+        _struct_field_lookup_state as "struct_field_lookup_state" in Declarations => token_rows * 8;
+    });
     let name_blocks = name_rows.div_ceil(256).max(1);
-    let name_hash_rows = name_blocks * u64::from(NAME_RADIX_BUCKETS);
+    let name_hash_rows = name_blocks * u64::from(NAME_HASH_TABLE_ROWS_PER_BLOCK);
     graph_resources!(graph, Workspace {
         _name_lexeme_flag as "name_lexeme_flag" in Tokens => token_rows * 4;
         _name_lexeme_kind as "name_lexeme_kind" in Tokens => token_rows * 4;
@@ -2097,8 +1797,8 @@ fn build_graph(
         _module_value_scan_prefix_b as "module_value_scan_prefix_b" in Declarations => hir_blocks * 4;
         module_path_key_radix_block_histogram in Declarations => module_path_key_radix_rows * 4;
         module_path_key_radix_block_bucket_prefix in Declarations => module_path_key_radix_rows * 4;
-        module_path_key_radix_bucket_total in Declarations => u64::from(NAME_RADIX_BUCKETS) * 4;
-        module_path_key_radix_bucket_base in Declarations => u64::from(NAME_RADIX_BUCKETS) * 4;
+        module_path_key_radix_bucket_total in Declarations => u64::from(RADIX_U8_BUCKET_COUNT) * 4;
+        module_path_key_radix_bucket_base in Declarations => u64::from(RADIX_U8_BUCKET_COUNT) * 4;
     });
 
     graph_resources!(graph, Input {
@@ -2145,17 +1845,12 @@ fn build_graph(
         _type_instance_arg_row_scan_block_sum as "type_instance_arg_row_scan_block_sum" in Types => token_rows.div_ceil(256) * 4;
         _type_instance_arg_row_scan_prefix_a as "type_instance_arg_row_scan_prefix_a" in Types => token_rows.div_ceil(256) * 4;
         _type_instance_arg_row_scan_prefix_b as "type_instance_arg_row_scan_prefix_b" in Types => token_rows.div_ceil(256) * 4;
-        method_key_to_fn_token in Declarations => token_rows * 4;
-        _method_key_order_tmp as "method_key_order_tmp" in Declarations => token_rows * 4;
-        method_key_status in Declarations => token_rows * 4;
-        method_key_duplicate_of in Declarations => token_rows * 4;
+        _method_key_status as "method_key_status" in Declarations => token_rows * 4;
+        _method_key_duplicate_of as "method_key_duplicate_of" in Declarations => token_rows * 4;
+        _method_lookup_head as "method_lookup_head" in Declarations => token_rows.saturating_mul(2) * 4;
+        _method_lookup_next as "method_lookup_next" in Declarations => hir_rows * 4;
     });
-    let method_key_radix_rows = token_rows.div_ceil(256) * u64::from(NAME_RADIX_BUCKETS);
     graph_resources!(graph, Workspace {
-        _method_key_radix_block_histogram as "method_key_radix_block_histogram" in Declarations => method_key_radix_rows * 4;
-        _method_key_radix_block_bucket_prefix as "method_key_radix_block_bucket_prefix" in Declarations => method_key_radix_rows * 4;
-        _method_key_radix_bucket_total as "method_key_radix_bucket_total" in Declarations => u64::from(NAME_RADIX_BUCKETS) * 4;
-        _method_key_radix_bucket_base as "method_key_radix_bucket_base" in Declarations => u64::from(NAME_RADIX_BUCKETS) * 4;
         member_result_context_instance in Tokens => token_rows * 4;
         member_result_ref_tag in Tokens => token_rows * 4;
         member_result_ref_payload in Tokens => token_rows * 4;
@@ -2207,54 +1902,24 @@ fn build_graph(
         generic_param_owner_token in Declarations => token_rows * 4;
         generic_param_name_id in Declarations => token_rows * 4;
         generic_param_token in Declarations => token_rows * 4;
-        generic_param_node in Declarations => token_rows * 4;
         generic_param_kind in Declarations => token_rows * 4;
-        generic_param_key_order in Declarations => token_rows * 4;
+        _generic_param_lookup_state as "generic_param_lookup_state" in Declarations => token_rows * 8;
+        generic_type_param_flag in Declarations => token_rows * 4;
+        generic_const_param_flag in Declarations => token_rows * 4;
+        _generic_type_param_prefix as "generic_type_param_prefix" in Declarations => token_rows * 4;
+        _generic_const_param_prefix as "generic_const_param_prefix" in Declarations => token_rows * 4;
+        _generic_type_param_count_out as "generic_type_param_count_out" in Declarations => 4;
+        _generic_const_param_count_out as "generic_const_param_count_out" in Declarations => 4;
+        _generic_type_param_rows as "generic_type_param_rows" in Declarations => token_rows * 4;
+        _generic_type_param_scan_local_prefix as "generic_type_param_scan_local_prefix" in Declarations => token_rows * 4;
+        _generic_const_param_scan_local_prefix as "generic_const_param_scan_local_prefix" in Declarations => token_rows * 4;
+        _generic_type_param_scan_block_sum as "generic_type_param_scan_block_sum" in Declarations => token_rows.div_ceil(256) * 4;
+        _generic_const_param_scan_block_sum as "generic_const_param_scan_block_sum" in Declarations => token_rows.div_ceil(256) * 4;
+        _generic_type_param_scan_prefix_a as "generic_type_param_scan_prefix_a" in Declarations => token_rows.div_ceil(256) * 4;
+        _generic_const_param_scan_prefix_a as "generic_const_param_scan_prefix_a" in Declarations => token_rows.div_ceil(256) * 4;
+        _generic_type_param_scan_prefix_b as "generic_type_param_scan_prefix_b" in Declarations => token_rows.div_ceil(256) * 4;
+        _generic_const_param_scan_prefix_b as "generic_const_param_scan_prefix_b" in Declarations => token_rows.div_ceil(256) * 4;
     });
-    if token_capacity.max(1) > GENERIC_PARAM_SMALL_SORT_CAPACITY {
-        graph.add_storage(
-            "generic_param_key_order_tmp",
-            ResourceDomain::Declarations,
-            ResourceClass::Workspace,
-            token_rows * 4,
-        )?;
-    }
-    graph_resources!(graph, Workspace {
-        generic_param_slot_order in Declarations => token_rows * 4;
-    });
-    if token_capacity.max(1) > GENERIC_PARAM_SMALL_SORT_CAPACITY {
-        graph.add_storage(
-            "generic_param_slot_order_tmp",
-            ResourceDomain::Declarations,
-            ResourceClass::Workspace,
-            token_rows * 4,
-        )?;
-    }
-    let generic_param_radix_rows = token_rows.div_ceil(256) * u64::from(NAME_RADIX_BUCKETS);
-    if token_capacity.max(1) > GENERIC_PARAM_SMALL_SORT_CAPACITY {
-        for name in [
-            "generic_param_slot_radix_block_histogram",
-            "generic_param_slot_radix_block_bucket_prefix",
-        ] {
-            graph.add_storage(
-                name,
-                ResourceDomain::Declarations,
-                ResourceClass::Workspace,
-                generic_param_radix_rows * 4,
-            )?;
-        }
-        for name in [
-            "generic_param_slot_radix_bucket_total",
-            "generic_param_slot_radix_bucket_base",
-        ] {
-            graph.add_storage(
-                name,
-                ResourceDomain::Declarations,
-                ResourceClass::Workspace,
-                u64::from(NAME_RADIX_BUCKETS) * 4,
-            )?;
-        }
-    }
     graph_resources!(graph, Input {
         _compact_generic_param_count as "compact_generic_param_count" in HirNodes => 4;
         _compact_generic_params as "compact_generic_params" in HirNodes => token_rows * 16;
@@ -2287,17 +1952,14 @@ fn build_graph(
             import_visible_rows * 4,
         )?;
     }
-    // Logical reflected names supplied by aliases at bind-group construction.
-    // Their backing resources are graph-owned (`module_key_to_module_id` and
-    // `path_prefix_id_a`); no second physical slot is required here.
-    for name in ["sorted_module_key_order", "path_prefix_id"] {
-        graph.add_storage(
-            name,
-            ResourceDomain::HirNodes,
-            ResourceClass::Input,
-            hir_rows * 4,
-        )?;
-    }
+    // Logical reflected name supplied by an alias at bind-group construction.
+    // Its backing path-prefix resource is graph-owned.
+    graph.add_storage(
+        "path_prefix_id",
+        ResourceDomain::HirNodes,
+        ResourceClass::Input,
+        hir_rows * 4,
+    )?;
     graph.add_storage(
         "compact_fn_return_type",
         ResourceDomain::HirNodes,
@@ -2334,53 +1996,16 @@ fn build_graph(
         predicate_method_contract_return_type_node in HirNodes => predicate_rows * 4;
         predicate_method_contract_visibility in HirNodes => predicate_rows * 4;
         predicate_method_contract_param_type_node in HirNodes => predicate_rows * 4;
-        _predicate_method_contract_key_order as "predicate_method_contract_key_order" in HirNodes => predicate_rows * 4;
-        _predicate_method_param_key_order as "predicate_method_param_key_order" in HirNodes => predicate_rows * 4;
-        predicate_method_contract_owner_range_first in HirNodes => predicate_rows * 4;
-        predicate_method_contract_owner_range_count in HirNodes => predicate_rows * 4;
+        predicate_method_contract_owner_count in HirNodes => predicate_rows * 4;
+        predicate_method_contract_lookup_head in HirNodes => predicate_rows * 2 * 4;
+        predicate_method_contract_lookup_next in HirNodes => predicate_rows * 4;
         predicate_method_validation_owner_node in HirNodes => predicate_rows * 4;
         predicate_method_validation_peer_node in HirNodes => predicate_rows * 4;
-        _predicate_owner_key_order as "predicate_owner_key_order" in HirNodes => predicate_rows * 4;
-        _predicate_impl_key_order as "predicate_impl_key_order" in HirNodes => predicate_rows * 4;
+        predicate_owner_lookup_head in HirNodes => predicate_rows * 2 * 4;
+        predicate_owner_lookup_next in HirNodes => predicate_rows * 4;
+        predicate_impl_lookup_head in HirNodes => predicate_rows * 2 * 4;
+        predicate_impl_lookup_next in HirNodes => predicate_rows * 4;
     });
-    if predicate_capacity.max(1) > PREDICATE_KEY_SMALL_SORT_CAPACITY {
-        for name in [
-            "predicate_method_contract_key_order_tmp",
-            "predicate_method_param_key_order_tmp",
-            "predicate_owner_key_order_tmp",
-            "predicate_impl_key_order_tmp",
-        ] {
-            graph.add_storage(
-                name,
-                ResourceDomain::HirNodes,
-                ResourceClass::Workspace,
-                predicate_rows * 4,
-            )?;
-        }
-        let radix_rows = predicate_rows.div_ceil(256) * u64::from(NAME_RADIX_BUCKETS);
-        for name in [
-            "predicate_key_radix_block_histogram",
-            "predicate_key_radix_block_bucket_prefix",
-        ] {
-            graph.add_storage(
-                name,
-                ResourceDomain::HirNodes,
-                ResourceClass::Workspace,
-                radix_rows * 4,
-            )?;
-        }
-        for name in [
-            "predicate_key_radix_bucket_total",
-            "predicate_key_radix_bucket_base",
-        ] {
-            graph.add_storage(
-                name,
-                ResourceDomain::HirNodes,
-                ResourceClass::Workspace,
-                u64::from(NAME_RADIX_BUCKETS) * 4,
-            )?;
-        }
-    }
     graph_resources!(graph, Workspace {
         predicate_obligation_count_by_call in HirNodes => predicate_rows * 4;
         _predicate_obligation_prefix_by_call as "predicate_obligation_prefix_by_call" in HirNodes => predicate_rows * 4;
@@ -2407,7 +2032,7 @@ fn build_graph(
         _module_key_segment_base as "module_key_segment_base" in Declarations => module_rows * 4;
         _decl_type_key_to_decl_id as "decl_type_key_to_decl_id" in Declarations => record_rows * 4;
         _decl_value_key_to_decl_id as "decl_value_key_to_decl_id" in Declarations => record_rows * 4;
-        _import_edge_key_order as "import_edge_key_order" in Declarations => record_rows * 4;
+        _decl_lookup_state as "decl_lookup_state" in Declarations => record_rows * 8;
         import_record_count_out in Declarations => 4;
         decl_count_out in Declarations => 4;
     });
@@ -2481,10 +2106,8 @@ fn build_graph(
         ),
         ("dependency_canonical_type_roots_a", dependency_type_rows),
         ("dependency_canonical_type_roots_b", dependency_type_rows),
-        (
-            "dependency_canonical_type_subtree_scratch",
-            dependency_type_rows,
-        ),
+        ("dependency_canonical_type_subtree_a", dependency_type_rows),
+        ("dependency_canonical_type_subtree_b", dependency_type_rows),
         (
             "dependency_declaration_generic_arity",
             dependency_declaration_rows,
@@ -2614,13 +2237,13 @@ fn build_graph(
         _import_dispatch_args as "import_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
     });
     graph_resources!(graph, Workspace {
-        _hir_visible_decl_flag as "hir_visible_decl_flag" in HirNodes => hir_rows * 4;
-        _hir_visible_decl_prefix as "hir_visible_decl_prefix" in HirNodes => hir_rows * 4;
+        hir_visible_decl_flag in Tokens => token_rows * 4;
+        _hir_visible_decl_prefix as "hir_visible_decl_prefix" in Tokens => token_rows * 4;
         compact_hir_dispatch_args in DispatchArguments [StorageIndirect] => 12;
-        _hir_visible_decl_scan_local_prefix as "hir_visible_decl_scan_local_prefix" in HirNodes => hir_rows * 4;
-        _hir_visible_decl_scan_block_sum as "hir_visible_decl_scan_block_sum" in HirNodes => hir_blocks * 4;
-        _hir_visible_decl_scan_prefix_a as "hir_visible_decl_scan_prefix_a" in HirNodes => hir_blocks * 4;
-        _hir_visible_decl_scan_prefix_b as "hir_visible_decl_scan_prefix_b" in HirNodes => hir_blocks * 4;
+        _hir_visible_decl_scan_local_prefix as "hir_visible_decl_scan_local_prefix" in Tokens => token_rows * 4;
+        _hir_visible_decl_scan_block_sum as "hir_visible_decl_scan_block_sum" in Tokens => token_blocks * 4;
+        _hir_visible_decl_scan_prefix_a as "hir_visible_decl_scan_prefix_a" in Tokens => token_blocks * 4;
+        _hir_visible_decl_scan_prefix_b as "hir_visible_decl_scan_prefix_b" in Tokens => token_blocks * 4;
     });
     // These columns and their count form one lookup table consumed across the
     // collection, sort, scope-tree, and query recorders. Keep the table under
@@ -2631,24 +2254,20 @@ fn build_graph(
         hir_visible_decl_count_out in Declarations => 4;
         hir_visible_decl_owner_fn in Declarations => token_rows * 4;
         hir_visible_decl_name_id in Declarations => token_rows * 4;
-        hir_visible_decl_token in Declarations => token_rows * 4;
+        _hir_visible_decl_token as "hir_visible_decl_token" in Declarations => token_rows * 4;
         hir_visible_decl_scope_end in Declarations => token_rows * 4;
         _hir_visible_decl_node as "hir_visible_decl_node" in Declarations => token_rows * 4;
     });
     graph_resources!(graph, Resident {
-        _match_payload_dispatch_args as "match_payload_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        match_payload_dispatch_args in DispatchArguments [StorageIndirect] => 12;
     });
     let visible_decl_sort_resources = graph.add_radix_sort_resources(
         hir_visible_decl_count_out,
-        vec![
-            hir_visible_decl_owner_fn,
-            hir_visible_decl_name_id,
-            hir_visible_decl_token,
-        ],
+        vec![hir_visible_decl_owner_fn, hir_visible_decl_name_id],
         ResourceDomain::Declarations,
         token_rows,
         256,
-        u64::from(NAME_RADIX_BUCKETS),
+        u64::from(RADIX_U8_BUCKET_COUNT),
         RadixSortGraphResourceNames {
             order: "hir_visible_decl_key_order",
             temporary_order: "hir_visible_decl_key_order_tmp",
@@ -2660,39 +2279,12 @@ fn build_graph(
         },
     )?;
     let hir_visible_decl_key_order = visible_decl_sort_resources.order;
-    let hir_visible_decl_key_radix_dispatch_args = visible_decl_sort_resources.dispatch_args;
-    let hir_visible_decl_key_radix_block_histogram = visible_decl_sort_resources.histogram;
-    let hir_visible_decl_key_radix_block_bucket_prefix = visible_decl_sort_resources.bucket_prefix;
-    let hir_visible_decl_key_radix_bucket_total = visible_decl_sort_resources.bucket_total;
-    let hir_visible_decl_key_radix_bucket_base = visible_decl_sort_resources.bucket_base;
-    // Both the fused small sort and the scalable radix path publish their row
-    // count through this operation-owned indirect dispatch buffer.
+    let hir_visible_decl_key_order_tmp = visible_decl_sort_resources.temporary_order;
     graph.add_resource_alias(
-        "generic_param_key_radix_dispatch_args",
-        hir_visible_decl_key_radix_dispatch_args,
+        "hir_visible_decl_source_by_token",
+        hir_visible_decl_key_order_tmp,
     )?;
-    if token_capacity.max(1) > GENERIC_PARAM_SMALL_SORT_CAPACITY {
-        for (alias, resource) in [
-            (
-                "generic_param_key_radix_block_histogram",
-                hir_visible_decl_key_radix_block_histogram,
-            ),
-            (
-                "generic_param_key_radix_block_bucket_prefix",
-                hir_visible_decl_key_radix_block_bucket_prefix,
-            ),
-            (
-                "generic_param_key_radix_bucket_total",
-                hir_visible_decl_key_radix_bucket_total,
-            ),
-            (
-                "generic_param_key_radix_bucket_base",
-                hir_visible_decl_key_radix_bucket_base,
-            ),
-        ] {
-            graph.add_resource_alias(alias, resource)?;
-        }
-    }
+    let hir_visible_decl_key_radix_dispatch_args = visible_decl_sort_resources.dispatch_args;
     let visible_tree_leaves = token_capacity
         .max(1)
         .div_ceil(HIR_VISIBLE_DECL_ROW_BLOCK_SIZE)
@@ -2712,12 +2304,9 @@ fn build_graph(
         _method_hir_dispatch_args as "method_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _method_compact_dispatch_args as "method_compact_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _method_token_hir_dispatch_args as "method_token_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _method_radix_prefix_dispatch_args as "method_radix_prefix_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _method_radix_bases_dispatch_args as "method_radix_bases_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _predicate_token_dispatch_args as "predicate_token_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _predicate_hir_dispatch_args as "predicate_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _predicate_radix_prefix_dispatch_args as "predicate_radix_prefix_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _predicate_radix_bases_dispatch_args as "predicate_radix_bases_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _predicate_compact_dispatch_args as "predicate_compact_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _predicate_single_dispatch_args as "predicate_single_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _match_hir_dispatch_args as "match_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         scalar_a as "compact_expr_scalar_type.a" in HirNodes => hir_rows * 4;
@@ -2789,20 +2378,15 @@ fn build_graph(
         _call_generic_claim_ref_tag as "call_generic_claim_ref_tag" in CallArguments => claim_rows * 4;
         _call_generic_claim_ref_payload as "call_generic_claim_ref_payload" in CallArguments => claim_rows * 4;
         _call_generic_claim_arg_row as "call_generic_claim_arg_row" in CallArguments => claim_rows * 4;
-        _call_generic_claim_order as "call_generic_claim_order" in CallArguments => claim_rows * 4;
-        _call_generic_claim_order_tmp as "call_generic_claim_order_tmp" in CallArguments => claim_rows * 4;
-        generic_claim_radix_dispatch_args as "call_generic_claim_radix_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _call_generic_claim_radix_block_histogram as "call_generic_claim_radix_block_histogram" in CallArguments => claim_histogram_rows * 4;
-        _call_generic_claim_radix_block_bucket_prefix as "call_generic_claim_radix_block_bucket_prefix" in CallArguments => claim_histogram_rows * 4;
-        _call_generic_claim_radix_bucket_total as "call_generic_claim_radix_bucket_total" in CallArguments => u64::from(NAME_RADIX_BUCKETS) * 4;
-        _call_generic_claim_radix_bucket_base as "call_generic_claim_radix_bucket_base" in CallArguments => u64::from(NAME_RADIX_BUCKETS) * 4;
-        // Both claim sorts execute sequentially through the same radix operation.
+        _call_generic_claim_lookup_head as "call_generic_claim_lookup_head" in CallArguments => claim_rows * 4;
+        _call_generic_claim_lookup_next as "call_generic_claim_lookup_next" in CallArguments => claim_rows * 4;
+        generic_claim_index_dispatch_args as "call_generic_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _call_const_claim_callee as "call_const_claim_callee" in CallArguments => call_arg_rows * 4;
         _call_const_claim_slot as "call_const_claim_slot" in CallArguments => call_arg_rows * 4;
         _call_const_claim_len as "call_const_claim_len" in CallArguments => call_arg_rows * 4;
-        _call_const_claim_order as "call_const_claim_order" in CallArguments => call_arg_rows * 4;
-        _call_const_claim_order_tmp as "call_const_claim_order_tmp" in CallArguments => call_arg_rows * 4;
-        const_claim_radix_dispatch_args as "call_const_claim_radix_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _call_const_claim_lookup_head as "call_const_claim_lookup_head" in CallArguments => call_arg_rows * 4;
+        _call_const_claim_lookup_next as "call_const_claim_lookup_next" in CallArguments => call_arg_rows * 4;
+        const_claim_index_dispatch_args as "call_const_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
     });
     graph_resources!(graph, Workspace {
         call_arg_row_count_out in CallArguments => 4;
@@ -2941,8 +2525,13 @@ fn build_graph(
         "type_checker/names/hash/02_assign_ids",
         reflected_bindings![
             "name_count_in" => name_scan_total: Read,
+            "name_hash_table_a" => name_hash_table_a: ReadWrite,
+            "name_hash_table_b" => name_hash_table_b: ReadWrite,
             "sorted_name_id" => sorted_name_id: Write,
             "name_id_by_input" => name_id_by_input: Write,
+            "name_id_by_token" => name_id_by_token: Write,
+            "language_name_id" => _language_name_id: Write,
+            "unique_name_count" => unique_name_count: ReadWrite,
         ],
     )?;
     graph.add_kernel_pass_by_name(
@@ -3004,6 +2593,9 @@ fn build_graph(
     FILE_MODULE_MAP_BUILD.register_kernel(&mut graph, kernels)?;
     ATTACH_RECORD_MODULES.register_kernel(&mut graph, kernels)?;
     RESOLVE_IMPORTS.register_kernel(&mut graph, kernels)?;
+    IMPORT_EDGE_SET_CLEAR.register_kernel(&mut graph, kernels)?;
+    IMPORT_EDGE_SET_BUILD.register_kernel(&mut graph, kernels)?;
+    IMPORT_CYCLES_VALIDATE.register_kernel(&mut graph, kernels)?;
     // Declaration materialization consumes the record-scan region and leaves
     // compact lookup relations live for calls, predicates, and interfaces.
     graph.add_pass(PassDesc {
@@ -3021,18 +2613,6 @@ fn build_graph(
             PassAccess::read("decl_record_flag", _module_record_family_flag),
             PassAccess::read("module_record_prefix", module_record_prefix),
             PassAccess::read("decl_count_out", decl_count_out),
-            // The resident recorder sorts and validates import edges between
-            // import resolution and declaration-key construction. That radix
-            // operation reads these import relations while writing the shared
-            // module-path radix workspace below. Keeping both sides on this
-            // schedule boundary prevents arena packing and lifetime coloring
-            // from treating them as non-overlapping.
-            PassAccess::read("import_count_out", import_record_count_out),
-            PassAccess::read("import_module_id", _import_module_id),
-            PassAccess::read("import_target_module_id", _import_target_module_id),
-            PassAccess::read("import_status", _import_status),
-            PassAccess::read("import_edge_key_order", _import_edge_key_order),
-            PassAccess::write("import_edge_key_order_tmp", _import_edge_key_order_tmp),
             // Module construction temporarily stores namespace flags in the
             // future type-instance argument columns. Naming both the runtime
             // role and the graph resource makes that early lifetime explicit.
@@ -3064,6 +2644,9 @@ fn build_graph(
             PassAccess::write("decl_key_to_decl_id", decl_key_to_decl_id),
         ],
     })?;
+    DECL_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
+    DECL_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
+    DECL_DUPLICATES_VALIDATE.register_kernel(&mut graph, kernels)?;
     DECL_NAMESPACE_MARK.register_kernel(&mut graph, kernels)?;
     DECL_NAMESPACE_SCAN.register(&mut graph, record_scan_levels)?;
     DECL_NAMESPACE_SCATTER.register_kernel(&mut graph, kernels)?;
@@ -3096,6 +2679,18 @@ fn build_graph(
     })?;
     IMPORT_VISIBILITY_COUNT.register_kernel(&mut graph, kernels)?;
     IMPORT_VISIBLE_SCAN.register(&mut graph, record_scan_levels)?;
+    for operation in [
+        IMPORT_VISIBLE_TYPE_SCATTER,
+        IMPORT_VISIBLE_VALUE_SCATTER,
+        IMPORT_VISIBLE_TYPE_LOOKUP_CLEAR,
+        IMPORT_VISIBLE_VALUE_LOOKUP_CLEAR,
+        IMPORT_VISIBLE_TYPE_LOOKUP_BUILD,
+        IMPORT_VISIBLE_VALUE_LOOKUP_BUILD,
+        IMPORT_VISIBLE_STATUS_INITIALIZE,
+        IMPORT_VISIBLE_AMBIGUITY_VALIDATE,
+    ] {
+        operation.register_kernel(&mut graph, kernels)?;
+    }
     graph.add_pass(PassDesc {
         name: IMPORT_VISIBLE_CONSUME_PASS,
         phase: CompilerPhase::TypeCheck,
@@ -3249,49 +2844,15 @@ fn build_graph(
             "generic_param_owner_token" => generic_param_owner_token: Write,
             "generic_param_name_id" => generic_param_name_id: Write,
             "generic_param_token" => generic_param_token: Write,
-            "generic_param_node" => generic_param_node: Write,
             "generic_param_kind" => generic_param_kind: Write,
-            "generic_param_key_order" => generic_param_key_order: Write,
-            "generic_param_slot_order" => generic_param_slot_order: Write,
+            "generic_type_param_flag" => generic_type_param_flag: Write,
+            "generic_const_param_flag" => generic_const_param_flag: Write,
         ],
     )?;
-    graph.add_kernel_pass_by_name(
-        TYPE_INSTANCES_GENERIC_PARAM_SORT_DISPATCH_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::DispatchArguments,
-        kernels,
-        "type_checker/names/radix/dispatch_args",
-        reflected_bindings![
-            "name_count_in" => generic_param_count_out,
-            "radix_dispatch_args" => hir_visible_decl_key_radix_dispatch_args: Write,
-        ],
-    )?;
-    if token_capacity.max(1) <= GENERIC_PARAM_SMALL_SORT_CAPACITY {
-        graph.add_kernel_pass_by_name(
-            TYPE_INSTANCES_GENERIC_PARAM_SORT_SMALL_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::Declarations,
-            kernels,
-            "type_checker/type/instances/00b2_sort_generic_params_small",
-            &[],
-        )?;
-    } else {
-        let radix_steps = generic_param_key_radix_steps(token_capacity.max(1), hir_capacity.max(1));
-        GENERIC_PARAMETER_RADIX_SORTS.register(
-            &mut graph,
-            radix_steps,
-            &[
-                "generic_param_owner_token",
-                "generic_param_name_id",
-                "generic_param_node",
-            ],
-            &[
-                "generic_param_owner_token",
-                "generic_param_node",
-                "generic_param_kind",
-            ],
-        )?;
-    }
+    GENERIC_PARAM_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
+    GENERIC_PARAM_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
+    GENERIC_PARAM_SLOT_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(token_blocks))?;
+    GENERIC_PARAM_ROWS_SCATTER.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS,
         CompilerPhase::TypeCheck,
@@ -3731,8 +3292,8 @@ fn build_graph(
     CALLS_FUNCTIONS.register_kernel(&mut graph, kernels)?;
     CALLS_PARAM_TYPES.register_kernel(&mut graph, kernels)?;
     // The resident recorder completes call-argument compaction before method
-    // collection and struct-field sorting. Keep the graph in that same order
-    // so compact call rows remain live while the later radix sort runs.
+    // and struct-field indexing. Keep the graph in that same order so compact
+    // call rows remain live while those indexes are constructed.
     CALLS_INTRINSICS.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_PACK.register_kernel(&mut graph, kernels)?;
@@ -3753,34 +3314,8 @@ fn build_graph(
         "type_checker/type/instances/03a_member_receivers",
         member_receiver_overrides,
     )?;
-    graph.add_kernel_pass_by_name(
-        TYPE_INSTANCES_STRUCT_FIELD_SORT_SEED_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::Declarations,
-        kernels,
-        "type_checker/type/instances/02_seed_struct_field_keys",
-        reflected_bindings!["struct_field_key_order" => struct_field_key_order: Write],
-    )?;
-    graph.add_kernel_pass_by_name(
-        TYPE_INSTANCES_STRUCT_FIELD_SORT_PREPARE_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::DispatchArguments,
-        kernels,
-        "type_checker/type/instances/02a_struct_field_radix_dispatch",
-        reflected_bindings![
-            "radix_dispatch_args" => struct_field_key_radix_dispatch_args: Write,
-        ],
-    )?;
-    STRUCT_FIELD_RADIX_SORT.register(
-        &mut graph,
-        struct_field_key_radix_steps(hir_capacity, token_capacity),
-        &[
-            "compact_hir_count",
-            "compact_hir_core",
-            "compact_fields",
-            "name_id_by_token",
-        ],
-    )?;
+    STRUCT_FIELD_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
+    STRUCT_FIELD_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_MEMBER_RESULTS_PASS,
         CompilerPhase::TypeCheck,
@@ -3891,26 +3426,18 @@ fn build_graph(
     GENERIC_CLAIM_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(call_arg_blocks))?;
     CALLS_GENERIC_CLAIM_EMIT.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
-        GENERIC_CLAIM_SORT_PREPARE_PASS,
+        GENERIC_CLAIM_INDEX_PREPARE_PASS,
         CompilerPhase::TypeCheck,
         ResourceDomain::DispatchArguments,
         kernels,
-        "type_checker/names/radix/dispatch_args",
+        "type_checker/count/dispatch_args",
         reflected_bindings![
-            "name_count_in" => generic_claim_count_out,
-            "radix_dispatch_args" => generic_claim_radix_dispatch_args: Write,
+            "count_in" => generic_claim_count_out,
+            "dispatch_args" => generic_claim_index_dispatch_args: Write,
         ],
     )?;
-    GENERIC_CLAIM_RADIX_SORT.register(
-        &mut graph,
-        call_claim_radix_steps(token_capacity, generic_claim_capacity),
-        &[
-            "call_generic_claim_callee",
-            "call_generic_claim_slot",
-            "call_generic_claim_type",
-            "call_generic_claim_ref_tag",
-        ],
-    )?;
+    CALLS_GENERIC_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
+    CALLS_GENERIC_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_GENERIC_CLAIM_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_GENERIC_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_REQUIRED_GENERIC_MARK.register_kernel(&mut graph, kernels)?;
@@ -3928,27 +3455,18 @@ fn build_graph(
     )?;
     CALLS_REQUIRED_GENERIC_VALIDATE.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
-        CONST_CLAIM_SORT_PREPARE_PASS,
+        CONST_CLAIM_INDEX_PREPARE_PASS,
         CompilerPhase::TypeCheck,
         ResourceDomain::DispatchArguments,
         kernels,
-        "type_checker/names/radix/dispatch_args",
+        "type_checker/count/dispatch_args",
         reflected_bindings![
-            "name_count_in" => call_arg_row_count_out,
-            "radix_dispatch_args" => const_claim_radix_dispatch_args: Write,
+            "count_in" => call_arg_row_count_out,
+            "dispatch_args" => const_claim_index_dispatch_args: Write,
         ],
     )?;
-    CONST_CLAIM_RADIX_SORT.register_with_bindings(
-        &mut graph,
-        call_claim_radix_steps(token_capacity, call_arg_capacity),
-        "call_generic_claim_count_out",
-        &[
-            ("call_generic_claim_callee", "call_const_claim_callee"),
-            ("call_generic_claim_slot", "call_const_claim_slot"),
-            ("call_generic_claim_type", "call_const_claim_len"),
-            ("call_generic_claim_ref_tag", "call_generic_claim_ref_tag"),
-        ],
-    )?;
+    CALLS_CONST_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
+    CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
     let aggregate_scan_resources = graph.resolve_prefix_scan_resources(AGGREGATE_SCAN_RESOURCES)?;
     graph.add_fragment(PrefixScanGraph {
@@ -4010,6 +3528,8 @@ fn build_graph(
             "visible_decl" => visible_decl: Write,
             "visible_type" => visible_type: Write,
             "hir_value_decl_name_present" => hir_value_decl_name_present: Write,
+            "hir_visible_decl_flag" => hir_visible_decl_flag: Write,
+            "hir_visible_decl_source_by_token" => hir_visible_decl_key_order_tmp: Write,
         ],
     )?;
     graph.add_kernel_pass_by_name(
@@ -4023,18 +3543,28 @@ fn build_graph(
             "dispatch_args" => compact_hir_dispatch_args: Write,
         ],
     )?;
-    VISIBLE_DECL_COMPACTION.register(
-        &mut graph,
+    VISIBLE_HIR_DECL_MARK.register_kernel(&mut graph, kernels)?;
+    graph.add_kernel_pass_by_name(
+        VISIBLE_MATCH_DISPATCH_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::DispatchArguments,
         kernels,
-        prefix_scan_hierarchy_levels(hir_blocks),
+        "type_checker/count/dispatch_args",
+        reflected_bindings![
+            "count_in" => compact_match_payload_row_count,
+            "dispatch_args" => match_payload_dispatch_args: Write,
+        ],
     )?;
+    VISIBLE_MATCH_DECL_MARK.register_kernel(&mut graph, kernels)?;
+    VISIBLE_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(token_blocks))?;
+    VISIBLE_DECL_SCATTER.register_kernel(&mut graph, kernels)?;
+    let visible_radix_steps = visible_decl_key_radix_steps(token_capacity);
     graph.add_pass(PassDesc {
         name: VISIBLE_SORT_PASS,
         phase: CompilerPhase::TypeCheck,
         dispatch_domain: ResourceDomain::Declarations,
         accesses: vec![
             PassAccess::read("hir_visible_decl_count_out", hir_visible_decl_count_out),
-            PassAccess::write("hir_visible_decl_key_order", hir_visible_decl_key_order),
             PassAccess::write(
                 "hir_visible_decl_key_radix_dispatch_args",
                 hir_visible_decl_key_radix_dispatch_args,
@@ -4043,12 +3573,10 @@ fn build_graph(
     })?;
     VISIBLE_RADIX_SORT.register(
         &mut graph,
-        visible_decl_key_radix_steps(token_capacity),
-        &[
-            "hir_visible_decl_owner_fn",
-            "hir_visible_decl_name_id",
-            "hir_visible_decl_token",
-        ],
+        token_capacity,
+        VISIBLE_DECL_SMALL_SORT_CAPACITY,
+        visible_radix_steps,
+        &["hir_visible_decl_owner_fn", "hir_visible_decl_name_id"],
     )?;
     graph.add_pass(PassDesc {
         name: VISIBLE_SCOPE_TREE_PASS,
@@ -4078,44 +3606,9 @@ fn build_graph(
         &[],
     )?;
     METHODS_MARK_CALL_KEYS.register_kernel(&mut graph, kernels)?;
-    graph.add_kernel_pass_by_name(
-        METHOD_KEY_SEED_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::Declarations,
-        kernels,
-        "type_checker/methods/03/seed_key_order",
-        reflected_bindings![
-            "method_key_to_fn_token" => method_key_to_fn_token: Write,
-            "method_key_status" => method_key_status: Write,
-            "method_key_duplicate_of" => method_key_duplicate_of: Write,
-        ],
-    )?;
-    METHOD_KEY_HIERARCHICAL_RADIX_SORT.register(
-        &mut graph,
-        METHOD_KEY_RADIX_STEPS,
-        &[
-            "method_decl_method_row",
-            "method_decl_receiver_ref_tag",
-            "method_decl_receiver_ref_payload",
-            "method_decl_module_id",
-            "method_decl_name_id",
-            "module_type_path_type",
-            "type_instance_decl_token",
-            "type_instance_arg_start",
-            "type_instance_arg_count",
-            "type_instance_arg_ref_tag",
-            "type_instance_arg_ref_payload",
-            "type_instance_arg_hash",
-        ],
-    )?;
-    graph.add_kernel_pass_by_name(
-        METHOD_KEY_VALIDATION_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::Declarations,
-        kernels,
-        "type_checker/methods/05_validate_keys",
-        reflected_bindings!["sorted_method_key_order" => method_key_to_fn_token: Read],
-    )?;
+    METHODS_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
+    METHODS_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
+    METHODS_VALIDATE_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE.register_kernel(&mut graph, kernels)?;
@@ -4141,13 +3634,18 @@ fn build_graph(
             "predicate_method_contract_visibility" => predicate_method_contract_visibility: Write,
             "predicate_method_contract_status" => predicate_method_contract_status: Write,
             "predicate_method_contract_param_type_node" => predicate_method_contract_param_type_node: Write,
-            "predicate_method_contract_owner_range_first" => predicate_method_contract_owner_range_first: Write,
-            "predicate_method_contract_owner_range_count" => predicate_method_contract_owner_range_count: Write,
+            "predicate_method_contract_owner_count" => predicate_method_contract_owner_count: Write,
+            "predicate_method_contract_lookup_head" => predicate_method_contract_lookup_head: Write,
+            "predicate_method_contract_lookup_next" => predicate_method_contract_lookup_next: Write,
             "predicate_method_validation_owner_node" => predicate_method_validation_owner_node: Write,
             "predicate_method_validation_peer_node" => predicate_method_validation_peer_node: Write,
             "predicate_method_validation_status" => predicate_method_validation_status: Write,
             "predicate_method_validation_detail_token" => predicate_method_validation_detail_token: Write,
             "predicate_method_validation_first_error_row" => predicate_method_validation_first_error_row: Write,
+            "predicate_owner_lookup_head" => predicate_owner_lookup_head: Write,
+            "predicate_owner_lookup_next" => predicate_owner_lookup_next: Write,
+            "predicate_impl_lookup_head" => predicate_impl_lookup_head: Write,
+            "predicate_impl_lookup_next" => predicate_impl_lookup_next: Write,
         ];
         graph.add_kernel_pass_by_name(
             PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS,
@@ -4171,22 +3669,6 @@ fn build_graph(
             ResourceDomain::HirNodes,
             kernels,
             "type_checker/predicates/00c_collect_method_contracts",
-            &[],
-        )?;
-        for definition in [PREDICATE_METHOD_CONTRACT_KEYS, PREDICATE_METHOD_PARAM_KEYS] {
-            definition.register(
-                &mut graph,
-                kernels,
-                predicate_capacity,
-                &PREDICATE_KEY_INPUTS,
-            )?;
-        }
-        graph.add_kernel_pass_by_name(
-            PREDICATES_BUILD_METHOD_OWNER_RANGES_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/01e_build_method_owner_ranges",
             &[],
         )?;
         graph.add_kernel_pass_by_name(
@@ -4245,14 +3727,6 @@ fn build_graph(
             "type_checker/predicates/01g_reduce_method_validation_errors",
             &[],
         )?;
-        for definition in [PREDICATE_OWNER_KEYS, PREDICATE_IMPL_KEYS] {
-            definition.register(
-                &mut graph,
-                kernels,
-                predicate_capacity,
-                &PREDICATE_KEY_INPUTS,
-            )?;
-        }
         graph.add_kernel_pass_by_name(
             PREDICATES_COUNT_OBLIGATION_PAIRS_PASS,
             CompilerPhase::TypeCheck,
@@ -4426,12 +3900,6 @@ fn build_graph(
             SEMANTIC_EXPRESSION_REFS_PROJECT_PASS,
         )?;
     }
-    // The resident recorder interleaves method-key work between the struct
-    // field sort and the later member/initializer queries. That physical
-    // schedule is not fully represented by graph nodes yet, so the sorted
-    // field order must not share a slot with method radix workspace during
-    // that interval.
-    graph.dedicate_workspace(struct_field_key_order)?;
     // Declaration-token projection is initialized with generic/type-instance
     // state, then consumed by member, aggregate, alias, and predicate passes
     // interleaved by the resident recorder. Keep the indexed relation intact
@@ -4513,12 +3981,9 @@ fn build_graph(
         _method_hir_dispatch_args,
         _method_compact_dispatch_args,
         _method_token_hir_dispatch_args,
-        _method_radix_prefix_dispatch_args,
-        _method_radix_bases_dispatch_args,
         _predicate_token_dispatch_args,
         _predicate_hir_dispatch_args,
-        _predicate_radix_prefix_dispatch_args,
-        _predicate_radix_bases_dispatch_args,
+        _predicate_compact_dispatch_args,
         _predicate_single_dispatch_args,
         _match_hir_dispatch_args,
     ] {
@@ -4615,6 +4080,13 @@ fn build_graph(
         "struct_init_field_expected_ref_tag",
         "struct_init_field_expected_ref_payload",
     ])?;
+    // The resident type-check recorder still interleaves and repeats several
+    // operation groups in an order that this graph does not encode exactly.
+    // Coloring from the partial order is unsound: a repeated consumer can read
+    // storage already assigned to another logical relation. Keep type-check
+    // workspace identities distinct until recording is driven by this graph's
+    // complete schedule.
+    graph.dedicate_all_workspace();
     graph.build()
 }
 
@@ -4668,9 +4140,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn typecheck_graph_colors_only_complete_workspace_intervals() {
+    fn typecheck_graph_dedicates_scratch_until_the_recorder_is_graph_driven() {
         let kernels =
-            crate::gpu::kernels::KernelCatalog::load_prefixes(&["type_checker", "scan"]).unwrap();
+            crate::gpu::kernels::KernelCatalog::load_prefixes(&["type_checker", "scan", "radix"])
+                .unwrap();
         let graph = build_graph(
             1024,
             4096,
@@ -4719,8 +4192,8 @@ mod tests {
         );
         assert_eq!(
             graph.repeated_regions().len(),
-            13,
-            "each scalable radix sort and pointer jump must have an explicit repeated region",
+            4,
+            "each remaining scalable radix sort and pointer jump must have an explicit repeated region",
         );
         let generic_owner_region = graph
             .repeated_regions()
@@ -4733,23 +4206,6 @@ mod tests {
             })
             .expect("generic-owner pointer-jump repeated region");
         assert_eq!(generic_owner_region.iterations, 5);
-        let generic_param_radix_region = graph
-            .repeated_regions()
-            .iter()
-            .find(|region| {
-                region.first_pass
-                    == graph
-                        .pass_id(
-                            GENERIC_PARAMETER_RADIX_SORTS
-                                .key
-                                .passes
-                                .order_to_temporary
-                                .histogram,
-                        )
-                        .unwrap()
-            })
-            .expect("generic-parameter paired radix repeated region");
-        assert_eq!(generic_param_radix_region.iterations, 3);
         let visible_radix_region = graph
             .repeated_regions()
             .iter()
@@ -4787,19 +4243,19 @@ mod tests {
                 >= aggregate_validation.index(),
             "member results must remain live through final aggregate validation",
         );
-        let slot = |resource: ResourceId| {
+        let storage_identity = |resource: ResourceId| {
             let name = graph.resource(resource).unwrap().name;
             graph
                 .workspace_plan()
                 .assignments
                 .iter()
                 .find(|assignment| assignment.name == name)
-                .unwrap()
-                .slot
+                .map_or(resource.index(), |assignment| assignment.slot as usize)
         };
+        let slot = storage_identity;
         assert_ne!(
-            slot(resource("compact_expr_scalar_type.a")),
-            slot(resource("compact_expr_scalar_type.b")),
+            storage_identity(resource("compact_expr_scalar_type.a")),
+            storage_identity(resource("compact_expr_scalar_type.b")),
         );
         let name_workspace = [
             graph.resource_id("name_lexeme_flag").unwrap(),
@@ -4833,18 +4289,18 @@ mod tests {
         for resource in name_workspace {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "source-name compaction scratch must be graph-owned",
+                ResourceClass::Resident,
+                "source-name compaction scratch must have dedicated storage until the recorder is graph-driven",
             );
         }
         assert_ne!(
-            slot(graph.resource_id("name_hash_lo").unwrap()),
-            slot(graph.resource_id("name_hash_hi").unwrap()),
+            storage_identity(graph.resource_id("name_hash_lo").unwrap()),
+            storage_identity(graph.resource_id("name_hash_hi").unwrap()),
             "the two halves of each name hash are written together",
         );
         assert_ne!(
-            slot(graph.resource_id("name_hash_table_a").unwrap()),
-            slot(graph.resource_id("name_hash_table_b").unwrap()),
+            storage_identity(graph.resource_id("name_hash_table_a").unwrap()),
+            storage_identity(graph.resource_id("name_hash_table_b").unwrap()),
             "both open-addressed name tables are updated together",
         );
         let module_borrow_fence = graph.pass_id(TYPE_INSTANCE_ARG_ROW_CLEAR_PASS).unwrap();
@@ -4876,18 +4332,18 @@ mod tests {
             );
         }
         assert_ne!(
-            slot(graph.resource_id("decl_name_token").unwrap()),
-            slot(graph.resource_id("decl_kind").unwrap()),
+            storage_identity(graph.resource_id("decl_name_token").unwrap()),
+            storage_identity(graph.resource_id("decl_kind").unwrap()),
             "module declaration scatter writes names and kinds together",
         );
         assert_ne!(
-            slot(graph.resource_id("decl_name_token").unwrap()),
-            slot(graph.resource_id("decl_id_by_name_token").unwrap()),
+            storage_identity(graph.resource_id("decl_name_token").unwrap()),
+            storage_identity(graph.resource_id("decl_id_by_name_token").unwrap()),
             "module declaration scatter writes names and reverse lookup together",
         );
         assert_ne!(
-            slot(graph.resource_id("decl_kind").unwrap()),
-            slot(graph.resource_id("decl_id_by_name_token").unwrap()),
+            storage_identity(graph.resource_id("decl_kind").unwrap()),
+            storage_identity(graph.resource_id("decl_id_by_name_token").unwrap()),
             "module declaration scatter writes kinds and reverse lookup together",
         );
         let initial_module_scan_resources = [
@@ -4907,7 +4363,7 @@ mod tests {
             resource("module_record_scan_local_prefix"),
             resource("module_record_scan_block_sum"),
         ]
-        .map(slot)
+        .map(storage_identity)
         .into_iter()
         .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(
@@ -4920,7 +4376,7 @@ mod tests {
             resource("module_record_scan_prefix_a"),
             resource("module_record_scan_prefix_b"),
         ]
-        .map(slot)
+        .map(storage_identity)
         .into_iter()
         .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(
@@ -4964,20 +4420,20 @@ mod tests {
             );
             for radix_resource in module_radix_resources {
                 assert_ne!(
-                    slot(resource),
-                    slot(radix_resource),
+                    storage_identity(resource),
+                    storage_identity(radix_resource),
                     "module scan hierarchy and radix storage overlap in the real schedule",
                 );
             }
         }
         assert_ne!(
-            slot(resource("module_record_scan_local_prefix")),
-            slot(resource("type_instance_arg_ref_tag")),
+            storage_identity(resource("module_record_scan_local_prefix")),
+            storage_identity(resource("type_instance_arg_ref_tag")),
             "declaration type flags use the future type-instance tag column while scanning",
         );
         assert_ne!(
-            slot(resource("module_record_scan_local_prefix")),
-            slot(resource("type_instance_arg_ref_payload")),
+            storage_identity(resource("module_record_scan_local_prefix")),
+            storage_identity(resource("type_instance_arg_ref_payload")),
             "declaration value flags use the future type-instance payload column while scanning",
         );
         let type_reference_resources = [
@@ -5000,7 +4456,7 @@ mod tests {
         }
         assert_eq!(
             type_reference_resources
-                .map(slot)
+                .map(storage_identity)
                 .into_iter()
                 .collect::<std::collections::BTreeSet<_>>()
                 .len(),
@@ -5061,13 +4517,13 @@ mod tests {
             );
         }
         assert_ne!(
-            slot(graph.resource_id("hir_visible_decl_flag").unwrap()),
-            slot(graph.resource_id("hir_visible_decl_prefix").unwrap()),
+            storage_identity(graph.resource_id("hir_visible_decl_flag").unwrap()),
+            storage_identity(graph.resource_id("hir_visible_decl_prefix").unwrap()),
             "visible scan input and prefix output are simultaneously bound",
         );
         assert_ne!(
-            slot(graph.resource_id("hir_visible_decl_key_order").unwrap()),
-            slot(graph.resource_id("hir_visible_decl_key_order_tmp").unwrap()),
+            storage_identity(graph.resource_id("hir_visible_decl_key_order").unwrap()),
+            storage_identity(graph.resource_id("hir_visible_decl_key_order_tmp").unwrap()),
             "visible radix input and scatter output are simultaneously bound",
         );
         let predicate_row_workspace = [
@@ -5087,21 +4543,26 @@ mod tests {
             resource("predicate_method_contract_visibility"),
             resource("predicate_method_contract_status"),
             resource("predicate_method_contract_param_type_node"),
-            resource("predicate_method_contract_owner_range_first"),
-            resource("predicate_method_contract_owner_range_count"),
+            resource("predicate_method_contract_owner_count"),
+            resource("predicate_method_contract_lookup_head"),
+            resource("predicate_method_contract_lookup_next"),
             resource("predicate_method_validation_owner_node"),
             resource("predicate_method_validation_peer_node"),
             resource("predicate_method_validation_status"),
             resource("predicate_method_validation_detail_token"),
             resource("predicate_method_validation_first_error_row"),
+            resource("predicate_owner_lookup_head"),
+            resource("predicate_owner_lookup_next"),
+            resource("predicate_impl_lookup_head"),
+            resource("predicate_impl_lookup_next"),
         ];
         assert_eq!(
             graph
                 .resource(resource("predicate_syntax_token"))
                 .unwrap()
                 .class,
-            ResourceClass::Workspace,
-            "predicate syntax markers must use graph-owned phase workspace",
+            ResourceClass::Resident,
+            "predicate syntax markers need dedicated storage until the recorder is graph-driven",
         );
         assert!(
             graph
@@ -5125,11 +4586,11 @@ mod tests {
         for resource in generic_owner_workspace {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "generic-owner pointer jumping must use graph-owned workspace",
+                ResourceClass::Resident,
+                "generic-owner pointer jumping needs dedicated storage until the recorder is graph-driven",
             );
         }
-        let mut generic_owner_slots = generic_owner_workspace.map(slot);
+        let mut generic_owner_slots = generic_owner_workspace.map(storage_identity);
         generic_owner_slots.sort_unstable();
         assert!(
             generic_owner_slots
@@ -5178,104 +4639,51 @@ mod tests {
             resource("generic_param_name_id"),
             resource("generic_param_token"),
             resource("generic_param_kind"),
-            resource("generic_param_key_order"),
-            resource("generic_param_slot_order"),
+            resource("generic_param_lookup_state"),
+            resource("generic_type_param_flag"),
+            resource("generic_const_param_flag"),
+            resource("generic_type_param_prefix"),
+            resource("generic_const_param_prefix"),
+            resource("generic_type_param_rows"),
         ] {
             assert!(
                 matches!(
                     graph.resource(resource).unwrap().class,
-                    ResourceClass::Workspace | ResourceClass::Output
+                    ResourceClass::Workspace | ResourceClass::Resident | ResourceClass::Output
                 ),
                 "generic-parameter rows must be graph-owned workspace or retained interface outputs",
             );
         }
-        for resource in [
-            resource("generic_param_node"),
-            graph
-                .resource_id("generic_param_key_order_tmp")
-                .expect("large sort key-order ping-pong"),
-            graph
-                .resource_id("generic_param_slot_order_tmp")
-                .expect("large sort slot-order ping-pong"),
-            graph
-                .resource_id("generic_param_slot_radix_block_histogram")
-                .expect("large sort slot histogram"),
-            graph
-                .resource_id("generic_param_slot_radix_block_bucket_prefix")
-                .expect("large sort slot prefix"),
-            graph
-                .resource_id("generic_param_slot_radix_bucket_total")
-                .expect("large sort slot total"),
-            graph
-                .resource_id("generic_param_slot_radix_bucket_base")
-                .expect("large sort slot base"),
-        ] {
-            assert_eq!(
-                graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "generic-parameter sort intermediates must be graph-owned workspace",
-            );
-        }
-        assert_ne!(
-            slot(resource("generic_param_key_order")),
-            slot(
-                graph
-                    .resource_id("generic_param_key_order_tmp")
-                    .expect("large sort key-order ping-pong"),
-            ),
-            "generic key radix input and output may not alias",
-        );
-        assert_ne!(
-            slot(resource("generic_param_slot_order")),
-            slot(
-                graph
-                    .resource_id("generic_param_slot_order_tmp")
-                    .expect("large sort slot-order ping-pong"),
-            ),
-            "generic slot radix input and output may not alias",
-        );
         assert!(
             graph
                 .pass_id(TYPE_INSTANCES_DECL_GENERIC_PARAMS_PASS)
                 .unwrap()
                 .index()
                 < graph
-                    .pass_id(
-                        GENERIC_PARAMETER_RADIX_SORTS
-                            .key
-                            .passes
-                            .order_to_temporary
-                            .histogram
-                    )
+                    .pass_id(GENERIC_PARAM_LOOKUP_BUILD.name)
                     .unwrap()
                     .index(),
-            "compact generic rows are produced before sorting",
+            "compact generic rows are produced before indexing",
         );
         assert!(
             graph
-                .pass_id(
-                    GENERIC_PARAMETER_RADIX_SORTS
-                        .slot
-                        .passes
-                        .temporary_to_order
-                        .scatter
-                )
+                .pass_id(GENERIC_PARAM_ROWS_SCATTER.name)
                 .unwrap()
                 .index()
                 < graph
                     .pass_id(TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS)
                     .unwrap()
                     .index(),
-            "both generic sort orders complete before use-site resolution",
+            "generic lookup and slot compaction complete before use-site resolution",
         );
         for resource in predicate_row_workspace {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "predicate core and method-validation rows must be graph-owned workspace",
+                ResourceClass::Resident,
+                "predicate core and method-validation rows need dedicated storage until the recorder is graph-driven",
             );
         }
-        let mut predicate_clear_slots = predicate_row_workspace.map(slot);
+        let mut predicate_clear_slots = predicate_row_workspace.map(storage_identity);
         predicate_clear_slots.sort_unstable();
         assert!(
             predicate_clear_slots
@@ -5283,35 +4691,70 @@ mod tests {
                 .all(|pair| pair[0] != pair[1]),
             "all predicate rows overwritten by the shared clear pass are simultaneously bound",
         );
-        for resource in [
-            resource("predicate_method_contract_key_order"),
-            resource("predicate_method_contract_key_order_tmp"),
-            resource("predicate_method_param_key_order"),
-            resource("predicate_method_param_key_order_tmp"),
-            resource("predicate_owner_key_order"),
-            resource("predicate_owner_key_order_tmp"),
-            resource("predicate_impl_key_order"),
-            resource("predicate_impl_key_order_tmp"),
-            resource("predicate_key_radix_block_histogram"),
-            resource("predicate_key_radix_block_bucket_prefix"),
-            resource("predicate_key_radix_bucket_total"),
-            resource("predicate_key_radix_bucket_base"),
+        for name in [
+            "predicate_method_contract_key_order",
+            "predicate_method_contract_key_order_tmp",
+            "type_check.predicates.method_contract_keys.small",
+            "type_check.predicates.method_contract_keys.radix.histogram.a",
+            "type_check.predicates.build_method_owner_ranges",
         ] {
-            assert_eq!(
-                graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "predicate key sorting must use graph-owned phase workspace",
+            assert!(
+                graph.resource_id(name).is_none() && graph.pass_id(name).is_none(),
+                "method contracts must not retain sort artifact `{name}`",
             );
         }
         assert_ne!(
-            slot(resource("predicate_method_contract_key_order")),
-            slot(resource("predicate_method_contract_key_order_tmp")),
-            "predicate radix input and scatter output are simultaneously bound",
+            storage_identity(resource("predicate_method_contract_lookup_head")),
+            storage_identity(resource("predicate_method_contract_lookup_next")),
+            "method-contract buckets and links are simultaneously bound",
         );
+        assert!(
+            graph
+                .resource_id("predicate_method_param_key_order")
+                .is_none(),
+            "compact parameter ranges replace the former method-parameter sort index",
+        );
+        assert!(
+            graph
+                .pass_id("type_check.predicates.method_param_keys.radix.histogram.a")
+                .is_none(),
+            "method parameters must not schedule a radix sort",
+        );
+        for name in [
+            "predicate_owner_key_order",
+            "predicate_owner_key_order_tmp",
+            "type_check.predicates.owner_keys.small",
+            "type_check.predicates.owner_keys.radix.histogram.a",
+        ] {
+            assert!(
+                graph.resource_id(name).is_none() && graph.pass_id(name).is_none(),
+                "predicate owner lookup must not retain radix artifact `{name}`",
+            );
+        }
         assert_ne!(
-            slot(resource("predicate_owner_key_order")),
-            slot(resource("predicate_owner_key_order_tmp")),
-            "predicate owner-key radix input and output may not alias",
+            storage_identity(resource("predicate_owner_lookup_head")),
+            storage_identity(resource("predicate_owner_lookup_next")),
+            "owner-index buckets and links are simultaneously bound",
+        );
+        for name in [
+            "predicate_impl_key_order",
+            "predicate_impl_key_order_tmp",
+            "predicate_key_radix_block_histogram",
+            "predicate_key_radix_block_bucket_prefix",
+            "predicate_key_radix_bucket_total",
+            "predicate_key_radix_bucket_base",
+            "type_check.predicates.impl_keys.small",
+            "type_check.predicates.impl_keys.radix.histogram.a",
+        ] {
+            assert!(
+                graph.resource_id(name).is_none() && graph.pass_id(name).is_none(),
+                "implementation lookup must not retain radix artifact `{name}`",
+            );
+        }
+        assert_ne!(
+            storage_identity(resource("predicate_impl_lookup_head")),
+            storage_identity(resource("predicate_impl_lookup_next")),
+            "implementation-index buckets and links are simultaneously bound",
         );
         for resource in [
             resource("predicate_obligation_count_by_call"),
@@ -5325,8 +4768,8 @@ mod tests {
         ] {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "predicate obligation emission must use graph-owned workspace",
+                ResourceClass::Resident,
+                "predicate obligation emission needs dedicated storage until the recorder is graph-driven",
             );
         }
         assert!(
@@ -5343,8 +4786,8 @@ mod tests {
             "predicate validation reads the per-call counts after the scan output is produced",
         );
         assert_ne!(
-            slot(resource("predicate_obligation_count_by_call")),
-            slot(resource("predicate_obligation_prefix_by_call")),
+            storage_identity(resource("predicate_obligation_count_by_call")),
+            storage_identity(resource("predicate_obligation_prefix_by_call")),
             "overlapping scan input and output lifetimes must not alias",
         );
         assert_eq!(
@@ -5356,8 +4799,8 @@ mod tests {
         );
         assert_eq!(
             graph.resource(resource("member_next_node")).unwrap().class,
-            ResourceClass::Workspace,
-            "dense member-chain edges must remain phase-local graph workspace",
+            ResourceClass::Resident,
+            "dense member-chain edges need dedicated storage until the recorder is graph-driven",
         );
         let member_result_resources = [
             resource("member_result_context_instance"),
@@ -5370,12 +4813,12 @@ mod tests {
             assert!(
                 matches!(
                     graph.resource(resource).unwrap().class,
-                    ResourceClass::Workspace | ResourceClass::Output
+                    ResourceClass::Workspace | ResourceClass::Resident | ResourceClass::Output
                 ),
                 "member-result columns must be graph-owned workspace or retained metadata outputs",
             );
         }
-        let mut member_result_slots = member_result_resources.map(slot);
+        let mut member_result_slots = member_result_resources.map(storage_identity);
         member_result_slots.sort_unstable();
         assert!(
             member_result_slots
@@ -5398,12 +4841,12 @@ mod tests {
         for member_slot in member_result_slots {
             assert_ne!(
                 member_slot,
-                slot(resource("compact_expr_scalar_type.a")),
+                storage_identity(resource("compact_expr_scalar_type.a")),
                 "member results are live while expression scalar propagation runs",
             );
             assert_ne!(
                 member_slot,
-                slot(resource("compact_expr_scalar_type.b")),
+                storage_identity(resource("compact_expr_scalar_type.b")),
                 "member results are live while expression scalar propagation runs",
             );
         }
@@ -5419,7 +4862,7 @@ mod tests {
             assert!(
                 matches!(
                     graph.resource(resource).unwrap().class,
-                    ResourceClass::Workspace | ResourceClass::Output
+                    ResourceClass::Workspace | ResourceClass::Resident | ResourceClass::Output
                 ),
                 "struct-literal relations must be graph-owned workspace or retained metadata outputs",
             );
@@ -5472,8 +4915,8 @@ mod tests {
         );
         assert_eq!(
             graph.resource(resource("fn_entrypoint_tag")).unwrap().class,
-            ResourceClass::Workspace,
-            "function entrypoint tags must be phase-local graph workspace",
+            ResourceClass::Resident,
+            "function entrypoint tags need dedicated storage until the recorder is graph-driven",
         );
         assert!(
             graph.pass_id(CALLS_ENTRYPOINT_CLEAR.name).unwrap().index()
@@ -5512,7 +4955,7 @@ mod tests {
             assert!(
                 matches!(
                     graph.resource(resource).unwrap().class,
-                    ResourceClass::Workspace | ResourceClass::Output
+                    ResourceClass::Workspace | ResourceClass::Resident | ResourceClass::Output
                 ),
                 "type-instance argument storage must be graph-owned workspace or retained metadata outputs",
             );
@@ -5628,49 +5071,58 @@ mod tests {
             "sparse argument references must be populated before semantic consumers",
         );
         let hash_rows = graph.pass_id(TYPE_INSTANCE_ARG_HASH_ROWS_PASS).unwrap();
-        let method_key_seed = graph.pass_id(METHOD_KEY_SEED_PASS).unwrap();
-        let method_key_sort_first = graph
-            .pass_id(METHOD_KEY_HIERARCHICAL_RADIX_SORT.passes.names()[0])
-            .unwrap();
-        let method_key_sort_last = graph
-            .pass_id(METHOD_KEY_HIERARCHICAL_RADIX_SORT.passes.names()[11])
-            .unwrap();
-        let method_key_validation = graph.pass_id(METHOD_KEY_VALIDATION_PASS).unwrap();
         let mark_call_keys = graph.pass_id(METHODS_MARK_CALL_KEYS.name).unwrap();
+        let method_lookup_clear = graph.pass_id(METHODS_LOOKUP_CLEAR.name).unwrap();
+        let method_lookup_build = graph.pass_id(METHODS_LOOKUP_BUILD.name).unwrap();
+        let method_key_validation = graph.pass_id(METHODS_VALIDATE_KEYS.name).unwrap();
         let mark_call_return_keys = graph.pass_id(METHODS_MARK_CALL_RETURN_KEYS.name).unwrap();
         let resolve_table = graph.pass_id(METHODS_RESOLVE_TABLE.name).unwrap();
         let resolve = graph.pass_id(METHODS_RESOLVE.name).unwrap();
         for resource in [
-            resource("method_key_to_fn_token"),
-            resource("method_key_order_tmp"),
             resource("method_key_status"),
             resource("method_key_duplicate_of"),
-            resource("method_key_radix_block_histogram"),
-            resource("method_key_radix_block_bucket_prefix"),
-            resource("method_key_radix_bucket_total"),
-            resource("method_key_radix_bucket_base"),
+            resource("method_lookup_head"),
+            resource("method_lookup_next"),
         ] {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "method-key lookup state must be graph-owned workspace",
+                ResourceClass::Resident,
+                "method index state needs dedicated storage until the recorder is graph-driven",
             );
         }
         assert_ne!(
             slot(resource("type_instance_arg_hash")),
-            slot(resource("method_key_status")),
-            "method-key validation reads argument hashes while writing status",
+            slot(resource("method_lookup_head")),
+            "method-index construction reads argument hashes while writing bucket heads",
         );
         assert_ne!(
             slot(resource("type_instance_arg_hash")),
-            slot(resource("method_key_to_fn_token")),
-            "method-key construction reads argument hashes while writing key order",
+            slot(resource("method_lookup_next")),
+            "method-index construction reads argument hashes while writing bucket links",
         );
         assert_ne!(
-            slot(resource("method_key_to_fn_token")),
-            slot(resource("method_key_status")),
-            "method-key validation reads sorted order while writing status",
+            slot(resource("method_lookup_head")),
+            slot(resource("method_lookup_next")),
+            "bucket heads and links are written together",
         );
+        assert_ne!(
+            slot(resource("method_lookup_head")),
+            slot(resource("method_key_status")),
+            "method validation reads bucket heads while writing status",
+        );
+        for old_resource in [
+            "method_key_to_fn_token",
+            "method_key_order_tmp",
+            "method_key_radix_block_histogram",
+            "method_key_radix_block_bucket_prefix",
+            "method_key_radix_bucket_total",
+            "method_key_radix_bucket_base",
+        ] {
+            assert!(
+                graph.resource_id(old_resource).is_none(),
+                "removed method radix resource `{old_resource}` must stay absent",
+            );
+        }
         assert!(
             graph
                 .pass_id(TYPE_INSTANCE_ARG_ROW_POPULATE_PASS)
@@ -5679,9 +5131,9 @@ mod tests {
                 < hash_rows.index()
         );
         assert!(hash_rows.index() < mark_call_keys.index());
-        assert!(mark_call_keys.index() < method_key_seed.index());
-        assert!(method_key_seed.index() < method_key_sort_first.index());
-        assert!(method_key_sort_last.index() < method_key_validation.index());
+        assert!(mark_call_keys.index() < method_lookup_clear.index());
+        assert!(method_lookup_clear.index() < method_lookup_build.index());
+        assert!(method_lookup_build.index() < method_key_validation.index());
         assert!(method_key_validation.index() < mark_call_return_keys.index());
         assert!(mark_call_return_keys.index() < resolve_table.index());
         assert!(resolve_table.index() < resolve.index());
@@ -5694,8 +5146,8 @@ mod tests {
         ] {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "semantic type compaction must be graph-owned workspace",
+                ResourceClass::Resident,
+                "semantic type compaction needs dedicated storage until the recorder is graph-driven",
             );
         }
         assert_ne!(
@@ -5735,8 +5187,8 @@ mod tests {
         ];
         control_slots.sort_unstable();
         assert!(
-            control_slots.windows(2).any(|pair| pair[0] == pair[1]),
-            "at least one non-overlapping control-depth row must reuse workspace",
+            control_slots.windows(2).all(|pair| pair[0] != pair[1]),
+            "control-depth rows need distinct storage until the recorder is graph-driven",
         );
         assert_ne!(
             slot(resource("if_depth_inblock")),
@@ -5770,8 +5222,8 @@ mod tests {
         ];
         function_slots.sort_unstable();
         assert!(
-            function_slots.windows(2).any(|pair| pair[0] == pair[1]),
-            "non-overlapping function-context rows must reuse workspace",
+            function_slots.windows(2).all(|pair| pair[0] != pair[1]),
+            "function-context rows need distinct storage until the recorder is graph-driven",
         );
         assert_ne!(
             slot(resource("fn_event_inblock")),
@@ -5784,19 +5236,21 @@ mod tests {
                 continue;
             }
             let id = graph.resource_id(resource.name).unwrap();
-            if resource.name == "struct_field_key_order" {
-                assert_eq!(
-                    graph.lifetime(id).unwrap().producer,
-                    graph.pass_id(TYPE_INSTANCES_STRUCT_FIELD_SORT_SEED_PASS),
-                    "dedicated sorted-field storage keeps its real graph producer",
-                );
-                continue;
-            }
-            assert_eq!(
-                graph.lifetime(id).unwrap().producer,
-                Some(resident_clear),
-                "dedicated resident resource must be initialized by the recorded job-storage clear: {}",
-                resource.name,
+            let producer = graph
+                .lifetime(id)
+                .unwrap()
+                .producer
+                .expect("resident resource producer");
+            assert!(
+                producer == resident_clear
+                    || graph
+                        .pass(producer)
+                        .unwrap()
+                        .accesses
+                        .iter()
+                        .any(|access| { access.resource == id && access.mode.writes() }),
+                "dedicated resident resource must be initialized by the job clear or its algorithmic producer: {}",
+                resource.name
             );
         }
         assert_eq!(
@@ -5804,21 +5258,21 @@ mod tests {
                 .resource(graph.resource_id("semantic_feature_flags").unwrap())
                 .unwrap()
                 .class,
-            ResourceClass::Workspace,
-            "the fully described feature clear/collect/dispatch interval is colorable",
+            ResourceClass::Resident,
+            "feature state needs dedicated storage while the surrounding recorder schedule is incomplete",
         );
         assert_eq!(
             graph.resource(resource("return_fn_flags")).unwrap().class,
-            ResourceClass::Workspace,
-            "return convergence is fully described by the registered return passes",
+            ResourceClass::Resident,
+            "return convergence needs dedicated storage while the surrounding recorder schedule is incomplete",
         );
         assert_eq!(
             graph
                 .resource(resource("return_block_flags"))
                 .unwrap()
                 .class,
-            ResourceClass::Workspace,
-            "block return convergence is fully described by the registered return passes",
+            ResourceClass::Resident,
+            "block return convergence needs dedicated storage while the surrounding recorder schedule is incomplete",
         );
         assert_ne!(
             slot(resource("return_fn_flags")),
@@ -5853,9 +5307,11 @@ mod tests {
             "call-site result instances must be published before expression typing",
         );
         let visible_order = [
-            VISIBLE_DECL_COMPACTION.mark.name,
+            VISIBLE_HIR_DECL_MARK.name,
+            VISIBLE_MATCH_DISPATCH_PASS,
+            VISIBLE_MATCH_DECL_MARK.name,
             VISIBLE_SCAN_PASS,
-            VISIBLE_DECL_COMPACTION.scatter.name,
+            VISIBLE_DECL_SCATTER.name,
             VISIBLE_SORT_PASS,
             VISIBLE_SCOPE_TREE_PASS,
             VISIBLE_NAMES_PASS,
@@ -6001,8 +5457,8 @@ mod tests {
                 .resource(resource("compact_predicate_diagnostic_facts"))
                 .unwrap()
                 .class,
-            ResourceClass::Workspace,
-            "raw predicate diagnostics must be a phase-colored migration fact, not retained state",
+            ResourceClass::Resident,
+            "raw predicate diagnostics need dedicated storage until the recorder is graph-driven",
         );
         assert!(
             graph
@@ -6095,8 +5551,8 @@ mod tests {
         ] {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
-                ResourceClass::Workspace,
-                "type-check implementation state must not cross the semantic artifact boundary",
+                ResourceClass::Resident,
+                "type-check implementation state needs dedicated storage until the recorder is graph-driven",
             );
         }
         assert!(
@@ -6138,15 +5594,10 @@ mod tests {
             slot(resource("call_generic_claim_scan_block_sum")),
             "simultaneously bound generic-claim scan rows must not alias",
         );
-        assert_eq!(
-            GENERIC_CLAIM_RADIX_SORT.resources.histogram,
-            CONST_CLAIM_RADIX_SORT.resources.histogram,
-            "sequential claim sorts should declare the same radix scratch",
-        );
         let aggregate_publish = graph.pass_id(CALLS_GENERIC_CLAIM_VALIDATE.name).unwrap();
         assert!(
             graph
-                .pass_id(GENERIC_CLAIM_RADIX_SORT.passes.temporary_to_order.scatter)
+                .pass_id(CALLS_GENERIC_CLAIM_INDEX_BUILD.name)
                 .unwrap()
                 .index()
                 < aggregate_publish.index()
@@ -6160,7 +5611,7 @@ mod tests {
         );
         assert!(
             graph
-                .pass_id(CONST_CLAIM_RADIX_SORT.passes.temporary_to_order.scatter)
+                .pass_id(CALLS_CONST_CLAIM_INDEX_BUILD.name)
                 .unwrap()
                 .index()
                 < graph
@@ -6169,9 +5620,14 @@ mod tests {
                     .index()
         );
         assert_ne!(
-            slot(resource("call_generic_claim_radix_block_histogram")),
-            slot(resource("call_generic_claim_radix_block_bucket_prefix")),
-            "simultaneously bound radix histogram and prefix rows must not alias",
+            slot(resource("call_generic_claim_lookup_head")),
+            slot(resource("call_generic_claim_lookup_next")),
+            "simultaneously bound generic-claim index rows must not alias",
+        );
+        assert_ne!(
+            slot(resource("call_const_claim_lookup_head")),
+            slot(resource("call_const_claim_lookup_next")),
+            "simultaneously bound const-claim index rows must not alias",
         );
         assert_ne!(
             slot(resource("call_arg_row_scan_block_sum")),
@@ -6215,42 +5671,28 @@ mod tests {
             &kernels,
         )
         .unwrap();
-        assert!(
-            graph
-                .pass_id(TYPE_INSTANCES_GENERIC_PARAM_SORT_SMALL_PASS)
-                .is_some(),
-            "small generic tables use the cooperative in-workgroup sort",
-        );
-        assert!(
-            graph
-                .pass_id(
-                    GENERIC_PARAMETER_RADIX_SORTS
-                        .key
-                        .passes
-                        .order_to_temporary
-                        .histogram
-                )
-                .is_none(),
-            "small generic tables do not allocate or schedule scalable radix scratch",
-        );
-        assert!(
-            graph
-                .resource_id("generic_param_slot_radix_block_histogram")
-                .is_none()
-        );
-        assert!(graph.resource_id("generic_param_key_order_tmp").is_none());
-        assert!(graph.resource_id("generic_param_slot_order_tmp").is_none());
-        assert!(
-            graph
-                .pass_id(PREDICATE_METHOD_CONTRACT_KEYS.small_pass)
-                .is_some(),
-            "small predicate tables use the cooperative in-workgroup sort",
-        );
+        assert!(graph.pass_id(GENERIC_PARAM_LOOKUP_BUILD.name).is_some());
+        assert!(graph.pass_id(GENERIC_PARAM_ROWS_SCATTER.name).is_some());
+        for name in [
+            "generic_param_key_order_tmp",
+            "generic_param_slot_order_tmp",
+            "generic_param_slot_radix_block_histogram",
+            "generic_param_slot_radix_block_bucket_prefix",
+            "generic_param_slot_radix_bucket_total",
+            "generic_param_slot_radix_bucket_base",
+        ] {
+            assert!(
+                graph.resource_id(name).is_none(),
+                "generic parameters no longer allocate radix resource `{name}`",
+            );
+        }
         for name in [
             "predicate_method_contract_key_order_tmp",
-            "predicate_method_param_key_order_tmp",
+            "predicate_method_contract_key_order",
             "predicate_owner_key_order_tmp",
+            "predicate_owner_key_order",
             "predicate_impl_key_order_tmp",
+            "predicate_impl_key_order",
             "predicate_key_radix_block_histogram",
             "predicate_key_radix_block_bucket_prefix",
             "predicate_key_radix_bucket_total",
@@ -6258,24 +5700,9 @@ mod tests {
         ] {
             assert!(
                 graph.resource_id(name).is_none(),
-                "small predicate sorting should not allocate `{name}`",
+                "predicate indexing should not allocate removed sort resource `{name}`",
             );
         }
-        assert!(
-            graph
-                .resource_id("generic_param_slot_radix_block_bucket_prefix")
-                .is_none()
-        );
-        assert!(
-            graph
-                .resource_id("generic_param_slot_radix_bucket_total")
-                .is_none()
-        );
-        assert!(
-            graph
-                .resource_id("generic_param_slot_radix_bucket_base")
-                .is_none()
-        );
         let expression_region = graph
             .repeated_regions()
             .iter()

@@ -118,10 +118,6 @@ impl GpuTypeChecker {
             .div_ceil(HIR_VISIBLE_DECL_ROW_BLOCK_SIZE)
             .max(1);
         let hir_decl_tree_leaf_base = hir_decl_tree_leaf_count.next_power_of_two().max(1);
-        let generic_param_key_order_tmp =
-            typecheck_graph.optional_buffer::<u32>("generic_param_key_order_tmp")?;
-        let generic_param_slot_order_tmp =
-            typecheck_graph.optional_buffer::<u32>("generic_param_slot_order_tmp")?;
         let name_order_in = typecheck_graph.u32_buffer("name_hash_lo")?;
         let name_order_tmp = typecheck_graph.u32_buffer("name_hash_hi")?;
         let decl_name_token = typecheck_graph.u32_buffer("decl_name_token")?;
@@ -232,7 +228,7 @@ impl GpuTypeChecker {
         let type_decl_generic_param_count_by_owner_token =
             typecheck_graph.u32_buffer("type_decl_generic_param_count_by_owner_token")?;
         // Local and imported named instances share this identity discriminator.
-        // It must survive name-radix scratch reuse and be reset independently:
+        // It must survive name-hash workspace reuse and be reset independently:
         // an imported canonical id and a stale local declaration token are
         // mutually exclusive representations of the same instance.
         let type_instance_decl_token = typecheck_graph.u32_buffer("type_instance_decl_token")?;
@@ -282,8 +278,6 @@ impl GpuTypeChecker {
                 },
             ),
         });
-        let predicate_capacity_u32 = predicate_capacity;
-        let predicate_key_radix_n_blocks = predicate_capacity_u32.div_ceil(256).max(1);
         // Declaration refs survive name/type-instance construction and feed
         // late semantic projection. They cannot alias radix rows that later
         // type-family sorts overwrite; the compiler graph may recolor them
@@ -763,6 +757,7 @@ impl GpuTypeChecker {
             token_capacity,
             hir_node_capacity,
             call_param_row_capacity,
+            call_arg_row_capacity,
             call_generic_claim_capacity,
         )?;
         resources.validate_graph_pass(compiler_graph::REQUIRED_GENERIC_DISPATCH_PASS, &[])?;
@@ -778,26 +773,6 @@ impl GpuTypeChecker {
         )?;
         allocation_stamp!("conditions_and_calls");
         resources.validate_graph_passes_if_present(compiler_graph::REGISTERED_VISIBLE_PASSES)?;
-        if let Some(buffer) = generic_param_key_order_tmp.as_ref() {
-            resources.buffer("generic_param_key_order_tmp", buffer);
-        }
-        if let Some(buffer) = generic_param_slot_order_tmp.as_ref() {
-            resources.buffer("generic_param_slot_order_tmp", buffer);
-        }
-        let mut generic_param_slot_radix_buffers = Vec::new();
-        for name in [
-            "generic_param_slot_radix_block_histogram",
-            "generic_param_slot_radix_block_bucket_prefix",
-            "generic_param_slot_radix_bucket_total",
-            "generic_param_slot_radix_bucket_base",
-        ] {
-            if let Some(buffer) = typecheck_graph.optional_buffer::<u32>(name)? {
-                generic_param_slot_radix_buffers.push((name, buffer));
-            }
-        }
-        for (name, buffer) in &generic_param_slot_radix_buffers {
-            resources.buffer(*name, buffer);
-        }
         resources.validate_graph_passes([
             compiler_graph::TYPE_INSTANCE_ARG_ROW_CLEAR_PASS,
             compiler_graph::TYPE_INSTANCES_MARK_GENERIC_PARAM_RECORDS_PASS,
@@ -851,14 +826,7 @@ impl GpuTypeChecker {
             )?;
         }
         typecheck_graph.validate_registered_generic_param_bindings(&resources)?;
-        let predicates = create_predicate_bind_groups(
-            device,
-            passes,
-            token_capacity,
-            predicate_capacity_u32,
-            predicate_key_radix_n_blocks,
-            &resources,
-        )?;
+        let predicates = create_predicate_bind_groups(device, passes, &resources)?;
         resources.validate_graph_passes(compiler_graph::REGISTERED_PREDICATE_DIRECT_PASSES)?;
         resources.validate_graph_passes(compiler_graph::REGISTERED_PREDICATE_LOGICAL_PASSES)?;
         allocation_stamp!("predicates");
@@ -891,25 +859,19 @@ impl GpuTypeChecker {
         allocation_stamp!("type_instances");
         resources.buffer("module_id_by_file_id", &module_path.module_id_by_file_id);
         resources.buffer("module_count_out", &module_path.module_count_out);
-        resources.validate_graph_passes([
-            compiler_graph::METHOD_KEY_SEED_PASS,
-            compiler_graph::METHOD_KEY_VALIDATION_PASS,
-        ])?;
-
-        let method_key_pipeline = MethodKeyPipeline::new(
+        let method_index = MethodIndex::new(
             device,
+            &typecheck_graph,
             passes,
             &resources,
-            "type_check_resident_methods",
-            token_capacity,
-            name_n_blocks,
+            &method_compact_dispatch_args,
         )?;
         let methods = create_method_bind_groups(
             device,
             &typecheck_graph,
             passes,
             &resources,
-            method_key_pipeline,
+            method_index,
             &token_active_dispatch_args,
             &method_token_dispatch_args,
             &method_compact_dispatch_args,

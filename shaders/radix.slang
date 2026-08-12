@@ -2,7 +2,10 @@ import atomics;
 import byte_packing;
 import prefix_scan;
 
-public static const uint RADIX_U8_SENTINEL_BUCKETS = 257u;
+/// Number of globally materialized buckets for one byte digit. Inactive lanes
+/// use a 257th key only inside the workgroup-local stable scatter; they never
+/// contribute to the global histogram or prefix tables.
+public static const uint RADIX_U8_BUCKETS = 256u;
 
 public interface IRadixU8KeySource
 {
@@ -11,39 +14,34 @@ public interface IRadixU8KeySource
     static uint radix_key(uint row, uint key_step);
 }
 
-public uint radix_field_index(uint key_step, uint max_field)
-{
-    return min(key_step / 4u, max_field);
-}
-
 public uint radix_byte_key(uint value, uint key_step)
 {
     return packed_u8_at(value, key_step);
 }
 
-// Reads one byte from a three-field LSD key whose field widths are packed as
-// nibbles in low-to-high field order. An even-schedule padding step maps to
-// zero, preserving stable order while returning the ping/pong output to its
-// canonical buffer.
-public uint radix_packed_u32x3_byte_key(
+/// Extracts one byte from two equal-width fields packed as
+/// `field1:field0`, without requiring 64-bit shader arithmetic. The first
+/// field is the least-significant stable-sort field.
+public uint radix_packed_u32x2_bit_key(
     uint field0,
     uint field1,
-    uint field2,
-    uint key_step,
-    uint packed_widths)
+    uint bits_per_field,
+    uint key_step)
 {
-    uint width0 = clamp(packed_widths & 0xfu, 1u, 4u);
-    uint width1 = clamp((packed_widths >> 4u) & 0xfu, 1u, 4u);
-    uint width2 = clamp((packed_widths >> 8u) & 0xfu, 1u, 4u);
-    if (key_step < width0)
-        return radix_byte_key(field0, key_step);
-    key_step -= width0;
-    if (key_step < width1)
-        return radix_byte_key(field1, key_step);
-    key_step -= width1;
-    if (key_step < width2)
-        return radix_byte_key(field2, key_step);
-    return 0u;
+    uint bits = clamp(bits_per_field, 1u, 32u);
+    uint bit_offset = key_step * 8u;
+    if (bit_offset < bits)
+    {
+        uint remaining = bits - bit_offset;
+        uint low = field0 >> bit_offset;
+        if (remaining >= 8u)
+            return low & 0xffu;
+
+        uint low_mask = (1u << remaining) - 1u;
+        return (low & low_mask) | ((field1 << remaining) & 0xffu);
+    }
+
+    return (field1 >> (bit_offset - bits)) & 0xffu;
 }
 
 public uint radix_histogram_slot(uint block_idx, uint bucket, uint bucket_count)
@@ -58,7 +56,8 @@ public void clear_radix_histogram_block(
     uint workgroup_size,
     RWStructuredBuffer<uint> histogram)
 {
-    // U8 radix histograms use 257 buckets with 256 lanes, so each lane clears at most two buckets.
+    // One lane clears one global u8 bucket. Keep the strided form generic for
+    // callers whose workgroup size differs from the bucket count.
     uint bucket0 = lane;
     if (bucket0 < bucket_count)
         histogram[radix_histogram_slot(block_idx, bucket0, bucket_count)] = 0u;
@@ -299,33 +298,4 @@ public void radix_bucket_prefix_scan_16<
 
     if (lane == uint(WG_SIZE) - 1u)
         radix_bucket_total[bucket] = inclusive15;
-}
-
-public void radix_bucket_base_scan_2<
-    let WG_SIZE: int,
-    let SCAN_SLOTS: int>(
-    uint lane,
-    uint bucket_count,
-    StructuredBuffer<uint> radix_bucket_total,
-    RWStructuredBuffer<uint> radix_bucket_base,
-    inout uint scan_values[SCAN_SLOTS])
-{
-    uint second = lane + uint(WG_SIZE);
-    uint value0 = lane < bucket_count ? radix_bucket_total[lane] : 0u;
-    uint value1 = second < bucket_count ? radix_bucket_total[second] : 0u;
-    uint inclusive0;
-    uint inclusive1;
-
-    prefix_scan_inclusive_2<uint, PrefixScanU32Add, WG_SIZE, SCAN_SLOTS>(
-        lane,
-        value0,
-        value1,
-        scan_values,
-        inclusive0,
-        inclusive1);
-
-    if (lane < bucket_count)
-        radix_bucket_base[lane] = inclusive0 - value0;
-    if (second < bucket_count)
-        radix_bucket_base[second] = inclusive1 - value1;
 }

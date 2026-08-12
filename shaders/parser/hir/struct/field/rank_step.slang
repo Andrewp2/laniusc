@@ -1,4 +1,4 @@
-// Pointer-jump struct declaration and literal field links.
+// Follow bounded runs of struct declaration and literal field links.
 
 import token_features;
 
@@ -31,6 +31,7 @@ RWStructuredBuffer<uint> hir_struct_lit_field_rank_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint LINKS_PER_STEP = 16u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -69,15 +70,23 @@ void jump_one(
         return;
     }
 
-    uint ancestor_owner = owner_in[link];
-    uint ancestor_link = link_in[link];
-    uint ancestor_rank = rank_in[link];
-    uint resolved_owner = valid_node(ancestor_owner) ? ancestor_owner : INVALID;
-
-    owner_out[node] = resolved_owner;
-    rank_out[node] = rank + ancestor_rank;
-    link_out[node] =
-        valid_node(resolved_owner) || !valid_node(ancestor_link) ? INVALID : ancestor_link;
+    for (uint hop = 0u; hop < LINKS_PER_STEP; ++hop)
+    {
+        if (valid_node(owner) || !valid_node(link) || link == node) break;
+        rank += rank_in[link];
+        uint ancestor_owner = owner_in[link];
+        uint ancestor_link = link_in[link];
+        if (valid_node(ancestor_owner))
+        {
+            owner = ancestor_owner;
+            link = INVALID;
+            break;
+        }
+        link = valid_node(ancestor_link) ? ancestor_link : INVALID;
+    }
+    owner_out[node] = valid_node(owner) ? owner : INVALID;
+    rank_out[node] = rank;
+    link_out[node] = link;
 }
 
 [shader("compute")]

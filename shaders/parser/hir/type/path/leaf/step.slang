@@ -1,4 +1,6 @@
-// Pointer-jump type-path leaf links.
+// Follow a bounded run of type-path links per dispatch. Each round compresses
+// the remaining chain by up to 16x, preserving arbitrary path lengths without
+// paying one device-wide barrier for every binary-doubling step.
 
 struct Params
 {
@@ -18,6 +20,7 @@ RWStructuredBuffer<uint> hir_type_path_leaf_value_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint LINKS_PER_STEP = 16u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -58,10 +61,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint linked_value = hir_type_path_leaf_value_in[link];
-    uint linked_link = hir_type_path_leaf_link_in[link];
-    hir_type_path_leaf_value_out[node] =
-        valid_node(linked_value) ? linked_value : value;
-    hir_type_path_leaf_link_out[node] =
-        valid_node(linked_link) ? linked_link : INVALID;
+    for (uint hop = 0u; hop < LINKS_PER_STEP; ++hop)
+    {
+        if (!valid_node(link) || link == node)
+        {
+            link = INVALID;
+            break;
+        }
+
+        uint linked_value = hir_type_path_leaf_value_in[link];
+        if (valid_node(linked_value))
+            value = linked_value;
+        uint linked_link = hir_type_path_leaf_link_in[link];
+        link = valid_node(linked_link) ? linked_link : INVALID;
+    }
+    hir_type_path_leaf_value_out[node] = value;
+    hir_type_path_leaf_link_out[node] = link;
 }

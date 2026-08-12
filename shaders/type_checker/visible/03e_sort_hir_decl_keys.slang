@@ -3,8 +3,9 @@
 // Scheduling contract:
 // - For each capacity-derived key_step, the host schedules histogram, GPU
 //   bucket-prefix scan, GPU bucket-base scan, and stable scatter.
-// - key_step walks the fixed declaration key from least-significant to
-//   most-significant: declaration token, name id, then owner function.
+// - Input records are already in declaration-token order. Stable byte passes
+//   walk name id and then owner function, preserving token order within equal
+//   owner/name groups.
 // - This pass only counts radix buckets for compact HIR declaration records.
 //   It does not resolve names, scan source bytes, use token spelling, or apply
 //   helper/body-shape shortcuts.
@@ -25,15 +26,14 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_visible_decl_count_out;
 StructuredBuffer<uint> hir_visible_decl_owner_fn;
 StructuredBuffer<uint> hir_visible_decl_name_id;
-StructuredBuffer<uint> hir_visible_decl_token;
-StructuredBuffer<uint> radix_order_in;
+RWStructuredBuffer<uint> radix_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
+static const uint RADIX_BUCKETS = RADIX_U8_BUCKETS;
 
 uint linear_group_id(uint3 gid)
 {
@@ -50,20 +50,18 @@ uint decl_key_field(uint decl_i, uint field_i)
     if (decl_i >= active_decl_count())
         return 0u;
 
-    if (field_i == 0u)
-        return encode_nullable_id(hir_visible_decl_token[decl_i], INVALID);
-    if (field_i == 1u)
-        return encode_nullable_id(hir_visible_decl_name_id[decl_i], INVALID);
-    return hir_visible_decl_owner_fn[decl_i];
+    return field_i == 0u
+        ? encode_nullable_id(hir_visible_decl_name_id[decl_i], INVALID)
+        : hir_visible_decl_owner_fn[decl_i];
 }
 
 uint decl_key_radix_key(uint decl_i, uint key_step)
 {
-    uint bytes_per_field = clamp(gParams.reserved, 1u, 4u);
-    uint field_i = min(key_step / bytes_per_field, 2u);
-    uint byte_i = key_step - field_i * bytes_per_field;
-    uint value = decl_key_field(decl_i, field_i);
-    return radix_byte_key(value, byte_i);
+    return radix_packed_u32x2_bit_key(
+        decl_key_field(decl_i, 0u),
+        decl_key_field(decl_i, 1u),
+        gParams.reserved,
+        key_step);
 }
 
 public struct HirVisibleDeclKeyRadixSource : IRadixU8KeySource
@@ -75,6 +73,10 @@ public struct HirVisibleDeclKeyRadixSource : IRadixU8KeySource
 
     public static uint ordered_row(uint order_i)
     {
+        // Visible declaration rows are compacted in token order. Digit zero
+        // establishes that identity order while building its histogram.
+        if (gParams.key_step == 0u)
+            radix_order_in[order_i] = order_i;
         return radix_order_in[order_i];
     }
 

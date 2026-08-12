@@ -14,13 +14,16 @@ use anyhow::{Result, anyhow};
 use log::{info, warn};
 use wgpu;
 
-use crate::reflection::{
-    EntryPointReflection,
-    ParameterReflection,
-    SlangReflection,
-    get_thread_group_size,
-    parse_reflection_from_bytes,
-    slang_category_and_type_to_wgpu,
+use crate::{
+    gpu::buffers::LaniusBuffer,
+    reflection::{
+        EntryPointReflection,
+        ParameterReflection,
+        SlangReflection,
+        get_thread_group_size,
+        parse_reflection_from_bytes,
+        slang_category_and_type_to_wgpu,
+    },
 };
 
 static PIPELINE_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -2333,27 +2336,30 @@ impl<'encoder> ComputePassBatch<'encoder> {
         Ok(())
     }
 
-    /// Records one pre-bound indirect dispatch into this compute pass.
-    pub(crate) fn record_raw_indirect(
+    /// Records an indirect dispatch whose arguments may be a logical slice of
+    /// an arena allocation. Keeping the `LaniusBuffer` here is essential: a
+    /// raw `wgpu::Buffer` does not retain the slice's byte offset.
+    pub(crate) fn record_buffer_indirect(
         &mut self,
         pass: &'encoder PassData,
         bind_group: &'encoder wgpu::BindGroup,
-        dispatch_args: &'encoder wgpu::Buffer,
+        dispatch_args: &'encoder LaniusBuffer<u32>,
     ) {
-        self.record_raw_indirect_with_offsets(pass, bind_group, dispatch_args, &[]);
+        self.record_buffer_indirect_with_offsets(pass, bind_group, dispatch_args, &[]);
     }
 
-    pub(crate) fn record_raw_indirect_with_offsets(
+    pub(crate) fn record_buffer_indirect_with_offsets(
         &mut self,
         pass: &'encoder PassData,
         bind_group: &'encoder wgpu::BindGroup,
-        dispatch_args: &'encoder wgpu::Buffer,
+        dispatch_args: &'encoder LaniusBuffer<u32>,
         dynamic_offsets: &[u32],
     ) {
         self.pass.set_pipeline(&pass.pipeline);
         self.pass
             .set_bind_group(0, Some(bind_group), dynamic_offsets);
-        self.pass.dispatch_workgroups_indirect(dispatch_args, 0);
+        self.pass
+            .dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
     }
 
     /// Records one reflected pass using cached bind groups.

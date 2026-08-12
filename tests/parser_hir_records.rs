@@ -5502,8 +5502,8 @@ fn take(value: Pair<i32, bool>) -> i32 {
 }
 
 #[test]
-fn parser_hir_generic_type_arguments_link_seventeen_argument_chain() {
-    let arg_count = 17;
+fn parser_hir_generic_type_arguments_cross_bounded_walk_span() {
+    let arg_count = 18;
     let params = (0..arg_count)
         .map(|i| format!("T{i}"))
         .collect::<Vec<_>>()
@@ -5536,7 +5536,7 @@ fn take(value: Wide<{args}>) -> i32 {{
         .iter()
         .enumerate()
         .find_map(|(node, &count)| (count == arg_count as u32).then_some(node))
-        .expect("fixture should publish one seventeen-argument generic type instance");
+        .expect("fixture should publish one generic instance longer than the local walk span");
     assert_eq!(
         parsed.hir_kind[owner], HIR_NODE_TYPE,
         "generic instance owner should be a type HIR node"
@@ -5562,7 +5562,7 @@ fn take(value: Wide<{args}>) -> i32 {{
     }
     assert_eq!(
         arg, INVALID,
-        "seventeen-argument chain should terminate after the final argument"
+        "type-argument chain should terminate after the final argument"
     );
 }
 

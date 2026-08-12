@@ -83,6 +83,29 @@ pub(in crate::type_checker) const DECL_NAMESPACE_SCATTER: ReflectedComputeSpec =
     ]
 );
 
+pub(in crate::type_checker) const DECL_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.modules.declarations.clear_lookup",
+    Declarations,
+    "type_checker/modules/08c_clear_decl_lookup";
+    writes ["decl_lookup_state"]
+);
+pub(in crate::type_checker) const DECL_LOOKUP_BUILD: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.modules.declarations.build_lookup",
+    Declarations,
+    "type_checker/modules/08d_build_decl_lookup";
+    resources [typecheck_resource!("decl_lookup_state" => "decl_lookup_state", ReadWrite)]
+);
+
+pub(in crate::type_checker) const DECL_DUPLICATES_VALIDATE: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.modules.decl_namespace.validate_duplicates",
+    Declarations,
+    "type_checker/modules/08e_validate_decl_duplicates"
+)
+.with_aliases(&[typecheck_resource!(
+    "decl_duplicate_of" => "type_decl_generic_param_count_by_owner_token",
+    Write
+)]);
+
 pub(in crate::type_checker) const DECL_PUBLIC_MARK: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.decl_public.mark",
     Declarations,
@@ -130,6 +153,34 @@ pub(in crate::type_checker) const RESOLVE_IMPORTS: ReflectedComputeSpec = typech
     ]
 );
 
+pub(in crate::type_checker) const IMPORT_EDGE_SET_CLEAR: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.modules.import_edges.clear",
+    Declarations,
+    "type_checker/modules/05e_clear_import_edge_set";
+    writes ["import_edge_set_state"]
+);
+
+pub(in crate::type_checker) const IMPORT_EDGE_SET_BUILD: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.modules.import_edges.build",
+    Declarations,
+    "type_checker/modules/05f_build_import_edge_set";
+    resources [
+        typecheck_resource!("import_count_out" => "import_record_count_out", Read),
+        typecheck_resource!("import_edge_set_state" => "import_edge_set_state", ReadWrite),
+    ]
+);
+
+pub(in crate::type_checker) const IMPORT_CYCLES_VALIDATE: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.modules.import_cycles.validate",
+    Declarations,
+    "type_checker/modules/05h_validate_import_cycles";
+    resources [
+        typecheck_resource!("import_count_out" => "import_record_count_out", Read),
+        typecheck_resource!("import_status" => "import_status", ReadWrite),
+        typecheck_resource!("status" => "status", ReadWrite),
+    ]
+);
+
 pub(in crate::type_checker) const IMPORT_VISIBILITY_COUNT: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.import_visibility.count",
     Declarations,
@@ -146,15 +197,106 @@ pub(in crate::type_checker) const IMPORT_VISIBILITY_COUNT: ReflectedComputeSpec 
     ]
 );
 
-const RESOLVE_LOCAL_TYPE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
+const IMPORT_VISIBLE_TYPE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
+    typecheck_resource!("import_visible_count" => "import_visible_type_count", Read),
+    typecheck_resource!("import_visible_count_out" => "import_visible_type_count_out", Read),
+    typecheck_resource!("import_visible_prefix" => "import_visible_type_prefix", Read),
     typecheck_resource!("decl_key_count_out" => "decl_type_key_count_out", Read),
     typecheck_resource!("decl_key_to_decl_id" => "decl_type_key_to_decl_id", Read),
+    typecheck_resource!("decl_public_flag" => "type_instance_arg_ref_tag", Read),
+    typecheck_resource!("decl_public_prefix" => "decl_status", Read),
+    typecheck_resource!("import_visible_key_module_id" => "import_visible_type_key_module_id", Write),
+    typecheck_resource!("import_visible_key_name_id" => "import_visible_type_key_name_id", Write),
+    typecheck_resource!("import_visible_key_to_decl_id" => "import_visible_type_key_to_decl_id", Write),
+];
+const IMPORT_VISIBLE_VALUE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
+    typecheck_resource!("import_visible_count" => "import_visible_value_count", Read),
+    typecheck_resource!("import_visible_count_out" => "import_visible_value_count_out", Read),
+    typecheck_resource!("import_visible_prefix" => "import_visible_value_prefix", Read),
+    typecheck_resource!("decl_key_count_out" => "decl_value_key_count_out", Read),
+    typecheck_resource!("decl_key_to_decl_id" => "decl_value_key_to_decl_id", Read),
+    typecheck_resource!("decl_public_flag" => "type_instance_arg_ref_payload", Read),
+    typecheck_resource!(
+        "decl_public_prefix" => "type_decl_generic_param_count_by_owner_token", Read
+    ),
+    typecheck_resource!("import_visible_key_module_id" => "import_visible_value_key_module_id", Write),
+    typecheck_resource!("import_visible_key_name_id" => "import_visible_value_key_name_id", Write),
+    typecheck_resource!("import_visible_key_to_decl_id" => "import_visible_value_key_to_decl_id", Write),
+];
+
+pub(in crate::type_checker) const IMPORT_VISIBLE_TYPE_SCATTER: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.modules.import_visibility.scatter_type",
+        Declarations,
+        "type_checker/modules/09b_scatter_import_visibility"
+    )
+    .with_aliases(IMPORT_VISIBLE_TYPE_ALIASES);
+pub(in crate::type_checker) const IMPORT_VISIBLE_VALUE_SCATTER: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.modules.import_visibility.scatter_value",
+        Declarations,
+        "type_checker/modules/09b_scatter_import_visibility"
+    )
+    .with_aliases(IMPORT_VISIBLE_VALUE_ALIASES);
+
+const IMPORT_VISIBLE_TYPE_LOOKUP_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
+    typecheck_resource!("import_visible_count_out" => "import_visible_type_count_out", Read),
+    typecheck_resource!("import_visible_key_module_id" => "import_visible_type_key_module_id", Read),
+    typecheck_resource!("import_visible_key_name_id" => "import_visible_type_key_name_id", Read),
+    typecheck_resource!("import_visible_key_to_decl_id" => "import_visible_type_key_to_decl_id", Read),
+    typecheck_resource!("import_visible_lookup_state" => "import_visible_type_lookup_state", ReadWrite),
+];
+const IMPORT_VISIBLE_VALUE_LOOKUP_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] =
+    &[
+        typecheck_resource!("import_visible_count_out" => "import_visible_value_count_out", Read),
+        typecheck_resource!("import_visible_key_module_id" => "import_visible_value_key_module_id", Read),
+        typecheck_resource!("import_visible_key_name_id" => "import_visible_value_key_name_id", Read),
+        typecheck_resource!("import_visible_key_to_decl_id" => "import_visible_value_key_to_decl_id", Read),
+        typecheck_resource!("import_visible_lookup_state" => "import_visible_value_lookup_state", ReadWrite),
+    ];
+
+pub(in crate::type_checker) const IMPORT_VISIBLE_TYPE_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.modules.import_visibility.clear_type_lookup",
+    Declarations,
+    "type_checker/modules/09c_clear_import_visible_lookup";
+    resources [typecheck_resource!("import_visible_lookup_state" => "import_visible_type_lookup_state", Write)]
+);
+pub(in crate::type_checker) const IMPORT_VISIBLE_VALUE_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.modules.import_visibility.clear_value_lookup",
+    Declarations,
+    "type_checker/modules/09c_clear_import_visible_lookup";
+    resources [typecheck_resource!("import_visible_lookup_state" => "import_visible_value_lookup_state", Write)]
+);
+pub(in crate::type_checker) const IMPORT_VISIBLE_TYPE_LOOKUP_BUILD: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.modules.import_visibility.build_type_lookup",
+        Declarations,
+        "type_checker/modules/09e_build_import_visible_key_tables"
+    )
+    .with_aliases(IMPORT_VISIBLE_TYPE_LOOKUP_ALIASES);
+pub(in crate::type_checker) const IMPORT_VISIBLE_VALUE_LOOKUP_BUILD: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.modules.import_visibility.build_value_lookup",
+        Declarations,
+        "type_checker/modules/09e_build_import_visible_key_tables"
+    )
+    .with_aliases(IMPORT_VISIBLE_VALUE_LOOKUP_ALIASES);
+pub(in crate::type_checker) const IMPORT_VISIBLE_STATUS_INITIALIZE: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.modules.import_visibility.initialize_status",
+    Declarations,
+    "type_checker/modules/09f_validate_import_visible_keys"
+);
+pub(in crate::type_checker) const IMPORT_VISIBLE_AMBIGUITY_VALIDATE: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.modules.import_visibility.validate_ambiguity",
+    Declarations,
+    "type_checker/modules/09f_validate_import_visible_keys"
+);
+
+const RESOLVE_LOCAL_TYPE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
     typecheck_resource!("resolved_decl" => "resolved_type_decl", Write),
     typecheck_resource!("resolved_status" => "resolved_type_status", Write),
 ];
 const RESOLVE_LOCAL_VALUE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
-    typecheck_resource!("decl_key_count_out" => "decl_value_key_count_out", Read),
-    typecheck_resource!("decl_key_to_decl_id" => "decl_value_key_to_decl_id", Read),
     typecheck_resource!("resolved_decl" => "resolved_value_decl", Write),
     typecheck_resource!("resolved_status" => "resolved_value_status", Write),
 ];
@@ -179,6 +321,7 @@ const RESOLVE_IMPORTED_TYPE_ALIASES: &[crate::gpu::compiler_graph::ReflectedReso
     typecheck_resource!("import_visible_key_name_id" => "import_visible_type_key_name_id", Read),
     typecheck_resource!("import_visible_key_to_decl_id" => "import_visible_type_key_to_decl_id", Read),
     typecheck_resource!("import_visible_status" => "import_visible_type_status", Read),
+    typecheck_resource!("import_visible_lookup_state" => "import_visible_type_lookup_state", Read),
     typecheck_resource!("resolved_decl" => "resolved_type_decl", ReadWrite),
     typecheck_resource!("resolved_status" => "resolved_type_status", ReadWrite),
 ];
@@ -188,6 +331,7 @@ const RESOLVE_IMPORTED_VALUE_ALIASES: &[crate::gpu::compiler_graph::ReflectedRes
     typecheck_resource!("import_visible_key_name_id" => "import_visible_value_key_name_id", Read),
     typecheck_resource!("import_visible_key_to_decl_id" => "import_visible_value_key_to_decl_id", Read),
     typecheck_resource!("import_visible_status" => "import_visible_value_status", Read),
+    typecheck_resource!("import_visible_lookup_state" => "import_visible_value_lookup_state", Read),
     typecheck_resource!("resolved_decl" => "resolved_value_decl", ReadWrite),
     typecheck_resource!("resolved_status" => "resolved_value_status", ReadWrite),
 ];
@@ -209,15 +353,11 @@ pub(in crate::type_checker) const RESOLVE_IMPORTED_VALUE_PATHS: ReflectedCompute
 
 const RESOLVE_QUALIFIED_TYPE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
     typecheck_resource!("import_count_out" => "import_record_count_out", Read),
-    typecheck_resource!("decl_key_count_out" => "decl_type_key_count_out", Read),
-    typecheck_resource!("decl_key_to_decl_id" => "decl_type_key_to_decl_id", Read),
     typecheck_resource!("resolved_decl" => "resolved_type_decl", Write),
     typecheck_resource!("resolved_status" => "resolved_type_status", Write),
 ];
 const RESOLVE_QUALIFIED_VALUE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
     typecheck_resource!("import_count_out" => "import_record_count_out", Read),
-    typecheck_resource!("decl_key_count_out" => "decl_value_key_count_out", Read),
-    typecheck_resource!("decl_key_to_decl_id" => "decl_value_key_to_decl_id", Read),
     typecheck_resource!("resolved_decl" => "resolved_value_decl", Write),
     typecheck_resource!("resolved_status" => "resolved_value_status", Write),
 ];

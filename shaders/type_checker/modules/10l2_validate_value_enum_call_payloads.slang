@@ -1,4 +1,5 @@
 import hir_records;
+import type_checker.type.instances.generic_param_lookup;
 
 // GPU HIR enum constructor payload validator.
 //
@@ -48,7 +49,7 @@ StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_token;
 StructuredBuffer<uint> generic_param_kind;
-StructuredBuffer<uint> generic_param_key_order;
+StructuredBuffer<uint> generic_param_lookup_state;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
@@ -166,14 +167,6 @@ uint active_generic_param_count()
     return min(generic_param_count_out[0u], gParams.n_tokens);
 }
 
-bool generic_param_key_less(uint row, uint owner_token, uint name_id)
-{
-    uint row_owner = generic_param_owner_token[row];
-    if (row_owner != owner_token)
-        return row_owner < owner_token;
-    return generic_param_name_id[row] < name_id;
-}
-
 bool generic_param_key_matches(uint row, uint owner_token, uint name_id)
 {
     return row < active_generic_param_count() &&
@@ -197,25 +190,10 @@ uint generic_param_token_for_variant_payload(uint variant, uint type_head)
         return INVALID;
 
     uint count = active_generic_param_count();
-    if (count == 0u)
-        return INVALID;
-    uint lo = 0u;
-    uint hi = count;
-    for (uint step = 0u; step < 32u; step += 1u)
-    {
-        if (lo >= hi)
-            continue;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint row = generic_param_key_order[mid];
-        if (row >= count || !generic_param_key_less(row, owner_token, name_id))
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-
-    if (lo >= count)
-        return INVALID;
-    uint row = generic_param_key_order[lo];
+    uint row = generic_param_lookup_find(
+        owner_token, name_id, count, gParams.n_tokens,
+        generic_param_owner_token, generic_param_name_id,
+        generic_param_lookup_state);
     if (!generic_param_key_matches(row, owner_token, name_id))
         return INVALID;
     return generic_param_token[row];

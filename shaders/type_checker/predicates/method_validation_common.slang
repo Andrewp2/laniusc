@@ -3,8 +3,7 @@
 
 import hir_records;
 import fixed.compact_method;
-import fixed.key;
-import range_query;
+import type_checker.predicates.method_contract_lookup;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
@@ -20,6 +19,7 @@ StructuredBuffer<CompactMethodCore> compact_method_cores;
 StructuredBuffer<HirMethodSignature> compact_method_signatures;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<HirRange> compact_param_ranges;
 StructuredBuffer<uint> compact_type_arg_count;
 StructuredBuffer<HirTypeArg> compact_type_args;
 StructuredBuffer<HirRange> compact_type_arg_ranges;
@@ -43,10 +43,9 @@ StructuredBuffer<uint> predicate_method_contract_param_type_node;
 StructuredBuffer<uint> predicate_method_contract_return_type_node;
 StructuredBuffer<uint> predicate_method_contract_visibility;
 StructuredBuffer<uint> predicate_method_contract_status;
-StructuredBuffer<uint> predicate_method_contract_key_order;
-StructuredBuffer<uint> predicate_method_param_key_order;
-StructuredBuffer<uint> predicate_method_contract_owner_range_first;
-StructuredBuffer<uint> predicate_method_contract_owner_range_count;
+StructuredBuffer<uint> predicate_method_contract_owner_count;
+StructuredBuffer<uint> predicate_method_contract_lookup_head;
+StructuredBuffer<uint> predicate_method_contract_lookup_next;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
@@ -72,7 +71,6 @@ uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes)
 uint active_method_count() { return min(compact_method_count[0u], gParams.n_hir_nodes); }
 uint active_param_count() { return min(compact_param_count[0u], gParams.n_hir_nodes); }
 uint active_type_arg_count() { return min(compact_type_arg_count[0u], gParams.n_hir_nodes); }
-uint active_sorted_row_count() { return min(hir_active_count[0u], gParams.n_hir_nodes); }
 bool valid_hir(uint hir) { return hir != INVALID && hir < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
 
@@ -124,43 +122,6 @@ uint method_contract_name_id(uint method_hir)
         : INVALID;
 }
 
-public struct MethodContractLookupKey { uint owner_node; uint name_id; }
-public struct MethodContractFixedKey : IFixedU32RowKey<MethodContractLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint method = row < active_sorted_row_count()
-            ? predicate_method_contract_key_order[row]
-            : INVALID;
-        if (!method_contract_lookup_row_valid(method)) return 0u;
-        return lane == 0u
-            ? fixed_key_encode_nullable_u32(predicate_method_contract_owner_hir[method], INVALID)
-            : fixed_key_encode_nullable_u32(method_contract_name_id(method), INVALID);
-    }
-    public static uint key_lane(MethodContractLookupKey key, uint lane)
-    {
-        return lane == 0u
-            ? fixed_key_encode_nullable_u32(key.owner_node, INVALID)
-            : fixed_key_encode_nullable_u32(key.name_id, INVALID);
-    }
-}
-public struct MethodContractKeyCompare : IRowQueryCompare<MethodContractLookupKey>
-{
-    public static int compare(uint row, MethodContractLookupKey key)
-    {
-        return fixed_u32_row_key_compare<MethodContractLookupKey, MethodContractFixedKey>(row, key, 2u);
-    }
-}
-
-QueryRange method_contract_range_for_owner_name(uint owner, uint name_id)
-{
-    MethodContractLookupKey key;
-    key.owner_node = owner;
-    key.name_id = name_id;
-    return equal_range_query<MethodContractLookupKey, MethodContractKeyCompare>(
-        active_sorted_row_count(), key);
-}
-
 bool method_contract_matches(uint method, uint owner, uint name_id)
 {
     return method_contract_lookup_row_valid(method) &&
@@ -168,57 +129,65 @@ bool method_contract_matches(uint method, uint owner, uint name_id)
            method_contract_name_id(method) == name_id;
 }
 
-bool method_contract_order_matches(uint row, uint owner, uint name_id)
-{
-    if (row >= active_sorted_row_count()) return false;
-    return method_contract_matches(predicate_method_contract_key_order[row], owner, name_id);
-}
-
 uint first_method_contract_for_owner_name(uint owner, uint name_id)
 {
     if (!valid_hir(owner) || name_id == INVALID) return INVALID;
-    QueryRange range = method_contract_range_for_owner_name(owner, name_id);
-    if (range.begin >= range.end ||
-        !method_contract_order_matches(range.begin, owner, name_id) ||
-        !method_contract_order_matches(range.end - 1u, owner, name_id))
-        return INVALID;
-    return predicate_method_contract_key_order[range.begin];
+    uint count = active_method_count();
+    if (count == 0u) return INVALID;
+
+    uint bucket = method_contract_lookup_bucket(owner, name_id, count);
+    uint link = predicate_method_contract_lookup_head[bucket];
+    uint visited = 0u;
+    uint best = INVALID;
+    uint best_token = INVALID;
+    while (link != 0u && visited < count)
+    {
+        uint method = link - 1u;
+        if (!valid_hir(method)) return INVALID;
+        if (method_contract_matches(method, owner, name_id))
+        {
+            uint token = method_contract_diagnostic_token(method);
+            if (best == INVALID || token < best_token ||
+                (token == best_token && method < best))
+            {
+                best = method;
+                best_token = token;
+            }
+        }
+        link = predicate_method_contract_lookup_next[method];
+        visited += 1u;
+    }
+    return link == 0u ? best : INVALID;
 }
 
 bool duplicate_method_contract_for_owner_name(uint owner, uint name_id)
 {
     if (!valid_hir(owner) || name_id == INVALID) return false;
-    QueryRange range = method_contract_range_for_owner_name(owner, name_id);
-    return range.end > range.begin + 1u &&
-           method_contract_order_matches(range.begin, owner, name_id) &&
-           method_contract_order_matches(range.end - 1u, owner, name_id);
+    uint count = active_method_count();
+    if (count == 0u) return false;
+
+    uint bucket = method_contract_lookup_bucket(owner, name_id, count);
+    uint link = predicate_method_contract_lookup_head[bucket];
+    uint visited = 0u;
+    uint matches = 0u;
+    while (link != 0u && visited < count)
+    {
+        uint method = link - 1u;
+        if (!valid_hir(method)) return false;
+        if (method_contract_matches(method, owner, name_id))
+        {
+            matches += 1u;
+            if (matches > 1u) return true;
+        }
+        link = predicate_method_contract_lookup_next[method];
+        visited += 1u;
+    }
+    return false;
 }
 
-QueryRange method_contract_range_for_owner(uint owner)
+uint method_contract_count_for_owner(uint owner)
 {
-    QueryRange range;
-    range.begin = 0u;
-    range.end = 0u;
-    if (!valid_hir(owner)) return range;
-    uint first = predicate_method_contract_owner_range_first[owner];
-    uint count = predicate_method_contract_owner_range_count[owner];
-    if (first == INVALID || count == 0u) return range;
-    range.begin = min(first, active_sorted_row_count());
-    range.end = min(first + count, active_sorted_row_count());
-    return range;
-}
-
-bool method_contract_range_matches_owner(uint owner, QueryRange range)
-{
-    if (!valid_hir(owner)) return false;
-    if (range.begin >= range.end) return true;
-    if (range.end > active_sorted_row_count()) return false;
-    uint first = predicate_method_contract_key_order[range.begin];
-    uint last = predicate_method_contract_key_order[range.end - 1u];
-    return method_contract_lookup_row_valid(first) &&
-           method_contract_lookup_row_valid(last) &&
-           predicate_method_contract_owner_hir[first] == owner &&
-           predicate_method_contract_owner_hir[last] == owner;
+    return valid_hir(owner) ? predicate_method_contract_owner_count[owner] : 0u;
 }
 
 bool method_param_lookup_row_valid(uint row)
@@ -228,45 +197,13 @@ bool method_param_lookup_row_valid(uint row)
     return method_contract_lookup_row_valid(parameter.owner) && parameter.ordinal != INVALID;
 }
 
-public struct MethodParamLookupKey { uint method_node; uint ordinal; }
-public struct MethodParamFixedKey : IFixedU32RowKey<MethodParamLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint parameter_row = row < active_sorted_row_count()
-            ? predicate_method_param_key_order[row]
-            : INVALID;
-        if (!method_param_lookup_row_valid(parameter_row)) return 0u;
-        HirParam parameter = compact_params[parameter_row];
-        return lane == 0u
-            ? fixed_key_encode_nullable_u32(parameter.owner, INVALID)
-            : fixed_key_encode_nullable_u32(parameter.ordinal, INVALID);
-    }
-    public static uint key_lane(MethodParamLookupKey key, uint lane)
-    {
-        return lane == 0u
-            ? fixed_key_encode_nullable_u32(key.method_node, INVALID)
-            : fixed_key_encode_nullable_u32(key.ordinal, INVALID);
-    }
-}
-public struct MethodParamKeyCompare : IRowQueryCompare<MethodParamLookupKey>
-{
-    public static int compare(uint row, MethodParamLookupKey key)
-    {
-        return fixed_u32_row_key_compare<MethodParamLookupKey, MethodParamFixedKey>(row, key, 2u);
-    }
-}
-
 uint method_param_for_ordinal(uint method, uint ordinal)
 {
     if (!method_contract_lookup_row_valid(method) || ordinal == INVALID) return INVALID;
-    MethodParamLookupKey key;
-    key.method_node = method;
-    key.ordinal = ordinal;
-    QueryRange range = equal_range_query<MethodParamLookupKey, MethodParamKeyCompare>(
-        active_sorted_row_count(), key);
-    if (range.begin >= range.end) return INVALID;
-    uint row = predicate_method_param_key_order[range.begin];
+    HirRange range = compact_param_ranges[method];
+    if (range.start == INVALID || ordinal >= range.count) return INVALID;
+    uint row = range.start + ordinal;
+    if (row < range.start) return INVALID;
     if (!method_param_lookup_row_valid(row)) return INVALID;
     HirParam parameter = compact_params[row];
     return parameter.owner == method && parameter.ordinal == ordinal ? row : INVALID;

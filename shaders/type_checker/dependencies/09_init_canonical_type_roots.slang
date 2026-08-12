@@ -16,6 +16,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> canonical_type_roots;
+RWStructuredBuffer<uint> canonical_type_subtree_start;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
@@ -93,4 +94,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
     }
     canonical_type_roots[type_i] = root;
+
+    uint first_edge = dependency_type_word(base + 3u);
+    uint edge_count = dependency_type_word(base + 4u);
+    uint last = edge_count == 0u
+        ? type_i
+        : dependency_type_edge_word(first_edge + edge_count - 1u);
+    canonical_type_subtree_start[type_i] =
+        last < dependency_type_count() ? last : type_i;
 }

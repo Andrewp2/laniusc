@@ -25,6 +25,7 @@ RWStructuredBuffer<uint> parser_feature_flags;
 static const uint TK_IDENT = 1;
 static const uint TK_INT = 2;
 static const uint TK_ASSIGN = 8;
+static const uint TK_LT = 12;
 static const uint TK_LBRACKET = 20;
 static const uint TK_RBRACKET = 21;
 static const uint TK_STRING = 32;
@@ -59,6 +60,7 @@ static const uint TK_DOT_DOT = 182;
 static const uint TK_DOT_DOT_EQUAL = 189;
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint PARSER_FEATURE_TYPE_ARGS = 0x00000001u;
 static const uint PARSER_FEATURE_ARRAYS = 0x00000002u;
 static const uint PARSER_FEATURE_ENUMS = 0x00000004u;
 static const uint PARSER_FEATURE_MATCHES = 0x00000008u;
@@ -86,6 +88,39 @@ uint parser_features_for_lexical_token(uint kind)
     if (kind == TK_TYPE)
         flags |= PARSER_FEATURE_TYPE_ALIASES;
     return flags;
+}
+
+uint previous_compact_kind(uint token_index, uint file_id)
+{
+    if (token_index == 0u)
+        return INVALID;
+
+    uint previous_index = token_index - 1u;
+    uint previous_end = end_positions[previous_index];
+    uint2 previous_file_info = file_start_and_id_for_token_end(previous_end);
+    if (previous_file_info.y != file_id)
+        return INVALID;
+
+    uint previous_start = compact_token_start(previous_index);
+    previous_start = max(previous_start, previous_file_info.x);
+    return retag_compact_kind(previous_index, previous_start, previous_end);
+}
+
+bool starts_generic_declaration(uint token_index, uint kind, uint file_id)
+{
+    if (kind != TK_LT || token_index == 0u)
+        return false;
+
+    uint previous_kind = previous_compact_kind(token_index, file_id);
+    if (previous_kind == TK_IMPL)
+        return true;
+    if (previous_kind != TK_IDENT || token_index < 2u)
+        return false;
+
+    uint declaration_kind = previous_compact_kind(token_index - 1u, file_id);
+    return declaration_kind == TK_FN || declaration_kind == TK_STRUCT ||
+           declaration_kind == TK_ENUM || declaration_kind == TK_TRAIT ||
+           declaration_kind == TK_TYPE;
 }
 
 uint2 file_start_and_id_for_token_end(uint end_excl)
@@ -368,6 +403,8 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
     tokens_out[k] = t;
     token_file_id[k] = file_info.y;
     uint parser_features = parser_features_for_lexical_token(kind);
+    if (starts_generic_declaration(k, kind, file_info.y))
+        parser_features |= PARSER_FEATURE_TYPE_ARGS;
     if (string_may_be_expression(k, kind, file_info.y))
         parser_features |= PARSER_FEATURE_STRING_EXPRS;
     if (parser_features != 0u)

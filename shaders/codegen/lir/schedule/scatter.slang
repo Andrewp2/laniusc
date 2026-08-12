@@ -28,7 +28,8 @@ void main(uint3 gid: SV_GroupID, uint3 tid: SV_GroupThreadID)
     bool active = order_i < total;
     uint row = active ? target_schedule_order_in[order_i] : 0u;
     uint key = active
-        ? target_schedule_radix_key(target_schedule_key[row], gParams.key_step)
+        ? target_schedule_radix_key(
+              target_schedule_key[row], gParams.key_step, gParams.reserved)
         : INACTIVE_KEY;
     uint sorted_key;
     uint sorted_row;

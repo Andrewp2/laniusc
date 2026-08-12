@@ -1,10 +1,10 @@
-// GPU sorted method-key validation.
+// GPU hash-indexed method-key validation.
 //
 // Scheduling contract:
-// - Dispatch after the method key radix sort has produced
-//   sorted_method_key_order.
-// - Adjacent equal valid keys are duplicate inherent methods in the same module
-//   for the same receiver type-ref, bounded receiver type-argument refs, and
+// - Dispatch after compact method rows have been inserted into the exact
+//   method index.
+// - Equal valid keys in one hash bucket are duplicate inherent methods in the
+//   same module for the same receiver type-ref, receiver type arguments, and
 //   interned method name.
 // - This pass writes per-method validation results and reduces invalid or
 //   duplicate method declarations into the compiler-wide type-check status. It
@@ -12,8 +12,9 @@
 //   lookup, or apply same-source shortcuts.
 
 import fixed.key;
-import sorted.runs;
+import hir_records;
 import status;
+import type_checker.methods.lookup;
 
 struct Params
 {
@@ -26,8 +27,9 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<HirMethodCore> compact_method_cores;
 StructuredBuffer<uint> module_count_out;
-StructuredBuffer<uint> sorted_method_key_order;
 StructuredBuffer<uint> method_decl_method_row;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
@@ -46,6 +48,8 @@ StructuredBuffer<uint> type_instance_arg_row_start;
 StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+StructuredBuffer<uint> method_lookup_head;
+StructuredBuffer<uint> method_lookup_next;
 
 RWStructuredBuffer<uint> method_key_status;
 RWStructuredBuffer<uint> method_key_duplicate_of;
@@ -82,14 +86,19 @@ uint active_module_count()
     return max(1u, min(module_count_out[0], gParams.method_capacity));
 }
 
-uint active_method_capacity()
+uint active_token_count()
 {
     return min(token_count[0], gParams.method_capacity);
 }
 
+uint active_method_count()
+{
+    return min(compact_method_count[0u], gParams.method_capacity);
+}
+
 bool is_method_decl(uint fn_i)
 {
-    return fn_i < active_method_capacity() && method_decl_method_row[fn_i] != INVALID;
+    return fn_i < active_token_count() && method_decl_method_row[fn_i] != INVALID;
 }
 
 uint decl_token_from_type_code(uint ty)
@@ -103,7 +112,7 @@ uint decl_token_from_type_code(uint ty)
 
 uint resolved_nominal_decl_token(uint token_i)
 {
-    if (token_i >= active_method_capacity())
+    if (token_i >= active_token_count())
         return INVALID;
     return decl_token_from_type_code(module_type_path_type[token_i]);
 }
@@ -136,7 +145,7 @@ uint receiver_arg_count(uint fn_i)
 {
     uint tag = method_decl_receiver_ref_tag[fn_i];
     uint payload = method_decl_receiver_ref_payload[fn_i];
-    if (tag != TYPE_REF_INSTANCE || payload >= active_method_capacity())
+    if (tag != TYPE_REF_INSTANCE || payload >= active_token_count())
         return 0u;
     return type_instance_arg_count[payload];
 }
@@ -145,7 +154,7 @@ uint receiver_arg_hash(uint fn_i)
 {
     uint tag = method_decl_receiver_ref_tag[fn_i];
     uint payload = method_decl_receiver_ref_payload[fn_i];
-    if (tag != TYPE_REF_INSTANCE || payload >= active_method_capacity())
+    if (tag != TYPE_REF_INSTANCE || payload >= active_token_count())
         return 0u;
     return type_instance_arg_hash[payload];
 }
@@ -169,7 +178,7 @@ bool instance_arg_ref(uint instance_i, uint ordinal, out uint tag, out uint payl
 {
     tag = TYPE_REF_INVALID;
     payload = INVALID;
-    if (instance_i >= active_method_capacity() || ordinal >= type_instance_arg_count[instance_i])
+    if (instance_i >= active_token_count() || ordinal >= type_instance_arg_count[instance_i])
         return false;
 
     uint row_ref_i = instance_arg_row_ref_index(instance_i, ordinal);
@@ -199,7 +208,7 @@ bool receiver_args_valid(uint fn_i)
     uint payload = method_decl_receiver_ref_payload[fn_i];
     if (tag != TYPE_REF_INSTANCE)
         return true;
-    if (payload >= active_method_capacity())
+    if (payload >= active_token_count())
         return false;
     if (type_instance_decl_token[payload] == INVALID)
         return false;
@@ -278,7 +287,7 @@ bool receiver_arg_rows_equal(uint left_fn_i, uint right_fn_i)
     uint right_payload = method_decl_receiver_ref_payload[right_fn_i];
     if (left_tag != TYPE_REF_INSTANCE || right_tag != TYPE_REF_INSTANCE)
         return true;
-    if (left_payload >= active_method_capacity() || right_payload >= active_method_capacity())
+    if (left_payload >= active_token_count() || right_payload >= active_token_count())
         return false;
 
     uint count = type_instance_arg_count[left_payload];
@@ -315,17 +324,39 @@ bool method_keys_equal(uint left_fn_i, uint right_fn_i)
         6u) && receiver_arg_rows_equal(left_fn_i, right_fn_i);
 }
 
-public struct MethodKeyEquality : ISortedRunEquality
+uint method_lookup_bucket_for_fn(uint fn_i, uint method_count)
 {
-    public static bool equal(uint left_item, uint right_item)
+    uint tag = method_decl_receiver_ref_tag[fn_i];
+    uint payload = method_decl_receiver_ref_payload[fn_i];
+    return method_lookup_bucket(
+        tag,
+        receiver_payload_key(fn_i),
+        receiver_arg_count(fn_i),
+        receiver_arg_hash(fn_i),
+        method_decl_name_id[fn_i],
+        method_count);
+}
+
+uint previous_duplicate(uint fn_i, uint method_count)
+{
+    uint encoded_row = method_lookup_head[method_lookup_bucket_for_fn(fn_i, method_count)];
+    uint duplicate = INVALID;
+    for (uint visited = 0u; encoded_row != 0u && visited < method_count; visited += 1u)
     {
-        return method_keys_equal(left_item, right_item);
+        uint row = encoded_row - 1u;
+        if (row >= method_count)
+            break;
+        encoded_row = method_lookup_next[row];
+        uint candidate = compact_method_cores[row].name_token;
+        if (candidate < fn_i && method_keys_equal(candidate, fn_i))
+            duplicate = duplicate == INVALID ? candidate : max(duplicate, candidate);
     }
+    return duplicate;
 }
 
 uint error_token_for_method(uint fn_i)
 {
-    if (fn_i < active_method_capacity())
+    if (fn_i < active_token_count())
     {
         uint name_token = method_decl_name_token[fn_i];
         if (name_token != INVALID)
@@ -346,17 +377,12 @@ void record_error(uint token_i, uint code, uint detail)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    uint method_count = active_method_capacity();
+    uint method_count = active_method_count();
     if (i >= method_count)
         return;
 
-    uint fn_i;
-    if (!sorted_order_item(
-        i,
-        method_count,
-        method_count,
-        sorted_method_key_order,
-        fn_i))
+    uint fn_i = compact_method_cores[i].name_token;
+    if (fn_i >= active_token_count())
         return;
 
     method_key_duplicate_of[fn_i] = INVALID;
@@ -377,14 +403,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     method_key_status[fn_i] =
         method_decl_visibility[fn_i] == METHOD_VIS_PUBLIC ? METHOD_KEY_STATUS_PUBLIC_OK
                                                           : METHOD_KEY_STATUS_PRIVATE_OK;
-    uint prev_fn_i;
-    if (!sorted_adjacent_duplicate<MethodKeyEquality>(
-        i,
-        method_count,
-        method_count,
-        sorted_method_key_order,
-        fn_i,
-        prev_fn_i))
+    uint prev_fn_i = previous_duplicate(fn_i, method_count);
+    if (prev_fn_i == INVALID)
         return;
     method_key_status[fn_i] = METHOD_KEY_STATUS_DUPLICATE;
     method_key_duplicate_of[fn_i] = prev_fn_i;

@@ -4,10 +4,10 @@ use anyhow::Result;
 
 use crate::{
     gpu::passes_core::{PassData, bind_group},
-    parser::buffers::ParserBuffers,
+    parser::{buffers::ParserBuffers, passes::hir::bounded_walk_step_capacity},
 };
 
-/// Pointer-jump pass that propagates expression result-root nodes.
+/// Bounded-walk pass that propagates expression result-root nodes.
 pub struct HirExprResultRootStepPass {
     data: PassData,
 }
@@ -25,18 +25,11 @@ impl HirExprResultRootStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_schedule: &wgpu::Buffer,
+        dispatch_args: &wgpu::Buffer,
     ) -> Result<()> {
-        let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
+        let steps = bounded_walk_step_capacity(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(
-                device,
-                encoder,
-                buffers,
-                step % 2 == 0,
-                dispatch_schedule,
-                u64::from(step) * 3 * std::mem::size_of::<u32>() as u64,
-            )?;
+            self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
         }
 
         if steps % 2 == 1 {
@@ -60,8 +53,7 @@ impl HirExprResultRootStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         read_from_root: bool,
-        dispatch_schedule: &wgpu::Buffer,
-        dispatch_offset: u64,
+        dispatch_args: &wgpu::Buffer,
     ) -> Result<()> {
         let (root_in, root_out) = if read_from_root {
             (
@@ -107,25 +99,13 @@ impl HirExprResultRootStepPass {
             &resources,
         )?;
 
-        crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
+        crate::gpu::passes_core::record_or_defer_compute_indirect(
             encoder,
             &self.data,
             &bind_group,
             "hir_expr_result_root_step",
-            dispatch_schedule,
-            dispatch_offset,
+            dispatch_args,
         );
         Ok(())
     }
-}
-
-fn pointer_jump_steps_for_items(items: u32) -> u32 {
-    let mut span = 1u32;
-    let mut steps = 0u32;
-    let target = items.max(1);
-    while span < target {
-        span = span.saturating_mul(2);
-        steps += 1;
-    }
-    steps
 }

@@ -133,16 +133,15 @@ fn record_module_path_stage(
             "type_check.modules.path_prefix_dispatch_args",
             32,
         )?;
+        record_compute_indirect(
+            encoder,
+            &passes.kernel("type_checker/modules/01c_path_prefix_table_clear"),
+            &state.bind_groups.path_prefix_initial_table_clear,
+            "type_check.modules.path_prefix_table_clear",
+            &state.path_prefix_row_dispatch_args,
+        )?;
         for (round_i, round) in state.bind_groups.path_prefix_rounds.iter().enumerate() {
             let offset = round_i as u64 * 3 * std::mem::size_of::<u32>() as u64;
-            record_compute_indirect_offset(
-                encoder,
-                &passes.kernel("type_checker/modules/01c_path_prefix_table_clear"),
-                &round.clear,
-                "type_check.modules.path_prefix_table_clear",
-                &state.path_prefix_round_dispatch_args,
-                offset,
-            )?;
             record_compute_indirect_offset(
                 encoder,
                 &passes.kernel("type_checker/modules/01c_path_prefix_table_insert"),
@@ -169,6 +168,13 @@ fn record_module_path_stage(
         )?;
         stamp_typecheck_timer(&mut timer, encoder, "typecheck.modules.paths.done");
         state.bind_groups.module_records.record(encoder)?;
+        record_compute(
+            encoder,
+            &passes.kernel("type_checker/modules/02d_clear_module_lookup"),
+            &state.bind_groups.clear_module_lookup,
+            "type_check.modules.clear_module_lookup",
+            state.token_capacity.saturating_mul(2).max(1),
+        )?;
         let module_key_work = state.module_n_blocks.saturating_mul(256).max(1);
         record_compute(
             encoder,
@@ -179,23 +185,18 @@ fn record_module_path_stage(
         )?;
         record_compute(
             encoder,
-            &passes.kernel("type_checker/names/radix/dispatch_args"),
-            &state.bind_groups.module_key_radix_dispatch,
-            "type_check.modules.module_key_radix_dispatch_args",
+            &passes.kernel("type_checker/count/dispatch_args"),
+            &state.bind_groups.module_dispatch,
+            "type_check.modules.module_dispatch_args",
             1,
         )?;
-        state.bind_groups.sort_module_keys.record(encoder)?;
-        stamp_typecheck_timer(
-            &mut timer,
-            encoder,
-            "typecheck.modules.sort_module_keys.done",
-        );
+        stamp_typecheck_timer(&mut timer, encoder, "typecheck.modules.module_lookup.done");
         record_compute_indirect(
             encoder,
             &passes.kernel("type_checker/modules/04_validate_modules"),
             &state.bind_groups.validate_modules,
             "type_check.modules.validate_modules",
-            &state.module_key_radix_dispatch_args,
+            &state.module_dispatch_args,
         )?;
         state.bind_groups.import_records.record(encoder)?;
         record_compute(
@@ -239,28 +240,9 @@ fn record_module_path_stage(
         stamp_typecheck_timer(&mut timer, encoder, "typecheck.modules.module_maps.done");
         state.bind_groups.attach_record_modules.record(encoder)?;
         state.bind_groups.resolve_imports.record(encoder)?;
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/names/radix/dispatch_args"),
-            &state.bind_groups.import_edge_key_radix_dispatch,
-            "type_check.modules.import_edge_key_radix_dispatch_args",
-            1,
-        )?;
-        record_compute_indirect(
-            encoder,
-            &passes.kernel("type_checker/modules/05e_seed_import_edge_key_order"),
-            &state.bind_groups.seed_import_edge_key_order,
-            "type_check.modules.seed_import_edge_key_order",
-            &state.import_edge_key_radix_dispatch_args,
-        )?;
-        state.bind_groups.sort_import_edges.record(encoder)?;
-        record_compute_indirect(
-            encoder,
-            &passes.kernel("type_checker/modules/05h_validate_import_cycles"),
-            &state.bind_groups.validate_import_cycles,
-            "type_check.modules.validate_import_cycles",
-            &state.import_edge_key_radix_dispatch_args,
-        )?;
+        state.bind_groups.clear_import_edge_set.record(encoder)?;
+        state.bind_groups.build_import_edge_set.record(encoder)?;
+        state.bind_groups.validate_import_cycles.record(encoder)?;
         stamp_typecheck_timer(
             &mut timer,
             encoder,
@@ -268,17 +250,10 @@ fn record_module_path_stage(
         );
         record_compute(
             encoder,
-            &passes.kernel("type_checker/names/radix/dispatch_args"),
+            &passes.kernel("radix/dispatch_args"),
             &state.bind_groups.decl_key_radix_dispatch,
             "type_check.modules.decl_key_radix_dispatch_args",
             1,
-        )?;
-        record_compute_indirect(
-            encoder,
-            &passes.kernel("type_checker/modules/06a_seed_decl_key_order"),
-            &state.bind_groups.seed_decl_key_order,
-            "type_check.modules.seed_decl_key_order",
-            &state.decl_key_radix_dispatch_args,
         )?;
         state.bind_groups.sort_decl_keys.record(encoder)?;
         stamp_typecheck_timer(&mut timer, encoder, "typecheck.modules.sort_decl_keys.done");
@@ -289,6 +264,8 @@ fn record_module_path_stage(
             "type_check.modules.validate_decls",
             &state.decl_key_radix_dispatch_args,
         )?;
+        state.bind_groups.decl_lookup.record(encoder)?;
+        state.bind_groups.validate_decl_duplicates.record(encoder)?;
         state.bind_groups.mark_decl_namespace_keys.record(encoder)?;
         PrefixScanOperation::record_pair(
             &state.bind_groups.decl_type_key_scan,
@@ -334,16 +311,9 @@ fn record_module_path_stage(
         )?;
         record_compute(
             encoder,
-            &passes.kernel("type_checker/names/radix/dispatch_args"),
-            &state.bind_groups.import_visible_type_key_radix_dispatch,
-            "type_check.modules.import_visible_type_key_radix_dispatch_args",
-            1,
-        )?;
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/names/radix/dispatch_args"),
-            &state.bind_groups.import_visible_value_key_radix_dispatch,
-            "type_check.modules.import_visible_value_key_radix_dispatch_args",
+            &passes.kernel("type_checker/count/pair_max_dispatch_args"),
+            &state.bind_groups.import_visible_validate_dispatch_args,
+            "type_check.modules.import_visible_dispatch_args",
             1,
         )?;
         record_compute_indirect(
@@ -351,59 +321,50 @@ fn record_module_path_stage(
             &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
             &state.bind_groups.scatter_import_visible_type,
             "type_check.modules.scatter_import_visible_type",
-            &state.import_visible_type_key_radix_dispatch_args,
+            &state.import_visible_validate_dispatch_args,
         )?;
         record_compute_indirect(
             encoder,
             &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
             &state.bind_groups.scatter_import_visible_value,
             "type_check.modules.scatter_import_visible_value",
-            &state.import_visible_value_key_radix_dispatch_args,
+            &state.import_visible_validate_dispatch_args,
         )?;
         stamp_typecheck_timer(
             &mut timer,
             encoder,
             "typecheck.modules.import_visibility_scatter.done",
         );
-        record_radix_sort_batch(
-            &[
-                RadixSortBatchItem {
-                    sort: &state.bind_groups.sort_import_visible_type_keys,
-                },
-                RadixSortBatchItem {
-                    sort: &state.bind_groups.sort_import_visible_value_keys,
-                },
-            ],
+        record_compute(
             encoder,
+            &passes.kernel("type_checker/modules/09c_clear_import_visible_lookup"),
+            &state.bind_groups.clear_import_visible_type_lookup,
+            "type_check.modules.clear_import_visible_type_lookup",
+            state.import_visible_capacity.saturating_mul(2),
         )?;
-        stamp_typecheck_timer(
-            &mut timer,
+        record_compute(
             encoder,
-            "typecheck.modules.sort_import_visible_keys.done",
-        );
+            &passes.kernel("type_checker/modules/09c_clear_import_visible_lookup"),
+            &state.bind_groups.clear_import_visible_value_lookup,
+            "type_check.modules.clear_import_visible_value_lookup",
+            state.import_visible_capacity.saturating_mul(2),
+        )?;
         {
             let mut batch = crate::gpu::passes_core::ComputePassBatch::begin(
                 encoder,
                 "type_check.modules.build_import_visible_key_tables.paired",
             );
-            batch.record_raw_indirect(
+            batch.record_buffer_indirect(
                 &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
                 &state.bind_groups.build_import_visible_type_key_table,
-                &state.import_visible_type_key_radix_dispatch_args,
+                &state.import_visible_validate_dispatch_args,
             );
-            batch.record_raw_indirect(
+            batch.record_buffer_indirect(
                 &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
                 &state.bind_groups.build_import_visible_value_key_table,
-                &state.import_visible_value_key_radix_dispatch_args,
+                &state.import_visible_validate_dispatch_args,
             );
         }
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/count/pair_max_dispatch_args"),
-            &state.bind_groups.import_visible_validate_dispatch_args,
-            "type_check.modules.import_visible_validate_dispatch_args",
-            1,
-        )?;
         record_compute_indirect(
             encoder,
             &passes.kernel("type_checker/modules/09f_validate_import_visible_keys"),

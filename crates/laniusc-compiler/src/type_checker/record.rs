@@ -7,7 +7,6 @@ mod dependency_page;
 mod methods;
 mod module_paths;
 mod names;
-mod predicates;
 mod type_instances;
 mod visible;
 
@@ -17,7 +16,6 @@ pub(in crate::type_checker) use control_flow::*;
 pub(in crate::type_checker) use dependency_page::*;
 pub(in crate::type_checker) use module_paths::*;
 pub(in crate::type_checker) use names::*;
-pub(in crate::type_checker) use predicates::*;
 pub(in crate::type_checker) use type_instances::*;
 pub(in crate::type_checker) use visible::*;
 

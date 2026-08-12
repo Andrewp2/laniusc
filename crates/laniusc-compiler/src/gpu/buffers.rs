@@ -161,8 +161,10 @@ pub(crate) struct ResettableBuffer {
     pub(crate) buffer: wgpu::Buffer,
     pub(crate) byte_size: u64,
     pub(crate) allocation_id: u64,
+    pub(crate) label: Arc<str>,
     pub(crate) row_domain: Option<ResettableRowDomain>,
     pub(crate) allocated_rows: usize,
+    pub(crate) reset_policy: JobResetPolicy,
 }
 
 impl ResettableBuffer {
@@ -174,8 +176,8 @@ impl ResettableBuffer {
 }
 
 /// Collects writable allocations created while `build` runs. This lets an
-/// owning workspace reset each unique physical allocation without manually
-/// listing every logical or aliased field.
+/// owning workspace reset each unique physical allocation according to its
+/// first-use contract without manually listing every logical alias.
 pub(crate) fn collect_resettable_buffers<T>(
     build: impl FnOnce() -> T,
 ) -> (T, Vec<ResettableBuffer>) {
@@ -198,7 +200,10 @@ pub(crate) fn collect_resettable_buffers<T>(
     (value, buffers)
 }
 
-pub(crate) fn register_resettable_buffer<T>(buffer: &LaniusBuffer<T>) {
+pub(crate) fn register_resettable_buffer<T>(
+    buffer: &LaniusBuffer<T>,
+    reset_policy: JobResetPolicy,
+) {
     RESETTABLE_BUFFER_COLLECTOR.with(|collector| {
         let mut collector = collector.borrow_mut();
         let Some(buffers) = collector.as_mut() else {
@@ -216,8 +221,13 @@ pub(crate) fn register_resettable_buffer<T>(buffer: &LaniusBuffer<T>) {
             allocation_id: buffer
                 .allocation_id()
                 .expect("resettable buffers must have tracked allocation identities"),
+            label: buffer._allocation.as_ref().map_or_else(
+                || Arc::<str>::from("<borrowed>"),
+                |value| value.label.clone(),
+            ),
             row_domain,
             allocated_rows: buffer.count,
+            reset_policy,
         });
     });
 }
@@ -1242,10 +1252,30 @@ pub fn readback_bytes(
     LaniusBuffer::new_labeled((raw, byte_size as u64), count, label)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum JobResetPolicy {
+    /// Clear the allocation before each job because some first read requires a baseline value.
+    ClearBeforeJob,
+    /// Every row that can be read is overwritten by an earlier pass in the same job.
+    OverwriteBeforeRead,
+}
+
 /// Create a STORAGE buffer (read/write) sized for an array of `T` using WGSL/std430 size/stride.
 /// We compute the **padded element size** by encoding one `T::default()` with `encase::StorageBuffer`.
 /// Requires `T: Default` so we can synthesize one element just to measure its layout.
 pub fn storage_rw_for_array<T>(device: &wgpu::Device, label: &str, count: usize) -> LaniusBuffer<T>
+where
+    T: Default + encase::ShaderType + encase::internal::WriteInto,
+{
+    storage_rw_for_array_with_reset_policy(device, label, count, JobResetPolicy::ClearBeforeJob)
+}
+
+pub(crate) fn storage_rw_for_array_with_reset_policy<T>(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+    reset_policy: JobResetPolicy,
+) -> LaniusBuffer<T>
 where
     T: Default + encase::ShaderType + encase::internal::WriteInto,
 {
@@ -1269,7 +1299,7 @@ where
         mapped_at_creation: false,
     });
     let buffer = LaniusBuffer::new_labeled((raw, total as u64), count, label);
-    register_resettable_buffer(&buffer);
+    register_resettable_buffer(&buffer, reset_policy);
     buffer
 }
 
@@ -1290,7 +1320,7 @@ pub fn storage_rw_uninit_bytes(
         mapped_at_creation: false,
     });
     let buffer = LaniusBuffer::new_labeled((raw, byte_size as u64), count, label);
-    register_resettable_buffer(&buffer);
+    register_resettable_buffer(&buffer, JobResetPolicy::ClearBeforeJob);
     buffer
 }
 

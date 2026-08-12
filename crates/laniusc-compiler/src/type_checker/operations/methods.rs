@@ -37,6 +37,31 @@ pub(in crate::type_checker) const METHODS_BIND_SELF_RECEIVERS: ReflectedComputeS
     HirNodes,
     "type_checker/methods/02c_bind_self_receivers"
 );
+pub(in crate::type_checker) const METHODS_LOOKUP_CLEAR: ReflectedComputeSpec = method_pass!(
+    "lookup.clear",
+    Declarations,
+    "type_checker/methods/03_clear_lookup"
+)
+.initializer();
+pub(in crate::type_checker) const METHODS_LOOKUP_BUILD: ReflectedComputeSpec = method_pass!(
+    "lookup.build",
+    Declarations,
+    "type_checker/methods/03_build_lookup"
+)
+.with_modes(&[
+    ("method_lookup_head", AccessMode::ReadWrite),
+    ("method_lookup_next", AccessMode::Write),
+]);
+pub(in crate::type_checker) const METHODS_VALIDATE_KEYS: ReflectedComputeSpec = method_pass!(
+    "lookup.validate",
+    Declarations,
+    "type_checker/methods/05_validate_keys"
+)
+.with_modes(&[
+    ("method_key_status", AccessMode::Write),
+    ("method_key_duplicate_of", AccessMode::Write),
+    ("status", AccessMode::ReadWrite),
+]);
 pub(in crate::type_checker) const METHODS_MARK_CALL_KEYS: ReflectedComputeSpec = method_pass!(
     "mark_call_keys",
     HirNodes,
@@ -51,9 +76,6 @@ pub(in crate::type_checker) const METHODS_RESOLVE_TABLE: ReflectedComputeSpec = 
     "resolve_table",
     Calls,
     "type_checker/methods/07_resolve_table"
-)
-.with_aliases(&[typecheck_resource!(
-    "sorted_method_key_order" => "method_key_to_fn_token", Read
-)]);
+);
 pub(in crate::type_checker) const METHODS_RESOLVE: ReflectedComputeSpec =
     method_pass!("resolve", HirNodes, "type_checker/methods/03/resolve");

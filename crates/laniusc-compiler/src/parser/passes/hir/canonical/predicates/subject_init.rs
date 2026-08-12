@@ -57,10 +57,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 b.hir_semantic_parent_value_a.as_entire_binding(),
             ),
             (
-                "owner_link_a".into(),
-                b.hir_struct_lit_field_link_a.as_entire_binding(),
-            ),
-            (
                 "owner_value_a".into(),
                 b.hir_type_arg_rank_a.as_entire_binding(),
             ),

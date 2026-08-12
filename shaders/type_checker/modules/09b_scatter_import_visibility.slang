@@ -6,9 +6,8 @@
 // - For each compact output row, find the owning import by binary search over
 //   import-visible prefixes, then find the local public declaration by binary
 //   search over public declaration prefixes in the target module range.
-// - This pass seeds row-order arrays for later stable radix sorting. It does
-//   not resolve paths, scan source bytes, use hashes, append with atomics,
-//   perform CPU lookup, or apply same-source shortcuts.
+// - Output rows are already compact. A later pass publishes them directly into
+//   an exact lookup table; no ordering relation is constructed here.
 
 import gpu_index;
 import range_query;
@@ -39,10 +38,9 @@ StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_name_id;
 
 RWStructuredBuffer<uint> status;
-RWStructuredBuffer<uint> import_visible_module_id;
-RWStructuredBuffer<uint> import_visible_name_id;
-RWStructuredBuffer<uint> import_visible_decl_id;
-RWStructuredBuffer<uint> import_visible_key_order;
+RWStructuredBuffer<uint> import_visible_key_module_id;
+RWStructuredBuffer<uint> import_visible_key_name_id;
+RWStructuredBuffer<uint> import_visible_key_to_decl_id;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -227,8 +225,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (decl_i >= gParams.capacity)
         return;
 
-    import_visible_module_id[visible_i] = importing_module;
-    import_visible_name_id[visible_i] = decl_name_id[decl_i];
-    import_visible_decl_id[visible_i] = decl_i;
-    import_visible_key_order[visible_i] = visible_i;
+    import_visible_key_module_id[visible_i] = importing_module;
+    import_visible_key_name_id[visible_i] = decl_name_id[decl_i];
+    import_visible_key_to_decl_id[visible_i] = decl_i;
 }

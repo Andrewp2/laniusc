@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// Records lexeme marking, compaction, radix sorting, deduping, and name-id assignment.
+/// Records lexeme compaction, exact hash-table construction, and name-ID assignment.
 pub(in crate::type_checker) fn record_name_bind_groups_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,

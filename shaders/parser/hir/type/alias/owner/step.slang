@@ -1,4 +1,4 @@
-// Pointer-jump nearest type-alias owner values over dense semantic-HIR rows.
+// Follow a bounded run of nearest type-alias owner links per dispatch.
 
 struct Params
 {
@@ -19,6 +19,7 @@ RWStructuredBuffer<uint> hir_type_alias_owner_value_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint LINKS_PER_STEP = 16u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -52,7 +53,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint link = hir_type_alias_owner_link_in[row];
     uint value = hir_type_alias_owner_value_in[row];
-    if (valid_semantic_row(link, semantic_count))
+    for (uint hop = 0u;
+         hop < LINKS_PER_STEP && valid_semantic_row(link, semantic_count);
+         ++hop)
     {
         if (value == INVALID)
         {

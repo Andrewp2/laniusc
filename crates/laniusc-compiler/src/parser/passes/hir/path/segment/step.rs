@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::{
     gpu::passes_core::{PassData, bind_group},
-    parser::buffers::ParserBuffers,
+    parser::{buffers::ParserBuffers, passes::hir::bounded_walk_step_capacity},
 };
 
 pub struct HirPathSegmentStepPass {
@@ -18,18 +18,11 @@ impl HirPathSegmentStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_schedule: &wgpu::Buffer,
+        dispatch_args: &wgpu::Buffer,
     ) -> Result<()> {
-        let steps = pointer_jump_steps(buffers.tree_capacity);
+        let steps = bounded_walk_step_capacity(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(
-                device,
-                encoder,
-                buffers,
-                step % 2 == 0,
-                dispatch_schedule,
-                u64::from(step) * 3 * std::mem::size_of::<u32>() as u64,
-            )?;
+            self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
         }
         if steps % 2 == 1 {
             crate::gpu::passes_core::flush_deferred_compute(encoder);
@@ -60,8 +53,7 @@ impl HirPathSegmentStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         read_a: bool,
-        dispatch_schedule: &wgpu::Buffer,
-        dispatch_offset: u64,
+        dispatch_args: &wgpu::Buffer,
     ) -> Result<()> {
         let (owner_in, link_in, rank_in, owner_out, link_out, rank_out) = if read_a {
             (
@@ -128,24 +120,13 @@ impl HirPathSegmentStepPass {
             0,
             &resources,
         )?;
-        crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
+        crate::gpu::passes_core::record_or_defer_compute_indirect(
             encoder,
             &self.data,
             &group,
             "hir_path_segment_step",
-            dispatch_schedule,
-            dispatch_offset,
+            dispatch_args,
         );
         Ok(())
     }
-}
-
-fn pointer_jump_steps(items: u32) -> u32 {
-    let mut span = 1u32;
-    let mut steps = 0u32;
-    while span < items.max(1) {
-        span = span.saturating_mul(2);
-        steps += 1;
-    }
-    steps
 }

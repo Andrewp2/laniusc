@@ -10,6 +10,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     token_capacity: u32,
     hir_capacity: u32,
     call_param_capacity: u32,
+    call_arg_capacity: u32,
     claim_capacity: u32,
 ) -> Result<CallBindGroups> {
     let indirect = |spec| {
@@ -30,10 +31,10 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         .max(token_capacity)
         .max(1);
     let semantic_work = token_capacity.max(hir_capacity).max(512);
-    let call_generic_claim_radix_dispatch_args =
-        typed_buffer_from_resources(resources, "call_generic_claim_radix_dispatch_args")?;
-    let call_const_claim_radix_dispatch_args =
-        typed_buffer_from_resources(resources, "call_const_claim_radix_dispatch_args")?;
+    let call_generic_claim_index_dispatch_args =
+        typed_buffer_from_resources(resources, "call_generic_claim_index_dispatch_args")?;
+    let call_const_claim_index_dispatch_args =
+        typed_buffer_from_resources(resources, "call_const_claim_index_dispatch_args")?;
     let call_required_generic_dispatch_args =
         typed_buffer_from_resources(resources, "call_required_generic_dispatch_args")?;
     let prefix_scan_spec = |spec| PrefixScanOperation::from_spec(device, passes, resources, spec);
@@ -66,25 +67,25 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             ),
         ],
     )?;
-    let generic_claim_keys = CallClaimKeyPipeline::new(
+    let generic_claim_index = CallClaimIndexOperation::new(
         device,
         passes,
-        CallClaimKeyBuild {
+        CallClaimIndexBuild {
             kind: CallClaimKind::Generic,
-            token_capacity,
             claim_capacity,
-            dispatch_args: &call_generic_claim_radix_dispatch_args,
+            dispatch_args: &call_generic_claim_index_dispatch_args,
+            graph,
             resources,
         },
     )?;
-    let const_claim_keys = CallClaimKeyPipeline::new(
+    let const_claim_index = CallClaimIndexOperation::new(
         device,
         passes,
-        CallClaimKeyBuild {
+        CallClaimIndexBuild {
             kind: CallClaimKind::Const,
-            token_capacity,
-            claim_capacity,
-            dispatch_args: &call_const_claim_radix_dispatch_args,
+            claim_capacity: call_arg_capacity,
+            dispatch_args: &call_const_claim_index_dispatch_args,
+            graph,
             resources,
         },
     )?;
@@ -104,9 +105,9 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 resources,
                 passes,
                 CALLS_GENERIC_CLAIM_VALIDATE,
-                generic_claim_keys.dispatch_args(),
+                generic_claim_index.dispatch_args(),
             )?,
-            generic_keys: generic_claim_keys,
+            generic_index: generic_claim_index,
             mark_required: indirect(CALLS_REQUIRED_GENERIC_MARK)?,
             required_scan: prefix_scan_spec(compiler_graph::REQUIRED_GENERIC_SCAN)?,
             required_dispatch: required_generic_dispatch,
@@ -125,9 +126,9 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 resources,
                 passes,
                 CALLS_CONST_CLAIM_VALIDATE,
-                const_claim_keys.dispatch_args(),
+                const_claim_index.dispatch_args(),
             )?,
-            const_keys: const_claim_keys,
+            const_index: const_claim_index,
         });
 
     Ok(CallBindGroups {

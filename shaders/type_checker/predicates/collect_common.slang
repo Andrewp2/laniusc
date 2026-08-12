@@ -9,10 +9,11 @@
 // bounds or impls as comments.
 
 import hir_records;
-import fixed.key;
-import range_query;
+import type_checker.type.instances.generic_param_lookup;
+import type_checker.modules.import_visible_lookup;
+import type_checker.modules.decl_lookup;
+import type_checker.modules.module_lookup;
 
-#define PREDICATE_COLLECT_METHOD_RECORDS 0
 #ifndef PREDICATE_COLLECT_IMPL_RECORDS
 #define PREDICATE_COLLECT_IMPL_RECORDS 0
 #endif
@@ -36,6 +37,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;
@@ -67,7 +69,7 @@ StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_token;
 #endif
 StructuredBuffer<uint> generic_param_kind;
-StructuredBuffer<uint> generic_param_key_order;
+StructuredBuffer<uint> generic_param_lookup_state;
 #if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
@@ -83,10 +85,8 @@ StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_visibility;
 #if PREDICATE_BOUND_PATH_RESOLUTION
 StructuredBuffer<uint> module_count_out;
-StructuredBuffer<uint> sorted_module_key_order;
-StructuredBuffer<uint> module_key_canonical_id;
-StructuredBuffer<uint> decl_type_key_count_out;
-StructuredBuffer<uint> decl_type_key_to_decl_id;
+StructuredBuffer<uint> module_by_canonical_id;
+StructuredBuffer<uint> decl_lookup_state;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> path_segment_name_id;
@@ -110,6 +110,7 @@ StructuredBuffer<uint> import_visible_type_key_module_id;
 StructuredBuffer<uint> import_visible_type_key_name_id;
 StructuredBuffer<uint> import_visible_type_key_to_decl_id;
 StructuredBuffer<uint> import_visible_type_status;
+StructuredBuffer<uint> import_visible_type_lookup_state;
 #endif
 
 RWStructuredBuffer<uint> predicate_owner_node;
@@ -124,19 +125,6 @@ RWStructuredBuffer<uint> predicate_bound_second_arg_token;
 RWStructuredBuffer<uint> predicate_status;
 #if PREDICATE_BOUND_DECL_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
 RWStructuredBuffer<uint> predicate_syntax_token;
-#endif
-#if PREDICATE_COLLECT_METHOD_RECORDS
-StructuredBuffer<uint> predicate_method_contract_owner_node;
-StructuredBuffer<uint> predicate_method_contract_name_token;
-StructuredBuffer<uint> predicate_method_contract_name_id;
-StructuredBuffer<uint> predicate_method_contract_param_count;
-StructuredBuffer<uint> predicate_method_contract_return_type_node;
-StructuredBuffer<uint> predicate_method_contract_visibility;
-StructuredBuffer<uint> predicate_method_contract_status;
-StructuredBuffer<uint> predicate_method_contract_param_type_node;
-StructuredBuffer<uint> predicate_method_contract_key_order;
-StructuredBuffer<uint> predicate_method_contract_owner_range_first;
-StructuredBuffer<uint> predicate_method_contract_owner_range_count;
 #endif
 
 static const uint INVALID = 0xffffffffu;
@@ -201,6 +189,11 @@ uint active_hir_node_count()
     return gParams.n_hir_nodes == 0u
         ? 0u
         : min(gParams.n_hir_nodes, compact_hir_count[0u]);
+}
+
+uint active_method_contract_count()
+{
+    return min(compact_method_count[0u], gParams.n_hir_nodes);
 }
 
 bool valid_node(uint node)
@@ -342,50 +335,12 @@ uint generic_type_param_count_for_compact_decl(uint hir)
 }
 #endif
 
-public struct GenericParamLookupKey
-{
-    uint owner;
-    uint name_id;
-}
-
-int compare_generic_param_key(uint row, GenericParamLookupKey key)
-{
-    if (row >= active_generic_param_count())
-        return 1;
-
-    int owner_cmp = fixed_u32_lane_compare(generic_param_owner_token[row], key.owner);
-    if (owner_cmp != 0)
-        return owner_cmp;
-    return fixed_u32_lane_compare(generic_param_name_id[row], key.name_id);
-}
-
-public struct GenericParamKeyCompare : IRowQueryCompare<GenericParamLookupKey>
-{
-    public static int compare(uint row, GenericParamLookupKey key)
-    {
-        if (row >= active_generic_param_count())
-            return 1;
-        return compare_generic_param_key(generic_param_key_order[row], key);
-    }
-}
-
 bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
 {
     return row < active_generic_param_count() &&
            generic_param_owner_token[row] == owner &&
            generic_param_name_id[row] == name_id &&
            generic_param_kind[row] == kind;
-}
-
-bool generic_param_key_less(uint row, uint owner, uint name_id)
-{
-    if (row >= active_generic_param_count())
-        return false;
-
-    uint row_owner = generic_param_owner_token[row];
-    if (row_owner != owner)
-        return row_owner < owner;
-    return generic_param_name_id[row] < name_id;
 }
 
 uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
@@ -402,24 +357,10 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
         return INVALID;
 
     uint count = active_generic_param_count();
-    uint lo = 0u;
-    uint hi = count;
-    for (uint step = 0u; step < 32u; step += 1u)
-    {
-        if (lo >= hi)
-            continue;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint row = generic_param_key_order[mid];
-        if (row >= count || !generic_param_key_less(row, owner_token, name_id))
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-
-    if (lo >= count)
-        return INVALID;
-
-    uint row = generic_param_key_order[lo];
+    uint row = generic_param_lookup_find(
+        owner_token, name_id, count, gParams.n_tokens,
+        generic_param_owner_token, generic_param_name_id,
+        generic_param_lookup_state);
     return generic_param_key_matches(row, owner_token, name_id, kind) ? row : INVALID;
 }
 
@@ -515,11 +456,6 @@ uint module_record_count()
     return min(module_count_out[0], gParams.n_hir_nodes);
 }
 
-uint type_decl_key_record_count()
-{
-    return min(decl_type_key_count_out[0], gParams.n_hir_nodes);
-}
-
 uint import_visible_type_record_count()
 {
     return min(import_visible_type_count_out[0], max(gParams.n_tokens, 1u));
@@ -595,21 +531,6 @@ uint bound_path_leaf_token(uint expr_node)
     return bound_path_segment_token(expr_node, segment_count - 1u);
 }
 
-public struct BoundModulePrefixLookupKey
-{
-    uint canonical_id;
-}
-
-public struct BoundModulePrefixCompare : IRowQueryCompare<BoundModulePrefixLookupKey>
-{
-    public static int compare(uint row, BoundModulePrefixLookupKey key)
-    {
-        uint module_i = sorted_module_key_order[row];
-        uint row_id = module_key_canonical_id[module_i];
-        return row_id < key.canonical_id ? -1 : (row_id > key.canonical_id ? 1 : 0);
-    }
-}
-
 uint find_module_for_bound_path_prefix(uint expr_node, uint prefix_count)
 {
     uint path_i = bound_path_record_id(expr_node);
@@ -617,62 +538,12 @@ uint find_module_for_bound_path_prefix(uint expr_node, uint prefix_count)
         prefix_count >= path_segment_count[path_i])
         return INVALID;
 
-    BoundModulePrefixLookupKey key;
-    key.canonical_id = path_prefix_id[path_segment_base[path_i] + prefix_count - 1u];
-    uint row = find_equal_query<BoundModulePrefixLookupKey, BoundModulePrefixCompare>(
-        module_record_count(),
-        key);
-    return row == INVALID ? INVALID : sorted_module_key_order[row];
-}
-
-public struct ImportVisibleTypeLookupKey
-{
-    uint module_id;
-    uint name_id;
-}
-
-public struct TypeDeclLookupKey
-{
-    uint module_id;
-    uint name_id;
-}
-
-public struct TypeDeclFixedKey : IFixedU32RowKey<TypeDeclLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint decl_i = decl_type_key_to_decl_id[row];
-        uint value = INVALID;
-        if (decl_i < decl_record_count())
-        {
-            if (lane == 0u)
-                value = decl_module_id[decl_i];
-            else if (lane == 1u)
-                value = decl_namespace[decl_i];
-            else
-                value = decl_name_id[decl_i];
-        }
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-
-    public static uint key_lane(TypeDeclLookupKey key, uint lane)
-    {
-        uint value = lane == 0u
-            ? key.module_id
-            : (lane == 1u ? HIR_ITEM_NAMESPACE_TYPE : key.name_id);
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-}
-
-public struct TypeDeclKeyCompare : IRowQueryCompare<TypeDeclLookupKey>
-{
-    public static int compare(uint row, TypeDeclLookupKey key)
-    {
-        return fixed_u32_row_key_compare<TypeDeclLookupKey, TypeDeclFixedKey>(
-            row,
-            key,
-            3u);
-    }
+    uint canonical_id = path_prefix_id[path_segment_base[path_i] + prefix_count - 1u];
+    uint module_id = module_lookup_find(
+        canonical_id,
+        gParams.n_tokens,
+        module_by_canonical_id);
+    return module_id < module_record_count() ? module_id : INVALID;
 }
 
 uint find_type_decl_in_module(uint module_id, uint name_id)
@@ -680,45 +551,11 @@ uint find_type_decl_in_module(uint module_id, uint name_id)
     if (module_id == INVALID || name_id == INVALID)
         return INVALID;
 
-    TypeDeclLookupKey key;
-    key.module_id = module_id;
-    key.name_id = name_id;
-    uint row = find_equal_query<TypeDeclLookupKey, TypeDeclKeyCompare>(
-        type_decl_key_record_count(),
-        key);
-    if (row == INVALID)
-        return INVALID;
-
-    uint decl_i = decl_type_key_to_decl_id[row];
+    uint decl_i = decl_lookup_find(
+        module_id, HIR_ITEM_NAMESPACE_TYPE, name_id,
+        decl_record_count(), decl_module_id, decl_namespace, decl_name_id,
+        decl_lookup_state);
     return decl_i < decl_record_count() ? decl_i : INVALID;
-}
-
-public struct ImportVisibleTypeFixedKey : IFixedU32RowKey<ImportVisibleTypeLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint value = lane == 0u
-            ? import_visible_type_key_module_id[row]
-            : import_visible_type_key_name_id[row];
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-
-    public static uint key_lane(ImportVisibleTypeLookupKey key, uint lane)
-    {
-        uint value = lane == 0u ? key.module_id : key.name_id;
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-}
-
-public struct ImportVisibleTypeKeyCompare : IRowQueryCompare<ImportVisibleTypeLookupKey>
-{
-    public static int compare(uint row, ImportVisibleTypeLookupKey key)
-    {
-        return fixed_u32_row_key_compare<ImportVisibleTypeLookupKey, ImportVisibleTypeFixedKey>(
-            row,
-            key,
-            2u);
-    }
 }
 
 uint find_import_visible_type_decl(uint module_id, uint name_id)
@@ -726,12 +563,15 @@ uint find_import_visible_type_decl(uint module_id, uint name_id)
     if (module_id == INVALID || name_id == INVALID)
         return INVALID;
 
-    ImportVisibleTypeLookupKey key;
-    key.module_id = module_id;
-    key.name_id = name_id;
-    uint row = find_equal_query<ImportVisibleTypeLookupKey, ImportVisibleTypeKeyCompare>(
+    uint row = import_visible_lookup_find(
+        module_id,
+        name_id,
         import_visible_type_record_count(),
-        key);
+        max(gParams.n_tokens, 1u),
+        import_visible_type_key_module_id,
+        import_visible_type_key_name_id,
+        import_visible_type_key_to_decl_id,
+        import_visible_type_lookup_state);
     if (row == INVALID || import_visible_type_status[row] != IMPORT_VISIBLE_STATUS_OK)
         return INVALID;
 
@@ -1262,186 +1102,6 @@ uint validate_trait_impl_scalar_arg_token(
 }
 #endif
 
-#if PREDICATE_COLLECT_METHOD_RECORDS
-uint method_contract_name_token(uint method_node)
-{
-    if (!valid_node(method_node))
-        return INVALID;
-    uint token = predicate_method_contract_name_token[method_node];
-    return valid_token(token) ? token : INVALID;
-}
-
-uint method_contract_name_id(uint method_node)
-{
-    if (!valid_node(method_node))
-        return INVALID;
-    return predicate_method_contract_name_id[method_node];
-}
-
-bool method_contract_lookup_row_valid(uint method_node)
-{
-    if (!valid_node(method_node))
-        return false;
-    return valid_node(predicate_method_contract_owner_node[method_node]) &&
-           method_contract_name_id(method_node) != INVALID;
-}
-
-public struct MethodContractLookupKey
-{
-    uint owner_node;
-    uint name_id;
-}
-
-public struct MethodContractFixedKey : IFixedU32RowKey<MethodContractLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint method_node = row < active_hir_node_count()
-            ? predicate_method_contract_key_order[row]
-            : INVALID;
-        if (!method_contract_lookup_row_valid(method_node))
-            return 0u;
-
-        if (lane == 0u)
-            return fixed_key_encode_nullable_u32(
-                predicate_method_contract_owner_node[method_node],
-                INVALID);
-        return fixed_key_encode_nullable_u32(method_contract_name_id(method_node), INVALID);
-    }
-
-    public static uint key_lane(MethodContractLookupKey key, uint lane)
-    {
-        if (lane == 0u)
-            return fixed_key_encode_nullable_u32(key.owner_node, INVALID);
-        return fixed_key_encode_nullable_u32(key.name_id, INVALID);
-    }
-}
-
-public struct MethodContractKeyCompare : IRowQueryCompare<MethodContractLookupKey>
-{
-    public static int compare(uint row, MethodContractLookupKey key)
-    {
-        return fixed_u32_row_key_compare<MethodContractLookupKey, MethodContractFixedKey>(
-            row,
-            key,
-            2u);
-    }
-}
-
-QueryRange method_contract_range_for_owner_name(uint owner_node, uint name_id)
-{
-    MethodContractLookupKey key;
-    key.owner_node = owner_node;
-    key.name_id = name_id;
-    return equal_range_query<MethodContractLookupKey, MethodContractKeyCompare>(
-        active_hir_node_count(),
-        key);
-}
-
-QueryRange method_contract_range_for_owner(uint owner_node)
-{
-    QueryRange range;
-    range.begin = 0u;
-    range.end = 0u;
-    if (!valid_node(owner_node))
-        return range;
-
-    uint first = predicate_method_contract_owner_range_first[owner_node];
-    uint count = predicate_method_contract_owner_range_count[owner_node];
-    if (first == INVALID || count == 0u)
-        return range;
-
-    uint active = active_hir_node_count();
-    range.begin = min(first, active);
-    range.end = min(first + count, active);
-    if (range.end < range.begin)
-        range.end = range.begin;
-    return range;
-}
-
-bool method_contract_node_matches_owner_name(uint method_node, uint owner_node, uint name_id)
-{
-    return method_contract_lookup_row_valid(method_node) &&
-           predicate_method_contract_owner_node[method_node] == owner_node &&
-           method_contract_name_id(method_node) == name_id;
-}
-
-bool method_contract_order_row_matches_owner(uint row, uint owner_node)
-{
-    uint active = active_hir_node_count();
-    if (row >= active)
-        return false;
-
-    uint method_node = predicate_method_contract_key_order[row];
-    return method_contract_lookup_row_valid(method_node) &&
-           predicate_method_contract_owner_node[method_node] == owner_node;
-}
-
-bool method_contract_order_row_matches_owner_name(uint row, uint owner_node, uint name_id)
-{
-    uint active = active_hir_node_count();
-    if (row >= active)
-        return false;
-
-    uint method_node = predicate_method_contract_key_order[row];
-    return method_contract_node_matches_owner_name(method_node, owner_node, name_id);
-}
-
-bool method_contract_range_matches_owner(uint owner_node, QueryRange range)
-{
-    if (!valid_node(owner_node))
-        return false;
-    if (range.begin >= range.end)
-        return true;
-    if (range.end > active_hir_node_count())
-        return false;
-
-    return method_contract_order_row_matches_owner(range.begin, owner_node) &&
-           method_contract_order_row_matches_owner(range.end - 1u, owner_node);
-}
-
-bool method_contract_range_matches_owner_name(
-    uint owner_node,
-    uint name_id,
-    QueryRange range)
-{
-    if (!valid_node(owner_node) || name_id == INVALID)
-        return false;
-    if (range.begin >= range.end)
-        return true;
-    if (range.end > active_hir_node_count())
-        return false;
-
-    return method_contract_order_row_matches_owner_name(range.begin, owner_node, name_id) &&
-           method_contract_order_row_matches_owner_name(range.end - 1u, owner_node, name_id);
-}
-
-uint first_method_contract_for_owner_name(uint owner_node, uint name_id)
-{
-    if (!valid_node(owner_node) || name_id == INVALID)
-        return INVALID;
-
-    QueryRange range = method_contract_range_for_owner_name(owner_node, name_id);
-    if (range.begin >= range.end ||
-        !method_contract_range_matches_owner_name(owner_node, name_id, range))
-        return INVALID;
-
-    uint method_node = predicate_method_contract_key_order[range.begin];
-    return method_contract_node_matches_owner_name(method_node, owner_node, name_id)
-        ? method_node
-        : INVALID;
-}
-
-bool duplicate_method_contract_for_owner_name(uint owner_node, uint name_id)
-{
-    if (!valid_node(owner_node) || name_id == INVALID)
-        return false;
-
-    QueryRange range = method_contract_range_for_owner_name(owner_node, name_id);
-    return range.end > range.begin + 1u &&
-           method_contract_range_matches_owner_name(owner_node, name_id, range);
-}
-#endif
 
 #if PREDICATE_COLLECT_IMPL_RECORDS
 bool inherent_impl_target_arg_supported(uint impl_node, uint arg_node)
@@ -1580,16 +1240,6 @@ bool trait_impl_header_visibility_matches_trait(uint trait_decl_i, uint impl_nod
     return trait_is_public == impl_is_public;
 }
 
-#if PREDICATE_COLLECT_METHOD_RECORDS
-uint method_unsupported_contract_status(uint method_node)
-{
-    if (!valid_node(method_node))
-        return PREDICATE_STATUS_OK;
-
-    uint record_status = predicate_method_contract_status[method_node];
-    return record_status != INVALID ? record_status : PREDICATE_STATUS_OK;
-}
-#endif
 
 uint impl_receiver_type_node(uint impl_node)
 {

@@ -9,9 +9,8 @@
 // - It does not scan source bytes, use hashes, perform CPU lookup, or apply
 //   same-source shortcuts.
 
-import fixed.key;
 import gpu_index;
-import range_query;
+import type_checker.modules.decl_lookup;
 
 struct Params
 {
@@ -29,10 +28,11 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_owner_module_id;
-StructuredBuffer<uint> decl_key_count_out;
-StructuredBuffer<uint> decl_key_to_decl_id;
+StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
+StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> decl_lookup_state;
 
 RWStructuredBuffer<uint> resolved_decl;
 RWStructuredBuffer<uint> resolved_status;
@@ -48,6 +48,8 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_SKIPPED = 1u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED = 2u;
 static const uint PATH_RESOLVE_STATUS_INVALID_OWNER = 3u;
+static const uint HIR_ITEM_NAMESPACE_VALUE = 2u;
+static const uint HIR_ITEM_NAMESPACE_TYPE = 3u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -59,55 +61,16 @@ uint active_path_count()
     return min(path_count_out[0], gParams.capacity);
 }
 
-uint active_decl_count()
-{
-    return min(decl_key_count_out[0], gParams.capacity);
-}
-
-public struct DeclLookupKey
-{
-    uint module_id;
-    uint name_id;
-}
-
-public struct DeclFixedKey : IFixedU32RowKey<DeclLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint decl_i = decl_key_to_decl_id[row];
-        uint value = INVALID;
-        if (decl_i < gParams.capacity)
-            value = lane == 0u ? decl_module_id[decl_i] : decl_name_id[decl_i];
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-
-    public static uint key_lane(DeclLookupKey key, uint lane)
-    {
-        uint value = lane == 0u ? key.module_id : key.name_id;
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-}
-
-public struct DeclKeyCompare : IRowQueryCompare<DeclLookupKey>
-{
-    public static int compare(uint row, DeclLookupKey key)
-    {
-        return fixed_u32_row_key_compare<DeclLookupKey, DeclFixedKey>(
-            row,
-            key,
-            2u);
-    }
-}
-
 uint find_decl(uint module_id, uint name_id)
 {
-    DeclLookupKey key;
-    key.module_id = module_id;
-    key.name_id = name_id;
-    uint row = find_equal_query<DeclLookupKey, DeclKeyCompare>(active_decl_count(), key);
-    if (row != INVALID)
-        return decl_key_to_decl_id[row];
-    return INVALID;
+    uint namespace_id = gParams.key_step == 0u
+        ? HIR_ITEM_NAMESPACE_TYPE
+        : HIR_ITEM_NAMESPACE_VALUE;
+    return decl_lookup_find(
+        module_id, namespace_id, name_id,
+        min(decl_count_out[0], gParams.capacity),
+        decl_module_id, decl_namespace, decl_name_id,
+        decl_lookup_state);
 }
 
 [shader("compute")]

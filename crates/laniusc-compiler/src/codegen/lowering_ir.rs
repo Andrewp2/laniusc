@@ -128,16 +128,64 @@ impl HostService {
     }
 }
 
-/// Four 32-bit schedule-key words consumed two bits per stable radix step.
-pub(crate) const TARGET_SCHEDULE_RADIX_STEPS: u32 = 16;
+/// Largest schedule-key width: four complete `u32` fields.
+pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 16;
 
-/// Number of target-independent instructions materialized in one resident
-/// lowering window. The logical stream may contain any number of pages.
-pub(crate) const SEMANTIC_LIR_PAGE_ROWS: u32 = 65_536;
+/// Capacity-derived bit layout for the semantic schedule key.
+///
+/// The four fields are packed into one continuous LSD bit stream instead of
+/// rounding each field independently to bytes. Expression ties occupy the
+/// source representation's high `0x7fff_ffff - depth` band; the radix key
+/// extractor maps that band above all ordinary local-row ties and below the
+/// `u32::MAX` sentinel. Digit zero initializes the identity order in whichever
+/// ping-pong buffer makes the last scatter finish in the canonical order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TargetScheduleRadixLayout {
+    pub(crate) packed_bits: u32,
+    pub(crate) steps: u32,
+}
+
+impl TargetScheduleRadixLayout {
+    pub(crate) fn for_capacities(capacities: LoweringCapacities) -> Self {
+        let token_or_hir = capacities.tokens.max(capacities.hir_nodes);
+        let ordinary_tie_capacity = capacities.semantic_instructions.max(token_or_hir);
+        let bits = [
+            radix_bits_for_capacity(ordinary_tie_capacity.saturating_add(capacities.hir_nodes)),
+            radix_bits_for_capacity(token_or_hir),
+            radix_bits_for_capacity(token_or_hir),
+            radix_bits_for_capacity(capacities.hir_nodes),
+        ];
+        let steps = bits.iter().copied().sum::<u32>().div_ceil(8);
+        let packed_bits =
+            (1u32 << 31) | bits[0] | (bits[1] << 6) | (bits[2] << 12) | (bits[3] << 18);
+        debug_assert!(steps > 0 && steps <= TARGET_SCHEDULE_MAX_RADIX_STEPS);
+        Self { packed_bits, steps }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn full_width() -> Self {
+        Self {
+            packed_bits: 32 | (32 << 6) | (32 << 12) | (32 << 18),
+            steps: TARGET_SCHEDULE_MAX_RADIX_STEPS,
+        }
+    }
+}
+
+fn radix_bits_for_capacity(capacity: u32) -> u32 {
+    (u32::BITS - capacity.leading_zeros()).max(1)
+}
+
+/// Number of target-independent instructions processed by one lowering
+/// dispatch. The logical stream may contain any number of pages. One million
+/// rows remains comfortably below the two-dimensional dispatch limit while
+/// avoiding hundreds of tiny page dispatches for ordinary compilation units.
+pub(crate) const SEMANTIC_LIR_PAGE_ROWS: u32 = 1_048_576;
 /// Target instructions are replayable: only this many complete target records
-/// are resident while counting bytes or emitting the final artifact. Global
-/// target counts, offsets, and byte offsets remain compact arrays.
-pub(crate) const TARGET_LIR_PAGE_ROWS: u32 = 65_536;
+/// are resident while counting bytes or emitting the final artifact. Each
+/// target record table uses 16 MiB at this page size, below WebGPU's minimum
+/// 128 MiB storage-buffer binding limit, while global counts and offsets remain
+/// compact arrays.
+pub(crate) const TARGET_LIR_PAGE_ROWS: u32 = 1_048_576;
 #[derive(Clone, Copy)]
 struct WasmAbiGraphResources {
     param_widths: ResourceId,
@@ -271,9 +319,9 @@ fn add_schedule_graph_passes(
     phase: CompilerPhase,
     domain: ResourceDomain,
     resources: ScheduleGraphResources,
+    radix_steps: u32,
 ) -> Result<(), String> {
     let names = [
-        "lir.semantic.schedule.slot_count",
         "lir.semantic.schedule.histogram.even",
         "lir.semantic.schedule.scan.local.even",
         "lir.semantic.schedule.scan.hierarchy_up.even",
@@ -287,23 +335,14 @@ fn add_schedule_graph_passes(
         "lir.semantic.schedule.scan.apply.odd",
         "lir.semantic.schedule.scatter.odd",
     ];
-    graph.add_pass(PassDesc {
-        name: names[0],
-        phase,
-        dispatch_domain: domain,
-        accesses: vec![
-            PassAccess::read("target_lir_total", resources.total),
-            PassAccess::write("target_schedule_slot_count", resources.slot_count),
-        ],
-    })?;
-    let mut body = Vec::with_capacity(12);
-    for base in [1usize, 7usize] {
-        let (order_in, order_out) = if base == 1 {
+    let mut directions = Vec::with_capacity(2);
+    for base in [0usize, 6usize] {
+        let (order_in, order_out) = if base == 0 {
             (resources.order, resources.order_tmp)
         } else {
             (resources.order_tmp, resources.order)
         };
-        body.extend([
+        directions.push([
             PassDesc {
                 name: names[base],
                 phase,
@@ -311,7 +350,8 @@ fn add_schedule_graph_passes(
                 accesses: vec![
                     PassAccess::read("target_lir_total", resources.total),
                     PassAccess::read("target_schedule_key", resources.keys),
-                    PassAccess::read("target_schedule_order_in", order_in),
+                    PassAccess::initialize_read_write("target_schedule_order_in", order_in),
+                    PassAccess::write("target_schedule_slot_count", resources.slot_count),
                     PassAccess::write("target_schedule_histogram", resources.histogram),
                 ],
             },
@@ -373,7 +413,16 @@ fn add_schedule_graph_passes(
             },
         ]);
     }
-    graph.add_repeated_region(TARGET_SCHEDULE_RADIX_STEPS / 2, body)?;
+    let mut body = Vec::with_capacity(12);
+    let starts_in_temporary = radix_steps % 2 != 0;
+    if starts_in_temporary {
+        body.extend(directions[1].clone());
+        body.extend(directions[0].clone());
+    } else {
+        body.extend(directions[0].clone());
+        body.extend(directions[1].clone());
+    }
+    graph.add_repeated_region(radix_steps.div_ceil(2), body)?;
     Ok(())
 }
 
@@ -3298,15 +3347,7 @@ fn build_lowering_compiler_graph(
         None
     };
 
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.schedule.init",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("semantic_lir_total", semantic_total),
-            PassAccess::write("target_schedule_order", schedule_order),
-        ],
-    })?;
+    let schedule_radix_layout = TargetScheduleRadixLayout::for_capacities(capacities);
     let schedule_resources = ScheduleGraphResources {
         total: semantic_total,
         keys: semantic_schedule,
@@ -3326,6 +3367,7 @@ fn build_lowering_compiler_graph(
         CompilerPhase::SemanticLowering,
         ResourceDomain::SemanticInstructions,
         schedule_resources,
+        schedule_radix_layout.steps,
     )?;
     if target == LoweringTarget::X86_64 {
         graph.add_pass(PassDesc {
@@ -5170,6 +5212,67 @@ mod tests {
     }
 
     #[test]
+    fn semantic_schedule_radix_bit_packing_tracks_capacity() {
+        let layout = TargetScheduleRadixLayout::for_capacities(LoweringCapacities {
+            source_bytes: 1_000_000,
+            tokens: 100_000,
+            hir_nodes: 65_000,
+            semantic_instructions: 250_000,
+            call_arguments: 1,
+            parameters: 1,
+            aggregate_elements: 1,
+            target_instructions: 1,
+            artifact_bytes: 1,
+        });
+        assert_eq!(layout.packed_bits, 0x8041_1453);
+        assert_eq!(layout.steps, 9);
+
+        let small_capacities = LoweringCapacities {
+            source_bytes: 4_096,
+            tokens: 4_096,
+            hir_nodes: 4_096,
+            semantic_instructions: 4_096,
+            call_arguments: 1,
+            parameters: 1,
+            aggregate_elements: 1,
+            target_instructions: 1,
+            artifact_bytes: 1,
+        };
+        let small = TargetScheduleRadixLayout::for_capacities(small_capacities);
+        assert_eq!(small.packed_bits, 0x8034_d34e);
+        assert_eq!(small.steps, 7);
+        let graph = lowering_compiler_graph(small_capacities, LoweringTarget::Wasm).unwrap();
+        assert!(graph.repeated_regions().iter().any(|region| {
+            region.iterations == 4
+                && region.pass_count == 12
+                && graph.passes()[region.first_pass.index()].name
+                    == "lir.semantic.schedule.histogram.odd"
+        }));
+
+        let odd_capacities = LoweringCapacities {
+            source_bytes: 4_096,
+            tokens: 128,
+            hir_nodes: 128,
+            semantic_instructions: 257,
+            call_arguments: 1,
+            parameters: 1,
+            aggregate_elements: 1,
+            target_instructions: 1,
+            artifact_bytes: 1,
+        };
+        let odd = TargetScheduleRadixLayout::for_capacities(odd_capacities);
+        assert_eq!(odd.packed_bits, 0x8020_8209);
+        assert_eq!(odd.steps, 5);
+        let graph = lowering_compiler_graph(odd_capacities, LoweringTarget::Wasm).unwrap();
+        assert!(graph.repeated_regions().iter().any(|region| {
+            region.iterations == 3
+                && region.pass_count == 12
+                && graph.passes()[region.first_pass.index()].name
+                    == "lir.semantic.schedule.histogram.odd"
+        }));
+    }
+
+    #[test]
     fn both_target_graphs_have_common_semantic_lowering_and_target_output() {
         let capacities = LoweringCapacities {
             source_bytes: 48,
@@ -5203,7 +5306,7 @@ mod tests {
                         == "lir.semantic.execution_rank.step_a_to_b"
             }));
             assert!(graph.repeated_regions().iter().any(|region| {
-                region.iterations == 8
+                region.iterations == TargetScheduleRadixLayout::for_capacities(capacities).steps / 2
                     && region.pass_count == 12
                     && graph.passes()[region.first_pass.index()].name
                         == "lir.semantic.schedule.histogram.even"

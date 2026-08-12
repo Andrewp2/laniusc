@@ -1,33 +1,23 @@
-use std::collections::HashMap;
-
 use anyhow::Result;
-use encase::ShaderType;
 
 use crate::{
-    gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
+    gpu::{buffers::LaniusBuffer, operations::InclusiveBlockScanKernels},
     parser::buffers::ParserBuffers,
 };
 
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-/// Uniform parameters for one semantic-HIR prefix block scan step.
-pub struct Params {
-    pub n_blocks: u32,
-    pub scan_step: u32,
-}
-
-/// Reusable block-prefix scanner for semantic HIR and HIR list-rank scans.
+/// Reusable hierarchical scanner for semantic-HIR and compact-family block
+/// sums. Its output remains inclusive to preserve the parser scatter ABI.
 pub struct HirSemanticPrefixBlocksPass {
-    data: PassData,
+    scan: InclusiveBlockScanKernels,
 }
-
-crate::gpu::passes_core::impl_static_shader_pass!(
-    HirSemanticPrefixBlocksPass,
-    label: "hir_semantic_prefix_01_blocks",
-    shader: "parser/hir/semantic/prefix/01_blocks"
-);
 
 impl HirSemanticPrefixBlocksPass {
+    pub fn new(device: &wgpu::Device) -> Result<Self> {
+        Ok(Self {
+            scan: InclusiveBlockScanKernels::new(device)?,
+        })
+    }
+
     /// Records the semantic-HIR compaction block-prefix scan.
     pub fn record_scan(
         &self,
@@ -38,31 +28,28 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
+            &buffers.hir_semantic_prefix_scan,
             &buffers.hir_semantic_block_count,
             &buffers.hir_semantic_block_prefix_a,
             &buffers.hir_semantic_block_prefix_b,
-            &buffers.hir_semantic_prefix_scan_steps,
-            buffers.tree_n_node_blocks,
             "hir_semantic_prefix_01_blocks",
         )
     }
 
-    /// Records a prefix scan over token-bounded canonical HIR rows.
+    /// Records a scan over token-bounded canonical HIR rows.
     pub fn record_compact_scan(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
     ) -> Result<()> {
-        let n_blocks = buffers.hir_canonical_capacity.div_ceil(256).max(1);
         self.record_scan_inner(
             device,
             encoder,
+            &buffers.hir_canonical_prefix_scan,
             &buffers.hir_semantic_block_count,
             &buffers.hir_semantic_block_prefix_a,
             &buffers.hir_semantic_block_prefix_b,
-            &buffers.hir_canonical_prefix_scan_steps,
-            n_blocks,
             "hir_canonical_prefix_01_blocks",
         )
     }
@@ -77,11 +64,10 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
+            &buffers.hir_semantic_prefix_scan,
             &buffers.hir_struct_rank_block_sum,
             &buffers.hir_struct_rank_block_prefix_a,
             &buffers.hir_struct_rank_block_prefix_b,
-            &buffers.hir_semantic_prefix_scan_steps,
-            buffers.tree_n_node_blocks,
             "hir_struct_rank_prefix_01_blocks",
         )
     }
@@ -96,11 +82,10 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
+            &buffers.hir_semantic_prefix_scan,
             &buffers.hir_list_rank_block_sum,
             &buffers.hir_list_rank_block_prefix_a,
             &buffers.hir_list_rank_block_prefix_b,
-            &buffers.hir_semantic_prefix_scan_steps,
-            buffers.tree_n_node_blocks,
             "hir_list_rank_prefix_01_blocks",
         )
     }
@@ -115,11 +100,10 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
+            &buffers.hir_semantic_prefix_scan,
             &buffers.hir_enum_rank_block_sum,
             &buffers.hir_enum_rank_block_prefix_a,
             &buffers.hir_enum_rank_block_prefix_b,
-            &buffers.hir_semantic_prefix_scan_steps,
-            buffers.tree_n_node_blocks,
             "hir_enum_rank_prefix_01_blocks",
         )
     }
@@ -134,11 +118,10 @@ impl HirSemanticPrefixBlocksPass {
         self.record_scan_inner(
             device,
             encoder,
+            &buffers.hir_semantic_prefix_scan,
             &buffers.hir_match_rank_block_sum,
             &buffers.hir_match_rank_block_prefix_a,
             &buffers.hir_match_rank_block_prefix_b,
-            &buffers.hir_semantic_prefix_scan_steps,
-            buffers.tree_n_node_blocks,
             "hir_match_rank_prefix_01_blocks",
         )
     }
@@ -147,62 +130,20 @@ impl HirSemanticPrefixBlocksPass {
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        block_sum: &crate::gpu::buffers::LaniusBuffer<u32>,
-        block_prefix_a: &crate::gpu::buffers::LaniusBuffer<u32>,
-        block_prefix_b: &crate::gpu::buffers::LaniusBuffer<u32>,
-        steps: &[crate::parser::buffers::HirSemanticPrefixScanStep],
-        n_blocks: u32,
+        plan: &crate::gpu::operations::InclusiveBlockScanPlan,
+        block_sum: &LaniusBuffer<u32>,
+        block_prefix: &LaniusBuffer<u32>,
+        hierarchy: &LaniusBuffer<u32>,
         label: &'static str,
     ) -> Result<()> {
-        for step in steps {
-            let prefix_in = if step.read_from_a {
-                block_prefix_a
-            } else {
-                block_prefix_b
-            };
-            let prefix_out = if step.write_to_a {
-                block_prefix_a
-            } else {
-                block_prefix_b
-            };
-            let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-                ("gHirSemanticBlocks".into(), step.params.as_entire_binding()),
-                (
-                    "hir_semantic_block_sum".into(),
-                    block_sum.as_entire_binding(),
-                ),
-                (
-                    "hir_semantic_block_prefix_in".into(),
-                    prefix_in.as_entire_binding(),
-                ),
-                (
-                    "hir_semantic_block_prefix_out".into(),
-                    prefix_out.as_entire_binding(),
-                ),
-            ]);
-            let bind_group = bind_group::create_bind_group_from_reflection(
-                device,
-                Some(label),
-                &self.data.bind_group_layouts[0],
-                &self.data.reflection,
-                0,
-                &resources,
-            )?;
-
-            let [tgsx, tgsy, _] = self.data.thread_group_size;
-            let (gx, gy, gz) = plan_workgroups(
-                DispatchDim::D1,
-                InputElements::Elements1D(n_blocks),
-                [tgsx, tgsy, 1],
-            )?;
-            crate::gpu::passes_core::record_or_defer_compute_direct(
-                encoder,
-                &self.data,
-                &bind_group,
-                label,
-                (gx, gy, gz),
-            );
-        }
-        Ok(())
+        self.scan.record(
+            device,
+            encoder,
+            label,
+            plan,
+            block_sum,
+            block_prefix,
+            hierarchy,
+        )
     }
 }

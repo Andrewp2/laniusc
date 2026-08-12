@@ -4,10 +4,10 @@
 // declaration visibility records. It does not inspect token kinds, token
 // neighborhoods, source bytes, helper names, or function bodies.
 
-import fixed.key;
 import hir_records;
-import range_query;
 import status;
+import type_checker.modules.decl_lookup;
+import type_checker.modules.import_visible_lookup;
 
 struct Params
 {
@@ -36,15 +36,17 @@ StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_name_token;
-StructuredBuffer<uint> decl_value_key_count_out;
-StructuredBuffer<uint> decl_value_key_to_decl_id;
+StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
+StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> decl_lookup_state;
 StructuredBuffer<uint> import_visible_value_count_out;
 StructuredBuffer<uint> import_visible_value_key_module_id;
 StructuredBuffer<uint> import_visible_value_key_name_id;
 StructuredBuffer<uint> import_visible_value_key_to_decl_id;
 StructuredBuffer<uint> import_visible_value_status;
+StructuredBuffer<uint> import_visible_value_lookup_state;
 StructuredBuffer<uint> method_call_name_id;
 
 RWStructuredBuffer<uint> call_fn_index;
@@ -63,6 +65,7 @@ static const uint TY_UNKNOWN = 0u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint IMPORT_VISIBLE_STATUS_OK = 0u;
+static const uint HIR_ITEM_NAMESPACE_VALUE = 2u;
 
 static const uint ERR_CALL_MISMATCH = 10u;
 static const uint CALL_MISMATCH_ARITY = 0xffffff05u;
@@ -93,11 +96,6 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < active_token_count();
-}
-
-uint active_decl_count()
-{
-    return min(decl_value_key_count_out[0], gParams.n_tokens);
 }
 
 uint active_import_visible_count()
@@ -194,92 +192,26 @@ uint resolved_function_for_call_path(uint call_node)
     return valid_token(fn_i) && call_fn_index[fn_i] == fn_i ? fn_i : INVALID;
 }
 
-public struct DeclLookupKey
-{
-    uint module_id;
-    uint name_id;
-}
-
-public struct DeclFixedKey : IFixedU32RowKey<DeclLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint decl_i = decl_value_key_to_decl_id[row];
-        uint value = INVALID;
-        if (decl_i < gParams.n_tokens)
-            value = lane == 0u ? decl_module_id[decl_i] : decl_name_id[decl_i];
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-
-    public static uint key_lane(DeclLookupKey key, uint lane)
-    {
-        uint value = lane == 0u ? key.module_id : key.name_id;
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-}
-
-public struct DeclKeyCompare : IRowQueryCompare<DeclLookupKey>
-{
-    public static int compare(uint row, DeclLookupKey key)
-    {
-        return fixed_u32_row_key_compare<DeclLookupKey, DeclFixedKey>(
-            row,
-            key,
-            2u);
-    }
-}
-
-public struct VisibleLookupKey
-{
-    uint module_id;
-    uint name_id;
-}
-
-public struct VisibleFixedKey : IFixedU32RowKey<VisibleLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint value = lane == 0u
-            ? import_visible_value_key_module_id[row]
-            : import_visible_value_key_name_id[row];
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-
-    public static uint key_lane(VisibleLookupKey key, uint lane)
-    {
-        uint value = lane == 0u ? key.module_id : key.name_id;
-        return fixed_key_encode_nullable_u32(value, INVALID);
-    }
-}
-
-public struct VisibleKeyCompare : IRowQueryCompare<VisibleLookupKey>
-{
-    public static int compare(uint row, VisibleLookupKey key)
-    {
-        return fixed_u32_row_key_compare<VisibleLookupKey, VisibleFixedKey>(
-            row,
-            key,
-            2u);
-    }
-}
-
 uint find_local_decl(uint module_id, uint name_id)
 {
-    DeclLookupKey key;
-    key.module_id = module_id;
-    key.name_id = name_id;
-    uint row = find_equal_query<DeclLookupKey, DeclKeyCompare>(active_decl_count(), key);
-    return row == INVALID ? INVALID : decl_value_key_to_decl_id[row];
+    return decl_lookup_find(
+        module_id, HIR_ITEM_NAMESPACE_VALUE, name_id,
+        min(decl_count_out[0], gParams.n_tokens),
+        decl_module_id, decl_namespace, decl_name_id,
+        decl_lookup_state);
 }
 
 uint find_import_visible_decl(uint module_id, uint name_id)
 {
-    VisibleLookupKey key;
-    key.module_id = module_id;
-    key.name_id = name_id;
-    uint row = find_equal_query<VisibleLookupKey, VisibleKeyCompare>(
+    uint row = import_visible_lookup_find(
+        module_id,
+        name_id,
         active_import_visible_count(),
-        key);
+        gParams.n_tokens,
+        import_visible_value_key_module_id,
+        import_visible_value_key_name_id,
+        import_visible_value_key_to_decl_id,
+        import_visible_value_lookup_state);
     if (row == INVALID || import_visible_value_status[row] != IMPORT_VISIBLE_STATUS_OK)
         return INVALID;
     return import_visible_value_key_to_decl_id[row];

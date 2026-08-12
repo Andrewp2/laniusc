@@ -12,6 +12,7 @@ use laniusc_compiler::{
             PARSER_FEATURE_PREDICATES,
             PARSER_FEATURE_STRING_EXPRS,
             PARSER_FEATURE_TYPE_ALIASES,
+            PARSER_FEATURE_TYPE_ARGS,
         },
     },
     parser::{driver::GpuParser, tables::PrecomputedParseTables},
@@ -23,6 +24,14 @@ fn gpu_lexer_publishes_conservative_parser_family_flags() {
         let lexer = GpuLexer::new().await.expect("create GPU lexer");
         for (source, expected) in [
             ("fn main() -> i32 { return 0; }", 0),
+            (
+                "fn id<T>(value: T) -> T { return value; } fn main() -> i32 { return id(7); }",
+                PARSER_FEATURE_TYPE_ARGS,
+            ),
+            (
+                "fn main(x: i32) -> i32 { if (x < 7) { return x; } return 7; }",
+                0,
+            ),
             (
                 "fn main() -> i32 { let xs: [i32; 1] = [7]; return xs[0]; }",
                 PARSER_FEATURE_ARRAYS,
@@ -98,6 +107,14 @@ fn gpu_parser_type_arg_feature_ignores_comparisons_and_tracks_generics() {
             ),
             (
                 "fn id<T>(value: T) -> T { return value; } fn main() -> i32 { return id<i32>(7); }",
+                laniusc_compiler::lexer::features::PARSER_FEATURE_TYPE_ARGS,
+            ),
+            (
+                "fn id<T>(value: T) -> T { return value; } fn main() -> i32 { return id(7); }",
+                laniusc_compiler::lexer::features::PARSER_FEATURE_TYPE_ARGS,
+            ),
+            (
+                "fn agree_fifth<A, B, C, D, E>(a: A, b: B, c: C, d: D, left: E, right: E) -> i32 { return 0; } fn main() -> i32 { return agree_fifth(1, true, 2, false, 3, true); }",
                 laniusc_compiler::lexer::features::PARSER_FEATURE_TYPE_ARGS,
             ),
             (

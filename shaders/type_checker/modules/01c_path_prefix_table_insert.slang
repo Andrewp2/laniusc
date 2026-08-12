@@ -29,13 +29,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint capacity = rows * 2u;
+    uint epoch = gParams.reserved0;
     uint2 key = path_prefix_pair(row, gParams.step, path_prefix_base, path_prefix_id_in);
     uint first = path_prefix_first_slot(key.x, key.y, capacity);
     for (uint probe = 0u; probe < capacity; probe += 1u)
     {
         uint slot = (first + probe) % capacity;
         uint state = path_prefix_table_state[slot];
-        if (state != PATH_PREFIX_TABLE_EMPTY)
+        if (state != PATH_PREFIX_TABLE_EMPTY && path_prefix_table_epoch(state) == epoch)
         {
             uint owner = path_prefix_table_owner(state);
             uint2 occupied_key = path_prefix_pair(
@@ -48,13 +49,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
             continue;
         }
 
+        uint replacement = path_prefix_table_state_for_owner(row, epoch);
         uint prior = atomic_u32_compare_exchange(
             path_prefix_table_state,
             slot,
-            PATH_PREFIX_TABLE_EMPTY,
-            path_prefix_table_state_for_owner(row));
-        if (prior == PATH_PREFIX_TABLE_EMPTY)
+            state,
+            replacement);
+        if (prior == state)
             return;
+
+        if (path_prefix_table_epoch(prior) != epoch)
+            continue;
 
         uint prior_owner = path_prefix_table_owner(prior);
         uint2 prior_key = path_prefix_pair(

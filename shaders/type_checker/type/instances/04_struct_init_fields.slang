@@ -7,8 +7,7 @@
 // of scanning declaration subtrees.
 
 import hir_records;
-import fixed.key;
-import range_query;
+import type_checker.type.instances.struct_field_lookup;
 
 struct Params
 {
@@ -29,7 +28,7 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
-StructuredBuffer<uint> struct_field_key_order;
+StructuredBuffer<uint> struct_field_lookup_state;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -217,54 +216,6 @@ uint struct_node_for_decl_token(uint decl_token)
     return INVALID;
 }
 
-public struct StructFieldLookupKey
-{
-    uint struct_node;
-    uint name_id;
-}
-
-public struct StructFieldFixedKey : IFixedU32RowKey<StructFieldLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint field_row = row < active_compact_field_count() ? struct_field_key_order[row] : INVALID;
-        if (!valid_compact_field(field_row))
-            return 0u;
-        HirField field = compact_fields[field_row];
-        uint owner = field.owner;
-        uint token = field.name_token;
-        uint name_id = valid_token(token) ? name_id_by_token[token] : INVALID;
-        if (!valid_compact_node(owner) ||
-            compact_hir_core[owner].kind != HIR_STRUCT_ITEM || name_id == INVALID)
-            return 0u;
-        if (lane == 0u)
-            return fixed_key_encode_nullable_u32(owner, INVALID);
-        if (lane == 1u)
-            return fixed_key_encode_nullable_u32(name_id, INVALID);
-        return fixed_key_encode_nullable_u32(field_row, INVALID);
-    }
-
-    public static uint key_lane(StructFieldLookupKey key, uint lane)
-    {
-        if (lane == 0u)
-            return fixed_key_encode_nullable_u32(key.struct_node, INVALID);
-        if (lane == 1u)
-            return fixed_key_encode_nullable_u32(key.name_id, INVALID);
-        return 0u;
-    }
-}
-
-public struct StructFieldKeyCompare : IRowQueryCompare<StructFieldLookupKey>
-{
-    public static int compare(uint row, StructFieldLookupKey key)
-    {
-        return fixed_u32_row_key_compare<StructFieldLookupKey, StructFieldFixedKey>(
-            row,
-            key,
-            2u);
-    }
-}
-
 bool field_row_for_literal_field(uint struct_node, uint field_token, out uint field_row, out uint field_ordinal)
 {
     field_row = INVALID;
@@ -276,16 +227,9 @@ bool field_row_for_literal_field(uint struct_node, uint field_token, out uint fi
     if (field_name == INVALID)
         return false;
 
-    StructFieldLookupKey key;
-    key.struct_node = struct_node;
-    key.name_id = field_name;
-    QueryRange range = equal_range_query<StructFieldLookupKey, StructFieldKeyCompare>(
-        active_compact_field_count(),
-        key);
-    if (range.end != range.begin + 1u)
-        return false;
-
-    field_row = struct_field_key_order[range.begin];
+    field_row = struct_field_lookup_find(
+        struct_node, field_name, active_compact_field_count(), gParams.n_tokens,
+        compact_fields, name_id_by_token, struct_field_lookup_state);
     if (!valid_compact_field(field_row) ||
         compact_fields[field_row].owner != struct_node ||
         compact_hir_core[struct_node].kind != HIR_STRUCT_ITEM)

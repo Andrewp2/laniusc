@@ -511,13 +511,19 @@ pub(crate) fn reflected_bind_group_from_resources(
     )
 }
 
-/// Borrows the buffer behind one reflected binding resource.
-pub(crate) fn buffer_from_resources<'buffer>(
+/// Clones one reflected buffer binding without discarding its logical range.
+///
+/// Returning the raw `wgpu::Buffer` here is incorrect for arena-backed
+/// resources: rebinding that handle would silently reset the offset to zero
+/// and expose the entire physical uber-buffer.
+pub(crate) fn buffer_binding_from_resources<'buffer>(
     resources: &HashMap<String, wgpu::BindingResource<'buffer>>,
     name: &str,
-) -> Result<&'buffer wgpu::Buffer> {
+) -> Result<wgpu::BindingResource<'buffer>> {
     match resources.get(name) {
-        Some(wgpu::BindingResource::Buffer(binding)) => Ok(binding.buffer),
+        Some(wgpu::BindingResource::Buffer(binding)) => {
+            Ok(wgpu::BindingResource::Buffer(binding.clone()))
+        }
         Some(_) => Err(anyhow::anyhow!(
             "type-check resource `{name}` is not a buffer binding"
         )),

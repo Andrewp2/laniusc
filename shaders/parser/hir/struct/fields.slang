@@ -1,8 +1,4 @@
-// Clear parser-owned struct declaration and struct literal metadata.
-//
-// Follow-up struct passes seed grammar list links, pointer-jump field ordinals,
-// and scatter owner/count records. This pass intentionally does not inspect
-// source bytes, token spelling, helper names, or function bodies.
+// Initialize parser-owned struct declaration and struct literal metadata.
 
 struct Params
 {

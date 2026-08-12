@@ -1033,7 +1033,12 @@ impl GpuTypeChecker {
             scan_scratch,
         )?;
 
-        let root_steps = u32::BITS - (capacity - 1).leading_zeros();
+        let mut root_steps = 0u32;
+        let mut covered_depth = 1u64;
+        while covered_depth < u64::from(capacity) {
+            covered_depth = covered_depth.saturating_mul(16);
+            root_steps += 1;
+        }
         let final_root_owner = if root_steps & 1 == 0 {
             &root_owner_a
         } else {

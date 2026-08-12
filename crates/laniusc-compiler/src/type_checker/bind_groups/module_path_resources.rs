@@ -36,8 +36,8 @@ pub(super) fn register_module_path_resources<'a>(
     resources.buffer("import_record_count_out", &module_path.import_count_out);
     resources.buffer("decl_type_public_prefix", &module_path.decl_status);
     resources.buffer(
-        "sorted_module_key_order",
-        &module_path.module_key_to_module_id,
+        "module_by_canonical_id",
+        &module_path.module_by_canonical_id,
     );
     resources.buffer("path_prefix_id", &module_path.path_prefix_id_a);
     Ok(())

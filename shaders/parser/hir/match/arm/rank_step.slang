@@ -1,4 +1,4 @@
-// Pointer-jump match-arm and match-pattern-payload links.
+// Follow bounded runs of match-arm and match-pattern-payload links.
 
 import token_features;
 
@@ -33,6 +33,7 @@ RWStructuredBuffer<uint> hir_match_pattern_parent_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint LINKS_PER_STEP = 16u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -64,17 +65,23 @@ void jump_arm(uint node)
         return;
     }
 
-    uint ancestor_owner = hir_match_arm_owner_in[link];
-    uint ancestor_link = hir_match_arm_link_in[link];
-    uint ancestor_rank = hir_match_arm_rank_in[link];
-    uint resolved_owner = valid_node(ancestor_owner) ? ancestor_owner : INVALID;
-
-    hir_match_arm_owner_out[node] = resolved_owner;
-    hir_match_arm_rank_out[node] = rank + ancestor_rank;
-    hir_match_arm_link_out[node] =
-        valid_node(resolved_owner) || !valid_node(ancestor_link)
-        ? INVALID
-        : ancestor_link;
+    for (uint hop = 0u; hop < LINKS_PER_STEP; ++hop)
+    {
+        if (valid_node(owner) || !valid_node(link) || link == node) break;
+        rank += hir_match_arm_rank_in[link];
+        uint ancestor_owner = hir_match_arm_owner_in[link];
+        uint ancestor_link = hir_match_arm_link_in[link];
+        if (valid_node(ancestor_owner))
+        {
+            owner = ancestor_owner;
+            link = INVALID;
+            break;
+        }
+        link = valid_node(ancestor_link) ? ancestor_link : INVALID;
+    }
+    hir_match_arm_owner_out[node] = valid_node(owner) ? owner : INVALID;
+    hir_match_arm_rank_out[node] = rank;
+    hir_match_arm_link_out[node] = link;
 }
 
 void jump_payload(uint node)
@@ -83,12 +90,9 @@ void jump_payload(uint node)
     uint link = hir_match_payload_link_in[node];
     uint rank = hir_match_payload_rank_in[node];
     uint parent_pattern = hir_match_pattern_parent_in[node];
-    if (!valid_node(parent_pattern) && valid_node(link) && link != node)
-        parent_pattern = hir_match_pattern_parent_in[link];
     hir_match_pattern_parent_out[node] = valid_node(parent_pattern)
         ? parent_pattern
         : INVALID;
-
     if (valid_node(owner) || !valid_node(link) || link == node)
     {
         hir_match_payload_owner_out[node] =
@@ -98,17 +102,28 @@ void jump_payload(uint node)
         return;
     }
 
-    uint ancestor_owner = hir_match_payload_owner_in[link];
-    uint ancestor_link = hir_match_payload_link_in[link];
-    uint ancestor_rank = hir_match_payload_rank_in[link];
-    uint resolved_owner = valid_node(ancestor_owner) ? ancestor_owner : INVALID;
-
-    hir_match_payload_owner_out[node] = resolved_owner;
-    hir_match_payload_rank_out[node] = rank + ancestor_rank;
-    hir_match_payload_link_out[node] =
-        valid_node(resolved_owner) || !valid_node(ancestor_link)
-        ? INVALID
-        : ancestor_link;
+    for (uint hop = 0u; hop < LINKS_PER_STEP; ++hop)
+    {
+        if (valid_node(owner) || !valid_node(link) || link == node) break;
+        if (!valid_node(parent_pattern))
+            parent_pattern = hir_match_pattern_parent_in[link];
+        rank += hir_match_payload_rank_in[link];
+        uint ancestor_owner = hir_match_payload_owner_in[link];
+        uint ancestor_link = hir_match_payload_link_in[link];
+        if (valid_node(ancestor_owner))
+        {
+            owner = ancestor_owner;
+            link = INVALID;
+            break;
+        }
+        link = valid_node(ancestor_link) ? ancestor_link : INVALID;
+    }
+    hir_match_pattern_parent_out[node] = valid_node(parent_pattern)
+        ? parent_pattern
+        : INVALID;
+    hir_match_payload_owner_out[node] = valid_node(owner) ? owner : INVALID;
+    hir_match_payload_rank_out[node] = rank;
+    hir_match_payload_link_out[node] = link;
 }
 
 [shader("compute")]

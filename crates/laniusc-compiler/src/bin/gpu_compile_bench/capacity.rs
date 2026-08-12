@@ -34,7 +34,8 @@ use super::Phase;
 pub(super) const RESIDENT_TREE_PRODUCTION_CAPACITY_PER_TOKEN: usize = 10;
 pub(super) const TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
 pub(super) const TYPECHECK_CALL_ARG_SLOT_STRIDE: usize = 4;
-pub(super) const TYPECHECK_NAME_RADIX_BUCKETS: usize = 257;
+pub(super) const TYPECHECK_RADIX_U8_BUCKET_COUNT: usize = 256;
+pub(super) const TYPECHECK_NAME_HASH_TABLE_ROWS_PER_BLOCK: usize = 257;
 pub(super) const TYPECHECK_LANGUAGE_SYMBOL_COUNT: usize = 67;
 pub(super) const TYPECHECK_HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: usize = 64;
 
@@ -528,9 +529,9 @@ pub(super) fn print_capacity_floors(
         human_bytes(allocation_floor.pack_streams)
     );
     println!(
-        "estimate typecheck_u32_buffer_floor total={} names_radix={} module_paths={} visible_hir_decls={} calls={} type_metadata={} methods={} control={} core={}",
+        "estimate typecheck_u32_buffer_floor total={} names_hash={} module_paths={} visible_hir_decls={} calls={} type_metadata={} methods={} control={} core={}",
         human_bytes(typecheck_floor.total),
-        human_bytes(typecheck_floor.names_radix),
+        human_bytes(typecheck_floor.names_hash),
         human_bytes(typecheck_floor.module_paths),
         human_bytes(typecheck_floor.visible_hir_decls),
         human_bytes(typecheck_floor.calls),
@@ -611,7 +612,7 @@ fn x86_graph_capacity_estimate(
 
 pub(super) struct TypecheckAllocationFloor {
     total: usize,
-    names_radix: usize,
+    names_hash: usize,
     module_paths: usize,
     visible_hir_decls: usize,
     calls: usize,
@@ -633,9 +634,9 @@ pub(super) fn typecheck_allocation_floor_bytes(
         .saturating_add(TYPECHECK_LANGUAGE_SYMBOL_COUNT)
         .max(1);
     let name_blocks = name_capacity.div_ceil(256).max(1);
-    let name_radix_histogram_len = name_blocks.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS);
+    let name_hash_table_len = name_blocks.saturating_mul(TYPECHECK_NAME_HASH_TABLE_ROWS_PER_BLOCK);
     let hir_blocks = hir_node_capacity.div_ceil(256).max(1);
-    let record_radix_histogram_len = token_blocks.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS);
+    let record_radix_histogram_len = token_blocks.saturating_mul(TYPECHECK_RADIX_U8_BUCKET_COUNT);
     let source_file_capacity = source_file_capacity.max(1);
     let module_capacity = source_file_capacity;
     let import_visible_capacity = if source_file_capacity <= 1 {
@@ -645,32 +646,23 @@ pub(super) fn typecheck_allocation_floor_bytes(
     };
     let import_record_capacity =
         typecheck_import_record_capacity(token_capacity, source_file_capacity);
-    let module_blocks = module_capacity.div_ceil(256).max(1);
-    let import_visible_blocks = import_visible_capacity.div_ceil(256).max(1);
-    let module_radix_histogram_len = module_blocks.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS);
-    let import_visible_radix_histogram_len =
-        import_visible_blocks.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS);
-    let module_path_key_radix_histogram_len = record_radix_histogram_len
-        .max(module_radix_histogram_len)
-        .max(import_visible_radix_histogram_len);
     let hir_visible_decl_tree_leaf_count = token_capacity
         .div_ceil(TYPECHECK_HIR_VISIBLE_DECL_ROW_BLOCK_SIZE)
         .max(1);
     let hir_visible_decl_tree_leaf_base = hir_visible_decl_tree_leaf_count.next_power_of_two();
     let hir_visible_decl_radix_histogram_len =
-        token_blocks.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS);
+        token_blocks.saturating_mul(TYPECHECK_RADIX_U8_BUCKET_COUNT);
 
     let core_u32 = 12usize
         .saturating_mul(token_capacity)
         .saturating_add(TYPECHECK_LANGUAGE_SYMBOL_COUNT);
-    let names_radix_u32 = 4usize
+    let names_hash_u32 = 4usize
         .saturating_mul(token_capacity)
         .saturating_add(3usize.saturating_mul(token_blocks))
         .saturating_add(2)
         .saturating_add(11usize.saturating_mul(name_capacity))
         .saturating_add(token_capacity)
-        .saturating_add(2usize.saturating_mul(name_radix_histogram_len))
-        .saturating_add(2usize.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS))
+        .saturating_add(2usize.saturating_mul(name_hash_table_len))
         .saturating_add(3)
         .saturating_add(1);
     let control_u32 = 9usize
@@ -703,25 +695,18 @@ pub(super) fn typecheck_allocation_floor_bytes(
         .saturating_add(call_arg_record_u32)
         .saturating_add(call_arg_node_u32)
         .saturating_add(compact_call_arg_row_u32);
-    let method_key_radix_scratch_u32 = if hir_node_capacity >= name_radix_histogram_len {
-        0
-    } else {
-        2usize.saturating_mul(name_radix_histogram_len)
-    };
-    let methods_u32 = 2usize
+    let methods_u32 = 4usize
         .saturating_mul(token_capacity)
+        .saturating_add(hir_node_capacity)
         .saturating_add(source_file_capacity)
-        .saturating_add(method_key_radix_scratch_u32)
-        .saturating_add(2usize.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS))
         .saturating_add(1);
     let type_metadata_u32 = 2usize
         .saturating_mul(TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE)
         .saturating_mul(token_capacity);
-    let module_path_radix_scratch_u32 = if hir_node_capacity >= module_path_key_radix_histogram_len
-    {
+    let module_decl_radix_scratch_u32 = if hir_node_capacity >= record_radix_histogram_len {
         0
     } else {
-        2usize.saturating_mul(module_path_key_radix_histogram_len)
+        2usize.saturating_mul(record_radix_histogram_len)
     };
     let module_path_decl_tree_scratch_u32 = if hir_node_capacity >= token_capacity {
         0
@@ -738,27 +723,27 @@ pub(super) fn typecheck_allocation_floor_bytes(
         // HIR-indexed module/path scratch: shared record prefix/local scan and
         // owner map. Family bits/flags reuse later typecheck/codegen records;
         // path prefixes reuse the shared prefix and are retained through
-        // path_id_by_owner_hir. Module-key radix scratch and ten declaration
-        // record tables borrow dead parser workspaces when those workspaces
-        // are large enough. The five x86-retained declaration metadata tables
-        // borrow typecheck name-radix scratch after the name pipeline records.
+        // path_id_by_owner_hir. Declaration-grouping radix scratch and ten
+        // declaration record tables borrow dead parser workspaces when those
+        // workspaces are large enough. The five x86-retained declaration
+        // metadata tables borrow dead name-hash workspace after interning.
         .saturating_add(3usize.saturating_mul(hir_node_capacity))
         .saturating_add(3usize.saturating_mul(hir_blocks))
-        .saturating_add(module_path_radix_scratch_u32)
+        .saturating_add(module_decl_radix_scratch_u32)
         .saturating_add(module_path_decl_tree_scratch_u32)
-        .saturating_add(2usize.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS))
+        .saturating_add(2usize.saturating_mul(TYPECHECK_RADIX_U8_BUCKET_COUNT))
         .saturating_add(33);
     let visible_hir_decls_u32 = 1usize
         .saturating_add(3)
         .saturating_add(6usize.saturating_mul(token_capacity))
         .saturating_add(2usize.saturating_mul(hir_visible_decl_radix_histogram_len))
-        .saturating_add(2usize.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS))
+        .saturating_add(2usize.saturating_mul(TYPECHECK_RADIX_U8_BUCKET_COUNT))
         .saturating_add(hir_visible_decl_tree_leaf_base.saturating_mul(2));
 
     TypecheckAllocationFloor {
         total: u32_words_to_bytes(
             core_u32
-                .saturating_add(names_radix_u32)
+                .saturating_add(names_hash_u32)
                 .saturating_add(module_paths_u32)
                 .saturating_add(visible_hir_decls_u32)
                 .saturating_add(calls_u32)
@@ -766,7 +751,7 @@ pub(super) fn typecheck_allocation_floor_bytes(
                 .saturating_add(methods_u32)
                 .saturating_add(control_u32),
         ),
-        names_radix: u32_words_to_bytes(names_radix_u32),
+        names_hash: u32_words_to_bytes(names_hash_u32),
         module_paths: u32_words_to_bytes(module_paths_u32),
         visible_hir_decls: u32_words_to_bytes(visible_hir_decls_u32),
         calls: u32_words_to_bytes(calls_u32),

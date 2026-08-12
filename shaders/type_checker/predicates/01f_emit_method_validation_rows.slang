@@ -51,12 +51,8 @@ void validate_impl_owner_method_counts(uint owner)
     if (owner_status != INVALID && owner_status != PREDICATE_STATUS_OK) return;
     uint trait_hir = trait_decl_for_impl(owner);
     if (!valid_hir(trait_hir)) return;
-    QueryRange trait_methods = method_contract_range_for_owner(trait_hir);
-    QueryRange impl_methods = method_contract_range_for_owner(owner);
-    if (!method_contract_range_matches_owner(trait_hir, trait_methods) ||
-        !method_contract_range_matches_owner(owner, impl_methods)) return;
-    uint trait_count = trait_methods.end - trait_methods.begin;
-    uint impl_count = impl_methods.end - impl_methods.begin;
+    uint trait_count = method_contract_count_for_owner(trait_hir);
+    uint impl_count = method_contract_count_for_owner(owner);
     if (trait_count <= impl_count) return;
     uint token = compact_hir_core[owner].token_start;
     publish_validation(

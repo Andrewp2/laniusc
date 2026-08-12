@@ -142,6 +142,9 @@ pub struct PassAccess {
     pub resource: ResourceId,
     pub mode: AccessMode,
     pub reflected: bool,
+    /// The pass establishes this binding's contents before any invocation
+    /// reads them, so no earlier producer is required.
+    pub initializes_before_read: bool,
     /// Shader invocation within one recorded compute batch.
     pub invocation: u16,
 }
@@ -153,6 +156,7 @@ impl PassAccess {
             resource,
             mode: AccessMode::Read,
             reflected: true,
+            initializes_before_read: false,
             invocation: 0,
         }
     }
@@ -163,6 +167,7 @@ impl PassAccess {
             resource,
             mode: AccessMode::Write,
             reflected: true,
+            initializes_before_read: false,
             invocation: 0,
         }
     }
@@ -173,6 +178,18 @@ impl PassAccess {
             resource,
             mode: AccessMode::ReadWrite,
             reflected: true,
+            initializes_before_read: false,
+            invocation: 0,
+        }
+    }
+
+    pub const fn initialize_read_write(binding: &'static str, resource: ResourceId) -> Self {
+        Self {
+            binding,
+            resource,
+            mode: AccessMode::ReadWrite,
+            reflected: true,
+            initializes_before_read: true,
             invocation: 0,
         }
     }
@@ -186,6 +203,7 @@ impl PassAccess {
             resource,
             mode: AccessMode::Read,
             reflected: false,
+            initializes_before_read: false,
             invocation: 0,
         }
     }
@@ -718,7 +736,10 @@ impl CompilerGraphWorkspace {
                 });
                 let buffer: LaniusBuffer<u8> =
                     LaniusBuffer::new_labeled((raw, plan.bytes), plan.bytes as usize, arena_label);
-                crate::gpu::buffers::register_resettable_buffer(&buffer);
+                crate::gpu::buffers::register_resettable_buffer(
+                    &buffer,
+                    crate::gpu::buffers::JobResetPolicy::ClearBeforeJob,
+                );
                 buffer
             })
             .collect::<Vec<_>>();
@@ -932,13 +953,6 @@ impl MaterializedCompilerGraph {
 
     pub(crate) fn u32_buffer(&self, name: &str) -> anyhow::Result<LaniusBuffer<u32>> {
         self.buffer(name)
-    }
-
-    pub(crate) fn optional_buffer<T>(&self, name: &str) -> anyhow::Result<Option<LaniusBuffer<T>>> {
-        self.graph
-            .resource_id(name)
-            .map(|_| self.buffer(name))
-            .transpose()
     }
 }
 
@@ -1621,51 +1635,6 @@ pub struct RadixSortGraphPasses {
     pub temporary_to_order: RadixSortGraphStepPasses,
 }
 
-/// Pass names for a radix implementation whose block-prefix relation is
-/// scanned hierarchically across workgroups.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct HierarchicalRadixSortGraphStepPasses {
-    pub histogram: &'static str,
-    pub bucket_local: &'static str,
-    pub bucket_chunks: &'static str,
-    pub bucket_apply: &'static str,
-    pub bucket_bases: &'static str,
-    pub scatter: &'static str,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct HierarchicalRadixSortGraphPasses {
-    pub order_to_temporary: HierarchicalRadixSortGraphStepPasses,
-    pub temporary_to_order: HierarchicalRadixSortGraphStepPasses,
-}
-
-impl HierarchicalRadixSortGraphPasses {
-    pub fn names(self) -> [&'static str; 12] {
-        let a = self.order_to_temporary;
-        let b = self.temporary_to_order;
-        [
-            a.histogram,
-            a.bucket_local,
-            a.bucket_chunks,
-            a.bucket_apply,
-            a.bucket_bases,
-            a.scatter,
-            b.histogram,
-            b.bucket_local,
-            b.bucket_chunks,
-            b.bucket_apply,
-            b.bucket_bases,
-            b.scatter,
-        ]
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RadixSortGraphSchedule {
-    Standard(RadixSortGraphPasses),
-    Hierarchical(HierarchicalRadixSortGraphPasses),
-}
-
 impl RadixSortGraphPasses {
     pub fn names(self) -> [&'static str; 8] {
         [
@@ -1721,97 +1690,11 @@ pub struct RadixSortGraph {
     pub phase: CompilerPhase,
     pub dispatch_domain: ResourceDomain,
     pub digit_steps: u32,
-    pub schedule: RadixSortGraphSchedule,
+    /// Odd schedules initialize `temporary_order` in their first histogram and
+    /// begin with the temporary-to-order direction, avoiding a final copy.
+    pub starts_in_temporary: bool,
+    pub schedule: RadixSortGraphPasses,
     pub resources: RadixSortGraphResources,
-}
-
-fn hierarchical_radix_sort_step_passes(
-    graph: &CompilerGraphBuilder,
-    phase: CompilerPhase,
-    dispatch_domain: ResourceDomain,
-    passes: HierarchicalRadixSortGraphStepPasses,
-    resources: &RadixSortGraphResources,
-    input: ResourceId,
-    output: ResourceId,
-) -> Vec<PassDesc> {
-    let r = resources;
-    let name = |resource: ResourceId| graph.resources[resource.index()].name;
-    let key_reads = || {
-        r.keys
-            .iter()
-            .map(|key| PassAccess::read(key.binding, key.resource))
-            .collect::<Vec<_>>()
-    };
-    let mut histogram_accesses = key_reads();
-    histogram_accesses.extend([
-        PassAccess::read(r.count_binding, r.count),
-        PassAccess::read("radix_order_in", input),
-        PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
-        PassAccess::write("radix_block_histogram", r.histogram),
-    ]);
-    let mut scatter_accesses = key_reads();
-    scatter_accesses.extend([
-        PassAccess::read(r.count_binding, r.count),
-        PassAccess::read("radix_order_in", input),
-        PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
-        PassAccess::read("radix_block_bucket_prefix", r.bucket_prefix),
-        PassAccess::read("radix_bucket_base", r.bucket_base),
-        PassAccess::write("radix_order_out", output),
-    ]);
-    vec![
-        PassDesc {
-            name: passes.histogram,
-            phase,
-            dispatch_domain,
-            accesses: histogram_accesses,
-        },
-        PassDesc {
-            name: passes.bucket_local,
-            phase,
-            dispatch_domain,
-            accesses: vec![
-                PassAccess::read("radix_count", r.count),
-                PassAccess::read_write("radix_block_histogram", r.histogram),
-                PassAccess::write("radix_block_bucket_prefix", r.bucket_prefix),
-                PassAccess::write("radix_bucket_total", r.bucket_total),
-            ],
-        },
-        PassDesc {
-            name: passes.bucket_chunks,
-            phase,
-            dispatch_domain,
-            accesses: vec![
-                PassAccess::read("radix_count", r.count),
-                PassAccess::read_write("radix_block_histogram", r.histogram),
-                PassAccess::read_write("radix_bucket_total", r.bucket_total),
-            ],
-        },
-        PassDesc {
-            name: passes.bucket_apply,
-            phase,
-            dispatch_domain,
-            accesses: vec![
-                PassAccess::read("radix_count", r.count),
-                PassAccess::read("radix_block_histogram", r.histogram),
-                PassAccess::read_write("radix_block_bucket_prefix", r.bucket_prefix),
-            ],
-        },
-        PassDesc {
-            name: passes.bucket_bases,
-            phase,
-            dispatch_domain,
-            accesses: vec![
-                PassAccess::read("radix_bucket_total", r.bucket_total),
-                PassAccess::write("radix_bucket_base", r.bucket_base),
-            ],
-        },
-        PassDesc {
-            name: passes.scatter,
-            phase,
-            dispatch_domain,
-            accesses: scatter_accesses,
-        },
-    ]
 }
 
 fn validate_radix_sort_resources(
@@ -1869,7 +1752,7 @@ fn radix_sort_step_passes(
     let mut histogram_accesses = key_reads();
     histogram_accesses.extend([
         PassAccess::read(r.count_binding, r.count),
-        PassAccess::read("radix_order_in", input),
+        PassAccess::initialize_read_write("radix_order_in", input),
         PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
         PassAccess::write("radix_block_histogram", r.histogram),
     ]);
@@ -1922,63 +1805,51 @@ impl CompilerGraphFragment for RadixSortGraph {
     type Output = ResourceId;
 
     fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
-        let label = match self.schedule {
-            RadixSortGraphSchedule::Standard(passes) => passes.order_to_temporary.histogram,
-            RadixSortGraphSchedule::Hierarchical(passes) => passes.order_to_temporary.histogram,
-        };
-        if self.digit_steps == 0 || self.digit_steps % 2 != 0 {
+        let label = self.schedule.order_to_temporary.histogram;
+        if self.digit_steps == 0 {
             return Err(format!(
-                "radix sort {} requires a positive even digit-step count, got {}",
+                "radix sort {} requires a positive digit-step count, got {}",
                 label, self.digit_steps,
             ));
         }
         let r = &self.resources;
         validate_radix_sort_resources(graph, label, r)?;
-        let body = match self.schedule {
-            RadixSortGraphSchedule::Standard(passes) => {
-                let mut body = radix_sort_step_passes(
-                    graph,
-                    self.phase,
-                    self.dispatch_domain,
-                    passes.order_to_temporary,
-                    r,
-                    r.order,
-                    r.temporary_order,
-                );
-                body.extend(radix_sort_step_passes(
-                    graph,
-                    self.phase,
-                    self.dispatch_domain,
-                    passes.temporary_to_order,
-                    r,
-                    r.temporary_order,
-                    r.order,
-                ));
-                body
-            }
-            RadixSortGraphSchedule::Hierarchical(passes) => {
-                let mut body = hierarchical_radix_sort_step_passes(
-                    graph,
-                    self.phase,
-                    self.dispatch_domain,
-                    passes.order_to_temporary,
-                    r,
-                    r.order,
-                    r.temporary_order,
-                );
-                body.extend(hierarchical_radix_sort_step_passes(
-                    graph,
-                    self.phase,
-                    self.dispatch_domain,
-                    passes.temporary_to_order,
-                    r,
-                    r.temporary_order,
-                    r.order,
-                ));
-                body
-            }
+        let order_to_temporary = || {
+            radix_sort_step_passes(
+                graph,
+                self.phase,
+                self.dispatch_domain,
+                self.schedule.order_to_temporary,
+                r,
+                r.order,
+                r.temporary_order,
+            )
         };
-        graph.add_repeated_region(self.digit_steps / 2, body)?;
+        let temporary_to_order = || {
+            radix_sort_step_passes(
+                graph,
+                self.phase,
+                self.dispatch_domain,
+                self.schedule.temporary_to_order,
+                r,
+                r.temporary_order,
+                r.order,
+            )
+        };
+        let mut body = if self.starts_in_temporary {
+            temporary_to_order()
+        } else {
+            order_to_temporary()
+        };
+        body.extend(if self.starts_in_temporary {
+            order_to_temporary()
+        } else {
+            temporary_to_order()
+        });
+        // An odd schedule executes only the first half of its final modeled
+        // pair. Modeling the complete pair conservatively extends scratch
+        // liveness without inventing a runtime copy pass.
+        graph.add_repeated_region(self.digit_steps.div_ceil(2), body)?;
         Ok(r.order)
     }
 }
@@ -2001,9 +1872,9 @@ impl CompilerGraphFragment for RadixSortPairGraph {
     type Output = (ResourceId, ResourceId);
 
     fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
-        if self.digit_steps == 0 || self.digit_steps % 2 != 0 {
+        if self.digit_steps == 0 {
             return Err(format!(
-                "paired radix sorts require a positive even digit-step count, got {}",
+                "paired radix sorts require a positive digit-step count, got {}",
                 self.digit_steps,
             ));
         }
@@ -2089,7 +1960,7 @@ impl CompilerGraphFragment for RadixSortPairGraph {
                 self.right.order,
             ),
         ));
-        graph.add_repeated_region(self.digit_steps / 2, body)?;
+        graph.add_repeated_region(self.digit_steps.div_ceil(2), body)?;
         Ok((self.left.order, self.right.order))
     }
 }
@@ -2658,6 +2529,20 @@ impl CompilerGraphBuilder {
         Ok(())
     }
 
+    /// Gives every graph-owned workspace relation a distinct physical identity.
+    ///
+    /// This is the conservative boundary for a phase whose handwritten
+    /// recorder is not yet represented by the graph in exact execution order.
+    /// Such a phase may still use the graph for reflected bindings and resource
+    /// ownership, but it must not infer aliasing from an incomplete schedule.
+    pub fn dedicate_all_workspace(&mut self) {
+        for resource in &mut self.resources {
+            if resource.class == ResourceClass::Workspace {
+                resource.class = ResourceClass::Resident;
+            }
+        }
+    }
+
     /// Gives one physical ownership identity another logical operation name.
     pub fn add_resource_alias(
         &mut self,
@@ -3181,6 +3066,7 @@ impl CompilerGraphBuilder {
                 resource: binding.resource,
                 mode,
                 reflected: true,
+                initializes_before_read: false,
                 invocation: 0,
             });
         }
@@ -3515,7 +3401,10 @@ impl CompilerGraphBuilder {
                 first_pass[resource_index].get_or_insert(pass_id);
                 last_pass[resource_index] = Some(pass_id);
 
-                if access.mode.reads() && !initialized[resource_index] {
+                if access.mode.reads()
+                    && !initialized[resource_index]
+                    && !access.initializes_before_read
+                {
                     return Err(format!(
                         "compiler pass {} reads {} before it is initialized",
                         pass.name, resource.name,
@@ -4422,7 +4311,8 @@ mod tests {
                 phase: CompilerPhase::TypeCheck,
                 dispatch_domain: ResourceDomain::Declarations,
                 digit_steps: 6,
-                schedule: RadixSortGraphSchedule::Standard(RadixSortGraphPasses {
+                starts_in_temporary: false,
+                schedule: RadixSortGraphPasses {
                     order_to_temporary: RadixSortGraphStepPasses {
                         histogram: "sort.a.histogram",
                         bucket_prefix: "sort.a.prefix",
@@ -4435,7 +4325,7 @@ mod tests {
                         bucket_bases: "sort.b.bases",
                         scatter: "sort.b.scatter",
                     },
-                }),
+                },
                 resources,
             })
             .unwrap();
@@ -4560,7 +4450,7 @@ mod tests {
     }
 
     #[test]
-    fn radix_sort_rejects_an_odd_digit_step_count() {
+    fn radix_sort_models_an_odd_digit_step_count_as_a_conservative_pair() {
         let mut builder = CompilerGraphBuilder::new();
         let mut add = |name, class| {
             builder
@@ -4582,12 +4472,13 @@ mod tests {
         let bucket_prefix = add("odd.bucket_prefix", ResourceClass::Workspace);
         let bucket_total = add("odd.bucket_total", ResourceClass::Workspace);
         let bucket_base = add("odd.bucket_base", ResourceClass::Workspace);
-        let error = builder
+        let result = builder
             .add_fragment(RadixSortGraph {
                 phase: CompilerPhase::TypeCheck,
                 dispatch_domain: ResourceDomain::Declarations,
                 digit_steps: 3,
-                schedule: RadixSortGraphSchedule::Standard(RadixSortGraphPasses {
+                starts_in_temporary: true,
+                schedule: RadixSortGraphPasses {
                     order_to_temporary: RadixSortGraphStepPasses {
                         histogram: "odd.a.histogram",
                         bucket_prefix: "odd.a.prefix",
@@ -4600,7 +4491,7 @@ mod tests {
                         bucket_bases: "odd.b.bases",
                         scatter: "odd.b.scatter",
                     },
-                }),
+                },
                 resources: RadixSortGraphResources {
                     count,
                     count_binding: "odd.count",
@@ -4618,8 +4509,10 @@ mod tests {
                     bucket_base,
                 },
             })
-            .unwrap_err();
-        assert!(error.contains("positive even digit-step count"), "{error}");
+            .unwrap();
+        assert_eq!(result, order);
+        assert_eq!(builder.repeated_regions.len(), 1);
+        assert_eq!(builder.repeated_regions[0].iterations, 2);
     }
 
     #[test]
@@ -4888,6 +4781,31 @@ mod tests {
                 .unwrap_err()
                 .contains("before it is initialized")
         );
+    }
+
+    #[test]
+    fn graph_accepts_a_pass_that_initializes_before_reading() {
+        let mut builder = CompilerGraphBuilder::new();
+        let value = builder
+            .add_resource(workspace("value", ResourceDomain::Types, 4))
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "initialize_then_read",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::initialize_read_write("value", value)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "read_after_initialization",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::read("value", value)],
+            })
+            .unwrap();
+        builder.build().unwrap();
     }
 
     #[test]

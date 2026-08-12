@@ -9,14 +9,14 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
-/// Uniform parameters for struct declaration field extraction.
+/// Uniform parameters for struct metadata initialization.
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
     pub retain_debug_rows: u32,
 }
 
-/// Pass that records field-list metadata for struct declarations.
+/// Pass that initializes struct declaration and literal metadata.
 pub struct HirStructFieldsPass {
     data: PassData,
 }

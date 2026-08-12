@@ -32,11 +32,9 @@ const ARGUMENT_MATCH_OUTPUTS: &[(&str, AccessMode)] = &[
     ("call_generic_claim_type", AccessMode::Write),
     ("call_generic_claim_ref_tag", AccessMode::Write),
     ("call_generic_claim_ref_payload", AccessMode::Write),
-    ("call_generic_claim_order", AccessMode::Write),
     ("call_const_claim_callee", AccessMode::Write),
     ("call_const_claim_slot", AccessMode::Write),
     ("call_const_claim_len", AccessMode::Write),
-    ("call_const_claim_order", AccessMode::Write),
 ];
 const GENERIC_CLAIM_OUTPUTS: &[(&str, AccessMode)] = &[
     ("call_generic_claim_callee", AccessMode::Write),
@@ -45,7 +43,6 @@ const GENERIC_CLAIM_OUTPUTS: &[(&str, AccessMode)] = &[
     ("call_generic_claim_ref_tag", AccessMode::Write),
     ("call_generic_claim_ref_payload", AccessMode::Write),
     ("call_generic_claim_arg_row", AccessMode::Write),
-    ("call_generic_claim_order", AccessMode::Write),
 ];
 
 pub(in crate::type_checker) const CALLS_CLEAR: ReflectedComputeSpec =
@@ -154,6 +151,29 @@ pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_EMIT: ReflectedComputeSpec
     "type_checker/calls/03a1_emit_generic_claims"
 )
 .with_modes(GENERIC_CLAIM_OUTPUTS);
+pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_INDEX_CLEAR: ReflectedComputeSpec =
+    call_pass!(
+        "generic_claims.index.clear",
+        CallArguments,
+        "type_checker/calls/03a2_clear_claim_lookup"
+    )
+    .with_aliases(&[
+        typecheck_resource!("claim_count_in" => "call_generic_claim_count_out", Read),
+        typecheck_resource!("claim_lookup_head" => "call_generic_claim_lookup_head", Write),
+    ]);
+pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_INDEX_BUILD: ReflectedComputeSpec =
+    call_pass!(
+        "generic_claims.index.build",
+        CallArguments,
+        "type_checker/calls/03a3_build_claim_lookup"
+    )
+    .with_aliases(&[
+        typecheck_resource!("claim_count_in" => "call_generic_claim_count_out", Read),
+        typecheck_resource!("claim_callee" => "call_generic_claim_callee", Read),
+        typecheck_resource!("claim_slot" => "call_generic_claim_slot", Read),
+        typecheck_resource!("claim_lookup_head" => "call_generic_claim_lookup_head", ReadWrite),
+        typecheck_resource!("claim_lookup_next" => "call_generic_claim_lookup_next", Write),
+    ]);
 pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_VALIDATE: ReflectedComputeSpec = call_pass!(
     "generic_claims.validate",
     CallArguments,
@@ -175,6 +195,27 @@ pub(in crate::type_checker) const CALLS_CONST_CLAIM_VALIDATE: ReflectedComputeSp
     CallArguments,
     "type_checker/calls/03a5_validate_const_claims"
 );
+pub(in crate::type_checker) const CALLS_CONST_CLAIM_INDEX_CLEAR: ReflectedComputeSpec = call_pass!(
+    "const_claims.index.clear",
+    CallArguments,
+    "type_checker/calls/03a2_clear_claim_lookup"
+)
+.with_aliases(&[
+    typecheck_resource!("claim_count_in" => "call_arg_row_count_out", Read),
+    typecheck_resource!("claim_lookup_head" => "call_const_claim_lookup_head", Write),
+]);
+pub(in crate::type_checker) const CALLS_CONST_CLAIM_INDEX_BUILD: ReflectedComputeSpec = call_pass!(
+    "const_claims.index.build",
+    CallArguments,
+    "type_checker/calls/03a3_build_claim_lookup"
+)
+.with_aliases(&[
+    typecheck_resource!("claim_count_in" => "call_arg_row_count_out", Read),
+    typecheck_resource!("claim_callee" => "call_const_claim_callee", Read),
+    typecheck_resource!("claim_slot" => "call_const_claim_slot", Read),
+    typecheck_resource!("claim_lookup_head" => "call_const_claim_lookup_head", ReadWrite),
+    typecheck_resource!("claim_lookup_next" => "call_const_claim_lookup_next", Write),
+]);
 pub(in crate::type_checker) const CALLS_ARRAY_STATE_CONSUME: ReflectedComputeSpec = call_pass!(
     "array_state.consume",
     HirNodes,

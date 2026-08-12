@@ -2,15 +2,23 @@
 
 static const uint PATH_PREFIX_INVALID = 0xffffffffu;
 static const uint PATH_PREFIX_TABLE_EMPTY = 0u;
+static const uint PATH_PREFIX_OWNER_MASK = 0x07ffffffu;
+static const uint PATH_PREFIX_EPOCH_SHIFT = 27u;
 
 uint path_prefix_table_owner(uint state)
 {
-    return state == PATH_PREFIX_TABLE_EMPTY ? PATH_PREFIX_INVALID : state - 1u;
+    uint encoded = state & PATH_PREFIX_OWNER_MASK;
+    return encoded == 0u ? PATH_PREFIX_INVALID : encoded - 1u;
 }
 
-uint path_prefix_table_state_for_owner(uint owner)
+uint path_prefix_table_epoch(uint state)
 {
-    return owner + 1u;
+    return state >> PATH_PREFIX_EPOCH_SHIFT;
+}
+
+uint path_prefix_table_state_for_owner(uint owner, uint epoch)
+{
+    return (epoch << PATH_PREFIX_EPOCH_SHIFT) | (owner + 1u);
 }
 
 uint path_prefix_mix(uint value)

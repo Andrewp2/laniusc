@@ -8,6 +8,7 @@ import dependency_interface;
 import gpu_index;
 import hir_records;
 import status;
+import type_checker.calls.claim_lookup;
 
 struct Params
 {
@@ -51,7 +52,8 @@ StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
 StructuredBuffer<uint> call_generic_claim_ref_tag;
 StructuredBuffer<uint> call_generic_claim_ref_payload;
-StructuredBuffer<uint> call_generic_claim_order;
+StructuredBuffer<uint> call_generic_claim_lookup_head;
+StructuredBuffer<uint> call_generic_claim_lookup_next;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -185,41 +187,8 @@ uint generic_claim_capacity()
         : base * GENERIC_CLAIM_CAPACITY_MULTIPLIER;
 }
 
-bool claim_key_less(uint row, uint callee, uint slot)
+bool generic_claim_row_matches(uint row, uint form, uint tag, uint payload, uint token)
 {
-    uint row_callee = call_generic_claim_callee[row];
-    return row_callee < callee ||
-        (row_callee == callee && call_generic_claim_slot[row] < slot);
-}
-
-uint generic_claim_row(uint callee, uint slot)
-{
-    uint count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
-    uint lo = 0u;
-    uint hi = count;
-    for (uint step = 0u; step < 32u && lo < hi; step += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint row = call_generic_claim_order[mid];
-        if (row >= count || !claim_key_less(row, callee, slot))
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-    if (lo >= count)
-        return INVALID;
-    uint row = call_generic_claim_order[lo];
-    return row < count && call_generic_claim_callee[row] == callee &&
-           call_generic_claim_slot[row] == slot
-        ? row
-        : INVALID;
-}
-
-bool generic_claim_matches(uint callee, uint slot, uint form, uint tag, uint payload, uint token)
-{
-    uint row = generic_claim_row(callee, slot);
-    if (row == INVALID)
-        return false;
     uint claim_tag = call_generic_claim_ref_tag[row];
     uint claim_payload = call_generic_claim_ref_payload[row];
     if (claim_tag == TYPE_REF_SCALAR)
@@ -242,6 +211,27 @@ bool generic_claim_matches(uint callee, uint slot, uint form, uint tag, uint pay
         matches = stable_nominal_equal(claim_payload, payload);
     }
     return matches;
+}
+
+bool generic_claim_matches(uint callee, uint slot, uint form, uint tag, uint payload, uint token)
+{
+    uint count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
+    uint bucket = call_claim_lookup_bucket(callee, slot, count);
+    uint link = call_generic_claim_lookup_head[bucket];
+    for (uint step = 0u; step < count && link != 0u; step += 1u)
+    {
+        uint row = link - 1u;
+        if (row >= count)
+            break;
+        if (call_generic_claim_callee[row] == callee &&
+            call_generic_claim_slot[row] == slot &&
+            generic_claim_row_matches(row, form, tag, payload, token))
+        {
+            return true;
+        }
+        link = call_generic_claim_lookup_next[row];
+    }
+    return false;
 }
 
 bool node_matches(uint expected_row, uint local_row, uint callee)

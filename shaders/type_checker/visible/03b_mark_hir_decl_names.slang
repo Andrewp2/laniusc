@@ -1,10 +1,9 @@
-// Mark interned names and compact-table flags for HIR value declarations.
+// Publish ordinary HIR declarations by their unique source-token anchor.
 //
 // The following HIR-name passes use this as GPU-resident input for declaration
-// table compaction. This stage consumes only compact HIR payloads and interned
-// name ids; compact match payload binders are appended by a dedicated
-// family-row pass after this scan. It does not inspect source text or token
-// spelling.
+// table compaction. Both ordinary declarations and match binders write into
+// the same token-indexed descriptor table before one token-domain scan. That
+// makes the compact declaration table source ordered without sorting by token.
 
 import hir_records;
 import atomics;
@@ -26,6 +25,7 @@ StructuredBuffer<uint> name_id_by_token;
 
 RWStructuredBuffer<uint> hir_value_decl_name_present;
 RWStructuredBuffer<uint> hir_visible_decl_flag;
+RWStructuredBuffer<uint> hir_visible_decl_source_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -110,5 +110,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint decl_token = decl_token_for_hir_node(row);
-    hir_visible_decl_flag[row] = valid_decl_name_token(decl_token) ? 1u : 0u;
+    if (!valid_decl_name_token(decl_token))
+        return;
+
+    // Zero means no declaration. Ordinary HIR rows use row + 1; the high bit
+    // is reserved for compact match-payload rows.
+    uint encoded = row + 1u;
+    uint prior = atomic_u32_compare_exchange(
+        hir_visible_decl_source_by_token,
+        decl_token,
+        0u,
+        encoded);
+    if (prior == 0u || prior == encoded)
+        hir_visible_decl_flag[decl_token] = 1u;
 }

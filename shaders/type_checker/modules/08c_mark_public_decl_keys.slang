@@ -25,6 +25,7 @@ StructuredBuffer<uint> decl_value_key_count_out;
 StructuredBuffer<uint> decl_type_key_to_decl_id;
 StructuredBuffer<uint> decl_value_key_to_decl_id;
 StructuredBuffer<uint> decl_visibility;
+StructuredBuffer<uint> decl_status;
 
 RWStructuredBuffer<uint> decl_type_public_flag;
 RWStructuredBuffer<uint> decl_value_public_flag;
@@ -33,6 +34,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_ITEM_VIS_PUBLIC = 1u;
+static const uint DECL_STATUS_OK = 0u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -51,7 +53,9 @@ uint active_value_decl_count()
 
 uint public_decl_flag(uint decl_i)
 {
-    return decl_i < gParams.capacity && decl_visibility[decl_i] == HIR_ITEM_VIS_PUBLIC ? 1u : 0u;
+    return decl_i < gParams.capacity &&
+           decl_status[decl_i] == DECL_STATUS_OK &&
+           decl_visibility[decl_i] == HIR_ITEM_VIS_PUBLIC ? 1u : 0u;
 }
 
 [shader("compute")]

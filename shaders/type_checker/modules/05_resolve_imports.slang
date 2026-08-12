@@ -1,10 +1,9 @@
 // GPU import-to-module lookup.
 //
 // Scheduling contract:
-// - Dispatch after import records have been scattered and module key rows have
-//   been sorted by the GPU radix passes.
-// - Each path import performs a sorted-table lookup using its exact canonical
-//   path-prefix id.
+// - Dispatch after import records have been scattered and the direct module
+//   table has been populated.
+// - Each path import indexes that table with its exact canonical path-prefix id.
 // - Dispatch after type_check_modules_05d_attach_record_modules has attached
 //   import records to their owning module ids.
 // - Direct self-imports are rejected here. The following sorted import-edge
@@ -13,17 +12,20 @@
 //   not make declarations visible, resolve value/type paths, perform CPU path
 //   lookup, scan source bytes, use hashes, or apply same-source shortcuts.
 
-import range_query;
-import sorted.join;
 import status;
 import hir_records;
+import type_checker.modules.module_lookup;
 
 struct Params
 {
+    uint import_capacity;
+    uint path_capacity;
+    uint path_segment_capacity;
     uint module_capacity;
-    uint reserved;
-    uint n_blocks;
-    uint key_step;
+    uint dependency_interfaces_present;
+    uint reserved0;
+    uint reserved1;
+    uint reserved2;
 };
 
 ConstantBuffer<Params> gParams;
@@ -40,8 +42,7 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_prefix_id;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> module_count_out;
-StructuredBuffer<uint> sorted_module_key_order;
-StructuredBuffer<uint> module_key_canonical_id;
+StructuredBuffer<uint> module_by_canonical_id;
 
 RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> import_target_module_id;
@@ -68,29 +69,14 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint record_capacity()
-{
-    return gParams.module_capacity;
-}
-
-uint path_record_capacity()
-{
-    return gParams.n_blocks;
-}
-
-uint module_capacity()
-{
-    return gParams.reserved == 0u ? gParams.module_capacity : gParams.reserved;
-}
-
 uint active_import_count()
 {
-    return min(import_count_out[0], record_capacity());
+    return min(import_count_out[0], gParams.import_capacity);
 }
 
 uint active_module_count()
 {
-    return min(module_count_out[0], module_capacity());
+    return min(module_count_out[0], gParams.module_capacity);
 }
 
 uint active_compact_hir_count()
@@ -113,47 +99,15 @@ uint import_owner_token(uint import_i)
     return compact_hir_core[owner].token_start;
 }
 
-public struct ImportPathLookupKey
-{
-    uint canonical_id;
-}
-
-public struct ImportModuleCompare : IRowQueryCompare<ImportPathLookupKey>
-{
-    public static int compare(uint row, ImportPathLookupKey key)
-    {
-        uint module_i = sorted_module_key_order[row];
-        uint row_id = module_key_canonical_id[module_i];
-        return row_id < key.canonical_id ? -1 : (row_id > key.canonical_id ? 1 : 0);
-    }
-}
-
-public struct ImportModuleValue : ISortedJoinValue<uint>
-{
-    public static uint invalid_value()
-    {
-        return INVALID;
-    }
-
-    public static uint row_value(uint row)
-    {
-        return row < active_module_count() ? sorted_module_key_order[row] : INVALID;
-    }
-}
-
 uint find_module_for_path(uint path_id)
 {
-    ImportPathLookupKey key;
     uint count = path_segment_count[path_id];
-    key.canonical_id = path_prefix_id[path_segment_base[path_id] + count - 1u];
-    return sorted_join_project_key_or_invalid<
-        ImportPathLookupKey,
-        uint,
-        ImportModuleCompare,
-        ImportModuleValue>(
-        active_module_count(),
-        key,
-        INVALID);
+    uint canonical_id = path_prefix_id[path_segment_base[path_id] + count - 1u];
+    uint module_id = module_lookup_find(
+        canonical_id,
+        gParams.path_segment_capacity,
+        module_by_canonical_id);
+    return module_id < active_module_count() ? module_id : INVALID;
 }
 
 [shader("compute")]
@@ -177,10 +131,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint path_id = import_path_id[import_i];
-    if (path_id >= path_record_capacity())
+    if (path_id >= gParams.path_capacity)
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
-        if (gParams.key_step == 0u)
+        if (gParams.dependency_interfaces_present == 0u)
             record_error(import_i, ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }
@@ -189,7 +143,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (count == 0u)
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
-        if (gParams.key_step == 0u)
+        if (gParams.dependency_interfaces_present == 0u)
             record_error(path_owner_token[path_id], ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }
@@ -197,7 +151,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (module_i == INVALID)
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
-        if (gParams.key_step == 0u)
+        if (gParams.dependency_interfaces_present == 0u)
             record_error(path_owner_token[path_id], ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }

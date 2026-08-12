@@ -1,12 +1,12 @@
-// GPU imported-visibility sorted key table build for one namespace table.
+// GPU imported-visibility exact lookup build for one namespace table.
 //
 // Scheduling contract:
-// - Dispatch once for type imports and once for value imports after imported
-//   visibility row ids have been sorted.
-// - This pass materializes a final sorted key table:
-//   (importing module id, name id) -> declaration id.
-// - It does not resolve paths, scan source bytes, use hashes, perform CPU
-//   lookup, or apply same-source shortcuts.
+// - Dispatch once for type imports and once for value imports after compact
+//   visibility rows have been scattered.
+// - Each immutable compact row is atomically published into an exact
+//   `(importing module, name)` hash index.
+
+import type_checker.modules.import_visible_lookup;
 
 struct Params
 {
@@ -19,14 +19,10 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> import_visible_count_out;
-StructuredBuffer<uint> import_visible_key_order;
-StructuredBuffer<uint> import_visible_module_id;
-StructuredBuffer<uint> import_visible_name_id;
-StructuredBuffer<uint> import_visible_decl_id;
-
-RWStructuredBuffer<uint> import_visible_key_module_id;
-RWStructuredBuffer<uint> import_visible_key_name_id;
-RWStructuredBuffer<uint> import_visible_key_to_decl_id;
+StructuredBuffer<uint> import_visible_key_module_id;
+StructuredBuffer<uint> import_visible_key_name_id;
+StructuredBuffer<uint> import_visible_key_to_decl_id;
+RWStructuredBuffer<uint> import_visible_lookup_state;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -55,16 +51,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= active_count())
         return;
 
-    uint visible_i = import_visible_key_order[i];
-    if (visible_i >= visible_capacity())
-    {
-        import_visible_key_module_id[i] = INVALID;
-        import_visible_key_name_id[i] = INVALID;
-        import_visible_key_to_decl_id[i] = INVALID;
-        return;
-    }
-
-    import_visible_key_module_id[i] = import_visible_module_id[visible_i];
-    import_visible_key_name_id[i] = import_visible_name_id[visible_i];
-    import_visible_key_to_decl_id[i] = import_visible_decl_id[visible_i];
+    import_visible_lookup_insert(
+        i,
+        active_count(),
+        visible_capacity(),
+        import_visible_key_module_id,
+        import_visible_key_name_id,
+        import_visible_key_to_decl_id,
+        import_visible_lookup_state);
 }

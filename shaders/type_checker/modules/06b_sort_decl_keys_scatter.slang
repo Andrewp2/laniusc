@@ -25,8 +25,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
-StructuredBuffer<uint> decl_namespace;
-StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> radix_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
@@ -36,7 +34,7 @@ RWStructuredBuffer<uint> radix_order_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
+static const uint RADIX_BUCKETS = RADIX_U8_BUCKETS;
 
 
 uint linear_group_id(uint3 gid)
@@ -49,26 +47,10 @@ uint active_decl_count()
     return min(decl_count_out[0], gParams.decl_capacity);
 }
 
-uint decl_key_field(uint decl_i, uint field_i)
-{
-    if (decl_i >= active_decl_count())
-        return 0u;
-
-    if (field_i == 0u)
-        return encode_nullable_id(decl_name_id[decl_i], INVALID);
-    if (field_i == 1u)
-        return decl_namespace[decl_i];
-    return encode_nullable_id(decl_module_id[decl_i], INVALID);
-}
-
 uint decl_key_radix_key(uint decl_i, uint key_step)
 {
-    return radix_packed_u32x3_byte_key(
-        decl_key_field(decl_i, 0u),
-        decl_key_field(decl_i, 1u),
-        decl_key_field(decl_i, 2u),
-        key_step,
-        gParams.reserved);
+    uint module_id = decl_i < active_decl_count() ? decl_module_id[decl_i] : INVALID;
+    return radix_byte_key(encode_nullable_id(module_id, INVALID), key_step);
 }
 
 public struct DeclKeyScatterSource : IStableRadixScatterSource<uint>

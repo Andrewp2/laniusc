@@ -2032,6 +2032,20 @@ import app::leaf;
 }
 
 #[test]
+fn type_checker_qualified_public_value_uses_exact_import_edge_set() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"module core::math;
+pub fn answer() -> i32 { return 42; }
+"#,
+        r#"module app::main;
+import core::math;
+import core::math;
+fn main() -> i32 { return core::math::answer(); }
+"#,
+    ]);
+}
+
+#[test]
 fn type_checker_unresolved_source_pack_import_reports_stable_diagnostic() {
     let source = r#"module app::main;
 import core::math;

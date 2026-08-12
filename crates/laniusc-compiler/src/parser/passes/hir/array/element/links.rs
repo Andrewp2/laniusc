@@ -77,6 +77,26 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirArrayElementL
                 "hir_array_element_rank_b".into(),
                 b.hir_array_element_rank_b.as_entire_binding(),
             ),
+            (
+                "hir_array_lit_first_element".into(),
+                b.hir_array_lit_first_element.as_entire_binding(),
+            ),
+            (
+                "hir_array_lit_element_count".into(),
+                b.hir_array_lit_element_count.as_entire_binding(),
+            ),
+            (
+                "hir_array_element_parent_lit".into(),
+                b.hir_array_element_parent_lit.as_entire_binding(),
+            ),
+            (
+                "hir_array_element_ordinal".into(),
+                b.hir_array_element_ordinal.as_entire_binding(),
+            ),
+            (
+                "hir_array_element_next".into(),
+                b.hir_array_element_next.as_entire_binding(),
+            ),
         ])
     }
 }

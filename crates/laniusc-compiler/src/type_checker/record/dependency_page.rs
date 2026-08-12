@@ -169,42 +169,21 @@ pub(in crate::type_checker) fn record_dependency_type_index(
     record_compute(
         encoder,
         &passes.kernel("type_checker/dependencies/09_init_canonical_type_roots"),
-        &visibility.init_canonical_type_roots_group,
-        "type_check.dependencies.init_canonical_type_roots",
+        &visibility.init_canonical_type_index_group,
+        "type_check.dependencies.init_canonical_type_index",
         visibility.canonical_type_count.max(1),
     )?;
     for round in 0..visibility.canonical_type_jump_rounds {
         let group = if round % 2 == 0 {
-            &visibility.jump_canonical_type_roots_a_to_b_group
+            &visibility.jump_canonical_type_index_a_to_b_group
         } else {
-            &visibility.jump_canonical_type_roots_b_to_a_group
+            &visibility.jump_canonical_type_index_b_to_a_group
         };
         record_compute(
             encoder,
             &passes.kernel("type_checker/dependencies/10_jump_canonical_type_roots"),
             group,
-            "type_check.dependencies.jump_canonical_type_roots",
-            visibility.canonical_type_count.max(1),
-        )?;
-    }
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/dependencies/09a_init_canonical_type_subtree_start"),
-        &visibility.canonical_type_subtree.init_group,
-        "type_check.dependencies.init_canonical_type_subtree_start",
-        visibility.canonical_type_count.max(1),
-    )?;
-    for round in 0..visibility.canonical_type_jump_rounds {
-        let group = if round % 2 == 0 {
-            &visibility.canonical_type_subtree.jump_a_to_b_group
-        } else {
-            &visibility.canonical_type_subtree.jump_b_to_a_group
-        };
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/dependencies/10a_jump_canonical_type_subtree_start"),
-            group,
-            "type_check.dependencies.jump_canonical_type_subtree_start",
+            "type_check.dependencies.jump_canonical_type_index",
             visibility.canonical_type_count.max(1),
         )?;
     }

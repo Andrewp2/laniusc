@@ -189,6 +189,7 @@ impl GpuX86ObjectStage {
             "artifact.x86.object.normalize_status",
             "codegen/lir/x86/object_normalize_status",
         )?;
+
         let relocation_flags_pass = load(
             device,
             "artifact.x86.object.relocation_flags",

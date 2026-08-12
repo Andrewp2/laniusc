@@ -14,7 +14,6 @@ StructuredBuffer<uint> hir_method_signature_flags;
 StructuredBuffer<uint> raw_to_hir;
 RWStructuredBuffer<uint> subject_link_a;
 RWStructuredBuffer<uint> subject_anchor_a;
-RWStructuredBuffer<uint> owner_link_a;
 RWStructuredBuffer<uint> owner_value_a;
 
 static const uint INVALID = 0xffffffffu;
@@ -56,7 +55,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= gCanonical.raw_capacity) return;
     subject_link_a[node] = INVALID;
     subject_anchor_a[node] = INVALID;
-    owner_link_a[node] = INVALID;
     owner_value_a[node] = INVALID;
     if (!valid(node)) return;
     bool found_subject = subject_anchor(node_kind[node]);
@@ -81,8 +79,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (found_subject && found_owner) return;
         if (hop + 1u == span)
         {
-            if (!found_subject) subject_link_a[node] = ancestor;
-            if (!found_owner) owner_link_a[node] = ancestor;
+            if (!found_subject || !found_owner) subject_link_a[node] = ancestor;
             return;
         }
         uint next = parent[ancestor];

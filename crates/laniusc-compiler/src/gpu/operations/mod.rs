@@ -16,29 +16,24 @@ use super::{
 };
 
 mod compute;
-mod hierarchical_radix_sort;
+mod exact_lookup;
+mod inclusive_block_scan;
 mod prefix_scan;
 mod radix_sort;
 
 pub(crate) use compute::{ComputeGraph, ComputeKernels, ComputeOperation};
-pub(crate) use hierarchical_radix_sort::{
-    HierarchicalRadixSortDefinition,
-    HierarchicalRadixSortDispatch,
-    HierarchicalRadixSortKernels,
-};
+pub(crate) use exact_lookup::ExactLookupOperation;
+pub(crate) use inclusive_block_scan::{InclusiveBlockScanKernels, InclusiveBlockScanPlan};
 pub(crate) use prefix_scan::PrefixScanOperation;
 pub(super) use radix_sort::uses_dynamic_uniform_kernel;
 pub(crate) use radix_sort::{
     RadixDispatchDomain,
-    RadixSortBatchItem,
     RadixSortDefinition,
     RadixSortDispatch,
     RadixSortKernels,
     RadixSortOperation,
-    RadixSortPairDefinition,
     RadixSortPlan,
     RadixSortResources,
-    record_radix_sort_batch,
 };
 
 fn record_direct(

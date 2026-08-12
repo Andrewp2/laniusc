@@ -8,6 +8,7 @@
 
 import hir_records;
 import lookup;
+import type_checker.type.instances.generic_param_lookup;
 
 struct Params
 {
@@ -31,7 +32,7 @@ StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
 StructuredBuffer<uint> generic_param_token;
 StructuredBuffer<uint> generic_param_kind;
-StructuredBuffer<uint> generic_param_key_order;
+StructuredBuffer<uint> generic_param_lookup_state;
 StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> fn_return_ref_tag;
@@ -126,17 +127,6 @@ uint active_generic_param_count()
     return min(generic_param_count_out[0u], gParams.n_tokens);
 }
 
-bool generic_param_key_less(uint row, uint owner, uint name_id)
-{
-    if (row >= active_generic_param_count())
-        return false;
-
-    uint row_owner = generic_param_owner_token[row];
-    if (row_owner != owner)
-        return row_owner < owner;
-    return generic_param_name_id[row] < name_id;
-}
-
 bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
 {
     return row < active_generic_param_count() &&
@@ -155,23 +145,10 @@ uint generic_param_row_for_name(uint owner_token, uint name_token, uint kind)
         return INVALID;
 
     uint count = active_generic_param_count();
-    uint lo = 0u;
-    uint hi = count;
-    for (uint step = 0u; step < 32u; step += 1u)
-    {
-        if (lo >= hi)
-            continue;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint row = generic_param_key_order[mid];
-        if (row >= count || !generic_param_key_less(row, owner_token, name_id))
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-
-    if (lo >= count)
-        return INVALID;
-    uint row = generic_param_key_order[lo];
+    uint row = generic_param_lookup_find(
+        owner_token, name_id, count, gParams.n_tokens,
+        generic_param_owner_token, generic_param_name_id,
+        generic_param_lookup_state);
     return generic_param_key_matches(row, owner_token, name_id, kind) ? row : INVALID;
 }
 
@@ -420,14 +397,17 @@ void return_ref_for_function(uint fn_decl_token, out uint tag, out uint payload)
 
 uint return_type_for_function(uint fn_node, uint fn_decl_token)
 {
+    // The compact function's explicit return-type node is authoritative for
+    // concrete scalar and named types. Generic/aggregate reference metadata
+    // is consulted only when that node does not project a concrete code.
+    uint scalar_ty = scalar_return_type_for_function(fn_node);
+    if (scalar_ty != TY_UNKNOWN)
+        return scalar_ty;
     uint tag;
     uint payload;
     return_ref_for_function(fn_decl_token, tag, payload);
     if (tag != TYPE_REF_INVALID)
         return semantic_type_code_for_ref(tag, payload);
-    uint scalar_ty = scalar_return_type_for_function(fn_node);
-    if (scalar_ty != TY_UNKNOWN)
-        return scalar_ty;
     if (main_entrypoint(fn_decl_token))
         return TY_INT;
     return TY_VOID;

@@ -54,6 +54,7 @@ use storage::{
 pub(crate) use storage::{dispatch_args_schedule_count_offset, pointer_jump_step_capacity};
 
 use crate::gpu::buffers::{
+    JobResetPolicy,
     LaniusBuffer,
     ResettableRowDomain,
     ResettableRowDomainGuard,
@@ -62,6 +63,7 @@ use crate::gpu::buffers::{
     storage_ro_from_bytes,
     storage_ro_from_u32s,
     storage_rw_for_array,
+    storage_rw_for_array_with_reset_policy,
     uniform_from_val,
 };
 
@@ -81,6 +83,15 @@ where
 }
 
 impl ParserBuffers {
+    fn clear_overwritten_allocations() -> bool {
+        crate::gpu::env::env_bool_strict("LANIUS_GPU_CLEAR_OVERWRITTEN", false)
+    }
+
+    fn clears_before_job(buffer: &crate::gpu::buffers::ResettableBuffer) -> bool {
+        buffer.reset_policy == JobResetPolicy::ClearBeforeJob
+            || Self::clear_overwritten_allocations()
+    }
+
     /// Updates the logical token dimensions for a reused resident allocation.
     /// Physical storage may be larger, but parser dispatches and token-boundary
     /// uniforms must describe only the current job.
@@ -238,6 +249,9 @@ impl ParserBuffers {
     ) -> u64 {
         let mut cleared_bytes = 0u64;
         for buffer in &self.resettable_buffers {
+            if !Self::clears_before_job(buffer) {
+                continue;
+            }
             let byte_size = self.active_reset_bytes(buffer, active_tree_capacity);
             if byte_size == 0 {
                 continue;
@@ -250,13 +264,38 @@ impl ParserBuffers {
     }
 
     pub(crate) fn resettable_storage_totals(&self) -> (usize, u64) {
-        (
-            self.resettable_buffers.len(),
-            self.resettable_buffers
-                .iter()
-                .map(|buffer| buffer.byte_size)
-                .sum(),
-        )
+        let buffers = self
+            .resettable_buffers
+            .iter()
+            .filter(|buffer| Self::clears_before_job(buffer));
+        let mut allocations = 0usize;
+        let mut bytes = 0u64;
+        for buffer in buffers {
+            allocations += 1;
+            bytes = bytes.saturating_add(buffer.byte_size);
+        }
+        (allocations, bytes)
+    }
+
+    pub(crate) fn largest_resettable_storage(
+        &self,
+        active_tree_capacity: u32,
+        limit: usize,
+    ) -> Vec<(&str, u64)> {
+        let mut rows = self
+            .resettable_buffers
+            .iter()
+            .filter(|buffer| Self::clears_before_job(buffer))
+            .map(|buffer| {
+                (
+                    buffer.label.as_ref(),
+                    self.active_reset_bytes(buffer, active_tree_capacity),
+                )
+            })
+            .collect::<Vec<_>>();
+        rows.sort_unstable_by_key(|(_, bytes)| std::cmp::Reverse(*bytes));
+        rows.truncate(limit);
+        rows
     }
 
     /// Returns every parser allocation whose contents are dead after compact
@@ -334,8 +373,8 @@ impl ParserBuffers {
                 scan_step: 0,
             },
         );
-        let token_delimiter_scan_steps =
-            make_token_delimiter_scan_steps(device, token_input_capacity, token_delimiter_n_blocks);
+        let token_block_scan_plan =
+            make_token_block_scan_plan(device, "parser.token_block_scan", token_delimiter_n_blocks);
         let token_depth_paren_inblock = storage_rw_for_array::<i32>(
             device,
             "parser.token_depth_paren_inblock",
@@ -381,11 +420,6 @@ impl ParserBuffers {
             "parser.token_prefix_paren_a",
             token_delimiter_n_blocks as usize,
         );
-        let token_prefix_paren_b = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_prefix_paren_b",
-            token_delimiter_n_blocks as usize,
-        );
         let token_block_prefix_paren = storage_rw_for_array::<i32>(
             device,
             "parser.token_block_prefix_paren",
@@ -394,11 +428,6 @@ impl ParserBuffers {
         let token_prefix_brace_a = storage_rw_for_array::<i32>(
             device,
             "parser.token_prefix_brace_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_prefix_brace_b = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_prefix_brace_b",
             token_delimiter_n_blocks as usize,
         );
         let token_block_prefix_brace = storage_rw_for_array::<i32>(
@@ -411,11 +440,6 @@ impl ParserBuffers {
             "parser.token_prefix_bracket_a",
             token_delimiter_n_blocks as usize,
         );
-        let token_prefix_bracket_b = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_prefix_bracket_b",
-            token_delimiter_n_blocks as usize,
-        );
         let token_block_prefix_bracket = storage_rw_for_array::<i32>(
             device,
             "parser.token_block_prefix_bracket",
@@ -424,11 +448,6 @@ impl ParserBuffers {
         let token_prefix_angle_a = storage_rw_for_array::<i32>(
             device,
             "parser.token_prefix_angle_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_prefix_angle_b = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_prefix_angle_b",
             token_delimiter_n_blocks as usize,
         );
         let token_block_prefix_angle = storage_rw_for_array::<i32>(
@@ -446,11 +465,6 @@ impl ParserBuffers {
             "parser.token_top_brace_owner_prefix_a",
             token_delimiter_n_blocks as usize,
         );
-        let token_top_brace_owner_prefix_b = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_top_brace_owner_prefix_b",
-            token_delimiter_n_blocks as usize,
-        );
         let token_top_brace_owner_block_prefix = storage_rw_for_array::<u32>(
             device,
             "parser.token_top_brace_owner_block_prefix",
@@ -464,11 +478,6 @@ impl ParserBuffers {
         let token_statement_event_prefix_a = storage_rw_for_array::<u32>(
             device,
             "parser.token_statement_event_prefix_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_statement_event_prefix_b = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_statement_event_prefix_b",
             token_delimiter_n_blocks as usize,
         );
         let token_statement_event_block_prefix = storage_rw_for_array::<u32>(
@@ -536,19 +545,9 @@ impl ParserBuffers {
             "parser.token_generic_shr.prefix_sum_a",
             token_delimiter_n_blocks as usize,
         );
-        let token_generic_shr_prefix_sum_b = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_generic_shr.prefix_sum_b",
-            token_delimiter_n_blocks as usize,
-        );
         let token_generic_shr_prefix_min_a = storage_rw_for_array::<i32>(
             device,
             "parser.token_generic_shr.prefix_min_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_generic_shr_prefix_min_b = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_generic_shr.prefix_min_b",
             token_delimiter_n_blocks as usize,
         );
         let token_generic_shr_block_prefix_sum = storage_rw_for_array::<i32>(
@@ -781,8 +780,7 @@ impl ParserBuffers {
             storage_rw_for_array::<u32>(device, "pack.emit_prefix_a", n_pack_pairs);
         let pack_emit_prefix_b =
             storage_rw_for_array::<u32>(device, "pack.emit_prefix_b", n_pack_pairs);
-        let pack_offset_scan_steps =
-            make_pack_offset_scan_steps(device, n_tokens.saturating_sub(1));
+        let pack_offset_scan_plan = make_pack_offset_scan_plan(device, n_tokens.saturating_sub(1));
         let pack_totals_blocks_params = uniform_from_val(
             device,
             "pack.totals_blocks.params",
@@ -805,10 +803,30 @@ impl ParserBuffers {
         let tables_blob = storage_ro_from_u32s(device, "pack.tables_blob", &blob);
         let _packed_stream_reset_rows =
             ResettableRowDomainGuard::enter(RESET_PACKED_STREAM_ROWS, total_sc.max(1) as usize);
-        let out_sc = storage_rw_for_array::<u32>(device, "pack.out_sc", total_sc.max(1) as usize);
-        let out_emit = storage_rw_for_array::<u32>(device, "pack.out_emit", emit_capacity as usize);
-        let out_emit_pos =
-            storage_rw_for_array::<u32>(device, "pack.out_emit_pos", emit_capacity as usize);
+        // The pair-offset scan partitions `[0, total_sc)` into disjoint ranges,
+        // and `pack_varlen` writes every element of every range before bracket
+        // matching reads the stream.
+        let out_sc = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "pack.out_sc",
+            total_sc.max(1) as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
+        // The same partition covers the production and source-position
+        // streams. Later type metadata aliases are fully initialized by
+        // `hir_type_fields` before those views are consumed.
+        let out_emit = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "pack.out_emit",
+            emit_capacity as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
+        let out_emit_pos = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "pack.out_emit_pos",
+            emit_capacity as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
 
         // ---------- Brackets (parallel) ----------
         //
@@ -834,7 +852,7 @@ impl ParserBuffers {
                 scan_step: 0,
             },
         );
-        let b02_scan_steps = make_brackets_block_prefix_scan_steps(device, n_blocks);
+        let b02_scan_plan = make_token_block_scan_plan(device, "brackets.b02.scan", n_blocks);
         let b03_params = uniform_from_val(
             device,
             "brackets.b03.params",
@@ -1010,11 +1028,22 @@ impl ParserBuffers {
             tree_prefix_block_max_tree_base,
         );
 
-        // Shared tables/outputs
+        // Shared tables/outputs. Tree recovery and HIR classification assign
+        // every active row; previous-sibling scatter has its own required
+        // per-phase clear before both of its sparse scatter uses.
         let prod_arity = storage_ro_from_u32s(device, "parser.prod_arity", &tables.prod_arity);
-        let node_kind =
-            storage_rw_for_array::<u32>(device, "parser.node_kind", tree_capacity as usize);
-        let parent = storage_rw_for_array::<u32>(device, "parser.parent", tree_capacity as usize);
+        let node_kind = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "parser.node_kind",
+            tree_capacity as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
+        let parent = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "parser.parent",
+            tree_capacity as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
         let tree_params = uniform_from_val(
             device,
             "parser.tree_parent.params",
@@ -1043,14 +1072,30 @@ impl ParserBuffers {
                 uses_status_count: u32::from(tree_count_uses_status),
             },
         );
-        let first_child =
-            storage_rw_for_array::<u32>(device, "parser.first_child", tree_capacity as usize);
-        let next_sibling =
-            storage_rw_for_array::<u32>(device, "parser.next_sibling", tree_capacity as usize);
-        let prev_sibling =
-            storage_rw_for_array::<u32>(device, "parser.prev_sibling", tree_capacity as usize);
-        let subtree_end =
-            storage_rw_for_array::<u32>(device, "parser.subtree_end", tree_capacity as usize);
+        let first_child = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "parser.first_child",
+            tree_capacity as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
+        let next_sibling = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "parser.next_sibling",
+            tree_capacity as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
+        let prev_sibling = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "parser.prev_sibling",
+            tree_capacity as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
+        let subtree_end = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "parser.subtree_end",
+            tree_capacity as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
         let hir_params = uniform_from_val(
             device,
             "parser.hir_nodes.params",
@@ -1114,7 +1159,7 @@ impl ParserBuffers {
         let hir_member_fields_params = uniform_from_val(
             device,
             "parser.hir_member_fields.params",
-            &super::passes::hir::member::fields::Params {
+            &super::passes::hir::postfix_fields::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
             },
@@ -1139,7 +1184,7 @@ impl ParserBuffers {
         let hir_array_fields_params = uniform_from_val(
             device,
             "parser.hir_array_fields.params",
-            &super::passes::hir::array::fields::Params {
+            &super::passes::hir::array::Params {
                 n: family_capacities.arrays,
                 uses_status_count: u32::from(tree_count_uses_status),
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
@@ -1148,7 +1193,7 @@ impl ParserBuffers {
         let hir_enum_match_fields_params = uniform_from_val(
             device,
             "parser.hir_enum_match_fields.params",
-            &super::passes::hir::enums::match_fields::Params {
+            &super::passes::hir::enums::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 family_flags: u32::from(
@@ -1168,14 +1213,18 @@ impl ParserBuffers {
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
             },
         );
-        let hir_kind =
-            storage_rw_for_array::<u32>(device, "parser.hir_kind", tree_capacity as usize);
+        let hir_kind = storage_rw_for_array_with_reset_policy::<u32>(
+            device,
+            "parser.hir_kind",
+            tree_capacity as usize,
+            JobResetPolicy::OverwriteBeforeRead,
+        );
         let hir_semantic_block_count = storage_rw_for_array::<u32>(
             device,
             "parser.hir_semantic_block_count",
             tree_n_node_blocks as usize,
         );
-        let hir_semantic_prefix_scan_steps = make_hir_prefix_scan_steps(device, tree_n_node_blocks);
+        let hir_semantic_prefix_scan = make_hir_prefix_scan_plan(device, tree_n_node_blocks);
         // Raw type records still alias the parser prefix arrays in resident
         // compilation, and remain live through type checking during the HIR
         // migration. Keep canonical-family scan storage distinct until every
@@ -2511,8 +2560,8 @@ impl ParserBuffers {
                 item_count: hir_canonical_capacity,
             },
         );
-        let hir_canonical_prefix_scan_steps =
-            make_hir_prefix_scan_steps(device, hir_canonical_capacity.div_ceil(WG).max(1));
+        let hir_canonical_prefix_scan =
+            make_hir_prefix_scan_plan(device, hir_canonical_capacity.div_ceil(WG).max(1));
         let hir_canonical_count =
             storage_rw_for_array::<u32>(device, "parser.hir_canonical_count", 1);
         let hir_canonical_status =
@@ -2984,7 +3033,7 @@ impl ParserBuffers {
             params_llp,
             semantic_token_kinds,
             token_delimiter_params,
-            token_delimiter_scan_steps,
+            token_block_scan_plan,
             token_input_capacity,
             token_delimiter_n_blocks,
             token_depth_paren_inblock,
@@ -2996,24 +3045,18 @@ impl ParserBuffers {
             token_block_sum_bracket,
             token_block_sum_angle,
             token_prefix_paren_a,
-            token_prefix_paren_b,
             token_block_prefix_paren,
             token_prefix_brace_a,
-            token_prefix_brace_b,
             token_block_prefix_brace,
             token_prefix_bracket_a,
-            token_prefix_bracket_b,
             token_block_prefix_bracket,
             token_prefix_angle_a,
-            token_prefix_angle_b,
             token_block_prefix_angle,
             token_top_brace_owner_block,
             token_top_brace_owner_prefix_a,
-            token_top_brace_owner_prefix_b,
             token_top_brace_owner_block_prefix,
             token_statement_event_block,
             token_statement_event_prefix_a,
-            token_statement_event_prefix_b,
             token_statement_event_block_prefix,
             token_brace_semantic_kind,
             token_braced_rhs_statement_kind,
@@ -3027,9 +3070,7 @@ impl ParserBuffers {
             token_generic_shr_block_sum,
             token_generic_shr_block_min,
             token_generic_shr_prefix_sum_a,
-            token_generic_shr_prefix_sum_b,
             token_generic_shr_prefix_min_a,
-            token_generic_shr_prefix_min_b,
             token_generic_shr_block_prefix_sum,
             token_generic_shr_block_prefix_min,
             token_brace_match_params,
@@ -3065,7 +3106,7 @@ impl ParserBuffers {
             pack_sc_prefix_b,
             pack_emit_prefix_a,
             pack_emit_prefix_b,
-            pack_offset_scan_steps,
+            pack_offset_scan_plan,
             pack_totals_blocks_params,
             pack_total_reduce_steps,
             pack_totals_status_params,
@@ -3077,7 +3118,7 @@ impl ParserBuffers {
 
             b01_params,
             b02_params,
-            b02_scan_steps,
+            b02_scan_plan,
             b03_params,
             b07_params,
             b_clear_matches_params,
@@ -3205,8 +3246,8 @@ impl ParserBuffers {
             hir_struct_fields_params,
             hir_kind,
             hir_semantic_block_count,
-            hir_semantic_prefix_scan_steps,
-            hir_canonical_prefix_scan_steps,
+            hir_semantic_prefix_scan,
+            hir_canonical_prefix_scan,
             hir_semantic_flag,
             hir_semantic_local_prefix,
             hir_semantic_block_prefix_a,

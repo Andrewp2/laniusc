@@ -1,4 +1,4 @@
-// Pointer-jump enum variant and payload links.
+// Follow bounded runs of enum variant and payload links.
 
 import token_features;
 
@@ -31,6 +31,7 @@ RWStructuredBuffer<uint> hir_variant_payload_rank_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint LINKS_PER_STEP = 16u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -62,17 +63,23 @@ void jump_variant(uint node)
         return;
     }
 
-    uint ancestor_owner = hir_variant_owner_in[link];
-    uint ancestor_link = hir_variant_link_in[link];
-    uint ancestor_rank = hir_variant_rank_in[link];
-    uint resolved_owner = valid_node(ancestor_owner) ? ancestor_owner : INVALID;
-
-    hir_variant_owner_out[node] = resolved_owner;
-    hir_variant_rank_out[node] = rank + ancestor_rank;
-    hir_variant_link_out[node] =
-        valid_node(resolved_owner) || !valid_node(ancestor_link)
-        ? INVALID
-        : ancestor_link;
+    for (uint hop = 0u; hop < LINKS_PER_STEP; ++hop)
+    {
+        if (valid_node(owner) || !valid_node(link) || link == node) break;
+        rank += hir_variant_rank_in[link];
+        uint ancestor_owner = hir_variant_owner_in[link];
+        uint ancestor_link = hir_variant_link_in[link];
+        if (valid_node(ancestor_owner))
+        {
+            owner = ancestor_owner;
+            link = INVALID;
+            break;
+        }
+        link = valid_node(ancestor_link) ? ancestor_link : INVALID;
+    }
+    hir_variant_owner_out[node] = valid_node(owner) ? owner : INVALID;
+    hir_variant_rank_out[node] = rank;
+    hir_variant_link_out[node] = link;
 }
 
 void jump_payload(uint node)
@@ -90,17 +97,23 @@ void jump_payload(uint node)
         return;
     }
 
-    uint ancestor_owner = hir_variant_payload_owner_in[link];
-    uint ancestor_link = hir_variant_payload_link_in[link];
-    uint ancestor_rank = hir_variant_payload_rank_in[link];
-    uint resolved_owner = valid_node(ancestor_owner) ? ancestor_owner : INVALID;
-
-    hir_variant_payload_owner_out[node] = resolved_owner;
-    hir_variant_payload_rank_out[node] = rank + ancestor_rank;
-    hir_variant_payload_link_out[node] =
-        valid_node(resolved_owner) || !valid_node(ancestor_link)
-        ? INVALID
-        : ancestor_link;
+    for (uint hop = 0u; hop < LINKS_PER_STEP; ++hop)
+    {
+        if (valid_node(owner) || !valid_node(link) || link == node) break;
+        rank += hir_variant_payload_rank_in[link];
+        uint ancestor_owner = hir_variant_payload_owner_in[link];
+        uint ancestor_link = hir_variant_payload_link_in[link];
+        if (valid_node(ancestor_owner))
+        {
+            owner = ancestor_owner;
+            link = INVALID;
+            break;
+        }
+        link = valid_node(ancestor_link) ? ancestor_link : INVALID;
+    }
+    hir_variant_payload_owner_out[node] = valid_node(owner) ? owner : INVALID;
+    hir_variant_payload_rank_out[node] = rank;
+    hir_variant_payload_link_out[node] = link;
 }
 
 [shader("compute")]

@@ -1,13 +1,13 @@
 // Validate required direct-call generic parameters from compact requirement rows.
 //
-// The generic claim stream is sorted by (callee, slot, concrete-claim flag).
-// This pass walks compact `(call, slot)` requirement rows and binary-searches
-// that stream to verify each declared generic slot was either concretely
+// This pass walks compact `(call, slot)` requirement rows and probes the exact
+// claim index to verify each declared generic slot was either concretely
 // inferred or at least touched by an unknown-typed argument. Missing slots get a
 // diagnostic at the call site.
 
 import hir_records;
 import status;
+import type_checker.calls.claim_lookup;
 
 struct Params
 {
@@ -33,7 +33,8 @@ StructuredBuffer<uint> call_generic_claim_count_out;
 StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
 StructuredBuffer<uint> call_generic_claim_type;
-StructuredBuffer<uint> call_generic_claim_order;
+StructuredBuffer<uint> call_generic_claim_lookup_head;
+StructuredBuffer<uint> call_generic_claim_lookup_next;
 StructuredBuffer<uint> call_required_generic_count_out;
 StructuredBuffer<uint> call_required_generic_scan_input;
 StructuredBuffer<uint> call_required_generic_prefix;
@@ -157,11 +158,6 @@ uint call_node_for_requirement(uint requirement_i)
     return INVALID;
 }
 
-uint nullable_key(uint value)
-{
-    return value == INVALID ? 0u : value + 1u;
-}
-
 uint concrete_claim_key(uint row)
 {
     return call_generic_claim_callee[row] != INVALID &&
@@ -171,59 +167,36 @@ uint concrete_claim_key(uint row)
         : 0u;
 }
 
-bool generic_claim_key_less(uint row, uint callee_token, uint slot, uint concrete)
-{
-    uint row_callee = nullable_key(call_generic_claim_callee[row]);
-    uint key_callee = nullable_key(callee_token);
-    if (row_callee != key_callee)
-        return row_callee < key_callee;
-
-    uint row_slot = nullable_key(call_generic_claim_slot[row]);
-    uint key_slot = nullable_key(slot);
-    if (row_slot != key_slot)
-        return row_slot < key_slot;
-
-    return concrete_claim_key(row) < concrete;
-}
-
-uint lower_bound_generic_claim(uint callee_token, uint slot, uint concrete)
+uint find_generic_claim(uint callee_token, uint slot, bool require_concrete)
 {
     uint count = active_generic_claim_count();
-    uint lo = 0u;
-    uint hi = count;
-    for (uint step = 0u; step < 32u; step += 1u)
+    uint bucket = call_claim_lookup_bucket(callee_token, slot, count);
+    uint link = call_generic_claim_lookup_head[bucket];
+    uint result = INVALID;
+    for (uint step = 0u; step < count && link != 0u; step += 1u)
     {
-        if (lo >= hi)
-            continue;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint row = call_generic_claim_order[mid];
-        if (row >= count || !generic_claim_key_less(row, callee_token, slot, concrete))
-            hi = mid;
-        else
-            lo = mid + 1u;
+        uint row = link - 1u;
+        if (row >= count)
+            break;
+        if (call_generic_claim_callee[row] == callee_token &&
+            call_generic_claim_slot[row] == slot &&
+            (!require_concrete || concrete_claim_key(row) != 0u))
+        {
+            result = min(result, row);
+        }
+        link = call_generic_claim_lookup_next[row];
     }
-    return lo < count ? call_generic_claim_order[lo] : INVALID;
-}
-
-bool generic_claim_matches(uint row, uint callee_token, uint slot)
-{
-    return row != INVALID &&
-           row < active_generic_claim_count() &&
-           call_generic_claim_callee[row] == callee_token &&
-           call_generic_claim_slot[row] == slot;
+    return result;
 }
 
 bool has_concrete_generic_claim(uint callee_token, uint slot)
 {
-    uint row = lower_bound_generic_claim(callee_token, slot, 1u);
-    return generic_claim_matches(row, callee_token, slot) &&
-           call_generic_claim_type[row] != TY_UNKNOWN;
+    return find_generic_claim(callee_token, slot, true) != INVALID;
 }
 
 bool has_any_generic_claim(uint callee_token, uint slot)
 {
-    uint row = lower_bound_generic_claim(callee_token, slot, 0u);
-    return generic_claim_matches(row, callee_token, slot);
+    return find_generic_claim(callee_token, slot, false) != INVALID;
 }
 
 static const uint REQUIRED_SLOT_MISSING = 0u;

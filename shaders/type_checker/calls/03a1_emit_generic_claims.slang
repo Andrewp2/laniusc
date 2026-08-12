@@ -68,7 +68,6 @@ RWStructuredBuffer<uint> call_generic_claim_type;
 RWStructuredBuffer<uint> call_generic_claim_ref_tag;
 RWStructuredBuffer<uint> call_generic_claim_ref_payload;
 RWStructuredBuffer<uint> call_generic_claim_arg_row;
-RWStructuredBuffer<uint> call_generic_claim_order;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -658,8 +657,8 @@ uint array_or_slice_element_type_for_arg_node(uint arg_node)
 
 uint actual_instance_arg_type(uint arg_node, uint expected_instance, uint instance_arg_ordinal)
 {
-    uint actual_tag;
-    uint actual_payload;
+    uint actual_tag = TYPE_REF_INVALID;
+    uint actual_payload = INVALID;
     uint node = resolve_expr(arg_node);
     bool have_ref = valid_node(node) &&
                     semantic_expr_ref_tag_by_hir[node] == TYPE_REF_INSTANCE;
@@ -738,6 +737,66 @@ uint actual_instance_or_call_return_arg_type(
         instance_arg_ordinal);
 }
 
+bool actual_instance_or_call_return_arg_ref(
+    uint arg_node,
+    uint expected_instance,
+    uint instance_arg_ordinal,
+    out uint tag,
+    out uint payload)
+{
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
+
+    uint actual_tag = TYPE_REF_INVALID;
+    uint actual_payload = INVALID;
+    uint node = resolve_expr(arg_node);
+    bool have_ref = valid_node(node) &&
+                    semantic_expr_ref_tag_by_hir[node] == TYPE_REF_INSTANCE;
+    if (have_ref)
+    {
+        actual_tag = TYPE_REF_INSTANCE;
+        actual_payload = semantic_expr_ref_payload_by_hir[node];
+    }
+    else if (!arg_decl_type_ref(arg_node, actual_tag, actual_payload))
+    {
+        actual_payload = INVALID;
+    }
+
+    if (actual_tag == TYPE_REF_INSTANCE &&
+        same_named_instance_decl(expected_instance, actual_payload) &&
+        instance_arg_ref(actual_payload, instance_arg_ordinal, tag, payload))
+    {
+        return tag != TYPE_REF_INVALID && payload != INVALID;
+    }
+
+    uint actual_call_node = resolve_expr(arg_node);
+    if (!valid_node(actual_call_node) ||
+        compact_hir_core[actual_call_node].kind != HIR_CALL_EXPR)
+        return false;
+    uint actual_callee = callee_token_for_hir_call(actual_call_node);
+    if (!valid_token(actual_callee))
+        return false;
+    uint actual_fn = call_fn_index[actual_callee];
+    if (!valid_token(actual_fn))
+        return false;
+    uint return_instance = call_return_type_token[actual_fn];
+    if (!same_named_instance_decl(expected_instance, return_instance) ||
+        !instance_arg_ref(return_instance, instance_arg_ordinal, tag, payload))
+        return false;
+    if (tag == TYPE_REF_GENERIC_PARAM)
+    {
+        uint slot = generic_slot_for_type_ref(tag, payload);
+        if (slot == INVALID || slot >= PARAM_CACHE_STRIDE)
+            return false;
+        uint inferred = call_generic_slot_type[actual_callee * PARAM_CACHE_STRIDE + slot];
+        if (inferred == INVALID || inferred == TY_UNKNOWN)
+            return false;
+        tag = TYPE_REF_SCALAR;
+        payload = inferred;
+    }
+    return tag != TYPE_REF_INVALID && payload != INVALID;
+}
+
 uint call_arg_error_token(uint arg_node, uint callee_i)
 {
     return valid_node(arg_node) ? compact_hir_core[arg_node].token_start : callee_i;
@@ -780,7 +839,6 @@ void clear_generic_claim(uint claim_i)
     call_generic_claim_ref_tag[claim_i] = TYPE_REF_INVALID;
     call_generic_claim_ref_payload[claim_i] = INVALID;
     call_generic_claim_arg_row[claim_i] = INVALID;
-    call_generic_claim_order[claim_i] = claim_i;
 }
 
 void emit_generic_claim(uint claim_i, uint arg_row, uint callee_i, uint slot, uint arg_ty)
@@ -909,6 +967,18 @@ void emit_instance_generic_claim(
             arg_ty,
             call_arg_error_token(arg_node, callee_i));
     emit_generic_claim(claim_i, arg_row, callee_i, slot, arg_ty);
+    uint actual_tag;
+    uint actual_payload;
+    if (actual_instance_or_call_return_arg_ref(
+        arg_node,
+        expected_instance,
+        instance_arg_i,
+        actual_tag,
+        actual_payload))
+    {
+        call_generic_claim_ref_tag[claim_i] = actual_tag;
+        call_generic_claim_ref_payload[claim_i] = actual_payload;
+    }
 }
 
 void emit_claim_for_relation(uint claim_i, uint arg_row, uint relation_i)

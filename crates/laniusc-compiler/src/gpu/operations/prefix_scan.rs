@@ -426,14 +426,14 @@ fn pair_indirect<'a>(
     encoder: &'a mut wgpu::CommandEncoder,
     pass: &'a PassData,
     left: &'a wgpu::BindGroup,
-    left_args: &'a wgpu::Buffer,
+    left_args: &'a LaniusBuffer<u32>,
     right: &'a wgpu::BindGroup,
-    right_args: &'a wgpu::Buffer,
+    right_args: &'a LaniusBuffer<u32>,
     label: &'static str,
 ) {
     let mut batch = ComputePassBatch::begin(encoder, label);
-    batch.record_raw_indirect(pass, left, left_args);
-    batch.record_raw_indirect(pass, right, right_args);
+    batch.record_buffer_indirect(pass, left, left_args);
+    batch.record_buffer_indirect(pass, right, right_args);
 }
 
 fn pair_steps<'a>(

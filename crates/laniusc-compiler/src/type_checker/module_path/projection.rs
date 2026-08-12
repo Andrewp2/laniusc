@@ -193,7 +193,12 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
             ("alias_root_decl_out", alias_root_a.as_entire_binding()),
         ],
     )?;
-    let alias_root_jump_rounds = u32::BITS - alias_root_capacity.saturating_sub(1).leading_zeros();
+    let mut alias_root_jump_rounds = 0;
+    let mut alias_root_covered_nodes = 1u64;
+    while alias_root_covered_nodes < u64::from(alias_root_capacity) {
+        alias_root_jump_rounds += 1;
+        alias_root_covered_nodes = alias_root_covered_nodes.saturating_mul(16);
+    }
     let final_alias_root = if alias_root_jump_rounds % 2 == 0 {
         &alias_root_a
     } else {
@@ -259,12 +264,15 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         &alias_equiv_parent_b,
         &alias_equiv_parent_a,
     )?;
-    // Every round performs both min-parent hooking and a pointer-jump. After
-    // r rounds, paths of up to 2^r graph nodes have collapsed, so one
-    // capacity-covering logarithm is sufficient. Multiplying this by two
-    // replayed the complete convergence schedule a second time.
-    let alias_equivalence_rounds =
-        (u32::BITS - alias_equiv_capacity.saturating_sub(1).leading_zeros()).max(1);
+    // Each round performs min-parent hooking followed by a bounded walk of up
+    // to 16 parent links. One base-16 capacity-covering logarithm is enough to
+    // contract the longest possible component chain.
+    let mut alias_equivalence_rounds = 1;
+    let mut covered_nodes = 16u64;
+    while covered_nodes < u64::from(alias_equiv_capacity) {
+        alias_equivalence_rounds += 1;
+        covered_nodes = covered_nodes.saturating_mul(16);
+    }
     let final_alias_equiv_parent = if alias_equivalence_rounds % 2 == 0 {
         &alias_equiv_parent_a
     } else {

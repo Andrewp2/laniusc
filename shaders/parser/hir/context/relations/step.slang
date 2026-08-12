@@ -1,4 +1,4 @@
-// Pointer-jump parser-owned context relations over semantic-HIR rows.
+// Follow a bounded run of parser-owned context relations over semantic-HIR rows.
 
 struct Params
 {
@@ -31,6 +31,7 @@ RWStructuredBuffer<uint> hir_nearest_array_element_value_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint LINKS_PER_STEP = 16u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -71,7 +72,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint nearest_loop = hir_nearest_loop_value_in[row];
     uint nearest_fn = hir_nearest_fn_value_in[row];
     uint nearest_array_element = hir_nearest_array_element_value_in[row];
-    if (valid_semantic_row(link, semantic_count))
+    for (uint hop = 0u;
+         hop < LINKS_PER_STEP && valid_semantic_row(link, semantic_count);
+         ++hop)
     {
         if (context_value == INVALID)
         {

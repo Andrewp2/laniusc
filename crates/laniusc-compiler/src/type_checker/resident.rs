@@ -223,11 +223,14 @@ impl GpuTypeChecker {
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         let supports_large_workgroup_storage =
             device.limits().max_compute_workgroup_storage_size >= 32 * 1024;
-        let passes =
-            TypeCheckPasses::prepare_prefixes(device, &["type_checker", "scan/counted"], |key| {
+        let passes = TypeCheckPasses::prepare_prefixes(
+            device,
+            &["type_checker", "scan/counted", "radix"],
+            |key| {
                 key != "type_checker/predicates/01b2_sort_keys_small"
                     || supports_large_workgroup_storage
-            })?;
+            },
+        )?;
         let params_buf = zeroed_type_check_params_buffer(device, "type_check.resident.params");
         let status_buf = typed_storage_u32_rw(
             device,
@@ -993,12 +996,10 @@ impl GpuTypeChecker {
                     timer.stamp(encoder, "typecheck.member_receivers.done");
                 }
             }
-            if struct_field_key_passes_required(bind_groups.cache_key.parser_feature_flags) {
+            if struct_field_index_passes_required(bind_groups.cache_key.parser_feature_flags) {
                 record_struct_field_key_passes_with_passes(
-                    &self.passes,
                     encoder,
                     &bind_groups.type_instances,
-                    &bind_groups.hir_active_dispatch_args,
                     timer.as_deref_mut(),
                 )?;
             }
@@ -1510,15 +1511,6 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.predicates_method_contracts.done");
             }
-            record_predicate_method_contract_keys_with_passes(
-                &self.passes,
-                encoder,
-                &predicate_hir_dispatch_args,
-                predicates,
-            )?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.predicates_method_contract_keys.done");
-            }
             record_compute_indirect(
                 encoder,
                 &self.passes.kernel("type_checker/predicates/01_collect"),
@@ -1586,9 +1578,8 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.predicates_method_validation_rows.done");
             }
-            record_predicate_bind_groups_with_passes(&self.passes, encoder, predicates)?;
             if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.predicates_keys.done");
+                timer.stamp(encoder, "typecheck.predicates_indices.done");
             }
             record_compute_indirect(
                 encoder,

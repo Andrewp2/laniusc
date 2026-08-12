@@ -1,4 +1,4 @@
-// Pointer-jump nearest-semantic-parent links.
+// Follow a bounded run of nearest-semantic-parent links per dispatch.
 //
 // `value` is the closest dense semantic ancestor discovered so far. `link` is
 // the next parse-tree ancestor to compose with if no semantic ancestor has been
@@ -22,6 +22,7 @@ RWStructuredBuffer<uint> hir_semantic_parent_value_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint LINKS_PER_STEP = 16u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -63,10 +64,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint ancestor_value = hir_semantic_parent_value_in[link];
-    uint ancestor_link = hir_semantic_parent_link_in[link];
-    bool resolved = valid_node(ancestor_value);
+    for (uint hop = 0u; hop < LINKS_PER_STEP; ++hop)
+    {
+        if (valid_node(value) || !valid_node(link) || link == node)
+            break;
+        uint ancestor_value = hir_semantic_parent_value_in[link];
+        uint ancestor_link = hir_semantic_parent_link_in[link];
+        if (valid_node(ancestor_value))
+        {
+            value = ancestor_value;
+            link = INVALID;
+            break;
+        }
+        link = valid_node(ancestor_link) ? ancestor_link : INVALID;
+    }
 
-    hir_semantic_parent_value_out[node] = resolved ? ancestor_value : INVALID;
-    hir_semantic_parent_link_out[node] = resolved || !valid_node(ancestor_link) ? INVALID : ancestor_link;
+    hir_semantic_parent_value_out[node] = valid_node(value) ? value : INVALID;
+    hir_semantic_parent_link_out[node] = link;
 }

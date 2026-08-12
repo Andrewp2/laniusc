@@ -1,5 +1,4 @@
-// Pointer-double type-root links. After ceil(log2(n)) parallel steps every
-// type node owns the same topmost root as its entire generic-argument chain.
+// Follow a bounded run of type-root links per dispatch.
 
 struct Params { uint n; uint uses_status_count; };
 ConstantBuffer<Params> gHirType;
@@ -12,6 +11,7 @@ RWStructuredBuffer<uint> hir_type_root_owner_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint LINKS_PER_STEP = 16u;
 
 uint active_node_count()
 {
@@ -28,7 +28,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (node >= gHirType.n) return;
     uint link = node < active ? hir_type_root_link_in[node] : INVALID;
     uint owner = node < active ? hir_type_root_owner_in[node] : INVALID;
-    if (link < active)
+    for (uint hop = 0u; hop < LINKS_PER_STEP && link < active; ++hop)
     {
         uint ancestor_owner = hir_type_root_owner_in[link];
         if (ancestor_owner < active) owner = ancestor_owner;

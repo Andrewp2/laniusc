@@ -2,6 +2,7 @@
 
 import hir_records;
 import status;
+import type_checker.calls.claim_lookup;
 
 struct Params
 {
@@ -20,7 +21,8 @@ StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_const_claim_callee;
 StructuredBuffer<uint> call_const_claim_slot;
 StructuredBuffer<uint> call_const_claim_len;
-StructuredBuffer<uint> call_const_claim_order;
+StructuredBuffer<uint> call_const_claim_lookup_head;
+StructuredBuffer<uint> call_const_claim_lookup_next;
 
 RWStructuredBuffer<uint> status;
 
@@ -81,26 +83,39 @@ bool concrete_claim(uint row)
            call_const_claim_len[row] != INVALID;
 }
 
-void validate_claim_at(uint order_i)
+uint canonical_claim_row(uint row, uint active_count)
 {
-    uint active_count = call_arg_row_count_out[0u];
-    if (order_i == 0u || order_i >= active_count)
-        return;
-
-    uint row = call_const_claim_order[order_i];
-    uint prev_row = call_const_claim_order[order_i - 1u];
-    if (row >= active_count || prev_row >= active_count)
-        return;
-    if (!concrete_claim(row) || !concrete_claim(prev_row))
-        return;
-
     uint callee = call_const_claim_callee[row];
     uint slot = call_const_claim_slot[row];
-    if (callee != call_const_claim_callee[prev_row] ||
-        slot != call_const_claim_slot[prev_row])
+    uint bucket = call_claim_lookup_bucket(callee, slot, active_count);
+    uint link = call_const_claim_lookup_head[bucket];
+    uint canonical = INVALID;
+    for (uint step = 0u; step < active_count && link != 0u; step += 1u)
     {
-        return;
+        uint candidate = link - 1u;
+        if (candidate >= active_count)
+            break;
+        if (concrete_claim(candidate) &&
+            call_const_claim_callee[candidate] == callee &&
+            call_const_claim_slot[candidate] == slot)
+        {
+            canonical = min(canonical, candidate);
+        }
+        link = call_const_claim_lookup_next[candidate];
     }
+    return canonical;
+}
+
+void validate_claim_at(uint row)
+{
+    uint active_count = call_arg_row_count_out[0u];
+    if (row >= active_count || !concrete_claim(row))
+        return;
+
+    uint prev_row = canonical_claim_row(row, active_count);
+    if (prev_row == INVALID || prev_row == row)
+        return;
+    uint callee = call_const_claim_callee[row];
 
     uint len = call_const_claim_len[row];
     uint prev_len = call_const_claim_len[prev_row];

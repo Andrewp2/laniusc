@@ -76,7 +76,10 @@ pub(super) fn typed_storage_u32_rw(
         mapped_at_creation: false,
     });
     let buffer = LaniusBuffer::new_labeled((raw, byte_size), count, label);
-    crate::gpu::buffers::register_resettable_buffer(&buffer);
+    crate::gpu::buffers::register_resettable_buffer(
+        &buffer,
+        crate::gpu::buffers::JobResetPolicy::ClearBeforeJob,
+    );
     buffer
 }
 

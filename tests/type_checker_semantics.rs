@@ -379,7 +379,9 @@ fn type_checker_exact_name_hash_table_handles_many_long_shared_prefixes() {
             "    let exact_name_hash_shared_prefix_identifier_{index:03}: i32 = {index};\n"
         ));
     }
-    source.push_str("    return exact_name_hash_shared_prefix_identifier_255;\n}\n");
+    let very_long_name = format!("exact_name_hash_{}", "shared_prefix_".repeat(20));
+    source.push_str(&format!("    let {very_long_name}: i32 = 255;\n"));
+    source.push_str(&format!("    return {very_long_name};\n}}\n"));
     assert_gpu_type_check_ok(&source);
 }
 

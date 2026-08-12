@@ -9,8 +9,18 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
     resources: &ResourceMap<'_>,
     shape: VisibleShape,
 ) -> Result<VisibleBindGroups> {
+    let mut visible_resources = resources.clone();
+    visible_resources.alias(
+        "hir_visible_decl_source_by_token",
+        "hir_visible_decl_key_order_tmp",
+    )?;
     let reflected = |label, kernel| {
-        reflected_bind_group_from_resources(device, label, &passes.kernel(kernel), resources)
+        reflected_bind_group_from_resources(
+            device,
+            label,
+            &passes.kernel(kernel),
+            &visible_resources,
+        )
     };
     let clear = reflected(
         "type_check_visible_01_clear",
@@ -42,12 +52,12 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
             ),
         ],
     )?;
-    let hir_declarations = CompactionOperation::indirect(
+    let mark_hir_declarations = ComputeOperation::indirect_spec(
         device,
         graph,
         resources,
         passes,
-        VISIBLE_DECL_COMPACTION,
+        VISIBLE_HIR_DECL_MARK,
         &compact_hir_dispatch_args,
     )?;
     let match_payload_dispatch_args = graph.u32_buffer("match_payload_dispatch_args")?;
@@ -68,13 +78,25 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
             ),
         ],
     )?;
-    let scatter_match_payload_decls = reflected(
-        "type_check_visible_03c2_scatter_match_payload_decls",
-        "type_checker/visible/03c2_scatter_match_payload_decls",
+    let mark_match_payload_declarations = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VISIBLE_MATCH_DECL_MARK,
+        &match_payload_dispatch_args,
     )?;
-    let finalize_decl_count = reflected(
-        "type_check_visible_03c3_finalize_decl_count",
-        "type_checker/visible/03c3_finalize_decl_count",
+    let declaration_scan =
+        PrefixScanOperation::from_spec(device, passes, resources, compiler_graph::VISIBLE_SCAN)?;
+    let token_active_dispatch_args =
+        typed_buffer_from_resources(resources, "token_active_dispatch_args")?;
+    let scatter_declarations = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VISIBLE_DECL_SCATTER,
+        &token_active_dispatch_args,
     )?;
 
     let declaration_capacity = shape.record_capacity.max(1);
@@ -145,13 +167,13 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
     )?;
     Ok(VisibleBindGroups {
         compact_hir_dispatch_args: typed_alias_storage_u32(&compact_hir_dispatch_args, 3),
-        match_payload_dispatch_args,
         clear,
         compact_hir_dispatch,
-        hir_declarations,
+        mark_hir_declarations,
         match_payload_dispatch,
-        scatter_match_payload_decls,
-        finalize_decl_count,
+        mark_match_payload_declarations,
+        declaration_scan,
+        scatter_declarations,
         declarations,
         _compact_hir_dispatch_params: compact_hir_dispatch_params,
         _hir_decl_scope_leaf_params: leaf_params,

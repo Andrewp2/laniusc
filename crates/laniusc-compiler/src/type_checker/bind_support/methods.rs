@@ -6,7 +6,7 @@ pub(in crate::type_checker) fn create_method_bind_groups(
     graph: &compiler_graph::TypeCheckCompilerGraph,
     passes: &TypeCheckPasses,
     resources: &ResourceMap<'_>,
-    keys: MethodKeyPipeline,
+    keys: MethodIndex,
     token_args: &LaniusBuffer<u32>,
     method_token_args: &LaniusBuffer<u32>,
     method_compact_args: &LaniusBuffer<u32>,
@@ -18,7 +18,7 @@ pub(in crate::type_checker) fn create_method_bind_groups(
     Ok(MethodBindGroups {
         clear: indirect(METHODS_CLEAR, token_args)?,
         collect: indirect(METHODS_COLLECT, method_compact_args)?,
-        attach_metadata: indirect(METHODS_ATTACH_METADATA, method_token_args)?,
+        attach_metadata: indirect(METHODS_ATTACH_METADATA, method_compact_args)?,
         bind_self_receivers: indirect(METHODS_BIND_SELF_RECEIVERS, method_hir_args)?,
         keys,
         mark_call_keys: indirect(METHODS_MARK_CALL_KEYS, method_token_hir_args)?,

@@ -1,8 +1,9 @@
 // Derive parser-owned type expression metadata from production ids and tree edges.
 //
 // The pass records syntax facts needed by future array/slice/reference semantics
-// without re-reading source text or scanning token neighborhoods. Follow-up
-// path/type-argument passes publish list-derived metadata with pointer jumping.
+// and seeds the independent path-leaf relation while the same tree row is hot.
+// Follow-up path/type-argument passes publish list-derived metadata with pointer
+// jumping.
 
 import generated_parse_production_ids;
 
@@ -29,6 +30,8 @@ RWStructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 RWStructuredBuffer<uint> hir_type_arg_start;
 RWStructuredBuffer<uint> hir_type_arg_count;
 RWStructuredBuffer<uint> hir_type_arg_next;
+RWStructuredBuffer<uint> hir_type_path_leaf_link_a;
+RWStructuredBuffer<uint> hir_type_path_leaf_value_a;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -136,6 +139,46 @@ void publish_array_or_slice_type(uint i)
     }
 }
 
+bool is_path_container(uint prod)
+{
+    return prod == PROD_PATH || prod == PROD_PATH_MORE ||
+           prod == PROD_TYPE_PATH || prod == PROD_TYPE_PATH_MORE ||
+           prod == PROD_BOUND_TYPE_PATH || prod == PROD_BOUND_TYPE_PATH_MORE;
+}
+
+bool is_type_path_segment(uint prod)
+{
+    return prod == PROD_TYPE_PATH_IDENT ||
+           prod == PROD_PATH_IDENT ||
+           prod == PROD_PATH_IDENT_ARGS ||
+           prod == PROD_BOUND_TYPE_PATH_IDENT;
+}
+
+bool is_type_path_tail(uint prod)
+{
+    return prod == PROD_TYPE_PATH_MORE ||
+           prod == PROD_PATH_MORE ||
+           prod == PROD_BOUND_TYPE_PATH_MORE;
+}
+
+void seed_type_path_leaf(uint node)
+{
+    hir_type_path_leaf_link_a[node] = INVALID;
+    hir_type_path_leaf_value_a[node] = INVALID;
+
+    if (!is_path_container(node_kind[node]))
+        return;
+
+    uint segment = first_child_node(node);
+    if (!valid_node(segment) || !is_type_path_segment(node_kind[segment]))
+        return;
+
+    hir_type_path_leaf_value_a[node] = segment;
+    uint tail = next_sibling_node(segment);
+    if (valid_node(tail) && is_type_path_tail(node_kind[tail]))
+        hir_type_path_leaf_link_a[node] = tail;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -144,6 +187,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gHirType.n)
         return;
 
+    seed_type_path_leaf(i);
     clear_type(i);
 
     if (!valid_node(i) || hir_kind[i] != HIR_TYPE)

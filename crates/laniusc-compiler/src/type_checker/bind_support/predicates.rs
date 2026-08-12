@@ -6,9 +6,6 @@ use super::super::*;
 pub(in crate::type_checker) fn create_predicate_bind_groups(
     device: &wgpu::Device,
     passes: &TypeCheckPasses,
-    token_capacity: u32,
-    predicate_capacity: u32,
-    predicate_blocks: u32,
     resources: &ResourceMap<'_>,
 ) -> Result<PredicateBindGroups> {
     let reflected = |label, kernel| {
@@ -44,28 +41,6 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         "type_checker/predicates/01_collect_impls",
     )?;
 
-    let build_keys = |kind| {
-        PredicateKeyPipeline::new(
-            device,
-            passes,
-            PredicateKeyBuild {
-                kind,
-                token_capacity,
-                predicate_capacity,
-                predicate_blocks,
-                resources,
-            },
-        )
-    };
-    let method_contract_keys = build_keys(PredicateKeyKind::MethodContract)?;
-    let method_param_keys = build_keys(PredicateKeyKind::MethodParam)?;
-    let owner_keys = build_keys(PredicateKeyKind::Owner)?;
-    let impl_keys = build_keys(PredicateKeyKind::Impl)?;
-
-    let build_method_contract_owner_ranges = reflected(
-        "type_check_resident_predicates_build_method_contract_owner_ranges",
-        "type_checker/predicates/01e_build_method_owner_ranges",
-    )?;
     let emit_method_validation_rows = reflected(
         "type_check_resident_predicates_emit_method_validation_rows",
         "type_checker/predicates/01f_emit_method_validation_rows",
@@ -132,15 +107,10 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         collect,
         validate_bound_args,
         collect_impls,
-        method_contract_keys,
-        method_param_keys,
-        build_method_contract_owner_ranges,
         emit_method_validation_rows,
         emit_method_param_validation_rows,
         validate_method_type_arg_rows,
         reduce_method_validation_errors,
-        owner_keys,
-        impl_keys,
         _obligation_pair_dispatch_params: obligation_pair_dispatch_params,
         count_obligation_pairs,
         obligation_pair_scan,

@@ -228,7 +228,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_struct_lit_field_owner_b[node] = INVALID;
     hir_struct_lit_field_link_b[node] = INVALID;
     hir_struct_lit_field_rank_b[node] = 0u;
-
     if (!valid_node(node))
         return;
 

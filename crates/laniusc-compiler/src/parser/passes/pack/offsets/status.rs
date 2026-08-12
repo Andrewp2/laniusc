@@ -68,22 +68,6 @@ impl PackOffsetsStatusPass {
                 emit_capacity: buffers.tree_capacity,
             },
         );
-        let read_from_a = buffers
-            .pack_offset_scan_steps
-            .last()
-            .map(|step| step.read_from_a)
-            .unwrap_or(true);
-        let sc_prefix = if read_from_a {
-            &buffers.pack_sc_prefix_a
-        } else {
-            &buffers.pack_sc_prefix_b
-        };
-        let emit_prefix = if read_from_a {
-            &buffers.pack_emit_prefix_a
-        } else {
-            &buffers.pack_emit_prefix_b
-        };
-
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
                 "gParams".into(),
@@ -93,8 +77,15 @@ impl PackOffsetsStatusPass {
                 "token_count".into(),
                 buffers.token_count.as_entire_binding(),
             ),
-            ("sc_prefix".into(), sc_prefix.as_entire_binding()),
-            ("emit_prefix".into(), emit_prefix.as_entire_binding()),
+            (
+                "out_headers".into(),
+                buffers.out_headers.as_entire_binding(),
+            ),
+            ("sc_offsets".into(), buffers.sc_offsets.as_entire_binding()),
+            (
+                "emit_offsets".into(),
+                buffers.emit_offsets.as_entire_binding(),
+            ),
             (
                 "partial_parse_status".into(),
                 buffers.partial_parse_status.as_entire_binding(),

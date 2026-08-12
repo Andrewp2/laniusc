@@ -76,7 +76,10 @@ pub struct GpuParser {
     timers_supported: bool,
 
     token_delimiters_01: PassData,
-    token_delimiters_02: PassData,
+    token_delimiters_02_scan_up: PassData,
+    token_delimiters_02_scan_down: PassData,
+    token_statement_event_scan_up: PassData,
+    token_statement_event_scan_down: PassData,
     token_delimiters_03_owner_local: PassData,
     token_delimiters_04_owner_apply: PassData,
     tokens_brace_context: PassData,
@@ -88,11 +91,8 @@ pub struct GpuParser {
     tokens_where_clause_02_apply: PassData,
     tokens_match_pattern_01_local: PassData,
     tokens_match_pattern_02_apply: PassData,
-    tokens_paren_match_01_depth_blocks: PassData,
-    tokens_angle_match_01_depth_blocks: PassData,
-    tokens_bracket_match_01_depth_blocks: PassData,
-    tokens_brace_match_01_depth_blocks: PassData,
-    tokens_brace_match_02_build_min_tree: PassData,
+    tokens_delimiter_match_01_depth_blocks: PassData,
+    tokens_delimiter_match_02_build_min_tree: PassData,
     tokens_bracket_match_03_pair_pse: PassData,
     tokens_brace_match_03_pair_pse: PassData,
     active_pair_dispatch_args: PassData,
@@ -105,7 +105,8 @@ pub struct GpuParser {
     tokens_generic_shr_00_raw_local: PassData,
     tokens_generic_shr_00_raw_apply: PassData,
     tokens_generic_shr_01_local: PassData,
-    tokens_generic_shr_02_scan: PassData,
+    tokens_generic_shr_02_scan_up: PassData,
+    tokens_generic_shr_02_scan_down: PassData,
     tokens_generic_shr_03_apply: PassData,
     tokens_generic_shr_04_close_kinds: PassData,
     passes: ParserPasses,
@@ -142,9 +143,21 @@ impl GpuParser {
                 "tokens_delimiters_01_local",
                 make_token_delimiters_01_pass
             ),
-            token_delimiters_02: make_parser_pass!(
-                "tokens_delimiters_02_scan",
-                make_token_delimiters_02_pass
+            token_delimiters_02_scan_up: make_parser_pass!(
+                "tokens_delimiters_02_scan_up",
+                make_token_delimiters_02_scan_up_pass
+            ),
+            token_delimiters_02_scan_down: make_parser_pass!(
+                "tokens_delimiters_02_scan_down",
+                make_token_delimiters_02_scan_down_pass
+            ),
+            token_statement_event_scan_up: make_parser_pass!(
+                "tokens_context_scan_up",
+                make_token_statement_event_scan_up_pass
+            ),
+            token_statement_event_scan_down: make_parser_pass!(
+                "tokens_context_scan_down",
+                make_token_statement_event_scan_down_pass
             ),
             token_delimiters_03_owner_local: make_parser_pass!(
                 "tokens_delimiters_03_owner_local",
@@ -190,25 +203,13 @@ impl GpuParser {
                 "tokens_match_pattern_02_apply",
                 make_tokens_match_pattern_02_apply_pass
             ),
-            tokens_paren_match_01_depth_blocks: make_parser_pass!(
-                "tokens_paren_match_01_depth_blocks",
-                make_tokens_paren_match_01_depth_blocks_pass
+            tokens_delimiter_match_01_depth_blocks: make_parser_pass!(
+                "tokens_delimiter_match_01_depth_blocks",
+                make_tokens_delimiter_match_01_depth_blocks_pass
             ),
-            tokens_angle_match_01_depth_blocks: make_parser_pass!(
-                "tokens_angle_match_01_depth_blocks",
-                make_tokens_angle_match_01_depth_blocks_pass
-            ),
-            tokens_bracket_match_01_depth_blocks: make_parser_pass!(
-                "tokens_bracket_match_01_depth_blocks",
-                make_tokens_bracket_match_01_depth_blocks_pass
-            ),
-            tokens_brace_match_01_depth_blocks: make_parser_pass!(
-                "tokens_brace_match_01_depth_blocks",
-                make_tokens_brace_match_01_depth_blocks_pass
-            ),
-            tokens_brace_match_02_build_min_tree: make_parser_pass!(
-                "tokens_brace_match_02_build_min_tree",
-                make_tokens_brace_match_02_build_min_tree_pass
+            tokens_delimiter_match_02_build_min_tree: make_parser_pass!(
+                "tokens_delimiter_match_02_build_min_tree",
+                make_tokens_delimiter_match_02_build_min_tree_pass
             ),
             tokens_bracket_match_03_pair_pse: make_parser_pass!(
                 "tokens_bracket_match_03_pair_pse",
@@ -255,9 +256,13 @@ impl GpuParser {
                 "tokens_generic_shr_01_local",
                 make_tokens_generic_shr_01_local_pass
             ),
-            tokens_generic_shr_02_scan: make_parser_pass!(
-                "tokens_generic_shr_02_scan",
-                make_tokens_generic_shr_02_scan_pass
+            tokens_generic_shr_02_scan_up: make_parser_pass!(
+                "tokens_generic_shr_02_scan_up",
+                make_tokens_generic_shr_02_scan_up_pass
+            ),
+            tokens_generic_shr_02_scan_down: make_parser_pass!(
+                "tokens_generic_shr_02_scan_down",
+                make_tokens_generic_shr_02_scan_down_pass
             ),
             tokens_generic_shr_03_apply: make_parser_pass!(
                 "tokens_generic_shr_03_apply",
@@ -532,6 +537,11 @@ impl GpuParser {
             eprintln!(
                 "[gpu_compile_host_timer] parser.workspace_clear: allocations={allocations} active_bytes={cleared_bytes} resident_bytes={bytes}"
             );
+            for (label, active_bytes) in bufs.largest_resettable_storage(active_tree_capacity, 24) {
+                eprintln!(
+                    "[gpu_compile_host_timer] parser.workspace_clear.allocation: label={label} active_bytes={active_bytes}"
+                );
+            }
         }
 
         self.record_tokens_to_kinds_timed(

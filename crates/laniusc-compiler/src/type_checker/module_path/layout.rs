@@ -17,7 +17,6 @@ pub(in crate::type_checker) struct Layout {
     pub(in crate::type_checker) import_record_capacity_u32: u32,
     pub(in crate::type_checker) import_visible_capacity: usize,
     pub(in crate::type_checker) import_visible_capacity_u32: u32,
-    pub(in crate::type_checker) import_visible_n_blocks: u32,
     pub(in crate::type_checker) key_radix_histogram_len: usize,
 }
 
@@ -51,12 +50,8 @@ impl Layout {
             token_capacity.max(1) as usize
         };
         let import_visible_capacity_u32 = import_visible_capacity as u32;
-        let import_visible_n_blocks = import_visible_capacity_u32.div_ceil(256).max(1);
-        let key_radix_histogram_len = module_n_blocks
-            .max(record_n_blocks)
-            .max(import_visible_n_blocks)
-            .max(1) as usize
-            * NAME_RADIX_BUCKETS as usize;
+        let key_radix_histogram_len =
+            module_n_blocks.max(record_n_blocks).max(1) as usize * RADIX_U8_BUCKET_COUNT as usize;
 
         Self {
             n_blocks,
@@ -70,7 +65,6 @@ impl Layout {
             import_record_capacity_u32,
             import_visible_capacity,
             import_visible_capacity_u32,
-            import_visible_n_blocks,
             key_radix_histogram_len,
         }
     }

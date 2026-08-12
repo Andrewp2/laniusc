@@ -1,3 +1,11 @@
+struct ActionHeader
+{
+    uint push_len;
+    uint emit_len;
+    uint pop_tag;
+    uint pop_count;
+};
+
 struct Params
 {
     uint n_pairs;
@@ -6,8 +14,9 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;
-StructuredBuffer<uint> sc_prefix;
-StructuredBuffer<uint> emit_prefix;
+StructuredBuffer<ActionHeader> out_headers;
+StructuredBuffer<uint> sc_offsets;
+StructuredBuffer<uint> emit_offsets;
 RWStructuredBuffer<uint> partial_parse_status;
 
 static const uint WG_SIZE = 256u;
@@ -48,8 +57,9 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     }
 
     uint last = n_active - 1u;
-    uint sc_total = sc_prefix[last];
-    uint emit_total = emit_prefix[last];
+    ActionHeader header = out_headers[last];
+    uint sc_total = sc_offsets[last] + header.push_len + header.pop_count;
+    uint emit_total = emit_offsets[last] + header.emit_len;
     bool emit_overflow = emit_total > gParams.emit_capacity;
     uint reported_emit = min(emit_total, gParams.emit_capacity);
 

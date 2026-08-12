@@ -1,20 +1,17 @@
-// GPU sorted method-table resolver.
+// GPU hash-indexed method-table resolver.
 //
 // Scheduling contract:
-// - Dispatch after method-call keys are marked and method declaration keys are
-//   sorted/validated.
-// - This pass binary-searches sorted_method_key_order using
-//   (receiver type-ref tag/payload, receiver type-argument row count/hash,
-//   method name id, module id) and writes the resolved function token plus
-//   return type metadata. Cross-module visibility uses an equal range over the
-//   receiver/name prefix and verifies compact receiver argument rows inside the
-//   candidate range.
+// - Dispatch after method-call keys are marked and the exact method index is
+//   built and validated.
+// - This pass selects a hash bucket by receiver identity, argument count/hash,
+//   and method name, then verifies exact receiver arguments and module
+//   visibility while traversing compact method rows in that bucket.
 // - It does not inspect source bytes, hash token text, compare names by
-//   spelling, perform CPU lookup, or use a direct method hash table.
+//   spelling, or perform CPU lookup.
 
-import fixed.key;
 import gpu_index;
-import range_query;
+import hir_records;
+import type_checker.methods.lookup;
 
 struct Params
 {
@@ -26,14 +23,17 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_count;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<HirMethodCore> compact_method_cores;
 StructuredBuffer<uint> method_call_receiver_ref_tag;
 StructuredBuffer<uint> method_call_receiver_ref_payload;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> method_call_site_module_id;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> module_count_out;
-StructuredBuffer<uint> sorted_method_key_order;
 StructuredBuffer<uint> method_key_status;
+StructuredBuffer<uint> method_lookup_head;
+StructuredBuffer<uint> method_lookup_next;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_module_id;
@@ -79,6 +79,11 @@ uint linear_thread_id(uint3 dtid)
 uint active_token_count()
 {
     return min(token_count[0], gParams.n_tokens);
+}
+
+uint active_method_count()
+{
+    return min(compact_method_count[0u], gParams.n_hir_nodes);
 }
 
 uint active_module_count()
@@ -519,67 +524,6 @@ uint receiver_arg_hash_key(uint receiver_tag, uint receiver_payload, uint generi
     return type_instance_arg_hash[receiver_payload];
 }
 
-public struct MethodFixedKey : IFixedU32RowKey<MethodLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        uint active_tokens = active_token_count();
-        uint fn_i = row < active_tokens ? sorted_method_key_order[row] : INVALID;
-        if (fn_i >= active_tokens)
-            return 0u;
-        if (lane == 0u)
-            return fixed_key_encode_nullable_u32(
-                method_decl_receiver_ref_tag[fn_i],
-                TYPE_REF_INVALID);
-        if (lane == 1u)
-            return fixed_key_encode_nullable_u32(
-                receiver_payload_key(
-                    method_decl_receiver_ref_tag[fn_i],
-                    method_decl_receiver_ref_payload[fn_i]),
-                INVALID);
-        if (lane == 2u)
-            return receiver_arg_count(
-                method_decl_receiver_ref_tag[fn_i],
-                method_decl_receiver_ref_payload[fn_i]) + 1u;
-        if (lane == 3u)
-            return receiver_arg_hash_key(
-                method_decl_receiver_ref_tag[fn_i],
-                method_decl_receiver_ref_payload[fn_i],
-                0u);
-        if (lane == 4u)
-            return fixed_key_encode_nullable_u32(method_decl_name_id[fn_i], INVALID);
-        return fixed_key_encode_nullable_u32(method_decl_module_id[fn_i], INVALID);
-    }
-
-    public static uint key_lane(MethodLookupKey key, uint lane)
-    {
-        if (lane == 0u)
-            return fixed_key_encode_nullable_u32(key.receiver_tag, TYPE_REF_INVALID);
-        if (lane == 1u)
-            return fixed_key_encode_nullable_u32(
-                receiver_payload_key(key.receiver_tag, key.receiver_payload),
-                INVALID);
-        if (lane == 2u)
-            return receiver_arg_count(key.receiver_tag, key.receiver_payload) + 1u;
-        if (lane == 3u)
-            return key.receiver_arg_hash;
-        if (lane == 4u)
-            return fixed_key_encode_nullable_u32(key.name_id, INVALID);
-        return fixed_key_encode_nullable_u32(key.module_id, INVALID);
-    }
-}
-
-public struct MethodPrefixCompare : IRowQueryCompare<MethodLookupKey>
-{
-    public static int compare(uint row, MethodLookupKey key)
-    {
-        return fixed_u32_row_key_compare<MethodLookupKey, MethodFixedKey>(
-            row,
-            key,
-            3u);
-    }
-}
-
 bool method_key_identity_matches(uint fn_i, MethodLookupKey key)
 {
     if (fn_i >= active_token_count())
@@ -652,15 +596,29 @@ bool method_status_resolvable(uint fn_i)
     return status == METHOD_KEY_STATUS_PUBLIC_OK || status == METHOD_KEY_STATUS_PRIVATE_OK;
 }
 
-uint matching_method_in_range(QueryRange range, MethodLookupKey key)
+uint method_lookup_bucket_for_key(MethodLookupKey key)
 {
-    if (range.end > active_token_count() || range.end < range.begin)
-        return INVALID;
+    return method_lookup_bucket(
+        key.receiver_tag,
+        receiver_payload_key(key.receiver_tag, key.receiver_payload),
+        receiver_arg_count(key.receiver_tag, key.receiver_payload),
+        key.receiver_arg_hash,
+        key.name_id,
+        active_method_count());
+}
 
+uint matching_method_in_bucket(MethodLookupKey key)
+{
+    uint method_count = active_method_count();
+    uint encoded_row = method_lookup_head[method_lookup_bucket_for_key(key)];
     uint found_fn_i = INVALID;
-    for (uint row = range.begin; row < range.end; row += 1u)
+    for (uint visited = 0u; encoded_row != 0u && visited < method_count; visited += 1u)
     {
-        uint fn_i = sorted_method_key_order[row];
+        uint row = encoded_row - 1u;
+        if (row >= method_count)
+            return INVALID;
+        encoded_row = method_lookup_next[row];
+        uint fn_i = compact_method_cores[row].name_token;
         if (!method_status_resolvable(fn_i) ||
             !method_key_identity_matches(fn_i, key) ||
             !method_receiver_args_match(fn_i, key))
@@ -688,19 +646,13 @@ uint find_method(uint module_id, uint receiver_tag, uint receiver_payload, uint 
     key.name_id = name_id;
     key.generic_receiver_args = 0u;
 
-    QueryRange exact_range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
-        active_token_count(),
-        key);
-    uint exact_fn_i = matching_method_in_range(exact_range, key);
+    uint exact_fn_i = matching_method_in_bucket(key);
     uint generic_fn_i = INVALID;
     if (receiver_arg_count(receiver_tag, receiver_payload) != 0u)
     {
         key.generic_receiver_args = 1u;
         key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 1u);
-        QueryRange generic_range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
-            active_token_count(),
-            key);
-        generic_fn_i = matching_method_in_range(generic_range, key);
+        generic_fn_i = matching_method_in_bucket(key);
     }
 
     // Specialization is not a proven relation yet; overlapping exact/generic
@@ -711,19 +663,21 @@ uint find_method(uint module_id, uint receiver_tag, uint receiver_payload, uint 
     return exact_fn_i != INVALID ? exact_fn_i : generic_fn_i;
 }
 
-bool unique_visible_method_in_range(
+bool unique_visible_method_in_bucket(
     uint method_i,
-    QueryRange range,
     MethodLookupKey key,
     out uint visible_fn_i)
 {
     visible_fn_i = INVALID;
-    if (range.end > active_token_count() || range.end < range.begin)
-        return false;
-
-    for (uint row = range.begin; row < range.end; row += 1u)
+    uint method_count = active_method_count();
+    uint encoded_row = method_lookup_head[method_lookup_bucket_for_key(key)];
+    for (uint visited = 0u; encoded_row != 0u && visited < method_count; visited += 1u)
     {
-        uint fn_i = sorted_method_key_order[row];
+        uint row = encoded_row - 1u;
+        if (row >= method_count)
+            return false;
+        encoded_row = method_lookup_next[row];
+        uint fn_i = compact_method_cores[row].name_token;
         uint candidate = method_key_identity_matches(fn_i, key) &&
                          method_receiver_args_match(fn_i, key)
             ? visibility_checked_method(method_i, fn_i)
@@ -758,10 +712,7 @@ uint find_visible_method_for_receiver(uint method_i, uint receiver_tag, uint rec
     key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 0u);
     key.name_id = name_id;
     key.generic_receiver_args = 0u;
-    QueryRange range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
-        active_token_count(),
-        key);
-    if (!unique_visible_method_in_range(method_i, range, key, exact_fn_i))
+    if (!unique_visible_method_in_bucket(method_i, key, exact_fn_i))
         return INVALID;
 
     if (receiver_arg_count(receiver_tag, receiver_payload) == 0u)
@@ -770,10 +721,7 @@ uint find_visible_method_for_receiver(uint method_i, uint receiver_tag, uint rec
     uint generic_fn_i = INVALID;
     key.generic_receiver_args = 1u;
     key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 1u);
-    range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
-        active_token_count(),
-        key);
-    if (!unique_visible_method_in_range(method_i, range, key, generic_fn_i))
+    if (!unique_visible_method_in_bucket(method_i, key, generic_fn_i))
         return INVALID;
 
     if (exact_fn_i != INVALID && generic_fn_i != INVALID)

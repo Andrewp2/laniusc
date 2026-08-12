@@ -17,6 +17,7 @@ use super::{
         SemanticLirSchedule,
         SemanticLirString,
         TargetScheduleKey,
+        TargetScheduleRadixLayout,
     },
     schedule::GpuStableScheduleSorter,
 };
@@ -111,15 +112,6 @@ struct SemanticFunctionParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
-struct SemanticScheduleParams {
-    semantic_capacity: u32,
-    reserved0: u32,
-    reserved1: u32,
-    reserved2: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
 pub(super) struct ScanParams {
     pub(super) n_items: u32,
     pub(super) n_blocks: u32,
@@ -148,7 +140,6 @@ struct SemanticPasses {
     scan_down: PassData,
     scan_apply: PassData,
     scatter: PassData,
-    schedule_init: PassData,
     call_args: PassData,
     aggregate_elements: PassData,
     strings: PassData,
@@ -190,10 +181,6 @@ impl SemanticPasses {
             )?,
             scan_apply: load("lir.semantic.scan.apply", "scan/counted/02_apply")?,
             scatter: load("lir.semantic.scatter", "codegen/lir/semantic/scatter")?,
-            schedule_init: load(
-                "lir.semantic.schedule.init",
-                "codegen/lir/semantic/schedule_init",
-            )?,
             call_args: load("lir.semantic.call_args", "codegen/lir/semantic/call_args")?,
             aggregate_elements: load(
                 "lir.semantic.aggregate_elements",
@@ -553,7 +540,6 @@ pub(crate) struct GpuSemanticLoweringStage {
     owner_by_instruction: LaniusBuffer<u32>,
     op_by_instruction: LaniusBuffer<u32>,
     schedule: LaniusBuffer<SemanticLirSchedule>,
-    semantic_schedule_group: Option<wgpu::BindGroup>,
     semantic_sorter: Option<GpuStableScheduleSorter>,
     call_args: LaniusBuffer<SemanticLirCallArg>,
     call_arg_count: LaniusBuffer<u32>,
@@ -899,71 +885,32 @@ impl GpuSemanticLoweringStage {
         } else {
             None
         };
-        let (semantic_schedule_group, semantic_sorter) =
-            if let Some(order_name) = schedule_order_resource {
-                let keys = schedule
-                    .alias::<TargetScheduleKey>(capacities.semantic_instructions.max(1) as usize);
-                let order = workspace
-                    .alias(
-                        &graph,
-                        resource(order_name)?,
-                        capacities.semantic_instructions.max(1) as usize,
-                    )
-                    .map_err(anyhow::Error::msg)?;
-                let params = uniform_from_val(
-                    device,
-                    "lir.semantic.schedule.init.params",
-                    &SemanticScheduleParams {
-                        semantic_capacity: capacities.semantic_instructions.max(1),
-                        reserved0: 0,
-                        reserved1: 0,
-                        reserved2: 0,
-                    },
-                );
-                graph
-                    .validate_pass_reflection(
-                        graph.pass_id("lir.semantic.schedule.init").unwrap(),
-                        passes.schedule_init.reflection.as_ref(),
-                    )
-                    .map_err(anyhow::Error::msg)?;
-                allocations
-                    .validate_pass_bindings(
-                        &graph,
-                        graph.pass_id("lir.semantic.schedule.init").unwrap(),
-                        &[
-                            bound(
-                                "semantic_lir_total",
-                                resource("lir.semantic.total")?,
-                                &total,
-                            )?,
-                            bound("target_schedule_order", resource(order_name)?, &order)?,
-                        ],
-                    )
-                    .map_err(anyhow::Error::msg)?;
-                let group = make_group(
-                    device,
-                    &passes.schedule_init,
-                    "lir.semantic.schedule.init.bind_group",
-                    &[
-                        ("gParams", params.as_entire_binding()),
-                        ("semantic_lir_total", total.as_entire_binding()),
-                        ("target_schedule_order", order.as_entire_binding()),
-                    ],
-                )?;
-                let sorter = GpuStableScheduleSorter::new_semantic(
-                    device,
+        let semantic_sorter = if let Some(order_name) = schedule_order_resource {
+            let keys = schedule
+                .alias::<TargetScheduleKey>(capacities.semantic_instructions.max(1) as usize);
+            let order = workspace
+                .alias(
                     &graph,
-                    workspace,
-                    &allocations,
-                    capacities.semantic_instructions.max(1),
-                    &total,
-                    &keys,
-                    &order,
-                )?;
-                (Some(group), Some(sorter))
-            } else {
-                (None, None)
-            };
+                    resource(order_name)?,
+                    capacities.semantic_instructions.max(1) as usize,
+                )
+                .map_err(anyhow::Error::msg)?;
+            let radix_layout = TargetScheduleRadixLayout::for_capacities(capacities);
+            let sorter = GpuStableScheduleSorter::new_semantic(
+                device,
+                &graph,
+                workspace,
+                &allocations,
+                capacities.semantic_instructions.max(1),
+                radix_layout,
+                &total,
+                &keys,
+                &order,
+            )?;
+            Some(sorter)
+        } else {
+            None
+        };
 
         Ok(Self {
             capacities,
@@ -1107,7 +1054,6 @@ impl GpuSemanticLoweringStage {
             owner_by_instruction,
             op_by_instruction,
             schedule,
-            semantic_schedule_group,
             semantic_sorter,
             call_args,
             call_arg_count,
@@ -1828,14 +1774,7 @@ impl GpuSemanticLoweringStage {
 
         self.record_aggregate_elements(device, encoder, &hir, semantic)?;
         self.record_strings(device, encoder, &hir)?;
-        if let (Some(group), Some(sorter)) = (&self.semantic_schedule_group, &self.semantic_sorter)
-        {
-            record_direct(
-                encoder,
-                &self.passes.schedule_init,
-                group,
-                self.capacities.semantic_instructions,
-            )?;
+        if let Some(sorter) = &self.semantic_sorter {
             sorter.record(encoder)?;
         }
         Ok(())
@@ -3725,6 +3664,7 @@ mod tests {
     #[test]
     fn physical_gpu_stably_sorts_wasm_schedule_across_scan_hierarchy() {
         let gpu = device::global();
+        let radix_layout = TargetScheduleRadixLayout::full_width();
         let count = 70_000u32;
         let blocks = count.div_ceil(256);
         let slots = blocks * 256;
@@ -3745,8 +3685,8 @@ mod tests {
             &words(&key_words),
             count as usize,
         );
-        let initial_order = (0..count).collect::<Vec<_>>();
-        let order_a = storage_ro_from_u32s(&gpu.device, "test.schedule.order_a", &initial_order);
+        let order_a =
+            storage_rw_for_array::<u32>(&gpu.device, "test.schedule.order_a", count as usize);
         let order_b =
             storage_rw_for_array::<u32>(&gpu.device, "test.schedule.order_b", count as usize);
         let slot_count = storage_rw_for_array::<u32>(&gpu.device, "test.schedule.slot_count", 1);
@@ -3774,16 +3714,6 @@ mod tests {
         );
         let scan_total = storage_rw_for_array::<u32>(&gpu.device, "test.schedule.scan_total", 1);
 
-        let slot_params = uniform_from_val(
-            &gpu.device,
-            "test.schedule.slot_params",
-            &WasmRadixTestParams {
-                target_capacity: count,
-                max_blocks: blocks,
-                key_step: 0,
-                reserved: 0,
-            },
-        );
         let scan_params = uniform_from_val(
             &gpu.device,
             "test.schedule.scan_params",
@@ -3813,13 +3743,6 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let slot_pass = make_pass_data_from_shader_key(
-            &gpu.device,
-            "test.schedule.slot_count",
-            "main",
-            "codegen/lir/schedule/slot_count",
-        )
-        .unwrap();
         let histogram_pass = make_pass_data_from_shader_key(
             &gpu.device,
             "test.schedule.histogram",
@@ -3862,17 +3785,6 @@ mod tests {
             "scan/counted/02_apply",
         )
         .unwrap();
-        let slot_group = make_group(
-            &gpu.device,
-            &slot_pass,
-            "test.schedule.slot.group",
-            &[
-                ("gParams", slot_params.as_entire_binding()),
-                ("target_lir_total", target_total.as_entire_binding()),
-                ("target_schedule_slot_count", slot_count.as_entire_binding()),
-            ],
-        )
-        .unwrap();
         let scan_local_group = make_group(
             &gpu.device,
             &scan_local_pass,
@@ -3906,8 +3818,7 @@ mod tests {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("test.schedule.encoder"),
             });
-        record_direct(&mut encoder, &slot_pass, &slot_group, 1).unwrap();
-        for key_step in 0..16u32 {
+        for key_step in 0..radix_layout.steps {
             let params = uniform_from_val(
                 &gpu.device,
                 &format!("test.schedule.radix.{key_step}"),
@@ -3915,7 +3826,7 @@ mod tests {
                     target_capacity: count,
                     max_blocks: blocks,
                     key_step,
-                    reserved: 0,
+                    reserved: radix_layout.packed_bits,
                 },
             );
             let (input, output) = if key_step % 2 == 0 {
@@ -3932,6 +3843,7 @@ mod tests {
                     ("target_lir_total", target_total.as_entire_binding()),
                     ("target_schedule_key", keys.as_entire_binding()),
                     ("target_schedule_order_in", input.as_entire_binding()),
+                    ("target_schedule_slot_count", slot_count.as_entire_binding()),
                     ("target_schedule_histogram", histogram.as_entire_binding()),
                 ],
             )
@@ -4003,19 +3915,19 @@ mod tests {
         gpu.queue.submit(Some(encoder.finish()));
 
         let actual = read_words(&gpu.device, &readback);
-        let mut expected = initial_order;
+        let mut expected = (0..count).collect::<Vec<_>>();
         expected.sort_by_key(|&row| key_words[row as usize]);
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn physical_gpu_resident_scheduler_uses_graph_workspace_without_record_allocations() {
+    fn physical_gpu_resident_scheduler_handles_odd_width_without_record_allocations() {
         let gpu = device::global();
-        let count = 600u32;
+        let count = 257u32;
         let capacities = LoweringCapacities {
             source_bytes: count,
-            tokens: count,
-            hir_nodes: count,
+            tokens: 128,
+            hir_nodes: 128,
             semantic_instructions: count,
             call_arguments: 1,
             parameters: 1,
@@ -4046,38 +3958,45 @@ mod tests {
                     (row * 17) % 5,
                     (row * 13) % 11,
                     (row * 7) % 19,
-                    !((row * 3) % 23),
+                    match row % 3 {
+                        0 => (row * 3) % 23,
+                        1 => 0x7fff_ffff - ((row * 3) % 23),
+                        _ => u32::MAX,
+                    },
                 ]
             })
             .collect::<Vec<_>>();
-        let initial_order = (0..count).collect::<Vec<_>>();
         total.write(&gpu.queue, 0, &count.to_le_bytes());
         keys.write(&gpu.queue, 0, &words(&key_words));
-        let order_bytes = initial_order
-            .iter()
-            .flat_map(|word| word.to_le_bytes())
-            .collect::<Vec<_>>();
-        order.write(&gpu.queue, 0, &order_bytes);
-
         let sorter = GpuStableScheduleSorter::new_semantic(
             &gpu.device,
             &graph,
             &workspace,
             &workspace.allocations(),
             count,
+            TargetScheduleRadixLayout::for_capacities(capacities),
             &total,
             &keys,
             &order,
         )
         .unwrap();
+        assert_eq!(
+            TargetScheduleRadixLayout::for_capacities(capacities).steps,
+            5
+        );
         let pipelines_before = pipeline_creation_count();
         let buffers_before = tracked_buffer_allocation_stats();
+        let passes_before = crate::gpu::passes_core::recorded_compute_pass_count();
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("test.resident_schedule.encoder"),
             });
         sorter.record(&mut encoder).unwrap();
+        let passes_after = crate::gpu::passes_core::recorded_compute_pass_count();
+        let hierarchy_levels = hierarchical_scan_levels(count.div_ceil(256)).len();
+        let passes_per_digit = 3 + 2 * hierarchy_levels as u64;
+        assert_eq!(passes_after - passes_before, 5 * passes_per_digit);
         assert_eq!(pipeline_creation_count(), pipelines_before);
         assert_eq!(tracked_buffer_allocation_stats(), buffers_before);
 
@@ -4092,7 +4011,7 @@ mod tests {
             .copy_to(&mut encoder, 0, &readback, 0, u64::from(count) * 4);
         gpu.queue.submit(Some(encoder.finish()));
         let actual = read_words(&gpu.device, &readback);
-        let mut expected = initial_order;
+        let mut expected = (0..count).collect::<Vec<_>>();
         expected.sort_by_key(|&row| key_words[row as usize]);
         assert_eq!(actual, expected);
     }

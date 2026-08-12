@@ -834,7 +834,7 @@ fn main() {{
 }
 
 #[test]
-fn type_checker_accepts_trait_method_sets_through_large_radix_path() {
+fn type_checker_accepts_large_trait_method_sets_through_exact_index() {
     let methods = (0..768)
         .map(|i| format!("    fn method_{i}(value: i32) -> i32;"))
         .collect::<Vec<_>>()

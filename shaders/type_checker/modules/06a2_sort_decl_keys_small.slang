@@ -13,8 +13,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
-StructuredBuffer<uint> decl_namespace;
-StructuredBuffer<uint> decl_name_id;
 RWStructuredBuffer<uint> radix_order;
 
 static const uint INVALID = 0xffffffffu;
@@ -33,28 +31,17 @@ uint encoded_nullable(uint value)
     return value == INVALID ? 0u : value + 1u;
 }
 
-uint decl_key_lane(uint decl_i, uint lane)
-{
-    if (lane == 0u)
-        return encoded_nullable(decl_module_id[decl_i]);
-    if (lane == 1u)
-        return decl_namespace[decl_i];
-    return encoded_nullable(decl_name_id[decl_i]);
-}
-
 bool decl_key_less(uint left, uint right, uint active_count)
 {
     bool left_padding = left >= active_count;
     bool right_padding = right >= active_count;
     if (left_padding || right_padding)
         return !left_padding && right_padding;
-    for (uint lane = 0u; lane < 3u; lane += 1u)
-    {
-        uint left_value = decl_key_lane(left, lane);
-        uint right_value = decl_key_lane(right, lane);
-        if (left_value != right_value)
-            return left_value < right_value;
-    }
+    uint left_module = encoded_nullable(decl_module_id[left]);
+    uint right_module = encoded_nullable(decl_module_id[right]);
+    if (left_module != right_module)
+        return left_module < right_module;
+    // Stable source/compact-row order within one module.
     return left < right;
 }
 

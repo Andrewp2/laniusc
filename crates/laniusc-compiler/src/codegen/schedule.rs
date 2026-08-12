@@ -16,7 +16,7 @@ use super::{
         record_direct,
         record_direct_with_offsets,
     },
-    lowering_ir::{TARGET_SCHEDULE_RADIX_STEPS, TargetScheduleKey},
+    lowering_ir::{TargetScheduleKey, TargetScheduleRadixLayout},
 };
 use crate::gpu::{
     buffers::{DynamicUniformBuffer, LaniusBuffer, dynamic_uniforms_from_vals, uniform_from_val},
@@ -44,7 +44,6 @@ struct ScheduleParams {
 }
 
 struct SchedulePasses {
-    slot_count: PassData,
     histogram: PassData,
     scan_local: PassData,
     scan_up: PassData,
@@ -58,8 +57,9 @@ struct SchedulePasses {
 pub(crate) struct GpuStableScheduleSorter {
     target_capacity: u32,
     slot_capacity: u32,
+    radix_steps: u32,
+    initial_direction: usize,
     passes: SchedulePasses,
-    slot_count_group: wgpu::BindGroup,
     scan_local_group: wgpu::BindGroup,
     scan_up_groups: Vec<wgpu::BindGroup>,
     scan_down_groups: Vec<wgpu::BindGroup>,
@@ -68,7 +68,6 @@ pub(crate) struct GpuStableScheduleSorter {
     histogram_groups: Vec<wgpu::BindGroup>,
     scatter_groups: Vec<wgpu::BindGroup>,
     scan_levels: Vec<HierarchicalScanLevel>,
-    _slot_params: LaniusBuffer<ScheduleParams>,
     _scan_params: LaniusBuffer<ScanParams>,
     _hierarchy_params: Vec<LaniusBuffer<ScanHierarchyParams>>,
     order: LaniusBuffer<u32>,
@@ -90,6 +89,7 @@ impl GpuStableScheduleSorter {
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
         semantic_capacity: u32,
+        radix_layout: TargetScheduleRadixLayout,
         total: &LaniusBuffer<u32>,
         keys: &LaniusBuffer<TargetScheduleKey>,
         order: &LaniusBuffer<u32>,
@@ -100,6 +100,7 @@ impl GpuStableScheduleSorter {
             workspace,
             allocations,
             semantic_capacity,
+            radix_layout,
             total,
             keys,
             order,
@@ -113,6 +114,7 @@ impl GpuStableScheduleSorter {
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
         target_capacity: u32,
+        radix_layout: TargetScheduleRadixLayout,
         total: &LaniusBuffer<u32>,
         keys: &LaniusBuffer<TargetScheduleKey>,
         order: &LaniusBuffer<u32>,
@@ -140,11 +142,6 @@ impl GpuStableScheduleSorter {
         let scan_total = alias("lir.semantic.schedule_scan_total", 1)?;
 
         let passes = SchedulePasses {
-            slot_count: load(
-                device,
-                "lir.target.schedule.slot_count",
-                "codegen/lir/schedule/slot_count",
-            )?,
             histogram: load_dynamic(
                 device,
                 "lir.target.schedule.histogram",
@@ -176,16 +173,6 @@ impl GpuStableScheduleSorter {
                 "codegen/lir/schedule/scatter",
             )?,
         };
-        let slot_params = uniform_from_val(
-            device,
-            "lir.target.schedule.slot_count.params",
-            &ScheduleParams {
-                target_capacity,
-                max_blocks,
-                key_step: 0,
-                reserved: 0,
-            },
-        );
         let scan_params = uniform_from_val(
             device,
             "lir.target.schedule.scan.params",
@@ -216,16 +203,6 @@ impl GpuStableScheduleSorter {
             })
             .collect::<Vec<_>>();
 
-        let slot_count_group = make_group(
-            device,
-            &passes.slot_count,
-            "lir.target.schedule.slot_count.bind_group",
-            &[
-                ("gParams", slot_params.as_entire_binding()),
-                ("target_lir_total", total.as_entire_binding()),
-                ("target_schedule_slot_count", slot_count.as_entire_binding()),
-            ],
-        )?;
         let scan_local_group = make_group(
             device,
             &passes.scan_local,
@@ -284,12 +261,12 @@ impl GpuStableScheduleSorter {
                 ("scan_total", scan_total.as_entire_binding()),
             ],
         )?;
-        let radix_values = (0..TARGET_SCHEDULE_RADIX_STEPS)
+        let radix_values = (0..radix_layout.steps)
             .map(|key_step| ScheduleParams {
                 target_capacity,
                 max_blocks,
                 key_step,
-                reserved: 0,
+                reserved: radix_layout.packed_bits,
             })
             .collect::<Vec<_>>();
         let radix_params =
@@ -311,6 +288,7 @@ impl GpuStableScheduleSorter {
                     ("target_lir_total", total.as_entire_binding()),
                     ("target_schedule_key", keys.as_entire_binding()),
                     ("target_schedule_order_in", input.as_entire_binding()),
+                    ("target_schedule_slot_count", slot_count.as_entire_binding()),
                     ("target_schedule_histogram", histogram.as_entire_binding()),
                 ],
             )?);
@@ -353,8 +331,9 @@ impl GpuStableScheduleSorter {
         Ok(Self {
             target_capacity,
             slot_capacity,
+            radix_steps: radix_layout.steps,
+            initial_direction: usize::from(radix_layout.steps % 2 != 0),
             passes,
-            slot_count_group,
             scan_local_group,
             scan_up_groups,
             scan_down_groups,
@@ -363,7 +342,6 @@ impl GpuStableScheduleSorter {
             histogram_groups,
             scatter_groups,
             scan_levels,
-            _slot_params: slot_params,
             _scan_params: scan_params,
             _hierarchy_params: hierarchy_params,
             order: order.clone(),
@@ -384,10 +362,9 @@ impl GpuStableScheduleSorter {
     }
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_direct(encoder, &self.passes.slot_count, &self.slot_count_group, 1)?;
-        for step in 0..TARGET_SCHEDULE_RADIX_STEPS as usize {
+        for step in 0..self.radix_steps as usize {
             let offsets = [self.radix_params.dynamic_offset(step)];
-            let direction = step % 2;
+            let direction = (step + self.initial_direction) % 2;
             record_direct_with_offsets(
                 encoder,
                 &self.passes.histogram,
@@ -501,17 +478,6 @@ fn validate_bindings(
             .validate_pass_bindings(graph, graph.pass_id(pass).unwrap(), &bindings)
             .map_err(anyhow::Error::msg)
     };
-    validate(
-        "lir.semantic.schedule.slot_count",
-        vec![
-            bound("target_lir_total", resource(names.total), total)?,
-            bound(
-                "target_schedule_slot_count",
-                resource(names.slot_count),
-                slot_count,
-            )?,
-        ],
-    )?;
     for (suffix, input, output) in [("even", order, order_tmp), ("odd", order_tmp, order)] {
         validate(
             if suffix == "even" {
@@ -530,6 +496,11 @@ fn validate_bindings(
                         names.order_tmp
                     }),
                     input,
+                )?,
+                bound(
+                    "target_schedule_slot_count",
+                    resource(names.slot_count),
+                    slot_count,
                 )?,
                 bound(
                     "target_schedule_histogram",

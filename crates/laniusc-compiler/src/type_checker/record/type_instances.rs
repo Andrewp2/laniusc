@@ -98,18 +98,16 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
         "typecheck.type_instances.decl_generic_params.done",
     );
 
-    type_instances
-        .generic_parameter_sorts
-        .record(passes, encoder)?;
+    type_instances.generic_parameter_index.record(encoder)?;
     stamp_typecheck_timer(
         &mut timer,
         encoder,
-        "typecheck.type_instances.generic_params.sort.done",
+        "typecheck.type_instances.generic_params.index.done",
     );
     stamp_typecheck_timer(
         &mut timer,
         encoder,
-        "typecheck.type_instances.generic_param_slots.sort.done",
+        "typecheck.type_instances.generic_param_slots.compact.done",
     );
 
     record_compute_indirect(
@@ -128,39 +126,17 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
     Ok(())
 }
 
-/// Records struct-field key seeding and radix sorting for aggregate lookup.
+/// Builds the exact compact struct-field lookup.
 pub(in crate::type_checker) fn record_struct_field_key_passes_with_passes(
-    passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     type_instances: &TypeInstanceBindGroups,
-    hir_active_dispatch_args: &LaniusBuffer<u32>,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/type/instances/02_seed_struct_field_keys"),
-        &type_instances.seed_struct_field_keys,
-        "type_check.resident.type_instances.seed_struct_field_keys.pass",
-        hir_active_dispatch_args,
-    )?;
+    type_instances.struct_field_index.record(encoder)?;
     stamp_typecheck_timer(
         &mut timer,
         encoder,
-        "typecheck.type_instances.struct_field_keys.seed.done",
-    );
-
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/type/instances/02a_struct_field_radix_dispatch"),
-        &type_instances.struct_field_key_radix_dispatch,
-        "type_check.type_instances.struct_field_key_radix_dispatch_args",
-        1,
-    )?;
-    type_instances.sort_struct_fields.record(encoder)?;
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.struct_field_keys.sort.done",
+        "typecheck.type_instances.struct_field_lookup.done",
     );
 
     Ok(())

@@ -14,8 +14,6 @@ pub mod enums;
 pub mod expr;
 /// Function signature and return-type passes.
 pub mod functions;
-/// Index-expression span passes.
-pub mod index_spans;
 /// Item kind, declaration-token, namespace, visibility, and import passes.
 pub mod item;
 /// Generic list ranking helpers shared by HIR record families.
@@ -34,6 +32,8 @@ pub mod nodes;
 pub mod param;
 /// Canonical path segment ownership and ordinal lowering passes.
 pub mod path;
+/// Member/index postfix metadata materialization pass.
+pub mod postfix_fields;
 /// Range-expression span passes.
 pub mod range_spans;
 /// HIR record clearing passes.
@@ -52,3 +52,31 @@ pub mod string;
 pub mod structs;
 /// Type form, type-path, type-argument, and alias passes.
 pub mod types;
+
+/// Number of input links followed by one bounded relation-walk dispatch.
+pub(crate) const BOUNDED_WALK_LINKS_PER_STEP: u32 = 16;
+
+/// Capacity-stable rounds needed when each dispatch follows up to 16 links.
+pub(crate) fn bounded_walk_step_capacity(items: u32) -> u32 {
+    let target = items.max(1);
+    let mut reach = 1u32;
+    let mut steps = 0u32;
+    while reach < target {
+        reach = reach.saturating_mul(BOUNDED_WALK_LINKS_PER_STEP);
+        steps += 1;
+    }
+    steps
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bounded_walk_step_capacity;
+
+    #[test]
+    fn bounded_walk_rounds_cover_the_full_tree_capacity() {
+        assert_eq!(bounded_walk_step_capacity(1), 0);
+        assert_eq!(bounded_walk_step_capacity(16), 1);
+        assert_eq!(bounded_walk_step_capacity(17), 2);
+        assert_eq!(bounded_walk_step_capacity(16_777_216), 6);
+    }
+}

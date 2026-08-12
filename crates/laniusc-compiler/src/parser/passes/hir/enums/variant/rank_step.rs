@@ -4,10 +4,10 @@ use anyhow::Result;
 
 use crate::{
     gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
-    parser::buffers::ParserBuffers,
+    parser::{buffers::ParserBuffers, passes::hir::bounded_walk_step_capacity},
 };
 
-/// Pointer-jump pass that ranks enum variants and payload rows.
+/// Bounded-walk pass that ranks enum variants and payload rows.
 pub struct HirEnumVariantRankStepPass {
     data: PassData,
 }
@@ -47,7 +47,7 @@ impl HirEnumVariantRankStepPass {
         buffers: &ParserBuffers,
         dispatch_args: Option<&wgpu::Buffer>,
     ) -> Result<()> {
-        let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
+        let steps = bounded_walk_step_capacity(buffers.tree_capacity);
         for step in 0..steps {
             self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
         }
@@ -241,15 +241,4 @@ impl HirEnumVariantRankStepPass {
         }
         Ok(())
     }
-}
-
-fn pointer_jump_steps_for_items(items: u32) -> u32 {
-    let mut span = 1u32;
-    let mut steps = 0u32;
-    let target = items.max(1);
-    while span < target {
-        span = span.saturating_mul(2);
-        steps += 1;
-    }
-    steps
 }

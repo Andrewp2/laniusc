@@ -21,16 +21,11 @@ RWStructuredBuffer<int> block_prefix;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-uint linear_thread_id(uint3 dtid)
-{
-    return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
+    uint i = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
     uint n_blocks = gTree.n_node_blocks;
     if (i >= n_blocks)
         return;

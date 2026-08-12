@@ -5,15 +5,15 @@ pub(in crate::type_checker) struct PathSequences {
     pub(in crate::type_checker) clear_state: wgpu::BindGroup,
     pub(in crate::type_checker) dispatch_params: LaniusBuffer<PathPrefixDispatchParams>,
     pub(in crate::type_checker) dispatch_args: wgpu::BindGroup,
+    pub(in crate::type_checker) initial_table_clear: wgpu::BindGroup,
     pub(in crate::type_checker) rounds: Vec<PathPrefixRound>,
     pub(in crate::type_checker) finalize: wgpu::BindGroup,
 }
 
-/// One pre-bound prefix-doubling round. Every round reuses the same three
-/// pipelines; only immutable uniforms and ping/pong buffer roles differ.
+/// One pre-bound prefix-doubling round. Every round reuses the insert and
+/// lookup pipelines; only immutable uniforms and ping/pong buffer roles differ.
 pub(in crate::type_checker) struct PathPrefixRound {
     pub(in crate::type_checker) _params: LaniusBuffer<PathPrefixRoundParams>,
-    pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) insert: wgpu::BindGroup,
     pub(in crate::type_checker) lookup: wgpu::BindGroup,
 }
@@ -26,6 +26,10 @@ pub(in crate::type_checker) fn create_path_sequences(
     resources: &ResourceMap<'_>,
 ) -> Result<PathSequences> {
     let segment_capacity = inputs.token_capacity.max(1);
+    assert!(
+        segment_capacity <= 0x07ff_ffff,
+        "path-prefix row capacity exceeds the round-tagged table encoding",
+    );
     let round_count = u32::BITS - segment_capacity.saturating_sub(1).leading_zeros();
     let dispatch_params = uniform_from_val(
         device,
@@ -81,6 +85,22 @@ pub(in crate::type_checker) fn create_path_sequences(
             ),
         ],
     )?;
+    let initial_table_clear = resources.reflected_bind_group_with_overrides(
+        device,
+        "type_check_modules_01c_path_prefix_table_clear",
+        &passes.kernel("type_checker/modules/01c_path_prefix_table_clear"),
+        &[
+            ("gParams", dispatch_params.as_entire_binding()),
+            (
+                "path_segment_count_out",
+                buffers.path_segment_count_out.as_entire_binding(),
+            ),
+            (
+                "path_prefix_table_state",
+                buffers.path_prefix_table_state.as_entire_binding(),
+            ),
+        ],
+    )?;
 
     let mut rounds = Vec::with_capacity(round_count as usize);
     for round_i in 0..round_count {
@@ -90,7 +110,7 @@ pub(in crate::type_checker) fn create_path_sequences(
             &PathPrefixRoundParams {
                 segment_capacity,
                 step: 1u32 << round_i,
-                reserved0: 0,
+                reserved0: round_i + 1,
                 reserved1: 0,
             },
         );
@@ -99,22 +119,6 @@ pub(in crate::type_checker) fn create_path_sequences(
         } else {
             (&buffers.path_prefix_id_b, &buffers.path_prefix_id_a)
         };
-        let clear = resources.reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_01c_path_prefix_table_clear",
-            &passes.kernel("type_checker/modules/01c_path_prefix_table_clear"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "path_segment_count_out",
-                    buffers.path_segment_count_out.as_entire_binding(),
-                ),
-                (
-                    "path_prefix_table_state",
-                    buffers.path_prefix_table_state.as_entire_binding(),
-                ),
-            ],
-        )?;
         let insert = resources.reflected_bind_group_with_overrides(
             device,
             "type_check_modules_01c_path_prefix_table_insert",
@@ -160,7 +164,6 @@ pub(in crate::type_checker) fn create_path_sequences(
         )?;
         rounds.push(PathPrefixRound {
             _params: params,
-            clear,
             insert,
             lookup,
         });
@@ -195,6 +198,7 @@ pub(in crate::type_checker) fn create_path_sequences(
         clear_state,
         dispatch_params,
         dispatch_args,
+        initial_table_clear,
         rounds,
         finalize,
     })

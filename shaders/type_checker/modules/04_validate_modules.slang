@@ -1,26 +1,26 @@
-// GPU sorted module-key validation.
+// GPU direct module-key validation.
 //
 // Scheduling contract:
-// - Dispatch after the module key radix sort has produced sorted_module_key_order.
-// - Adjacent equal exact canonical path ids are duplicates.
+// - Dispatch after module construction has populated module_by_canonical_id.
+// - The lowest module row owns each exact canonical path id; other rows are duplicates.
 // - This pass only validates module declarations. It does not resolve imports,
 //   perform declaration lookup, produce visibility, or use CPU path lookup.
 
-import sorted.runs;
 import status;
+import type_checker.modules.module_lookup;
 
 struct Params
 {
+    uint path_capacity;
+    uint path_segment_capacity;
     uint module_capacity;
     uint reserved;
-    uint n_blocks;
-    uint key_step;
 };
 
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> module_count_out;
-StructuredBuffer<uint> sorted_module_key_order;
+StructuredBuffer<uint> module_by_canonical_id;
 StructuredBuffer<uint> module_key_canonical_id;
 StructuredBuffer<uint> module_path_id;
 StructuredBuffer<uint> path_owner_token;
@@ -47,28 +47,9 @@ uint active_module_count()
     return min(module_count_out[0], gParams.module_capacity);
 }
 
-uint record_capacity()
-{
-    return gParams.reserved == 0u ? gParams.module_capacity : gParams.reserved;
-}
-
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
-}
-
-bool module_keys_equal(uint left_module_i, uint right_module_i)
-{
-    return module_key_canonical_id[left_module_i] ==
-           module_key_canonical_id[right_module_i];
-}
-
-public struct ModuleKeyEquality : ISortedRunEquality
-{
-    public static bool equal(uint left_item, uint right_item)
-    {
-        return module_keys_equal(left_item, right_item);
-    }
 }
 
 [shader("compute")]
@@ -80,29 +61,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= module_count)
         return;
 
-    uint module_i;
-    if (!sorted_order_item(
-        i,
-        module_count,
-        module_count,
-        sorted_module_key_order,
-        module_i))
-        return;
-
+    uint module_i = i;
     if (module_status[module_i] != MODULE_STATUS_OK)
         return;
-
-    uint prev_module_i;
-    if (!sorted_adjacent_duplicate<ModuleKeyEquality>(
-        i,
-        module_count,
-        module_count,
-        sorted_module_key_order,
-        module_i,
-        prev_module_i))
+    uint first = module_lookup_find(
+        module_key_canonical_id[module_i],
+        gParams.path_segment_capacity,
+        module_by_canonical_id);
+    if (first == module_i)
         return;
     module_status[module_i] = MODULE_STATUS_DUPLICATE;
     uint path_id = module_path_id[module_i];
-    uint token_i = path_id < record_capacity() ? path_owner_token[path_id] : record_capacity();
+    uint token_i = path_id < gParams.path_capacity
+        ? path_owner_token[path_id]
+        : gParams.path_segment_capacity;
     record_error(token_i, ERR_DUPLICATE_MODULE, MODULE_STATUS_DUPLICATE);
 }

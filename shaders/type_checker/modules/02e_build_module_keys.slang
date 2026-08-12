@@ -6,13 +6,14 @@
 
 import gpu_index;
 import status;
+import type_checker.modules.module_lookup;
 
 struct Params
 {
-    uint record_capacity;
+    uint path_capacity;
+    uint path_segment_capacity;
     uint module_capacity;
-    uint n_blocks;
-    uint key_step;
+    uint reserved;
 };
 
 ConstantBuffer<Params> gParams;
@@ -30,7 +31,7 @@ RWStructuredBuffer<uint> module_status;
 RWStructuredBuffer<uint> module_key_canonical_id;
 RWStructuredBuffer<uint> module_key_segment_count;
 RWStructuredBuffer<uint> module_key_segment_base;
-RWStructuredBuffer<uint> module_key_to_module_id;
+RWStructuredBuffer<uint> module_by_canonical_id;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -55,16 +56,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint owner_hir = module_owner_hir[module_i];
     uint path_id = module_path_id[module_i];
-    bool active = owner_hir != INVALID && path_id < gParams.record_capacity;
+    bool active = owner_hir != INVALID && path_id < gParams.path_capacity;
     uint count = active ? path_segment_count[path_id] : 0u;
     uint base = active ? path_segment_base[path_id] : 0u;
 
     module_key_segment_count[module_i] = count;
     module_key_segment_base[module_i] = base;
-    module_key_to_module_id[module_i] = module_i;
-    module_key_canonical_id[module_i] = count == 0u
+    uint canonical_id = count == 0u
         ? INVALID
         : path_prefix_id[base + count - 1u];
+    module_key_canonical_id[module_i] = canonical_id;
 
     if (!active)
     {
@@ -82,4 +83,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     module_status[module_i] = MODULE_STATUS_OK;
+    module_lookup_insert_lowest(
+        canonical_id,
+        module_i,
+        gParams.path_segment_capacity,
+        module_by_canonical_id);
 }

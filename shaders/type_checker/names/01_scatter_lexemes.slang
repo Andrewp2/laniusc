@@ -53,7 +53,6 @@ RWStructuredBuffer<uint> status;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint INVALID = 0xffffffffu;
-static const uint MAX_NAME_RADIX_BYTES = 64u;
 static const uint ERR_NAME_LIMIT = 11u;
 static const uint LANGUAGE_SYMBOL_COUNT = 68u;
 
@@ -117,7 +116,7 @@ uint compact_token_name_count()
     return name_lexeme_prefix[last] + name_lexeme_flag[last];
 }
 
-uint name_radix_item_capacity()
+uint name_item_capacity()
 {
     return gParams.n_tokens + LANGUAGE_SYMBOL_COUNT;
 }
@@ -137,15 +136,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i == 0u)
     {
         uint total_name_count = token_name_count + LANGUAGE_SYMBOL_COUNT;
-        if (total_name_count > name_radix_item_capacity())
+        if (total_name_count > name_item_capacity())
             record_error(0u, ERR_NAME_LIMIT, total_name_count);
 
         for (uint symbol_i = 0u; symbol_i < LANGUAGE_SYMBOL_COUNT; symbol_i += 1u)
         {
             uint slot = token_name_count + symbol_i;
             NameSpan span = make_language_symbol_span(symbol_i);
-            if (span.len > MAX_NAME_RADIX_BYTES)
-                record_error(0u, ERR_NAME_LIMIT, span.len);
             atomic_u32_max(name_max_len_out, 0u, span.len);
             name_spans[slot] = span;
             name_order_in[slot] = slot;
@@ -163,8 +160,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (slot.active != 0u)
     {
         NameSpan span = make_name_span(i, name_lexeme_kind[i]);
-        if (span.len > MAX_NAME_RADIX_BYTES)
-            record_error(i, ERR_NAME_LIMIT, span.len);
         atomic_u32_max(name_max_len_out, 0u, span.len);
         name_spans[slot.dst] = span;
         name_order_in[slot.dst] = slot.dst;

@@ -1,4 +1,4 @@
-// Resolve final compact expression roots with parallel pointer jumping.
+// Resolve final compact expression roots with bounded parallel parent walks.
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
@@ -17,5 +17,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint count = min(canonical_count[0u], gCanonical.canonical_capacity);
     if (hir >= count) return;
     uint link = expr_root_in[hir];
-    expr_root_out[hir] = link < count ? expr_root_in[link] : hir;
+    [unroll]
+    for (uint step = 0u; step < 15u && link < count; ++step)
+    {
+        uint next = expr_root_in[link];
+        if (next == link)
+            break;
+        link = next;
+    }
+    expr_root_out[hir] = link < count ? link : hir;
 }

@@ -2,9 +2,8 @@
 //
 // Scheduling contract:
 // - Dispatch after type/value declaration flags have been prefix-scanned.
-// - The input order is the sorted declaration-key table, so filtering by a
-//   single namespace preserves sorted (module, name) lookup order for each
-//   output table.
+// - The input order is stably grouped by module. Filtering by namespace keeps
+//   deterministic source order within each module for interface traversal.
 // - It does not resolve imports, expand visibility, resolve type/value paths,
 //   read source bytes, or apply same-source shortcuts.
 

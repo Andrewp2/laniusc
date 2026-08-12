@@ -38,7 +38,6 @@ static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint WG_SIZE = 256u;
 static const uint NAME_KIND_LANGUAGE_SYMBOL = 3u;
-static const uint NAME_HASH_MAX_BYTES = 64u;
 static const uint ERR_NAME_LIMIT = 11u;
 
 uint linear_thread_id(uint3 dtid)
@@ -78,10 +77,8 @@ uint2 hash_name(NameSpan span)
 {
     uint lo = 2166136261u ^ span.len;
     uint hi = 0x9e3779b9u + span.len * 0x85ebca6bu;
-    for (uint i = 0u; i < NAME_HASH_MAX_BYTES; i += 1u)
+    for (uint i = 0u; i < span.len; i += 1u)
     {
-        if (i >= span.len)
-            break;
         uint byte_value = load_name_byte(span, i);
         lo = (lo ^ byte_value) * 16777619u;
         hi ^= byte_value + 0x9e3779b9u + (hi << 6u) + (hi >> 2u);
@@ -102,12 +99,10 @@ bool names_equal(uint left, uint right)
 
     NameSpan a = name_spans[left];
     NameSpan b = name_spans[right];
-    if (a.len != b.len || a.len > NAME_HASH_MAX_BYTES)
+    if (a.len != b.len)
         return false;
-    for (uint i = 0u; i < NAME_HASH_MAX_BYTES; i += 1u)
+    for (uint i = 0u; i < a.len; i += 1u)
     {
-        if (i >= a.len)
-            break;
         if (load_name_byte(a, i) != load_name_byte(b, i))
             return false;
     }

@@ -190,64 +190,7 @@ impl GpuParser {
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
 
-        for (step_index, step) in bufs.token_delimiter_scan_steps.iter().enumerate() {
-            let sum_in = if step.read_from_a {
-                &bufs.token_generic_shr_prefix_sum_a
-            } else {
-                &bufs.token_generic_shr_prefix_sum_b
-            };
-            let min_in = if step.read_from_a {
-                &bufs.token_generic_shr_prefix_min_a
-            } else {
-                &bufs.token_generic_shr_prefix_min_b
-            };
-            let sum_out = if step.write_to_a {
-                &bufs.token_generic_shr_prefix_sum_a
-            } else {
-                &bufs.token_generic_shr_prefix_sum_b
-            };
-            let min_out = if step.write_to_a {
-                &bufs.token_generic_shr_prefix_min_a
-            } else {
-                &bufs.token_generic_shr_prefix_min_b
-            };
-            let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-                ("gParams".into(), step.params.as_entire_binding()),
-                (
-                    "block_sum".into(),
-                    bufs.token_generic_shr_block_sum.as_entire_binding(),
-                ),
-                (
-                    "block_min".into(),
-                    bufs.token_generic_shr_block_min.as_entire_binding(),
-                ),
-                ("prefix_sum_in".into(), sum_in.as_entire_binding()),
-                ("prefix_min_in".into(), min_in.as_entire_binding()),
-                ("prefix_sum_out".into(), sum_out.as_entire_binding()),
-                ("prefix_min_out".into(), min_out.as_entire_binding()),
-                (
-                    "block_prefix_sum".into(),
-                    bufs.token_generic_shr_block_prefix_sum.as_entire_binding(),
-                ),
-                (
-                    "block_prefix_min".into(),
-                    bufs.token_generic_shr_block_prefix_min.as_entire_binding(),
-                ),
-            ]);
-            let cache_label = format!("parser_tokens_generic_shr_02_scan.semantic.{step_index}");
-            let bind = self.cached_token_bind_group(
-                &cache_label,
-                &self.tokens_generic_shr_02_scan,
-                &resources,
-            )?;
-            record_parser_compute(
-                encoder,
-                &self.tokens_generic_shr_02_scan,
-                &bind,
-                "parser.tokens.generic_shr.scan",
-                bufs.token_delimiter_n_blocks,
-            )?;
-        }
+        self.record_generic_shr_summary_scan(encoder, bufs, "parser.tokens.generic_shr.scan")?;
 
         let apply_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
@@ -429,29 +372,9 @@ impl GpuParser {
         bufs: &ParserBuffers,
         label: &'static str,
     ) -> Result<()> {
-        for (step_index, step) in bufs.token_delimiter_scan_steps.iter().enumerate() {
-            let sum_in = if step.read_from_a {
-                &bufs.token_generic_shr_prefix_sum_a
-            } else {
-                &bufs.token_generic_shr_prefix_sum_b
-            };
-            let min_in = if step.read_from_a {
-                &bufs.token_generic_shr_prefix_min_a
-            } else {
-                &bufs.token_generic_shr_prefix_min_b
-            };
-            let sum_out = if step.write_to_a {
-                &bufs.token_generic_shr_prefix_sum_a
-            } else {
-                &bufs.token_generic_shr_prefix_sum_b
-            };
-            let min_out = if step.write_to_a {
-                &bufs.token_generic_shr_prefix_min_a
-            } else {
-                &bufs.token_generic_shr_prefix_min_b
-            };
-            let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-                ("gParams".into(), step.params.as_entire_binding()),
+        for (index, step) in bufs.token_block_scan_plan.up.iter().enumerate() {
+            let resources = HashMap::from([
+                ("gGenericScan".into(), step.params.as_entire_binding()),
                 (
                     "block_sum".into(),
                     bufs.token_generic_shr_block_sum.as_entire_binding(),
@@ -460,10 +383,6 @@ impl GpuParser {
                     "block_min".into(),
                     bufs.token_generic_shr_block_min.as_entire_binding(),
                 ),
-                ("prefix_sum_in".into(), sum_in.as_entire_binding()),
-                ("prefix_min_in".into(), min_in.as_entire_binding()),
-                ("prefix_sum_out".into(), sum_out.as_entire_binding()),
-                ("prefix_min_out".into(), min_out.as_entire_binding()),
                 (
                     "block_prefix_sum".into(),
                     bufs.token_generic_shr_block_prefix_sum.as_entire_binding(),
@@ -472,19 +391,61 @@ impl GpuParser {
                     "block_prefix_min".into(),
                     bufs.token_generic_shr_block_prefix_min.as_entire_binding(),
                 ),
+                (
+                    "hierarchy_sum".into(),
+                    bufs.token_generic_shr_prefix_sum_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_min".into(),
+                    bufs.token_generic_shr_prefix_min_a.as_entire_binding(),
+                ),
             ]);
-            let cache_label = format!("parser_tokens_generic_shr_02_scan.raw.{step_index}");
+            let invocation = format!("parser_tokens_generic_shr_02_scan_up.{index}");
             let bind = self.cached_token_bind_group(
-                &cache_label,
-                &self.tokens_generic_shr_02_scan,
+                &invocation,
+                &self.tokens_generic_shr_02_scan_up,
                 &resources,
             )?;
             record_parser_compute(
                 encoder,
-                &self.tokens_generic_shr_02_scan,
+                &self.tokens_generic_shr_02_scan_up,
                 &bind,
                 label,
-                bufs.token_delimiter_n_blocks,
+                step.work_items,
+            )?;
+        }
+        for (index, step) in bufs.token_block_scan_plan.down.iter().enumerate() {
+            let resources = HashMap::from([
+                ("gGenericScan".into(), step.params.as_entire_binding()),
+                (
+                    "block_prefix_sum".into(),
+                    bufs.token_generic_shr_block_prefix_sum.as_entire_binding(),
+                ),
+                (
+                    "block_prefix_min".into(),
+                    bufs.token_generic_shr_block_prefix_min.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_sum".into(),
+                    bufs.token_generic_shr_prefix_sum_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_min".into(),
+                    bufs.token_generic_shr_prefix_min_a.as_entire_binding(),
+                ),
+            ]);
+            let invocation = format!("parser_tokens_generic_shr_02_scan_down.{index}");
+            let bind = self.cached_token_bind_group(
+                &invocation,
+                &self.tokens_generic_shr_02_scan_down,
+                &resources,
+            )?;
+            record_parser_compute(
+                encoder,
+                &self.tokens_generic_shr_02_scan_down,
+                &bind,
+                label,
+                step.work_items,
             )?;
         }
         Ok(())
@@ -539,11 +500,7 @@ impl GpuParser {
             "parser.tokens.type_path_context.local.done",
         );
 
-        self.record_token_delimiter_scan_steps(
-            encoder,
-            bufs,
-            "parser.tokens.type_path_context.scan",
-        )?;
+        self.record_statement_event_scan(encoder, bufs, "parser.tokens.type_path_context.scan")?;
         stamp_timer(
             timer_ref,
             encoder,
@@ -605,6 +562,7 @@ impl GpuParser {
         bufs: &ParserBuffers,
         timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<()> {
+        stamp_timer(timer_ref, encoder, "parser.tokens.impl_header.begin");
         parser_clear_buffer(encoder, &bufs.token_impl_header_kind, 0, None);
 
         let local_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
@@ -636,7 +594,7 @@ impl GpuParser {
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.impl_header.local.done");
 
-        self.record_token_delimiter_scan_steps(encoder, bufs, "parser.tokens.impl_header.scan")?;
+        self.record_statement_event_scan(encoder, bufs, "parser.tokens.impl_header.scan")?;
         stamp_timer(timer_ref, encoder, "parser.tokens.impl_header.scan.done");
 
         let apply_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
@@ -715,7 +673,7 @@ impl GpuParser {
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.where_clause.local.done");
 
-        self.record_token_delimiter_scan_steps(encoder, bufs, "parser.tokens.where_clause.scan")?;
+        self.record_statement_event_scan(encoder, bufs, "parser.tokens.where_clause.scan")?;
         stamp_timer(timer_ref, encoder, "parser.tokens.where_clause.scan.done");
 
         let apply_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
@@ -838,7 +796,7 @@ impl GpuParser {
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.match_pattern.local.done");
 
-        self.record_token_delimiter_scan_steps(encoder, bufs, "parser.tokens.match_pattern.scan")?;
+        self.record_statement_event_scan(encoder, bufs, "parser.tokens.match_pattern.scan")?;
         stamp_timer(timer_ref, encoder, "parser.tokens.match_pattern.scan.done");
 
         let apply_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
@@ -997,7 +955,7 @@ impl GpuParser {
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.delimiters.local.done");
 
-        self.record_token_delimiter_scan_steps(
+        self.record_token_delimiter_hierarchy(
             encoder,
             bufs,
             "parser.tokens.delimiters.scan.depth",
@@ -1019,7 +977,7 @@ impl GpuParser {
             encoder,
             "parser.tokens.delimiters.owner_header.local.done",
         );
-        self.record_token_delimiter_scan_steps(
+        self.record_token_delimiter_hierarchy(
             encoder,
             bufs,
             "parser.tokens.delimiters.scan.owner_header",
@@ -1035,7 +993,7 @@ impl GpuParser {
             encoder,
             "parser.tokens.delimiters.owner_apply.done",
         );
-        self.record_token_delimiter_scan_steps(
+        self.record_token_delimiter_hierarchy(
             encoder,
             bufs,
             "parser.tokens.delimiters.scan.owner",
@@ -1113,17 +1071,8 @@ impl GpuParser {
 
         self.record_statement_phase_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
 
-        self.record_token_paren_matching(encoder, token_buf, token_count_buf, bufs)?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.paren_match.done");
-
-        self.record_token_brace_matching(encoder, token_buf, token_count_buf, bufs)?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.brace_match.done");
-
-        self.record_token_angle_matching(encoder, token_buf, token_count_buf, bufs)?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.angle_match.done");
-
-        self.record_token_bracket_matching(encoder, token_buf, token_count_buf, bufs)?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.bracket_match.done");
+        self.record_token_delimiter_matching(encoder, token_buf, token_count_buf, bufs)?;
+        stamp_timer(timer_ref, encoder, "parser.tokens.delimiter_match.done");
 
         Ok(())
     }
@@ -1189,11 +1138,7 @@ impl GpuParser {
             "parser.tokens.statement_phase.local.done",
         );
 
-        self.record_token_delimiter_scan_steps(
-            encoder,
-            bufs,
-            "parser.tokens.statement_phase.scan",
-        )?;
+        self.record_statement_event_scan(encoder, bufs, "parser.tokens.statement_phase.scan")?;
         stamp_timer(
             timer_ref,
             encoder,
@@ -1255,15 +1200,13 @@ impl GpuParser {
         Ok(())
     }
 
-    fn record_token_bracket_matching(
+    fn record_token_delimiter_matching(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
         bufs: &ParserBuffers,
     ) -> Result<()> {
-        let n_tokens = bufs.token_input_capacity.max(1);
-
         let depth_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
                 "gParams".into(),
@@ -1275,12 +1218,36 @@ impl GpuParser {
                 token_count_buf.as_entire_binding(),
             ),
             (
+                "depth_paren_inblock".into(),
+                bufs.token_depth_paren_inblock.as_entire_binding(),
+            ),
+            (
+                "depth_brace_inblock".into(),
+                bufs.token_depth_brace_inblock.as_entire_binding(),
+            ),
+            (
                 "depth_bracket_inblock".into(),
                 bufs.token_depth_bracket_inblock.as_entire_binding(),
             ),
             (
+                "depth_angle_inblock".into(),
+                bufs.token_depth_angle_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_paren".into(),
+                bufs.token_block_prefix_paren.as_entire_binding(),
+            ),
+            (
+                "block_prefix_brace".into(),
+                bufs.token_block_prefix_brace.as_entire_binding(),
+            ),
+            (
                 "block_prefix_bracket".into(),
                 bufs.token_block_prefix_bracket.as_entire_binding(),
+            ),
+            (
+                "block_prefix_angle".into(),
+                bufs.token_block_prefix_angle.as_entire_binding(),
             ),
             (
                 "statement_context_kind".into(),
@@ -1291,28 +1258,64 @@ impl GpuParser {
                 bufs.token_bracket_semantic_kind.as_entire_binding(),
             ),
             (
+                "paren_match_depth".into(),
+                bufs.token_paren_match_depth.as_entire_binding(),
+            ),
+            (
+                "brace_match_depth".into(),
+                bufs.token_brace_match_depth.as_entire_binding(),
+            ),
+            (
                 "bracket_match_depth".into(),
                 bufs.token_bracket_match_depth.as_entire_binding(),
+            ),
+            (
+                "angle_match_depth".into(),
+                bufs.token_angle_match_depth.as_entire_binding(),
+            ),
+            (
+                "paren_match_block_min".into(),
+                bufs.token_paren_match_block_min.as_entire_binding(),
+            ),
+            (
+                "brace_match_block_min".into(),
+                bufs.token_brace_match_block_min.as_entire_binding(),
             ),
             (
                 "bracket_match_block_min".into(),
                 bufs.token_bracket_match_block_min.as_entire_binding(),
             ),
+            (
+                "angle_match_block_min".into(),
+                bufs.token_angle_match_block_min.as_entire_binding(),
+            ),
         ]);
         let depth_bind_group = self.cached_token_bind_group(
-            "parser_tokens_bracket_match_01_depth_blocks",
-            &self.tokens_bracket_match_01_depth_blocks,
+            "parser_tokens_delimiter_match_01_depth_blocks",
+            &self.tokens_delimiter_match_01_depth_blocks,
             &depth_resources,
         )?;
         record_parser_compute(
             encoder,
-            &self.tokens_bracket_match_01_depth_blocks,
+            &self.tokens_delimiter_match_01_depth_blocks,
             &depth_bind_group,
-            "parser.tokens.bracket_match.depth_blocks",
+            "parser.tokens.delimiter_match.depth_blocks",
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
 
-        self.record_token_bracket_match_min_tree_build(encoder, bufs)?;
+        self.record_token_delimiter_match_min_tree_build(encoder, bufs)?;
+        self.record_token_brace_pairing(encoder, token_buf, token_count_buf, bufs)?;
+        self.record_token_bracket_pairing(encoder, token_buf, token_count_buf, bufs)
+    }
+
+    fn record_token_bracket_pairing(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        bufs: &ParserBuffers,
+    ) -> Result<()> {
+        let n_tokens = bufs.token_input_capacity.max(1);
 
         let pair_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
@@ -1429,7 +1432,7 @@ impl GpuParser {
         Ok(())
     }
 
-    fn record_token_brace_matching(
+    fn record_token_brace_pairing(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         token_buf: &wgpu::Buffer,
@@ -1437,48 +1440,6 @@ impl GpuParser {
         bufs: &ParserBuffers,
     ) -> Result<()> {
         let n_tokens = bufs.token_input_capacity.max(1);
-
-        let depth_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            (
-                "gParams".into(),
-                bufs.token_brace_match_params.as_entire_binding(),
-            ),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            (
-                "lexer_token_count".into(),
-                token_count_buf.as_entire_binding(),
-            ),
-            (
-                "depth_brace_inblock".into(),
-                bufs.token_depth_brace_inblock.as_entire_binding(),
-            ),
-            (
-                "block_prefix_brace".into(),
-                bufs.token_block_prefix_brace.as_entire_binding(),
-            ),
-            (
-                "brace_match_depth".into(),
-                bufs.token_brace_match_depth.as_entire_binding(),
-            ),
-            (
-                "brace_match_block_min".into(),
-                bufs.token_brace_match_block_min.as_entire_binding(),
-            ),
-        ]);
-        let depth_bind_group = self.cached_token_bind_group(
-            "parser_tokens_brace_match_01_depth_blocks",
-            &self.tokens_brace_match_01_depth_blocks,
-            &depth_resources,
-        )?;
-        record_parser_compute(
-            encoder,
-            &self.tokens_brace_match_01_depth_blocks,
-            &depth_bind_group,
-            "parser.tokens.brace_match.depth_blocks",
-            bufs.token_delimiter_n_blocks.saturating_mul(256),
-        )?;
-
-        self.record_token_brace_match_min_tree_build(encoder, bufs)?;
 
         let pair_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
@@ -1531,111 +1492,7 @@ impl GpuParser {
         Ok(())
     }
 
-    fn record_token_angle_matching(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        token_buf: &wgpu::Buffer,
-        token_count_buf: &wgpu::Buffer,
-        bufs: &ParserBuffers,
-    ) -> Result<()> {
-        let depth_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            (
-                "gParams".into(),
-                bufs.token_brace_match_params.as_entire_binding(),
-            ),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            (
-                "lexer_token_count".into(),
-                token_count_buf.as_entire_binding(),
-            ),
-            (
-                "depth_angle_inblock".into(),
-                bufs.token_depth_angle_inblock.as_entire_binding(),
-            ),
-            (
-                "block_prefix_angle".into(),
-                bufs.token_block_prefix_angle.as_entire_binding(),
-            ),
-            (
-                "angle_match_depth".into(),
-                bufs.token_angle_match_depth.as_entire_binding(),
-            ),
-            (
-                "angle_match_block_min".into(),
-                bufs.token_angle_match_block_min.as_entire_binding(),
-            ),
-        ]);
-        let depth_bind_group = self.cached_token_bind_group(
-            "parser_tokens_angle_match_01_depth_blocks",
-            &self.tokens_angle_match_01_depth_blocks,
-            &depth_resources,
-        )?;
-        record_parser_compute(
-            encoder,
-            &self.tokens_angle_match_01_depth_blocks,
-            &depth_bind_group,
-            "parser.tokens.angle_match.depth_blocks",
-            bufs.token_delimiter_n_blocks.saturating_mul(256),
-        )?;
-
-        self.record_token_angle_match_min_tree_build(encoder, bufs)?;
-
-        Ok(())
-    }
-
-    fn record_token_paren_matching(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        token_buf: &wgpu::Buffer,
-        token_count_buf: &wgpu::Buffer,
-        bufs: &ParserBuffers,
-    ) -> Result<()> {
-        let depth_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            (
-                "gParams".into(),
-                bufs.token_brace_match_params.as_entire_binding(),
-            ),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            (
-                "lexer_token_count".into(),
-                token_count_buf.as_entire_binding(),
-            ),
-            (
-                "depth_paren_inblock".into(),
-                bufs.token_depth_paren_inblock.as_entire_binding(),
-            ),
-            (
-                "block_prefix_paren".into(),
-                bufs.token_block_prefix_paren.as_entire_binding(),
-            ),
-            (
-                "paren_match_depth".into(),
-                bufs.token_paren_match_depth.as_entire_binding(),
-            ),
-            (
-                "paren_match_block_min".into(),
-                bufs.token_paren_match_block_min.as_entire_binding(),
-            ),
-        ]);
-        let depth_bind_group = self.cached_token_bind_group(
-            "parser_tokens_paren_match_01_depth_blocks",
-            &self.tokens_paren_match_01_depth_blocks,
-            &depth_resources,
-        )?;
-        record_parser_compute(
-            encoder,
-            &self.tokens_paren_match_01_depth_blocks,
-            &depth_bind_group,
-            "parser.tokens.paren_match.depth_blocks",
-            bufs.token_delimiter_n_blocks.saturating_mul(256),
-        )?;
-
-        self.record_token_paren_match_min_tree_build(encoder, bufs)?;
-
-        Ok(())
-    }
-
-    fn record_token_brace_match_min_tree_build(
+    fn record_token_delimiter_match_min_tree_build(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         bufs: &ParserBuffers,
@@ -1643,211 +1500,69 @@ impl GpuParser {
         for step in &bufs.token_brace_match_min_tree_steps {
             let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
                 ("gMinTree".into(), step.params.as_entire_binding()),
+                (
+                    "paren_match_block_min".into(),
+                    bufs.token_paren_match_block_min.as_entire_binding(),
+                ),
                 (
                     "brace_match_block_min".into(),
                     bufs.token_brace_match_block_min.as_entire_binding(),
                 ),
                 (
-                    "brace_match_min_tree".into(),
-                    bufs.token_brace_match_min_tree.as_entire_binding(),
-                ),
-            ]);
-            let bind_group = bind_group::create_bind_group_from_reflection(
-                &self.device,
-                Some("parser_tokens_brace_match_02_build_min_tree"),
-                &self.tokens_brace_match_02_build_min_tree.bind_group_layouts[0],
-                &self.tokens_brace_match_02_build_min_tree.reflection,
-                0,
-                &resources,
-            )?;
-            record_parser_compute(
-                encoder,
-                &self.tokens_brace_match_02_build_min_tree,
-                &bind_group,
-                "parser.tokens.brace_match.build_min_tree",
-                step.work_items,
-            )?;
-        }
-        Ok(())
-    }
-
-    fn record_token_paren_match_min_tree_build(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        bufs: &ParserBuffers,
-    ) -> Result<()> {
-        for step in &bufs.token_brace_match_min_tree_steps {
-            let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-                ("gMinTree".into(), step.params.as_entire_binding()),
-                (
-                    "brace_match_block_min".into(),
-                    bufs.token_paren_match_block_min.as_entire_binding(),
-                ),
-                (
-                    "brace_match_min_tree".into(),
-                    bufs.token_paren_match_min_tree.as_entire_binding(),
-                ),
-            ]);
-            let bind_group = bind_group::create_bind_group_from_reflection(
-                &self.device,
-                Some("parser_tokens_paren_match_02_build_min_tree"),
-                &self.tokens_brace_match_02_build_min_tree.bind_group_layouts[0],
-                &self.tokens_brace_match_02_build_min_tree.reflection,
-                0,
-                &resources,
-            )?;
-            record_parser_compute(
-                encoder,
-                &self.tokens_brace_match_02_build_min_tree,
-                &bind_group,
-                "parser.tokens.paren_match.build_min_tree",
-                step.work_items,
-            )?;
-        }
-        Ok(())
-    }
-
-    fn record_token_bracket_match_min_tree_build(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        bufs: &ParserBuffers,
-    ) -> Result<()> {
-        for step in &bufs.token_brace_match_min_tree_steps {
-            let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-                ("gMinTree".into(), step.params.as_entire_binding()),
-                (
-                    "brace_match_block_min".into(),
+                    "bracket_match_block_min".into(),
                     bufs.token_bracket_match_block_min.as_entire_binding(),
                 ),
                 (
-                    "brace_match_min_tree".into(),
-                    bufs.token_bracket_match_min_tree.as_entire_binding(),
-                ),
-            ]);
-            let bind_group = bind_group::create_bind_group_from_reflection(
-                &self.device,
-                Some("parser_tokens_bracket_match_02_build_min_tree"),
-                &self.tokens_brace_match_02_build_min_tree.bind_group_layouts[0],
-                &self.tokens_brace_match_02_build_min_tree.reflection,
-                0,
-                &resources,
-            )?;
-            record_parser_compute(
-                encoder,
-                &self.tokens_brace_match_02_build_min_tree,
-                &bind_group,
-                "parser.tokens.bracket_match.build_min_tree",
-                step.work_items,
-            )?;
-        }
-        Ok(())
-    }
-
-    fn record_token_angle_match_min_tree_build(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        bufs: &ParserBuffers,
-    ) -> Result<()> {
-        for step in &bufs.token_brace_match_min_tree_steps {
-            let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-                ("gMinTree".into(), step.params.as_entire_binding()),
-                (
-                    "brace_match_block_min".into(),
+                    "angle_match_block_min".into(),
                     bufs.token_angle_match_block_min.as_entire_binding(),
                 ),
                 (
+                    "paren_match_min_tree".into(),
+                    bufs.token_paren_match_min_tree.as_entire_binding(),
+                ),
+                (
                     "brace_match_min_tree".into(),
+                    bufs.token_brace_match_min_tree.as_entire_binding(),
+                ),
+                (
+                    "bracket_match_min_tree".into(),
+                    bufs.token_bracket_match_min_tree.as_entire_binding(),
+                ),
+                (
+                    "angle_match_min_tree".into(),
                     bufs.token_angle_match_min_tree.as_entire_binding(),
                 ),
             ]);
             let bind_group = bind_group::create_bind_group_from_reflection(
                 &self.device,
-                Some("parser_tokens_angle_match_02_build_min_tree"),
-                &self.tokens_brace_match_02_build_min_tree.bind_group_layouts[0],
-                &self.tokens_brace_match_02_build_min_tree.reflection,
+                Some("parser_tokens_delimiter_match_02_build_min_tree"),
+                &self
+                    .tokens_delimiter_match_02_build_min_tree
+                    .bind_group_layouts[0],
+                &self.tokens_delimiter_match_02_build_min_tree.reflection,
                 0,
                 &resources,
             )?;
             record_parser_compute(
                 encoder,
-                &self.tokens_brace_match_02_build_min_tree,
+                &self.tokens_delimiter_match_02_build_min_tree,
                 &bind_group,
-                "parser.tokens.angle_match.build_min_tree",
+                "parser.tokens.delimiter_match.build_min_tree",
                 step.work_items,
             )?;
         }
         Ok(())
     }
 
-    fn record_token_delimiter_scan_steps(
+    fn record_token_delimiter_hierarchy(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         bufs: &ParserBuffers,
         label: &'static str,
     ) -> Result<()> {
-        for step in &bufs.token_delimiter_scan_steps {
-            let prefix_brace_in = if step.read_from_a {
-                &bufs.token_prefix_brace_a
-            } else {
-                &bufs.token_prefix_brace_b
-            };
-            let prefix_brace_out = if step.write_to_a {
-                &bufs.token_prefix_brace_a
-            } else {
-                &bufs.token_prefix_brace_b
-            };
-            let prefix_bracket_in = if step.read_from_a {
-                &bufs.token_prefix_bracket_a
-            } else {
-                &bufs.token_prefix_bracket_b
-            };
-            let prefix_bracket_out = if step.write_to_a {
-                &bufs.token_prefix_bracket_a
-            } else {
-                &bufs.token_prefix_bracket_b
-            };
-            let prefix_paren_in = if step.read_from_a {
-                &bufs.token_prefix_paren_a
-            } else {
-                &bufs.token_prefix_paren_b
-            };
-            let prefix_paren_out = if step.write_to_a {
-                &bufs.token_prefix_paren_a
-            } else {
-                &bufs.token_prefix_paren_b
-            };
-            let prefix_angle_in = if step.read_from_a {
-                &bufs.token_prefix_angle_a
-            } else {
-                &bufs.token_prefix_angle_b
-            };
-            let prefix_angle_out = if step.write_to_a {
-                &bufs.token_prefix_angle_a
-            } else {
-                &bufs.token_prefix_angle_b
-            };
-            let top_owner_prefix_in = if step.read_from_a {
-                &bufs.token_top_brace_owner_prefix_a
-            } else {
-                &bufs.token_top_brace_owner_prefix_b
-            };
-            let top_owner_prefix_out = if step.write_to_a {
-                &bufs.token_top_brace_owner_prefix_a
-            } else {
-                &bufs.token_top_brace_owner_prefix_b
-            };
-            let statement_event_prefix_in = if step.read_from_a {
-                &bufs.token_statement_event_prefix_a
-            } else {
-                &bufs.token_statement_event_prefix_b
-            };
-            let statement_event_prefix_out = if step.write_to_a {
-                &bufs.token_statement_event_prefix_a
-            } else {
-                &bufs.token_statement_event_prefix_b
-            };
-            let scan_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-                ("gParams".into(), step.params.as_entire_binding()),
+        for (index, step) in bufs.token_block_scan_plan.up.iter().enumerate() {
+            let resources = HashMap::from([
+                ("gDelimiterScan".into(), step.params.as_entire_binding()),
                 (
                     "block_sum_brace".into(),
                     bufs.token_block_sum_brace.as_entire_binding(),
@@ -1865,52 +1580,12 @@ impl GpuParser {
                     bufs.token_block_sum_angle.as_entire_binding(),
                 ),
                 (
-                    "prefix_brace_in".into(),
-                    prefix_brace_in.as_entire_binding(),
-                ),
-                (
-                    "prefix_bracket_in".into(),
-                    prefix_bracket_in.as_entire_binding(),
-                ),
-                (
-                    "prefix_paren_in".into(),
-                    prefix_paren_in.as_entire_binding(),
-                ),
-                (
-                    "prefix_angle_in".into(),
-                    prefix_angle_in.as_entire_binding(),
-                ),
-                (
                     "top_brace_owner_block".into(),
                     bufs.token_top_brace_owner_block.as_entire_binding(),
                 ),
                 (
-                    "top_brace_owner_prefix_in".into(),
-                    top_owner_prefix_in.as_entire_binding(),
-                ),
-                (
                     "statement_event_block".into(),
                     bufs.token_statement_event_block.as_entire_binding(),
-                ),
-                (
-                    "statement_event_prefix_in".into(),
-                    statement_event_prefix_in.as_entire_binding(),
-                ),
-                (
-                    "prefix_brace_out".into(),
-                    prefix_brace_out.as_entire_binding(),
-                ),
-                (
-                    "prefix_bracket_out".into(),
-                    prefix_bracket_out.as_entire_binding(),
-                ),
-                (
-                    "prefix_paren_out".into(),
-                    prefix_paren_out.as_entire_binding(),
-                ),
-                (
-                    "prefix_angle_out".into(),
-                    prefix_angle_out.as_entire_binding(),
                 ),
                 (
                     "block_prefix_brace".into(),
@@ -1929,36 +1604,181 @@ impl GpuParser {
                     bufs.token_block_prefix_angle.as_entire_binding(),
                 ),
                 (
-                    "top_brace_owner_prefix_out".into(),
-                    top_owner_prefix_out.as_entire_binding(),
+                    "top_brace_owner_block_prefix".into(),
+                    bufs.token_top_brace_owner_block_prefix.as_entire_binding(),
+                ),
+                (
+                    "statement_event_block_prefix".into(),
+                    bufs.token_statement_event_block_prefix.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_brace".into(),
+                    bufs.token_prefix_brace_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_bracket".into(),
+                    bufs.token_prefix_bracket_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_paren".into(),
+                    bufs.token_prefix_paren_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_angle".into(),
+                    bufs.token_prefix_angle_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_owner".into(),
+                    bufs.token_top_brace_owner_prefix_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_event".into(),
+                    bufs.token_statement_event_prefix_a.as_entire_binding(),
+                ),
+            ]);
+            let invocation = format!("parser_tokens_delimiters_02_scan_up.{index}");
+            let bind = self.cached_token_bind_group(
+                &invocation,
+                &self.token_delimiters_02_scan_up,
+                &resources,
+            )?;
+            record_parser_compute(
+                encoder,
+                &self.token_delimiters_02_scan_up,
+                &bind,
+                label,
+                step.work_items,
+            )?;
+        }
+        for (index, step) in bufs.token_block_scan_plan.down.iter().enumerate() {
+            let resources = HashMap::from([
+                ("gDelimiterScan".into(), step.params.as_entire_binding()),
+                (
+                    "block_prefix_brace".into(),
+                    bufs.token_block_prefix_brace.as_entire_binding(),
+                ),
+                (
+                    "block_prefix_bracket".into(),
+                    bufs.token_block_prefix_bracket.as_entire_binding(),
+                ),
+                (
+                    "block_prefix_paren".into(),
+                    bufs.token_block_prefix_paren.as_entire_binding(),
+                ),
+                (
+                    "block_prefix_angle".into(),
+                    bufs.token_block_prefix_angle.as_entire_binding(),
                 ),
                 (
                     "top_brace_owner_block_prefix".into(),
                     bufs.token_top_brace_owner_block_prefix.as_entire_binding(),
                 ),
                 (
-                    "statement_event_prefix_out".into(),
-                    statement_event_prefix_out.as_entire_binding(),
+                    "statement_event_block_prefix".into(),
+                    bufs.token_statement_event_block_prefix.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_brace".into(),
+                    bufs.token_prefix_brace_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_bracket".into(),
+                    bufs.token_prefix_bracket_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_paren".into(),
+                    bufs.token_prefix_paren_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_angle".into(),
+                    bufs.token_prefix_angle_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_owner".into(),
+                    bufs.token_top_brace_owner_prefix_a.as_entire_binding(),
+                ),
+                (
+                    "hierarchy_event".into(),
+                    bufs.token_statement_event_prefix_a.as_entire_binding(),
+                ),
+            ]);
+            let invocation = format!("parser_tokens_delimiters_02_scan_down.{index}");
+            let bind = self.cached_token_bind_group(
+                &invocation,
+                &self.token_delimiters_02_scan_down,
+                &resources,
+            )?;
+            record_parser_compute(
+                encoder,
+                &self.token_delimiters_02_scan_down,
+                &bind,
+                label,
+                step.work_items,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn record_statement_event_scan(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        bufs: &ParserBuffers,
+        label: &'static str,
+    ) -> Result<()> {
+        for (index, step) in bufs.token_block_scan_plan.up.iter().enumerate() {
+            let resources = HashMap::from([
+                ("gContextScan".into(), step.params.as_entire_binding()),
+                (
+                    "statement_event_block".into(),
+                    bufs.token_statement_event_block.as_entire_binding(),
                 ),
                 (
                     "statement_event_block_prefix".into(),
                     bufs.token_statement_event_block_prefix.as_entire_binding(),
                 ),
+                (
+                    "statement_event_hierarchy".into(),
+                    bufs.token_statement_event_prefix_a.as_entire_binding(),
+                ),
             ]);
-            let scan_bind_group = bind_group::create_bind_group_from_reflection(
-                &self.device,
-                Some("parser_tokens_delimiters_02_scan"),
-                &self.token_delimiters_02.bind_group_layouts[0],
-                &self.token_delimiters_02.reflection,
-                0,
-                &scan_resources,
+            let invocation = format!("parser_tokens_context_scan_up.{index}");
+            let group = self.cached_token_bind_group(
+                &invocation,
+                &self.token_statement_event_scan_up,
+                &resources,
             )?;
             record_parser_compute(
                 encoder,
-                &self.token_delimiters_02,
-                &scan_bind_group,
+                &self.token_statement_event_scan_up,
+                &group,
                 label,
-                bufs.token_delimiter_n_blocks,
+                step.work_items,
+            )?;
+        }
+        for (index, step) in bufs.token_block_scan_plan.down.iter().enumerate() {
+            let resources = HashMap::from([
+                ("gContextScan".into(), step.params.as_entire_binding()),
+                (
+                    "statement_event_block_prefix".into(),
+                    bufs.token_statement_event_block_prefix.as_entire_binding(),
+                ),
+                (
+                    "statement_event_hierarchy".into(),
+                    bufs.token_statement_event_prefix_a.as_entire_binding(),
+                ),
+            ]);
+            let invocation = format!("parser_tokens_context_scan_down.{index}");
+            let group = self.cached_token_bind_group(
+                &invocation,
+                &self.token_statement_event_scan_down,
+                &resources,
+            )?;
+            record_parser_compute(
+                encoder,
+                &self.token_statement_event_scan_down,
+                &group,
+                label,
+                step.work_items,
             )?;
         }
         Ok(())

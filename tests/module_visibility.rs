@@ -102,3 +102,23 @@ fn main() {
         Err(other) => panic!("expected GPU type-check rejection, got {other:?}"),
     }
 }
+
+#[test]
+fn imported_visibility_exact_index_handles_more_than_one_workgroup() {
+    let mut imported_module = String::from("module lib::wide;\n");
+    for index in 0..2_100 {
+        imported_module.push_str(&format!(
+            "pub fn exported_{index}() -> i32 {{ return {index}; }}\n"
+        ));
+    }
+
+    common::type_check_source_pack_with_timeout(&[
+        &imported_module,
+        r#"
+module app::main;
+import lib::wide;
+fn main() -> i32 { return exported_2099(); }
+"#,
+    ])
+    .expect("large imported declaration tables should retain exact visibility ordering");
+}

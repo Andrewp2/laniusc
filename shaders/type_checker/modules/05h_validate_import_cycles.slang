@@ -1,24 +1,24 @@
-// GPU import-cycle validation over sorted import edges.
+// GPU import-cycle validation over the exact resolved-import set.
 //
 // Scheduling contract:
-// - Dispatch after the import-edge radix sort has produced rows ordered by
-//   (importing module id, target module id).
-// - Each resolved import performs equal-range lookups over the sorted edge
-//   table. This slice rejects direct two-module cycles without scanning source
-//   bytes, walking module graphs on the CPU, using hashes, or performing broad
-//   per-module loops. Longer cycles require a dedicated GPU SCC/topological
-//   checkpoint.
+// - Dispatch after every resolved edge has been published to the GPU hash set.
+// - Each resolved import performs one exact reverse-edge lookup. This slice
+//   rejects direct two-module cycles without scanning source bytes or walking
+//   module graphs on the CPU. Longer cycles require the GPU topological check.
 
-import fixed.key;
-import range_query;
 import status;
+import type_checker.modules.import_edge_set;
 
 struct Params
 {
+    uint import_capacity;
+    uint path_capacity;
+    uint path_segment_capacity;
     uint module_capacity;
-    uint reserved;
-    uint n_blocks;
-    uint key_step;
+    uint dependency_interfaces_present;
+    uint reserved0;
+    uint reserved1;
+    uint reserved2;
 };
 
 ConstantBuffer<Params> gParams;
@@ -28,10 +28,15 @@ StructuredBuffer<uint> import_module_id;
 StructuredBuffer<uint> import_target_module_id;
 StructuredBuffer<uint> import_path_id;
 StructuredBuffer<uint> path_owner_token;
-StructuredBuffer<uint> import_edge_key_order;
+StructuredBuffer<uint> import_edge_set_state;
 
 RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> import_status;
+
+public struct ImportEdgeStatusSource : IImportEdgeStatusSource
+{
+    public static uint status(uint row) { return import_status[row]; }
+}
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -49,7 +54,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint import_capacity()
 {
-    return gParams.module_capacity;
+    return gParams.import_capacity;
 }
 
 uint active_import_count()
@@ -57,67 +62,15 @@ uint active_import_count()
     return min(import_count_out[0], import_capacity());
 }
 
-bool valid_import_edge(uint import_i)
-{
-    return import_i < active_import_count() &&
-           import_status[import_i] == IMPORT_STATUS_OK &&
-           import_module_id[import_i] != INVALID &&
-           import_target_module_id[import_i] != INVALID;
-}
-
-uint encoded_module_id(uint module_id)
-{
-    return fixed_key_encode_nullable_u32(module_id, INVALID);
-}
-
-public struct ImportEdgeLookupKey
-{
-    uint importing_module;
-    uint target_module;
-}
-
-public struct ImportEdgeFixedKey : IFixedU32RowKey<ImportEdgeLookupKey>
-{
-    public static uint row_lane(uint row, uint lane)
-    {
-        if (row >= active_import_count())
-            return 0u;
-        uint import_i = import_edge_key_order[row];
-        if (!valid_import_edge(import_i))
-            return 0u;
-        uint value = lane == 0u
-            ? import_module_id[import_i]
-            : import_target_module_id[import_i];
-        return encoded_module_id(value);
-    }
-
-    public static uint key_lane(ImportEdgeLookupKey key, uint lane)
-    {
-        uint value = lane == 0u ? key.importing_module : key.target_module;
-        return encoded_module_id(value);
-    }
-}
-
-public struct ImportEdgeCompare : IRowQueryCompare<ImportEdgeLookupKey>
-{
-    public static int compare(uint row, ImportEdgeLookupKey key)
-    {
-        return fixed_u32_row_key_compare<ImportEdgeLookupKey, ImportEdgeFixedKey>(
-            row,
-            key,
-            2u);
-    }
-}
-
 bool has_reverse_edge(uint importing_module, uint target_module)
 {
-    ImportEdgeLookupKey key;
-    key.importing_module = target_module;
-    key.target_module = importing_module;
-    QueryRange range = equal_range_query<ImportEdgeLookupKey, ImportEdgeCompare>(
+    return import_edge_set_contains<ImportEdgeStatusSource>(
+        target_module,
+        importing_module,
         active_import_count(),
-        key);
-    return range.begin < range.end;
+        import_module_id,
+        import_target_module_id,
+        import_edge_set_state);
 }
 
 uint import_error_token(uint import_i)
@@ -134,7 +87,11 @@ uint import_error_token(uint import_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint import_i = linear_thread_id(dtid);
-    if (!valid_import_edge(import_i))
+    if (!import_edge_row_valid<ImportEdgeStatusSource>(
+        import_i,
+        active_import_count(),
+        import_module_id,
+        import_target_module_id))
         return;
 
     uint importing_module = import_module_id[import_i];

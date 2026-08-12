@@ -1,4 +1,4 @@
-// One race-free pointer-jumping round over alias-substitution components.
+// One race-free bounded parent walk over alias-substitution components.
 
 import gpu_index;
 
@@ -33,7 +33,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= capacity)
         return;
     uint parent = alias_equiv_parent_in[node];
-    alias_equiv_parent_out[node] = parent < capacity
-        ? alias_equiv_parent_in[parent]
-        : node;
+    [unroll]
+    for (uint step = 0u; step < 15u && parent < capacity; ++step)
+    {
+        uint next = alias_equiv_parent_in[parent];
+        if (next == parent)
+            break;
+        parent = next;
+    }
+    alias_equiv_parent_out[node] = parent < capacity ? parent : node;
 }

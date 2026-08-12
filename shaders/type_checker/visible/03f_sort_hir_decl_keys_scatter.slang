@@ -3,8 +3,9 @@
 // Scheduling contract:
 // - Dispatch after type_check_visible_03e_sort_hir_decl_keys and GPU scans over
 //   radix bucket counts for the same key_step.
-// - Produces a stable order of compact HIR declaration rows by
-//   (owner function, interned name id, declaration token).
+// - Input records are already in declaration-token order. Stable byte passes
+//   produce (owner function, interned name id, declaration token) order using
+//   only owner and name as explicit radix fields.
 // - This pass only reorders compact declaration rows. It does not inspect source
 //   text, token spelling, helper names, or function body shapes.
 
@@ -26,7 +27,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_visible_decl_count_out;
 StructuredBuffer<uint> hir_visible_decl_owner_fn;
 StructuredBuffer<uint> hir_visible_decl_name_id;
-StructuredBuffer<uint> hir_visible_decl_token;
 StructuredBuffer<uint> radix_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
@@ -36,7 +36,7 @@ RWStructuredBuffer<uint> radix_order_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
+static const uint RADIX_BUCKETS = RADIX_U8_BUCKETS;
 
 
 uint linear_group_id(uint3 gid)
@@ -54,20 +54,18 @@ uint decl_key_field(uint decl_i, uint field_i)
     if (decl_i >= active_decl_count())
         return 0u;
 
-    if (field_i == 0u)
-        return encode_nullable_id(hir_visible_decl_token[decl_i], INVALID);
-    if (field_i == 1u)
-        return encode_nullable_id(hir_visible_decl_name_id[decl_i], INVALID);
-    return hir_visible_decl_owner_fn[decl_i];
+    return field_i == 0u
+        ? encode_nullable_id(hir_visible_decl_name_id[decl_i], INVALID)
+        : hir_visible_decl_owner_fn[decl_i];
 }
 
 uint decl_key_radix_key(uint decl_i, uint key_step)
 {
-    uint bytes_per_field = clamp(gParams.reserved, 1u, 4u);
-    uint field_i = min(key_step / bytes_per_field, 2u);
-    uint byte_i = key_step - field_i * bytes_per_field;
-    uint value = decl_key_field(decl_i, field_i);
-    return radix_byte_key(value, byte_i);
+    return radix_packed_u32x2_bit_key(
+        decl_key_field(decl_i, 0u),
+        decl_key_field(decl_i, 1u),
+        gParams.reserved,
+        key_step);
 }
 
 public struct HirVisibleDeclKeyScatterSource : IStableRadixScatterSource<uint>

@@ -10,7 +10,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Pointer-jumps compact expression roots to convergence.
+/// Resolves compact expression roots with bounded parallel parent walks.
 pub struct HirCanonicalExprForestRootStepPass {
     data: PassData,
 }
@@ -28,7 +28,7 @@ impl HirCanonicalExprForestRootStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
     ) -> Result<()> {
-        let steps = pointer_jump_steps(buffers.hir_canonical_capacity);
+        let steps = bounded_parent_walk_steps(buffers.hir_canonical_capacity);
         for step in 0..steps {
             let (input, output) = if step % 2 == 0 {
                 (
@@ -102,11 +102,11 @@ impl HirCanonicalExprForestRootStepPass {
     }
 }
 
-fn pointer_jump_steps(items: u32) -> u32 {
+fn bounded_parent_walk_steps(items: u32) -> u32 {
     let mut span = 1u32;
     let mut steps = 0u32;
     while span < items.max(1) {
-        span = span.saturating_mul(2);
+        span = span.saturating_mul(16);
         steps += 1;
     }
     steps
@@ -114,14 +114,14 @@ fn pointer_jump_steps(items: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::pointer_jump_steps;
+    use super::bounded_parent_walk_steps;
 
     #[test]
     fn compact_expression_root_steps_cover_arbitrary_depth() {
-        assert_eq!(pointer_jump_steps(0), 0);
-        assert_eq!(pointer_jump_steps(1), 0);
-        assert_eq!(pointer_jump_steps(2), 1);
-        assert_eq!(pointer_jump_steps(257), 9);
-        assert_eq!(pointer_jump_steps(10_000_000), 24);
+        assert_eq!(bounded_parent_walk_steps(0), 0);
+        assert_eq!(bounded_parent_walk_steps(1), 0);
+        assert_eq!(bounded_parent_walk_steps(2), 1);
+        assert_eq!(bounded_parent_walk_steps(257), 3);
+        assert_eq!(bounded_parent_walk_steps(10_000_000), 6);
     }
 }
