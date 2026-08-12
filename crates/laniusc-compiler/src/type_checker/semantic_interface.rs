@@ -220,6 +220,12 @@ impl GpuTypeChecker {
             state
                 .typecheck_graph
                 .u32_buffer("semantic_type_generic_param_slot_by_hir")?,
+            state
+                .typecheck_graph
+                .u32_buffer("semantic_value_const_by_hir")?,
+            state
+                .typecheck_graph
+                .u32_buffer("semantic_value_const_present_by_hir")?,
         ];
         let dependency_visibility = module_path.dependency_visibility.as_deref();
         let inputs = GpuSemanticInterfaceIdentityBuffers {
@@ -248,6 +254,8 @@ impl GpuTypeChecker {
             decl_visibility: &module_path.decl_visibility,
             decl_parent_type_decl: &module_path.decl_parent_type_decl,
             decl_hir_node: &module_path.decl_hir_node,
+            semantic_value_const_by_hir: &graph_buffers[21],
+            semantic_value_const_present_by_hir: &graph_buffers[22],
             function_host_service_by_hir: &graph_buffers[14],
             public_decl_count: &module_path.interface_public_decl_count,
             public_decl_local_id: &module_path.interface_public_decl_local_id,
@@ -505,6 +513,14 @@ impl GpuTypeChecker {
         identity_resources.buffer("compact_const_value", hir.compact_const_value);
         identity_resources.buffer("compact_hir_core", hir.compact_hir_core);
         identity_resources.buffer("compact_hir_payload", hir.compact_hir_payload);
+        identity_resources.buffer(
+            "semantic_value_const_by_hir",
+            inputs.semantic_value_const_by_hir,
+        );
+        identity_resources.buffer(
+            "semantic_value_const_present_by_hir",
+            inputs.semantic_value_const_present_by_hir,
+        );
         identity_resources.buffer(
             "semantic_function_host_service_by_hir",
             inputs.function_host_service_by_hir,

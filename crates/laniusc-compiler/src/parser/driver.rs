@@ -96,7 +96,6 @@ pub struct GpuParser {
     tokens_bracket_match_03_pair_pse: PassData,
     tokens_brace_match_03_pair_pse: PassData,
     active_pair_dispatch_args: PassData,
-    tree_active_dispatch_args: PassData,
     tree_feature_dispatch_args: PassData,
     tokens_to_kinds: PassData,
     tokens_type_path_context_01_local: PassData,
@@ -222,10 +221,6 @@ impl GpuParser {
             active_pair_dispatch_args: make_parser_pass!(
                 "active_pair_dispatch_args",
                 make_active_pair_dispatch_args_pass
-            ),
-            tree_active_dispatch_args: make_parser_pass!(
-                "tree_active_dispatch_args",
-                make_tree_active_dispatch_args_pass
             ),
             tree_feature_dispatch_args: make_parser_pass!(
                 "tree_feature_dispatch_args",

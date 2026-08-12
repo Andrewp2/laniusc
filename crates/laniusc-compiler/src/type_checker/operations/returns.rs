@@ -10,11 +10,6 @@ pub(in crate::type_checker) const RETURNS_MARK: ReflectedComputeSpec = typecheck
     HirNodes,
     "type_checker/returns/01_mark"
 );
-pub(in crate::type_checker) const RETURNS_MARK_IF: ReflectedComputeSpec = typecheck_pass!(
-    "type_check.returns.mark_if",
-    HirNodes,
-    "type_checker/returns/02_mark_if"
-);
 pub(in crate::type_checker) const RETURNS_VALIDATE: ReflectedComputeSpec = typecheck_pass!(
     "type_check.returns.validate",
     HirNodes,
@@ -25,7 +20,6 @@ pub(in crate::type_checker) const RETURNS_VALIDATE: ReflectedComputeSpec = typec
 pub(in crate::type_checker) struct ReturnValidationOperation {
     clear: ComputeOperation,
     mark: ComputeOperation,
-    mark_if: ComputeOperation,
     validate: ComputeOperation,
 }
 
@@ -43,7 +37,6 @@ impl ReturnValidationOperation {
         Ok(Self {
             clear: operation(RETURNS_CLEAR)?,
             mark: operation(RETURNS_MARK)?,
-            mark_if: operation(RETURNS_MARK_IF)?,
             validate: operation(RETURNS_VALIDATE)?,
         })
     }
@@ -52,22 +45,15 @@ impl ReturnValidationOperation {
         graph: &mut CompilerGraphBuilder,
         kernels: &impl crate::gpu::kernels::KernelReflections,
     ) -> Result<(), String> {
-        for spec in [
-            RETURNS_CLEAR,
-            RETURNS_MARK,
-            RETURNS_MARK_IF,
-            RETURNS_VALIDATE,
-        ] {
+        for spec in [RETURNS_CLEAR, RETURNS_MARK, RETURNS_VALIDATE] {
             spec.register_kernel(graph, kernels)?;
         }
-        graph.repeat_pass_range(2, RETURNS_MARK_IF.name, RETURNS_MARK_IF.name)
+        Ok(())
     }
 
     pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.clear.record(encoder)?;
         self.mark.record(encoder)?;
-        self.mark_if.record(encoder)?;
-        self.mark_if.record(encoder)?;
         self.validate.record(encoder)
     }
 }

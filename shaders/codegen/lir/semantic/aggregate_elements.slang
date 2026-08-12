@@ -143,8 +143,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         result.ordinal = source.ordinal;
         result.name_token = LIR_INVALID;
         result.value_metadata = value_metadata_for_hir(source.value, hir_count);
-        result.word_offset = source.ordinal;
-        result.word_count = 1u;
+        // Arrays are homogeneous, so every element has the same checked ABI
+        // width. Dense element ordinals therefore map directly to dense word
+        // ranges without a serial prefix walk.
+        result.word_count = max(
+            aggregate_word_count_for_hir(source.value, hir_count), 1u);
+        result.word_offset = source.ordinal * result.word_count;
     }
     else if (row < array_count + field_count)
     {

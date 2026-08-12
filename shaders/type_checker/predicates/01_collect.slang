@@ -91,8 +91,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint trait_decl_i = type_decl_for_bound_path(node, owner_decl);
-    if (!valid_token(bound_token) ||
-        trait_decl_i == INVALID ||
+    if (!valid_token(bound_token) || trait_decl_i == INVALID)
+    {
+        predicate_status[node] = PREDICATE_STATUS_UNKNOWN_BOUND_TYPE;
+        return;
+    }
+    if (
         decl_kind[trait_decl_i] != HIR_ITEM_KIND_TRAIT ||
         decl_namespace[trait_decl_i] != HIR_ITEM_NAMESPACE_TYPE)
     {

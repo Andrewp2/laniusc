@@ -55,6 +55,7 @@ RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> fn_start_token_by_decl_token;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
+RWStructuredBuffer<uint> call_return_generic_slot;
 RWStructuredBuffer<uint> function_lookup_key;
 RWStructuredBuffer<uint> function_lookup_fn;
 
@@ -427,8 +428,21 @@ void publish_function_lookup(uint fn_node)
     return_ref_for_function(fn_decl_token, tag, payload);
     uint return_type_token = return_type_token_for_ref(tag, payload);
     uint return_type = return_type_for_function(fn_node, fn_decl_token);
+    uint return_generic_slot = tag == TYPE_REF_GENERIC_PARAM && valid_token(payload)
+        ? type_generic_param_slot_by_token[payload]
+        : INVALID;
+    if (return_generic_slot == INVALID)
+    {
+        uint return_node = return_type_node(fn_node);
+        uint return_use_token = valid_node(return_node)
+            ? compact_hir_core[return_node].token_start
+            : INVALID;
+        if (valid_token(return_use_token))
+            return_generic_slot = type_generic_param_slot_by_token[return_use_token];
+    }
     call_return_type_token[fn_decl_token] = return_type_token;
     call_return_type[fn_decl_token] = return_type;
+    call_return_generic_slot[fn_decl_token] = return_generic_slot;
 
     // Backend body records are keyed by the function's source-span start,
     // while semantic name lookup is keyed by its declaration-name token.
@@ -440,6 +454,7 @@ void publish_function_lookup(uint fn_node)
         call_fn_index[fn_start_token] = fn_decl_token;
         call_return_type_token[fn_start_token] = return_type_token;
         call_return_type[fn_start_token] = return_type;
+        call_return_generic_slot[fn_start_token] = return_generic_slot;
     }
 
     if (!function_item_kind(fn.a))

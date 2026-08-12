@@ -1,6 +1,7 @@
 import codegen.lowering_ir;
 import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.location_common;
+import codegen.lir.x86.safety;
 import gpu_index;
 
 struct Params
@@ -387,6 +388,15 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             emit_u32(cursor, displacement(first_word_slot));
             store_declaration64(cursor, 0u, declaration_location(operands.a));
         }
+        else if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
+        {
+            load_value32(cursor, locations.b, 0u, function);
+            load_value32(cursor, locations.c, 1u, function);
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0xc1u);
+            emit_u8(cursor, 0xe1u); emit_u8(cursor, 0x20u);
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x09u); emit_u8(cursor, 0xc8u);
+            store_declaration64(cursor, 0u, declaration_location(operands.a));
+        }
         else if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
         {
             load_value64(cursor, locations.b, 0u, function);
@@ -425,7 +435,20 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         load_value64(cursor, locations.a, 0u, function);
         load_value32(cursor, locations.b, 1u, function);
         emit_u8(cursor, 0x48u); emit_u8(cursor, 0xf7u); emit_u8(cursor, 0xd9u);
-        emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
+        bool aggregate = (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
+        if (aggregate)
+        {
+            // The aggregate pointer addresses descending stack words. Scale
+            // the negated element index by the homogeneous element width,
+            // then return the element address for subsequent member loads.
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x69u); emit_u8(cursor, 0xc9u);
+            emit_u32(cursor, operands.c);
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8du);
+        }
+        else
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
+        }
         emit_u8(cursor, 0x04u); emit_u8(cursor, 0xc8u);
         store_value64(cursor, 0u, locations.result, function);
     }
@@ -488,7 +511,19 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         { emit_u8(cursor, 0x0fu); emit_u8(cursor, 0xafu); emit_u8(cursor, 0xc1u); }
         else if (operands.a == X86_LIR_BINARY_DIV_I32 || operands.a == X86_LIR_BINARY_REM_I32)
         {
-            emit_u8(cursor, 0x99u); emit_u8(cursor, 0xf7u); emit_u8(cursor, 0xf9u);
+            bool is_unsigned = (operands.metadata & 0xffu) == 4u ||
+                (operands.metadata & 0xffu) == 6u;
+            if (is_unsigned)
+            {
+                // xor edx, edx; div ecx
+                emit_u8(cursor, 0x31u); emit_u8(cursor, 0xd2u);
+                emit_u8(cursor, 0xf7u); emit_u8(cursor, 0xf1u);
+            }
+            else
+            {
+                // cdq; idiv ecx
+                emit_u8(cursor, 0x99u); emit_u8(cursor, 0xf7u); emit_u8(cursor, 0xf9u);
+            }
             if (operands.a == X86_LIR_BINARY_REM_I32)
             { emit_u8(cursor, 0x89u); emit_u8(cursor, 0xd0u); }
         }
@@ -501,7 +536,11 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         else if (operands.a == X86_LIR_BINARY_SHL_I32)
         { emit_u8(cursor, 0xd3u); emit_u8(cursor, 0xe0u); }
         else if (operands.a == X86_LIR_BINARY_SHR_I32)
-        { emit_u8(cursor, 0xd3u); emit_u8(cursor, 0xf8u); }
+        {
+            emit_u8(cursor, 0xd3u);
+            emit_u8(cursor, (operands.metadata & 0xffu) == 4u ||
+                (operands.metadata & 0xffu) == 6u ? 0xe8u : 0xf8u);
+        }
         store_value32(cursor, 0u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_COMPARE)
@@ -575,17 +614,30 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     }
     else if (core.op == X86_LIR_OP_CALL_ARG)
     {
-        bool wide = (operands.metadata &
-            (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u;
-        if (wide)
+        if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
         {
             load_value64(cursor, locations.a, 0u, function);
-            move_rax_to_argument(cursor, operands.b);
+            if ((operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u)
+            {
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0xc1u);
+                emit_u8(cursor, 0xe8u); emit_u8(cursor, 0x20u);
+            }
+            move_eax_to_argument(cursor, operands.b);
         }
         else
         {
-            load_value32(cursor, locations.a, 0u, function);
-            move_eax_to_argument(cursor, operands.b);
+            bool wide = (operands.metadata &
+                (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u;
+            if (wide)
+            {
+                load_value64(cursor, locations.a, 0u, function);
+                move_rax_to_argument(cursor, operands.b);
+            }
+            else
+            {
+                load_value32(cursor, locations.a, 0u, function);
+                move_eax_to_argument(cursor, operands.b);
+            }
         }
     }
     else if (core.op == X86_LIR_OP_CALL)
@@ -842,6 +894,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint cursor = layout.body_offset + target_byte_offset[row];
     if (row == function.instruction_start)
         emit_prologue(cursor, function, semantic_function, saved_mask);
+    cursor += x86_safety_guard_bytes(core, target_lir_operands[page_row],
+        target_lir_locations[page_row]);
     emit_instruction(cursor, core, target_lir_operands[page_row],
                      target_lir_locations[page_row], function,
                      semantic_function, layout, saved_mask);

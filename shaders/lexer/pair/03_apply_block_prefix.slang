@@ -16,12 +16,21 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> flags_packed;       // length n (packed flags per i)
-StructuredBuffer<uint2> block_prefix_pair; // length nb (inclusive per block)
+StructuredBuffer<uint2> block_prefix_pair_ping; // length nb (inclusive per block)
+StructuredBuffer<uint2> block_prefix_pair_pong; // length nb (inclusive per block)
 
 RWStructuredBuffer<uint> s_all_final;  // length n
 RWStructuredBuffer<uint> s_keep_final; // length n
 
 static const uint MAX_GROUPS_X = 65535u;
+
+bool block_prefix_is_ping(uint block_count)
+{
+    uint rounds = 0u;
+    for (uint stride = 1u; stride < block_count; stride <<= 1u)
+        rounds += 1u;
+    return (rounds & 1u) == 0u;
+}
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
@@ -49,7 +58,10 @@ void pair_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
     uint2 carry = uint2(0u, 0u);
     if (block > 0u)
     {
-        carry = block_prefix_pair[block - 1u];
+        const uint block_count = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE;
+        carry = block_prefix_is_ping(block_count)
+                    ? block_prefix_pair_ping[block - 1u]
+                    : block_prefix_pair_pong[block - 1u];
     }
 
     uint2 res = inc + carry;

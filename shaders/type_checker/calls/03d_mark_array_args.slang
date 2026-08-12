@@ -199,7 +199,7 @@ uint direct_node_type(uint node)
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint lit = hir_scalar_type_for_expr_form(expr_form(node));
+    uint lit = hir_scalar_type_for_hir(compact_hir_core[node].kind, expr_form(node));
     if (lit != TY_UNKNOWN)
         return lit;
 

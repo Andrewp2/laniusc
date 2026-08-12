@@ -177,6 +177,7 @@ static const uint PREDICATE_STATUS_IMPL_TARGET_DECL_KIND = 31u;
 static const uint PREDICATE_STATUS_IMPL_TARGET_DECL_IDENTITY = 32u;
 static const uint PREDICATE_STATUS_IMPL_TARGET_ARITY = 33u;
 static const uint PREDICATE_STATUS_IMPL_TARGET_ARG_SHAPE = 34u;
+static const uint PREDICATE_STATUS_UNKNOWN_BOUND_TYPE = 35u;
 static const uint IMPORT_VISIBLE_STATUS_OK = 0u;
 
 uint linear_thread_id(uint3 dtid)

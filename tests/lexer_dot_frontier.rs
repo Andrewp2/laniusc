@@ -44,6 +44,22 @@ fn lexer_tokenizes_known_dot_frontiers() {
                 ],
             ),
             (
+                "0..0",
+                vec![
+                    (TokenKind::Int, "0"),
+                    (TokenKind::DotDot, ".."),
+                    (TokenKind::Int, "0"),
+                ],
+            ),
+            (
+                "12..34",
+                vec![
+                    (TokenKind::Int, "12"),
+                    (TokenKind::DotDot, ".."),
+                    (TokenKind::Int, "34"),
+                ],
+            ),
+            (
                 "1.0..n",
                 vec![
                     (TokenKind::Float, "1.0"),

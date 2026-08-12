@@ -32,6 +32,7 @@ StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> module_value_path_call_head;
+StructuredBuffer<uint> resolved_dependency_value_metadata;
 
 RWStructuredBuffer<uint> module_value_path_status;
 RWStructuredBuffer<uint> module_value_path_const_head;
@@ -98,6 +99,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     if (resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
         return;
+
+    uint dependency_value_base = path_i * 3u;
+    if (resolved_dependency_value_metadata[dependency_value_base] == HIR_ITEM_KIND_CONST)
+    {
+        uint ty = resolved_dependency_value_metadata[dependency_value_base + 1u];
+        if (ty == TY_UNKNOWN)
+        {
+            module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
+            return;
+        }
+        visible_type[owner_token] = ty;
+        module_value_path_const_head[owner_token] = 1u;
+        module_value_path_const_end[owner_token] =
+            path_segment_token[path_segment_base[path_i] + segment_count - 1u];
+        module_value_path_status[owner_token] = INVALID;
+        return;
+    }
 
     uint decl_i = resolved_value_decl[path_i];
     uint visible = visible_decl[owner_token];

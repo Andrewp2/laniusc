@@ -697,9 +697,14 @@ async fn run_session(
         let resources_before = job_resource_creation_counts();
         let bind_group_timing_before = bind_group_timing_counters();
         let bind_group_job = crate::gpu::passes_core::begin_reflected_bind_group_job();
-        let breakdown_before =
+        let resource_breakdown_enabled =
             crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false)
-                .then(job_resource_creation_breakdown);
+                || (resources_before.bind_groups > 0
+                    && crate::gpu::env::env_bool_strict(
+                        "LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN",
+                        false,
+                    ));
+        let breakdown_before = resource_breakdown_enabled.then(job_resource_creation_breakdown);
         let mut response =
             compile_request(&compiler, options, &mut source_pack_cache, request).await;
         let resources_after = job_resource_creation_counts();
@@ -761,7 +766,13 @@ async fn run_session(
                 }
                 .into(),
             );
-            if let (Some(before), Some(after)) = (&breakdown_before, &breakdown_after) {
+            // Keep stdio responses bounded: a cold/growth job can create hundreds
+            // of distinct labels and fill the child's captured-output pipe before
+            // the test harness starts reading it. The focused diagnostic is for
+            // small unexpected deltas on otherwise resident jobs.
+            if created.buffers.saturating_add(created.bind_groups) <= 32
+                && let (Some(before), Some(after)) = (&breakdown_before, &breakdown_after)
+            {
                 response.insert(
                     "resource_creation_breakdown".into(),
                     after.delta_json(before),

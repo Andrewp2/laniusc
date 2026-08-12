@@ -63,6 +63,8 @@ StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> semantic_value_const_by_hir;
+StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<uint> semantic_function_host_service_by_hir;
 StructuredBuffer<uint> interface_name_ref_len;
 StructuredBuffer<uint> interface_name_ref_prefix;
@@ -180,8 +182,9 @@ void write_decl(uint dst, uint decl, uint name_ref)
     interface_declaration_words[base + 12u] = semantic_function_host_service_by_hir[hir];
     uint value_hir = hir != INVALID ? compact_const_value[hir] : INVALID;
     interface_declaration_words[base + 13u] =
-        decl_kind[decl] == 3u && value_hir < gParams.hir_capacity
-            ? compact_hir_payload[value_hir].b : 0u;
+        decl_kind[decl] == 3u && value_hir < gParams.hir_capacity &&
+        semantic_value_const_present_by_hir[value_hir] == 0x80000000u
+            ? semantic_value_const_by_hir[value_hir] : 0u;
 }
 
 [shader("compute")]

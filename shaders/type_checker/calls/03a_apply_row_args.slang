@@ -77,7 +77,7 @@ void record_error(uint token_i, uint code, uint detail)
 
 bool is_generic_type(uint ty)
 {
-    return ty >= TY_GENERIC_BASE;
+    return ty >= TY_GENERIC_BASE && ty != INVALID;
 }
 
 uint plain_generic_slot(uint ty)

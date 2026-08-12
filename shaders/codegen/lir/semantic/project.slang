@@ -14,6 +14,7 @@ StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
+StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 StructuredBuffer<uint> semantic_function_flag;
@@ -47,6 +48,7 @@ static const uint CHECKED_CALLABLE_DEPENDENCY = 3u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -160,7 +162,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : checked.arg_count +
                     (semantic_call_receiver[node] != INVALID ? 1u : 0u);
     }
-    else if ((core.kind == HIR_NAME_EXPR || payload.a == HIR_EXPR_NAME) &&
+    else if (semantic_value_const_present_by_hir[node] != 0x80000000u &&
+             (core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR ||
+              payload.a == HIR_EXPR_NAME) &&
              semantic_value_id[node] < gParams.n_tokens)
     {
         uint declaration = semantic_value_id[node];

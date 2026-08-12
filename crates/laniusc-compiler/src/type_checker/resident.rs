@@ -1767,6 +1767,24 @@ impl GpuTypeChecker {
                 "type_check.semantic_artifact.project",
                 hir_node_capacity,
             )?;
+            record_compute(
+                encoder,
+                &self
+                    .passes
+                    .kernel("type_checker/semantic/artifact/00a_local_const_literals"),
+                &bind_groups.semantic_local_const_literals_project,
+                "type_check.semantic_artifact.local_const_literals",
+                hir_node_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self
+                    .passes
+                    .kernel("type_checker/semantic/artifact/00b_local_const_references"),
+                &bind_groups.semantic_local_const_references_project,
+                "type_check.semantic_artifact.local_const_references",
+                hir_node_capacity,
+            )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.semantic_artifact.done");
             }
@@ -1932,6 +1950,14 @@ impl GpuTypeChecker {
             .typecheck_graph
             .u32_buffer("semantic_function_host_service_by_hir")
             .ok()?;
+        let semantic_value_const_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_value_const_by_hir")
+            .ok()?;
+        let semantic_value_const_present_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_value_const_present_by_hir")
+            .ok()?;
         let semantic_type_ref_tag_by_hir = state
             .typecheck_graph
             .u32_buffer("semantic_type_ref_tag_by_hir")
@@ -1984,6 +2010,8 @@ impl GpuTypeChecker {
             decl_visibility: &module_path.decl_visibility,
             decl_parent_type_decl: &module_path.decl_parent_type_decl,
             decl_hir_node: &module_path.decl_hir_node,
+            semantic_value_const_by_hir: &semantic_value_const_by_hir,
+            semantic_value_const_present_by_hir: &semantic_value_const_present_by_hir,
             function_host_service_by_hir: &function_host_service_by_hir,
             public_decl_count: &module_path.interface_public_decl_count,
             public_decl_local_id: &module_path.interface_public_decl_local_id,

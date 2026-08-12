@@ -309,9 +309,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                     )
                     .await?;
                 self.compiler.cache_compiled_unit(
-                    cache_hint
-                        .clone()
-                        .expect("concrete compiled unit must have a cache hint"),
+                    cache_hint.clone(),
                     key.clone(),
                     compiled.clone(),
                 );

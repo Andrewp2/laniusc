@@ -35,6 +35,9 @@ StructuredBuffer<uint> call_param_row_start;
 StructuredBuffer<uint> call_param_row_count;
 
 RWStructuredBuffer<uint> call_arg_param_row;
+RWStructuredBuffer<uint> call_generic_slot_type;
+RWStructuredBuffer<uint> call_generic_slot_ordinal;
+RWStructuredBuffer<uint> call_const_slot_len;
 
 static const uint INVALID = 0xffffffffu;
 static const uint INTRINSIC_NONE = 0u;
@@ -42,6 +45,7 @@ static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -146,6 +150,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_arg_param_row[row] = INVALID;
 
         uint call_node = call_arg_row_call_node[row];
+        uint callee_i = callee_token_for_hir_call(call_node);
+        if (valid_token(callee_i))
+        {
+            // Generic inference is recomputed from the current argument types
+            // on every fixed-point iteration. Keeping a prior iteration's
+            // concrete value turns legitimate nested-call refinement into a
+            // false same-call conflict.
+            for (uint slot = 0u; slot < PARAM_CACHE_STRIDE; slot += 1u)
+            {
+                uint state_i = callee_i * PARAM_CACHE_STRIDE + slot;
+                call_generic_slot_type[state_i] = INVALID;
+                call_generic_slot_ordinal[state_i] = INVALID;
+                call_const_slot_len[state_i] = INVALID;
+            }
+        }
         uint arg_count = valid_node(call_node) ? call_arg_row_count[call_node] : 0u;
         call_arg_param_row[row] = param_row_for_call_ordinal(
             call_node,

@@ -216,6 +216,35 @@ uint lir_for_value_hir(uint node, uint hir_count)
     return lir_for_hir(node, hir_count);
 }
 
+bool semantic_short_circuit_rhs(uint node, uint hir_count)
+{
+    if (node >= hir_count) return false;
+    uint root = compact_expr_root[node];
+    if (root >= hir_count) return false;
+    HirCore root_core = compact_hir_core[root];
+    if (root_core.kind != HIR_BINARY_EXPR) return false;
+    HirPayload root_payload = compact_hir_payload[root];
+    if (root_payload.a != HIR_EXPR_AND && root_payload.a != HIR_EXPR_OR)
+        return false;
+    uint rhs = root_payload.c;
+    if (rhs >= hir_count) return false;
+    HirCore source = compact_hir_core[node];
+    HirCore rhs_core = compact_hir_core[rhs];
+    uint file_id = compact_hir_links[node].file_id;
+    if (compact_hir_links[root].file_id != file_id ||
+        compact_hir_links[rhs].file_id != file_id)
+        return false;
+    return source.token_start >= rhs_core.token_start &&
+        source.token_end <= rhs_core.token_end;
+}
+
+bool static_index_in_bounds(uint node, uint length, uint hir_count)
+{
+    if (node >= hir_count || length == LIR_INVALID) return false;
+    HirPayload payload = compact_hir_payload[node];
+    return payload.a == HIR_EXPR_INT && payload.b < length;
+}
+
 uint bounded_token(uint node, uint hir_count, uint fallback)
 {
     return node != LIR_INVALID && node < hir_count
@@ -319,26 +348,10 @@ void semantic_type_ref_for_hir(uint node, uint hir_count,
     payload = semantic_expr_ref_payload[node];
 }
 
-// A path expression can name either a callable or a constant. Callable paths
-// are syntax owned by their call expression, while constant paths are actual
-// value-producing rows and must be materialized as literal instructions.
-uint constant_reference_for_hir(uint node, uint hir_count)
-{
-    if (node == LIR_INVALID || node >= hir_count ||
-        compact_hir_core[node].kind != HIR_PATH_EXPR ||
-        semantic_value_id[node] >= gParams.n_tokens)
-        return LIR_INVALID;
-    uint function_id = semantic_function_id_by_token[semantic_value_id[node]];
-    if (function_id >= gParams.n_hir_nodes) return LIR_INVALID;
-    uint target_hir = semantic_lir_functions[function_id].hir_function;
-    return target_hir < hir_count &&
-        compact_hir_core[target_hir].kind == HIR_CONST_ITEM
-        ? target_hir : LIR_INVALID;
-}
-
 bool imported_constant_for_hir(uint node, uint hir_count)
 {
-    return node < hir_count && semantic_value_const_present_by_hir[node] != 0u;
+    return node < hir_count &&
+           semantic_value_const_present_by_hir[node] == 0x80000000u;
 }
 
 uint materialize_loop_operand(uint source, uint node, uint first_row,
@@ -673,9 +686,8 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
 
     uint row = first_row + local_row;
     uint op = semantic_materialized_op(node, local_row, local_count);
-    uint constant_reference_hir = constant_reference_for_hir(node, hir_count);
     bool imported_constant = imported_constant_for_hir(node, hir_count);
-    if (constant_reference_hir != LIR_INVALID || imported_constant)
+    if (imported_constant)
     {
         uint constant_type = semantic_value_type[node];
         op = constant_type == 5u
@@ -687,8 +699,11 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     if (compound_assignment && local_row == 0u &&
         (assignment_field || assignment_indexed))
         op = SEMANTIC_LIR_OP_LOAD;
-    if (op == SEMANTIC_LIR_OP_VALUE_GET && hir.kind == HIR_CALL_EXPR &&
-        semantic_call_kind[node] == 1u)
+    // Local constants are represented as zero-argument semantic functions;
+    // their name rows therefore lower through the same call instruction as
+    // explicit call expressions. Imported constants are projected directly
+    // from interface metadata and never receive this call kind.
+    if (op == SEMANTIC_LIR_OP_VALUE_GET && semantic_call_kind[node] == 1u)
         op = SEMANTIC_LIR_OP_CALL;
     if (op == SEMANTIC_LIR_OP_VALUE_GET && semantic_call_kind[node] == 5u)
         op = SEMANTIC_LIR_OP_AGGREGATE_NEW;
@@ -760,7 +775,12 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
             core.type_ref_tag, core.type_ref_payload);
     if (semantic_lir_is_assignment(hir, payload) && payload.b < hir_count)
     {
-        core.type_id = semantic_value_type[payload.b];
+        // The lvalue's declaration type is not necessarily the type of the
+        // value being updated: indexing an array and selecting a struct field
+        // produce their element/field type. Preserve the checked expression
+        // result so target selection can distinguish signed and unsigned
+        // compound operations.
+        core.type_id = semantic_type_for_hir(payload.b, hir_count);
         semantic_type_ref_for_hir(payload.b, hir_count,
             core.type_ref_tag, core.type_ref_payload);
     }
@@ -790,7 +810,10 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         }
         else if (local_row == 11u || local_row == 12u)
         {
-            core.type_id = semantic_value_type[node];
+            // The checked array-index projection stores the for binding's
+            // element type on the loop HIR row. The token-value table has no
+            // declaration row for this synthetic load/store pair.
+            core.type_id = semantic_type_for_hir(node, hir_count);
             semantic_type_ref_for_hir(node, hir_count,
                 core.type_ref_tag, core.type_ref_payload);
         }
@@ -806,6 +829,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     }
     core.source_hir = node;
     core.flags = 0u;
+    core.array_length = LIR_INVALID;
     uint value_node = match_scrutinee_set ? payload.a
         : op == SEMANTIC_LIR_OP_VALUE_SET && payload.c < hir_count
         ? payload.c : node;
@@ -816,12 +840,63 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         core.value_word_count = aggregate_word_count_for_hir(node, hir_count);
     if (core.value_word_count == 0u)
         core.value_word_count = aggregate_word_count_for_type(core.type_id, hir_count);
+    if (array_for && (local_row == 11u || local_row == 12u))
+    {
+        // semantic_array_length[node] describes the iterable, not one loop
+        // binding value. Prefer the projected element ABI width here.
+        uint element_words = semantic_aggregate_word_count[node];
+        uint element_decl_token = semantic_aggregate_decl_token[node];
+        if (element_decl_token < gParams.n_tokens)
+        {
+            uint element_hir = semantic_aggregate_hir_by_name_token[element_decl_token];
+            if (element_hir < hir_count)
+                element_words = semantic_struct_word_count_by_hir[element_hir];
+        }
+        if (element_words == 0u)
+            element_words = aggregate_word_count_for_type(core.type_id, hir_count);
+        core.value_word_count = element_words;
+    }
+    // Literal arrays own a compact, dense element range even when type
+    // projection has not published semantic_array_length for the expression.
+    // Allocate ABI words rather than element rows: an array of three two-word
+    // structs occupies six words even though it has only three HIR elements.
+    // The checked array artifact carries the element declaration identity;
+    // semantic struct layout turns that identity into the ABI element width.
+    if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW && hir.kind == HIR_ARRAY_EXPR)
+    {
+        uint element_count = compact_array_element_owner_count[node];
+        uint element_words = 1u;
+        uint decl_token = semantic_aggregate_decl_token[node];
+        if (decl_token < gParams.n_tokens)
+        {
+            uint struct_hir = semantic_aggregate_hir_by_name_token[decl_token];
+            if (struct_hir < hir_count)
+                element_words = max(
+                    semantic_struct_word_count_by_hir[struct_hir], 1u);
+        }
+        core.value_word_count = element_count * element_words;
+    }
     if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW && semantic_call_kind[node] == 5u)
         core.value_word_count = hir.kind == HIR_CALL_EXPR
             ? enum_constructor_word_count(node, payload, hir_count) : 1u;
     if ((op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_STORE) &&
         (hir.kind == HIR_INDEX_EXPR || assignment_indexed))
+    {
         core.flags |= SEMANTIC_LIR_FLAG_INDEXED;
+        uint indexed_base = assignment_indexed
+            ? assignment_lhs_payload.b : payload.b;
+        if (indexed_base < hir_count)
+        {
+            core.array_length = semantic_array_length[indexed_base];
+            if (core.array_length == LIR_INVALID)
+            {
+                uint projected_words = aggregate_word_count_for_hir(
+                    indexed_base, hir_count);
+                if (projected_words != 0u)
+                    core.array_length = projected_words;
+            }
+        }
+    }
     if ((op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_STORE) &&
         (hir.kind == HIR_MEMBER_EXPR || assignment_field))
         core.flags |= SEMANTIC_LIR_FLAG_FIELD;
@@ -829,6 +904,9 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         (match_binding && local_row == 1u))
         core.flags |= SEMANTIC_LIR_FLAG_FIELD;
     if (op == SEMANTIC_LIR_OP_INVALID) core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
+    if (semantic_lir_is_for(hir, payload) &&
+        loop_recipe.kind == SEMANTIC_LOOP_RECIPE_NONE)
+        core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE;
     if (compound_assignment && !assignment_field && !assignment_indexed &&
         (payload.b >= hir_count || semantic_value_id[payload.b] == LIR_INVALID))
         core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
@@ -865,6 +943,38 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         core.flags |= SEMANTIC_LIR_FLAG_BRANCH_FALSE;
     if (loop_recipe.kind != SEMANTIC_LOOP_RECIPE_NONE)
         core.flags |= semantic_loop_recipe_flags(loop_recipe.kind, local_row);
+    if (array_for && (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
+        core.array_length = array_length;
+    if (semantic_short_circuit_rhs(node, hir_count))
+    {
+        if (op == SEMANTIC_LIR_OP_CALL || op == SEMANTIC_LIR_OP_CALL_HOST ||
+            op == SEMANTIC_LIR_OP_CALL_SYMBOL || op == SEMANTIC_LIR_OP_CALL_INTRINSIC)
+            core.flags |= SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_CALL;
+        uint index_hir = assignment_indexed
+            ? assignment_lhs_payload.c : payload.c;
+        bool indexed_may_trap =
+            (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u &&
+            !static_index_in_bounds(index_hir, core.array_length, hir_count);
+        if (op == SEMANTIC_LIR_OP_DIV || op == SEMANTIC_LIR_OP_REM ||
+            op == SEMANTIC_LIR_OP_SHIFT_LEFT || op == SEMANTIC_LIR_OP_SHIFT_RIGHT ||
+            indexed_may_trap)
+            core.flags |= SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_TRAP;
+    }
+    if (match_expression)
+    {
+        uint parent = hir.parent;
+        bool return_context = false;
+        if (parent < hir_count)
+        {
+            HirCore parent_core = compact_hir_core[parent];
+            HirPayload parent_payload = compact_hir_payload[parent];
+            return_context = parent_core.kind == HIR_RETURN_STMT ||
+                (parent_core.kind == HIR_STMT && parent_payload.a == HIR_STMT_RETURN) ||
+                parent_core.kind == HIR_CONST_ITEM;
+        }
+        if (!return_context)
+            core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED_MATCH_CONTEXT;
+    }
 
     SemanticLirOperands operands;
     operands.result = row;
@@ -990,17 +1100,9 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     else if (op == SEMANTIC_LIR_OP_CONST_I32 || op == SEMANTIC_LIR_OP_CONST_F32 ||
         op == SEMANTIC_LIR_OP_CONST_STRING)
     {
-        uint local_constant_value = payload.b;
-        if (constant_reference_hir != LIR_INVALID)
-        {
-            uint initializer = compact_const_value[constant_reference_hir];
-            if (initializer < hir_count)
-                local_constant_value = compact_hir_payload[initializer].b;
-        }
         operands.a = imported_constant
             ? semantic_value_const_by_hir[node]
-            : constant_reference_hir != LIR_INVALID
-                ? local_constant_value : payload.b;
+            : payload.b;
         if (op == SEMANTIC_LIR_OP_CONST_I32 && payload.a == HIR_EXPR_TRUE)
             operands.a = 1u;
         else if (op == SEMANTIC_LIR_OP_CONST_I32 && payload.a == HIR_EXPR_FALSE)

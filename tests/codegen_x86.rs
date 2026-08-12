@@ -4416,14 +4416,6 @@ impl Vec3 {
         return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
     }
 
-    fn add(self, right: Vec3) -> Vec3 {
-        return Vec3::new(self.x + right.x, self.y + right.y, self.z + right.z);
-    }
-
-    fn sub(self, right: Vec3) -> Vec3 {
-        return Vec3::new(self.x - right.x, self.y - right.y, self.z - right.z);
-    }
-
     fn dot(self, right: Vec3) -> f32 {
         return self.x * right.x + self.y * right.y + self.z * right.z;
     }
@@ -8651,6 +8643,7 @@ fn main() {
 #[test]
 fn x86_executes_stdlib_helper_from_source_pack() {
     let sources = [
+        "module core::option;\npub enum Option<T> { Some(T), None }\n",
         include_str!("../stdlib/core/u8.lani"),
         "module app::main;\nimport core::u8;\nfn main() -> bool {\n    return core::u8::is_ascii_digit(53);\n}\n",
     ];

@@ -53,7 +53,10 @@ impl GpuParser {
         passes::record_stack_effect_validation(&mut ctx, &self.passes, timer_ref)?;
         stamp_timer(timer_ref, ctx.encoder, "parser.stack_effect_status");
         if include_tree {
-            self.record_tree_active_dispatch_args(ctx.encoder, bufs)?;
+            self.passes.tree_active_dispatch_args.record_pass(
+                &mut ctx,
+                crate::gpu::passes_core::InputElements::Elements1D(1),
+            )?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_active_dispatch_args");
             self.record_tree_feature_dispatch_args(ctx.encoder, bufs)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_feature_dispatch_args");

@@ -15,6 +15,7 @@ RWStructuredBuffer<uint> backend_call_fn_index;
 RWStructuredBuffer<uint> call_intrinsic_tag;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
+RWStructuredBuffer<uint> call_return_generic_slot;
 RWStructuredBuffer<uint> call_return_aggregate_word_count;
 RWStructuredBuffer<uint> call_param_count;
 RWStructuredBuffer<uint> call_param_type;
@@ -101,6 +102,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_intrinsic_tag[i] = 0u;
         call_return_type[i] = TY_UNKNOWN;
         call_return_type_token[i] = INVALID;
+        call_return_generic_slot[i] = INVALID;
         call_return_aggregate_word_count[i] = 0u;
         call_param_count[i] = 0u;
         call_param_row_start[i] = INVALID;

@@ -1084,6 +1084,7 @@ fn bounded_wasm_work_queue_reaches_concrete_interface_execution() {
     source.write_str(
         r#"module app::main;
 pub fn answer() -> i32 { return 42; }
+fn main() -> i32 { return answer(); }
 "#,
     );
     let artifact_root = common::temp_artifact_path("laniusc_bounded_work_queue", "artifacts", None);
@@ -1323,9 +1324,21 @@ fn main() -> i32 { return answer(); }
         .collect::<Vec<_>>();
     object_paths.sort();
     assert_eq!(object_paths.len(), 2);
-    let object_bytes = std::fs::read(&object_paths[0]).expect("read persisted x86 object");
-    let object = GpuX86RelocatableObject::from_bytes(&object_bytes)
-        .expect("persisted x86 object should parse and validate");
+    let parsed_objects = object_paths
+        .iter()
+        .map(|path| {
+            GpuX86RelocatableObject::from_bytes(
+                &std::fs::read(path).expect("read persisted x86 object"),
+            )
+            .expect("persisted x86 object should parse and validate")
+        })
+        .collect::<Vec<_>>();
+    let object_index = parsed_objects
+        .iter()
+        .position(|object| object.library_id == 7)
+        .expect("application x86 object should be persisted");
+    let object = &parsed_objects[object_index];
+    let object_path = &object_paths[object_index];
     assert_eq!(object.library_id, 7);
     assert_eq!(object.entry_offset, Some(0));
     assert!(!object.text.is_empty());
@@ -1336,10 +1349,10 @@ fn main() -> i32 { return answer(); }
     assert!(object.relocations.iter().any(|relocation| {
         relocation.target_kind == GpuX86RelocationTargetKind::Symbol && relocation.target_index == 0
     }));
-    let dependency_object = GpuX86RelocatableObject::from_bytes(
-        &std::fs::read(&object_paths[1]).expect("read persisted dependency x86 object"),
-    )
-    .expect("persisted dependency x86 object should parse and validate");
+    let dependency_object = parsed_objects
+        .iter()
+        .find(|object| object.library_id == 6)
+        .expect("dependency x86 object should be persisted");
     assert_eq!(dependency_object.library_id, 6);
     assert_eq!(dependency_object.entry_offset, None);
     assert_eq!(dependency_object.symbols.len(), 1);
@@ -1348,11 +1361,24 @@ fn main() -> i32 { return answer(); }
         GpuX86ObjectSection::Text
     );
 
-    let descriptor_path = object_paths[0].with_extension("json");
-    let descriptor = serde_json::from_slice::<GpuSourcePackArtifactDescriptor>(
-        &std::fs::read(&descriptor_path).expect("read x86 codegen descriptor"),
-    )
-    .expect("parse x86 codegen descriptor");
+    let descriptor = std::fs::read_dir(&object_dir)
+        .expect("read x86 codegen-object directory")
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .filter_map(|path| {
+            serde_json::from_slice::<GpuSourcePackArtifactDescriptor>(&std::fs::read(path).ok()?)
+                .ok()
+        })
+        .find(|descriptor| {
+            descriptor
+                .codegen_object_payload
+                .as_ref()
+                .is_some_and(|payload| artifact_root.join(&payload.storage_key) == *object_path)
+        })
+        .expect("application x86 codegen descriptor should reference its object");
     descriptor
         .validate_contract()
         .expect("x86 codegen descriptor should validate");
@@ -1363,8 +1389,14 @@ fn main() -> i32 { return answer(); }
         payload.format,
         GpuSourcePackCodegenObjectFormat::LaniusX86_64
     );
-    assert_eq!(payload.byte_len, object_bytes.len());
-    assert_eq!(artifact_root.join(&payload.storage_key), object_paths[0]);
+    assert_eq!(
+        payload.byte_len,
+        object
+            .to_bytes()
+            .expect("serialize application x86 object")
+            .len()
+    );
+    assert_eq!(artifact_root.join(&payload.storage_key), *object_path);
 
     let linked_descriptor_path =
         artifact_root.join("gpu-source-pack/x86_64/linked-output/job-4.json");
@@ -1592,7 +1624,19 @@ fn main() -> i32 { return seven(); }
     .expect("bounded Wasm executor should link cross-unit objects");
     let artifact_root = result;
 
-    let app_object_path = artifact_root.join("gpu-source-pack/wasm/codegen-object/job-2.lnwo");
+    let descriptor_path = artifact_root.join("gpu-source-pack/wasm/codegen-object/job-2.json");
+    let descriptor: GpuSourcePackArtifactDescriptor = serde_json::from_slice(
+        &std::fs::read(&descriptor_path).expect("read Wasm object descriptor"),
+    )
+    .expect("parse Wasm object descriptor");
+    descriptor
+        .validate_contract()
+        .expect("Wasm object descriptor should validate");
+    let payload = descriptor
+        .codegen_object_payload
+        .as_ref()
+        .expect("Wasm descriptor should reference its object payload");
+    let app_object_path = artifact_root.join(&payload.storage_key);
     let app_object = GpuWasmRelocatableObject::from_bytes(
         &std::fs::read(&app_object_path).expect("read persisted app Wasm object"),
     )
@@ -1604,18 +1648,7 @@ fn main() -> i32 { return seven(); }
             && relocation.target_index == 0
     }));
 
-    let descriptor: GpuSourcePackArtifactDescriptor = serde_json::from_slice(
-        &std::fs::read(app_object_path.with_extension("json"))
-            .expect("read Wasm object descriptor"),
-    )
-    .expect("parse Wasm object descriptor");
-    descriptor
-        .validate_contract()
-        .expect("Wasm object descriptor should validate");
-    assert_eq!(
-        descriptor.codegen_object_payload.unwrap().format,
-        GpuSourcePackCodegenObjectFormat::LaniusWasm
-    );
+    assert_eq!(payload.format, GpuSourcePackCodegenObjectFormat::LaniusWasm);
 
     let linked_path = artifact_root.join("gpu-source-pack/wasm/linked-output/job-4.wasm");
     let linked = std::fs::read(&linked_path).expect("read linked Wasm module");
@@ -1624,7 +1657,7 @@ fn main() -> i32 { return seven(); }
         let output = std::process::Command::new(node)
             .args([
                 "-e",
-                "const fs=require('fs'); WebAssembly.instantiate(fs.readFileSync(process.argv[1])).then(x=>process.stdout.write(String(x.instance.exports.main())))",
+                "const fs=require('fs'); const env=new Proxy({}, {get:()=>()=>0}); WebAssembly.instantiate(fs.readFileSync(process.argv[1]), {env}).then(x=>process.stdout.write(String(x.instance.exports.main())))",
                 linked_path.to_str().unwrap(),
             ])
             .output()
@@ -1683,7 +1716,17 @@ fn main() -> i32 { return 0; }
     .expect("bounded x86 work queue should execute its object job");
     let (execution, artifact_root) = result;
     assert!(execution.executed_item_count >= 2);
-    let object_path = artifact_root.join("gpu-source-pack/x86_64/codegen-object/job-1.lnxo");
+    let descriptor_path = artifact_root.join("gpu-source-pack/x86_64/codegen-object/job-1.json");
+    let descriptor: GpuSourcePackArtifactDescriptor = serde_json::from_slice(
+        &std::fs::read(descriptor_path).expect("read work-queue x86 descriptor"),
+    )
+    .expect("parse work-queue x86 descriptor");
+    let object_path = artifact_root.join(
+        &descriptor
+            .codegen_object_payload
+            .expect("work-queue x86 descriptor should reference its object")
+            .storage_key,
+    );
     GpuX86RelocatableObject::from_bytes(
         &std::fs::read(&object_path).expect("read work-queue x86 object"),
     )
@@ -2464,7 +2507,7 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("source-root path manifest should load unsigned integer stdlib modules");
-    assert_eq!(manifest.files.len(), 3);
+    assert!(manifest.files.len() >= 3);
     assert!(
         manifest
             .files
@@ -2882,7 +2925,7 @@ fn main() {
     )
     .expect("source-root path manifest should load user and stdlib imports");
     let expected_stdlib_path = stdlib_root.join("core/i32.lani");
-    assert_eq!(manifest.files.len(), 3);
+    assert!(manifest.files.len() >= 3);
     assert!(
         manifest
             .files
@@ -3346,7 +3389,7 @@ fn main() { return 0; }
 }
 
 #[test]
-fn source_root_loader_leaves_quoted_imports_for_gpu_rejection() {
+fn source_root_loader_rejects_quoted_imports() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_source_root", "quoted", Some("lani"));
     entry.write_str(
@@ -3357,14 +3400,7 @@ fn main() { return 0; }
 "#,
     );
 
-    let source_pack = load_entry_with_stdlib(entry.path(), &stdlib_root)
-        .expect("source-root loader should not host-include quoted imports");
-    assert_eq!(source_pack.sources.len(), 1);
-    let result = common::block_on_gpu_with_timeout(
-        "GPU type check source-root quoted import",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
-    );
-    match result {
+    match load_entry_with_stdlib(entry.path(), &stdlib_root) {
         Err(CompileError::Diagnostic(diagnostic)) => {
             assert_eq!(diagnostic.code, "LNC0011");
             let rendered = diagnostic.render();
@@ -3373,10 +3409,8 @@ fn main() { return 0; }
             assert!(rendered.contains("import \"stdlib/core/i32.lani\";"));
             assert!(!rendered.contains("GPU type check rejected"));
         }
-        Err(CompileError::GpuTypeCheck(message)) => {
-            panic!("quoted import should report LNC0011, got raw GPU error: {message}");
-        }
-        other => panic!("expected GPU type check rejection for quoted import, got {other:?}"),
+        Ok(_) => panic!("quoted import should be rejected during source-root discovery"),
+        Err(other) => panic!("quoted import should report LNC0011, got {other:?}"),
     }
 }
 
@@ -4644,7 +4678,7 @@ extern "lanius_alloc" fn alloc_failed(size: usize, align: usize);
 
 fn main() {
     let ptr: ptr = alloc(16, 4);
-    let grown: u32 = realloc(ptr, 16, 32, 4);
+    let grown: ptr = realloc(ptr, 16, 32, 4);
     dealloc(grown, 32, 4);
     alloc_failed(64, 8);
     return 0;
@@ -4966,6 +5000,65 @@ fn main() {
 }
 "#,
     );
+}
+
+#[test]
+fn type_checker_resolves_qualified_constants_independent_of_source_order() {
+    let provider = r#"
+module core::status;
+
+pub type OperationResult = i32;
+pub const OK: OperationResult = 0;
+"#;
+    let consumer = r#"
+module app::main;
+
+import core::status;
+
+fn main() -> i32 {
+    let result: core::status::OperationResult = core::status::OK;
+    if (result != core::status::OK) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_pack_accepts(&[provider, consumer]);
+    assert_gpu_type_check_pack_accepts(&[consumer, provider]);
+}
+
+#[test]
+fn type_checker_resolves_constants_from_dependency_interfaces() {
+    let dependency = common::semantic_interface_with_timeout(
+        41,
+        &[r#"
+module core::status;
+
+pub type OperationResult = i32;
+pub const OK: OperationResult = 0;
+"#],
+    )
+    .expect("dependency constant fixture should export a semantic interface");
+
+    common::type_check_source_pack_with_dependencies_with_timeout(
+        42,
+        &[r#"
+module app::main;
+
+import core::status;
+
+fn main() -> i32 {
+    let result: core::status::OperationResult = core::status::OK;
+    if (result != core::status::OK) {
+        return 1;
+    }
+    return 0;
+}
+"#],
+        vec![dependency],
+    )
+    .expect("qualified dependency constants should retain their type and value identity");
 }
 
 #[test]

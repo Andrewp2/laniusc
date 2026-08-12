@@ -230,19 +230,14 @@ fn shader_opt_level_for_artifact(artifact_key: &str) -> Result<String> {
     if default != "0" && force_minimum_complex_artifact_optimization(artifact_key) {
         return Ok("0".to_string());
     }
-    // Machine-byte emission is intentionally a broad selector. O2 keeps its
-    // generated SPIR-V below the daemon's pipeline-size guard without changing
-    // the optimization policy for the many small, latency-sensitive passes.
-    if default == "1" && artifact_key == "codegen/lir/x86/emit" {
-        return Ok("2".to_string());
-    }
     Ok(default)
 }
 
 fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
     matches!(
         artifact_key,
-        "parser/tokens/to/kinds"
+        "codegen/lir/x86/emit"
+            | "parser/tokens/to/kinds"
             | "parser/syntax/tokens"
             | "type_checker/predicates/01_collect"
             | "type_checker/predicates/01a_validate_bound_args"

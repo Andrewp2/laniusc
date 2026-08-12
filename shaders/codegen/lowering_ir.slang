@@ -94,6 +94,7 @@ static const uint SEMANTIC_LIR_OP_NOP = 40u;
 
 // Canonical scalar type shared by semantic and target lowering. Pointer width
 // is selected by the target: 64 bits on x86_64 and 32 bits on Wasm32.
+static const uint SEMANTIC_LIR_TY_STRING = 7u;
 static const uint SEMANTIC_LIR_TY_POINTER = 8u;
 
 // Runtime services retain the type checker's canonical language-symbol values
@@ -213,6 +214,13 @@ static const uint SEMANTIC_LIR_FLAG_INDEXED = 32u;
 // byte offsets belong to the target layout layer, not semantic lowering.
 // IR_OPCODE
 static const uint SEMANTIC_LIR_FLAG_FIELD = 64u;
+// A `for` row whose checked iterable has no range/array lowering recipe.
+static const uint SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE = 128u;
+// Effectful RHS operations require conditional scheduling before logical
+// AND/OR may be lowered eagerly by a target.
+static const uint SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_CALL = 256u;
+static const uint SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_TRAP = 512u;
+static const uint SEMANTIC_LIR_FLAG_UNSUPPORTED_MATCH_CONTEXT = 1024u;
 
 // Canonical type-reference tags shared with checked semantic artifacts.
 static const uint SEMANTIC_TYPE_REF_INVALID = 0u;
@@ -222,6 +230,7 @@ static const uint SEMANTIC_TYPE_REF_INSTANCE = 3u;
 // Function ABI flags are separate from instruction flags.
 // IR_OPCODE
 static const uint SEMANTIC_FUNCTION_FLAG_ENTRYPOINT = 1u;
+static const uint SEMANTIC_FUNCTION_FLAG_EXTERN = 2u;
 
 // IR_OPCODE
 static const uint LOWERING_STATUS_SEMANTIC_CAPACITY = 1u;
@@ -241,6 +250,42 @@ static const uint LOWERING_STATUS_STRING_CAPACITY = 64u;
 static const uint LOWERING_STATUS_MULTIPLE_ENTRYPOINTS = 128u;
 // IR_OPCODE
 static const uint LOWERING_STATUS_MISSING_ENTRYPOINT = 256u;
+
+// Target-validation diagnostics carried across the GPU lowering boundary.
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_NONE = 0u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_PARAMETERS = 1u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_AGGREGATE_RETURN = 2u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_PARAMETER_REGISTERS = 3u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_CALL_ABI = 4u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_MISSING_ENTRYPOINT = 5u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_MULTIPLE_ENTRYPOINTS = 6u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_FOR_ITERABLE = 7u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_ZERO_DIVISOR = 8u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_ARRAY_INDEX_BOUNDS = 9u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_DYNAMIC_ARRAY_INDEX = 10u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_CALL = 11u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_TRAP = 12u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_X86_MATCH_EXPRESSION = 13u;
+
+// Diagnostic details either name a source token directly or a compact HIR
+// row whose token anchor must be read from compact HIR.
+static const uint LOWERING_DIAGNOSTIC_DETAIL_NONE = 0u;
+static const uint LOWERING_DIAGNOSTIC_DETAIL_TOKEN = 1u;
+static const uint LOWERING_DIAGNOSTIC_DETAIL_HIR = 2u;
 
 // x86 target LIR is the backend's uniform virtual-instruction vocabulary.
 // IR_OPCODE
@@ -507,6 +552,7 @@ static const uint X86_LIR_METADATA_RHS_NARROW = 0x10000000u;
 // semantic value. Tagged aggregate discriminants use this path so target
 // lowering does not need to manufacture a fake source expression.
 static const uint X86_LIR_METADATA_IMMEDIATE = 0x08000000u;
+static const uint X86_LIR_METADATA_PACKED_STRING = 0x04000000u;
 
 // Semantic AGGREGATE_NEW metadata. The high bit distinguishes tagged enums;
 // the remaining bits contain the checked variant ordinal.
@@ -543,6 +589,9 @@ struct SemanticLirCore
     uint flags;
     // Fixed-size aggregate width in machine words. Scalar rows use zero.
     uint value_word_count;
+    // Checked fixed-array length for indexed operations. Other operations and
+    // unsized bases use LIR_INVALID.
+    uint array_length;
 };
 
 struct SemanticLirOperands
@@ -656,6 +705,10 @@ struct LoweringStatus
     uint first_unsupported_hir;
     uint required_capacity;
     uint available_capacity;
+    uint diagnostic_reason;
+    uint diagnostic_detail_kind;
+    uint diagnostic_detail;
+    uint diagnostic_aux;
 };
 
 // Lexicographic target scheduling key. The eventual radix stage processes the

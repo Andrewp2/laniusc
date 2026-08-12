@@ -219,7 +219,7 @@ fn record_module_path_stage(
             &passes.kernel("type_checker/modules/02d/clear_decl_lookup"),
             &state.bind_groups.clear_decl_lookup,
             "type_check.modules.clear_decl_lookup",
-            state.token_capacity.max(1),
+            state.token_capacity.saturating_mul(2).max(1),
         )?;
         record_compute_indirect(
             encoder,

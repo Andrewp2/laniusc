@@ -1,6 +1,5 @@
 import hir_records;
 import gpu_index;
-import dependency_interface;
 
 struct Params
 {
@@ -14,9 +13,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> path_id_by_owner_hir;
-StructuredBuffer<uint> resolved_dependency_library_id;
-StructuredBuffer<uint> resolved_dependency_unit_id;
-StructuredBuffer<uint> resolved_dependency_local_index;
+StructuredBuffer<uint> resolved_dependency_value_metadata;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
@@ -76,7 +73,7 @@ static const uint HOST_SERVICE_END = 63u;
 static const uint LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR = 52u;
 static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
-static const uint DECL_WORDS = 14u;
+static const uint CONST_PRESENT = 0x80000000u;
 
 bool valid_token(uint token)
 {
@@ -160,22 +157,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (core.kind == HIR_PATH_EXPR)
             {
                 uint path = path_id_by_owner_hir[row];
-                if (path != INVALID &&
-                    resolved_dependency_library_id[path] != INVALID &&
-                    resolved_dependency_unit_id[path] != INVALID &&
-                    resolved_dependency_local_index[path] != INVALID)
+                if (path != INVALID && path < gParams.n_hir_nodes)
                 {
-                    uint dependency_decl = dependency_find_declaration(
-                        resolved_dependency_library_id[path],
-                        resolved_dependency_unit_id[path],
-                        resolved_dependency_local_index[path]);
-                    if (dependency_decl != INVALID &&
-                        dependency_declaration_word(dependency_decl * DECL_WORDS + 6u) ==
-                            HIR_ITEM_KIND_CONST)
+                    uint value_base = path * 3u;
+                    if (resolved_dependency_value_metadata[value_base] == HIR_ITEM_KIND_CONST)
                     {
-                        const_value = dependency_declaration_word(
-                            dependency_decl * DECL_WORDS + 13u);
-                        const_present = 1u;
+                        type_id = resolved_dependency_value_metadata[value_base + 1u];
+                        const_value = resolved_dependency_value_metadata[value_base + 2u];
+                        const_present = CONST_PRESENT;
                     }
                 }
             }

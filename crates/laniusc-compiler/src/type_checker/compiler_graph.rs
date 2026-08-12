@@ -385,6 +385,10 @@ const VISIBLE_SCOPE_TREE_PASS: &str = "type_check.visible.build_hir_decl_scope_t
 const VISIBLE_NAMES_PASS: &str = "type_check.visible.hir_names";
 pub(super) const SCOPE_HIR_PASS: &str = "type_check.scope.hir";
 pub(super) const SEMANTIC_ARTIFACT_PROJECT_PASS: &str = "type_check.semantic_artifact.project";
+pub(super) const SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS: &str =
+    "type_check.semantic_artifact.local_const_literals";
+pub(super) const SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS: &str =
+    "type_check.semantic_artifact.local_const_references";
 
 pub(super) const PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS: &str =
     "type_check.predicates.clear_bound_arg_facts";
@@ -1527,6 +1531,7 @@ fn build_graph(
         compact_hir_core in HirNodes => hir_rows * 16;
         _compact_hir_links as "compact_hir_links" in HirNodes => hir_rows * 16;
         _compact_hir_payload as "compact_hir_payload" in HirNodes => hir_rows * 16;
+        _compact_const_value as "compact_const_value" in HirNodes => hir_rows * 4;
         _compact_hir_semantic_facts as "compact_hir_semantic_facts" in HirNodes =>
             hir_rows * core::mem::size_of::<HirSemanticFacts>() as u64;
         _compact_type_root_owner as "compact_type_root_owner" in HirNodes => hir_rows * 4;
@@ -1832,6 +1837,7 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         _call_return_type as "call_return_type" in Tokens => token_rows * 4;
         _call_return_type_token as "call_return_type_token" in Tokens => token_rows * 4;
+        _call_return_generic_slot as "call_return_generic_slot" in Tokens => token_rows * 4;
         _call_return_aggregate_word_count as "call_return_aggregate_word_count" in Tokens => token_rows * 4;
         _call_fn_index as "call_fn_index" in Calls => token_rows * 4;
         _method_call_receiver_ref_tag as "method_call_receiver_ref_tag" in Calls => token_rows * 4;
@@ -2100,10 +2106,6 @@ fn build_graph(
             "dependency_resolved_type_decl",
             u64::from(module_record_capacity.max(1)),
         ),
-        (
-            "dependency_resolved_value_decl",
-            u64::from(module_record_capacity.max(1)),
-        ),
         ("dependency_canonical_type_roots_a", dependency_type_rows),
         ("dependency_canonical_type_roots_b", dependency_type_rows),
         ("dependency_canonical_type_subtree_a", dependency_type_rows),
@@ -2120,7 +2122,13 @@ fn build_graph(
             rows * 4,
         )?;
     }
-    let dependency_words = graph.add_storage(
+    let _dependency_resolved_value_decl = graph.add_storage(
+        "dependency_resolved_value_decl",
+        ResourceDomain::Declarations,
+        ResourceClass::Resident,
+        u64::from(module_record_capacity.max(1)) * 4,
+    )?;
+    let _dependency_words = graph.add_storage(
         "dependency_words",
         ResourceDomain::Declarations,
         ResourceClass::External,
@@ -2138,12 +2146,18 @@ fn build_graph(
             u64::from(module_record_capacity.max(1)) * 4,
         )
     };
-    let resolved_dependency_library_id =
+    let _resolved_dependency_library_id =
         dependency_identity(&mut graph, "resolved_dependency_library_id")?;
-    let resolved_dependency_unit_id =
+    let _resolved_dependency_unit_id =
         dependency_identity(&mut graph, "resolved_dependency_unit_id")?;
-    let resolved_dependency_local_index =
+    let _resolved_dependency_local_index =
         dependency_identity(&mut graph, "resolved_dependency_local_index")?;
+    let resolved_dependency_value_metadata = graph.add_storage(
+        "resolved_dependency_value_metadata",
+        ResourceDomain::Declarations,
+        ResourceClass::Resident,
+        u64::from(module_record_capacity.max(1)) * 3 * 4,
+    )?;
     graph.add_storage(
         "dependency_declaration_field_count",
         ResourceDomain::Declarations,
@@ -3092,6 +3106,7 @@ fn build_graph(
                 kernels,
                 "type_checker/semantic/artifact/01b_array_index_refs",
                 reflected_bindings![
+                    "semantic_aggregate_decl_token_by_hir" => semantic_aggregate_decl_token_by_hir: ReadWrite,
                     "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: Write,
                     "semantic_function_result_word_count_by_hir" => semantic_function_result_word_count_by_hir: Write,
                 ],
@@ -3930,11 +3945,8 @@ fn build_graph(
         kernels,
         "type_checker/semantic/artifact/00_project",
         reflected_bindings![
-            "dependency_words" => dependency_words: Read,
             "path_id_by_owner_hir" => _path_id_by_owner_hir: Read,
-            "resolved_dependency_library_id" => resolved_dependency_library_id: Read,
-            "resolved_dependency_unit_id" => resolved_dependency_unit_id: Read,
-            "resolved_dependency_local_index" => resolved_dependency_local_index: Read,
+            "resolved_dependency_value_metadata" => resolved_dependency_value_metadata: Read,
             "semantic_value_decl_by_hir" => semantic_value_decl_by_hir: Write,
             "semantic_value_type_by_hir" => semantic_value_type_by_hir: Write,
             "semantic_value_const_by_hir" => semantic_value_const_by_hir: Write,
@@ -3958,6 +3970,34 @@ fn build_graph(
             "semantic_type_external_library_id_by_hir" => semantic_type_external_library_id_by_hir: Write,
             "semantic_type_external_unit_id_by_hir" => semantic_type_external_unit_id_by_hir: Write,
             "semantic_type_external_local_index_by_hir" => semantic_type_external_local_index_by_hir: Write,
+        ],
+    )?;
+    graph.add_kernel_pass_by_name(
+        SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/00a_local_const_literals",
+        reflected_bindings![
+            "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
+            "compact_hir_nearest_fn" => _compact_hir_nearest_fn: Read,
+            "compact_expr_scalar_type" => final_scalar: Read,
+            "semantic_value_const_by_hir" => semantic_value_const_by_hir: ReadWrite,
+            "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
+        ],
+    )?;
+    graph.add_kernel_pass_by_name(
+        SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/00b_local_const_references",
+        reflected_bindings![
+            "compact_const_value" => _compact_const_value: Read,
+            "decl_id_by_name_token" => decl_id_by_name_token: Read,
+            "decl_hir_node" => _decl_hir_node: Read,
+            "semantic_value_const_by_hir" => semantic_value_const_by_hir: ReadWrite,
+            "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
         ],
     )?;
     // The resident recorder computes control depth before the still-partly

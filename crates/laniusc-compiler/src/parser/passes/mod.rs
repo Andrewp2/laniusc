@@ -204,6 +204,7 @@ pub struct ParserPasses {
     pub tree_prefix_02: tree::prefix::scan_blocks::TreePrefixScanBlocksPass,
     pub tree_prefix_03: tree::prefix::apply::TreePrefixApplyPass,
     pub tree_prefix_04: tree::prefix::build_max_tree::TreePrefixMaxBuildPass,
+    pub tree_active_dispatch_args: tree::active_dispatch_args::TreeActiveDispatchArgsPass,
     pub tree_parent: tree::parent::TreeParentPass,
     pub tree_spans: tree::spans::TreeSpansPass,
     pub tree_depth_init: tree::depth::init::TreeDepthInitPass,
@@ -421,6 +422,8 @@ impl ParserPasses {
             tree_prefix_02: tree::prefix::scan_blocks::TreePrefixScanBlocksPass::new(device)?,
             tree_prefix_03: tree::prefix::apply::TreePrefixApplyPass::new(device)?,
             tree_prefix_04: tree::prefix::build_max_tree::TreePrefixMaxBuildPass::new(device)?,
+            tree_active_dispatch_args:
+                tree::active_dispatch_args::TreeActiveDispatchArgsPass::new(device)?,
             tree_spans: tree::spans::TreeSpansPass::new(device)?,
             tree_depth_init: tree::depth::init::TreeDepthInitPass::new(device)?,
             tree_depth_step: tree::depth::step::TreeDepthStepPass::new(device)?,
@@ -744,6 +747,7 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1D(n_tree_prefix_positions))?;
     p.tree_prefix_04
         .record_build(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.tree_active_dispatch_args.record_pass(&mut ctx, E1D(1))?;
     p.tree_parent.record_pass(&mut ctx, E1D(n_tree))?;
     p.tree_spans.record_pass(&mut ctx, E1D(n_tree))?;
     let tree_active_dispatch_args = ctx.buffers.tree_active_dispatch_args.buffer.clone();
@@ -1645,7 +1649,16 @@ pub fn record_stack_effect_validation(
     use InputElements::Elements1D as E1D;
 
     let n_sc = ctx.buffers.total_sc.max(1);
-    parser_clear_buffer(ctx.encoder, &ctx.buffers.depths_out, 0, None);
+    parser_clear_buffer(ctx.encoder, &ctx.buffers.valid_out, 0, None);
+    for buffer in [
+        &ctx.buffers.depths_out,
+        &ctx.buffers.b_block_sum,
+        &ctx.buffers.b_block_minpref,
+        &ctx.buffers.b_block_row_min,
+        &ctx.buffers.b_block_maxdepth,
+    ] {
+        parser_clear_buffer(ctx.encoder, buffer, 0, None);
+    }
 
     p.b01.record_pass(ctx, E1D(n_sc))?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram");

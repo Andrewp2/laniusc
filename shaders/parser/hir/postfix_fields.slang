@@ -131,6 +131,21 @@ uint receiver_token_for_node(uint receiver_node)
 {
     if (!valid_node(receiver_node))
         return INVALID;
+    if (node_kind[receiver_node] == PROD_POSTFIX_INDEX)
+    {
+        uint base = receiver_node;
+        for (uint guard = 0u; guard < active_node_count(); guard += 1u)
+        {
+            if (!valid_node(base) ||
+                expr_record(base, HIR_EXPR_RECORD_FORM) != HIR_EXPR_INDEX)
+                break;
+            uint next = expr_record(base, HIR_EXPR_RECORD_LEFT);
+            if (!valid_node(next) || next == base)
+                break;
+            base = next;
+        }
+        return valid_node(base) ? hir_token_pos[base] : INVALID;
+    }
     if (is_postfix_operator(node_kind[receiver_node]))
         return postfix_operator_head_token(receiver_node);
     return hir_token_pos[receiver_node];

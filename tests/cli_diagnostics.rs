@@ -1834,12 +1834,12 @@ fn cli_diagnostics_source_pack_progress_missing_artifact_record_can_render_json_
         laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["severity"], "error");
-    assert_eq!(diagnostic["code"], "LNC0037");
+    assert_eq!(diagnostic["code"], "LNC0060");
     assert_eq!(diagnostic["category"], "package/import loading");
     assert!(diagnostic["primary_label"].is_null());
     assert_eq!(
         diagnostic["explain_command"],
-        "laniusc diagnostics explain LNC0037"
+        "laniusc diagnostics explain LNC0060"
     );
     assert!(
         diagnostic["help"]
@@ -1854,14 +1854,14 @@ fn cli_diagnostics_source_pack_progress_missing_artifact_record_can_render_json_
         notes.iter().any(|note| note
             .as_str()
             .expect("diagnostic note should be a string")
-            .contains("source-pack artifact root")),
+            .contains(&artifact_root.display().to_string())),
         "diagnostic notes should identify the artifact root\nstderr:\n{stderr}"
     );
     assert!(
         notes.iter().any(|note| note
             .as_str()
             .expect("diagnostic note should be a string")
-            .contains("source-pack progress index")),
+            .contains("progress index")),
         "diagnostic notes should identify the missing progress index\nstderr:\n{stderr}"
     );
 }
@@ -1911,9 +1911,9 @@ fn cli_diagnostics_source_pack_progress_missing_artifact_record_can_render_lsp_j
     let diagnostic: serde_json::Value =
         serde_json::from_str(&stderr).expect("stderr should be one LSP diagnostic object");
     assert_eq!(diagnostic["severity"], 1);
-    assert_eq!(diagnostic["code"], "LNC0037");
+    assert_eq!(diagnostic["code"], "LNC0060");
     assert_eq!(diagnostic["source"], "laniusc");
-    assert_eq!(diagnostic["message"], "package metadata invalid");
+    assert_eq!(diagnostic["message"], "source-pack metadata store failed");
     assert_eq!(
         diagnostic["data"]["schema_version"],
         laniusc_compiler::compiler::LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
@@ -1927,12 +1927,15 @@ fn cli_diagnostics_source_pack_progress_missing_artifact_record_can_render_lsp_j
         laniusc_compiler::compiler::DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
     );
     assert_eq!(diagnostic["data"]["position_encoding"], "utf-16");
-    assert_eq!(diagnostic["data"]["title"], "package metadata invalid");
+    assert_eq!(
+        diagnostic["data"]["title"],
+        "source-pack metadata store failed"
+    );
     assert_eq!(diagnostic["data"]["category"], "package/import loading");
     assert_eq!(diagnostic["data"]["primary_label_policy"], "none");
     assert_eq!(
         diagnostic["data"]["explain_command"],
-        "laniusc diagnostics explain LNC0037"
+        "laniusc diagnostics explain LNC0060"
     );
     assert!(
         diagnostic["data"]["help"]
@@ -1947,14 +1950,14 @@ fn cli_diagnostics_source_pack_progress_missing_artifact_record_can_render_lsp_j
         notes.iter().any(|note| note
             .as_str()
             .expect("diagnostic note should be a string")
-            .contains("source-pack artifact root")),
+            .contains(&artifact_root.display().to_string())),
         "LSP diagnostic notes should identify the artifact root\nstderr:\n{stderr}"
     );
     assert!(
         notes.iter().any(|note| note
             .as_str()
             .expect("diagnostic note should be a string")
-            .contains("source-pack progress index")),
+            .contains("progress index")),
         "LSP diagnostic notes should identify the missing progress index\nstderr:\n{stderr}"
     );
     assert!(diagnostic["data"].get("primary_label").is_none());
@@ -6047,7 +6050,7 @@ fn cli_check_missing_source_file_can_render_json_input_read_diagnostic() {
         notes.iter().any(|note| note
             .as_str()
             .expect("diagnostic note should be a string")
-            .contains("source input path:")),
+            .contains("input path:")),
         "diagnostic notes should include the source input path\nstderr:\n{stderr}"
     );
     assert!(

@@ -99,15 +99,21 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint abi_row,
     // moves without chasing the source expression's producer shape.
     uint argument_type =
         argument.value_metadata & SEMANTIC_LIR_VALUE_TYPE_MASK;
+    bool string_value =
+        (argument.value_metadata & SEMANTIC_LIR_VALUE_STRING) != 0u;
+    bool packed_string = string_value &&
+        argument.value_instruction < gParams.semantic_capacity &&
+        semantic_lir_core[argument.value_instruction].op != SEMANTIC_LIR_OP_CONST_STRING;
     operands.metadata = (argument_type & 0xffu) |
         ((argument.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u
             ? X86_LIR_METADATA_AGGREGATE : 0u) |
-        ((argument.value_metadata & SEMANTIC_LIR_VALUE_STRING) != 0u &&
+        (string_value &&
          component == 0u
             ? X86_LIR_METADATA_WIDE :
-         (argument.value_metadata & SEMANTIC_LIR_VALUE_STRING) != 0u &&
+         string_value &&
          component == 1u
-            ? X86_LIR_METADATA_STRING_LEN : 0u);
+            ? X86_LIR_METADATA_STRING_LEN : 0u) |
+        (packed_string ? X86_LIR_METADATA_PACKED_STRING : 0u);
     if (argument_type == SEMANTIC_LIR_TY_POINTER)
         operands.metadata |= X86_LIR_METADATA_WIDE;
     target_lir_core[page_row] = core;
@@ -320,6 +326,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint b = args.b;
     uint c = args.c;
     uint flags = x86_lir_supported(source) ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
+    if ((source.flags & (SEMANTIC_LIR_FLAG_UNSUPPORTED |
+                         SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE)) != 0u)
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     if ((source.op == SEMANTIC_LIR_OP_VALUE_SET ||
          source.op == SEMANTIC_LIR_OP_STORE) &&
         x86_semantic_type_is_aggregate(source) &&
@@ -333,6 +342,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         flags = TARGET_LIR_FLAG_UNSUPPORTED;
     uint metadata = (source.type_id & 0xffu) | (source.flags << 8u) |
         (x86_semantic_type_is_aggregate(source) ? X86_LIR_METADATA_AGGREGATE : 0u);
+    if ((source.op == SEMANTIC_LIR_OP_VALUE_SET ||
+         source.op == SEMANTIC_LIR_OP_STORE) &&
+        source.type_id == SEMANTIC_LIR_TY_STRING)
+        metadata |= X86_LIR_METADATA_PACKED_STRING;
 
     if (op == X86_LIR_OP_IMM_I32) { a = args.a; b = 0u; c = 0u; }
     else if (source.op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
@@ -351,7 +364,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         a = args.a;
         b = args.b;
-        c = 8u;
+        c = max(source.value_word_count, 1u);
     }
     else if (op == X86_LIR_OP_FIELD_LOAD)
     {
@@ -418,7 +431,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     X86LirCore core;
     core.source_hir = source.source_hir;
-    core.local_ordinal = op == X86_LIR_OP_CALL_SYMBOL ? call_result_words : 0u;
+    core.local_ordinal = (op == X86_LIR_OP_INDEX_LOAD || op == X86_LIR_OP_INDEX_STORE)
+        ? source.array_length
+        : op == X86_LIR_OP_CALL_SYMBOL ? call_result_words : 0u;
     core.op = op;
     // `result` is a semantic instruction identity. The target stream may
     // have inserted CALL_ARG rows before this operation, so machine emission

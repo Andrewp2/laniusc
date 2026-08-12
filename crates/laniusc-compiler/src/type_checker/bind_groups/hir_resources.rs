@@ -25,6 +25,7 @@ pub(super) fn register_hir_resources<'a>(
     resources.buffer("compact_type_root_owner", &hir.type_root_owner);
     resources.buffer("compact_type_alias_target", &hir.type_alias_target);
     resources.buffer("compact_const_type", &hir.const_type);
+    resources.buffer("compact_const_value", &hir.const_value);
     resources.buffer("compact_param_count", &hir.param_count);
     resources.buffer("compact_params", &hir.params);
     resources.buffer("compact_param_ranges", &hir.param_ranges);

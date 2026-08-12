@@ -149,4 +149,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
     call_intrinsic_tag[callee_token] = intrinsic_tag;
     call_return_type[callee_token] = TY_VOID;
     call_return_type_token[callee_token] = INVALID;
+
+    // Qualified callees keep both a path leaf and a canonical expression
+    // token. Later call tables use the canonical token, so publish the same
+    // intrinsic identity to that alias instead of letting lowering mistake
+    // the stdlib contract body for an ordinary user function.
+    uint callee_node = compact_hir_payload[i].a;
+    if (valid_node(callee_node))
+    {
+        HirCore callee = compact_hir_core[callee_node];
+        HirPayload payload = compact_hir_payload[callee_node];
+        uint canonical_token = valid_token(payload.d) ? payload.d : callee.token_start;
+        if (valid_token(canonical_token))
+        {
+            call_intrinsic_tag[canonical_token] = intrinsic_tag;
+        }
+    }
 }

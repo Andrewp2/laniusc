@@ -95,7 +95,7 @@ uint direct_node_type(uint node)
         return TY_UNKNOWN;
     HirCore core = compact_hir_core[node];
     HirPayload payload = compact_hir_payload[node];
-    uint literal = hir_scalar_type_for_expr_form(payload.a);
+    uint literal = hir_scalar_type_for_hir(core.kind, payload.a);
     if (literal != TY_UNKNOWN)
         return literal;
     if (core.kind == HIR_NAME_EXPR || core.kind == HIR_MEMBER_EXPR)

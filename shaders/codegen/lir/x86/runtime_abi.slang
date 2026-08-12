@@ -7,40 +7,40 @@ import codegen.lowering_ir;
 
 static const uint X86_RUNTIME_INVALID = 0xffffffffu;
 static const uint X86_RUNTIME_ARG_READ_OFFSET = 78u;
-static const uint X86_RUNTIME_ALLOC_OFFSET = 117u;
-static const uint X86_RUNTIME_DEALLOC_OFFSET = 149u;
-static const uint X86_RUNTIME_REALLOC_OFFSET = 157u;
-static const uint X86_RUNTIME_ALLOC_FAILED_OFFSET = 171u;
-static const uint X86_RUNTIME_PRINT_I32_OFFSET = 184u;
-static const uint X86_RUNTIME_MONOTONIC_READ_OFFSET = 268u;
-static const uint X86_RUNTIME_SYSTEM_READ_OFFSET = 294u;
-static const uint X86_RUNTIME_SLEEP_MS_I32_OFFSET = 320u;
-static const uint X86_RUNTIME_OPEN_READ_OFFSET = 375u;
-static const uint X86_RUNTIME_OPEN_WRITE_OFFSET = 387u;
-static const uint X86_RUNTIME_OPEN_APPEND_OFFSET = 405u;
-static const uint X86_RUNTIME_REMOVE_FILE_OFFSET = 423u;
-static const uint X86_RUNTIME_CREATE_DIR_OFFSET = 431u;
-static const uint X86_RUNTIME_REMOVE_DIR_OFFSET = 444u;
-static const uint X86_RUNTIME_RENAME_OFFSET = 452u;
-static const uint X86_RUNTIME_WRITE_TEXT_OFFSET = 462u;
-static const uint X86_RUNTIME_WRITE_I32_OFFSET = 470u;
-static const uint X86_RUNTIME_WRITE_BYTE_OFFSET = 562u;
-static const uint X86_RUNTIME_WRITE_NEWLINE_OFFSET = 590u;
-static const uint X86_RUNTIME_READ_I32_OFFSET = 618u;
-static const uint X86_RUNTIME_OPEN_READ_NUL_OFFSET = 793u;
-static const uint X86_RUNTIME_OPEN_WRITE_NUL_OFFSET = 869u;
-static const uint X86_RUNTIME_OPEN_APPEND_NUL_OFFSET = 945u;
-static const uint X86_RUNTIME_VAR_KEY_LEN_OFFSET = 1021u;
-static const uint X86_RUNTIME_VAR_COUNT_OFFSET = 1089u;
-static const uint X86_RUNTIME_VAR_KEY_READ_OFFSET = 1111u;
-static const uint X86_RUNTIME_VAR_LEN_OFFSET = 1198u;
-static const uint X86_RUNTIME_VAR_READ_OFFSET = 1279u;
-static const uint X86_RUNTIME_CURRENT_DIR_READ_OFFSET = 1381u;
-static const uint X86_RUNTIME_UNIX_SECONDS_OFFSET = 1408u;
-static const uint X86_RUNTIME_SECURE_U32_OFFSET = 1418u;
-static const uint X86_RUNTIME_FILL_SECURE_BYTES_OFFSET = 1462u;
-static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1470u;
-static const uint X86_RUNTIME_LENGTH = 1510u;
+static const uint X86_RUNTIME_ALLOC_OFFSET = 134u;
+static const uint X86_RUNTIME_DEALLOC_OFFSET = 166u;
+static const uint X86_RUNTIME_REALLOC_OFFSET = 174u;
+static const uint X86_RUNTIME_ALLOC_FAILED_OFFSET = 188u;
+static const uint X86_RUNTIME_PRINT_I32_OFFSET = 201u;
+static const uint X86_RUNTIME_MONOTONIC_READ_OFFSET = 285u;
+static const uint X86_RUNTIME_SYSTEM_READ_OFFSET = 311u;
+static const uint X86_RUNTIME_SLEEP_MS_I32_OFFSET = 337u;
+static const uint X86_RUNTIME_OPEN_READ_OFFSET = 392u;
+static const uint X86_RUNTIME_OPEN_WRITE_OFFSET = 404u;
+static const uint X86_RUNTIME_OPEN_APPEND_OFFSET = 422u;
+static const uint X86_RUNTIME_REMOVE_FILE_OFFSET = 440u;
+static const uint X86_RUNTIME_CREATE_DIR_OFFSET = 448u;
+static const uint X86_RUNTIME_REMOVE_DIR_OFFSET = 461u;
+static const uint X86_RUNTIME_RENAME_OFFSET = 469u;
+static const uint X86_RUNTIME_WRITE_TEXT_OFFSET = 479u;
+static const uint X86_RUNTIME_WRITE_I32_OFFSET = 487u;
+static const uint X86_RUNTIME_WRITE_BYTE_OFFSET = 579u;
+static const uint X86_RUNTIME_WRITE_NEWLINE_OFFSET = 607u;
+static const uint X86_RUNTIME_READ_I32_OFFSET = 635u;
+static const uint X86_RUNTIME_OPEN_READ_NUL_OFFSET = 810u;
+static const uint X86_RUNTIME_OPEN_WRITE_NUL_OFFSET = 886u;
+static const uint X86_RUNTIME_OPEN_APPEND_NUL_OFFSET = 962u;
+static const uint X86_RUNTIME_VAR_KEY_LEN_OFFSET = 1038u;
+static const uint X86_RUNTIME_VAR_COUNT_OFFSET = 1106u;
+static const uint X86_RUNTIME_VAR_KEY_READ_OFFSET = 1128u;
+static const uint X86_RUNTIME_VAR_LEN_OFFSET = 1215u;
+static const uint X86_RUNTIME_VAR_READ_OFFSET = 1296u;
+static const uint X86_RUNTIME_CURRENT_DIR_READ_OFFSET = 1398u;
+static const uint X86_RUNTIME_UNIX_SECONDS_OFFSET = 1425u;
+static const uint X86_RUNTIME_SECURE_U32_OFFSET = 1435u;
+static const uint X86_RUNTIME_FILL_SECURE_BYTES_OFFSET = 1479u;
+static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1487u;
+static const uint X86_RUNTIME_LENGTH = 1527u;
 
 uint x86_runtime_service_offset(uint service)
 {
@@ -139,12 +139,16 @@ uint x86_runtime_byte(uint pos)
 
     // Copy argv[index] into the caller's bounded allocation and
     // return the number of bytes copied, excluding the terminating NUL.
-    static const uint arg_read_bytes[39] = {
+    static const uint arg_read_bytes[56] = {
+        // Reject negative and out-of-range indices before reading argv.
+        0x85u, 0xffu, 0x78u, 0x2eu, 0x41u, 0x8bu, 0x07u, 0x39u,
+        0xc7u, 0x73u, 0x27u,
         0x56u, 0x41u, 0x58u, 0x41u, 0x89u, 0xd1u, 0x89u, 0xf8u,
         0xffu, 0xc0u, 0x49u, 0x8bu, 0x34u, 0xc7u, 0x31u, 0xc0u,
         0x44u, 0x39u, 0xc8u, 0x73u, 0x11u, 0x80u, 0x3cu, 0x06u,
         0u, 0x74u, 0x0bu, 0x8au, 0x0cu, 0x06u, 0x41u, 0x88u,
-        0x0cu, 0u, 0xffu, 0xc0u, 0xebu, 0xeau, 0xc3u
+        0x0cu, 0u, 0xffu, 0xc0u, 0xebu, 0xeau, 0xc3u,
+        0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u
     };
     if (pos < X86_RUNTIME_ALLOC_OFFSET)
         return arg_read_bytes[pos - X86_RUNTIME_ARG_READ_OFFSET];
@@ -310,9 +314,11 @@ uint x86_runtime_byte(uint pos)
             0x85u, 0xc0u, 0x75u, 0xf0u, 0x45u, 0x85u, 0xc0u, 0x74u, 0x06u,
             0x48u, 0xffu, 0xceu, 0xc6u, 0x06u, 0x2du, 0x48u, 0x8du,
             0x54u, 0x24u, 0x17u, 0x48u, 0x29u, 0xf2u, 0x44u, 0x89u, 0xd7u,
-            0xb8u, 1u, 0u, 0u, 0u, 0x0fu, 0x05u, 0x48u, 0x83u, 0xc4u,
-            0x18u, 0xc3u,
-            0u, 0u, 0u, 0u, 0u, 0u, 0u
+            0xb8u, 1u, 0u, 0u, 0u, 0x0fu, 0x05u,
+            // The language service reports status, not the Linux byte count:
+            // preserve negative errno values and canonicalize success to zero.
+            0x85u, 0xc0u, 0x78u, 0x02u, 0x31u, 0xc0u,
+            0x48u, 0x83u, 0xc4u, 0x18u, 0xc3u, 0u
         };
         return write_i32_bytes[pos - X86_RUNTIME_WRITE_I32_OFFSET];
     }

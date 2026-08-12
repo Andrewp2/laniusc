@@ -318,7 +318,9 @@ uint direct_value_type(uint node)
         return record_ty;
 
     uint expr = compact_expr_for_raw(node);
-    uint lit = hir_scalar_type_for_expr_form(compact_expr_form(expr));
+    uint lit = valid_compact_node(expr)
+        ? hir_scalar_type_for_hir(compact_hir_core[expr].kind, compact_expr_form(expr))
+        : TY_UNKNOWN;
     if (lit != TY_UNKNOWN)
         return lit;
 

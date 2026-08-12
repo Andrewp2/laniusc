@@ -208,15 +208,22 @@ void validate_return(uint node, HirCore core, HirPayload stmt)
             return;
         }
     }
-    if (expected_ref_tag == TYPE_REF_INSTANCE) return;
-    if (!known_scalar(expected)) return;
-
     if (!valid_hir(stmt.b))
     {
-        if (expected != TY_VOID && valid_token(call_return_type_token[fn_token]))
-            validate_pair(expected, TY_VOID, INVALID, core.token_start);
+        if (expected != TY_VOID &&
+            (expected_ref_tag != TYPE_REF_INVALID || known_scalar(expected)) &&
+            valid_token(call_return_type_token[fn_token]))
+        {
+            record_min_token_error(
+                status,
+                core.token_start,
+                ERR_ASSIGN_MISMATCH,
+                expected * 256u + TY_VOID);
+        }
         return;
     }
+    if (expected_ref_tag == TYPE_REF_INSTANCE) return;
+    if (!known_scalar(expected)) return;
     validate_pair(expected, scalar_type(stmt.b), stmt.b, expression_token(stmt.b));
 }
 

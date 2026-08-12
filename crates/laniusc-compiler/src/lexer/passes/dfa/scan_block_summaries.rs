@@ -7,7 +7,6 @@ use crate::{
         DispatchDim,
         InputElements,
         PassData,
-        bind_group::create_bind_group_from_reflection,
         compute_pass_batching_enabled,
         validation_scopes_enabled,
     },
@@ -111,15 +110,25 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
             ("block_ping".into(), b.dfa_02_ping.as_entire_binding()),
             ("block_pong".into(), b.dfa_02_pong.as_entire_binding()),
         ]);
-        let bg = create_bind_group_from_reflection(
-            device,
-            Some("func_blocks_bg"),
-            layout0,
-            reflection,
-            0,
-            &res,
-        )
-        .expect("func_blocks_bg reflection");
+        let bg = if let Some(cache) = ctx.bg_cache.as_deref_mut() {
+            cache
+                .reflected_for_pass_data(device, "func_blocks_bg", pd, &res)?
+                .into_iter()
+                .next()
+                .expect("DFA scan pass must have one reflected bind group")
+        } else {
+            std::sync::Arc::new(
+                crate::gpu::passes_core::bind_group::create_bind_group_from_reflection(
+                    device,
+                    Some("func_blocks_bg"),
+                    layout0,
+                    reflection,
+                    0,
+                    &res,
+                )
+                .expect("func_blocks_bg reflection"),
+            )
+        };
         let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
             crate::gpu::passes_core::DispatchDim::D1,
             crate::gpu::passes_core::InputElements::Elements1D(n),
@@ -136,7 +145,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
             );
             for r in 0..rounds {
                 pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, &bg, &[scan_params.dynamic_offset(r as usize)]);
+                pass.set_bind_group(0, bg.as_ref(), &[scan_params.dynamic_offset(r as usize)]);
                 pass.dispatch_workgroups(gx, gy, gz);
             }
         } else {
@@ -155,7 +164,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                     },
                 );
                 pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, &bg, &[scan_params.dynamic_offset(r as usize)]);
+                pass.set_bind_group(0, bg.as_ref(), &[scan_params.dynamic_offset(r as usize)]);
                 pass.dispatch_workgroups(gx, gy, gz);
                 drop(pass);
 

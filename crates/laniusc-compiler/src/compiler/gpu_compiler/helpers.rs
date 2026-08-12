@@ -69,6 +69,7 @@ fn type_code_note(code: u32) -> String {
     const TY_FLOAT: u32 = 5;
     const TY_CHAR: u32 = 6;
     const TY_STRING: u32 = 7;
+    const TY_POINTER: u32 = 8;
     const TY_ARRAY_BASE: u32 = 128;
     const TY_STRUCT_BASE: u32 = 4096;
     const TY_ENUM_BASE: u32 = 6144;
@@ -83,6 +84,7 @@ fn type_code_note(code: u32) -> String {
         TY_FLOAT => "float".to_string(),
         TY_CHAR => "char".to_string(),
         TY_STRING => "str".to_string(),
+        TY_POINTER => "ptr".to_string(),
         code if (TY_ARRAY_BASE..TY_STRUCT_BASE).contains(&code) => {
             let element_code = code - TY_ARRAY_BASE;
             if element_code == TY_UNKNOWN {

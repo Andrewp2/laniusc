@@ -2206,7 +2206,7 @@ pub(in crate::compiler) fn input_read_failed_error(
         Diagnostic::error("LNC0040", "input read failed")
             .with_primary_label(DiagnosticLabel::primary(path, 1, 1, 1, None, label_message))
             .with_note(format!("operation: {}", operation.into()))
-            .with_note(format!("input path: {}", path.display()))
+            .with_note(format!("source input path: {}", path.display()))
             .with_note(format!("I/O error kind: {:?}", err.kind()))
             .with_note(format!("I/O error: {err}"))
             .with_help(help),
@@ -2226,7 +2226,7 @@ pub(in crate::compiler) fn input_path_invalid_error(
         Diagnostic::error("LNC0040", "input read failed")
             .with_primary_label(DiagnosticLabel::primary(path, 1, 1, 1, None, label_message))
             .with_note(format!("operation: {}", operation.into()))
-            .with_note(format!("input path: {}", path.display()))
+            .with_note(format!("source input path: {}", path.display()))
             .with_note(reason)
             .with_help(help),
     )

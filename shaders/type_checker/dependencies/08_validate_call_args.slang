@@ -75,6 +75,9 @@ static const uint TY_INT = 3u;
 static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
+static const uint TY_POINTER = 8u;
+static const uint HIR_EXPR_FORWARD = 1u;
+static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -105,7 +108,7 @@ uint scalar_type_for_argument(uint node, uint token)
         return HIR_SEM_TY_UNKNOWN;
     HirCore core = compact_hir_core[node];
     HirPayload payload = compact_hir_payload[node];
-    uint scalar = hir_scalar_type_for_expr_form(payload.a);
+    uint scalar = hir_scalar_type_for_hir(core.kind, payload.a);
     if (scalar != HIR_SEM_TY_UNKNOWN)
         return scalar;
     if (core.kind == HIR_CALL_EXPR)
@@ -130,6 +133,21 @@ bool assignable(uint expected, uint actual)
         return actual == TY_INT || actual == TY_CHAR;
     if (expected == TY_FLOAT)
         return actual == TY_INT || actual == TY_UINT || actual == TY_CHAR;
+    return false;
+}
+
+bool null_pointer_constant(uint node)
+{
+    if (!valid_hir(node)) return false;
+    uint current = node;
+    for (uint step = 0u; step < 32u; step += 1u)
+    {
+        HirPayload payload = compact_hir_payload[current];
+        if (payload.a != HIR_EXPR_FORWARD)
+            return payload.a == HIR_EXPR_INT && payload.b == 0u;
+        if (!valid_hir(payload.b) || payload.b == current) return false;
+        current = payload.b;
+    }
     return false;
 }
 
@@ -324,7 +342,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint expected = dependency_type_word(expected_base + 1u);
     if (actual == HIR_SEM_TY_UNKNOWN && arg_token < gParams.visible_capacity)
         actual = visible_type[arg_token];
-    if (!assignable(expected, actual))
+    if (!assignable(expected, actual) &&
+        !(expected == TY_POINTER && actual == TY_INT && null_pointer_constant(arg_node)))
         record_min_token_error(
             status,
             arg_token < gParams.visible_capacity ? arg_token : callee,

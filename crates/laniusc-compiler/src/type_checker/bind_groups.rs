@@ -611,6 +611,26 @@ impl GpuTypeChecker {
             &resources,
         )?;
         resources.validate_graph_pass(compiler_graph::SEMANTIC_ARTIFACT_PROJECT_PASS, &[])?;
+        let semantic_local_const_literals_project = reflected_bind_group_from_resources(
+            device,
+            "type_check.semantic_artifact.local_const_literals",
+            &passes.kernel("type_checker/semantic/artifact/00a_local_const_literals"),
+            &resources,
+        )?;
+        resources.validate_graph_pass(
+            compiler_graph::SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS,
+            &[],
+        )?;
+        let semantic_local_const_references_project = reflected_bind_group_from_resources(
+            device,
+            "type_check.semantic_artifact.local_const_references",
+            &passes.kernel("type_checker/semantic/artifact/00b_local_const_references"),
+            &resources,
+        )?;
+        resources.validate_graph_pass(
+            compiler_graph::SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS,
+            &[],
+        )?;
         let semantic_expression_refs_project = reflected_bind_group_from_resources(
             device,
             "type_check.semantic_artifact.expression_refs",
@@ -984,6 +1004,8 @@ impl GpuTypeChecker {
             semantic_array_index_refs_project,
             semantic_calls_project,
             semantic_artifact_project,
+            semantic_local_const_literals_project,
+            semantic_local_const_references_project,
             aggregate_compare_scan,
             aggregate_compare_dispatch,
             conditions_aggregate_args,

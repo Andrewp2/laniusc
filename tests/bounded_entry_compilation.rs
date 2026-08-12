@@ -8,6 +8,8 @@ use laniusc_compiler::{
         CompileError,
         ExplicitSourceLibraryPathStream,
         ExplicitSourceLibraryPaths,
+        FilesystemArtifactStore,
+        GpuSourcePackArtifactDescriptor,
         compile_entry_to_wasm_with_source_root,
         compile_entry_to_x86_64_with_source_root,
         compile_source_pack_path_manifest_to_x86_64_with_gpu_codegen,
@@ -222,10 +224,37 @@ fn run_small_limit_worker(
                                 "completed hierarchical build did not report target output".into(),
                             )
                         })?;
-                        let bytes = std::fs::read(&linked_output_path).map_err(|err| {
+                        let descriptor_bytes = std::fs::read(&linked_output_path).map_err(|err| {
+                            CompileError::GpuCodegen(format!(
+                                "read hierarchical linked-output descriptor {}: {err}",
+                                linked_output_path.display()
+                            ))
+                        })?;
+                        let descriptor: GpuSourcePackArtifactDescriptor =
+                            serde_json::from_slice(&descriptor_bytes).map_err(|err| {
+                                CompileError::GpuCodegen(format!(
+                                    "parse hierarchical linked-output descriptor {}: {err}",
+                                    linked_output_path.display()
+                                ))
+                            })?;
+                        let storage_key = descriptor
+                            .output_record_arrays
+                            .iter()
+                            .chain(descriptor.record_arrays.iter())
+                            .find(|array| array.name == "emitted_byte_records")
+                            .and_then(|array| array.storage_key.as_deref())
+                            .ok_or_else(|| {
+                                CompileError::GpuCodegen(
+                                    "hierarchical linked-output descriptor has no emitted-byte artifact"
+                                        .into(),
+                                )
+                            })?;
+                        let output_path = FilesystemArtifactStore::new(&worker_root)
+                            .path_for_key(storage_key)?;
+                        let bytes = std::fs::read(&output_path).map_err(|err| {
                             CompileError::GpuCodegen(format!(
                                 "read hierarchical target output {}: {err}",
-                                linked_output_path.display()
+                                output_path.display()
                             ))
                         })?;
                         return Ok((bytes, executed_link_group_count));

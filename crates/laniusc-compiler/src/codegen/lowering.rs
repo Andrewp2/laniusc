@@ -1306,6 +1306,11 @@ impl GpuSemanticLoweringStage {
                     semantic.value_type_by_hir,
                 )?,
                 bound(
+                    "semantic_value_const_present_by_hir",
+                    resource("typecheck.semantic_value_const_present_by_hir"),
+                    semantic.value_const_present_by_hir,
+                )?,
+                bound(
                     "semantic_calls_by_hir",
                     resource("typecheck.semantic_calls_by_hir"),
                     semantic.calls_by_hir,
@@ -1423,6 +1428,10 @@ impl GpuSemanticLoweringStage {
                 (
                     "semantic_value_type_by_hir",
                     semantic.value_type_by_hir.as_entire_binding(),
+                ),
+                (
+                    "semantic_value_const_present_by_hir",
+                    semantic.value_const_present_by_hir.as_entire_binding(),
                 ),
                 (
                     "semantic_calls_by_hir",

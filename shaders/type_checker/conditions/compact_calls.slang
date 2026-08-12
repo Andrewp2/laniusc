@@ -105,7 +105,6 @@ bool token_resolved(uint token)
     return valid_token(token) &&
            (valid_token(call_fn_index[token]) ||
             call_dependency_library_id[token] != INVALID ||
-            module_value_path_associated_method_token[token] != INVALID ||
             call_return_type[token] != TY_UNKNOWN ||
             call_intrinsic_tag[token] != INTRINSIC_NONE ||
             method_call_name_id[token] != INVALID);

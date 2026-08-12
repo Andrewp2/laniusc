@@ -39,11 +39,14 @@ uint x86_move64_from_fixed_bytes(uint fixed_register, uint location)
     return x86_location_payload(location) == fixed_register ? 0u : 3u;
 }
 
-uint x86_binary_opcode_bytes(uint operation)
+uint x86_binary_opcode_bytes(uint operation, uint type_id)
 {
     if (operation == X86_LIR_BINARY_MUL_I32) return 3u;
-    if (operation == X86_LIR_BINARY_DIV_I32) return 3u;
-    if (operation == X86_LIR_BINARY_REM_I32) return 5u;
+    bool is_unsigned = type_id == 4u || type_id == 6u;
+    if (operation == X86_LIR_BINARY_DIV_I32)
+        return is_unsigned ? 4u : 3u;
+    if (operation == X86_LIR_BINARY_REM_I32)
+        return is_unsigned ? 6u : 5u;
     return 2u;
 }
 

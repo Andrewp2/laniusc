@@ -127,8 +127,8 @@ fn parser_hir_path_type_leaf_must_match_parser_owned_path_leaf() {
 
     assert!(
         err.to_string()
-            .contains("different from parser-owned path node"),
-        "error should describe the parser-owned path type leaf contract"
+            .contains("not the terminal segment of path node"),
+        "error should describe the parser-owned path type leaf contract: {err:#}"
     );
 }
 

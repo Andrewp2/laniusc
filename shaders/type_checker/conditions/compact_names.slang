@@ -21,7 +21,8 @@ StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> module_type_path_status;
 StructuredBuffer<uint> module_value_path_status;
 StructuredBuffer<uint> module_value_path_call_leaf;
-StructuredBuffer<uint> module_value_path_associated_method_token;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_name_id;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_fn_index;
@@ -47,11 +48,18 @@ static const uint INTRINSIC_NONE = 0u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
+static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
+
+bool token_is_wildcard(uint token)
+{
+    return valid_token(token) && name_id_by_token[token] != INVALID &&
+           name_id_by_token[token] == language_name_id[LANGUAGE_SYMBOL_WILDCARD];
+}
 
 uint name_token(uint node)
 {
@@ -115,20 +123,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     if (!valid_hir(node) ||
         (compact_hir_core[node].kind != HIR_NAME_EXPR &&
+         compact_hir_core[node].kind != HIR_PATH_EXPR &&
          !(compact_hir_core[node].kind == HIR_EXPR &&
            compact_hir_payload[node].a == HIR_EXPR_NAME)))
         return;
 
     uint token = name_token(node);
     if (!valid_token(token)) return;
+    if (token_is_wildcard(token)) return;
     if (enclosing_fn[token] == 0u || resolved(token)) return;
     if (predicate_syntax_token[token] != 0u ||
         type_expr_ref_tag[token] != TYPE_REF_INVALID ||
         module_type_path_status[token] != PATH_RESOLVE_STATUS_INVALID ||
         token_words[token].kind == TK_BOUND_TYPE_IDENT)
         return;
-    if (module_value_path_associated_method_token[token] != INVALID ||
-        method_call_name_id[token] != INVALID ||
+    if (method_call_name_id[token] != INVALID ||
         module_value_path_call_leaf[token] != 0u ||
         owned_by_call(node) || postfix_or_struct_head(node))
         return;

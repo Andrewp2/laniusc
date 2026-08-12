@@ -226,6 +226,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? HIR_IMPL_TRAIT
             : HIR_IMPL_INHERENT;
         payload.c = semantic_id(hir_method_impl_receiver_type[raw]);
+        payload.d = hir_item_visibility[hir_token_pos[raw]];
     }
     else if (item_kind != 0u)
     {
@@ -322,7 +323,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         payload.a = expr_form;
         uint projected_base = direct_base ? dense_id(raw_base) : expression_id(raw_base);
         payload.b = projected_base != INVALID ? projected_base : semantic_id(raw_base);
-        payload.c = semantic_id(hir_expr_record[expr_base + 2u]);
+        // Unlike the postfix base, the bracket contents denote a complete
+        // expression value. Preserve its canonical result (for example the
+        // ADD row in `values[1 + 2]`) rather than the first anchored leaf.
+        payload.c = expression_id(hir_expr_record[expr_base + 2u]);
         payload.d = hir_expr_record[expr_base + 3u];
     }
     else if (core.kind == HIR_MEMBER_EXPR)

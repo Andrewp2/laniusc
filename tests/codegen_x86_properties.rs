@@ -24,6 +24,7 @@ struct GeneratedX86Case {
 struct GeneratedX86RejectionCase {
     name: &'static str,
     source: String,
+    expected_parameter: &'static str,
 }
 
 struct GeneratedX86ShortCircuitRejectionCase {
@@ -2224,7 +2225,11 @@ fn main() {{
         local = local,
     );
 
-    GeneratedX86RejectionCase { name, source }
+    GeneratedX86RejectionCase {
+        name,
+        source,
+        expected_parameter: params[6],
+    }
 }
 
 fn generated_x86_call_arg_count_rejection_cases() -> [GeneratedX86RejectionCase; 2] {
@@ -2798,30 +2803,30 @@ fn generated_x86_source_pack_parameter_indexed_assignments_match_reference_model
 }
 
 #[test]
-fn generated_x86_direct_call_argument_count_rejections_are_name_independent() {
+fn generated_x86_parameter_register_count_rejections_are_name_independent() {
     for case in generated_x86_call_arg_count_rejection_cases() {
         let name = case.name;
         let source = case.source;
         let err = common::run_gpu_codegen_with_timeout(name, move || {
             pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
         })
-        .expect_err("seven-argument direct calls should exceed the SysV scalar register ABI");
+        .expect_err("seven-parameter functions should exceed the supported SysV register ABI");
 
         match err {
             CompileError::Diagnostic(diagnostic) => {
                 let message = diagnostic.render();
                 assert_eq!(
                     diagnostic.code, "LNC0017",
-                    "call-argument rejection should use the stable backend diagnostic: {message}"
+                    "parameter-count rejection should use the stable backend diagnostic: {message}"
                 );
                 assert_eq!(
                     diagnostic.category, "native codegen",
-                    "call-argument rejection should stay in native codegen: {message}"
+                    "parameter-count rejection should stay in native codegen: {message}"
                 );
                 assert!(
                     diagnostic
                         .message
-                        .contains("unsupported x86 call argument count")
+                        .contains("unsupported x86 parameter register count")
                         && message.contains("native x86 backend"),
                     "diagnostic should identify the SysV scalar register boundary: {message}"
                 );
@@ -2836,15 +2841,15 @@ fn generated_x86_direct_call_argument_count_rejections_are_name_independent() {
                 assert!(
                     label.line > 0
                         && label.column > 0
-                        && source_line.trim_start().starts_with("return ")
-                        && source_line.contains("(1, 2, 3, 4, 5, 6,"),
-                    "diagnostic should point at the generated unsupported direct call: {message}"
+                        && source_line.contains(case.expected_parameter)
+                        && source_line.contains(": i32"),
+                    "diagnostic should point at the first unsupported parameter: {message}"
                 );
             }
             CompileError::GpuCodegen(message) => {
                 panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
             }
-            other => panic!("expected x86 call argument-count rejection, got {other:?}"),
+            other => panic!("expected x86 parameter-count rejection, got {other:?}"),
         }
     }
 }

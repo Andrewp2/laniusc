@@ -23,6 +23,7 @@
 import hir_records;
 import type_checker.modules.decl_lookup;
 import type_checker.modules.import_visible_lookup;
+import type_checker.modules.module_lookup;
 
 struct Params
 {
@@ -65,8 +66,11 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_segment_token;
+StructuredBuffer<uint> path_prefix_id;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> path_owner_module_id;
+StructuredBuffer<uint> module_count_out;
+StructuredBuffer<uint> module_by_canonical_id;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
@@ -178,6 +182,11 @@ uint active_path_count()
 uint active_import_visible_type_count()
 {
     return min(import_visible_type_count_out[0], gParams.n_tokens);
+}
+
+uint active_decl_count()
+{
+    return min(decl_count_out[0], gParams.n_tokens);
 }
 
 bool valid_node(uint i)
@@ -338,7 +347,7 @@ uint find_local_type_decl(uint module_id, uint name_id)
 
     return decl_lookup_find(
         module_id, HIR_ITEM_NAMESPACE_TYPE, name_id,
-        min(decl_count_out[0], gParams.n_hir_nodes),
+        active_decl_count(),
         decl_module_id, decl_namespace, decl_name_id,
         decl_lookup_state);
 }
@@ -491,7 +500,7 @@ uint associated_receiver_decl(uint path_i, uint receiver_segment_count)
     if (receiver_segment_count == count)
     {
         uint decl_i = resolved_type_decl[path_i];
-        if (decl_i != INVALID && decl_i < gParams.n_hir_nodes)
+        if (decl_i != INVALID && decl_i < active_token_count())
             return decl_i;
     }
 
@@ -499,8 +508,20 @@ uint associated_receiver_decl(uint path_i, uint receiver_segment_count)
         return local_or_imported_type_decl_for_segment(path_i, 0u);
     if (receiver_segment_count < count)
     {
+        uint module_prefix_count = receiver_segment_count - 1u;
+        uint prefix_row = path_segment_base[path_i] + module_prefix_count - 1u;
+        uint canonical_id = path_prefix_id[prefix_row];
+        uint module_id = module_lookup_find(
+            canonical_id, gParams.n_tokens, module_by_canonical_id);
+        if (module_id < min(module_count_out[0], gParams.n_tokens))
+        {
+            uint name_id = segment_name_id(path_i, receiver_segment_count - 1u);
+            uint decl_i = find_local_type_decl(module_id, name_id);
+            if (decl_i != INVALID)
+                return decl_i;
+        }
         uint decl_i = local_or_imported_type_decl_for_segment(path_i, receiver_segment_count - 1u);
-        if (decl_i != INVALID && decl_i < gParams.n_hir_nodes)
+        if (decl_i != INVALID && decl_i < active_token_count())
             return decl_i;
     }
 
@@ -554,7 +575,7 @@ uint resolved_path_decl_for_owner_token(uint owner_token)
 uint receiver_decl_for_source_token(uint receiver_token)
 {
     uint decl_i = resolved_path_decl_for_owner_token(receiver_token);
-    if (decl_i != INVALID && decl_i < gParams.n_hir_nodes)
+    if (decl_i != INVALID && decl_i < active_token_count())
         return decl_i;
     return local_or_imported_type_decl_for_source_token(receiver_token);
 }
@@ -569,10 +590,10 @@ uint receiver_decl_for_associated_method_token(uint method_i, uint receiver_toke
     if (valid_path(path_i))
     {
         uint decl_i = resolved_type_decl[path_i];
-        if (decl_i != INVALID && decl_i < gParams.n_hir_nodes)
+        if (decl_i != INVALID && decl_i < active_token_count())
             return decl_i;
         decl_i = associated_receiver_decl(path_i, associated_receiver_segment_count(path_i, method_i));
-        if (decl_i != INVALID && decl_i < gParams.n_hir_nodes)
+        if (decl_i != INVALID && decl_i < active_token_count())
             return decl_i;
     }
     return receiver_decl_for_source_token(receiver_token);
@@ -592,7 +613,7 @@ uint fallback_type_code_for_arg_token(uint arg_token)
         return ty;
 
     uint decl_i = resolved_path_decl_for_owner_token(arg_token);
-    uint decl_token = decl_i < gParams.n_hir_nodes ? decl_name_token[decl_i] : INVALID;
+    uint decl_token = decl_i < active_token_count() ? decl_name_token[decl_i] : INVALID;
     return nominal_type_code(decl_i, decl_token);
 }
 
@@ -929,7 +950,7 @@ uint nominal_type_code(uint decl_i, uint decl_token)
     if (ty != TY_UNKNOWN)
         return ty;
 
-    if (decl_i >= gParams.n_hir_nodes || !valid_token(decl_token))
+    if (decl_i >= active_token_count() || !valid_token(decl_token))
         return TY_UNKNOWN;
 
     uint kind = decl_kind[decl_i];
@@ -1014,7 +1035,7 @@ void publish_compact_associated_method_call(uint call_hir)
         ? associated_receiver_decl(path_i, receiver_segment_count)
         : local_or_imported_type_decl_for_compact_hir(call_hir, receiver_token);
     uint receiver_decl_token =
-        receiver_decl < gParams.n_hir_nodes ? decl_name_token[receiver_decl] : INVALID;
+        receiver_decl < active_token_count() ? decl_name_token[receiver_decl] : INVALID;
     uint receiver_tag;
     uint receiver_payload;
     if (!associated_receiver_ref(
@@ -1045,7 +1066,7 @@ void publish_associated_method_call_for_method_token(uint method_i)
 
     uint receiver_decl = receiver_decl_for_associated_method_token(method_i, receiver_token);
     uint receiver_decl_token =
-        receiver_decl < gParams.n_hir_nodes ? decl_name_token[receiver_decl] : INVALID;
+        receiver_decl < active_token_count() ? decl_name_token[receiver_decl] : INVALID;
     uint receiver_tag;
     uint receiver_payload;
     if (!associated_receiver_ref(

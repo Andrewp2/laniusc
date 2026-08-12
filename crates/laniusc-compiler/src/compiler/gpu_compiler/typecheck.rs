@@ -544,9 +544,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                             .record_checked_hir(device, encoder, &typecheck_hir, semantic.view())
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
-                    Ok(type_check)
+                    Ok((type_check, typecheck_hir))
                 },
-                |device, queue, bufs, type_check| {
+                |device, queue, bufs, (type_check, typecheck_hir)| {
                     self.type_checker
                         .finish_recorded_check(device, &type_check)
                         .map_err(|err| {
@@ -564,7 +564,17 @@ impl<'gpu> GpuCompiler<'gpu> {
                             self.lowering_pipeline(target)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
                                 .finish_artifact(device, queue)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                                .map_err(|err| {
+                                    lowering_error_to_compile_error_for_source(
+                                        device,
+                                        queue,
+                                        bufs,
+                                        &typecheck_hir,
+                                        src,
+                                        &diagnostic_path,
+                                        err,
+                                    )
+                                })
                         })
                         .transpose()
                 },
@@ -916,6 +926,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     Ok(RecordedTypeCheckWithDiagnosticBuffers {
                         type_check,
                         diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
+                        hir: typecheck_hir,
                         semantic_interface,
                     })
                 },
@@ -952,7 +963,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                             self.lowering_pipeline(target)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
                                 .finish_artifact(device, queue)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                                .map_err(|err| {
+                                    lowering_error_to_compile_error_for_source_pack(
+                                        device,
+                                        queue,
+                                        &recorded.diagnostic_tokens,
+                                        &recorded.hir,
+                                        &diagnostic_files,
+                                        err,
+                                    )
+                                })
                         })
                         .transpose()?;
                     finish_timer.stamp("target_artifact");
@@ -968,7 +988,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                             self.lowering_pipeline(LoweringTarget::X86_64)
                                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
                                 .finish_x86_object(device, queue, library_id, unit_id)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                                .map_err(|err| {
+                                    lowering_error_to_compile_error_for_source_pack(
+                                        device,
+                                        queue,
+                                        &recorded.diagnostic_tokens,
+                                        &recorded.hir,
+                                        &diagnostic_files,
+                                        err,
+                                    )
+                                })
                         })
                         .transpose()?;
                     finish_timer.stamp("x86_object");
@@ -1071,6 +1100,7 @@ fn debug_parser_rejection(failure: &crate::parser::driver::ParserFailure) {
 struct RecordedTypeCheckWithDiagnosticBuffers {
     type_check: gpu_type_checker::RecordedTypeCheck,
     diagnostic_tokens: DiagnosticTokenBuffer,
+    hir: crate::parser::buffers::GpuHirView,
     semantic_interface: Option<gpu_type_checker::RecordedSemanticInterface>,
 }
 
@@ -1158,6 +1188,197 @@ impl DiagnosticTokenBuffer {
             byte_size: bufs.tokens_out.byte_size,
         }
     }
+}
+
+fn lowering_error_to_compile_error_for_source(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    tokens: &crate::lexer::buffers::GpuBuffers,
+    hir: &crate::parser::buffers::GpuHirView,
+    source: &str,
+    path: &Path,
+    error: anyhow::Error,
+) -> CompileError {
+    let Some(failure) = error.downcast_ref::<crate::codegen::lowering_pipeline::LoweringFailure>()
+    else {
+        return CompileError::GpuCodegen(error.to_string());
+    };
+    let Some(message) = lowering_diagnostic_message(failure.status.diagnostic_reason) else {
+        return CompileError::GpuCodegen(error.to_string());
+    };
+    let token_index = lowering_diagnostic_token(device, queue, hir, failure.status).ok();
+    let span = token_index
+        .and_then(|token| read_single_token_for_diagnostic(device, queue, tokens, token).ok())
+        .map(|token| (token.start, token.len))
+        .unwrap_or_else(|| first_nonempty_source_span(source));
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0017", message)
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                span.0,
+                span.1,
+                "not supported by the native x86 backend yet",
+            ))
+            .with_note("the native x86 backend rejected this program before emitting an artifact"),
+    )
+}
+
+fn lowering_error_to_compile_error_for_source_pack(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    tokens: &DiagnosticTokenBuffer,
+    hir: &crate::parser::buffers::GpuHirView,
+    files: &[DiagnosticSourceFile],
+    error: anyhow::Error,
+) -> CompileError {
+    let Some(failure) = error.downcast_ref::<crate::codegen::lowering_pipeline::LoweringFailure>()
+    else {
+        return CompileError::GpuCodegen(error.to_string());
+    };
+    let Some(message) = lowering_diagnostic_message(failure.status.diagnostic_reason) else {
+        return CompileError::GpuCodegen(error.to_string());
+    };
+    let token_record = lowering_diagnostic_token(device, queue, hir, failure.status)
+        .ok()
+        .and_then(|token| {
+            read_single_token_from_buffer(device, queue, &tokens.buffer, tokens.byte_size, token)
+                .ok()
+        });
+    let label = token_record
+        .as_ref()
+        .and_then(|token| {
+            source_pack_nearest_file_for_global_span(files, token.start).map(|file| {
+                diagnostic_label_from_source_span(
+                    &file.path,
+                    &file.source,
+                    file.local_start_for_global(token.start),
+                    token.len,
+                    "not supported by the native x86 backend yet",
+                )
+            })
+        })
+        .unwrap_or_else(|| lowering_fallback_label_for_source_pack(files));
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0017", message)
+            .with_primary_label(label)
+            .with_note("the native x86 backend rejected this program before emitting an artifact"),
+    )
+}
+
+fn lowering_diagnostic_message(reason: u32) -> Option<&'static str> {
+    use crate::codegen::lowering_ir::*;
+    match reason {
+        LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_PARAMETERS => {
+            Some("unsupported x86 entrypoint parameters")
+        }
+        LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_AGGREGATE_RETURN => {
+            Some("unsupported x86 entrypoint aggregate return")
+        }
+        LOWERING_DIAGNOSTIC_X86_PARAMETER_REGISTERS => {
+            Some("unsupported x86 parameter register count")
+        }
+        LOWERING_DIAGNOSTIC_X86_CALL_ABI => Some("unsupported x86 call ABI"),
+        LOWERING_DIAGNOSTIC_MISSING_ENTRYPOINT => Some("missing main entrypoint"),
+        LOWERING_DIAGNOSTIC_MULTIPLE_ENTRYPOINTS => Some("multiple main entrypoints"),
+        LOWERING_DIAGNOSTIC_X86_FOR_ITERABLE => Some("unsupported x86 for iterable"),
+        LOWERING_DIAGNOSTIC_X86_ZERO_DIVISOR => Some("unsupported x86 zero divisor"),
+        LOWERING_DIAGNOSTIC_X86_ARRAY_INDEX_BOUNDS => Some("unsupported x86 array index bounds"),
+        LOWERING_DIAGNOSTIC_X86_DYNAMIC_ARRAY_INDEX => Some("unsupported x86 dynamic array index"),
+        LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_CALL => {
+            Some("unsupported x86 short-circuit call operand")
+        }
+        LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_TRAP => {
+            Some("unsupported x86 short-circuit trapping operand")
+        }
+        LOWERING_DIAGNOSTIC_X86_MATCH_EXPRESSION => Some("unsupported x86 match expression"),
+        _ => None,
+    }
+}
+
+fn lowering_diagnostic_token(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    hir: &crate::parser::buffers::GpuHirView,
+    status: crate::codegen::lowering_ir::LoweringStatus,
+) -> Result<u32, String> {
+    match status.diagnostic_detail_kind {
+        crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_TOKEN => {
+            Ok(status.diagnostic_detail)
+        }
+        crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_HIR => {
+            read_hir_token_start_for_diagnostic(device, queue, hir, status.diagnostic_detail)
+        }
+        _ => Err("lowering diagnostic has no source-addressable detail".into()),
+    }
+}
+
+fn read_hir_token_start_for_diagnostic(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    hir: &crate::parser::buffers::GpuHirView,
+    hir_id: u32,
+) -> Result<u32, String> {
+    let stride = std::mem::size_of::<crate::parser::buffers::HirCore>() as u64;
+    let offset = u64::from(hir_id)
+        .checked_mul(stride)
+        .ok_or_else(|| format!("HIR {hir_id} byte offset overflow"))?;
+    let end = offset
+        .checked_add(stride)
+        .ok_or_else(|| format!("HIR {hir_id} byte end overflow"))?;
+    if hir_id >= hir.capacity || end > hir.core.byte_size as u64 {
+        return Err(format!(
+            "HIR {hir_id} exceeds compact HIR capacity {}",
+            hir.capacity
+        ));
+    }
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("rb.compiler.lowering.diagnostic_hir"),
+        size: stride,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("compiler.lowering.diagnostic-hir-readback.encoder"),
+    });
+    encoder.copy_buffer_to_buffer(&hir.core.buffer, offset, &readback, 0, stride);
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "compiler.lowering.diagnostic-hir-readback",
+        encoder.finish(),
+    );
+    let slice = readback.slice(..);
+    crate::gpu::passes_core::map_readback_blocking(
+        device,
+        &slice,
+        "compiler.lowering.diagnostic-hir",
+    )
+    .map_err(|error| error.to_string())?;
+    let mapped = slice.get_mapped_range();
+    let token_start = u32::from_le_bytes(mapped[8..12].try_into().unwrap());
+    drop(mapped);
+    readback.unmap();
+    Ok(token_start)
+}
+
+fn lowering_fallback_label_for_source_pack(files: &[DiagnosticSourceFile]) -> DiagnosticLabel {
+    if let Some(file) = files.first() {
+        let (start, len) = first_nonempty_source_span(&file.source);
+        return diagnostic_label_from_source_span(
+            &file.path,
+            &file.source,
+            start,
+            len,
+            "not supported by the native x86 backend yet",
+        );
+    }
+    diagnostic_label_from_source_span(
+        PathBuf::from("<source pack>"),
+        "",
+        0,
+        1,
+        "not supported by the native x86 backend yet",
+    )
 }
 
 /// Maps one GPU type-check error for a single source file into a compiler error.

@@ -1,40 +1,6 @@
 use super::*;
 
 impl GpuParser {
-    /// Records indirect dispatch arguments for active recovered-tree rows.
-    pub(super) fn record_tree_active_dispatch_args(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        bufs: &ParserBuffers,
-    ) -> Result<()> {
-        let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gTree".into(), bufs.tree_prefix_params.as_entire_binding()),
-            (
-                "tree_count_status".into(),
-                bufs.ll1_status.as_entire_binding(),
-            ),
-            (
-                "tree_active_dispatch_args".into(),
-                bufs.tree_active_dispatch_args.as_entire_binding(),
-            ),
-        ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tree_active_dispatch_args"),
-            &self.tree_active_dispatch_args.bind_group_layouts[0],
-            &self.tree_active_dispatch_args.reflection,
-            0,
-            &resources,
-        )?;
-        record_parser_compute(
-            encoder,
-            &self.tree_active_dispatch_args,
-            &bind_group,
-            "parser.tree_active_dispatch_args",
-            1,
-        )
-    }
-
     /// Records feature-specific tree dispatch arguments for enums, matches, and structs.
     pub(super) fn record_tree_feature_dispatch_args(
         &self,

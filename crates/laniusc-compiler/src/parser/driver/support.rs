@@ -356,15 +356,6 @@ pub(super) fn make_tokens_brace_match_03_pair_pse_pass(device: &wgpu::Device) ->
     )
 }
 
-/// Loads the pass that writes active tree-row dispatch arguments.
-pub(super) fn make_tree_active_dispatch_args_pass(device: &wgpu::Device) -> Result<PassData> {
-    crate::gpu::passes_core::make_main_pass!(
-        device,
-        "parser_tree_active_dispatch_args",
-        shader: "parser/tree/active_dispatch_args"
-    )
-}
-
 /// Loads the pass that writes feature-specific tree dispatch arguments.
 pub(super) fn make_tree_feature_dispatch_args_pass(device: &wgpu::Device) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(

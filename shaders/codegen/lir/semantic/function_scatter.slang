@@ -232,6 +232,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     result.flags = !constant && semantic_function_entrypoint_by_hir[hir] != 0u
         ? SEMANTIC_FUNCTION_FLAG_ENTRYPOINT : 0u;
+    if (!constant && payload.a == 5u)
+        result.flags |= SEMANTIC_FUNCTION_FLAG_EXTERN;
     result.file_id = compact_hir_links[hir].file_id;
     uint local_start = semantic_local_prefix[hir];
     uint local_end = compact_hir_links[hir].subtree_end < hir_count

@@ -564,8 +564,10 @@ pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<
 pub async fn compile_source_to_x86_64_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
+    let path = path.as_ref();
+    let source = prepare_source_for_gpu_from_path(path)?;
     global_x86_gpu_compiler()?
-        .compile_source_to_x86_64_from_path(path)
+        .compile_expanded_source_to_x86_64_with_diagnostic_path(&source, path.to_path_buf())
         .await
 }
 

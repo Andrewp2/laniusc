@@ -31,11 +31,18 @@ impl Drop for ChildGuard {
 
 fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Option<&str>) {
     let source = common::temp_artifact_path("laniusc_daemon_capacity", backend, Some("lani"));
+    let alternate_source = common::temp_artifact_path(
+        "laniusc_daemon_capacity",
+        &format!("{backend}_alternate"),
+        Some("lani"),
+    );
     let grown_source = common::temp_artifact_path("laniusc_daemon_capacity", "grown", Some("lani"));
     let artifact = common::temp_artifact_path("laniusc_daemon_capacity", emit, extension);
     let requests = common::temp_artifact_path("laniusc_daemon_capacity", "requests", Some("jsonl"));
     fs::write(&source, "fn main() -> i32 { return 42; }\n")
         .expect("write capacity-stable daemon source");
+    fs::write(&alternate_source, "fn main() -> i32 { return 41; }\n")
+        .expect("write alternate capacity-stable daemon source");
     fs::write(
         &grown_source,
         format!(
@@ -47,11 +54,16 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
 
     let mut request_lines = (0..21)
         .map(|job| {
+            let input = if job % 2 == 0 {
+                &source
+            } else {
+                &alternate_source
+            };
             serde_json::json!({
                 "id": format!("compile-{job}"),
                 "command": "compile",
                 "emit": emit,
-                "input": source,
+                "input": input,
                 "output": artifact,
             })
             .to_string()

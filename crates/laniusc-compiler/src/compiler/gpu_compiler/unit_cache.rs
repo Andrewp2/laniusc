@@ -275,7 +275,7 @@ impl GpuCompiler<'_> {
 
     pub(super) fn cache_compiled_unit(
         &self,
-        hint: CompiledUnitCacheHintKey,
+        hint: Option<CompiledUnitCacheHintKey>,
         key: CompiledUnitCacheKey,
         value: CompiledSourcePackUnit,
     ) {
@@ -284,7 +284,9 @@ impl GpuCompiler<'_> {
             .lock()
             .expect("compiled-unit cache mutex poisoned");
         cache.insert(key.clone(), value);
-        cache.insert_hint(hint, key);
+        if let Some(hint) = hint {
+            cache.insert_hint(hint, key);
+        }
     }
 
     pub(crate) fn compiled_unit_cache_stats(&self) -> CompiledUnitCacheStats {

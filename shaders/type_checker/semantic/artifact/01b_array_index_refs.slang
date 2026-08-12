@@ -15,6 +15,11 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_hir_nearest_fn;
+StructuredBuffer<uint> compact_array_element_start;
+StructuredBuffer<uint> compact_array_element_count;
+StructuredBuffer<uint> compact_array_element_row_count;
+StructuredBuffer<HirArrayElement> compact_array_elements;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -48,6 +53,7 @@ StructuredBuffer<uint> external_type_unit_id;
 StructuredBuffer<uint> external_type_local_index;
 RWStructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 RWStructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
+RWStructuredBuffer<uint> semantic_aggregate_decl_token_by_hir;
 RWStructuredBuffer<uint> semantic_array_length_by_hir;
 RWStructuredBuffer<uint> semantic_iterable_kind_by_hir;
 RWStructuredBuffer<uint> semantic_function_result_word_count_by_hir;
@@ -57,9 +63,14 @@ static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_STMT_FOR = 7u;
+static const uint HIR_STMT_LET = 1u;
+static const uint HIR_STMT_RETURN = 2u;
 static const uint HIR_FN = 3u;
+static const uint HIR_RETURN_STMT = 9u;
+static const uint HIR_ARRAY_EXPR = 24u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
@@ -114,6 +125,68 @@ void publish_array_length(uint node, uint instance)
     if (!valid_hir(node) || type_instance_len_kind[instance] != TYPE_LEN_LITERAL)
         return;
     semantic_array_length_by_hir[node] = type_instance_len_payload[instance];
+}
+
+uint array_element_decl_token(uint instance)
+{
+    if (!valid_token(instance)) return INVALID;
+    uint tag = type_instance_elem_ref_tag[instance];
+    uint payload = type_instance_elem_ref_payload[instance];
+    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+        return type_instance_decl_token[payload];
+    if (tag == TYPE_REF_SCALAR && payload >= 4096u && payload < 8192u)
+        return payload >= 6144u ? payload - 6144u : payload - 4096u;
+    return INVALID;
+}
+
+void publish_array_ref(uint node, uint instance)
+{
+    publish_ref(node, TYPE_REF_INSTANCE, instance);
+    publish_array_length(node, instance);
+    uint decl_token = array_element_decl_token(instance);
+    if (valid_hir(node) && valid_token(decl_token))
+        semantic_aggregate_decl_token_by_hir[node] = decl_token;
+}
+
+void publish_array_literal_element_decl(uint node)
+{
+    if (!valid_hir(node) || compact_hir_core[node].kind != HIR_ARRAY_EXPR ||
+        compact_array_element_count[node] == 0u)
+        return;
+    uint start = compact_array_element_start[node];
+    if (start >= min(compact_array_element_row_count[0u], gParams.n_hir_nodes)) return;
+    uint element = compact_array_elements[start].value;
+    if (!valid_hir(element)) return;
+    uint decl_token = semantic_aggregate_decl_token_by_hir[element];
+    if (valid_token(decl_token))
+        semantic_aggregate_decl_token_by_hir[node] = decl_token;
+}
+
+uint contextual_array_instance(uint node)
+{
+    if (!valid_hir(node) || compact_hir_core[node].kind != HIR_ARRAY_EXPR)
+        return INVALID;
+    uint parent = compact_hir_payload[node].d;
+    if (!valid_hir(parent)) return INVALID;
+    HirCore parent_core = compact_hir_core[parent];
+    HirPayload parent_payload = compact_hir_payload[parent];
+    if ((parent_core.kind == HIR_STMT || parent_core.kind == HIR_LET_STMT) &&
+        parent_payload.a == HIR_STMT_LET &&
+        parent_payload.c == node)
+    {
+        uint token = parent_payload.b;
+        return valid_token(token) && decl_type_ref_tag[token] == TYPE_REF_INSTANCE
+            ? decl_type_ref_payload[token] : INVALID;
+    }
+    if (parent_core.kind == HIR_RETURN_STMT &&
+        parent_payload.a == HIR_STMT_RETURN && parent_payload.b == node)
+    {
+        uint fn_node = compact_hir_nearest_fn[parent];
+        uint fn_token = valid_hir(fn_node) ? compact_hir_payload[fn_node].b : INVALID;
+        return valid_token(fn_token) && fn_return_ref_tag[fn_token] == TYPE_REF_INSTANCE
+            ? fn_return_ref_payload[fn_token] : INVALID;
+    }
+    return INVALID;
 }
 
 uint named_iterable_kind(uint instance)
@@ -209,6 +282,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_hir(node)) return;
     HirCore core = compact_hir_core[node];
     HirPayload payload = compact_hir_payload[node];
+    if (core.kind == HIR_ARRAY_EXPR)
+    {
+        uint contextual_instance = contextual_array_instance(node);
+        if (valid_token(contextual_instance) &&
+            type_instance_kind[contextual_instance] == TYPE_INSTANCE_ARRAY)
+        {
+            publish_array_ref(node, contextual_instance);
+            publish_array_literal_element_decl(node);
+        }
+        return;
+    }
     if (core.kind == HIR_FN && valid_token(payload.b))
         semantic_function_result_word_count_by_hir[node] = aggregate_word_count(
             fn_return_ref_tag[payload.b], fn_return_ref_payload[payload.b]);
@@ -244,16 +328,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint elem_payload = type_instance_elem_ref_payload[instance];
     if (elem_tag == TYPE_REF_INVALID || elem_payload == INVALID) return;
 
-    publish_ref(base_node, TYPE_REF_INSTANCE, instance);
-    if (kind == TYPE_INSTANCE_ARRAY)
-    {
-        publish_array_length(base_node, instance);
-    }
+    publish_array_ref(base_node, instance);
     if (for_node)
     {
         publish_ref(node, elem_tag, elem_payload);
+        uint element_decl = array_element_decl_token(instance);
+        if (valid_token(element_decl))
+            semantic_aggregate_decl_token_by_hir[node] = element_decl;
         if (kind == TYPE_INSTANCE_ARRAY) publish_array_length(node, instance);
     }
     if (index_node == INVALID) return;
     publish_ref(index_node, elem_tag, elem_payload);
+    uint element_decl = array_element_decl_token(instance);
+    if (valid_token(element_decl))
+        semantic_aggregate_decl_token_by_hir[index_node] = element_decl;
 }

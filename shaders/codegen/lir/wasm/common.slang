@@ -7,7 +7,7 @@ static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 
 uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands,
-                    bool call_index_base)
+                    bool call_index_base, bool direct_field_store_receiver)
 {
     if (core.op == SEMANTIC_LIR_OP_NOP) return 0u;
     // Expression operands are already on the Wasm stack when their semantic
@@ -32,12 +32,14 @@ uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands,
     if (core.op == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
         return 5u;
-    // A field store consumes the RHS value already on the stack. Save it in
-    // the target-private temporary, reconstruct the receiver address from its
-    // checked local declaration, and then perform the typed memory store.
+    // The semantic schedule leaves the evaluated receiver below the RHS.
+    // Save the RHS, turn that receiver into the field address, and store.
+    // This works for an arbitrarily deep member chain because each receiver is
+    // consumed from the preceding semantic LOAD instead of being reconstructed
+    // from a source declaration token.
     if (core.op == SEMANTIC_LIR_OP_STORE &&
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
-        return 8u;
+        return direct_field_store_receiver ? 8u : 7u;
     // The language print intrinsic accepts an i32, while the stable Wasm
     // runtime boundary accepts i64. Keep that ABI choice in target lowering:
     // one row widens the checked value and one row calls import zero.

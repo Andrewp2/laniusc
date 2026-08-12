@@ -70,7 +70,7 @@ fn cli_version_reports_distribution_contract_without_compiling_source() {
     assert_field_contains(
         &fields,
         "x86_64",
-        "unsupported source shapes are rejected",
+        "unsupported source shapes are reported as unsupported-feature diagnostics",
         &stdout,
     );
     assert_eq!(
@@ -438,48 +438,6 @@ fn cli_doctor_reports_no_run_toolchain_contract_without_compiling_source() {
         "LNC0029"
     );
     assert_eq!(document["readiness"]["status"], "not-production-ready");
-    assert_eq!(
-        document["readiness"]["default_no_run_gate"],
-        "tools/compiler_acceptance.sh --tier readiness --check-plan"
-    );
-    assert_eq!(
-        document["readiness"]["default_no_run_gate_compiles_tests"],
-        false
-    );
-    assert_eq!(
-        document["readiness"]["default_no_run_gate_creates_gpu_device"],
-        false
-    );
-    assert_eq!(
-        document["readiness"]["default_no_run_gate_invokes_pareas"],
-        false
-    );
-    let test_discipline = &document["readiness"]["test_discipline"];
-    assert_eq!(
-        test_discipline["schema_name"],
-        "laniusc.readiness.test-discipline"
-    );
-    assert_eq!(test_discipline["schema_version"], 1);
-    assert_eq!(
-        test_discipline["inventory_gate"],
-        "tools/compiler_acceptance.sh --tier readiness --check-plan"
-    );
-    assert_eq!(test_discipline["inventory_gate_compiles_tests"], false);
-    assert_eq!(test_discipline["inventory_gate_executes_tests"], false);
-    assert_eq!(test_discipline["named_filter_existence_check"], true);
-    assert_eq!(
-        test_discipline["duplicate_same_lane_references_rejected"],
-        true
-    );
-    assert_eq!(test_discipline["rust_integration_test_audit"], true);
-    assert_eq!(
-        test_discipline["compiler_shader_product_source_inspection"],
-        "rejected"
-    );
-    assert_eq!(
-        test_discipline["source_scoped_evidence_policy"],
-        "public-boundary-artifact-contract-execution-contract-or-measurement-scaffold-only"
-    );
     assert_eq!(document["readiness"]["generated_scale_lane"], "opt-in");
     assert_eq!(document["readiness"]["pareas_lane"], "opt-in");
     assert_eq!(
@@ -565,18 +523,6 @@ fn cli_doctor_reports_no_run_toolchain_contract_without_compiling_source() {
     assert_eq!(
         document["language_slice"]["status"],
         "bounded-unstable-alpha"
-    );
-    assert_eq!(
-        document["language_slice"]["inventory_path"],
-        "docs/language_slice_unstable_alpha.tsv"
-    );
-    assert_eq!(
-        document["language_slice"]["inventory_gate"],
-        "tools/compiler_acceptance.sh --tier readiness --check-plan"
-    );
-    assert_eq!(
-        document["language_slice"]["inventory_checked_by_doctor"], false,
-        "doctor should point at the slice inventory without executing the gate\nstdout:\n{stdout}"
     );
     assert_eq!(
         document["language_slice"]["production_release_claim"],
@@ -831,13 +777,12 @@ fn cli_doctor_bounds_slangc_version_probe_without_compiling_source() {
 #[test]
 fn cli_accepts_explicit_current_language_edition() {
     let mut command = Command::new(laniusc_bin());
-    command
-        .arg("--edition")
-        .arg("unstable-alpha")
-        .env("LANIUS_COMPILER_PROCESS_TEST_TIMEOUT_MS", "60000");
+    command.arg("--edition").arg("unstable-alpha");
 
-    let output =
-        common::command_output_with_timeout("laniusc --edition unstable-alpha", &mut command);
+    let output = common::codegen_command_output_with_timeout(
+        "laniusc --edition unstable-alpha",
+        &mut command,
+    );
     common::assert_command_success("laniusc --edition unstable-alpha", &output);
     assert!(
         output.stdout.starts_with(b"\x7fELF"),

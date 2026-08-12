@@ -10,6 +10,7 @@ StructuredBuffer<TargetLirFunction> target_functions;
 StructuredBuffer<uint> target_function_index_by_semantic;
 StructuredBuffer<uint> target_byte_offset;
 StructuredBuffer<uint> semantic_lir_string_pool_len;
+StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 RWStructuredBuffer<X86ArtifactLayout> x86_artifact_layout;
 RWStructuredBuffer<uint> x86_artifact_length;
 RWStructuredBuffer<LoweringStatus> lowering_status;
@@ -42,11 +43,20 @@ void main()
     {
         layout.status = 1u;
         InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_MISSING_ENTRYPOINT);
+        lowering_status[0u].diagnostic_reason = LOWERING_DIAGNOSTIC_MISSING_ENTRYPOINT;
     }
     else if (layout.entrypoint_count > 1u)
     {
         layout.status = 2u;
         InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_MULTIPLE_ENTRYPOINTS);
+        lowering_status[0u].diagnostic_reason = LOWERING_DIAGNOSTIC_MULTIPLE_ENTRYPOINTS;
+        uint duplicate_function = x86_entrypoint_state[2u];
+        if (duplicate_function < gParams.function_capacity)
+        {
+            lowering_status[0u].diagnostic_detail_kind = LOWERING_DIAGNOSTIC_DETAIL_TOKEN;
+            lowering_status[0u].diagnostic_detail =
+                semantic_lir_functions[duplicate_function].name_token;
+        }
     }
     else if (entrypoint_index >= function_count)
     {

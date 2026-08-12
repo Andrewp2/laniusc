@@ -34,15 +34,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
 
-        // Pick last-writer of the block scan (dfa_02)
-        let rounds = compute_rounds(b.nb_dfa);
-        let block_prefix_binding: wgpu::BindingResource<'a> = if (rounds % 2) == 1 {
-            b.dfa_02_pong.as_entire_binding()
-        } else {
-            b.dfa_02_ping.as_entire_binding()
-        };
-        debug_assert!(rounds == 0 || b.dfa_02_ping.count == b.dfa_02_pong.count);
-
         // Bind exactly what the fused Slang shader declares
         HashMap::from([
             (
@@ -58,7 +49,14 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
                 "source_file_end_flags".into(),
                 b.source_file_end_flags.as_entire_binding(),
             ),
-            ("block_prefix".into(), block_prefix_binding),
+            (
+                "block_prefix_ping".into(),
+                b.dfa_02_ping.as_entire_binding(),
+            ),
+            (
+                "block_prefix_pong".into(),
+                b.dfa_02_pong.as_entire_binding(),
+            ),
             (
                 "chunk_summaries".into(),
                 b.dfa_chunk_summaries.as_entire_binding(),

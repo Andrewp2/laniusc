@@ -28,6 +28,7 @@ RWStructuredBuffer<uint> dependency_resolved_value_decl;
 RWStructuredBuffer<uint> resolved_dependency_library_id;
 RWStructuredBuffer<uint> resolved_dependency_unit_id;
 RWStructuredBuffer<uint> resolved_dependency_local_index;
+RWStructuredBuffer<uint> resolved_dependency_value_metadata;
 RWStructuredBuffer<uint> dependency_call_compare_scan_input;
 RWStructuredBuffer<uint> dependency_call_compare_prefix;
 RWStructuredBuffer<uint> dependency_call_compare_total;
@@ -63,6 +64,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         resolved_dependency_library_id[i] = INVALID;
         resolved_dependency_unit_id[i] = INVALID;
         resolved_dependency_local_index[i] = INVALID;
+        uint value_base = i * 3u;
+        resolved_dependency_value_metadata[value_base] = INVALID;
+        resolved_dependency_value_metadata[value_base + 1u] = 0u;
+        resolved_dependency_value_metadata[value_base + 2u] = 0u;
     }
     if (i < gParams.hir_capacity)
     {

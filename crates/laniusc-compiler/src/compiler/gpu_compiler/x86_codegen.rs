@@ -78,7 +78,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
     }
 
-    async fn compile_expanded_source_to_x86_64_with_diagnostic_path(
+    pub(in crate::compiler) async fn compile_expanded_source_to_x86_64_with_diagnostic_path(
         &self,
         src: &str,
         diagnostic_path: PathBuf,
@@ -97,12 +97,12 @@ pub(super) fn x86_empty_source_pack_compile_error() -> CompileError {
     CompileError::Diagnostic(
         Diagnostic::error("LNC0017", "missing main entrypoint")
             .with_primary_label(DiagnosticLabel::primary(
-                PathBuf::from("<source-pack>"),
+                PathBuf::from("<source pack>"),
                 1,
                 1,
                 1,
                 None,
-                "the source pack is empty",
+                "the source pack is empty; the native x86 backend has no entrypoint",
             ))
             .with_note("x86 source packs must contain at least one source file before native entry selection can run"),
     )

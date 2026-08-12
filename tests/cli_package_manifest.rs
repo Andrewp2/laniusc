@@ -142,6 +142,7 @@ fn cli_package_manifest_metadata_only_prepares_stdlib_fallback_source_pack_metad
 
     let mut command = Command::new(laniusc_bin());
     command
+        .arg("--emit=wasm")
         .arg("--package-manifest")
         .arg(&manifest)
         .arg("--source-pack-metadata-only")
@@ -298,7 +299,7 @@ fn main() {
         "stale lockfile should fail on persisted input identity before metadata writes\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("package metadata selector: --package-lockfile"),
+        stderr.contains("package metadata context: --package-lockfile"),
         "stale lockfile diagnostic should retain package selector context\nstderr:\n{stderr}"
     );
     assert!(
@@ -1438,8 +1439,8 @@ fn cli_package_manifest_invalid_metadata_can_render_json_without_compiling_sourc
     let diagnostic: serde_json::Value =
         serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
     assert_eq!(diagnostic["severity"], "error");
-    assert_eq!(diagnostic["code"], "LNC0037");
-    assert_eq!(diagnostic["title"], "package metadata invalid");
+    assert_eq!(diagnostic["code"], "LNC0053");
+    assert_eq!(diagnostic["title"], "package manifest invalid");
     assert_eq!(diagnostic["category"], "package/import loading");
     assert!(diagnostic["primary_label"].is_null());
     let notes = diagnostic["notes"]
@@ -1518,8 +1519,8 @@ fn cli_package_manifest_entry_outside_roots_json_reports_declared_roots() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let diagnostic: serde_json::Value =
         serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
-    assert_eq!(diagnostic["code"], "LNC0037");
-    assert_eq!(diagnostic["title"], "package metadata invalid");
+    assert_eq!(diagnostic["code"], "LNC0053");
+    assert_eq!(diagnostic["title"], "package manifest invalid");
     let notes = diagnostic["notes"]
         .as_array()
         .expect("package metadata diagnostic should include notes");
@@ -1975,7 +1976,7 @@ fn main() {
     );
     assert_eq!(
         diagnostic["primary_label"]["message"].as_str(),
-        Some("only module-path imports are supported here")
+        Some("quoted imports are not supported by source-root discovery")
     );
     let notes = diagnostic["notes"]
         .as_array()

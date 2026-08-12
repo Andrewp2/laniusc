@@ -184,6 +184,12 @@ bool is_impl_owner(uint kind)
     return kind == PROD_IMPL_INHERENT || kind == PROD_IMPL_TRAIT;
 }
 
+uint direct_impl_owner(uint wrapper)
+{
+    uint child = first_child_node(wrapper);
+    return child != INVALID && is_impl_owner(node_kind[child]) ? child : INVALID;
+}
+
 uint item_kind_for_production(uint prod)
 {
     if (prod == PROD_MODULE)
@@ -387,6 +393,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint p_kind = parent_kind(i);
+    if (prod == PROD_ITEM_IMPL || prod == PROD_PUB_IMPL)
+    {
+        uint impl_owner = direct_impl_owner(i);
+        uint impl_anchor = impl_owner != INVALID ? hir_token_pos[impl_owner] : INVALID;
+        if (impl_anchor != INVALID)
+            hir_item_visibility[impl_anchor] =
+                prod == PROD_PUB_IMPL ? HIR_ITEM_VIS_PUBLIC : HIR_ITEM_VIS_PRIVATE;
+        return;
+    }
     if (is_impl_owner(prod) && (p_kind == PROD_ITEM_IMPL || p_kind == PROD_PUB_IMPL))
     {
         if (start != INVALID)

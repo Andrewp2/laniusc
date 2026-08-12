@@ -120,7 +120,6 @@ pub fn record_all_passes(
                 .bg_cache
                 .as_deref_mut()
                 .expect("batching requires bind-group cache");
-            bg_cache.remove(&p.dfa_03.data().shader_id);
             let mut batch = ComputePassBatch::begin(ctx.encoder, "lexer.dfa-pair-local.batch");
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.dfa_03, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.pair_01, E1(n))?;
@@ -131,7 +130,6 @@ pub fn record_all_passes(
                 .bg_cache
                 .as_deref_mut()
                 .expect("batching requires bind-group cache");
-            bg_cache.remove(&p.pair_03.data().shader_id);
             let mut batch = ComputePassBatch::begin(ctx.encoder, "lexer.emit.batch");
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.pair_03, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_kept, E1(n))?;
@@ -145,15 +143,9 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1(source_file_capacity))?;
     p.dfa_01.record_pass(&mut ctx, E1(n))?;
     p.dfa_02.record_pass(&mut ctx, E1(nb_dfa))?;
-    if let Some(cache) = ctx.bg_cache.as_deref_mut() {
-        cache.remove(&p.dfa_03.data().shader_id);
-    }
     p.dfa_03.record_pass(&mut ctx, E1(n))?;
     p.pair_01.record_pass(&mut ctx, E1(n))?;
     p.pair_02.record_pass(&mut ctx, E1(nb_sum))?;
-    if let Some(cache) = ctx.bg_cache.as_deref_mut() {
-        cache.remove(&p.pair_03.data().shader_id);
-    }
     p.pair_03.record_pass(&mut ctx, E1(n))?;
     // Run KEPT compaction before ALL to enable buffer reuse
     p.compact_kept.record_pass(&mut ctx, E1(n))?;

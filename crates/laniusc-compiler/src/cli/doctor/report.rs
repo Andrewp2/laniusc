@@ -28,10 +28,6 @@ use crate::{
     shader_artifacts,
 };
 
-const LANGUAGE_SLICE_INVENTORY_PATH: &str = "docs/language_slice_unstable_alpha.tsv";
-const LANGUAGE_SLICE_INVENTORY_GATE: &str =
-    "tools/compiler_acceptance.sh --tier readiness --check-plan";
-
 /// Builds the `laniusc doctor` readiness report as pretty JSON.
 pub(super) fn json_pretty(skip_slangc_probe: bool) -> Result<String, CliError> {
     let (slangc_status, slangc_check) = if skip_slangc_probe {
@@ -124,22 +120,6 @@ pub(super) fn json_pretty(skip_slangc_probe: bool) -> Result<String, CliError> {
         },
         "readiness": {
             "status": "not-production-ready",
-            "default_no_run_gate": LANGUAGE_SLICE_INVENTORY_GATE,
-            "default_no_run_gate_compiles_tests": false,
-            "default_no_run_gate_creates_gpu_device": false,
-            "default_no_run_gate_invokes_pareas": false,
-            "test_discipline": {
-                "schema_name": "laniusc.readiness.test-discipline",
-                "schema_version": 1,
-                "inventory_gate": LANGUAGE_SLICE_INVENTORY_GATE,
-                "inventory_gate_compiles_tests": false,
-                "inventory_gate_executes_tests": false,
-                "named_filter_existence_check": true,
-                "duplicate_same_lane_references_rejected": true,
-                "rust_integration_test_audit": true,
-                "compiler_shader_product_source_inspection": "rejected",
-                "source_scoped_evidence_policy": "public-boundary-artifact-contract-execution-contract-or-measurement-scaffold-only"
-            },
             "generated_scale_lane": "opt-in",
             "pareas_lane": "opt-in",
             "performance_claims": "local-artifacts-required",
@@ -177,9 +157,6 @@ pub(super) fn json_pretty(skip_slangc_probe: bool) -> Result<String, CliError> {
         "language_slice": {
             "edition": LANIUS_LANGUAGE_EDITION,
             "status": "bounded-unstable-alpha",
-            "inventory_path": LANGUAGE_SLICE_INVENTORY_PATH,
-            "inventory_gate": LANGUAGE_SLICE_INVENTORY_GATE,
-            "inventory_checked_by_doctor": false,
             "supported_statuses": ["supported", "bounded"],
             "non_support_statuses": ["planned", "unsupported"],
             "evidence_contracts": [

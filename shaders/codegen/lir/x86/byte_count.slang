@@ -1,6 +1,7 @@
 import codegen.lowering_ir;
 import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.location_common;
+import codegen.lir.x86.safety;
 import gpu_index;
 
 struct Params
@@ -77,6 +78,10 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     if (core.op == X86_LIR_OP_STORE_LOCAL)
     {
         uint destination = declaration_location(operands.a);
+        if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
+            return x86_move32_to_fixed_bytes(locations.b, 0u) +
+                x86_move32_to_fixed_bytes(locations.c, 1u) + 7u +
+                x86_move64_from_fixed_bytes(0u, destination);
         bool wide = (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u ||
             (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER;
         return (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u
@@ -96,7 +101,7 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
                 x86_move64_from_fixed_bytes(0u, locations.result);
         return x86_move32_to_fixed_bytes(locations.b, 0u) +
             x86_move32_to_fixed_bytes(locations.c, 1u) +
-            x86_binary_opcode_bytes(operands.a) +
+            x86_binary_opcode_bytes(operands.a, operands.metadata & 0xffu) +
             x86_move32_from_fixed_bytes(0u, locations.result);
     }
     if (core.op == X86_LIR_OP_COMPARE)
@@ -130,6 +135,10 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     if (core.op == X86_LIR_OP_CALL_ARG)
     {
         if (operands.b >= 6u) return 0u;
+        if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
+            return x86_move64_to_fixed_bytes(locations.a, 0u) +
+                ((operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u ? 4u : 0u) +
+                (operands.b < 4u ? 2u : 3u);
         bool wide = (operands.metadata &
             (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u;
         return (wide ? x86_move64_to_fixed_bytes(locations.a, 0u)
@@ -167,7 +176,8 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
             x86_move64_from_fixed_bytes(0u, locations.c);
     if (core.op == X86_LIR_OP_INDEX_LOAD)
         return x86_move64_to_fixed_bytes(locations.a, 0u) +
-            x86_move32_to_fixed_bytes(locations.b, 1u) + 7u +
+            x86_move32_to_fixed_bytes(locations.b, 1u) +
+            ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u ? 14u : 7u) +
             x86_move64_from_fixed_bytes(0u, locations.result);
     if (core.op == X86_LIR_OP_FIELD_LOAD)
         return x86_move64_to_fixed_bytes(locations.a, 0u) + 7u +
@@ -224,7 +234,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     TargetLirFunction function = target_functions[function_index];
     SemanticLirFunction semantic_function = semantic_lir_functions[function_id];
     uint saved_mask = x86_saved_gpr_mask_by_function[function_id];
-    uint bytes = instruction_bytes(core, operands, locations, saved_mask);
+    uint bytes = instruction_bytes(core, operands, locations, saved_mask) +
+        x86_safety_guard_bytes(core, operands, locations);
     bool supported_zero = core.op == X86_LIR_OP_LABEL ||
         core.op == X86_LIR_OP_AGGREGATE_RESULT_SLOT;
     if (bytes == 0u && !supported_zero)

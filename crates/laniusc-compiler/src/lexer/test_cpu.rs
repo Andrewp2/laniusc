@@ -71,6 +71,32 @@ fn repair_numeric_dotdot_ranges(tokens: &mut Vec<TestCpuToken>, src: &[u8]) {
     while i + 1 < tokens.len() {
         let current = tokens[i];
         let next = tokens[i + 1];
+        if current.kind == TokenKind::Float
+            && current.len >= 2
+            && next.kind == TokenKind::Float
+            && next.len >= 2
+            && next.start == current.start + current.len
+            && src.get(current.start + current.len - 1) == Some(&b'.')
+            && src.get(next.start) == Some(&b'.')
+            && src.get(next.start + 1).is_some_and(u8::is_ascii_digit)
+        {
+            tokens[i].kind = TokenKind::Int;
+            tokens[i].len -= 1;
+            tokens[i + 1].kind = TokenKind::Int;
+            tokens[i + 1].start += 1;
+            tokens[i + 1].len -= 1;
+            tokens.insert(
+                i + 1,
+                TestCpuToken {
+                    kind: TokenKind::DotDot,
+                    start: current.start + current.len - 1,
+                    len: 2,
+                },
+            );
+            i += 3;
+            continue;
+        }
+
         if current.kind != TokenKind::Float
             || current.len < 2
             || next.kind != TokenKind::Dot
@@ -328,11 +354,17 @@ mod tests {
         use TokenKind::*;
 
         assert_eq!(
-            kinds("0..samples 1.0 1. .5 ..rest 1..=end"),
+            kinds("0..samples 0..0 12..34 1.0 1. .5 ..rest 1..=end"),
             vec![
                 Int,
                 DotDot,
                 Ident,
+                Int,
+                DotDot,
+                Int,
+                Int,
+                DotDot,
+                Int,
                 Float,
                 Float,
                 Float,

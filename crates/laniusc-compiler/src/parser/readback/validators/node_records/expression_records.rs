@@ -1017,7 +1017,9 @@ pub fn validate_hir_member_records(
         }
         if receiver_token < token_pos[receiver] || receiver_token >= token_end[receiver] {
             return Err(anyhow!(
-                "parser HIR member row {row} receiver token is outside receiver row {receiver}"
+                "parser HIR member row {row} receiver token {receiver_token} is outside receiver row {receiver} span {}..{}",
+                token_pos[receiver],
+                token_end[receiver],
             ));
         }
         if token_end[receiver] >= member_token {

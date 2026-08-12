@@ -8,6 +8,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> semantic_lir_total;
 StructuredBuffer<SemanticLirCore> semantic_lir_core;
 StructuredBuffer<SemanticLirOperands> semantic_lir_operands;
+StructuredBuffer<uint> semantic_lir_layout_word_offset;
 StructuredBuffer<uint> semantic_owner_by_instruction;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> semantic_schedule_order;
@@ -172,29 +173,46 @@ void main(uint3 dtid: SV_DispatchThreadID)
             : local_row == 2u ? WASM_LIR_OP_I32_MUL
             : local_row == 3u ? WASM_LIR_OP_I32_ADD
             : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_LOAD : WASM_LIR_OP_I32_LOAD;
-        immediate = local_row == 0u ? operands.b
+        immediate = local_row == 0u ? semantic_lir_layout_word_offset[semantic_row]
             : local_row == 1u ? 4u : 0u;
     }
     else if (core.op == SEMANTIC_LIR_OP_STORE &&
              (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
     {
-        uint receiver_declaration = WASM_LIR_INVALID;
-        if (operands.a < semantic_count)
-            receiver_declaration = semantic_lir_operands[operands.a].a;
+        bool direct_receiver = operands.a < semantic_count &&
+            semantic_lir_core[operands.a].op == SEMANTIC_LIR_OP_VALUE_GET;
+        uint receiver_declaration = direct_receiver
+            ? semantic_lir_operands[operands.a].a : WASM_LIR_INVALID;
         uint temporary = core.type_id == TY_FLOAT
             ? WASM_SYNTHETIC_F32_TEMP : WASM_SYNTHETIC_I32_TEMP;
-        opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
-            : local_row == 1u ? WASM_LIR_OP_LOCAL_GET
-            : local_row == 2u ? WASM_LIR_OP_I32_CONST
-            : local_row == 3u ? WASM_LIR_OP_I32_CONST
-            : local_row == 4u ? WASM_LIR_OP_I32_MUL
-            : local_row == 5u ? WASM_LIR_OP_I32_ADD
-            : local_row == 6u ? WASM_LIR_OP_LOCAL_GET
-            : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
-        immediate = local_row == 0u || local_row == 6u ? temporary
-            : local_row == 1u ? receiver_declaration
-            : local_row == 2u ? operands.b
-            : local_row == 3u ? 4u : 0u;
+        if (direct_receiver)
+        {
+            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
+                : local_row == 1u ? WASM_LIR_OP_LOCAL_GET
+                : local_row == 2u ? WASM_LIR_OP_I32_CONST
+                : local_row == 3u ? WASM_LIR_OP_I32_CONST
+                : local_row == 4u ? WASM_LIR_OP_I32_MUL
+                : local_row == 5u ? WASM_LIR_OP_I32_ADD
+                : local_row == 6u ? WASM_LIR_OP_LOCAL_GET
+                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
+            immediate = local_row == 0u || local_row == 6u ? temporary
+                : local_row == 1u ? receiver_declaration
+                : local_row == 2u ? semantic_lir_layout_word_offset[semantic_row]
+                : local_row == 3u ? 4u : 0u;
+        }
+        else
+        {
+            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
+                : local_row == 1u ? WASM_LIR_OP_I32_CONST
+                : local_row == 2u ? WASM_LIR_OP_I32_CONST
+                : local_row == 3u ? WASM_LIR_OP_I32_MUL
+                : local_row == 4u ? WASM_LIR_OP_I32_ADD
+                : local_row == 5u ? WASM_LIR_OP_LOCAL_GET
+                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
+            immediate = local_row == 0u || local_row == 5u ? temporary
+                : local_row == 1u ? semantic_lir_layout_word_offset[semantic_row]
+                : local_row == 2u ? 4u : 0u;
+        }
     }
     else if ((core.op == SEMANTIC_LIR_OP_VALUE_GET ||
               core.op == SEMANTIC_LIR_OP_VALUE_SET) &&

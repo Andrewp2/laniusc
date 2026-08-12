@@ -376,6 +376,18 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
     start = max(start, file_info.x);
     uint kind = retag_compact_kind(k, start, end_excl);
 
+    // The byte-boundary repair for a compact numeric range ends `..` at the
+    // first digit of the upper bound. The streaming DFA still carries its
+    // leading-dot float state to that bound's eventual end, so restore the
+    // integer kind from the preserved source boundary.
+    if (kind == TK_FLOAT && start >= file_info.x + 2u && end_excl > start &&
+        load_byte_at(in_bytes, start - 2u) == 46u &&
+        load_byte_at(in_bytes, start - 1u) == 46u &&
+        load_byte_at(in_bytes, start) >= 48u && load_byte_at(in_bytes, start) <= 57u)
+    {
+        kind = TK_INT;
+    }
+
     if (float_token_ends_with_dot(kind, start, end_excl)
         && next_token_is_adjacent_dot(k, end_excl, file_info.y, total))
     {

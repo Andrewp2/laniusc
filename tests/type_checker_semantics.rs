@@ -213,7 +213,7 @@ fn main() {
             let rendered = diagnostic.render();
             assert!(rendered.contains("error[LNC0006]: type mismatch"));
             assert!(rendered.contains("let value: i32 = false;"));
-            assert!(rendered.contains("expected a different type here"));
+            assert!(rendered.contains("value type is bool but this context expects i32"));
             assert!(rendered.contains("= note:"));
             assert!(!rendered.contains("GPU type check rejected"));
         }
@@ -2309,8 +2309,8 @@ fn main() {
         "LNC0027",
         &[
             "error[LNC0027]: call resolution failed",
-            "call does not match a resolved function or method",
-            "no supported function or method signature matches this receiver and argument list",
+            "call has the wrong number of arguments",
+            "match the argument list to the resolved function or method signature",
         ],
     );
 }

@@ -34,32 +34,20 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
 
-        let final_prefix_is_ping = super::block_total_scan_last_writer_is_ping(b.nb_sum);
-
-        #[cfg(feature = "gpu-debug")]
-        {
-            let plane = if final_prefix_is_ping { "PING" } else { "PONG" };
-            println!(
-                "[dbg] {}: final pair-prefix last-writer={}",
-                Self::NAME,
-                plane
-            );
-        }
-
-        // Reuse DFA block ping/pong as the pair prefix source
-        let block_prefix_pair_binding: wgpu::BindingResource<'a> = if final_prefix_is_ping {
-            b.dfa_02_ping.as_entire_binding()
-        } else {
-            b.dfa_02_pong.as_entire_binding()
-        };
-
         HashMap::from([
             (
                 "gParams".into(),
                 Buffer(b.params.as_entire_buffer_binding()),
             ),
             ("flags_packed".into(), b.flags_packed.as_entire_binding()),
-            ("block_prefix_pair".into(), block_prefix_pair_binding),
+            (
+                "block_prefix_pair_ping".into(),
+                b.dfa_02_ping.as_entire_binding(),
+            ),
+            (
+                "block_prefix_pair_pong".into(),
+                b.dfa_02_pong.as_entire_binding(),
+            ),
             ("s_all_final".into(), b.s_all_final.as_entire_binding()),
             ("s_keep_final".into(), b.s_keep_final.as_entire_binding()),
         ])

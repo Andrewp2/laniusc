@@ -436,6 +436,9 @@ pub struct SemanticLirCore {
     pub source_hir: u32,
     pub flags: u32,
     pub value_word_count: u32,
+    /// Checked fixed-array length for indexed operations, or `u32::MAX` when
+    /// the base has no statically sized array type.
+    pub array_length: u32,
 }
 
 #[repr(C)]
@@ -549,7 +552,27 @@ pub struct LoweringStatus {
     pub first_unsupported_hir: u32,
     pub required_capacity: u32,
     pub available_capacity: u32,
+    pub diagnostic_reason: u32,
+    pub diagnostic_detail_kind: u32,
+    pub diagnostic_detail: u32,
+    pub diagnostic_aux: u32,
 }
+
+pub(crate) const LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_PARAMETERS: u32 = 1;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_AGGREGATE_RETURN: u32 = 2;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_PARAMETER_REGISTERS: u32 = 3;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_CALL_ABI: u32 = 4;
+pub(crate) const LOWERING_DIAGNOSTIC_MISSING_ENTRYPOINT: u32 = 5;
+pub(crate) const LOWERING_DIAGNOSTIC_MULTIPLE_ENTRYPOINTS: u32 = 6;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_FOR_ITERABLE: u32 = 7;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_ZERO_DIVISOR: u32 = 8;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_ARRAY_INDEX_BOUNDS: u32 = 9;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_DYNAMIC_ARRAY_INDEX: u32 = 10;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_CALL: u32 = 11;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_TRAP: u32 = 12;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_MATCH_EXPRESSION: u32 = 13;
+pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_TOKEN: u32 = 1;
+pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_HIR: u32 = 2;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
@@ -2011,6 +2034,10 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
             PassAccess::read("semantic_value_decl_by_hir", checked_value_decls),
             PassAccess::read("semantic_value_type_by_hir", checked_value_types),
+            PassAccess::read(
+                "semantic_value_const_present_by_hir",
+                checked_value_const_present,
+            ),
             PassAccess::read("semantic_calls_by_hir", checked_calls),
             PassAccess::read("semantic_enclosing_fn_by_hir", checked_enclosing_functions),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
@@ -2850,7 +2877,7 @@ fn build_lowering_compiler_graph(
             entrypoint_state: graph.add_resource(workspace(
                 "lir.x86.entrypoint_state",
                 ResourceDomain::Declarations,
-                LoweringCapacities::bytes::<u32>(2),
+                LoweringCapacities::bytes::<u32>(3),
             ))?,
             layout: graph.add_resource(workspace(
                 "lir.x86.artifact_layout",
@@ -3501,6 +3528,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_lir_call_args", semantic_call_args),
             PassAccess::read("semantic_lir_function_total", semantic_function_total),
             PassAccess::read("semantic_lir_functions", semantic_functions),
+            PassAccess::read("semantic_lir_params", semantic_params),
             PassAccess::read(
                 "semantic_lir_aggregate_element_total",
                 semantic_aggregate_element_total,
@@ -3510,6 +3538,7 @@ fn build_lowering_compiler_graph(
                 semantic_aggregate_elements,
             ),
             PassAccess::write("target_lir_count", target_counts),
+            PassAccess::read_write("lowering_status", lowering_status),
         ],
     };
     graph.add_pass(PassDesc {
@@ -3526,6 +3555,10 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_lir_total", semantic_total),
             PassAccess::read("semantic_lir_core", semantic_core),
             PassAccess::read("semantic_lir_operands", semantic_operands),
+            PassAccess::read(
+                "semantic_lir_layout_word_offset",
+                semantic_layout_word_offset,
+            ),
             PassAccess::read("semantic_owner_by_instruction", semantic_owner),
             PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
             PassAccess::read("semantic_schedule_order", schedule_order),
@@ -4259,6 +4292,7 @@ fn build_lowering_compiler_graph(
                 ),
                 PassAccess::read("target_byte_offset", byte_offsets),
                 PassAccess::read("semantic_lir_string_pool_len", semantic_string_pool_len),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
                 PassAccess::write("x86_artifact_layout", x86.layout),
                 PassAccess::write("x86_artifact_length", x86.artifact_length),
                 PassAccess::read_write("lowering_status", lowering_status),
@@ -4321,6 +4355,38 @@ fn build_lowering_compiler_graph(
                     "target_semantic_origin",
                     target_semantic_origins.expect("x86 semantic origin resource"),
                 ),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.x86.safety.emit",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: target_domain,
+            accesses: vec![
+                PassAccess::read("target_lir_total", target_total),
+                PassAccess::read("target_lir_core", target_core),
+                PassAccess::read("target_lir_operands", target_operands.unwrap()),
+                PassAccess::read("target_lir_locations", x86_target_locations.unwrap()),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read("target_function_count", function_count),
+                PassAccess::read("target_functions", functions),
+                PassAccess::read(
+                    "target_function_index_by_semantic",
+                    function_index_by_semantic,
+                ),
+                PassAccess::read("semantic_lir_function_total", semantic_function_total),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::read("semantic_lir_params", semantic_params),
+                PassAccess::read(
+                    "x86_decl_location_by_token",
+                    x86_decl_location_by_token.expect("x86 declaration location resource"),
+                ),
+                PassAccess::read(
+                    "x86_saved_gpr_mask_by_function",
+                    x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
+                ),
+                PassAccess::read("target_byte_offset", byte_offsets),
+                PassAccess::read("x86_artifact_layout", x86.layout),
+                PassAccess::write("artifact_bytes", x86.artifact_bytes),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -5181,13 +5247,13 @@ mod tests {
 
     #[test]
     fn lowering_records_match_shader_uint4_layouts() {
-        assert_eq!(std::mem::size_of::<SemanticLirCore>(), 24);
+        assert_eq!(std::mem::size_of::<SemanticLirCore>(), 32);
         assert_eq!(std::mem::size_of::<SemanticLirOperands>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirSchedule>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirFunction>(), 52);
         assert_eq!(std::mem::size_of::<SemanticLirParam>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirLocal>(), 16);
-        assert_eq!(std::mem::size_of::<LoweringStatus>(), 16);
+        assert_eq!(std::mem::size_of::<LoweringStatus>(), 32);
         assert_eq!(std::mem::size_of::<TargetScheduleKey>(), 16);
         assert_eq!(std::mem::size_of::<TargetLirFunction>(), 16);
         assert_eq!(std::mem::size_of::<X86LirCore>(), 16);

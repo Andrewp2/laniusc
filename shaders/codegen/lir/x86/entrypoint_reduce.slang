@@ -21,5 +21,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         InterlockedAdd(x86_entrypoint_state[0u], 1u);
         InterlockedMin(x86_entrypoint_state[1u], function_id);
+        InterlockedMax(x86_entrypoint_state[2u], function_id);
     }
 }

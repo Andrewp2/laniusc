@@ -324,7 +324,10 @@ uint direct_node_type(uint node)
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint lit = hir_scalar_type_for_expr_form(compact_expr_form(compact_expr_for_raw(node)));
+    uint expr = compact_expr_for_raw(node);
+    uint lit = valid_node(expr)
+        ? hir_scalar_type_for_hir(compact_hir_core[expr].kind, compact_expr_form(expr))
+        : TY_UNKNOWN;
     if (lit != TY_UNKNOWN)
         return lit;
 
@@ -372,7 +375,7 @@ uint direct_compact_node_type(uint node)
 
     HirCore core = compact_hir_core[node];
     HirPayload payload = compact_hir_payload[node];
-    uint literal = hir_scalar_type_for_expr_form(payload.a);
+    uint literal = hir_scalar_type_for_hir(core.kind, payload.a);
     if (literal != TY_UNKNOWN)
         return literal;
     if (core.kind == HIR_NAME_EXPR)
@@ -384,10 +387,7 @@ uint direct_compact_node_type(uint node)
     if (core.kind != HIR_CALL_EXPR || payload.a >= count)
         return TY_UNKNOWN;
 
-    HirCore callee = compact_hir_core[payload.a];
-    uint token = callee.kind == HIR_MEMBER_EXPR
-        ? compact_hir_payload[payload.a].c
-        : callee.token_start;
+    uint token = call_callee_token(node);
     return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
 }
 
@@ -397,6 +397,10 @@ uint direct_expr_record_type(uint node)
     uint compact_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     if (expr >= compact_count)
         return TY_UNKNOWN;
+
+    uint direct_ty = direct_compact_node_type(expr);
+    if (direct_ty != TY_UNKNOWN)
+        return direct_ty;
 
     uint form = compact_expr_form(expr);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
@@ -598,9 +602,10 @@ uint generic_claim_capacity()
 
 uint concrete_claim_key(uint row)
 {
+    uint ty = call_generic_claim_type[row];
     return call_generic_claim_callee[row] != INVALID &&
            call_generic_claim_slot[row] != INVALID &&
-           call_generic_claim_type[row] != TY_UNKNOWN
+           ty != TY_UNKNOWN && ty < TY_GENERIC_BASE
         ? 1u
         : 0u;
 }

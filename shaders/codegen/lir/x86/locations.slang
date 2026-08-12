@@ -59,7 +59,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     if (core.op == X86_LIR_OP_STORE_LOCAL)
+    {
         locations.b = value_location(operands.b, total);
+        if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
+        {
+            uint string_start = operands.b < gParams.semantic_capacity
+                ? semantic_to_target_start[operands.b] : X86_LOCATION_INVALID;
+            locations.c = string_start + 1u < total
+                ? stack_location(string_start + 1u) : X86_LOCATION_INVALID;
+        }
+    }
     else if (core.op == X86_LIR_OP_BINARY || core.op == X86_LIR_OP_COMPARE)
     {
         locations.b = value_location(operands.b, total);
@@ -77,10 +86,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         if ((operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u)
         {
-            uint string_start = operands.a < gParams.semantic_capacity
-                ? semantic_to_target_start[operands.a] : X86_LOCATION_INVALID;
-            locations.a = string_start + 1u < total
-                ? stack_location(string_start + 1u) : X86_LOCATION_INVALID;
+            if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
+                locations.a = value_location(operands.a, total);
+            else
+            {
+                uint string_start = operands.a < gParams.semantic_capacity
+                    ? semantic_to_target_start[operands.a] : X86_LOCATION_INVALID;
+                locations.a = string_start + 1u < total
+                    ? stack_location(string_start + 1u) : X86_LOCATION_INVALID;
+            }
         }
         else locations.a = value_location(operands.a, total);
     }

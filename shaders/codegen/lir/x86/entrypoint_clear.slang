@@ -6,4 +6,5 @@ void main()
 {
     x86_entrypoint_state[0u] = 0u;
     x86_entrypoint_state[1u] = 0xffffffffu;
+    x86_entrypoint_state[2u] = 0u;
 }

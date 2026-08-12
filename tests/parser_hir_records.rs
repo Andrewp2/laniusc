@@ -4494,6 +4494,26 @@ fn main() { return weighted(inc(1), inc(2), inc(3)); }
         4,
         "the outer call and all three nested calls should retain distinct HIR rows"
     );
+    let outer = parsed
+        .hir_call_arg_count
+        .iter()
+        .position(|count| *count == 3)
+        .expect("weighted call should own three arguments");
+    let arguments = parsed
+        .hir_call_arg_parent_call
+        .iter()
+        .enumerate()
+        .filter_map(|(node, parent)| (*parent as usize == outer).then_some(node))
+        .collect::<Vec<_>>();
+    assert_eq!(arguments.len(), 3);
+    for argument in arguments {
+        let result = parsed.hir_expr_result_root_node[argument] as usize;
+        assert!(result < parsed.hir_kind.len());
+        assert_eq!(
+            parsed.hir_kind[result], HIR_NODE_CALL_EXPR,
+            "a nested call argument must canonicalize to the call result, not its path head"
+        );
+    }
 }
 
 #[test]
@@ -9785,6 +9805,10 @@ fn main() -> i32 {
     assert_eq!(
         parsed.hir_expr_record_form[qualified_operand], HIR_EXPR_FORM_NAME,
         "qualified const operand should publish a name-form expression record"
+    );
+    assert_eq!(
+        parsed.hir_node_file_id[qualified_operand], 1,
+        "qualified path owner should retain the consuming source file"
     );
     assert_source_pack_hir_child_span_inside_owner(
         &parsed,

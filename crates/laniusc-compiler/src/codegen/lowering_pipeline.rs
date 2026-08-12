@@ -21,6 +21,27 @@ use crate::{
     type_checker::GpuSemanticArtifactView,
 };
 
+#[derive(Debug)]
+pub(crate) struct LoweringFailure {
+    pub(crate) status: LoweringStatus,
+}
+
+impl std::fmt::Display for LoweringFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let status = self.status;
+        write!(
+            formatter,
+            "GPU lowering failed (flags=0x{:x}, first HIR={}, required capacity={}, available capacity={})",
+            status.flags,
+            status.first_unsupported_hir,
+            status.required_capacity,
+            status.available_capacity,
+        )
+    }
+}
+
+impl std::error::Error for LoweringFailure {}
+
 enum TargetStage {
     X86_64(GpuX86LirStage),
     Wasm(GpuWasmLirStage),
@@ -248,7 +269,7 @@ impl GpuLoweringPipeline {
                 semantic.output(),
             )?),
         };
-        let status_readback = readback_bytes(device, "lowering.status.readback", 16, 16);
+        let status_readback = readback_bytes(device, "lowering.status.readback", 32, 32);
         Ok(Self {
             capacities,
             _workspace: workspace,
@@ -288,7 +309,7 @@ impl GpuLoweringPipeline {
             0,
             &self.status_readback.buffer,
             0,
-            16,
+            32,
         );
         Ok(())
     }
@@ -329,7 +350,7 @@ impl GpuLoweringPipeline {
             0,
             &self.status_readback.buffer,
             0,
-            16,
+            32,
         );
         Ok(())
     }
@@ -391,6 +412,10 @@ impl GpuLoweringPipeline {
             first_unsupported_hir: word(1),
             required_capacity: word(2),
             available_capacity: word(3),
+            diagnostic_reason: word(4),
+            diagnostic_detail_kind: word(5),
+            diagnostic_detail: word(6),
+            diagnostic_aux: word(7),
         };
         drop(mapped);
         self.status_readback.unmap();
@@ -400,13 +425,7 @@ impl GpuLoweringPipeline {
     fn ensure_success(&self, device: &wgpu::Device) -> Result<()> {
         let status = self.finish_status(device)?;
         if status.flags != 0 {
-            anyhow::bail!(
-                "GPU lowering failed (flags=0x{:x}, first HIR={}, required capacity={}, available capacity={})",
-                status.flags,
-                status.first_unsupported_hir,
-                status.required_capacity,
-                status.available_capacity,
-            );
+            return Err(LoweringFailure { status }.into());
         }
         Ok(())
     }

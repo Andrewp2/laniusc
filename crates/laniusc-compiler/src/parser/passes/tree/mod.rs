@@ -1,3 +1,5 @@
+/// Active recovered-tree indirect dispatch argument pass.
+pub mod active_dispatch_args;
 /// Raw parse-tree depth and pointer-jump scheduling passes.
 pub mod depth;
 /// Recovered tree parent construction pass.

@@ -758,9 +758,21 @@ fn main() -> i32 {
     let path: [i32; 1] = [102];
     let payload: [i32; 1] = [82];
     let read_buffer: [i32; 1] = [0];
+    if (path == payload) {
+        return 11;
+    }
     let path_ptr: ptr = core::mem::i32_array_data_ptr(path);
     let payload_ptr: ptr = core::mem::i32_array_data_ptr(payload);
     let read_ptr: ptr = core::mem::i32_array_data_ptr(read_buffer);
+    if (path_ptr == payload_ptr) {
+        return 8;
+    }
+    if (path_ptr == read_ptr) {
+        return 9;
+    }
+    if (payload_ptr == read_ptr) {
+        return 10;
+    }
 
     let output: i32 = std::fs::open_write(path_ptr, 1);
     if (output < 0) {
@@ -797,8 +809,16 @@ fn main() -> i32 {
     ])
     .expect("std::fs low-level file imports should compile to WASM");
 
-    let stdout = common::run_wasm_main_with_node("WASM std::fs file IO", "fs_file_io", &wasm);
-    assert_eq!(stdout, "R");
+    let result =
+        common::run_wasm_main_with_node_and_files("WASM std::fs file IO", "fs_file_io", &wasm, &[]);
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(
+        result.files.get("f").map(Vec::as_slice),
+        Some(&b"R"[..]),
+        "virtual files: {:?}",
+        result.files,
+    );
+    assert_eq!(result.stdout, "R");
 }
 
 #[test]

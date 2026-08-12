@@ -10,6 +10,7 @@ public static const uint HIR_SEM_EXPR_FALSE = 5u;
 public static const uint HIR_SEM_EXPR_FLOAT = 27u;
 public static const uint HIR_SEM_EXPR_STRING = 28u;
 public static const uint HIR_SEM_EXPR_CHAR = 29u;
+public static const uint HIR_SEM_KIND_LITERAL_EXPR = 23u;
 
 public static const uint HIR_SEM_TY_UNKNOWN = 0u;
 public static const uint HIR_SEM_TY_BOOL = 2u;
@@ -31,4 +32,14 @@ public uint hir_scalar_type_for_expr_form(uint form)
     if (form == HIR_SEM_EXPR_CHAR)
         return HIR_SEM_TY_CHAR;
     return HIR_SEM_TY_UNKNOWN;
+}
+
+// Payload fields are kind-dependent. Only literal HIR rows use `payload.a`
+// as one of the scalar literal forms above; a call row, for example, stores
+// its callee HIR id in the same word.
+public uint hir_scalar_type_for_hir(uint kind, uint form)
+{
+    return kind == HIR_SEM_KIND_LITERAL_EXPR
+        ? hir_scalar_type_for_expr_form(form)
+        : HIR_SEM_TY_UNKNOWN;
 }

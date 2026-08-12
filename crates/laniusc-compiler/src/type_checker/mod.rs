@@ -477,6 +477,8 @@ struct ResidentTypeCheckWorkspace {
     semantic_array_index_refs_project: wgpu::BindGroup,
     semantic_calls_project: wgpu::BindGroup,
     semantic_artifact_project: wgpu::BindGroup,
+    semantic_local_const_literals_project: wgpu::BindGroup,
+    semantic_local_const_references_project: wgpu::BindGroup,
     aggregate_compare_scan: PrefixScanOperation,
     aggregate_compare_dispatch: wgpu::BindGroup,
     conditions_aggregate_args: wgpu::BindGroup,
@@ -693,6 +695,10 @@ pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
     pub decl_visibility: &'a wgpu::Buffer,
     pub decl_parent_type_decl: &'a wgpu::Buffer,
     pub decl_hir_node: &'a wgpu::Buffer,
+    /// Evaluated scalar constant bits keyed by dense HIR row.
+    pub semantic_value_const_by_hir: &'a wgpu::Buffer,
+    /// Constant-presence state keyed by dense HIR row.
+    pub semantic_value_const_present_by_hir: &'a wgpu::Buffer,
     /// Runtime host-service identity for an extern function declaration,
     /// keyed by its dense HIR row. Non-host declarations carry `u32::MAX`.
     pub function_host_service_by_hir: &'a wgpu::Buffer,
