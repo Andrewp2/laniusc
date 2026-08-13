@@ -4,6 +4,7 @@ use super::{record_direct, record_indirect};
 use crate::gpu::{
     buffers::{CapacityBufferCache, LaniusBuffer, TrackedBufferView, uniform_from_val},
     compiler_graph::{
+        PrefixScanGraphPasses,
         PrefixScanPairSpec,
         PrefixScanResources,
         PrefixScanSpec,
@@ -62,6 +63,7 @@ struct HierarchyStep {
 
 pub(crate) struct PrefixScanOperation {
     label: &'static str,
+    pair_passes: Option<PrefixScanGraphPasses>,
     passes: [PassData; 4],
     dispatch_args: LaniusBuffer<u32>,
     _params: LaniusBuffer<PrefixScanParams>,
@@ -80,22 +82,23 @@ impl PrefixScanOperation {
     ) -> Result<(Self, Self)> {
         resources.validate_graph_passes_if_present(spec.passes.names())?;
         let passes = standard_passes(kernels);
-        Ok((
-            Self::from_resource_names_with_passes(
-                device,
-                spec.left_label,
-                passes,
-                resources,
-                spec.left,
-            )?,
-            Self::from_resource_names_with_passes(
-                device,
-                spec.right_label,
-                passes,
-                resources,
-                spec.right,
-            )?,
-        ))
+        let mut left = Self::from_resource_names_with_passes(
+            device,
+            spec.left_label,
+            passes,
+            resources,
+            spec.left,
+        )?;
+        let mut right = Self::from_resource_names_with_passes(
+            device,
+            spec.right_label,
+            passes,
+            resources,
+            spec.right,
+        )?;
+        left.pair_passes = Some(spec.passes);
+        right.pair_passes = Some(spec.passes);
+        Ok((left, right))
     }
 
     pub(crate) fn from_spec(
@@ -317,6 +320,7 @@ impl PrefixScanOperation {
         )?;
         Ok(Self {
             label,
+            pair_passes: None,
             passes: [
                 passes.local.clone(),
                 passes.hierarchy_up.clone(),
@@ -382,6 +386,10 @@ impl PrefixScanOperation {
                 "paired prefix scans must use the same scan kernels"
             ));
         }
+        let pair_passes = left
+            .pair_passes
+            .filter(|passes| Some(*passes) == right.pair_passes)
+            .ok_or_else(|| anyhow!("paired prefix scans must share compiler-graph passes"))?;
         pair_indirect(
             encoder,
             &left.passes[0],
@@ -389,7 +397,7 @@ impl PrefixScanOperation {
             &left.dispatch_args,
             &right.local,
             &right.dispatch_args,
-            "prefix_scan.pair.local",
+            pair_passes.local,
         );
         for index in 0..left.up.len().max(right.up.len()) {
             pair_steps(
@@ -397,7 +405,11 @@ impl PrefixScanOperation {
                 &left.passes[1],
                 left.up.get(index),
                 right.up.get(index),
-                "prefix_scan.pair.hierarchy_up",
+                if index == 0 {
+                    pair_passes.hierarchy_up_first
+                } else {
+                    pair_passes.hierarchy_up_rest
+                },
             )?;
         }
         for index in 0..left.down.len().max(right.down.len()) {
@@ -406,7 +418,7 @@ impl PrefixScanOperation {
                 &left.passes[2],
                 left.down.get(index),
                 right.down.get(index),
-                "prefix_scan.pair.hierarchy_down",
+                pair_passes.hierarchy_down,
             )?;
         }
         pair_indirect(
@@ -416,7 +428,7 @@ impl PrefixScanOperation {
             &left.dispatch_args,
             &right.apply,
             &right.dispatch_args,
-            "prefix_scan.pair.apply",
+            pair_passes.apply,
         );
         Ok(())
     }

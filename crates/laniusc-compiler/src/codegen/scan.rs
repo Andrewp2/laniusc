@@ -87,10 +87,10 @@ impl GpuResidentExclusiveScan {
         let block_prefix = alias(contract.block_prefix, blocks)?;
         let hierarchy = alias(contract.hierarchy, blocks)?;
         let passes = ScanPasses {
-            local: load(device, "lir.scan.local", "scan/counted/00_local")?,
-            up: load(device, "lir.scan.up", "scan/counted/01_hierarchy_up")?,
-            down: load(device, "lir.scan.down", "scan/counted/02_hierarchy_down")?,
-            apply: load(device, "lir.scan.apply", "scan/counted/02_apply")?,
+            local: load(device, contract.local_pass, "scan/counted/00_local")?,
+            up: load(device, contract.up_pass, "scan/counted/01_hierarchy_up")?,
+            down: load(device, contract.down_pass, "scan/counted/02_hierarchy_down")?,
+            apply: load(device, contract.apply_pass, "scan/counted/02_apply")?,
         };
         let params = uniform_from_val(
             device,
@@ -124,7 +124,7 @@ impl GpuResidentExclusiveScan {
         let local_group = make_group(
             device,
             &passes.local,
-            "lir.scan.local.bind_group",
+            contract.local_pass,
             &[
                 ("gScan", params.as_entire_binding()),
                 ("scan_count", count.as_entire_binding()),
@@ -139,7 +139,7 @@ impl GpuResidentExclusiveScan {
                 make_group(
                     device,
                     &passes.up,
-                    "lir.scan.up.bind_group",
+                    contract.up_pass,
                     &[
                         ("gHierarchy", hierarchy_params.as_entire_binding()),
                         ("scan_count", count.as_entire_binding()),
@@ -156,7 +156,7 @@ impl GpuResidentExclusiveScan {
                 make_group(
                     device,
                     &passes.down,
-                    "lir.scan.down.bind_group",
+                    contract.down_pass,
                     &[
                         ("gHierarchy", hierarchy_params.as_entire_binding()),
                         ("scan_count", count.as_entire_binding()),
@@ -169,7 +169,7 @@ impl GpuResidentExclusiveScan {
         let apply_group = make_group(
             device,
             &passes.apply,
-            "lir.scan.apply.bind_group",
+            contract.apply_pass,
             &[
                 ("gScan", params.as_entire_binding()),
                 ("scan_count", count.as_entire_binding()),

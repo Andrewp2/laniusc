@@ -6,6 +6,7 @@ import json
 import pathlib
 import statistics
 import sys
+from collections.abc import Callable
 
 
 REGIME_METRICS = {
@@ -115,35 +116,241 @@ def compiler_phase(pass_name: str) -> str:
         return "lexer"
     if pass_name.startswith("type_check"):
         return "typecheck"
-    if pass_name.startswith("codegen.x86"):
+    if pass_name.startswith("lir.semantic") or pass_name == "lir.status.clear":
+        return "semantic_lir"
+    if pass_name.startswith("lir.target"):
+        return "target_lir"
+    if pass_name.startswith(("lir.x86", "artifact.x86", "codegen.x86")):
         return "x86_codegen"
-    if pass_name.startswith("codegen.wasm"):
+    if pass_name.startswith(("lir.wasm", "artifact.wasm", "codegen.wasm")):
         return "wasm_codegen"
-    if pass_name.startswith(("parser.", "hir_", "brackets_", "tree_", "pack_")):
+    if pass_name.startswith("lir.scan"):
+        return "backend_scan_unattributed"
+    if pass_name.startswith(
+        (
+            "parser.",
+            "parser_",
+            "hir_",
+            "brackets_",
+            "tree_",
+            "pack_",
+            "llp_",
+            "source_file_",
+        )
+    ):
         return "parser_hir"
     return "other"
 
 
+def compiler_stage(pass_name: str) -> str:
+    """Return the narrowest stable compiler stage expressed by a pass label."""
+    phase = compiler_phase(pass_name)
+    if phase == "parser_hir":
+        return parser_hir_stage(pass_name)
+    if phase in {"lexer", "typecheck", "other"}:
+        return phase
+    if phase == "backend_scan_unattributed":
+        # Old captures used one label for every reusable lowering scan. New
+        # captures retain the GraphScanContract pass name and avoid this bucket.
+        return phase
+    if pass_name == "lir.status.clear":
+        return "semantic_lir.control"
+    if pass_name.startswith("lir.semantic.execution_rank"):
+        return "semantic_lir.execution_order"
+    if pass_name.startswith("lir.semantic.functions"):
+        return "semantic_lir.functions"
+    if pass_name.startswith("lir.semantic.locals"):
+        return "semantic_lir.locals"
+    if pass_name.startswith("lir.semantic.call_arg"):
+        return "semantic_lir.call_arguments"
+    if pass_name.startswith("lir.semantic.aggregate"):
+        return "semantic_lir.aggregates"
+    if pass_name.startswith("lir.semantic.strings"):
+        return "semantic_lir.strings"
+    if pass_name.startswith("lir.semantic.scan"):
+        return "semantic_lir.compaction_scans"
+    if pass_name.startswith("lir.semantic"):
+        return "semantic_lir.projection"
+    if pass_name.startswith("lir.target.schedule"):
+        return "target_lir.scheduling"
+    if pass_name.startswith("lir.target.functions"):
+        return "target_lir.functions"
+    if pass_name.startswith("lir.target.count_scan"):
+        return "target_lir.instruction_count_scan"
+    if pass_name.startswith("lir.target.byte_scan"):
+        return "target_lir.byte_layout_scan"
+    if pass_name.startswith("lir.target"):
+        return "target_lir.page_planning"
+    if pass_name.startswith("lir.x86.lifetime"):
+        return "x86.lifetime_analysis"
+    if pass_name.startswith(("lir.x86.location", "lir.x86.locations")):
+        return "x86.register_allocation"
+    if pass_name.startswith(("lir.x86.resolve", "lir.x86.decl_slots")):
+        return "x86.operand_resolution"
+    if pass_name.startswith(("lir.x86.count", "lir.x86.scatter", "lir.x86.validate")):
+        return "x86.instruction_lowering"
+    if pass_name.startswith("lir.x86.byte_count"):
+        return "x86.byte_sizing"
+    if pass_name.startswith(("lir.x86.entrypoint", "lir.x86.artifact")):
+        return "x86.executable_layout"
+    if pass_name.startswith(("lir.x86.emit", "lir.x86.safety.emit")):
+        return "x86.machine_byte_emission"
+    if pass_name.startswith("lir.x86.runtime.emit"):
+        return "x86.runtime_emission"
+    if pass_name.startswith("artifact.x86.object"):
+        return "x86.object_projection"
+    if phase == "x86_codegen":
+        return "x86.other"
+    if pass_name.startswith("lir.wasm.abi"):
+        return "wasm.abi_lowering"
+    if pass_name.startswith(("lir.wasm.count", "lir.wasm.scatter", "lir.wasm.validate")):
+        return "wasm.instruction_lowering"
+    if pass_name.startswith("lir.wasm.byte_count"):
+        return "wasm.byte_sizing"
+    if pass_name.startswith(("lir.wasm.emit", "lir.wasm.attach_bodies")):
+        return "wasm.byte_emission"
+    if pass_name.startswith("artifact.wasm.object"):
+        return "wasm.object_projection"
+    if pass_name.startswith("lir.wasm"):
+        return "wasm.module_layout"
+    if phase == "wasm_codegen":
+        return "wasm.other"
+    return phase
+
+
+def parser_hir_stage(pass_name: str) -> str:
+    """Classify parser work by the artifact or relation it produces."""
+    if pass_name.startswith("parser.tokens_to_"):
+        return "parser.token_classification"
+    if pass_name.startswith("brackets_") or (
+        pass_name.startswith("parser.tokens.")
+        and any(
+            marker in pass_name
+            for marker in ("delimiter", "brace_match", "bracket_match")
+        )
+    ):
+        return "parser.delimiter_matching"
+    if pass_name.startswith("parser.tokens."):
+        return "parser.syntax_contexts"
+    if pass_name.startswith(("llp_", "pack_", "parser.active_pair", "parser_status")):
+        return "parser.production_parsing_and_packing"
+    if pass_name.startswith(("tree_", "parser.tree_")):
+        return "parser.raw_tree_recovery"
+    if pass_name == "parser.semantic-nav.batch":
+        return "hir.semantic_navigation_batch"
+    if pass_name.startswith("hir_semantic_"):
+        if any(marker in pass_name for marker in ("prefix", "compact", "dispatch")):
+            return "hir.semantic_compaction"
+        if "parent" in pass_name:
+            return "hir.semantic_parents"
+        if "depth" in pass_name:
+            return "hir.semantic_depth"
+        if "child_index" in pass_name:
+            return "hir.semantic_child_indices"
+        if "subtree" in pass_name:
+            return "hir.semantic_subtree_ranges"
+        return "hir.semantic_navigation_other"
+    if pass_name.startswith("hir_canonical_"):
+        if any(
+            marker in pass_name
+            for marker in (
+                "predicate_subject",
+                "predicate_relations",
+                "generic_param_owner",
+                "variant_payload_owner",
+                "expr_forest",
+                "parent_links",
+                "identity_aliases",
+            )
+        ) or pass_name.endswith("_nav"):
+            return "hir.canonical_relationships"
+        if pass_name in {
+            "hir_canonical_mark",
+            "hir_canonical_local",
+            "hir_canonical_prefix_01_blocks",
+            "hir_canonical_scatter",
+            "hir_canonical_core",
+            "hir_canonical_validate",
+            "hir_canonical_stmt_compact",
+            "hir_canonical_string_scatter",
+            "hir_canonical_decl_index_clear",
+            "hir_canonical_decl_index_scatter",
+        }:
+            return "hir.canonical_core_compaction"
+        return "hir.canonical_side_tables"
+    if pass_name.startswith("hir_list_rank_"):
+        return "hir.family_compaction"
+    if pass_name.startswith(("hir_string_", "parser_hir_literal", "parser_hir_string")):
+        return "hir.literals_and_strings"
+    if pass_name.startswith(("hir_struct_", "hir_array_", "hir_enum_")):
+        return "hir.aggregate_relations"
+    if pass_name.startswith(
+        (
+            "hir_expr_",
+            "hir_binary_",
+            "hir_call_",
+            "hir_range_",
+            "hir_context_",
+            "hir_stmt_",
+            "hir_match_",
+        )
+    ):
+        return "hir.expression_and_control_relations"
+    if pass_name.startswith(
+        (
+            "hir_type_",
+            "hir_fn_",
+            "hir_param_",
+            "hir_path_",
+            "hir_method_",
+            "hir_item_",
+        )
+    ):
+        return "hir.declaration_and_type_relations"
+    if pass_name.startswith(
+        ("hir_nodes", "hir_spans", "hir_record_", "parser.hir-core", "source_file_")
+    ):
+        return "hir.core_records"
+    return "parser_hir.other"
+
+
 def summarize_phases(events: list[tuple[str, float]]) -> list[dict[str, object]]:
+    return summarize_categories(events, compiler_phase, "phase")
+
+
+def summarize_stages(events: list[tuple[str, float]]) -> list[dict[str, object]]:
+    return summarize_categories(events, compiler_stage, "stage")
+
+
+def summarize_categories(
+    events: list[tuple[str, float]],
+    classifier: Callable[[str], str],
+    category_key: str,
+) -> list[dict[str, object]]:
     totals: dict[str, list[float]] = {}
-    for name, milliseconds in events:
-        phase = compiler_phase(name)
-        row = totals.setdefault(phase, [0.0, 0.0])
+    for event_index, (name, milliseconds) in enumerate(events):
+        category = classifier(name)
+        row = totals.setdefault(
+            category,
+            [0.0, 0.0, float(event_index), float(event_index)],
+        )
         row[0] += 1
         row[1] += milliseconds
+        row[3] = float(event_index)
     total_ms = sum(row[1] for row in totals.values())
     return sorted(
         (
             {
-                "phase": phase,
+                category_key: category,
                 "event_count": int(values[0]),
                 "total_time_ms": values[1],
                 "percent_of_labeled_time": 100.0 * values[1] / total_ms if total_ms else 0.0,
+                "first_event_index": int(values[2]),
+                "last_event_index": int(values[3]),
             }
-            for phase, values in totals.items()
+            for category, values in totals.items()
         ),
-        key=lambda row: float(row["total_time_ms"]),
-        reverse=True,
+        key=lambda row: int(row["first_event_index"]),
     )
 
 
@@ -256,6 +463,7 @@ def main() -> int:
     events = read_events(export_dir / "D3DPERF_EVENTS.xls")
     passes = summarize_passes(events)
     phases = summarize_phases(events)
+    stages = summarize_stages(events)
     metrics = read_frame_metrics(export_dir / "GPUTRACE_FRAME.xls")
     event_metrics = correlate_regimes(
         events, read_regimes(export_dir / "GPUTRACE_REGIMES.xls")
@@ -265,6 +473,7 @@ def main() -> int:
         export_dir / "PASS_SUMMARY.csv": passes,
         export_dir / "PASS_SUMMARY.json": passes,
         export_dir / "PHASE_SUMMARY.json": phases,
+        export_dir / "STAGE_SUMMARY.json": stages,
         export_dir / "FRAME_METRICS.json": metrics,
         export_dir / "EVENT_METRICS.csv": event_metrics,
         export_dir / "EVENT_METRICS.json": event_metrics,
