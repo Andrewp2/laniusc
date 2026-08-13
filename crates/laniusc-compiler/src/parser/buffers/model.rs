@@ -589,13 +589,14 @@ pub struct ParserBuffers {
     pub tree_enum_dispatch_args: LaniusBuffer<u32>,
     pub tree_match_dispatch_args: LaniusBuffer<u32>,
     pub tree_struct_dispatch_args: LaniusBuffer<u32>,
-    pub tree_pointer_jump_dispatch_args: LaniusBuffer<u32>,
+    /// Zero on success; otherwise one plus a raw node whose parent chain was
+    /// malformed or cyclic during local depth traversal.
+    pub tree_depth_status: LaniusBuffer<u32>,
     /// Raw-depth-bounded schedule for nearest-ancestor searches whose seed
     /// shaders inspect a fixed local span before global pointer jumping.
     pub hir_canonical_parent_dispatch_args: LaniusBuffer<u32>,
     pub hir_semantic_dispatch_args: LaniusBuffer<u32>,
-    pub hir_semantic_depth_block_max: LaniusBuffer<u32>,
-    pub hir_semantic_pointer_jump_dispatch_args: LaniusBuffer<u32>,
+    pub tree_depth_block_max: LaniusBuffer<u32>,
     pub tree_prefix_inblock: LaniusBuffer<i32>,
     pub tree_block_sum: LaniusBuffer<i32>,
     pub tree_block_prefix_a: LaniusBuffer<i32>,
@@ -652,14 +653,7 @@ pub struct ParserBuffers {
     pub hir_semantic_parent_link_b: LaniusBuffer<u32>,
     pub hir_semantic_parent_value_a: LaniusBuffer<u32>,
     pub hir_semantic_parent_value_b: LaniusBuffer<u32>,
-    pub hir_semantic_depth_link_a: LaniusBuffer<u32>,
-    pub hir_semantic_depth_link_b: LaniusBuffer<u32>,
-    pub hir_semantic_depth_value_a: LaniusBuffer<u32>,
-    pub hir_semantic_depth_value_b: LaniusBuffer<u32>,
-    pub hir_semantic_child_index_link_a: LaniusBuffer<u32>,
-    pub hir_semantic_child_index_link_b: LaniusBuffer<u32>,
-    pub hir_semantic_child_index_rank_a: LaniusBuffer<u32>,
-    pub hir_semantic_child_index_rank_b: LaniusBuffer<u32>,
+    pub tree_depth: LaniusBuffer<u32>,
     pub hir_semantic_count: LaniusBuffer<u32>,
     // -------- Canonical dense HIR phase boundary --------
     pub hir_canonical_params:

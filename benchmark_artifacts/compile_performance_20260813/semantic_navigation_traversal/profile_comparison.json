@@ -1,0 +1,25 @@
+{
+  "recorded_compute_passes": {
+    "after": 1422,
+    "before": 1470,
+    "reduction": 48
+  },
+  "semantic_navigation": {
+    "after_dispatch_count": 3,
+    "after_time_ms": 0.51008,
+    "before_dispatch_count": 50,
+    "before_time_ms": 6.077084,
+    "dispatch_reduction": 47,
+    "time_reduction_ms": 5.567004,
+    "time_reduction_percent": 91.61
+  },
+  "warm_wall_time": {
+    "baseline_mad_ms": 4.4471625,
+    "baseline_median_ms": 221.187803,
+    "final_first_mad_ms": 26.7444285,
+    "final_first_median_ms": 268.2456915,
+    "final_repeat_mad_ms": 23.8240865,
+    "final_repeat_median_ms": 266.5937895,
+    "note": "Final wall-time runs occurred under substantial concurrent desktop CPU/GPU load and are retained as measurements, not treated as a controlled regression comparison."
+  }
+}

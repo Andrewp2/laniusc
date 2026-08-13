@@ -1,0 +1,8 @@
+{
+  "gpu": "NVIDIA GeForce RTX 3090",
+  "gpu_driver": "580.173.02",
+  "gpu_memory_mib": 24576,
+  "kernel": "Linux 7.0.0-28-generic",
+  "machine": "x86_64",
+  "operating_system": "GNU/Linux"
+}

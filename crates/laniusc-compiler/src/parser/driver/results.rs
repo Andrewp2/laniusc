@@ -107,7 +107,7 @@ impl ParserFailure {
 
 #[cfg(test)]
 mod tests {
-    use super::{Ll1AcceptResult, ParserFailure};
+    use super::{Ll1AcceptResult, ParserFailure, validate_raw_tree_depth_status};
     use crate::parser::tables::{INVALID_TABLE_ENTRY, Ll1ParseErrorCode, PrecomputedParseTables};
 
     fn tiny_ident_semicolon_table() -> PrecomputedParseTables {
@@ -170,6 +170,17 @@ mod tests {
         assert_eq!(result.detail, 5);
         assert_eq!(result.steps, 6);
         assert_eq!(result.emit_len, 7);
+    }
+
+    #[test]
+    fn raw_tree_depth_status_rejects_malformed_parent_node() {
+        validate_raw_tree_depth_status(0).expect("zero depth status should be valid");
+
+        let error = validate_raw_tree_depth_status(42)
+            .expect_err("nonzero depth status should identify a malformed parent chain");
+        let message = error.to_string();
+        assert!(message.contains("raw parse-tree node 41"));
+        assert!(message.contains("malformed or cyclic parent chain"));
     }
 
     #[test]
@@ -485,15 +496,15 @@ impl RecordedResidentLl1HirCheck {
         &self,
         device: &wgpu::Device,
     ) -> anyhow::Result<Ll1AcceptResult> {
-        self.read_status_feature_flags_and_pointer_jump_steps_result(device)
-            .map(|(status, _feature_flags, _pointer_jump_steps)| status)
+        self.read_status_feature_flags_and_tree_depth_status_result(device)
+            .map(|(status, _feature_flags)| status)
     }
 
-    /// Reads parser status, feature mask, and the depth-bounded round count.
-    pub(crate) fn read_status_feature_flags_and_pointer_jump_steps_result(
+    /// Reads parser status and feature mask, rejecting malformed raw trees.
+    pub(crate) fn read_status_feature_flags_and_tree_depth_status_result(
         &self,
         device: &wgpu::Device,
-    ) -> anyhow::Result<(Ll1AcceptResult, u32, u32)> {
+    ) -> anyhow::Result<(Ll1AcceptResult, u32)> {
         self.begin_status_and_feature_flags_read().finish(device)
     }
 
@@ -510,11 +521,8 @@ impl RecordedResidentLl1HirCheck {
 }
 
 impl PendingResidentLl1HirStatus {
-    /// Waits for the queued map and decodes status plus GPU scheduling metadata.
-    pub(crate) fn finish(
-        self,
-        device: &wgpu::Device,
-    ) -> anyhow::Result<(Ll1AcceptResult, u32, u32)> {
+    /// Waits for the queued map and validates the raw-tree traversal invariant.
+    pub(crate) fn finish(self, device: &wgpu::Device) -> anyhow::Result<(Ll1AcceptResult, u32)> {
         crate::gpu::passes_core::finish_readback_map_blocking(device, self.map)?;
         let mapped = self.status_readback.slice(..).get_mapped_range();
         let words =
@@ -522,12 +530,20 @@ impl PendingResidentLl1HirStatus {
         drop(mapped);
         self.status_readback.unmap();
 
-        Ok((
-            Ll1AcceptResult::from_status_words(&words[..6]),
-            words[6],
-            words[7],
-        ))
+        validate_raw_tree_depth_status(words[7])?;
+
+        Ok((Ll1AcceptResult::from_status_words(&words[..6]), words[6]))
     }
+}
+
+fn validate_raw_tree_depth_status(status: u32) -> anyhow::Result<()> {
+    if status != 0 {
+        anyhow::bail!(
+            "internal parser invariant failed: raw parse-tree node {} has a malformed or cyclic parent chain",
+            status - 1
+        );
+    }
+    Ok(())
 }
 
 /// Recorded semantic-HIR count readback used by backend capacity planning.

@@ -3819,6 +3819,30 @@ fn parser_hir_semantic_parents_match_raw_tree_oracle_for_deeply_nested_source() 
         parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
     );
 
+    let mut maximum_raw_depth = 0usize;
+    for node in 0..parsed.parent.len() {
+        let mut ancestor = parsed.parent[node];
+        let mut depth = 0usize;
+        while ancestor != INVALID {
+            let ancestor_usize = ancestor as usize;
+            assert!(
+                ancestor_usize < parsed.parent.len(),
+                "raw parent chain for node {node} should remain in bounds"
+            );
+            depth += 1;
+            assert!(
+                depth <= parsed.parent.len(),
+                "raw parent chain for node {node} should be acyclic"
+            );
+            ancestor = parsed.parent[ancestor_usize];
+        }
+        maximum_raw_depth = maximum_raw_depth.max(depth);
+    }
+    assert!(
+        maximum_raw_depth > 32,
+        "fixture must exercise traversal beyond the former 32-hop local prefix; observed depth {maximum_raw_depth}"
+    );
+
     let semantic_nodes =
         active_semantic_nodes(&parsed.hir_semantic_dense_node, parsed.hir_kind.len());
     let mut raw_to_dense = vec![INVALID; parsed.hir_kind.len()];
@@ -3848,7 +3872,7 @@ fn parser_hir_semantic_parents_match_raw_tree_oracle_for_deeply_nested_source() 
         };
         assert_eq!(
             parsed.hir_semantic_parent[row], expected,
-            "hybrid GPU ancestor propagation should match the raw-tree oracle for semantic row {row}"
+            "GPU ancestor propagation should match the raw-tree oracle for semantic row {row}"
         );
     }
 }

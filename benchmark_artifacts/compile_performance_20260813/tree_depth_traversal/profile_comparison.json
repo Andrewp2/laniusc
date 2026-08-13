@@ -1,0 +1,25 @@
+{
+  "end_to_end": {
+    "baseline_mad_ms": 2.668113,
+    "baseline_median_ms": 220.747537,
+    "first_run_mad_ms": 3.9046915,
+    "first_run_median_ms": 228.0586985,
+    "repeat_mad_ms": 4.4471625,
+    "repeat_median_ms": 221.187803,
+    "repeat_regression_percent": 0.2
+  },
+  "raw_tree_depth": {
+    "after_dispatch_count": 1,
+    "after_time_ms": 1.09126,
+    "before_dispatch_count": 20,
+    "before_time_ms": 4.827616,
+    "dispatch_reduction": 19,
+    "time_reduction_ms": 3.736356,
+    "time_reduction_percent": 77.38
+  },
+  "recorded_compute_passes": {
+    "after": 1470,
+    "before": 1489,
+    "reduction": 19
+  }
+}

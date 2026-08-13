@@ -1,4 +1,4 @@
-// Project dense semantic-HIR navigation and seed depth accumulation.
+// Project dense semantic-HIR navigation and compute exact depth locally.
 //
 // The dense semantic tree is preorder. Once nearest semantic parents and
 // dense subtree ends are known, child/sibling navigation is a local record
@@ -22,8 +22,7 @@ StructuredBuffer<uint> hir_semantic_parent;
 
 RWStructuredBuffer<uint> hir_semantic_first_child;
 RWStructuredBuffer<uint> hir_semantic_next_sibling;
-RWStructuredBuffer<uint> hir_semantic_depth_link_a;
-RWStructuredBuffer<uint> hir_semantic_depth_value_a;
+RWStructuredBuffer<uint> hir_semantic_depth;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -71,20 +70,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint ancestor = parent;
     uint depth = 0u;
-    uint local_span = max(1u, gHirSemantic.semantic_parent_local_ancestor_span);
-    for (uint hop = 0u; hop < local_span; ++hop)
+    while (valid_semantic_row(ancestor, semantic_count) && depth < semantic_count)
     {
-        if (!valid_semantic_row(ancestor, semantic_count))
-            break;
         depth += 1u;
-        if (hop + 1u == local_span)
-        {
-            hir_semantic_depth_link_a[row] = ancestor;
-            hir_semantic_depth_value_a[row] = depth;
-            return;
-        }
         ancestor = hir_semantic_parent[ancestor];
     }
-    hir_semantic_depth_link_a[row] = INVALID;
-    hir_semantic_depth_value_a[row] = depth;
+    hir_semantic_depth[row] = depth;
 }

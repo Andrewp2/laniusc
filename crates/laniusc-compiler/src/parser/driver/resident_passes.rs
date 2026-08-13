@@ -152,17 +152,11 @@ impl GpuParser {
                 .hir_expr_fields
                 .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_fields_raw");
+            parser_clear_buffer(ctx.encoder, &bufs.tree_depth_status, 0, None);
             self.passes
-                .tree_depth_init
+                .tree_depth_traverse
                 .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_depth_init");
-            self.passes.tree_depth_step.record_steps_indirect(
-                ctx.device,
-                ctx.encoder,
-                ctx.buffers,
-                &bufs.tree_active_dispatch_args,
-            )?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_depth_step");
+            stamp_timer(timer_ref, ctx.encoder, "parser.tree_depth_traverse");
             self.passes
                 .tree_depth_block_max
                 .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
@@ -206,122 +200,27 @@ impl GpuParser {
                 .hir_semantic_subtree_end
                 .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_subtree_end");
-            self.passes.hir_semantic_parent_init.record_pass(
-                &mut ctx,
-                crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
-            )?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_parent_init");
             self.passes
-                .hir_tree_relations
-                .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_parent_step");
-            if parser_compute_pass_batching_enabled(timer_ref) {
-                self.passes
-                    .hir_semantic_parent_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-                let bg_cache = ctx
-                    .bg_cache
-                    .as_deref_mut()
-                    .expect("parser batching requires bind-group cache");
-                let mut batch = ComputePassBatch::begin(ctx.encoder, "parser.semantic-nav.batch");
-                batch.record_pass_indirect_cached(
-                    ctx.device,
-                    ctx.buffers,
-                    bg_cache,
-                    &self.passes.hir_semantic_nav_depth_init,
-                    &bufs.hir_semantic_dispatch_args,
-                )?;
-            } else {
-                self.passes
-                    .hir_semantic_parent_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_parent_scatter");
-                self.passes
-                    .hir_semantic_nav_depth_init
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_nav_depth_init");
-            }
-            self.passes.hir_semantic_depth_step.record_steps_indirect(
-                ctx.device,
-                ctx.encoder,
-                ctx.buffers,
-                &bufs.hir_semantic_dispatch_args,
-            )?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_depth_step");
-            self.passes
-                .hir_semantic_depth_block_max
+                .hir_semantic_parent_traverse
                 .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
             stamp_timer(
                 timer_ref,
                 ctx.encoder,
-                "parser.hir_semantic_depth_block_max",
+                "parser.hir_semantic_parent_traverse",
             );
-            self.passes.hir_semantic_depth_schedule.record_pass(
-                &mut ctx,
-                crate::gpu::passes_core::InputElements::Elements1D(256),
-            )?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_depth_schedule");
             crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-            if parser_dependency_batching_enabled(timer_ref) {
-                let bg_cache = ctx
-                    .bg_cache
-                    .as_deref_mut()
-                    .expect("parser batching requires bind-group cache");
-                let mut batch =
-                    ComputePassBatch::begin(ctx.encoder, "parser.semantic-child-index.batch");
-                batch.record_pass_indirect_cached(
-                    ctx.device,
-                    ctx.buffers,
-                    bg_cache,
-                    &self.passes.hir_semantic_child_index_clear,
-                    &bufs.hir_semantic_dispatch_args,
-                )?;
-                batch.record_pass_indirect_cached(
-                    ctx.device,
-                    ctx.buffers,
-                    bg_cache,
-                    &self.passes.hir_semantic_child_index_links,
-                    &bufs.hir_semantic_dispatch_args,
-                )?;
-            } else {
-                self.passes
-                    .hir_semantic_child_index_clear
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(
-                    timer_ref,
-                    ctx.encoder,
-                    "parser.hir_semantic_child_index_clear",
-                );
-                self.passes
-                    .hir_semantic_child_index_links
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(
-                    timer_ref,
-                    ctx.encoder,
-                    "parser.hir_semantic_child_index_links",
-                );
-            }
             self.passes
-                .hir_semantic_child_index_block_init
+                .hir_semantic_nav
+                .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_nav");
+            crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+            self.passes
+                .hir_semantic_child_index_traverse
                 .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
             stamp_timer(
                 timer_ref,
                 ctx.encoder,
-                "parser.hir_semantic_child_index_block_init",
-            );
-            self.passes
-                .hir_semantic_child_index_rank_step
-                .record_steps_indirect(
-                    ctx.device,
-                    ctx.encoder,
-                    ctx.buffers,
-                    &bufs.hir_semantic_dispatch_args,
-                )?;
-            stamp_timer(
-                timer_ref,
-                ctx.encoder,
-                "parser.hir_semantic_child_index_rank_step",
+                "parser.hir_semantic_child_index_traverse",
             );
             if include_hir_spans {
                 if parser_dependency_batching_enabled(timer_ref) {

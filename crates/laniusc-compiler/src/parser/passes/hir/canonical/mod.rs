@@ -14,9 +14,9 @@ pub mod matches;
 pub mod methods;
 pub mod nav;
 pub mod params;
-pub mod parent_links_init;
 pub mod paths;
 pub mod predicates;
+pub mod relations_init;
 pub mod scatter;
 pub mod stmt_compact;
 pub mod strings;
@@ -33,6 +33,12 @@ pub struct CanonicalHirParams {
     pub local_ancestor_span: u32,
     pub records_use_token_rows: u32,
 }
+
+/// Canonical family discovery already has a bounded parallel relation walk.
+/// Seed only the direct raw parent here; scanning a long local ancestor span
+/// for every raw grammar node duplicates that parallel work and makes sparse
+/// families cost proportional to `raw_nodes * span`.
+pub const RELATION_LOCAL_ANCESTOR_SPAN: u32 = 1;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, ShaderType)]

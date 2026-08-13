@@ -1,0 +1,14 @@
+{
+  "baseline_warm_compile_median_ms": 243.136594,
+  "command": "python3 tools/run_typical_lanius_matrix.py --file-counts 1000 --project-prefix target/typical-project- --samples 20 --target x86_64 --output benchmark_artifacts/compile_performance_20260813/canonical_relation_batch/results.json",
+  "first_job_excluded_from_warm_statistics": true,
+  "git_head_before_changes": "9260b46",
+  "samples": 20,
+  "target": "x86_64",
+  "workload": {
+    "file_count": 1000,
+    "generator_schema": "lanius.typical-project.v1",
+    "largest_source_file_bytes": 66475,
+    "source_bytes": 9171769
+  }
+}

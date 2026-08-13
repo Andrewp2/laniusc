@@ -14,6 +14,7 @@ use crate::{
 pub struct TreeRelationOperation {
     data: PassData,
     pair_data: PassData,
+    triple_data: PassData,
 }
 
 impl TreeRelationOperation {
@@ -30,6 +31,12 @@ impl TreeRelationOperation {
                 "hir_semantic_parent_pair_step",
                 "main",
                 "parser/hir/semantic/parent/pair_step",
+            )?,
+            triple_data: make_pass_data_from_shader_key(
+                device,
+                "hir_semantic_parent_triple_step",
+                "main",
+                "parser/hir/semantic/parent/triple_step",
             )?,
         })
     }
@@ -66,6 +73,53 @@ impl TreeRelationOperation {
         value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
         label: &'static str,
     ) -> Result<()> {
+        self.record_steps_for_buffers_after_local_span(
+            device,
+            encoder,
+            buffers,
+            link_a,
+            value_a,
+            link_b,
+            value_b,
+            SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+            label,
+        )
+    }
+
+    /// Propagates a canonical-family relation through the shared tree slots.
+    pub fn record_canonical_steps(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        label: &'static str,
+    ) -> Result<()> {
+        self.record_steps_for_buffers_after_local_span(
+            device,
+            encoder,
+            buffers,
+            &buffers.hir_semantic_parent_link_a,
+            &buffers.hir_semantic_parent_value_a,
+            &buffers.hir_semantic_parent_link_b,
+            &buffers.hir_semantic_parent_value_b,
+            crate::parser::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
+            label,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_steps_for_buffers_after_local_span(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        link_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        local_span: u32,
+        label: &'static str,
+    ) -> Result<()> {
         self.record_schedule(
             device,
             encoder,
@@ -73,29 +127,32 @@ impl TreeRelationOperation {
             &self.data,
             SINGLE_NAMES,
             TreeRelationBuffers::new(link_a, link_b, [value_a], [value_b]),
-            bounded_walk_steps_after_local_span(buffers.tree_capacity),
+            bounded_walk_steps_after_local_span(buffers.tree_capacity, local_span),
             &buffers.tree_active_dispatch_args.buffer,
             label,
         )
     }
 
-    /// Propagates two nearest-ancestor payload columns over one shared tree.
-    pub fn record_steps_for_two_values(
+    /// Propagates three canonical ancestor payloads over one shared link.
+    pub fn record_canonical_steps_for_three_values(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        relation: TreeRelationBuffers<'_, 2>,
+        relation: TreeRelationBuffers<'_, 3>,
         label: &'static str,
     ) -> Result<()> {
         self.record_schedule(
             device,
             encoder,
             buffers,
-            &self.pair_data,
-            PAIR_NAMES,
+            &self.triple_data,
+            TRIPLE_NAMES,
             relation,
-            bounded_walk_steps_after_local_span(buffers.tree_capacity),
+            bounded_walk_steps_after_local_span(
+                buffers.tree_capacity,
+                crate::parser::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
+            ),
             &buffers.tree_active_dispatch_args.buffer,
             label,
         )
@@ -216,6 +273,12 @@ const PAIR_NAMES: RelationNames<2> = RelationNames {
     values_in: ["first_value_in", "second_value_in"],
     values_out: ["first_value_out", "second_value_out"],
 };
+const TRIPLE_NAMES: RelationNames<3> = RelationNames {
+    link_in: "relation_link_in",
+    link_out: "relation_link_out",
+    values_in: ["first_value_in", "second_value_in", "third_value_in"],
+    values_out: ["first_value_out", "second_value_out", "third_value_out"],
+};
 
 #[derive(Clone, Copy)]
 pub struct TreeRelationBuffers<'a, const N: usize> {
@@ -263,8 +326,8 @@ pub(crate) fn pointer_jump_steps_after_local_span(items: u32) -> u32 {
     )
 }
 
-fn bounded_walk_steps_after_local_span(items: u32) -> u32 {
-    bounded_walk_step_capacity(items.max(1).div_ceil(SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN))
+fn bounded_walk_steps_after_local_span(items: u32, local_span: u32) -> u32 {
+    bounded_walk_step_capacity(items.max(1).div_ceil(local_span.max(1)))
 }
 
 #[cfg(test)]
@@ -309,10 +372,13 @@ mod tests {
 
     #[test]
     fn bounded_relation_walk_composes_local_ancestor_spans() {
-        assert_eq!(bounded_walk_steps_after_local_span(32), 0);
-        assert_eq!(bounded_walk_steps_after_local_span(33), 1);
-        assert_eq!(bounded_walk_steps_after_local_span(512), 1);
-        assert_eq!(bounded_walk_steps_after_local_span(513), 2);
-        assert_eq!(bounded_walk_steps_after_local_span(1_687_524), 4);
+        let span = SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN;
+        assert_eq!(bounded_walk_steps_after_local_span(32, span), 0);
+        assert_eq!(bounded_walk_steps_after_local_span(33, span), 1);
+        assert_eq!(bounded_walk_steps_after_local_span(512, span), 1);
+        assert_eq!(bounded_walk_steps_after_local_span(513, span), 2);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, span), 4);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 1), 6);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 2), 5);
     }
 }

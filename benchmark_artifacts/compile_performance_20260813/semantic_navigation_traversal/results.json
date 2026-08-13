@@ -1,0 +1,92 @@
+{
+  "first_job_excluded_from_warm_statistics": true,
+  "generator_schema": "lanius.typical-project.v1",
+  "rows": [
+    {
+      "cold_capacity_job_ms": 1016.2613899999999,
+      "edit_workspace_warmup_ms": 271.294713,
+      "file_count": 1000,
+      "largest_source_file_bytes": 66475,
+      "source_bytes": 9171769,
+      "source_files": 1000,
+      "transcript": "benchmark_artifacts/compile_performance_20260813/semantic_navigation_traversal/transcript-1000-x86_64.json",
+      "validated_exit_code": 0,
+      "validated_stdout": "1310\n",
+      "warm_compile": {
+        "mad_ms": 6.6452224999999885,
+        "max_ms": 245.673428,
+        "median_ms": 222.0107435,
+        "min_ms": 203.22886,
+        "samples": 20
+      },
+      "warm_created_bind_groups": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "warm_created_buffers": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "warm_job": {
+        "mad_ms": 6.5020820000000015,
+        "max_ms": 248.87751799999998,
+        "median_ms": 225.52535799999998,
+        "min_ms": 206.44168,
+        "samples": 20
+      },
+      "warm_load": {
+        "mad_ms": 0.03354900000000005,
+        "max_ms": 3.823299,
+        "median_ms": 3.2227740000000002,
+        "min_ms": 3.1146540000000003,
+        "samples": 20
+      },
+      "warm_write": {
+        "mad_ms": 4.999999999999996e-06,
+        "max_ms": 4.9999999999999996e-05,
+        "median_ms": 4e-05,
+        "min_ms": 2.9999999999999997e-05,
+        "samples": 20
+      }
+    }
+  ],
+  "schema": "lanius.typical-project-compiler-matrix.v1",
+  "target": "x86_64",
+  "warm_samples_per_cell": 20
+}

@@ -1,0 +1,92 @@
+{
+  "first_job_excluded_from_warm_statistics": true,
+  "generator_schema": "lanius.typical-project.v1",
+  "rows": [
+    {
+      "cold_capacity_job_ms": 1024.076853,
+      "edit_workspace_warmup_ms": 290.161842,
+      "file_count": 1000,
+      "largest_source_file_bytes": 66475,
+      "source_bytes": 9171769,
+      "source_files": 1000,
+      "transcript": "benchmark_artifacts/compile_performance_20260813/canonical_relation_batch/transcript-1000-x86_64.json",
+      "validated_exit_code": 0,
+      "validated_stdout": "1310\n",
+      "warm_compile": {
+        "mad_ms": 2.6681130000000053,
+        "max_ms": 239.265281,
+        "median_ms": 220.74753700000002,
+        "min_ms": 214.551026,
+        "samples": 20
+      },
+      "warm_created_bind_groups": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "warm_created_buffers": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "warm_job": {
+        "mad_ms": 2.841885000000005,
+        "max_ms": 243.06219000000002,
+        "median_ms": 223.9812875,
+        "min_ms": 217.788142,
+        "samples": 20
+      },
+      "warm_load": {
+        "mad_ms": 0.07972599999999996,
+        "max_ms": 3.7789099999999998,
+        "median_ms": 3.2920385000000003,
+        "min_ms": 3.15205,
+        "samples": 20
+      },
+      "warm_write": {
+        "mad_ms": 0.0,
+        "max_ms": 4.9999999999999996e-05,
+        "median_ms": 2.9999999999999997e-05,
+        "min_ms": 2.9999999999999997e-05,
+        "samples": 20
+      }
+    }
+  ],
+  "schema": "lanius.typical-project-compiler-matrix.v1",
+  "target": "x86_64",
+  "warm_samples_per_cell": 20
+}

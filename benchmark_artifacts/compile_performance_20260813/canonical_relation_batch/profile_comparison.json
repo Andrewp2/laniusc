@@ -1,0 +1,24 @@
+{
+  "after": {
+    "canonical_relation_event_count": 7,
+    "canonical_relation_time_ms": 4.441054,
+    "parser_hir_event_count": 546,
+    "parser_hir_time_ms": 69.792366
+  },
+  "before": {
+    "canonical_relation_event_count": 21,
+    "canonical_relation_time_ms": 7.211999999999999,
+    "parser_hir_event_count": 559,
+    "parser_hir_time_ms": 76.672242
+  },
+  "canonical_relation_time_reduction_percent": 38.42,
+  "parser_hir_time_reduction_percent": 8.98,
+  "profiler": "NVIDIA Nsight Graphics 2026.1 GPU Trace",
+  "warm_compile": {
+    "after_mad_ms": 2.668113,
+    "after_median_ms": 220.747537,
+    "before_mad_ms": 9.1373545,
+    "before_median_ms": 243.136594,
+    "reduction_percent": 9.21
+  }
+}

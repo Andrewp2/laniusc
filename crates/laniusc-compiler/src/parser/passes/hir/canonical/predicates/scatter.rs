@@ -57,7 +57,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPred
             ),
             (
                 "subject_anchor".into(),
-                b.hir_semantic_parent_value_a.as_entire_binding(),
+                b.hir_variant_payload_rank_a.as_entire_binding(),
             ),
             (
                 "owner_value".into(),

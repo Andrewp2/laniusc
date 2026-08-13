@@ -5,7 +5,6 @@ struct HirParams { uint n; uint uses_status_count; uint semantic_parent_local_an
 ConstantBuffer<HirParams> gHir;
 StructuredBuffer<uint> tree_active_dispatch_args;
 StructuredBuffer<uint> tree_depth_block_max;
-RWStructuredBuffer<uint> tree_pointer_jump_dispatch_args;
 RWStructuredBuffer<uint> hir_canonical_parent_dispatch_args;
 
 static const uint WG_SIZE = 256u;
@@ -33,20 +32,6 @@ void main(uint3 lane: SV_GroupThreadID)
     {
         if (lane.x < stride) lane_max_depth[lane.x] = max(lane_max_depth[lane.x], lane_max_depth[lane.x + stride]);
         GroupMemoryBarrierWithGroupSync();
-    }
-
-    uint required_steps = step_capacity(lane_max_depth[0u] + 1u);
-    uint capacity = step_capacity(gTree.n);
-    uint scheduled_steps = required_steps + ((required_steps ^ capacity) & 1u);
-    if (lane.x == 0u)
-        tree_pointer_jump_dispatch_args[max(capacity, 1u) * 3u] = scheduled_steps;
-    for (uint step = lane.x; step < capacity; step += WG_SIZE)
-    {
-        uint out = step * 3u;
-        bool enabled = step < scheduled_steps;
-        tree_pointer_jump_dispatch_args[out + 0u] = enabled ? tree_active_dispatch_args[0u] : 0u;
-        tree_pointer_jump_dispatch_args[out + 1u] = enabled ? tree_active_dispatch_args[1u] : 0u;
-        tree_pointer_jump_dispatch_args[out + 2u] = enabled ? tree_active_dispatch_args[2u] : 0u;
     }
 
     uint local_span = max(1u, gHir.semantic_parent_local_ancestor_span);

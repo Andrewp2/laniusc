@@ -5,19 +5,19 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Builds dense navigation and seeds semantic depth accumulation in one row pass.
-pub struct HirSemanticNavDepthInitPass {
+/// Builds dense navigation and computes exact semantic depth in one row pass.
+pub struct HirSemanticNavPass {
     data: PassData,
 }
 
 crate::gpu::passes_core::impl_static_shader_pass!(
-    HirSemanticNavDepthInitPass,
-    label: "hir_semantic_nav_depth_init",
+    HirSemanticNavPass,
+    label: "hir_semantic_nav",
     shader: "parser/hir/semantic/nav"
 );
 
-impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticNavDepthInitPass {
-    const NAME: &'static str = "hir_semantic_nav_depth_init";
+impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticNavPass {
+    const NAME: &'static str = "hir_semantic_nav";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
@@ -63,12 +63,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticNavDe
                 b.hir_semantic_next_sibling.as_entire_binding(),
             ),
             (
-                "hir_semantic_depth_link_a".into(),
-                b.hir_semantic_depth_link_a.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_depth_value_a".into(),
-                b.hir_semantic_depth_value_a.as_entire_binding(),
+                "hir_semantic_depth".into(),
+                b.hir_semantic_depth.as_entire_binding(),
             ),
         ])
     }

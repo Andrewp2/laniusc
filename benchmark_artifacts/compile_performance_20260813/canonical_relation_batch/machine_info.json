@@ -1,0 +1,8 @@
+{
+  "cpu_architecture": "x86_64",
+  "gpu": "NVIDIA GeForce RTX 3090",
+  "gpu_driver": "580.173.02",
+  "gpu_memory_mib": 24576,
+  "logical_cpus": 32,
+  "system": "Linux 7.0.0-28-generic x86_64 GNU/Linux"
+}

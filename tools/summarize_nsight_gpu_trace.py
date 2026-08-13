@@ -236,7 +236,7 @@ def parser_hir_stage(pass_name: str) -> str:
         return "parser.production_parsing_and_packing"
     if pass_name.startswith(("tree_", "parser.tree_")):
         return "parser.raw_tree_recovery"
-    if pass_name == "parser.semantic-nav.batch":
+    if pass_name in ("parser.semantic-nav.batch", "hir_semantic_nav"):
         return "hir.semantic_navigation_batch"
     if pass_name.startswith("hir_semantic_"):
         if any(marker in pass_name for marker in ("prefix", "compact", "dispatch")):

@@ -1,0 +1,92 @@
+{
+  "first_job_excluded_from_warm_statistics": true,
+  "generator_schema": "lanius.typical-project.v1",
+  "rows": [
+    {
+      "cold_capacity_job_ms": 1085.495026,
+      "edit_workspace_warmup_ms": 284.800977,
+      "file_count": 1000,
+      "largest_source_file_bytes": 66475,
+      "source_bytes": 9171769,
+      "source_files": 1000,
+      "transcript": "benchmark_artifacts/compile_performance_20260813/semantic_navigation_traversal/transcript-1000-x86_64.json",
+      "validated_exit_code": 0,
+      "validated_stdout": "1310\n",
+      "warm_compile": {
+        "mad_ms": 10.695577499999999,
+        "max_ms": 260.843437,
+        "median_ms": 243.3222575,
+        "min_ms": 222.881337,
+        "samples": 20
+      },
+      "warm_created_bind_groups": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "warm_created_buffers": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "warm_job": {
+        "mad_ms": 10.672718499999974,
+        "max_ms": 265.756614,
+        "median_ms": 247.03618899999998,
+        "min_ms": 226.445223,
+        "samples": 20
+      },
+      "warm_load": {
+        "mad_ms": 0.17081950000000012,
+        "max_ms": 5.1712679999999995,
+        "median_ms": 3.6930035,
+        "min_ms": 3.332476,
+        "samples": 20
+      },
+      "warm_write": {
+        "mad_ms": 1.0000000000000006e-05,
+        "max_ms": 0.00037,
+        "median_ms": 4e-05,
+        "min_ms": 2.9999999999999997e-05,
+        "samples": 20
+      }
+    }
+  ],
+  "schema": "lanius.typical-project-compiler-matrix.v1",
+  "target": "x86_64",
+  "warm_samples_per_cell": 20
+}

@@ -42,13 +42,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeDepthBlockMa
                     b.ll1_status.as_entire_binding()
                 },
             ),
-            (
-                "tree_depth".into(),
-                b.hir_semantic_depth_value_a.as_entire_binding(),
-            ),
+            ("tree_depth".into(), b.tree_depth.as_entire_binding()),
             (
                 "tree_depth_block_max".into(),
-                b.hir_semantic_depth_block_max.as_entire_binding(),
+                b.tree_depth_block_max.as_entire_binding(),
             ),
         ])
     }

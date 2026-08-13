@@ -584,16 +584,7 @@ impl GpuParser {
             24,
             4,
         );
-        parser_copy_buffer_to_buffer(
-            encoder,
-            &bufs.tree_pointer_jump_dispatch_args,
-            crate::parser::buffers::dispatch_args_schedule_count_offset(
-                crate::parser::buffers::pointer_jump_step_capacity(bufs.tree_capacity) as usize,
-            ),
-            &status_readback,
-            28,
-            4,
-        );
+        parser_copy_buffer_to_buffer(encoder, &bufs.tree_depth_status, 0, &status_readback, 28, 4);
         drop(parser_batch);
 
         let consumed = consume(bufs, encoder, timer_ref);

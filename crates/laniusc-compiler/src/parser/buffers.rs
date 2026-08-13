@@ -42,16 +42,15 @@ use sizing::{
     resident_partial_parse_tree_capacity,
     resident_virtual_pair_width,
 };
+pub(crate) use storage::pointer_jump_step_capacity;
 use storage::{
     alias_storage_buffer,
     dispatch_args_buffer,
     dispatch_args_schedule_buffer,
-    dispatch_args_schedule_with_count_buffer,
     reuse_or_allocate_u32_workspace,
     u32_workspace_subrange,
     workspace_subrange,
 };
-pub(crate) use storage::{dispatch_args_schedule_count_offset, pointer_jump_step_capacity};
 
 use crate::gpu::buffers::{
     JobResetPolicy,
@@ -956,11 +955,7 @@ impl ParserBuffers {
             dispatch_args_buffer(device, "parser.tree_match_dispatch_args");
         let tree_struct_dispatch_args =
             dispatch_args_buffer(device, "parser.tree_struct_dispatch_args");
-        let tree_pointer_jump_dispatch_args = dispatch_args_schedule_with_count_buffer(
-            device,
-            "parser.tree_pointer_jump_dispatch_args",
-            pointer_jump_step_capacity(tree_capacity) as usize,
-        );
+        let tree_depth_status = storage_rw_for_array::<u32>(device, "parser.tree_depth_status", 1);
         let canonical_parent_step_capacity =
             super::passes::hir::semantic::parent::step::pointer_jump_steps_after_local_span(
                 tree_capacity,
@@ -972,15 +967,10 @@ impl ParserBuffers {
         );
         let hir_semantic_dispatch_args =
             dispatch_args_buffer(device, "parser.hir_semantic_dispatch_args");
-        let hir_semantic_depth_block_max = storage_rw_for_array::<u32>(
+        let tree_depth_block_max = storage_rw_for_array::<u32>(
             device,
-            "parser.hir_semantic_depth_block_max",
+            "parser.tree_depth_block_max",
             tree_n_node_blocks as usize,
-        );
-        let hir_semantic_pointer_jump_dispatch_args = dispatch_args_schedule_buffer(
-            device,
-            "parser.hir_semantic_pointer_jump_dispatch_args",
-            pointer_jump_step_capacity(tree_capacity) as usize,
         );
         let tree_prefix_scan_steps =
             make_tree_prefix_scan_steps(device, tree_prefix_params_base, tree_n_node_blocks);
@@ -1407,22 +1397,8 @@ impl ParserBuffers {
             alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
         let hir_semantic_parent_value_b =
             alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let hir_semantic_depth_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_semantic_depth_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_semantic_depth_value_a =
+        let tree_depth =
             alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
-        let hir_semantic_depth_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let hir_semantic_child_index_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_semantic_child_index_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_semantic_child_index_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
-        let hir_semantic_child_index_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
         let hir_token_pos =
             storage_rw_for_array::<u32>(device, "parser.hir_token_pos", tree_capacity as usize);
         let hir_token_end =
@@ -2549,7 +2525,7 @@ impl ParserBuffers {
                 raw_capacity: tree_capacity,
                 canonical_capacity: hir_canonical_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
-                local_ancestor_span: super::passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+                local_ancestor_span: super::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
                 records_use_token_rows: u32::from(!retain_debug_hir_buffers),
             },
         );
@@ -3154,11 +3130,10 @@ impl ParserBuffers {
             tree_enum_dispatch_args,
             tree_match_dispatch_args,
             tree_struct_dispatch_args,
-            tree_pointer_jump_dispatch_args,
+            tree_depth_status,
             hir_canonical_parent_dispatch_args,
             hir_semantic_dispatch_args,
-            hir_semantic_depth_block_max,
-            hir_semantic_pointer_jump_dispatch_args,
+            tree_depth_block_max,
             tree_prefix_inblock,
             tree_block_sum,
             tree_block_prefix_a,
@@ -3265,14 +3240,7 @@ impl ParserBuffers {
             hir_semantic_parent_link_b,
             hir_semantic_parent_value_a,
             hir_semantic_parent_value_b,
-            hir_semantic_depth_link_a,
-            hir_semantic_depth_link_b,
-            hir_semantic_depth_value_a,
-            hir_semantic_depth_value_b,
-            hir_semantic_child_index_link_a,
-            hir_semantic_child_index_link_b,
-            hir_semantic_child_index_rank_a,
-            hir_semantic_child_index_rank_b,
+            tree_depth,
             hir_semantic_count,
             hir_canonical_params,
             hir_canonical_scan_params,

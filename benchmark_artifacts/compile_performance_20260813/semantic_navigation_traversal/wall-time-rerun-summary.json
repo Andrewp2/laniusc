@@ -1,0 +1,59 @@
+{
+  "baseline": {
+    "mad_ms": 4.4471625,
+    "median_ms": 221.187803,
+    "source": "tree_depth_traversal/results-repeat.json"
+  },
+  "environment": {
+    "available_memory_before_gib": 22,
+    "note": "The previous high-RAM process was absent. Runs 1-4 completed before a separate Creusot workload became visibly CPU-heavy; run 5 overlapped six creusot-rustc processes and had the widest dispersion. Desktop GPU activity remained present throughout."
+  },
+  "independent_runs": [
+    {
+      "mad_ms": 7.5423845,
+      "median_ms": 231.881925,
+      "samples": 20,
+      "source": "wall-time-rerun-1.json"
+    },
+    {
+      "mad_ms": 3.7478055,
+      "median_ms": 229.2496945,
+      "samples": 20,
+      "source": "wall-time-rerun-2.json"
+    },
+    {
+      "mad_ms": 4.43801,
+      "median_ms": 225.820164,
+      "samples": 20,
+      "source": "wall-time-rerun-3.json"
+    },
+    {
+      "mad_ms": 4.3007245,
+      "median_ms": 225.578015,
+      "samples": 20,
+      "source": "wall-time-rerun-4.json"
+    },
+    {
+      "mad_ms": 10.6955775,
+      "median_ms": 243.3222575,
+      "samples": 20,
+      "source": "wall-time-rerun-5.json",
+      "system_load": "overlapped six active creusot-rustc processes"
+    }
+  ],
+  "summary": {
+    "baseline_delta_percent": 3.644817,
+    "mean_of_run_medians_ms": 231.1704112,
+    "median_of_run_mads_ms": 4.43801,
+    "median_of_run_medians_ms": 229.2496945,
+    "run_median_max_ms": 243.3222575,
+    "run_median_min_ms": 225.578015,
+    "total_samples": 100
+  },
+  "workload": {
+    "file_count": 1000,
+    "largest_source_file_bytes": 66475,
+    "source_bytes": 9171769,
+    "target": "x86_64"
+  }
+}

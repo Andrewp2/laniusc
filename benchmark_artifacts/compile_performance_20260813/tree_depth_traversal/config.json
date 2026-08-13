@@ -1,0 +1,21 @@
+{
+  "baseline": "benchmark_artifacts/compile_performance_20260813/canonical_relation_batch/results.json",
+  "commands": [
+    "python3 tools/run_typical_lanius_matrix.py --file-counts 1000 --project-prefix target/typical-project- --samples 20 --target x86_64 --output benchmark_artifacts/compile_performance_20260813/tree_depth_traversal/results.json",
+    "python3 tools/run_typical_lanius_matrix.py --file-counts 1000 --project-prefix target/typical-project- --samples 20 --target x86_64 --output benchmark_artifacts/compile_performance_20260813/tree_depth_traversal/results-repeat.json"
+  ],
+  "first_job_excluded_from_warm_statistics": true,
+  "profile": {
+    "after_export": "target/nsight/lanius-tree-depth-traversal-1000-warm-20260813/BASE_UNLOCKED",
+    "before_export": "target/nsight/lanius-batched-canonical-three-1000-warm-20260813/BASE_UNLOCKED",
+    "profiler": "NVIDIA Nsight Graphics 2026.1 GPU Trace"
+  },
+  "samples_per_run": 20,
+  "target": "x86_64",
+  "workload": {
+    "file_count": 1000,
+    "generator_schema": "lanius.typical-project.v1",
+    "largest_source_file_bytes": 66475,
+    "source_bytes": 9171769
+  }
+}

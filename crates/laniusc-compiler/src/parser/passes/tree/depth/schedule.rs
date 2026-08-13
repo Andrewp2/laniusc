@@ -5,7 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Builds capacity-stable indirect commands from the actual raw-tree height.
+/// Builds semantic ancestor-search commands from the actual raw-tree height.
 pub struct TreeDepthSchedulePass {
     data: PassData,
 }
@@ -41,11 +41,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeDepthSchedul
             ),
             (
                 "tree_depth_block_max".into(),
-                b.hir_semantic_depth_block_max.as_entire_binding(),
-            ),
-            (
-                "tree_pointer_jump_dispatch_args".into(),
-                b.tree_pointer_jump_dispatch_args.as_entire_binding(),
+                b.tree_depth_block_max.as_entire_binding(),
             ),
             (
                 "hir_canonical_parent_dispatch_args".into(),
