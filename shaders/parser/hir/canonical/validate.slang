@@ -147,7 +147,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < type_arg_count)
     {
         HirTypeArg type_arg = hir_type_args[row];
-        if (type_arg.owner >= count || hir_core[type_arg.owner].kind != 5u)
+        if (type_arg.owner >= count ||
+            (hir_core[type_arg.owner].kind != 5u && hir_core[type_arg.owner].kind != 33u))
             type_arg_reason |= 8192u;
         if (type_arg.value >= count || hir_core[type_arg.value].kind != 5u)
             type_arg_reason |= 16384u;

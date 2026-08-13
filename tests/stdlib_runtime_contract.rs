@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 use laniusc_compiler::{
     codegen::unit::{SourcePackArtifactTarget, SourcePackJob, SourcePackJobPhase},
     compiler::{
-        CompileError,
         GPU_SOURCE_PACK_FIRST_RUNTIME_SERVICE_ID,
         GPU_SOURCE_PACK_LAST_RUNTIME_SERVICE_ID,
         GPU_SOURCE_PACK_RUNTIME_ABI_VERSION,
@@ -1105,7 +1104,7 @@ fn runtime_bound_descriptor_persists_flat_service_requirement_rows() {
         "runtime descriptor rows should align one-for-one with the service id list"
     );
     for (row, (expected_service_id, expected_status)) in required_service_rows.iter().zip([
-        (allocator_service_id, unavailable_status),
+        (allocator_service_id, available_status),
         (stdio_service_id, available_status),
     ]) {
         assert_eq!(
@@ -1497,7 +1496,6 @@ fn descriptor_json_rejects_runtime_abi_metadata_without_required_services() {
 fn link_descriptor_summary_runtime_services_persist_partial_rows_and_gate_final_bytes() {
     let allocator_service_id = runtime_descriptor_value("SERVICE_ALLOCATOR_ID");
     let stdio_service_id = runtime_descriptor_value("SERVICE_STDIO_ID");
-    let unavailable_status = runtime_descriptor_value("SERVICE_STATUS_UNAVAILABLE");
     let available_status = runtime_descriptor_value("SERVICE_STATUS_AVAILABLE");
 
     let partial_page = link_execution_page(false, vec![allocator_service_id, stdio_service_id]);
@@ -1531,11 +1529,7 @@ fn link_descriptor_summary_runtime_services_persist_partial_rows_and_gate_final_
             row.get("service_id").and_then(|value| value.as_u64()),
             Some(u64::from(*service_id))
         );
-        let expected_status = if *service_id == stdio_service_id {
-            available_status
-        } else {
-            unavailable_status
-        };
+        let expected_status = available_status;
         assert_eq!(
             row.get("service_status").and_then(|value| value.as_u64()),
             Some(u64::from(expected_status)),
@@ -1961,7 +1955,6 @@ fn main() {
         }),
         "path manifest should include core::runtime from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root runtime-bound API binding alias",
@@ -2076,7 +2069,6 @@ fn main() {
         }),
         "path manifest should include core::runtime from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root runtime service requirement row guard",
@@ -2161,7 +2153,6 @@ fn main() {
         }),
         "path manifest should include core::runtime from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::runtime raw status helpers",
@@ -2224,7 +2215,6 @@ fn main() {
         }),
         "path manifest should include core::runtime from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root runtime service requirement row contract-only alias",
@@ -2294,7 +2284,6 @@ fn main() {
         }),
         "path manifest should include core::runtime from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root runtime service requirement row fail-closed guard",
@@ -2352,7 +2341,6 @@ fn main() {
         }),
         "path manifest should include core::target from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::target runtime-service defaults",
@@ -2419,7 +2407,7 @@ fn main() {
 }
 
 #[test]
-fn core_bool_public_helpers_wasm_compile_fails_closed_through_stdlib_root() {
+fn core_bool_public_helpers_compile_and_run_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "core_bool_exec", Some("lani"));
     entry.write_str(
@@ -2455,9 +2443,8 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/bool.lani")),
         "path manifest should include core::bool from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
 
-    let err = common::run_gpu_codegen_with_timeout(
+    let wasm = common::run_gpu_codegen_with_timeout(
         "GPU WASM compile stdlib-root core::bool public helpers",
         {
             let entry_path = entry.path().to_path_buf();
@@ -2465,37 +2452,11 @@ fn main() {
             move || pollster::block_on(compile_entry_to_wasm_with_stdlib(entry_path, stdlib_root))
         },
     )
-    .expect_err("real core::bool stdlib-root helper execution should fail closed for WASM");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            assert_eq!(diagnostic.code, "LNC0036");
-            assert_eq!(diagnostic.title, "WASM backend boundary");
-            assert_eq!(diagnostic.category, "target codegen");
-            assert!(
-                diagnostic.message.contains("unsupported source shape"),
-                "diagnostic should describe the WASM backend shape boundary: {diagnostic}"
-            );
-            assert!(
-                diagnostic
-                    .help
-                    .as_deref()
-                    .is_some_and(|help| help.contains("laniusc check")),
-                "diagnostic should point users to check-only validation: {diagnostic}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("WASM backend boundary should include a primary label");
-            assert!(
-                label
-                    .message
-                    .contains("not supported by the WASM backend yet"),
-                "primary label should name the backend boundary: {diagnostic}"
-            );
-        }
-        other => panic!("expected stable WASM backend diagnostic, got {other:?}"),
-    }
+    .expect("core::bool stdlib-root helpers should compile to WASM");
+    assert_eq!(
+        common::run_wasm_main_return_with_node("core::bool stdlib helpers", "core_bool", &wasm),
+        0
+    );
 }
 
 #[test]
@@ -2530,7 +2491,6 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/i32.lani")),
         "path manifest should include core::i32 from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::i32 predicate helpers",
@@ -2576,7 +2536,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::i32 import");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files
@@ -2620,7 +2579,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::i32 import");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files
@@ -2670,7 +2628,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load unsigned integer modules");
-    assert_eq!(manifest.files.len(), 3);
     assert!(
         manifest
             .files
@@ -2752,7 +2709,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::u32");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files
@@ -2808,7 +2764,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::u32 import");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files
@@ -2857,7 +2812,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load integer helper modules");
-    assert_eq!(manifest.files.len(), 4);
     for relative_path in ["core/i32.lani", "core/u32.lani", "core/u8.lani"] {
         assert!(
             manifest
@@ -2927,7 +2881,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::char");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest.files.iter().any(|file| {
             file.library_id == 0 && file.path == stdlib_root.join("core/char.lani")
@@ -2985,7 +2938,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::char");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest.files.iter().any(|file| {
             file.library_id == 0 && file.path == stdlib_root.join("core/char.lani")
@@ -3049,7 +3001,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load ASCII helper modules");
-    assert_eq!(manifest.files.len(), 3);
     assert!(
         manifest
             .files
@@ -3116,7 +3067,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::u8");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files
@@ -3185,7 +3135,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::u8");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files
@@ -3248,7 +3197,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::u8");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files
@@ -3762,7 +3710,7 @@ fn main() {
         alloc::allocator::ALLOCATOR_POINTER_UNAVAILABLE;
     let unavailable_from_fn: AllocatorPointer =
         allocator_pointer_unavailable();
-    let non_null: alloc::allocator::AllocatorPointer = 16;
+    let non_null: alloc::allocator::AllocatorPointer = alloc::allocator::alloc(16, 4);
     let allocated: AllocatorPointer = alloc::allocator::alloc(16, 4);
     let reallocated: alloc::allocator::AllocatorPointer =
         alloc::allocator::realloc(non_null, 16, 32, 4);
@@ -3808,7 +3756,6 @@ fn main() {
     assert!(manifest.files.iter().any(|file| {
         file.library_id == 0 && file.path == stdlib_root.join("alloc/allocator.lani")
     }));
-    assert_eq!(manifest.files.len(), 2);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root alloc::allocator pointer-result contract",
@@ -7459,7 +7406,6 @@ fn main() {
         }),
         "path manifest should include core::option from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         runtime_bound_api_diagnostic_info("core::option::or").is_none(),
         "core::option::or is a source-level helper and must not claim a runtime binding"

@@ -1,0 +1,4931 @@
+{
+  "lanius_results": "target/perf-20260812/typical-100-1000-final-lanius.json",
+  "machine": {
+    "gpu": "NVIDIA GeForce RTX 3090, 580.173.02, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "versions": {
+      "cargo": "cargo 1.99.0-nightly (3efb1f477 2026-07-17)",
+      "g++": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "ninja": "1.11.1",
+      "rustc": "rustc 1.99.0-nightly (87e5904f5 2026-07-20)",
+      "zig": "0.16.0"
+    }
+  },
+  "measurement_policy": {
+    "debug_info": "disabled",
+    "lanius": "warm daemon edit job including request, source load, compile, and artifact write",
+    "native": "clean build; cleanup occurs before timed interval; default compiler parallelism",
+    "native_source_variation": "a semantics-neutral entry-source marker changes for every sample",
+    "validation": "every emitted artifact executed and exact stdout checked",
+    "zig_cache": "fresh local build cache per sample; persistent compiler-global cache; one unmeasured primer per lane"
+  },
+  "native_samples": [
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 0,
+      "wall_ms": 231.743655
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 1,
+      "wall_ms": 235.780834
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 2,
+      "wall_ms": 234.415754
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 3,
+      "wall_ms": 216.477673
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 4,
+      "wall_ms": 211.881334
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 5,
+      "wall_ms": 205.937316
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 6,
+      "wall_ms": 226.707502
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 7,
+      "wall_ms": 217.202196
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 8,
+      "wall_ms": 257.027472
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 9,
+      "wall_ms": 232.325492
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 10,
+      "wall_ms": 224.89852
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 11,
+      "wall_ms": 213.777924
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 12,
+      "wall_ms": 231.905259
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 13,
+      "wall_ms": 236.480308
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 14,
+      "wall_ms": 218.530557
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 15,
+      "wall_ms": 208.740852
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 16,
+      "wall_ms": 203.94876
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 17,
+      "wall_ms": 208.0029
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 18,
+      "wall_ms": 267.596139
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "sample": 19,
+      "wall_ms": 225.798336
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 0,
+      "wall_ms": 411.557404
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 1,
+      "wall_ms": 415.294665
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 2,
+      "wall_ms": 441.573626
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 3,
+      "wall_ms": 468.05117
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 4,
+      "wall_ms": 455.238387
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 5,
+      "wall_ms": 438.141335
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 6,
+      "wall_ms": 440.451568
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 7,
+      "wall_ms": 439.576561
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 8,
+      "wall_ms": 427.416594
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 9,
+      "wall_ms": 433.299066
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 10,
+      "wall_ms": 424.828701
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 11,
+      "wall_ms": 411.667501
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 12,
+      "wall_ms": 446.708466
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 13,
+      "wall_ms": 462.9752
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 14,
+      "wall_ms": 466.115033
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 15,
+      "wall_ms": 424.130537
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 16,
+      "wall_ms": 471.806541
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 17,
+      "wall_ms": 445.389625
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 18,
+      "wall_ms": 393.093294
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 19,
+      "wall_ms": 455.426551
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 0,
+      "wall_ms": 270.651186
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 1,
+      "wall_ms": 238.987556
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 2,
+      "wall_ms": 249.294122
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 3,
+      "wall_ms": 258.625864
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 4,
+      "wall_ms": 271.231045
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 5,
+      "wall_ms": 258.972572
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 6,
+      "wall_ms": 243.292186
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 7,
+      "wall_ms": 253.699668
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 8,
+      "wall_ms": 251.087655
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 9,
+      "wall_ms": 270.211533
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 10,
+      "wall_ms": 270.441174
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 11,
+      "wall_ms": 273.855867
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 12,
+      "wall_ms": 235.034133
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 13,
+      "wall_ms": 233.931745
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 14,
+      "wall_ms": 237.773021
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 15,
+      "wall_ms": 235.260225
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 16,
+      "wall_ms": 239.559985
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 17,
+      "wall_ms": 245.332949
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 18,
+      "wall_ms": 259.770282
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 19,
+      "wall_ms": 253.590183
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 0,
+      "wall_ms": 433.875226
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 1,
+      "wall_ms": 441.841768
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 2,
+      "wall_ms": 520.129012
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 3,
+      "wall_ms": 479.307553
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 4,
+      "wall_ms": 476.691751
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 5,
+      "wall_ms": 483.126791
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 6,
+      "wall_ms": 467.387428
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 7,
+      "wall_ms": 539.875807
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 8,
+      "wall_ms": 458.47962
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 9,
+      "wall_ms": 456.715845
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 10,
+      "wall_ms": 443.606384
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 11,
+      "wall_ms": 472.405661
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 12,
+      "wall_ms": 454.807997
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 13,
+      "wall_ms": 457.14539
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 14,
+      "wall_ms": 497.661551
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 15,
+      "wall_ms": 499.107927
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 16,
+      "wall_ms": 461.215689
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 17,
+      "wall_ms": 448.424785
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 18,
+      "wall_ms": 470.512113
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 19,
+      "wall_ms": 508.336244
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 955.428549
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 984.974159
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 971.624617
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 936.682149
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 973.593924
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 993.083859
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 999.308528
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 1007.665016
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 968.318262
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 1027.435251
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 929.779649
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 1033.266885
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 958.660284
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 993.708869
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 1035.220374
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 973.882809
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 1091.039976
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 1013.720196
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 1041.486163
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 1038.801382
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 1013.976128
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 1072.003498
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 1063.91312
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 1008.006972
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 1049.871983
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 1056.466088
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 980.103052
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 1110.051714
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 1003.906937
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 946.321091
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 1130.816432
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 996.414177
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 946.505316
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 968.830636
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 988.345929
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 1040.399881
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 993.517948
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 943.812798
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 1066.136664
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 1017.322212
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-0",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 0,
+      "wall_ms": 524.316479
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-1",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 1,
+      "wall_ms": 525.229365
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-2",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 2,
+      "wall_ms": 544.755598
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-3",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 3,
+      "wall_ms": 527.304968
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-4",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 4,
+      "wall_ms": 525.220606
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-5",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 5,
+      "wall_ms": 535.809712
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-6",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 6,
+      "wall_ms": 550.130458
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-7",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 7,
+      "wall_ms": 510.638269
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-8",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 8,
+      "wall_ms": 539.366489
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-9",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 9,
+      "wall_ms": 554.501376
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-10",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 10,
+      "wall_ms": 549.496853
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-11",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 11,
+      "wall_ms": 531.514383
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-12",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 12,
+      "wall_ms": 559.891675
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-13",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 13,
+      "wall_ms": 520.823171
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-14",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 14,
+      "wall_ms": 514.903581
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-15",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 15,
+      "wall_ms": 567.409327
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-16",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 16,
+      "wall_ms": 552.363307
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-17",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 17,
+      "wall_ms": 527.629868
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-18",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 18,
+      "wall_ms": 494.336097
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-19",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 19,
+      "wall_ms": 561.723329
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-0",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 0,
+      "wall_ms": 4290.231924
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-1",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 1,
+      "wall_ms": 4564.479574
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-2",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 2,
+      "wall_ms": 4420.53203
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-3",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 3,
+      "wall_ms": 4256.378247
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-4",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 4,
+      "wall_ms": 4249.081515
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-5",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 5,
+      "wall_ms": 4350.110174
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-6",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 6,
+      "wall_ms": 4316.26043
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-7",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 7,
+      "wall_ms": 4376.412839
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-8",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 8,
+      "wall_ms": 4520.250684
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-9",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 9,
+      "wall_ms": 4355.435074
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-10",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 10,
+      "wall_ms": 4332.724107
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-11",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 11,
+      "wall_ms": 4315.778934
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-12",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 12,
+      "wall_ms": 4446.561336
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-13",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 13,
+      "wall_ms": 4478.166647
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-14",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 14,
+      "wall_ms": 4262.020474
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-15",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 15,
+      "wall_ms": 4362.440436
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-16",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 16,
+      "wall_ms": 4353.445657
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-17",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 17,
+      "wall_ms": 4341.030985
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-18",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 18,
+      "wall_ms": 4715.936498
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-19",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 19,
+      "wall_ms": 4254.518957
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 0,
+      "wall_ms": 1874.613482
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 1,
+      "wall_ms": 1753.028875
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 2,
+      "wall_ms": 1685.279545
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 3,
+      "wall_ms": 1690.253391
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 4,
+      "wall_ms": 1724.152522
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 5,
+      "wall_ms": 1758.235216
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 6,
+      "wall_ms": 1725.59934
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 7,
+      "wall_ms": 1806.115697
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 8,
+      "wall_ms": 1719.520588
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 9,
+      "wall_ms": 1719.824018
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 10,
+      "wall_ms": 1788.800094
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 11,
+      "wall_ms": 1695.247824
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 12,
+      "wall_ms": 1712.446605
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 13,
+      "wall_ms": 1795.17861
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 14,
+      "wall_ms": 1727.14106
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 15,
+      "wall_ms": 1718.102898
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 16,
+      "wall_ms": 1784.256839
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 17,
+      "wall_ms": 1730.48744
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 18,
+      "wall_ms": 1721.159327
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "sample": 19,
+      "wall_ms": 1744.213421
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 0,
+      "wall_ms": 3075.183269
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 1,
+      "wall_ms": 3039.980111
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 2,
+      "wall_ms": 3107.014461
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 3,
+      "wall_ms": 3111.728269
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 4,
+      "wall_ms": 3127.020924
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 5,
+      "wall_ms": 3094.460537
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 6,
+      "wall_ms": 3073.76422
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 7,
+      "wall_ms": 3099.349852
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 8,
+      "wall_ms": 3070.868963
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 9,
+      "wall_ms": 3036.319561
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 10,
+      "wall_ms": 3027.736922
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 11,
+      "wall_ms": 3061.124274
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 12,
+      "wall_ms": 3121.555571
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 13,
+      "wall_ms": 3060.085299
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 14,
+      "wall_ms": 3047.910093
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 15,
+      "wall_ms": 3061.425134
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 16,
+      "wall_ms": 3105.762219
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 17,
+      "wall_ms": 3145.848792
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 18,
+      "wall_ms": 3012.517291
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "sample": 19,
+      "wall_ms": 3067.014218
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 0,
+      "wall_ms": 1905.859788
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 1,
+      "wall_ms": 1995.271066
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 2,
+      "wall_ms": 1990.921769
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 3,
+      "wall_ms": 1946.787991
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 4,
+      "wall_ms": 1995.918677
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 5,
+      "wall_ms": 2005.839169
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 6,
+      "wall_ms": 1957.888251
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 7,
+      "wall_ms": 2076.437637
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 8,
+      "wall_ms": 1953.983319
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 9,
+      "wall_ms": 2017.799969
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 10,
+      "wall_ms": 1945.846353
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 11,
+      "wall_ms": 2025.91723
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 12,
+      "wall_ms": 1944.237745
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 13,
+      "wall_ms": 2010.34374
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 14,
+      "wall_ms": 1934.395793
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 15,
+      "wall_ms": 2012.81712
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 16,
+      "wall_ms": 1965.693973
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 17,
+      "wall_ms": 1966.926877
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 18,
+      "wall_ms": 1950.577717
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-o0.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "sample": 19,
+      "wall_ms": 1925.162371
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 0,
+      "wall_ms": 3299.467369
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 1,
+      "wall_ms": 3281.791899
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 2,
+      "wall_ms": 3327.85261
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 3,
+      "wall_ms": 3361.125547
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 4,
+      "wall_ms": 3384.788991
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 5,
+      "wall_ms": 3399.625853
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 6,
+      "wall_ms": 3311.228759
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 7,
+      "wall_ms": 3329.365708
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 8,
+      "wall_ms": 3369.081426
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 9,
+      "wall_ms": 3341.495924
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 10,
+      "wall_ms": 3376.604352
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 11,
+      "wall_ms": 3318.245183
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 12,
+      "wall_ms": 3318.816814
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 13,
+      "wall_ms": 3321.565684
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 14,
+      "wall_ms": 3327.13553
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 15,
+      "wall_ms": 3368.580154
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 16,
+      "wall_ms": 3371.99345
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 17,
+      "wall_ms": 3342.46188
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 18,
+      "wall_ms": 3303.210099
+    },
+    {
+      "command": [
+        "ninja",
+        "-f",
+        "build-optimized.ninja"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "sample": 19,
+      "wall_ms": 3371.002975
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 9265.413172
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 9173.224984
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 9048.465565
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 9032.591682
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 9198.25585
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 9232.624363
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 9507.122321
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 9299.41316
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 9646.031693
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 9288.789469
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 9228.262222
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 9236.809412
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 9216.305989
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 9272.2165
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 9419.595597
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 8898.872563
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 9336.002229
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 9530.027606
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 9325.629623
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 9037.785765
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 9012.244207
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 8646.660741
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 8546.988689
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 8873.20385
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 8792.441598
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 8766.965025
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 8900.404997
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 8686.043127
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 8861.187943
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 8737.158084
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 9078.040153
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 8957.778063
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 9036.365
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 9117.441934
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 9031.167474
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 8682.657355
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 8960.760314
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 8786.160357
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 8846.041087
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 8928.392242
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-0",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 0,
+      "wall_ms": 1759.446124
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-1",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 1,
+      "wall_ms": 1905.917145
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-2",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 2,
+      "wall_ms": 1793.458884
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-3",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 3,
+      "wall_ms": 1772.087768
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-4",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 4,
+      "wall_ms": 1872.331411
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-5",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 5,
+      "wall_ms": 1829.723122
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-6",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 6,
+      "wall_ms": 1749.901181
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-7",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 7,
+      "wall_ms": 1758.780722
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-8",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 8,
+      "wall_ms": 1819.963495
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-9",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 9,
+      "wall_ms": 1760.904614
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-10",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 10,
+      "wall_ms": 1752.373251
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-11",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 11,
+      "wall_ms": 1926.525155
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-12",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 12,
+      "wall_ms": 1903.296416
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-13",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 13,
+      "wall_ms": 1841.349033
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-14",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 14,
+      "wall_ms": 1784.706143
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-15",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 15,
+      "wall_ms": 1829.562181
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-16",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 16,
+      "wall_ms": 2008.166611
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-17",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 17,
+      "wall_ms": 1955.115728
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-18",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 18,
+      "wall_ms": 1970.154631
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "Debug",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/local-19",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-o0/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-o0"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "sample": 19,
+      "wall_ms": 1805.692817
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-0",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 0,
+      "wall_ms": 18093.68823
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-1",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 1,
+      "wall_ms": 18794.193759
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-2",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 2,
+      "wall_ms": 18040.824192
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-3",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 3,
+      "wall_ms": 18605.355361
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-4",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 4,
+      "wall_ms": 18015.800788
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-5",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 5,
+      "wall_ms": 17994.491185
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-6",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 6,
+      "wall_ms": 18159.830845
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-7",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 7,
+      "wall_ms": 18686.474677
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-8",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 8,
+      "wall_ms": 18462.746293
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-9",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 9,
+      "wall_ms": 18098.056128
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-10",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 10,
+      "wall_ms": 17442.983502
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-11",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 11,
+      "wall_ms": 18221.204302
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-12",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 12,
+      "wall_ms": 18016.487537
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-13",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 13,
+      "wall_ms": 18188.719197
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-14",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 14,
+      "wall_ms": 18030.704841
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-15",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 15,
+      "wall_ms": 17796.382969
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-16",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 16,
+      "wall_ms": 17814.534816
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-17",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 17,
+      "wall_ms": 17845.851543
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-18",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 18,
+      "wall_ms": 18644.883873
+    },
+    {
+      "command": [
+        "zig",
+        "build-exe",
+        "-lc",
+        "-O",
+        "ReleaseFast",
+        "-fstrip",
+        "main.zig",
+        "--cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/local-19",
+        "--global-cache-dir",
+        "/home/andrew-peterson/code/laniusc/target/typical-project-1000/.benchmark-cache/zig-optimized/global",
+        "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-1000/zig/typical-project-optimized"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "sample": 19,
+      "wall_ms": 18625.471941
+    }
+  ],
+  "rows": [
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 9.749865999999983,
+        "max_ms": 267.596139,
+        "median_ms": 225.348428,
+        "min_ms": 203.94876,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "o0",
+      "language": "c",
+      "source_bytes": 919373,
+      "source_files": 100,
+      "speedup_vs_lanius": 2.6542307794439504
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 15.318404499999986,
+        "max_ms": 471.806541,
+        "median_ms": 440.0140645,
+        "min_ms": 393.093294,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "c",
+      "source_bytes": 919373,
+      "source_files": 100,
+      "speedup_vs_lanius": 5.182635990627525
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 13.065148499999992,
+        "max_ms": 273.855867,
+        "median_ms": 252.338919,
+        "min_ms": 233.931745,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "o0",
+      "language": "cpp",
+      "source_bytes": 832733,
+      "source_files": 100,
+      "speedup_vs_lanius": 2.9721340042425934
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 14.159397000000013,
+        "max_ms": 539.875807,
+        "median_ms": 468.9497705,
+        "min_ms": 433.875226,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "cpp",
+      "source_bytes": 832733,
+      "source_files": 100,
+      "speedup_vs_lanius": 5.523450622314865
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 29.55849450000005,
+        "max_ms": 1091.039976,
+        "median_ms": 993.396364,
+        "min_ms": 929.779649,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "source_bytes": 801111,
+      "source_files": 100,
+      "speedup_vs_lanius": 11.70056178744014
+    },
+    {
+      "artifact_sha256_count": 2,
+      "compile": {
+        "mad_ms": 40.52067349999999,
+        "max_ms": 1130.816432,
+        "median_ms": 1010.99155,
+        "min_ms": 943.812798,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "source_bytes": 801111,
+      "source_files": 100,
+      "speedup_vs_lanius": 11.907803899868993
+    },
+    {
+      "artifact_sha256_count": 20,
+      "compile": {
+        "mad_ms": 14.336840999999993,
+        "max_ms": 567.409327,
+        "median_ms": 533.6620475,
+        "min_ms": 494.336097,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "o0",
+      "language": "zig",
+      "source_bytes": 805095,
+      "source_files": 100,
+      "speedup_vs_lanius": 6.285653930967644
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 65.1500530000003,
+        "max_ms": 4715.936498,
+        "median_ms": 4351.777915500001,
+        "min_ms": 4249.081515,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "zig",
+      "source_bytes": 805095,
+      "source_files": 100,
+      "speedup_vs_lanius": 51.25672715420289
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 22.250948000000108,
+        "max_ms": 1874.613482,
+        "median_ms": 1726.3701999999998,
+        "min_ms": 1685.279545,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "c",
+      "source_bytes": 10364217,
+      "source_files": 1000,
+      "speedup_vs_lanius": 7.3244596380390155
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 29.684870499999988,
+        "max_ms": 3145.848792,
+        "median_ms": 3072.3165915,
+        "min_ms": 3012.517291,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "c",
+      "source_bytes": 10364217,
+      "source_files": 1000,
+      "speedup_vs_lanius": 13.034897653886377
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 29.28444649999983,
+        "max_ms": 2076.437637,
+        "median_ms": 1966.3104250000001,
+        "min_ms": 1905.859788,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "cpp",
+      "source_bytes": 9320211,
+      "source_files": 1000,
+      "speedup_vs_lanius": 8.34245247268972
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 28.9577240000001,
+        "max_ms": 3399.625853,
+        "median_ms": 3335.430816,
+        "min_ms": 3281.791899,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "cpp",
+      "source_bytes": 9320211,
+      "source_files": 1000,
+      "speedup_vs_lanius": 14.151210665744545
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 76.20231950000016,
+        "max_ms": 9646.031693,
+        "median_ms": 9251.111292000001,
+        "min_ms": 8898.872563,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "source_bytes": 8986449,
+      "source_files": 1000,
+      "speedup_vs_lanius": 39.2496298101421
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 115.1343420000012,
+        "max_ms": 9117.441934,
+        "median_ms": 8867.195896500001,
+        "min_ms": 8546.988689,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "source_bytes": 8986449,
+      "source_files": 1000,
+      "speedup_vs_lanius": 37.620794454456785
+    },
+    {
+      "artifact_sha256_count": 20,
+      "compile": {
+        "mad_ms": 64.58746900000006,
+        "max_ms": 2008.166611,
+        "median_ms": 1824.762838,
+        "min_ms": 1749.901181,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "zig",
+      "source_bytes": 9005077,
+      "source_files": 1000,
+      "speedup_vs_lanius": 7.741909444408001
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 187.6763794999988,
+        "max_ms": 18794.193759,
+        "median_ms": 18095.872178999998,
+        "min_ms": 17442.983502,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "zig",
+      "source_bytes": 9005077,
+      "source_files": 1000,
+      "speedup_vs_lanius": 76.77523939546607
+    },
+    {
+      "cold_capacity_job_ms": 328.57538400000004,
+      "compile": {
+        "mad_ms": 5.401903999999988,
+        "max_ms": 99.991173,
+        "median_ms": 84.90159550000001,
+        "min_ms": 76.29063599999999,
+        "samples": 20
+      },
+      "compiler_only": {
+        "mad_ms": 5.320246500000003,
+        "max_ms": 98.95472199999999,
+        "median_ms": 84.4769915,
+        "min_ms": 75.899892,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "warm_daemon",
+      "language": "lanius",
+      "source_bytes": 820976,
+      "source_files": 100,
+      "speedup_vs_lanius": 1.0
+    },
+    {
+      "cold_capacity_job_ms": 1027.41544,
+      "compile": {
+        "mad_ms": 8.35499900000002,
+        "max_ms": 262.621843,
+        "median_ms": 235.69932599999999,
+        "min_ms": 220.00145099999997,
+        "samples": 20
+      },
+      "compiler_only": {
+        "mad_ms": 7.9960570000000075,
+        "max_ms": 258.885653,
+        "median_ms": 232.613486,
+        "min_ms": 216.633476,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "warm_daemon",
+      "language": "lanius",
+      "source_bytes": 9171769,
+      "source_files": 1000,
+      "speedup_vs_lanius": 1.0
+    }
+  ],
+  "schema": "lanius.typical-project-comparison.v1"
+}

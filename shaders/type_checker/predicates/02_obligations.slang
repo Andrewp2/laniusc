@@ -86,7 +86,7 @@ static const uint INVALID = 0xffffffffu;
 
 static const uint ERR_TRAIT_BOUND_UNSATISFIED = 13u;
 static const uint ERR_TRAIT_BOUND_AMBIGUOUS = 14u;
-static const uint ERR_BAD_HIR = 6u;
+static const uint ERR_INVALID_TRAIT_IMPLEMENTATION = 17u;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
@@ -979,7 +979,10 @@ void validate_unique_impl_key(uint impl_node)
         uint token_i = valid_token(compact_hir_core[impl_node].token_start)
             ? compact_hir_core[impl_node].token_start
             : 0u;
-        record_error(token_i, ERR_BAD_HIR, PREDICATE_STATUS_INVALID_IMPL_ARG);
+        record_error(
+            token_i,
+            ERR_INVALID_TRAIT_IMPLEMENTATION,
+            PREDICATE_STATUS_INVALID_IMPL_ARG);
         return;
     }
 
@@ -1007,7 +1010,10 @@ void validate_unique_impl_key(uint impl_node)
         uint token_i = valid_token(compact_hir_core[impl_node].token_start)
             ? compact_hir_core[impl_node].token_start
             : 0u;
-        record_error(token_i, ERR_BAD_HIR, PREDICATE_STATUS_OVERLAPPING_IMPL);
+        record_error(
+            token_i,
+            ERR_INVALID_TRAIT_IMPLEMENTATION,
+            PREDICATE_STATUS_OVERLAPPING_IMPL);
         return;
     }
     if (match_count <= 1u)
@@ -1019,7 +1025,10 @@ void validate_unique_impl_key(uint impl_node)
     uint token_i = valid_token(compact_hir_core[impl_node].token_start)
         ? compact_hir_core[impl_node].token_start
         : 0u;
-    record_error(token_i, ERR_BAD_HIR, PREDICATE_STATUS_OVERLAPPING_IMPL);
+    record_error(
+        token_i,
+        ERR_INVALID_TRAIT_IMPLEMENTATION,
+        PREDICATE_STATUS_OVERLAPPING_IMPL);
 }
 
 void validate_predicate_fail_closed_status(uint node)
@@ -1105,7 +1114,10 @@ void validate_predicate_fail_closed_status(uint node)
         token_i = predicate_bound_second_arg_token[node];
     if (!valid_token(token_i))
         token_i = compact_hir_core[node].token_start;
-    record_error(valid_token(token_i) ? token_i : 0u, ERR_BAD_HIR, status_value);
+    record_error(
+        valid_token(token_i) ? token_i : 0u,
+        ERR_INVALID_TRAIT_IMPLEMENTATION,
+        status_value);
 }
 
 void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)

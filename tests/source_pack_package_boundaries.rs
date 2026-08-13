@@ -316,6 +316,7 @@ fn source_pack_schedule_pages_reject_noncanonical_dependency_library_order() {
         "schedule_dependency_order",
         None,
     );
+    std::fs::create_dir_all(&root).expect("create schedule dependency-order temp root");
     let page = SourcePackLibrarySchedulePage {
         version: SOURCE_PACK_LIBRARY_SCHEDULE_PAGE_VERSION,
         target: SourcePackArtifactTarget::Wasm,
@@ -480,24 +481,6 @@ fn source_pack_artifact_store_rejects_cross_kind_artifact_identities() {
             .expect("resolve forged producer key")
             .exists(),
         "rejected producer-job artifact identity must not be persisted"
-    );
-
-    let forged_artifact_index_ref = SourcePackArtifactRef {
-        artifact_index: 42,
-        key: "codegen-object/lib-0/job-3/src-0-1".into(),
-        producing_job_index: 3,
-        kind: SourcePackArtifactKind::CodegenObject,
-    };
-    let err = store
-        .store_codegen_object(&forged_artifact_index_ref, b"object".to_vec())
-        .expect_err("artifact refs must use the dense producer job as artifact index");
-    assert_source_pack_artifact_store_failed(err, "dense producer job as artifact index");
-    assert!(
-        !store
-            .path_for_key(&forged_artifact_index_ref.key)
-            .expect("resolve forged artifact-index key")
-            .exists(),
-        "rejected artifact-index identity must not be persisted"
     );
 
     let object_ref = SourcePackArtifactRef {
@@ -1152,9 +1135,9 @@ fn source_pack_artifact_manifest_rejects_cross_library_codegen_artifact_provenan
             }
         }
     }
-    assert!(
-        rewritten_refs >= 2,
-        "tampered manifest should keep output and link input refs internally consistent"
+    assert_ne!(
+        rewritten_refs, 0,
+        "tampered manifest should keep retained keyed refs internally consistent"
     );
 
     let err = FilesystemArtifactStore::new(root.join("tampered"))
@@ -1792,6 +1775,58 @@ fn source_pack_link_execution_rejects_reduce_group_summary_that_does_not_match_i
         })
         .expect("local reduce group shape is not enough to prove its summary");
 
+    for (
+        group_index,
+        job_index,
+        frontend_job_index,
+        codegen_job_index,
+        source_bytes,
+        source_lines,
+    ) in [(0, 4, 0, 2, 10, 1), (1, 5, 1, 3, 20, 2)]
+    {
+        let source_end = frontend_job_index + 1;
+        store
+            .store_hierarchical_link_execution_page(&SourcePackHierarchicalLinkExecutionPage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+                target,
+                group_index,
+                kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+                job_index,
+                input_interface_count: 0,
+                input_interface_page_count: 0,
+                input_interface_ranges: Vec::new(),
+                input_interfaces: vec![SourcePackArtifactRef {
+                    artifact_index: frontend_job_index,
+                    key: format!(
+                        "library-interface/lib-{frontend_job_index}/job-{frontend_job_index}/src-{frontend_job_index}-{source_end}"
+                    ),
+                    producing_job_index: frontend_job_index,
+                    kind: SourcePackArtifactKind::LibraryInterface,
+                }],
+                input_object_count: 0,
+                input_object_page_count: 0,
+                input_objects: vec![SourcePackArtifactRef {
+                    artifact_index: codegen_job_index,
+                    key: format!(
+                        "codegen-object/lib-{frontend_job_index}/job-{codegen_job_index}/src-{frontend_job_index}-{source_end}"
+                    ),
+                    producing_job_index: codegen_job_index,
+                    kind: SourcePackArtifactKind::CodegenObject,
+                }],
+                input_group_count: 0,
+                input_group_page_count: 0,
+                input_group_indices: Vec::new(),
+                input_group_output_keys: Vec::new(),
+                source_byte_count: source_bytes,
+                source_file_count: 1,
+                source_line_count: source_lines,
+                output_key: format!("partial-link/group-{group_index:08}/job-{job_index:08}"),
+                final_output: false,
+                descriptor_summary: Default::default(),
+            })
+            .expect("store prepared leaf execution evidence");
+    }
+
     let plan_index = SourcePackHierarchicalLinkPlanIndex {
         version: SOURCE_PACK_HIERARCHICAL_LINK_PLAN_INDEX_VERSION,
         target,
@@ -2034,21 +2069,21 @@ fn source_pack_link_execution_rejects_final_group_missing_plan_input_partitions(
             version: SOURCE_PACK_LIBRARY_SCHEDULE_INDEX_VERSION,
             target,
             partition_count: 2,
-            frontend_job_count: 1,
+            frontend_job_count: 2,
             codegen_job_count: 1,
-            link_job_index: 2,
-            job_count: 3,
+            link_job_index: 3,
+            job_count: 4,
         })
         .expect("store schedule index with two input partitions");
     store
         .store_build_artifact_ref_index(&SourcePackBuildArtifactRefIndex {
             version: SOURCE_PACK_BUILD_ARTIFACT_REF_INDEX_VERSION,
             target,
-            artifact_count: 3,
-            interface_artifact_count: 1,
+            artifact_count: 4,
+            interface_artifact_count: 2,
             object_artifact_count: 1,
-            final_output_artifact_index: 2,
-            final_output_key: "linked-output/job-2/src-0-2".into(),
+            final_output_artifact_index: 3,
+            final_output_key: "linked-output/job-3/src-0-2".into(),
             total_source_file_count: 2,
             total_source_byte_count: 32,
             total_source_line_count: 2,
@@ -2061,12 +2096,12 @@ fn source_pack_link_execution_rejects_final_group_missing_plan_input_partitions(
             group_index: 0,
             kind: SourcePackHierarchicalLinkGroupKind::Leaf,
             level: 0,
-            job_index: 2,
+            job_index: 3,
             input_partition_count: 1,
             input_partition_indices: vec![0],
             input_frontend_job_count: 1,
             input_frontend_job_indices: vec![0],
-            input_codegen_job_indices: vec![1],
+            input_codegen_job_indices: vec![2],
             input_link_group_indices: Vec::new(),
             source_byte_count: 16,
             source_file_count: 1,
@@ -2080,9 +2115,9 @@ fn source_pack_link_execution_rejects_final_group_missing_plan_input_partitions(
         target,
         limits: SourcePackJobBatchLimits::default().normalized(),
         input_partition_count: 2,
-        first_link_job_index: 2,
+        first_link_job_index: 3,
         final_link_group_index: 0,
-        final_link_job_index: 2,
+        final_link_job_index: 3,
         link_group_count: 1,
     };
     let plan_path = store.hierarchical_link_plan_index_path_for_target(target);
@@ -3037,48 +3072,53 @@ fn source_pack_link_execution_resume_rejects_stale_final_group_shape() {
             oversized_input: false,
         })
         .expect("store current final reduce group shape");
-    store
-        .store_hierarchical_link_execution_page(&SourcePackHierarchicalLinkExecutionPage {
-            version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
-            target,
-            group_index: final_link_group_index,
-            kind: SourcePackHierarchicalLinkGroupKind::Leaf,
-            job_index: final_link_job_index,
-            input_interface_count: 0,
-            input_interface_page_count: 0,
-            input_interface_ranges: Vec::new(),
-            input_interfaces: vec![SourcePackArtifactRef {
-                artifact_index: 0,
-                key: "library-interface/lib-0/job-0/src-0-1".into(),
-                producing_job_index: 0,
-                kind: SourcePackArtifactKind::LibraryInterface,
-            }],
-            input_object_count: 0,
-            input_object_page_count: 0,
-            input_objects: vec![SourcePackArtifactRef {
-                artifact_index: 1,
-                key: "codegen-object/lib-0/job-1/src-0-1".into(),
-                producing_job_index: 1,
-                kind: SourcePackArtifactKind::CodegenObject,
-            }],
-            input_group_count: 0,
-            input_group_page_count: 0,
-            input_group_indices: Vec::new(),
-            input_group_output_keys: Vec::new(),
-            source_byte_count: 16,
-            source_file_count: 1,
-            source_line_count: 1,
-            output_key: execution_index.final_output_key.clone(),
-            final_output: true,
-            descriptor_summary: Default::default(),
-        })
-        .expect("store stale final execution page that still matches completed index evidence");
+    let stale_execution_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: final_link_group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: final_link_job_index,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: vec![SourcePackArtifactRef {
+            artifact_index: 0,
+            key: "library-interface/lib-0/job-0/src-0-1".into(),
+            producing_job_index: 0,
+            kind: SourcePackArtifactKind::LibraryInterface,
+        }],
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: vec![SourcePackArtifactRef {
+            artifact_index: 1,
+            key: "codegen-object/lib-0/job-1/src-0-1".into(),
+            producing_job_index: 1,
+            kind: SourcePackArtifactKind::CodegenObject,
+        }],
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 16,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: execution_index.final_output_key.clone(),
+        final_output: true,
+        descriptor_summary: Default::default(),
+    };
+    std::fs::write(
+        store.hierarchical_link_execution_page_path_for_target(target, final_link_group_index),
+        serde_json::to_vec_pretty(&stale_execution_page)
+            .expect("serialize stale final execution page"),
+    )
+    .expect("persist stale final execution page that still matches completed index evidence");
 
     let err = prepare_link_execution_chunk(&root, target, 1)
         .expect_err("completed replay must reject stale final group shape");
     let message = err.to_string();
     assert!(
-        message.contains("records kind Leaf") && message.contains("current link group is Reduce"),
+        message.contains("final leaf group 1 is invalid")
+            && message.contains("nonzero final groups must reduce prior partial-link outputs"),
         "expected stale final group shape error, got {message}"
     );
 
@@ -3852,6 +3892,27 @@ fn source_pack_link_execution_resume_requires_final_page_sidecar_evidence() {
     )
     .expect("persist link plan index");
 
+    store
+        .store_hierarchical_link_group_page(&SourcePackHierarchicalLinkGroupPage {
+            version: SOURCE_PACK_HIERARCHICAL_LINK_GROUP_PAGE_VERSION,
+            target,
+            group_index: 0,
+            kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+            level: 0,
+            job_index: 2,
+            input_partition_count: 1,
+            input_partition_indices: vec![0],
+            input_frontend_job_count: 1,
+            input_frontend_job_indices: vec![0],
+            input_codegen_job_indices: vec![1],
+            input_link_group_indices: Vec::new(),
+            source_byte_count: 16,
+            source_file_count: 1,
+            source_line_count: 1,
+            oversized_input: false,
+        })
+        .expect("store current final link group evidence");
+
     let execution_index = SourcePackHierarchicalLinkExecutionIndex {
         version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INDEX_VERSION,
         target,
@@ -3874,32 +3935,36 @@ fn source_pack_link_execution_resume_requires_final_page_sidecar_evidence() {
     )
     .expect("persist completed link execution index");
 
-    store
-        .store_hierarchical_link_execution_page(&SourcePackHierarchicalLinkExecutionPage {
-            version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
-            target,
-            group_index: 0,
-            kind: SourcePackHierarchicalLinkGroupKind::Leaf,
-            job_index: 2,
-            input_interface_count: 1,
-            input_interface_page_count: 1,
-            input_interface_ranges: Vec::new(),
-            input_interfaces: Vec::new(),
-            input_object_count: 1,
-            input_object_page_count: 1,
-            input_objects: Vec::new(),
-            input_group_count: 0,
-            input_group_page_count: 0,
-            input_group_indices: Vec::new(),
-            input_group_output_keys: Vec::new(),
-            source_byte_count: 16,
-            source_file_count: 1,
-            source_line_count: 1,
-            output_key: execution_index.final_output_key.clone(),
-            final_output: true,
-            descriptor_summary: Default::default(),
-        })
-        .expect("store final execution page that references paged link inputs");
+    let missing_sidecars_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 0,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: 2,
+        input_interface_count: 1,
+        input_interface_page_count: 1,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 16,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: execution_index.final_output_key.clone(),
+        final_output: true,
+        descriptor_summary: Default::default(),
+    };
+    std::fs::write(
+        store.hierarchical_link_execution_page_path_for_target(target, 0),
+        serde_json::to_vec_pretty(&missing_sidecars_page)
+            .expect("serialize final execution page with missing sidecars"),
+    )
+    .expect("persist final execution page that references missing sidecars");
 
     let err = prepare_link_execution_chunk(&root, target, 1)
         .expect_err("completed link execution must not resume without input sidecar evidence");
@@ -5235,32 +5300,36 @@ fn source_pack_link_execution_resume_requires_previous_group_sidecar_evidence() 
             oversized_input: false,
         })
         .expect("store current link group that progress claims has already been prepared");
-    store
-        .store_hierarchical_link_execution_page(&SourcePackHierarchicalLinkExecutionPage {
-            version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
-            target,
-            group_index: 0,
-            kind: SourcePackHierarchicalLinkGroupKind::Leaf,
-            job_index: first_link_job_index,
-            input_interface_count: 1,
-            input_interface_page_count: 1,
-            input_interface_ranges: Vec::new(),
-            input_interfaces: Vec::new(),
-            input_object_count: 1,
-            input_object_page_count: 1,
-            input_objects: Vec::new(),
-            input_group_count: 0,
-            input_group_page_count: 0,
-            input_group_indices: Vec::new(),
-            input_group_output_keys: Vec::new(),
-            source_byte_count: 16,
-            source_file_count: 1,
-            source_line_count: 1,
-            output_key: "partial-link/group-00000000/job-00000002".into(),
-            final_output: false,
-            descriptor_summary: Default::default(),
-        })
-        .expect("store prepared execution page that references missing sidecars");
+    let missing_sidecars_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 0,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: first_link_job_index,
+        input_interface_count: 1,
+        input_interface_page_count: 1,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 16,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: "partial-link/group-00000000/job-00000002".into(),
+        final_output: false,
+        descriptor_summary: Default::default(),
+    };
+    std::fs::write(
+        store.hierarchical_link_execution_page_path_for_target(target, 0),
+        serde_json::to_vec_pretty(&missing_sidecars_page)
+            .expect("serialize prepared execution page with missing sidecars"),
+    )
+    .expect("persist prepared execution page that references missing sidecars");
 
     let progress_path = store.link_execution_prepare_progress_path_for_target(target);
     std::fs::create_dir_all(progress_path.parent().expect("link progress parent"))

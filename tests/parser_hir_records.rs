@@ -846,6 +846,24 @@ fn make_world() -> i32 {
             parsed.hir_call_parent_by_callee[path_node] as usize, init_root,
             "the parser-owned reverse call relation should alias the compact path owner to the constructor call"
         );
+        let path_dense = parsed.hir_canonical_raw_to_dense[path_node];
+        let path = parsed
+            .hir_path_owner
+            .iter()
+            .position(|owner| *owner == path_dense)
+            .expect("qualified constructor should retain one compact path row");
+        let start = parsed.hir_path_segment_start[path] as usize;
+        let count = parsed.hir_path_segment_count[path] as usize;
+        assert_eq!(
+            count, 4,
+            "the nested type argument must not become an outer path segment"
+        );
+        assert!(
+            parsed.hir_path_segment_name_token[start..start + count]
+                .windows(2)
+                .all(|tokens| tokens[0] < tokens[1]),
+            "qualified constructor segments should stay contiguous and in source order"
+        );
     }
     assert_eq!(
         parsed.hir_nearest_stmt_node[init_root] as usize, let_node,
@@ -4256,6 +4274,109 @@ fn parser_compact_hir_maps_colliding_nested_qualified_callees_to_dense_owners() 
 }
 
 #[test]
+fn parser_compact_hir_keeps_unqualified_callee_nested_in_qualified_call() {
+    let parsed = parse_resident_source(
+        "fn inner(value: i32) -> i32 { return value; } fn main() { return core::option::Some(inner(1)); }",
+    );
+    let callee_owners = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter(|&(_, kind)| *kind == HIR_NODE_CALL_EXPR)
+        .map(|(call, _)| {
+            let raw_callee = parsed.hir_call_callee_node[call] as usize;
+            (parsed.hir_canonical_raw_to_dense[raw_callee], raw_callee)
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(callee_owners.len(), 2);
+    assert_ne!(callee_owners[0].0, callee_owners[1].0);
+    assert_ne!(
+        parsed.hir_token_pos[callee_owners[0].1], parsed.hir_token_pos[callee_owners[1].1],
+        "nested calls must retain distinct raw callee source tokens",
+    );
+    let mut segment_counts = Vec::new();
+    for (owner, raw_callee) in callee_owners {
+        assert_ne!(owner, INVALID);
+        let path = parsed
+            .hir_path_owner
+            .iter()
+            .position(|candidate| *candidate == owner);
+        assert!(
+            path.is_some(),
+            "nested callee dense row {owner} must retain its own compact path"
+        );
+        let path = path.unwrap();
+        let segment_count = parsed.hir_path_segment_count[path];
+        segment_counts.push(segment_count);
+        let leaf_row = parsed.hir_path_segment_start[path] + segment_count - 1;
+        if segment_count == 1 {
+            assert_eq!(
+                parsed.hir_token_pos[raw_callee],
+                parsed.hir_path_segment_name_token[leaf_row as usize],
+                "unqualified callee payload must name its sole path token"
+            );
+        }
+    }
+    segment_counts.sort_unstable();
+    assert_eq!(segment_counts, vec![1, 3]);
+}
+
+#[test]
+fn parser_source_pack_keeps_nested_stdlib_call_callees() {
+    let parsed = parse_resident_source_pack(&[
+        include_str!("../stdlib/core/i32.lani"),
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/result.lani"),
+    ]);
+    let mut calls = 0usize;
+    let mut raw_callee_tokens = Vec::new();
+    for (dense, core) in parsed.hir_canonical_core_words.chunks_exact(4).enumerate() {
+        if core[0] != HIR_NODE_CALL_EXPR {
+            continue;
+        }
+        calls += 1;
+        let callee = parsed.hir_canonical_payload_words[dense * 4] as usize;
+        assert!(
+            callee < parsed.hir_canonical_core_words.len() / 4,
+            "call {dense} must retain a dense callee"
+        );
+        let callee_kind = parsed.hir_canonical_core_words[callee * 4];
+        assert!(
+            matches!(callee_kind, HIR_NODE_NAME_EXPR | HIR_NODE_PATH_EXPR),
+            "call {dense} callee {callee} must retain a name or path, got kind {callee_kind}"
+        );
+    }
+    for (raw_call, kind) in parsed.hir_kind.iter().enumerate() {
+        if *kind == HIR_NODE_CALL_EXPR {
+            let raw_callee = parsed.hir_call_callee_node[raw_call] as usize;
+            if raw_callee < parsed.hir_token_pos.len() {
+                assert!(
+                    matches!(
+                        parsed.hir_kind[raw_callee],
+                        HIR_NODE_NAME_EXPR | HIR_NODE_PATH_EXPR
+                    ),
+                    "raw call {raw_call} must point at a callable name/path row, got kind {}",
+                    parsed.hir_kind[raw_callee],
+                );
+                raw_callee_tokens.push(parsed.hir_token_pos[raw_callee]);
+            }
+        }
+    }
+    raw_callee_tokens.sort_unstable();
+    assert!(
+        raw_callee_tokens
+            .windows(2)
+            .all(|tokens| tokens[0] != tokens[1]),
+        "each call occurrence must retain its own raw callee token: {raw_callee_tokens:?}",
+    );
+    assert!(
+        calls > 1,
+        "stdlib pack should contain nested and direct calls"
+    );
+}
+
+#[test]
 fn parser_compact_hir_call_identity_preserves_binary_operand_roots() {
     let source = r#"
 fn weighted5(a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 {
@@ -5518,6 +5639,31 @@ fn take(value: Pair<i32, bool>) -> i32 {
     assert_eq!(
         valid_argument_rows, 1,
         "fixture should publish exactly one generic type-argument link"
+    );
+}
+
+#[test]
+fn parser_hir_pattern_payloads_are_not_type_arguments() {
+    let parsed = parse_resident_source(
+        r#"
+enum Choice {
+    Some(i32),
+    None,
+}
+
+fn choose(value: Choice) -> Choice {
+    return match (value) {
+        Some(inner) -> None,
+        None -> None,
+    };
+}
+"#,
+    );
+
+    assert!(parsed.ll1.accepted, "pattern fixture should parse");
+    assert!(
+        parsed.hir_type_arg_count.iter().all(|&count| count == 0),
+        "tuple-pattern payloads must not enter the compact type-argument family"
     );
 }
 

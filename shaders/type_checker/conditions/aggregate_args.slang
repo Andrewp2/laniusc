@@ -19,7 +19,9 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> aggregate_compare_scan_input;
 StructuredBuffer<uint> aggregate_compare_prefix;
 StructuredBuffer<uint> aggregate_compare_count_out;
@@ -28,6 +30,7 @@ StructuredBuffer<uint> aggregate_compare_actual_instance;
 StructuredBuffer<uint> aggregate_compare_error_token;
 StructuredBuffer<uint> aggregate_compare_error_detail;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
+RWStructuredBuffer<uint> call_generic_slot_type;
 StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
@@ -50,8 +53,20 @@ RWStructuredBuffer<uint> status;
 static const uint INVALID = 0xffffffffu;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
+static const uint HIR_RETURN_STMT = 9u;
+static const uint HIR_ASSIGN_EXPR = 15u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_STMT_LET = 1u;
+static const uint HIR_STMT_RETURN = 2u;
+static const uint HIR_STMT_CONST = 4u;
+static const uint HIR_STMT_ASSIGN = 5u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -167,6 +182,61 @@ bool same_leaf_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_p
     return lhs_payload == rhs_payload;
 }
 
+uint statement_call_callee_token(uint request)
+{
+    if (request >= active_hir_node_count()) return INVALID;
+    HirCore core = compact_hir_core[request];
+    HirPayload stmt = compact_hir_payload[request];
+    if (core.kind != HIR_STMT && core.kind != HIR_LET_STMT &&
+        core.kind != HIR_RETURN_STMT && core.kind != HIR_ASSIGN_EXPR)
+        return INVALID;
+
+    uint expression = INVALID;
+    if (stmt.a == HIR_STMT_LET || stmt.a == HIR_STMT_CONST ||
+        stmt.a == HIR_STMT_ASSIGN)
+        expression = stmt.c;
+    else if (stmt.a == HIR_STMT_RETURN)
+        expression = stmt.b;
+    if (expression >= active_hir_node_count() ||
+        compact_hir_core[expression].kind != HIR_CALL_EXPR)
+        return INVALID;
+
+    uint callee = compact_hir_payload[expression].a;
+    if (callee >= active_hir_node_count()) return INVALID;
+    HirCore callee_core = compact_hir_core[callee];
+    HirPayload callee_payload = compact_hir_payload[callee];
+    uint token = callee_core.kind == HIR_MEMBER_EXPR
+        ? callee_payload.c
+        : callee_payload.d;
+    return valid_token(token) ? token : callee_core.token_start;
+}
+
+bool substituted_generic_matches(
+    uint request,
+    uint expected_tag,
+    uint expected_payload,
+    uint actual_tag,
+    uint actual_payload)
+{
+    if (expected_tag != TYPE_REF_SCALAR || actual_tag != TYPE_REF_GENERIC_PARAM)
+        return false;
+    uint slot = valid_token(actual_payload)
+        ? type_generic_param_slot_by_token[actual_payload]
+        : INVALID;
+    uint callee = statement_call_callee_token(request);
+    if (slot >= PARAM_CACHE_STRIDE || !valid_token(callee)) return false;
+    uint state = callee * PARAM_CACHE_STRIDE + slot;
+    uint inferred = call_generic_slot_type[state];
+    if (inferred == INVALID)
+    {
+        uint observed;
+        InterlockedCompareExchange(
+            call_generic_slot_type[state], INVALID, expected_payload, observed);
+        inferred = observed == INVALID ? expected_payload : observed;
+    }
+    return inferred == expected_payload;
+}
+
 uint semantic_type_subtree_count(uint root)
 {
     uint semantic_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
@@ -262,6 +332,13 @@ void validate_compare_row(uint row)
             expected_payload,
             actual_tag,
             actual_payload);
+        if (!matches)
+            matches = substituted_generic_matches(
+                request_node,
+                expected_tag,
+                expected_payload,
+                actual_tag,
+                actual_payload);
     }
     if (!matches)
     {

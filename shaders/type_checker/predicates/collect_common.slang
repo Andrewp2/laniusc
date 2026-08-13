@@ -99,7 +99,7 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_id_by_owner_hir;
 #endif
-#if PREDICATE_COLLECT_IMPL_RECORDS
+#if PREDICATE_BOUND_PATH_RESOLUTION || PREDICATE_COLLECT_IMPL_RECORDS
 StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> resolved_type_status;
@@ -178,6 +178,7 @@ static const uint PREDICATE_STATUS_IMPL_TARGET_DECL_IDENTITY = 32u;
 static const uint PREDICATE_STATUS_IMPL_TARGET_ARITY = 33u;
 static const uint PREDICATE_STATUS_IMPL_TARGET_ARG_SHAPE = 34u;
 static const uint PREDICATE_STATUS_UNKNOWN_BOUND_TYPE = 35u;
+static const uint PREDICATE_STATUS_INACCESSIBLE_BOUND_TYPE_ARG = 36u;
 static const uint IMPORT_VISIBLE_STATUS_OK = 0u;
 
 uint linear_thread_id(uint3 dtid)
@@ -622,18 +623,25 @@ uint type_decl_for_unqualified_bound_path(uint expr_node, uint owner_decl_node)
 
 uint type_decl_for_bound_path(uint expr_node, uint owner_decl_node)
 {
-    uint segment_count = bound_path_segment_count(expr_node);
-    if (segment_count == 0u)
+    uint path_i = bound_path_record_id(expr_node);
+    if (path_i == INVALID)
         return INVALID;
+    if (resolved_type_status[path_i] == 0u)
+    {
+        uint resolved = resolved_type_decl[path_i];
+        return resolved < decl_record_count() ? resolved : INVALID;
+    }
 
+    // A fully-qualified public trait name is self-contained and does not need
+    // an import. The shared path resolver intentionally requires imports for
+    // ordinary qualified value/type use, so retain that language rule here.
+    uint segment_count = bound_path_segment_count(expr_node);
+    if (segment_count <= 1u)
+        return INVALID;
     uint leaf_name_id = bound_path_segment_name_id(expr_node, segment_count - 1u);
-    if (segment_count == 1u)
-        return type_decl_for_unqualified_bound_path(expr_node, owner_decl_node);
-
-    uint prefix_count = segment_count - 1u;
-    uint owner_module = owner_module_for_decl_node(owner_decl_node);
-    uint module_i = find_module_for_bound_path_prefix(expr_node, prefix_count);
+    uint module_i = find_module_for_bound_path_prefix(expr_node, segment_count - 1u);
     uint decl_i = find_type_decl_in_module(module_i, leaf_name_id);
+    uint owner_module = owner_module_for_decl_node(owner_decl_node);
     return decl_visible_from_module(owner_module, decl_i) ? decl_i : INVALID;
 }
 
@@ -901,7 +909,7 @@ uint direct_type_arg_node(uint owner_type_node, uint ordinal)
         return INVALID;
 
     uint count = direct_type_arg_count(owner_type_node);
-    if (ordinal >= count || ordinal >= 2u)
+    if (ordinal >= count)
         return INVALID;
 
     HirRange range = compact_type_arg_ranges[owner_type_node];
@@ -1118,9 +1126,6 @@ bool inherent_impl_target_arg_supported(uint impl_node, uint arg_node)
         return false;
     if (!type_path_scan_supported(arg_node))
         return false;
-    if (direct_type_arg_count(arg_node) != 0u)
-        return false;
-
     uint token = type_path_leaf_token(arg_node);
     if (!valid_token(token))
         token = source_token;
@@ -1601,6 +1606,19 @@ bool valid_bound_type_arg(uint owner_decl_node, uint expr_node)
     return supported_predicate_type_arg_decl(decl_i);
 }
 
+bool bound_type_arg_exists_but_is_inaccessible(uint owner_decl_node, uint expr_node)
+{
+    uint segment_count = bound_path_segment_count(expr_node);
+    if (segment_count <= 1u)
+        return false;
+
+    uint module_i = find_module_for_bound_path_prefix(expr_node, segment_count - 1u);
+    uint leaf_name_id = bound_path_segment_name_id(expr_node, segment_count - 1u);
+    uint decl_i = find_type_decl_in_module(module_i, leaf_name_id);
+    uint owner_module = owner_module_for_decl_node(owner_decl_node);
+    return decl_i < decl_record_count() && !decl_visible_from_module(owner_module, decl_i);
+}
+
 bool bound_type_arg_shape_supported(uint owner_decl_node, uint expr_node)
 {
     if (!valid_node(expr_node) ||
@@ -1843,7 +1861,9 @@ uint validate_bound_type_args(
                 token,
                 first_arg_token,
                 second_arg_token);
-            return PREDICATE_STATUS_INVALID_ARG;
+            return bound_type_arg_exists_but_is_inaccessible(owner_decl_node, node)
+                ? PREDICATE_STATUS_INACCESSIBLE_BOUND_TYPE_ARG
+                : PREDICATE_STATUS_INVALID_ARG;
         }
 
         if (ordinal == 0u)

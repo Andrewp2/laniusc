@@ -308,6 +308,18 @@ pub(in crate::type_checker) fn generic_claim_capacity_for_features(
     }
 }
 
+pub(in crate::type_checker) fn generic_claim_capacity_for_job(
+    token_capacity: u32,
+    parser_feature_flags: u32,
+    has_dependency_interfaces: bool,
+) -> u32 {
+    if has_dependency_interfaces {
+        generic_claim_capacity(token_capacity)
+    } else {
+        generic_claim_capacity_for_features(token_capacity, parser_feature_flags)
+    }
+}
+
 pub(in crate::type_checker) fn predicate_capacity_for_features(
     hir_node_capacity: u32,
     parser_feature_flags: u32,
@@ -550,6 +562,8 @@ mod tests {
         decl_key_radix_layout,
         enum_passes_required,
         generic_call_claim_passes_required,
+        generic_claim_capacity,
+        generic_claim_capacity_for_job,
         generic_param_record_passes_required,
         match_passes_required,
         member_passes_required,
@@ -643,6 +657,15 @@ mod tests {
         ));
         assert!(generic_call_claim_passes_required(PARSER_FEATURE_TYPE_ARGS));
         assert!(generic_call_claim_passes_required(u32::MAX));
+    }
+
+    #[test]
+    fn dependency_interfaces_reserve_generic_claim_rows_without_local_type_arguments() {
+        assert_eq!(generic_claim_capacity_for_job(64, 0, false), 1);
+        assert_eq!(
+            generic_claim_capacity_for_job(64, 0, true),
+            generic_claim_capacity(64)
+        );
     }
 
     #[test]

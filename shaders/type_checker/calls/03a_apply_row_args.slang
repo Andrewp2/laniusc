@@ -24,6 +24,7 @@ StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> type_decl_generic_param_count;
+StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> call_generic_slot_type;
 StructuredBuffer<uint> call_generic_slot_ordinal;
 
@@ -38,6 +39,7 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint TYPE_REF_INSTANCE = 3u;
 
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint PARAM_CACHE_STRIDE = 4u;
@@ -128,7 +130,11 @@ uint callee_token_for_hir_call(uint call_node)
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
-bool check_required_generic_slot(uint callee_i, uint generic_count, uint slot)
+bool check_required_generic_slot(
+    uint callee_i,
+    uint fn_i,
+    uint generic_count,
+    uint slot)
 {
     if (slot >= generic_count)
         return true;
@@ -140,6 +146,11 @@ bool check_required_generic_slot(uint callee_i, uint generic_count, uint slot)
 
     if (call_generic_slot_ordinal[state_i] != INVALID)
         return false;
+
+    // Aggregate return slots can be inferred from the enclosing declaration
+    // or return context after argument claims have been collected.
+    if (fn_return_ref_tag[fn_i] == TYPE_REF_INSTANCE)
+        return true;
 
     record_error(
         callee_i,
@@ -171,10 +182,10 @@ void apply_row_argument_call(uint call_node)
     if (generic_count == 0u)
         return;
 
-    if (!check_required_generic_slot(callee_i, generic_count, 0u) ||
-        !check_required_generic_slot(callee_i, generic_count, 1u) ||
-        !check_required_generic_slot(callee_i, generic_count, 2u) ||
-        !check_required_generic_slot(callee_i, generic_count, 3u))
+    if (!check_required_generic_slot(callee_i, fn_i, generic_count, 0u) ||
+        !check_required_generic_slot(callee_i, fn_i, generic_count, 1u) ||
+        !check_required_generic_slot(callee_i, fn_i, generic_count, 2u) ||
+        !check_required_generic_slot(callee_i, fn_i, generic_count, 3u))
     {
         call_return_type[callee_i] = TY_UNKNOWN;
         return;
@@ -202,8 +213,6 @@ void apply_row_argument_call(uint call_node)
         uint inferred = call_generic_slot_type[state_i];
         if (inferred == INVALID)
         {
-            if (call_generic_slot_ordinal[state_i] == INVALID)
-                record_error(callee_i, ERR_ASSIGN_MISMATCH, ret_ty * 256u + TY_UNKNOWN);
             call_return_type[callee_i] = TY_UNKNOWN;
             return;
         }

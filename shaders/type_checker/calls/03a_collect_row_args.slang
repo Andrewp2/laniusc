@@ -1196,8 +1196,6 @@ void collect_row_argument(uint row)
         return;
 
     uint fn_i = call_fn_index[callee_i];
-    if (!valid_token(fn_i))
-        return;
 
     uint param_row = call_arg_param_row[row];
     if (param_row == INVALID)
@@ -1211,9 +1209,9 @@ void collect_row_argument(uint row)
     // Publish the generic return dependency by dense call-site identity. The
     // scalar expression pass pointer-jumps through this argument node, so two
     // instantiations of the same function never share token-keyed result state.
-    uint return_slot = generic_slot_for_type_ref(
-        fn_return_ref_tag[fn_i],
-        fn_return_ref_payload[fn_i]);
+    uint return_slot = valid_token(fn_i)
+        ? generic_slot_for_type_ref(fn_return_ref_tag[fn_i], fn_return_ref_payload[fn_i])
+        : INVALID;
     uint param_slot = param_direct_generic_slot_for_row(param_row);
     if (return_slot != INVALID && return_slot == param_slot)
     {

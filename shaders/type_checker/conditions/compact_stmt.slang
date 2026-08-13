@@ -46,9 +46,12 @@ static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 static const uint TY_POINTER = 8u;
+static const uint TY_ARRAY_BASE = 128u;
+static const uint TY_GENERIC_BASE = 8192u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint SCALAR_TYPE_SHIFT = 28u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -61,6 +64,10 @@ uint scalar_type(uint node)
     return valid_hir(node) ? compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT : TY_UNKNOWN;
 }
 bool known_scalar(uint ty) { return ty != TY_UNKNOWN && ty <= TY_POINTER; }
+bool legacy_aggregate_type(uint ty)
+{
+    return ty >= TY_ARRAY_BASE && ty < TY_GENERIC_BASE;
+}
 
 uint declaration_token(uint token)
 {
@@ -160,10 +167,43 @@ void validate_decl(HirPayload stmt)
     // Symbol visibility may legitimately map a declaration token through a
     // different namespace row, so do not reinterpret aggregate annotations as
     // scalar void while aggregate validation owns the full type relation.
-    if (aggregate_type_node(stmt.d)) return;
-    uint expected = scalar_decl_type(stmt.b);
-    uint actual = scalar_type(stmt.c);
-    validate_pair(expected, actual, stmt.c, expression_token(stmt.c));
+    uint expected_ref_tag = TYPE_REF_INVALID;
+    uint expected_ref_payload = INVALID;
+    bool expected_ref_known = expression_type_ref(
+        stmt.d, expected_ref_tag, expected_ref_payload);
+    bool expected_instance =
+        expected_ref_tag == TYPE_REF_INSTANCE ||
+        (expected_ref_tag == TYPE_REF_SCALAR &&
+         legacy_aggregate_type(expected_ref_payload));
+    if (!expected_ref_known)
+        expected_instance = aggregate_type_node(stmt.d);
+    uint actual_scalar = scalar_type(stmt.c);
+    uint actual_ref_tag = TYPE_REF_INVALID;
+    uint actual_ref_payload = INVALID;
+    expression_type_ref(stmt.c, actual_ref_tag, actual_ref_payload);
+    uint actual_token = expression_token(stmt.c);
+    uint actual_legacy_type = valid_token(actual_token)
+                                  ? visible_type[actual_token]
+                                  : TY_UNKNOWN;
+    bool actual_instance = !known_scalar(actual_scalar) &&
+                           (actual_ref_tag == TYPE_REF_INSTANCE ||
+                            legacy_aggregate_type(actual_scalar) ||
+                            legacy_aggregate_type(actual_legacy_type) ||
+                            (actual_ref_tag == TYPE_REF_SCALAR &&
+                             legacy_aggregate_type(actual_ref_payload)));
+    uint expected_scalar = scalar_decl_type(stmt.b);
+    if ((known_scalar(expected_scalar) && actual_instance) ||
+        (expected_ref_known && expected_instance && known_scalar(actual_scalar)))
+    {
+        record_min_token_error(
+            status,
+            valid_token(expression_token(stmt.c)) ? expression_token(stmt.c) : 0u,
+            ERR_ASSIGN_MISMATCH,
+            0u);
+        return;
+    }
+    if (expected_instance) return;
+    validate_pair(expected_scalar, actual_scalar, stmt.c, expression_token(stmt.c));
 }
 
 void validate_assignment(HirPayload stmt)

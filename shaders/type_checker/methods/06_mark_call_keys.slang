@@ -55,6 +55,8 @@ StructuredBuffer<HirTypeArg> compact_type_args;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
@@ -429,18 +431,11 @@ uint path_id_for_associated_call(uint call_hir, uint callee_hir)
     if (!valid_dense(call_hir) || !valid_dense(callee_hir))
         return INVALID;
     uint path_i = path_id_by_owner_hir[callee_hir];
-    uint callee_token = compact_hir_core[callee_hir].token_start;
-    uint call_token = compact_hir_core[call_hir].token_start;
-
-    if (!valid_path(path_i))
-        path_i = path_id_for_call_open(call_token);
-    if (!valid_path(path_i))
-        path_i = path_id_for_call_open(callee_token);
-    if (!valid_path(path_i))
-        path_i = path_id_for_owner_token(call_token);
-    if (!valid_path(path_i))
-        path_i = path_id_for_owner_token(callee_token);
-    return valid_path(path_i) ? path_i : INVALID;
+    uint compact_count = min(compact_path_count[0u], gParams.n_hir_nodes);
+    return valid_path(path_i) && path_i < compact_count &&
+                   compact_paths[path_i].owner == callee_hir
+               ? path_i
+               : INVALID;
 }
 
 uint local_or_imported_type_decl_for_segment(uint path_i, uint segment_i)
@@ -873,7 +868,7 @@ bool publish_token_type_arg_refs(uint instance_i, out uint arg_count)
     return false;
 }
 
-uint publish_path_type_args(uint instance_i)
+uint publish_path_type_args(uint instance_i, uint compact_owner)
 {
     uint compact_arg_count =
         valid_token(instance_i) ? type_instance_arg_count[instance_i] : 0u;
@@ -881,7 +876,9 @@ uint publish_path_type_args(uint instance_i)
     if (!valid_token(instance_i))
         return 0u;
 
-    uint type_node = type_node_for_instance_token(instance_i);
+    uint type_node = valid_node(compact_owner)
+        ? compact_owner
+        : type_node_for_instance_token(instance_i);
     uint method_i = module_value_path_associated_method_token[instance_i];
     if (!valid_node(type_node))
     {
@@ -963,6 +960,7 @@ uint nominal_type_code(uint decl_i, uint decl_token)
 
 bool associated_receiver_ref(
     uint receiver_token,
+    uint compact_owner,
     uint decl_i,
     uint decl_token,
     out uint receiver_tag,
@@ -984,7 +982,7 @@ bool associated_receiver_ref(
         return true;
     }
 
-    uint arg_count = publish_path_type_args(receiver_token);
+    uint arg_count = publish_path_type_args(receiver_token, compact_owner);
     if (arg_count != expected_count)
     {
         type_instance_state[receiver_token] = TYPE_INSTANCE_UNSUPPORTED;
@@ -1018,9 +1016,8 @@ void publish_compact_associated_method_call(uint call_hir)
     uint owner_token = has_path ? path_owner_token[path_i] : call_token;
     if (!valid_token(owner_token))
         return;
-
     uint method_i = has_path
-        ? associated_method_token(path_i)
+        ? path_leaf_token(path_i)
         : module_value_path_associated_method_token[owner_token];
     uint receiver_segment_count = has_path ? associated_receiver_segment_count(path_i, method_i) : 1u;
     uint receiver_token = has_path
@@ -1030,7 +1027,6 @@ void publish_compact_associated_method_call(uint call_hir)
         : (valid_token(method_i) ? module_value_path_associated_receiver_token[method_i] : owner_token);
     if (!valid_token(method_i) || method_i == owner_token)
         return;
-
     uint receiver_decl = has_path
         ? associated_receiver_decl(path_i, receiver_segment_count)
         : local_or_imported_type_decl_for_compact_hir(call_hir, receiver_token);
@@ -1040,12 +1036,12 @@ void publish_compact_associated_method_call(uint call_hir)
     uint receiver_payload;
     if (!associated_receiver_ref(
             receiver_token,
+            callee_hir,
             receiver_decl,
             receiver_decl_token,
             receiver_tag,
             receiver_payload))
         return;
-
     method_call_name_id[method_i] = name_id_by_token[method_i];
     method_call_site_module_id[method_i] = has_path ? module_for_path(path_i) : INVALID;
     if (method_call_site_module_id[method_i] == INVALID)
@@ -1071,6 +1067,7 @@ void publish_associated_method_call_for_method_token(uint method_i)
     uint receiver_payload;
     if (!associated_receiver_ref(
             receiver_token,
+            INVALID,
             receiver_decl,
             receiver_decl_token,
             receiver_tag,

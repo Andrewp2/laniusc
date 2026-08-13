@@ -765,7 +765,17 @@ impl CompilerGraphWorkspace {
                         plan.slot, plan.bytes, imported.byte_size,
                     ));
                 }
-                slots.push(imported.subrange::<u8>(0, plan.bytes, plan.bytes as usize)?);
+                let imported = imported.subrange::<u8>(0, plan.bytes, plan.bytes as usize)?;
+                // Cross-phase imports are dead producer storage, but they are
+                // still physical allocations reused by subsequent jobs. Make
+                // them part of the consumer workspace's reset boundary just
+                // like newly allocated arenas; otherwise old parser words can
+                // leak into a later type-check job through an imported slot.
+                crate::gpu::buffers::register_resettable_buffer(
+                    &imported,
+                    crate::gpu::buffers::JobResetPolicy::ClearBeforeJob,
+                );
+                slots.push(imported);
             } else {
                 let placement = arena_layout
                     .placements

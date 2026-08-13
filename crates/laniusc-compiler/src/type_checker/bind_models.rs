@@ -127,6 +127,7 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) backend_targets: ComputeOperation,
     pub(in crate::type_checker) argument_matching: CallArgumentMatchingOperation,
     pub(in crate::type_checker) generic_claim_validation: CallGenericClaimValidationOperation,
+    pub(in crate::type_checker) contextual_result_requests: ComputeOperation,
     pub(in crate::type_checker) clear_generic_claim_type_args: ComputeOperation,
     pub(in crate::type_checker) apply_row_args: ComputeOperation,
     pub(in crate::type_checker) infer_array_generics: wgpu::BindGroup,

@@ -77,6 +77,7 @@ void name_token_ref(uint token, out uint tag, out uint payload)
 
     tag = type_expr_ref_tag[token];
     payload = type_expr_ref_payload[token];
+
 }
 
 uint name_decl_token(uint token)

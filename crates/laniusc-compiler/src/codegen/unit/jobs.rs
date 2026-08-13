@@ -396,6 +396,11 @@ impl SourcePackJobSchedule {
 
                 let mut dependency_batch_indices = BTreeSet::new();
                 let mut dependency_batch_ranges = Vec::new();
+                // Establish the complete explicit dependency set for the
+                // batch before projecting any job ranges. A later job in the
+                // same batch can name a batch that an earlier job reaches by
+                // range; range projection must exclude that explicit batch
+                // regardless of job ordering.
                 for &job_index in &batch.job_indices {
                     let Some(position) = job_position_by_index
                         .get(job_index)
@@ -418,6 +423,12 @@ impl SourcePackJobSchedule {
                             dependency_batch_indices.insert(dependency_batch_index);
                         }
                     }
+                }
+                for &job_index in &batch.job_indices {
+                    let position = job_position_by_index
+                        .get(job_index)
+                        .and_then(|position| *position)
+                        .expect("execution batch jobs were validated above");
                     for dependency_job_range in
                         self.dependency_job_ranges_for_job(&self.jobs[position])
                     {
@@ -506,6 +517,8 @@ impl SourcePackJobSchedule {
         for batch in &batches.batches {
             let mut dependency_batch_indices = BTreeSet::new();
             let mut dependency_batch_ranges = Vec::new();
+            // Collect explicit dependencies for every job first so compact
+            // ranges can exclude them independently of batch job order.
             for &job_index in &batch.job_indices {
                 let Some(position) = job_position_by_index
                     .get(job_index)
@@ -528,6 +541,12 @@ impl SourcePackJobSchedule {
                         dependency_batch_indices.insert(dependency_batch_index);
                     }
                 }
+            }
+            for &job_index in &batch.job_indices {
+                let position = job_position_by_index
+                    .get(job_index)
+                    .and_then(|position| *position)
+                    .expect("execution batch jobs were validated above");
                 for dependency_job_range in self.dependency_job_ranges_for_job(&self.jobs[position])
                 {
                     push_dependency_batch_range_for_job_range(

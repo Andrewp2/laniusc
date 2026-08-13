@@ -487,12 +487,13 @@ pub fn validate_hir_type_argument_records(
             }
             continue;
         }
-        if kinds[owner] != HIR_NODE_TYPE {
+        let path_expression_owner = kinds[owner] == HIR_NODE_PATH_EXPR;
+        if kinds[owner] != HIR_NODE_TYPE && !path_expression_owner {
             return Err(anyhow!(
-                "parser HIR type argument owner row {owner} is not a type HIR row"
+                "parser HIR type argument owner row {owner} is neither a type nor path-expression HIR row"
             ));
         }
-        if type_forms[owner] != HIR_TYPE_FORM_PATH {
+        if !path_expression_owner && type_forms[owner] != HIR_TYPE_FORM_PATH {
             return Err(anyhow!(
                 "parser HIR type argument owner row {owner} published generic arguments on a non-path type record"
             ));

@@ -68,6 +68,7 @@ StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> module_value_path_call_head;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> call_return_type;
 
 RWStructuredBuffer<uint> module_value_path_status;
 
@@ -84,6 +85,7 @@ static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint PATH_KIND_VALUE = 3u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -309,6 +311,19 @@ uint direct_expr_type(uint node)
 {
     if (!valid_compact_node(node))
         return TY_UNKNOWN;
+
+    if (compact_hir_core[node].kind == HIR_CALL_EXPR)
+    {
+        uint callee = compact_hir_payload[node].a;
+        if (!valid_compact_node(callee))
+            return TY_UNKNOWN;
+        HirCore core = compact_hir_core[callee];
+        HirPayload payload = compact_hir_payload[callee];
+        uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+        if (!valid_token(token))
+            token = core.token_start;
+        return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
+    }
 
     uint form = expr_form(node);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)

@@ -146,16 +146,10 @@ bool receiver_call_return_type_ref(uint receiver_i, out uint tag, out uint paylo
     if (fn_i == INVALID || fn_i >= active_token_count())
         return false;
 
-    uint ret_ty = call_return_type[receiver_i];
-    if (ret_ty == TY_UNKNOWN)
-        ret_ty = call_return_type[fn_i];
-    if (ret_ty != TY_UNKNOWN && ret_ty != TY_VOID)
-    {
-        tag = TYPE_REF_SCALAR;
-        payload = ret_ty;
-        return true;
-    }
-
+    // Preserve the structured return reference for named aggregates. Their
+    // legacy numeric type code is useful to scalar consumers, but treating it
+    // as a scalar here loses the generic receiver identity required by method
+    // lookup on a call result.
     uint return_token = call_return_type_token[receiver_i];
     if (!valid_token(return_token))
         return_token = call_return_type_token[fn_i];
@@ -171,6 +165,16 @@ bool receiver_call_return_type_ref(uint receiver_i, out uint tag, out uint paylo
     payload = fn_return_ref_payload[fn_i];
     if (tag != TYPE_REF_INVALID && payload != INVALID)
         return true;
+
+    uint ret_ty = call_return_type[receiver_i];
+    if (ret_ty == TY_UNKNOWN)
+        ret_ty = call_return_type[fn_i];
+    if (ret_ty != TY_UNKNOWN && ret_ty != TY_VOID)
+    {
+        tag = TYPE_REF_SCALAR;
+        payload = ret_ty;
+        return true;
+    }
 
     tag = TYPE_REF_INVALID;
     payload = INVALID;

@@ -5377,20 +5377,31 @@ mod tests {
                     && graph.passes()[region.first_pass.index()].name
                         == "lir.semantic.schedule.histogram.even"
             }));
-            assert!(graph.repeated_regions().iter().any(|region| {
-                region.iterations == 1
-                    && region.pass_count == 4
-                    && graph.passes()[region.first_pass.index()].name == target_pass
-            }));
-            assert!(graph.repeated_regions().iter().any(|region| {
-                region.iterations == 1
-                    && region.pass_count == 3
-                    && graph.passes()[region.first_pass.index()].name
-                        == match target {
-                            LoweringTarget::X86_64 => "lir.x86.scatter.replay",
-                            LoweringTarget::Wasm => "lir.wasm.scatter.replay",
-                        }
-            }));
+            assert!(
+                graph.repeated_regions().iter().any(|region| {
+                    region.iterations == 1
+                        && region.pass_count
+                            == match target {
+                                LoweringTarget::X86_64 => 5,
+                                LoweringTarget::Wasm => 3,
+                            }
+                        && graph.passes()[region.first_pass.index()].name
+                            == match target {
+                                LoweringTarget::X86_64 => "lir.x86.scatter.replay",
+                                LoweringTarget::Wasm => "lir.wasm.scatter.replay",
+                            }
+                }),
+                "target repeated regions: {:?}",
+                graph
+                    .repeated_regions()
+                    .iter()
+                    .map(|region| (
+                        region.iterations,
+                        region.pass_count,
+                        graph.passes()[region.first_pass.index()].name
+                    ))
+                    .collect::<Vec<_>>()
+            );
             assert!(
                 graph
                     .passes()
@@ -5450,12 +5461,21 @@ mod tests {
                     .is_none()
             );
             assert!(graph.resource_id("typecheck.call_intrinsic_tags").is_none());
-            assert!(
-                graph
-                    .resources()
-                    .iter()
-                    .all(|resource| resource.class != ResourceClass::Resident),
-                "fully described lowering graphs must permit phase-lifetime coloring",
+            let resident_resources = graph
+                .resources()
+                .iter()
+                .filter(|resource| resource.class == ResourceClass::Resident)
+                .map(|resource| resource.name)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                resident_resources,
+                [
+                    "lir.semantic.struct_field_start_by_hir",
+                    "lir.semantic.struct_word_count_by_hir",
+                    "lir.semantic.struct_field_word_offset_by_row",
+                    "lir.semantic.struct_field_word_count_by_row",
+                ],
+                "only compact semantic-layout inputs may outlive lowering workspace slots",
             );
         }
     }

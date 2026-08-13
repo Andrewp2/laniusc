@@ -3485,7 +3485,15 @@ mod tests {
             .map(|record| {
                 let mut complete = [u32::MAX; 14];
                 complete[..10].copy_from_slice(record);
-                complete[11] = 0;
+                complete[11] = if record[0] != u32::MAX {
+                    1
+                } else if record[1] != u32::MAX && record[2] != u32::MAX && record[3] != u32::MAX {
+                    3
+                } else if record[5] != 0 {
+                    2
+                } else {
+                    0
+                };
                 complete
             })
             .collect::<Vec<_>>();
@@ -4041,6 +4049,7 @@ mod tests {
                     0,
                     0,
                     0,
+                    u32::MAX,
                 ],
                 [
                     super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_CONST_I32,
@@ -4050,6 +4059,7 @@ mod tests {
                     1,
                     0,
                     0,
+                    u32::MAX,
                 ],
                 [
                     super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_ADD,
@@ -4059,6 +4069,7 @@ mod tests {
                     2,
                     0,
                     0,
+                    u32::MAX,
                 ],
                 [
                     super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_RETURN,
@@ -4068,6 +4079,7 @@ mod tests {
                     3,
                     0,
                     0,
+                    u32::MAX,
                 ],
                 [
                     super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_CALL_SYMBOL,
@@ -4077,6 +4089,7 @@ mod tests {
                     4,
                     0,
                     0,
+                    u32::MAX,
                 ],
             ]),
             5,
@@ -4116,6 +4129,8 @@ mod tests {
             storage_ro_from_u32s(&gpu.device, "test.wasm_lir.owner", &[0, 1, 2, 3, 4]);
         let semantic_function =
             storage_ro_from_u32s(&gpu.device, "test.wasm_lir.function_by_hir", &[u32::MAX; 5]);
+        let semantic_layout =
+            storage_ro_from_u32s(&gpu.device, "test.wasm_lir.layout_word_offset", &[0; 5]);
         let semantic_to_target =
             storage_rw_for_array::<u32>(&gpu.device, "test.wasm_lir.semantic_to_target", 5);
         let target_core =
@@ -4184,6 +4199,10 @@ mod tests {
                 ("gParams", scatter_params.as_entire_binding()),
                 ("semantic_lir_total", semantic_total.as_entire_binding()),
                 ("semantic_lir_core", semantic_core.as_entire_binding()),
+                (
+                    "semantic_lir_layout_word_offset",
+                    semantic_layout.as_entire_binding(),
+                ),
                 (
                     "semantic_lir_operands",
                     semantic_operands.as_entire_binding(),
@@ -4557,16 +4576,16 @@ mod tests {
             .unwrap();
         let output = stage.output();
         let count_readback = readback_bytes(&gpu.device, "test.lir.count.rb", 4, 1);
-        let core_readback = readback_bytes(&gpu.device, "test.lir.core.rb", 252, 63);
+        let core_readback = readback_bytes(&gpu.device, "test.lir.core.rb", 288, 72);
         let operands_readback = readback_bytes(&gpu.device, "test.lir.operands.rb", 144, 36);
         let owner_readback = readback_bytes(&gpu.device, "test.lir.owner.rb", 36, 9);
         let order_readback = readback_bytes(&gpu.device, "test.lir.order.rb", 36, 9);
         let scheduled_core_readback =
-            readback_bytes(&gpu.device, "test.lir.scheduled_core.rb", 252, 63);
+            readback_bytes(&gpu.device, "test.lir.scheduled_core.rb", 288, 72);
         let scheduled_operands_readback =
             readback_bytes(&gpu.device, "test.lir.scheduled_operands.rb", 144, 36);
         output.count.copy_to(&mut encoder, 0, &count_readback, 0, 4);
-        output.core.copy_to(&mut encoder, 0, &core_readback, 0, 252);
+        output.core.copy_to(&mut encoder, 0, &core_readback, 0, 288);
         output
             .operands
             .copy_to(&mut encoder, 0, &operands_readback, 0, 144);
@@ -4579,7 +4598,7 @@ mod tests {
             .copy_to(&mut encoder, 0, &order_readback, 0, 36);
         stage
             .core
-            .copy_to(&mut encoder, 0, &scheduled_core_readback, 0, 252);
+            .copy_to(&mut encoder, 0, &scheduled_core_readback, 0, 288);
         stage
             .operands
             .copy_to(&mut encoder, 0, &scheduled_operands_readback, 0, 144);
@@ -4591,14 +4610,14 @@ mod tests {
         assert_eq!(
             &owners[..7],
             &core
-                .chunks_exact(7)
+                .chunks_exact(8)
                 .take(7)
                 .map(|row| row[4])
                 .collect::<Vec<_>>(),
         );
         assert_eq!(
             [
-                core[0], core[7], core[14], core[21], core[28], core[35], core[42],
+                core[0], core[8], core[16], core[24], core[32], core[40], core[48],
             ],
             [
                 super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_CONST_I32,
@@ -4611,7 +4630,7 @@ mod tests {
             ]
         );
         assert_eq!([core[2], core[3]], [1, 3]);
-        assert_eq!([core[44], core[45]], [3, 42]);
+        assert_eq!([core[50], core[51]], [3, 42]);
         let operands = read_words(&gpu.device, &operands_readback);
         assert_eq!([operands[1], operands[5]], [7, 9]);
         assert_eq!(&operands[8..12], &[2, 0, 1, u32::MAX]);
@@ -4625,8 +4644,8 @@ mod tests {
         for (scheduled_row, &semantic_row) in order.iter().take(7).enumerate() {
             let semantic_row = semantic_row as usize;
             assert_eq!(
-                &scheduled_core[scheduled_row * 7..scheduled_row * 7 + 7],
-                &core[semantic_row * 7..semantic_row * 7 + 7],
+                &scheduled_core[scheduled_row * 8..scheduled_row * 8 + 8],
+                &core[semantic_row * 8..semantic_row * 8 + 8],
             );
             assert_eq!(
                 &scheduled_operands[scheduled_row * 4..scheduled_row * 4 + 4],
@@ -5289,7 +5308,7 @@ mod tests {
                 source_bytes: 16,
                 tokens: 16,
                 hir_nodes: 5,
-                semantic_instructions: 10,
+                semantic_instructions: 13,
                 call_arguments: 1,
                 parameters: 1,
                 aggregate_elements: 1,
@@ -5379,45 +5398,46 @@ mod tests {
             .unwrap();
         let output = stage.output();
         let count_readback = readback_bytes(&gpu.device, "test.control.count.rb", 4, 1);
-        let core_readback = readback_bytes(&gpu.device, "test.control.core.rb", 280, 70);
-        let operands_readback = readback_bytes(&gpu.device, "test.control.operands.rb", 160, 40);
+        let core_readback = readback_bytes(&gpu.device, "test.control.core.rb", 416, 104);
+        let operands_readback = readback_bytes(&gpu.device, "test.control.operands.rb", 208, 52);
         let status_readback = readback_bytes(&gpu.device, "test.control.status.rb", 16, 4);
-        let schedule_readback = readback_bytes(&gpu.device, "test.control.schedule.rb", 160, 40);
+        let schedule_readback = readback_bytes(&gpu.device, "test.control.schedule.rb", 208, 52);
         output.count.copy_to(&mut encoder, 0, &count_readback, 0, 4);
-        output.core.copy_to(&mut encoder, 0, &core_readback, 0, 280);
+        output.core.copy_to(&mut encoder, 0, &core_readback, 0, 416);
         output
             .operands
-            .copy_to(&mut encoder, 0, &operands_readback, 0, 160);
+            .copy_to(&mut encoder, 0, &operands_readback, 0, 208);
         stage
             .status()
             .copy_to(&mut encoder, 0, &status_readback, 0, 16);
         stage
             .schedule
-            .copy_to(&mut encoder, 0, &schedule_readback, 0, 160);
+            .copy_to(&mut encoder, 0, &schedule_readback, 0, 208);
         gpu.queue.submit(Some(encoder.finish()));
 
         let status = read_words(&gpu.device, &status_readback);
         assert_eq!(
             read_words(&gpu.device, &count_readback)[0],
-            10,
+            13,
             "lowering status: {status:?}"
         );
         let core = read_words(&gpu.device, &core_readback);
         assert_eq!(
-            [core[0], core[7], core[14], core[21]],
+            [core[0], core[8], core[16]],
             [
                 super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_CONST_I32,
                 super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_IF_BEGIN,
                 super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_CONTROL_END,
-                super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_INVALID,
             ]
         );
-        assert_ne!(
-            core[26] & super::super::lowering_ir::opcode::SEMANTIC_LIR_FLAG_UNSUPPORTED,
-            0
+        assert_eq!(
+            core[29]
+                & super::super::lowering_ir::opcode::SEMANTIC_LIR_FLAG_UNSUPPORTED_MATCH_CONTEXT,
+            0,
+            "match result rows are valid values in ordinary expression contexts"
         );
         assert_eq!(
-            [core[28], core[35], core[42], core[49], core[56], core[63]],
+            [core[56], core[64], core[72], core[80], core[88], core[96]],
             [
                 super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN,
                 super::super::lowering_ir::opcode::SEMANTIC_LIR_OP_LOOP_BEGIN,
@@ -5428,8 +5448,8 @@ mod tests {
             ]
         );
         let operands = read_words(&gpu.device, &operands_readback);
-        assert_eq!(&operands[24..28], &[6, 0, 1, 9]);
-        assert_eq!(&operands[28..32], &[7, 5, 0, u32::MAX]);
+        assert_eq!(&operands[36..40], &[9, 0, 1, 12]);
+        assert_eq!(&operands[40..44], &[10, 8, 0, u32::MAX]);
         assert_eq!(status, [0, u32::MAX, 0, u32::MAX]);
         let schedule = read_words(&gpu.device, &schedule_readback);
         assert_eq!(

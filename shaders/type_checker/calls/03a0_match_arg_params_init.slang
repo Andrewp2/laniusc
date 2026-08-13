@@ -112,17 +112,24 @@ bool param_row_matches(uint row, uint fn_i, uint ordinal)
 uint param_row_for_call_ordinal(uint call_node, uint arg_count, uint arg_ordinal)
 {
     uint callee_i = callee_token_for_hir_call(call_node);
-    if (!valid_token(callee_i) || call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
+    if (!valid_token(callee_i))
+        return INVALID;
+    if (call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
         return INVALID;
 
     uint fn_i = call_fn_index[callee_i];
+    bool dependency_rows = !valid_token(fn_i) || fn_i == callee_i;
+    // Dependency-interface parameter rows are keyed by the local callee
+    // token because there is no local function declaration token.
     if (!valid_token(fn_i))
-        return INVALID;
+        fn_i = callee_i;
 
     uint param_count = call_param_count[fn_i];
     uint param_offset = method_param_offset(fn_i);
     uint expected_arg_count = param_count >= param_offset ? param_count - param_offset : 0u;
-    if (arg_count == 0u || arg_count != expected_arg_count || param_offset >= param_count)
+    if ((!dependency_rows && (arg_count == 0u || arg_count != expected_arg_count)) ||
+        (dependency_rows && arg_ordinal >= expected_arg_count) ||
+        param_offset >= param_count)
         return INVALID;
 
     uint start = call_param_row_start[fn_i];

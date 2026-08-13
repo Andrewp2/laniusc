@@ -53,6 +53,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeArgLinksP
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_type_form".into(), b.hir_type_form.as_entire_binding()),
             (
+                "hir_node_dense_id".into(),
+                b.hir_node_dense_id.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_parent".into(),
+                b.hir_semantic_parent.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_dense_node".into(),
+                b.hir_semantic_dense_node.as_entire_binding(),
+            ),
+            (
                 "hir_type_path_leaf_node".into(),
                 b.hir_type_path_leaf_node.as_entire_binding(),
             ),

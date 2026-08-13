@@ -42,13 +42,18 @@ fn test_link_reduce_work_queue_page(
     link_group_index: usize,
     input_link_group_indices: Vec<usize>,
 ) -> SourcePackWorkQueuePage {
+    let first_link_job_index = item_index - link_group_index;
+    let dependency_item_indices = input_link_group_indices
+        .iter()
+        .map(|group_index| first_link_job_index + group_index)
+        .collect();
     SourcePackWorkQueuePage {
         version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
         target: SourcePackArtifactTarget::Generic,
         item_index,
         kind: SourcePackWorkQueueItemKind::LinkReduce,
         job_index: item_index,
-        dependency_item_indices: Vec::new(),
+        dependency_item_indices,
         dependency_item_count: 0,
         dependency_page_count: 0,
         dependency_item_ranges: Vec::new(),
@@ -77,13 +82,22 @@ fn test_link_leaf_work_queue_page(
     input_frontend_job_count: usize,
     input_codegen_job_count: usize,
 ) -> SourcePackWorkQueuePage {
+    let input_frontend_job_indices = (0..input_frontend_job_count)
+        .map(|index| index * 2)
+        .collect::<Vec<_>>();
+    let input_codegen_job_indices = (0..input_codegen_job_count)
+        .map(|index| index * 2 + 1)
+        .collect::<Vec<_>>();
+    let mut dependency_item_indices = input_frontend_job_indices.clone();
+    dependency_item_indices.extend(input_codegen_job_indices.iter().copied());
+    dependency_item_indices.sort_unstable();
     SourcePackWorkQueuePage {
         version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
         target: SourcePackArtifactTarget::Generic,
         item_index,
         kind: SourcePackWorkQueueItemKind::LinkLeaf,
         job_index: item_index,
-        dependency_item_indices: Vec::new(),
+        dependency_item_indices,
         dependency_item_count: 0,
         dependency_page_count: 0,
         dependency_item_ranges: Vec::new(),
@@ -96,9 +110,9 @@ fn test_link_leaf_work_queue_page(
         partition_indices: vec![0],
         link_group_index: Some(0),
         input_frontend_job_count,
-        input_frontend_job_indices: Vec::new(),
+        input_frontend_job_indices,
         input_codegen_job_count,
-        input_codegen_job_indices: Vec::new(),
+        input_codegen_job_indices,
         input_link_group_count: 0,
         input_link_group_indices: Vec::new(),
         source_byte_count: 1,
@@ -613,7 +627,7 @@ fn final_link_work_queue_rejects_stale_dense_output_key() {
             item_index: link_job_index,
             kind: SourcePackWorkQueueItemKind::LinkReduce,
             job_index: link_job_index,
-            dependency_item_indices: Vec::new(),
+            dependency_item_indices: vec![20],
             dependency_item_count: 0,
             dependency_page_count: 0,
             dependency_item_ranges: Vec::new(),
@@ -780,7 +794,7 @@ fn store_link_execution_page_rejects_descriptor_summary_with_only_interface_rang
         output_key: hierarchical_link_partial_output_key(target, group_index, link_job_index),
         final_output: false,
         descriptor_summary: SourcePackLinkDescriptorSummary {
-            interface_symbol_count: 1,
+            export_symbol_count: 1,
             object_symbol_count: 1,
             ..SourcePackLinkDescriptorSummary::default()
         },
@@ -1504,7 +1518,7 @@ fn final_link_work_queue_rejects_persisted_relocation_descriptor_summary() {
             partition_indices: vec![0],
             link_group_index: Some(group_index),
             input_frontend_job_count: 1,
-            input_frontend_job_indices: Vec::new(),
+            input_frontend_job_indices: vec![0],
             input_codegen_job_count: 1,
             input_codegen_job_indices: vec![1],
             input_link_group_count: 0,
@@ -1768,7 +1782,7 @@ fn store_partial_link_execution_page_rejects_linked_output_domain_contracts() {
 }
 
 #[test]
-fn x86_link_work_queue_rejects_object_inputs_without_descriptor_metadata() {
+fn generic_link_work_queue_delegates_object_validation_to_the_selected_executor() {
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock")
@@ -1777,7 +1791,7 @@ fn x86_link_work_queue_rejects_object_inputs_without_descriptor_metadata() {
         "laniusc-x86-link-object-metadata-test-{}-{suffix}",
         std::process::id()
     ));
-    let store = FilesystemArtifactStore::new(&root);
+    let mut store = FilesystemArtifactStore::new(&root);
     let target = SourcePackArtifactTarget::X86_64;
     let link_job_index = 7;
     let group_index = 0;
@@ -1805,7 +1819,7 @@ fn x86_link_work_queue_rejects_object_inputs_without_descriptor_metadata() {
         output_key: output_key.clone(),
         final_output: true,
         descriptor_summary: SourcePackLinkDescriptorSummary {
-            interface_symbol_count: 1,
+            export_symbol_count: 1,
             ..SourcePackLinkDescriptorSummary::default()
         }
         .with_record_contracts_from_counts(),
@@ -1819,6 +1833,64 @@ fn x86_link_work_queue_rejects_object_inputs_without_descriptor_metadata() {
         serde_json::to_vec_pretty(&link_page).expect("serialize persisted x86 link page"),
     )
     .expect("write persisted x86 link page");
+    let interface_ref = SourcePackArtifactRef {
+        artifact_index: 0,
+        key: "x86_64/library-interface/lib-0/job-0/src-0-1".into(),
+        producing_job_index: 0,
+        kind: SourcePackArtifactKind::LibraryInterface,
+    };
+    let object_ref = SourcePackArtifactRef {
+        artifact_index: 1,
+        key: "x86_64/codegen-object/lib-0/job-1/src-0-1".into(),
+        producing_job_index: 1,
+        kind: SourcePackArtifactKind::CodegenObject,
+    };
+    store
+        .store_library_interface(&interface_ref, b"interface".to_vec())
+        .expect("store x86 interface input");
+    store
+        .store_codegen_object(&object_ref, b"object".to_vec())
+        .expect("store x86 object input without descriptor metadata");
+    store
+        .store_hierarchical_link_execution_interface_page(
+            &SourcePackHierarchicalLinkExecutionInterfacePage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_PAGE_VERSION,
+                target,
+                group_index,
+                job_index: link_job_index,
+                page_index: 0,
+                first_input_position: 0,
+                input_count: 1,
+                input_interfaces: vec![interface_ref],
+            },
+        )
+        .expect("store x86 interface input page");
+    store
+        .store_hierarchical_link_execution_object_page(
+            &SourcePackHierarchicalLinkExecutionObjectPage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_PAGE_VERSION,
+                target,
+                group_index,
+                job_index: link_job_index,
+                page_index: 0,
+                first_input_position: 0,
+                input_count: 1,
+                input_objects: vec![object_ref],
+            },
+        )
+        .expect("store x86 object input page");
+    let mut frontend_page = test_compile_work_queue_page(0);
+    frontend_page.target = target;
+    store
+        .store_work_queue_page(&frontend_page)
+        .expect("store x86 frontend input work item");
+    let mut codegen_page = test_compile_work_queue_page(1);
+    codegen_page.target = target;
+    codegen_page.kind = SourcePackWorkQueueItemKind::Codegen;
+    codegen_page.dependency_item_indices = vec![0];
+    store
+        .store_work_queue_page(&codegen_page)
+        .expect("store x86 codegen input work item");
     store
         .store_work_queue_page(&SourcePackWorkQueuePage {
             version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
@@ -1839,7 +1911,7 @@ fn x86_link_work_queue_rejects_object_inputs_without_descriptor_metadata() {
             partition_indices: vec![0],
             link_group_index: Some(group_index),
             input_frontend_job_count: 1,
-            input_frontend_job_indices: Vec::new(),
+            input_frontend_job_indices: vec![0],
             input_codegen_job_count: 1,
             input_codegen_job_indices: vec![1],
             input_link_group_count: 0,
@@ -1849,9 +1921,54 @@ fn x86_link_work_queue_rejects_object_inputs_without_descriptor_metadata() {
             source_line_count: 1,
         })
         .expect("store x86 link work item");
+    store
+        .store_work_queue_progress_page(&SourcePackWorkQueueProgressPage {
+            version: SOURCE_PACK_WORK_QUEUE_PROGRESS_PAGE_VERSION,
+            target,
+            page_index: 0,
+            first_item_index: 0,
+            item_count: link_job_index + 1,
+            artifact_item_indices: Vec::new(),
+            remaining_dependency_counts: Vec::new(),
+            remaining_dependent_counts: vec![
+                SourcePackWorkQueueRemainingDependentCount {
+                    item_index: 0,
+                    remaining_dependent_count: 1,
+                },
+                SourcePackWorkQueueRemainingDependentCount {
+                    item_index: 1,
+                    remaining_dependent_count: 1,
+                },
+            ],
+            completed_item_indices: vec![0, 1],
+            ready_item_indices: vec![link_job_index],
+            ready_artifact_item_indices: Vec::new(),
+            claimed_items: vec![SourcePackWorkQueueItemClaim {
+                item_index: link_job_index,
+                worker_id: "worker-a".into(),
+                lease_expires_unix_nanos: Some(200),
+            }],
+        })
+        .expect("store claimed x86 link progress page");
+    store
+        .store_work_queue_progress_index(&SourcePackWorkQueueProgressIndex {
+            version: SOURCE_PACK_WORK_QUEUE_PROGRESS_INDEX_VERSION,
+            target,
+            work_item_count: link_job_index + 1,
+            page_size: link_job_index + 1,
+            page_count: 1,
+            artifact_item_count: 0,
+            completed_item_count: 2,
+            ready_item_count: 1,
+            ready_artifact_item_count: 0,
+            claimed_item_count: 1,
+            first_ready_item_index: Some(link_job_index),
+            first_ready_artifact_item_index: None,
+        })
+        .expect("store claimed x86 link progress index");
 
     let mut executor = RecordingSourcePackByteArtifactExecutor::default();
-    let err = execute_claimed_link_work_queue_item(
+    let result = execute_claimed_link_work_queue_item(
         &root,
         link_job_index,
         target,
@@ -1860,20 +1977,22 @@ fn x86_link_work_queue_rejects_object_inputs_without_descriptor_metadata() {
         Some(100),
         &mut executor,
     )
-    .expect_err("x86 link work item must reject object inputs without metadata");
-    let message = err.to_string();
+    .expect("generic work-queue execution must delegate object decoding to its executor");
     assert!(
-        message.contains("x86_64")
-            && message.contains("object inputs")
-            && message.contains("descriptor metadata"),
-        "unexpected x86 object metadata validation error: {message}"
+        executor
+            .events
+            .iter()
+            .any(|event| event == "hlink-objects:0:1"),
+        "the selected executor must receive the concrete object input: {:?}",
+        executor.events,
     );
+    assert_eq!(result.executed_link_group.output_key, output_key);
     assert!(
-        !store
+        store
             .path_for_key(&output_key)
             .expect("linked output artifact path")
             .exists(),
-        "rejected x86 link page must not leave linked-output bytes"
+        "the recording executor's linked output must be persisted"
     );
 
     std::fs::remove_dir_all(&root).expect("remove x86 link object metadata test dir");
@@ -3517,7 +3636,7 @@ fn artifact_manifest_build_stops_at_batch_limit() {
     let manifest =
         ExplicitSourcePackPathManifest::from_libraries(vec![ExplicitSourceLibraryPaths {
             library_id: 7,
-            paths: source_paths,
+            paths: source_paths.clone(),
             dependency_library_ids: Vec::new(),
         }])
         .expect("load path manifest");
@@ -3537,15 +3656,27 @@ fn artifact_manifest_build_stops_at_batch_limit() {
             > SOURCE_PACK_ARTIFACT_MANIFEST_FULL_BUILD_DEFAULT_BATCH_LIMIT
     );
 
+    prepare_dependency_stream_metadata_for_target(
+        [ExplicitSourceLibraryPathDependencyStream {
+            library_id: 7,
+            source_file_count: source_paths.len(),
+            paths: source_paths.iter().map(|path| path.as_path()),
+            dependency_library_count: 0,
+            dependency_library_ids: std::iter::empty(),
+        }],
+        &artifact_root,
+        SourcePackArtifactTarget::Generic,
+    )
+    .expect("prepare bounded-build source metadata");
+    prepare_artifact_build(
+        &artifact_root,
+        limits,
+        batch_limits,
+        SourcePackBuildShardLimits::default(),
+        SourcePackArtifactTarget::Generic,
+    )
+    .expect("prepare bounded-build artifact indexes");
     let store = FilesystemArtifactStore::new(&artifact_root);
-    store
-        .store_build_artifact_manifest(&artifact_manifest)
-        .expect("store artifact manifest");
-    let path_build_manifest =
-        source_pack_path_build_manifest(&manifest, limits, batch_limits, artifact_manifest);
-    store
-        .store_path_build_manifest(&path_build_manifest)
-        .expect("store path build manifest");
 
     let mut executor = RecordingSourcePackByteArtifactExecutor::default();
     let err = execute_artifact_manifest_build_for_target(
@@ -3556,7 +3687,12 @@ fn artifact_manifest_build_stops_at_batch_limit() {
     .expect_err("full manifest build should stop at the bounded batch limit");
     match &err {
         CompileError::Diagnostic(diagnostic) => {
-            assert_eq!(diagnostic.code, "LNC0058");
+            assert_eq!(
+                diagnostic.code,
+                "LNC0058",
+                "unexpected bounded-build diagnostic: {}",
+                diagnostic.render(),
+            );
             assert_eq!(diagnostic.message, "source-pack progress state invalid");
         }
         other => panic!("expected source-pack progress diagnostic, got {other:?}"),

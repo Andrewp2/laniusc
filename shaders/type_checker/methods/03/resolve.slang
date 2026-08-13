@@ -356,17 +356,7 @@ uint path_id_for_call_open(uint call_open)
 
 uint associated_method_token_for_path(uint path_i)
 {
-    if (!valid_path(path_i))
-        return INVALID;
-    uint owner_token = path_owner_token[path_i];
-    uint method_token = valid_token(owner_token)
-        ? module_value_path_associated_method_token[owner_token]
-        : INVALID;
-    if (valid_token(method_token))
-        return method_token;
-    uint leaf = path_leaf_token(path_i);
-    method_token = valid_token(leaf) ? module_value_path_associated_method_token[leaf] : INVALID;
-    return valid_token(method_token) ? method_token : leaf;
+    return valid_path(path_i) ? path_leaf_token(path_i) : INVALID;
 }
 
 uint path_id_for_associated_call(uint call_hir, uint callee_hir)
@@ -648,7 +638,12 @@ void resolve_associated_call(uint call_hir)
     uint fn_i = call_fn_index[method_i];
     if (fn_i == INVALID || fn_i >= active_token_count())
     {
-        record_error(method_i, ERR_CALL_MISMATCH, method_call_name_id[method_i]);
+        uint callee_hir = compact_hir_payload[call_hir].a;
+        uint path_i = path_id_for_associated_call(call_hir, callee_hir);
+        record_error(
+            valid_dense(callee_hir) ? compact_hir_core[callee_hir].token_start : method_i,
+            ERR_CALL_MISMATCH,
+            method_call_name_id[method_i]);
         return;
     }
 

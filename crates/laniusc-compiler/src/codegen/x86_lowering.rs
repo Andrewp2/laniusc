@@ -755,14 +755,86 @@ mod tests {
             &gpu.device,
             "test.x86_lir.page_core",
             &record_bytes(&[
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 1, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_ADD, 3, 0, u32::MAX, 2, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_RETURN, 0, 0, u32::MAX, 3, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_BRANCH, 0, 0, u32::MAX, 5, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN, 0, 0, u32::MAX, 6, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_CALL, 3, 0, u32::MAX, 4, 0, 0],
-                [opcode::SEMANTIC_LIR_OP_CALL_SYMBOL, 3, 0, u32::MAX, 7, 0, 0],
+                [
+                    opcode::SEMANTIC_LIR_OP_CONST_I32,
+                    3,
+                    0,
+                    u32::MAX,
+                    1,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
+                [
+                    opcode::SEMANTIC_LIR_OP_CONST_I32,
+                    3,
+                    0,
+                    u32::MAX,
+                    0,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
+                [
+                    opcode::SEMANTIC_LIR_OP_ADD,
+                    3,
+                    0,
+                    u32::MAX,
+                    2,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
+                [
+                    opcode::SEMANTIC_LIR_OP_RETURN,
+                    0,
+                    0,
+                    u32::MAX,
+                    3,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
+                [
+                    opcode::SEMANTIC_LIR_OP_BRANCH,
+                    0,
+                    0,
+                    u32::MAX,
+                    5,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
+                [
+                    opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN,
+                    0,
+                    0,
+                    u32::MAX,
+                    6,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
+                [
+                    opcode::SEMANTIC_LIR_OP_CALL,
+                    3,
+                    0,
+                    u32::MAX,
+                    4,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
+                [
+                    opcode::SEMANTIC_LIR_OP_CALL_SYMBOL,
+                    3,
+                    0,
+                    u32::MAX,
+                    7,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
             ]),
             8,
         );
@@ -776,7 +848,7 @@ mod tests {
                 [3, 2, u32::MAX, u32::MAX],
                 [5, 6, u32::MAX, u32::MAX],
                 [6, u32::MAX, u32::MAX, u32::MAX],
-                [4, 42, 0, 2],
+                [4, 0, 0, 2],
                 [7, 7, 11, 23],
             ]),
             8,
@@ -881,8 +953,12 @@ mod tests {
                 [u32::MAX; 4],
                 [u32::MAX; 4],
                 [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
             ]),
-            8,
+            12,
         );
         let function_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.fn_count", &[1]);
         let param_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.param_count", &[1]);
@@ -939,7 +1015,7 @@ mod tests {
         let locations_rb = readback_bytes(&gpu.device, "test.x86_lir.locations.rb", 160, 40);
         let function_count_rb = readback_bytes(&gpu.device, "test.x86_lir.function_count.rb", 4, 1);
         let functions_rb = readback_bytes(&gpu.device, "test.x86_lir.functions.rb", 64, 16);
-        let status_rb = readback_bytes(&gpu.device, "test.x86_lir.status.rb", 16, 4);
+        let status_rb = readback_bytes(&gpu.device, "test.x86_lir.status.rb", 32, 8);
         let frame_slots_rb = readback_bytes(&gpu.device, "test.x86_lir.frame_slots.rb", 32, 8);
         let saved_mask_rb = readback_bytes(&gpu.device, "test.x86_lir.saved_mask.rb", 4, 1);
         output.total.copy_to(&mut encoder, 0, &total_rb, 0, 4);
@@ -956,7 +1032,7 @@ mod tests {
         functions
             .rows
             .copy_to(&mut encoder, 0, &functions_rb, 0, 64);
-        status.copy_to(&mut encoder, 0, &status_rb, 0, 16);
+        status.copy_to(&mut encoder, 0, &status_rb, 0, 32);
         stage
             .decl_location_by_token
             .copy_to(&mut encoder, 0, &frame_slots_rb, 0, 32);
@@ -1021,9 +1097,18 @@ mod tests {
             read_words(&gpu.device, &saved_mask_rb)[0],
             (1 << 3) | (1 << 12)
         );
+        let status_words = read_words(&gpu.device, &status_rb);
+        // This fixture deliberately keeps one parameter on the entrypoint so
+        // the LIR can exercise parameter/register placement. Artifact
+        // validation must report that unsupported executable ABI after the
+        // scheduled target rows have still been materialized.
         assert_eq!(
-            read_words(&gpu.device, &status_rb)[0] & opcode::LOWERING_STATUS_UNSUPPORTED_TARGET,
-            0
+            status_words[0] & opcode::LOWERING_STATUS_UNSUPPORTED_TARGET,
+            opcode::LOWERING_STATUS_UNSUPPORTED_TARGET,
+        );
+        assert_eq!(
+            status_words[4],
+            super::super::lowering_ir::LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_PARAMETERS,
         );
     }
 }

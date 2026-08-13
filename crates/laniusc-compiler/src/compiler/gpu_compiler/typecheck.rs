@@ -1517,11 +1517,15 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
         GpuTypeCheckCode::InvalidModulePath => {
             invalid_module_path_diagnostic(path, source, start, len)
         }
-        GpuTypeCheckCode::BadHir => trait_impl_diagnostic(path, source, start, len, detail)
-            .or_else(|| generic_param_diagnostic(path, source, start, len, detail))
+        GpuTypeCheckCode::BadHir => generic_param_diagnostic(path, source, start, len, detail)
             .unwrap_or_else(|| {
                 syntax_error_to_compile_error_for_source_span(path, source, start, len)
             }),
+        GpuTypeCheckCode::InvalidTraitImplementation => {
+            trait_impl_diagnostic(path, source, start, len, detail).unwrap_or_else(|| {
+                unclassified_type_check_diagnostic(path, source, start, len, 17, detail)
+            })
+        }
         GpuTypeCheckCode::TraitBoundUnsatisfied | GpuTypeCheckCode::TraitBoundAmbiguous => {
             trait_bound_diagnostic(path, source, start, len, code, detail)
         }
@@ -1888,6 +1892,7 @@ fn trait_bound_diagnostic(
     const PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND: u32 = 18;
     const PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW: u32 = 21;
     const PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION: u32 = 22;
+    const PREDICATE_STATUS_INACCESSIBLE_BOUND_TYPE_ARG: u32 = 36;
 
     let (diagnostic_code, message, label, note) = match code {
         GpuTypeCheckCode::TraitBoundUnsatisfied if detail == PREDICATE_STATUS_INVALID_SUBJECT => (
@@ -1902,6 +1907,16 @@ fn trait_bound_diagnostic(
             "trait bound target does not resolve to a trait",
             "name a trait in the bound before relying on trait solving",
         ),
+        GpuTypeCheckCode::TraitBoundUnsatisfied
+            if detail == PREDICATE_STATUS_INACCESSIBLE_BOUND_TYPE_ARG =>
+        {
+            (
+                "LNC0008",
+                "unsatisfied trait bound",
+                "trait bound argument type is not visible here",
+                "make the bound argument type public or keep this bound in its defining module",
+            )
+        }
         GpuTypeCheckCode::TraitBoundUnsatisfied
             if detail == PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH =>
         {

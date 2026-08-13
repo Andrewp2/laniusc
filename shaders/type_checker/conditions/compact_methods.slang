@@ -20,7 +20,7 @@ static const uint METHOD_SIGNATURE_HAS_GENERICS = 1u;
 static const uint METHOD_SIGNATURE_HAS_WHERE = 2u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC = 16u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE = 17u;
-static const uint ERR_BAD_HIR = 6u;
+static const uint ERR_INVALID_TRAIT_IMPLEMENTATION = 17u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_method_count()
@@ -49,5 +49,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (detail == 0u) return;
 
     uint token = compact_method_cores[row].name_token;
-    record_min_token_error(status, valid_token(token) ? token : 0u, ERR_BAD_HIR, detail);
+    record_min_token_error(
+        status,
+        valid_token(token) ? token : 0u,
+        ERR_INVALID_TRAIT_IMPLEMENTATION,
+        detail);
 }

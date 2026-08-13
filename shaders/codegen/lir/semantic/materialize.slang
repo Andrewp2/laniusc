@@ -245,6 +245,13 @@ bool static_index_in_bounds(uint node, uint length, uint hir_count)
     return payload.a == HIR_EXPR_INT && payload.b < length;
 }
 
+bool static_nonzero_integer(uint node, uint hir_count)
+{
+    if (node >= hir_count) return false;
+    HirPayload payload = compact_hir_payload[node];
+    return payload.a == HIR_EXPR_INT && payload.b != 0u;
+}
+
 uint bounded_token(uint node, uint hir_count, uint fallback)
 {
     return node != LIR_INVALID && node < hir_count
@@ -955,27 +962,13 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         bool indexed_may_trap =
             (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u &&
             !static_index_in_bounds(index_hir, core.array_length, hir_count);
-        if (op == SEMANTIC_LIR_OP_DIV || op == SEMANTIC_LIR_OP_REM ||
-            op == SEMANTIC_LIR_OP_SHIFT_LEFT || op == SEMANTIC_LIR_OP_SHIFT_RIGHT ||
-            indexed_may_trap)
+        bool division_may_trap =
+            (op == SEMANTIC_LIR_OP_DIV || op == SEMANTIC_LIR_OP_REM) &&
+            !static_nonzero_integer(payload.c, hir_count);
+        if (division_may_trap || op == SEMANTIC_LIR_OP_SHIFT_LEFT ||
+            op == SEMANTIC_LIR_OP_SHIFT_RIGHT || indexed_may_trap)
             core.flags |= SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_TRAP;
     }
-    if (match_expression)
-    {
-        uint parent = hir.parent;
-        bool return_context = false;
-        if (parent < hir_count)
-        {
-            HirCore parent_core = compact_hir_core[parent];
-            HirPayload parent_payload = compact_hir_payload[parent];
-            return_context = parent_core.kind == HIR_RETURN_STMT ||
-                (parent_core.kind == HIR_STMT && parent_payload.a == HIR_STMT_RETURN) ||
-                parent_core.kind == HIR_CONST_ITEM;
-        }
-        if (!return_context)
-            core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED_MATCH_CONTEXT;
-    }
-
     SemanticLirOperands operands;
     operands.result = row;
     operands.a = LIR_INVALID;

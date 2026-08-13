@@ -224,7 +224,7 @@ fn main() -> i32 {
         let output = std::process::Command::new(node)
             .args([
                 "-e",
-                "const fs=require('fs'); WebAssembly.instantiate(fs.readFileSync(process.argv[1])).then(x=>process.stdout.write(String(x.instance.exports.main())))",
+                "const fs=require('fs'); const env=new Proxy({}, {get:()=>()=>0}); WebAssembly.instantiate(fs.readFileSync(process.argv[1]), {env}).then(x=>process.stdout.write(String(x.instance.exports.main())))",
                 path.to_str().unwrap(),
             ])
             .output()

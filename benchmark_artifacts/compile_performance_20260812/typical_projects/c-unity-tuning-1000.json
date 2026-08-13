@@ -1,0 +1,75 @@
+{
+  "schema": "lanius.c-unity-compile-experiment.v1",
+  "status": "complete",
+  "file_count": 1000,
+  "source_files": 1000,
+  "source_bytes": 10364217,
+  "expected_stdout": "1310\n",
+  "compiler": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+  "linker": "Ubuntu LLD 18.1.3 (compatible with GNU linkers)",
+  "lane": "unity_o0",
+  "configuration": {
+    "unity_units": 40,
+    "files_per_unit_min": 24,
+    "files_per_unit_max": 26,
+    "bytes_per_unit_min": 258627,
+    "bytes_per_unit_max": 260399,
+    "grouping": "greedy largest-source-first balance by source bytes",
+    "compile_flags": [
+      "-std=c17",
+      "-O0",
+      "-g0",
+      "-D_POSIX_C_SOURCE=200809L",
+      "-Iinclude",
+      "-x",
+      "c"
+    ],
+    "unity_mechanism": "Each source is supplied to its unit with a command-line -include; the resulting unit compiles from /dev/null.",
+    "link_flags": ["-fuse-ld=lld"],
+    "maximum_parallel_compile_processes": 40,
+    "dependency_files": false
+  },
+  "measurement_policy": {
+    "timed": "Compile all 40 precomputed unity units and link the executable.",
+    "excluded": "Source grouping and executable validation.",
+    "cache": "No compiler result cache; every unity object is rebuilt in every sample.",
+    "source_variation": "The source text is unchanged between samples.",
+    "validation": "Every executable ran from the project root and produced exact stdout with exit code 0."
+  },
+  "compile": {
+    "samples": 20,
+    "median_ms": 569.5921455,
+    "mad_ms": 20.508797500000014,
+    "min_ms": 508.282447,
+    "max_ms": 649.653937
+  },
+  "samples": [
+    {"sample": 0, "wall_ms": 647.909281, "validated": true},
+    {"sample": 1, "wall_ms": 639.067665, "validated": true},
+    {"sample": 2, "wall_ms": 614.471260, "validated": true},
+    {"sample": 3, "wall_ms": 649.653937, "validated": true},
+    {"sample": 4, "wall_ms": 597.981151, "validated": true},
+    {"sample": 5, "wall_ms": 565.335630, "validated": true},
+    {"sample": 6, "wall_ms": 589.363376, "validated": true},
+    {"sample": 7, "wall_ms": 553.380630, "validated": true},
+    {"sample": 8, "wall_ms": 508.282447, "validated": true},
+    {"sample": 9, "wall_ms": 569.530953, "validated": true},
+    {"sample": 10, "wall_ms": 569.653338, "validated": true},
+    {"sample": 11, "wall_ms": 529.139043, "validated": true},
+    {"sample": 12, "wall_ms": 524.982809, "validated": true},
+    {"sample": 13, "wall_ms": 548.345781, "validated": true},
+    {"sample": 14, "wall_ms": 577.529353, "validated": true},
+    {"sample": 15, "wall_ms": 558.684911, "validated": true},
+    {"sample": 16, "wall_ms": 577.464145, "validated": true},
+    {"sample": 17, "wall_ms": 579.603366, "validated": true},
+    {"sample": 18, "wall_ms": 562.160092, "validated": true},
+    {"sample": 19, "wall_ms": 547.478734, "validated": true}
+  ],
+  "comparison": {
+    "conventional_gcc_o0_median_ms": 1726.370200,
+    "speedup_over_conventional_gcc_o0": 3.030888,
+    "lanius_warm_daemon_median_ms": 242.0234795,
+    "slowdown_vs_lanius": 2.353458
+  },
+  "generality_note": "Unity builds can change preprocessing order and expose collisions among file-local names. This generated project uses module-prefixed file-local identifiers and passed execution validation, but this result is not automatically representative of arbitrary C projects."
+}

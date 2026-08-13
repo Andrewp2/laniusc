@@ -10,6 +10,8 @@ StructuredBuffer<uint> hir_type_arg_count;
 RWStructuredBuffer<uint> family_flag;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_TYPE = 5u;
+static const uint HIR_PATH_EXPR = 33u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -24,8 +26,9 @@ void main(uint3 dtid: SV_DispatchThreadID) {
         return;
     }
     uint owner = hir_type_arg_owner[raw];
-    bool valid_owner = owner < gCanonical.raw_capacity && hir_kind[owner] == 5u &&
+    bool valid_owner = owner < gCanonical.raw_capacity &&
+                       (hir_kind[owner] == HIR_TYPE || hir_kind[owner] == HIR_PATH_EXPR) &&
                        hir_type_arg_start[owner] != INVALID && hir_type_arg_count[owner] != 0u;
-    family_flag[dense] = raw < gCanonical.raw_capacity && hir_kind[raw] == 5u && valid_owner &&
+    family_flag[dense] = raw < gCanonical.raw_capacity && hir_kind[raw] == HIR_TYPE && valid_owner &&
                        owner != raw && hir_type_arg_rank[raw] < hir_type_arg_count[owner] ? 1u : 0u;
 }

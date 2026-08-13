@@ -1,0 +1,51 @@
+{
+  "schema": "lanius.compile-performance-snapshot.v1",
+  "captured_on": "2026-08-13",
+  "source_work_directory": "target/perf-20260812",
+  "canonical_results": "results.tsv",
+  "artifacts": {
+    "single_file_1mb": {
+      "status": "complete",
+      "directory": "single_file_1mb",
+      "samples_per_cell": 20,
+      "languages": ["c", "cpp", "lanius", "rust", "zig"],
+      "note": "The stored Rust rows predate the parallel-frontend correction. All raw samples, commands, configuration, provenance, and summary data are retained."
+    },
+    "typical_projects": {
+      "directory": "typical_projects",
+      "files": {
+        "typical-supported-final-lanius.json": {
+          "status": "complete",
+          "coverage": "Lanius warm-daemon jobs for 1, 10, 100, and 1000 files"
+        },
+        "typical-100-1000-final.json": {
+          "status": "complete",
+          "coverage": "20-sample C, C++, Rust, Zig, and Lanius comparison for 100 and 1000 files",
+          "note": "Its Rust rows predate the parallel-frontend correction; use typical-rust-parallel-final.json for corrected Rust numbers."
+        },
+        "typical-rust-parallel-final.json": {
+          "status": "complete",
+          "coverage": "20-sample Rust debug and optimized builds for 1, 10, 100, 1000, and 10000 files",
+          "rust_flags": "-Awarnings -Zthreads=16"
+        },
+        "typical-native-1-10.json": {
+          "status": "complete",
+          "coverage": "20-sample native compiler rows for 1-file and 10-file projects"
+        },
+        "typical-native-10000-c-cpp.json": {
+          "status": "complete",
+          "coverage": "Completed 20-sample C and C++ rows for 10000 files; interruption metadata is stored separately from the rows"
+        },
+        "c-unity-tuning-1000.json": {
+          "status": "complete",
+          "coverage": "20-sample Clang 18 + LLD compile-and-link experiment using 40 balanced unity units for the 1000-file C project",
+          "note": "Stored as a separate unity_o0 lane because unity-build compatibility is not guaranteed for arbitrary C projects."
+        }
+      },
+      "pending": {
+        "zig_10000_optimized": "The 20-sample run was still active when this snapshot was created and will be added after completion.",
+        "lanius_10000": "No result exists: the source-root path exhausted GPU memory instead of scheduling bounded compilation units."
+      }
+    }
+  }
+}

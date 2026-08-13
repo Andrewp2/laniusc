@@ -159,7 +159,7 @@ class TypicalProjectModelTests(unittest.TestCase):
             "where_clause": "where T: ScorePolicy<T>",
             "const_generic": "<const N: usize>",
             "reference_type": "fn borrowed_marker(&self)",
-            "slice_type": "values: [i32]",
+            "fixed_array_parameter": "values: [i32; 4]",
             "extern_abi": 'extern "lanius_std" fn argc()',
             "string_literal": 'let label: str = "module-',
             "char_literal": "let delimiter: char = ':';",
@@ -202,7 +202,7 @@ class TypicalProjectModelTests(unittest.TestCase):
         active_use_sites = {
             "trait_bound": "rare_construct_score(seed)",
             "generic_bound_call": "preserve_scored(seed)",
-            "const_generic_call": "first_const_generic(const_values)",
+            "const_generic_call": "first_const_generic(seed, const_values)",
             "reference_method_call": "borrowed.borrowed_marker()",
             "slice_call": "first_slice(slice_values)",
             "extern_call": "observed_argc: i32 = argc()",

@@ -172,8 +172,8 @@ pub(in crate::compiler) fn validate_path_manifest(
             manifest.version, SOURCE_PACK_PATH_BUILD_MANIFEST_VERSION
         )));
     }
-    validate_artifact_manifest(&manifest.artifacts)?;
     validate_path_manifest_source_ranges(manifest)?;
+    validate_artifact_manifest(&manifest.artifacts)?;
     Ok(())
 }
 

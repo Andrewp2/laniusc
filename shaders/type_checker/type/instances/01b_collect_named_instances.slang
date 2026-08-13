@@ -27,6 +27,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_TYPE = 5u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_NAMED = 1u;
@@ -47,7 +48,7 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint leaf_token_for_owner(uint owner)
+uint instance_token_for_owner(uint owner)
 {
     uint path_i = path_id_by_owner_hir[owner];
     uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
@@ -56,7 +57,11 @@ uint leaf_token_for_owner(uint owner)
     uint count = path_segment_count[path_i];
     if (count == 0u)
         return INVALID;
-    uint row = path_segment_base[path_i] + count - 1u;
+    uint kind = compact_hir_core[owner].kind;
+    if (kind == HIR_PATH_EXPR && count < 2u)
+        return INVALID;
+    uint segment = kind == HIR_PATH_EXPR && count >= 2u ? count - 2u : count - 1u;
+    uint row = path_segment_base[path_i] + segment;
     return row < gParams.n_tokens ? path_segment_token[row] : INVALID;
 }
 
@@ -67,8 +72,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner = linear_thread_id(dtid);
     if (owner >= active_hir_count())
         return;
-    if (compact_hir_core[owner].kind != HIR_TYPE ||
-        compact_hir_payload[owner].a != HIR_TYPE_FORM_PATH)
+    uint owner_kind = compact_hir_core[owner].kind;
+    if (owner_kind != HIR_PATH_EXPR &&
+        (owner_kind != HIR_TYPE || compact_hir_payload[owner].a != HIR_TYPE_FORM_PATH))
         return;
 
     HirRange args = compact_type_arg_ranges[owner];
@@ -76,12 +82,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint owner_token = compact_hir_core[owner].token_start;
-    uint leaf_token = leaf_token_for_owner(owner);
+    uint leaf_token = instance_token_for_owner(owner);
     if (!valid_token(owner_token) || !valid_token(leaf_token))
         return;
 
-    type_expr_ref_tag[owner_token] = TYPE_REF_INSTANCE;
-    type_expr_ref_payload[owner_token] = leaf_token;
+    if (owner_kind == HIR_TYPE)
+    {
+        type_expr_ref_tag[owner_token] = TYPE_REF_INSTANCE;
+        type_expr_ref_payload[owner_token] = leaf_token;
+    }
     type_expr_ref_tag[leaf_token] = TYPE_REF_INSTANCE;
     type_expr_ref_payload[leaf_token] = leaf_token;
     type_instance_kind[leaf_token] = TYPE_INSTANCE_NAMED;

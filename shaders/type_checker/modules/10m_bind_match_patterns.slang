@@ -134,15 +134,18 @@ void bind_resolved_pattern(uint pattern, uint actual_count)
     if (!enum_variant_decl(resolved_value_decl[path_i], variant_token, enum_token, variant))
         return;
 
+    // Name resolution succeeds independently of payload-arity validation.
+    // Keep the pattern bound so later name checks do not replace the more
+    // useful arity diagnostic with an "unresolved identifier" error.
+    bind_decl(owner_token, variant_token);
+    visible_type[owner_token] = TY_ENUM_BASE + enum_token;
+
     uint expected_count = compact_variant_payload_count[variant];
     if (actual_count != expected_count)
     {
         record_min_token_error(status, owner_token, ERR_ASSIGN_MISMATCH, 0u);
         return;
     }
-
-    bind_decl(owner_token, variant_token);
-    visible_type[owner_token] = TY_ENUM_BASE + enum_token;
 }
 
 [shader("compute")]

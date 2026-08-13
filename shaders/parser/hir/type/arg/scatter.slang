@@ -25,6 +25,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_TYPE = 5u;
+static const uint HIR_PATH_EXPR = 33u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -41,9 +42,10 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
-bool valid_type_node(uint node)
+bool valid_type_arg_owner(uint node)
 {
-    return valid_node(node) && hir_kind[node] == HIR_TYPE;
+    return valid_node(node) &&
+           (hir_kind[node] == HIR_TYPE || hir_kind[node] == HIR_PATH_EXPR);
 }
 
 [shader("compute")]
@@ -55,13 +57,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint owner = hir_type_arg_owner_a[node];
-    if (!valid_type_node(owner))
+    if (!valid_type_arg_owner(owner))
         return;
 
     uint ordinal = hir_type_arg_rank_a[node];
     uint previous = hir_type_arg_previous[node];
     atomic_u32_min(hir_type_arg_start, owner, node);
     atomic_u32_max(hir_type_arg_count, owner, ordinal + 1u);
-    if (valid_type_node(previous))
+    if (valid_node(previous) && hir_kind[previous] == HIR_TYPE)
         hir_type_arg_next[previous] = node;
 }

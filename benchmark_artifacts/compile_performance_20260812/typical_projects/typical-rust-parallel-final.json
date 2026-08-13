@@ -1,0 +1,2680 @@
+{
+  "lanius_results": null,
+  "machine": {
+    "gpu": "NVIDIA GeForce RTX 3090, 580.173.02, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "versions": {
+      "cargo": "cargo 1.99.0-nightly (3efb1f477 2026-07-17)",
+      "g++": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "ninja": "1.11.1",
+      "rustc": "rustc 1.99.0-nightly (87e5904f5 2026-07-20)",
+      "zig": "0.16.0"
+    }
+  },
+  "measurement_policy": {
+    "debug_info": "disabled",
+    "lanius": "warm daemon edit job including request, source load, compile, and artifact write",
+    "native": "clean build; cleanup occurs before timed interval; default compiler parallelism",
+    "native_source_variation": "a semantics-neutral entry-source marker changes for every sample",
+    "rust": "clean Cargo build with incremental compilation disabled, warnings suppressed, and nightly parallel frontend -Zthreads=16",
+    "validation": "every emitted artifact executed and exact stdout checked",
+    "zig_cache": "fresh local build cache per sample; persistent compiler-global cache; one unmeasured primer per lane"
+  },
+  "native_samples": [
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 254.119121
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 260.620329
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 251.649957
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 249.779269
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 232.067576
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 227.819691
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 240.288578
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 238.972349
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 251.07415
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 237.155089
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 231.416112
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 246.897472
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 235.749844
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 232.615826
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 251.523322
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 248.085056
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 297.588565
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 247.750839
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 234.737334
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 238.484488
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 290.943804
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 278.970078
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 255.064536
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 256.125684
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 253.772826
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 290.489662
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 255.888674
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 261.15599
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 259.36076
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 267.722465
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 258.074659
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 272.273559
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 276.35439
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 276.983377
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 286.509757
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 295.478619
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 290.997173
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 258.905388
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 251.90248
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 268.586092
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 261.094193
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 300.436067
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 248.090447
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 234.676118
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 271.540368
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 234.775045
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 238.715472
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 257.894758
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 266.394409
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 238.260189
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 246.673943
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 266.864741
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 226.367281
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 240.377658
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 241.518883
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 272.173235
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 262.067087
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 259.768306
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 264.687606
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 253.510629
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 329.475023
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 312.222002
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 345.794881
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 302.848526
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 350.571985
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 323.512365
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 319.989821
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 337.162576
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 299.244916
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 320.891788
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 348.218067
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 310.072827
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 379.444957
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 292.778758
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 323.572934
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 347.013085
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 292.890493
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 304.775773
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 289.11113
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 298.510386
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 730.40831
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 619.460263
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 623.475108
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 588.167737
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 625.331836
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 645.984757
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 621.292794
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 619.534872
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 567.74793
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 631.545137
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 646.370693
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 622.74332
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 724.178668
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 645.583935
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 729.003042
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 587.314405
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 591.085698
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 688.645828
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 632.630799
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 595.302156
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 761.217266
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 715.796207
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 801.589982
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 786.591465
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 791.492725
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 811.966512
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 725.756664
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 720.652212
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 687.154731
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 688.383464
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 778.220093
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 710.605464
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 750.158221
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 722.87694
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 715.465967
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 742.214061
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 815.771432
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 729.479435
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 718.196633
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 741.52491
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 5402.623122
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 5433.491993
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 5116.273886
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 4989.054786
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 5735.89503
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 5176.297005
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 5424.644983
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 4880.287458
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 4845.789594
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 4786.028078
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 4813.152346
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 4858.333547
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 5105.147038
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 5221.911003
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 5072.630158
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 4761.773511
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 4875.968633
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 4787.652097
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 4899.356475
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 4788.484869
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 5666.473008
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 6184.009348
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 5864.165597
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 5544.332931
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 5615.06789
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 6329.210992
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 5861.578654
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 5712.962988
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 5741.412392
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 6287.816774
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 5959.796626
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 5665.089748
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 5771.576318
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 5487.097202
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 5770.048789
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 5881.873594
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 5796.014539
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 5724.281508
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 5595.912331
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 5820.984606
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 54752.494298
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 54806.180609
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 55271.428864
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 56137.022055
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 51178.424161
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 57834.801965
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 50929.82352
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 53087.488793
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 51114.398215
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 50626.529345
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 53981.594679
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 53993.984807
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 52693.623127
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 49940.019838
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 53646.640051
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 53631.444215
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 53104.694433
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 53607.757668
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 51406.001705
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet"
+      ],
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 55005.978513
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 0,
+      "wall_ms": 60336.504209
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 1,
+      "wall_ms": 60835.971872
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 2,
+      "wall_ms": 59177.226292
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 3,
+      "wall_ms": 59688.309455
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 4,
+      "wall_ms": 58463.48913
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 5,
+      "wall_ms": 58610.427329
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 6,
+      "wall_ms": 59822.692268
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 7,
+      "wall_ms": 59731.964757
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 8,
+      "wall_ms": 58455.91647
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 9,
+      "wall_ms": 58166.468791
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 10,
+      "wall_ms": 56718.184273
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 11,
+      "wall_ms": 58618.285674
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 12,
+      "wall_ms": 61642.416785
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 13,
+      "wall_ms": 58931.436161
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 14,
+      "wall_ms": 59829.22559
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 15,
+      "wall_ms": 62792.424048
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 16,
+      "wall_ms": 58182.485462
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 17,
+      "wall_ms": 58776.171265
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 18,
+      "wall_ms": 59084.029634
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--quiet",
+        "--release"
+      ],
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "sample": 19,
+      "wall_ms": 58413.177607
+    }
+  ],
+  "rows": [
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 7.886739000000006,
+        "max_ms": 297.588565,
+        "median_ms": 243.593025,
+        "min_ms": 227.819691,
+        "samples": 20
+      },
+      "file_count": 1,
+      "lane": "o0",
+      "language": "rust",
+      "source_bytes": 36490,
+      "source_files": 1
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 11.422197000000011,
+        "max_ms": 295.478619,
+        "median_ms": 268.15427850000003,
+        "min_ms": 251.90248,
+        "samples": 20
+      },
+      "file_count": 1,
+      "lane": "optimized",
+      "language": "rust",
+      "source_bytes": 36490,
+      "source_files": 1
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 12.672928999999996,
+        "max_ms": 300.436067,
+        "median_ms": 255.7026935,
+        "min_ms": 226.367281,
+        "samples": 20
+      },
+      "file_count": 10,
+      "lane": "o0",
+      "language": "rust",
+      "source_bytes": 73810,
+      "source_files": 10
+    },
+    {
+      "artifact_sha256_count": 2,
+      "compile": {
+        "mad_ms": 19.394083500000022,
+        "max_ms": 379.444957,
+        "median_ms": 320.4408045,
+        "min_ms": 289.11113,
+        "samples": 20
+      },
+      "file_count": 10,
+      "lane": "optimized",
+      "language": "rust",
+      "source_bytes": 73810,
+      "source_files": 10
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 21.774252999999987,
+        "max_ms": 730.40831,
+        "median_ms": 624.403472,
+        "min_ms": 567.74793,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "o0",
+      "language": "rust",
+      "source_bytes": 801111,
+      "source_files": 100
+    },
+    {
+      "artifact_sha256_count": 2,
+      "compile": {
+        "mad_ms": 22.466456999999934,
+        "max_ms": 815.771432,
+        "median_ms": 735.5021724999999,
+        "min_ms": 687.154731,
+        "samples": 20
+      },
+      "file_count": 100,
+      "lane": "optimized",
+      "language": "rust",
+      "source_bytes": 801111,
+      "source_files": 100
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 157.36554299999943,
+        "max_ms": 5735.89503,
+        "median_ms": 4944.2056305,
+        "min_ms": 4761.773511,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "o0",
+      "language": "rust",
+      "source_bytes": 8986449,
+      "source_files": 1000
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 105.03117549999979,
+        "max_ms": 6329.210992,
+        "median_ms": 5770.8125535,
+        "min_ms": 5487.097202,
+        "samples": 20
+      },
+      "file_count": 1000,
+      "lane": "optimized",
+      "language": "rust",
+      "source_bytes": 8986449,
+      "source_files": 1000
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 1286.4786195000015,
+        "max_ms": 57834.801965,
+        "median_ms": 53619.6009415,
+        "min_ms": 49940.019838,
+        "samples": 20
+      },
+      "file_count": 10000,
+      "lane": "o0",
+      "language": "rust",
+      "source_bytes": 91631605,
+      "source_files": 10000
+    },
+    {
+      "artifact_sha256_count": 1,
+      "compile": {
+        "mad_ms": 702.4042085000037,
+        "max_ms": 62792.424048,
+        "median_ms": 59007.7328975,
+        "min_ms": 56718.184273,
+        "samples": 20
+      },
+      "file_count": 10000,
+      "lane": "optimized",
+      "language": "rust",
+      "source_bytes": 91631605,
+      "source_files": 10000
+    }
+  ],
+  "schema": "lanius.typical-project-comparison.v1"
+}

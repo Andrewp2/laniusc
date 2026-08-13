@@ -1,0 +1,16 @@
+{
+  "schema": "lanius.typical-project-completed-rows.v1",
+  "status": "complete",
+  "samples_per_cell": 20,
+  "coverage": "C and C++ rows for the 10000-file project; the combined runner was interrupted after these rows completed",
+  "interruption": {
+    "reason": "Rust methodology was corrected to enable the nightly parallel frontend",
+    "completed_rows_affected": false
+  },
+  "rows": [
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 155.67170850000002, "max_ms": 20315.560596, "median_ms": 19912.966701999998, "min_ms": 18315.06362, "samples": 20}, "file_count": 10000, "lane": "o0", "language": "c", "source_bytes": 106099442, "source_files": 10000},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 436.44289299999946, "max_ms": 35731.158136, "median_ms": 33707.1591875, "min_ms": 32277.967777, "samples": 20}, "file_count": 10000, "lane": "optimized", "language": "c", "source_bytes": 106099442, "source_files": 10000},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 274.92142500000045, "max_ms": 23765.351473, "median_ms": 22356.995632500002, "min_ms": 20941.323292, "samples": 20}, "file_count": 10000, "lane": "o0", "language": "cpp", "source_bytes": 95001014, "source_files": 10000},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 1329.718519500002, "max_ms": 37548.816458, "median_ms": 35960.72089, "min_ms": 34146.521577, "samples": 20}, "file_count": 10000, "lane": "optimized", "language": "cpp", "source_bytes": 95001014, "source_files": 10000}
+  ]
+}

@@ -13,6 +13,8 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> path_id_by_owner_hir;
@@ -33,6 +35,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint PATH_KIND_VALUE = 3u;
 
 uint linear_thread_id(uint3 dtid)
@@ -51,13 +54,17 @@ uint path_for_callee(uint callee)
     if (!valid_hir(callee))
         return INVALID;
     uint path = path_id_by_owner_hir[callee];
-    if (valid_path(path))
+    uint compact_count = min(compact_path_count[0u], gParams.n_hir_nodes);
+    if (valid_path(path) && path < compact_count && compact_paths[path].owner == callee)
         return path;
 
     // A name expression normally owns its compact path directly. Preserve
     // the equally valid representation where its durable path child owns it.
     uint child = compact_hir_links[callee].first_child;
-    return valid_hir(child) ? path_id_by_owner_hir[child] : INVALID;
+    path = valid_hir(child) ? path_id_by_owner_hir[child] : INVALID;
+    return valid_path(path) && path < compact_count && compact_paths[path].owner == child
+               ? path
+               : INVALID;
 }
 
 uint path_leaf_token(uint path)
@@ -79,6 +86,18 @@ uint path_receiver_token(uint path, uint leaf_token)
     return valid_token(token) ? token : leaf_token;
 }
 
+uint callee_token(uint callee)
+{
+    if (!valid_hir(callee))
+        return INVALID;
+    HirCore core = compact_hir_core[callee];
+    HirPayload payload = compact_hir_payload[callee];
+    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (!valid_token(token))
+        token = core.token_start;
+    return valid_token(token) ? token : INVALID;
+}
+
 void mark_value_path(uint path)
 {
     if (!valid_path(path) || path_kind[path] != PATH_KIND_VALUE)
@@ -92,7 +111,12 @@ void mark_value_call(uint call_node)
 {
     if (!valid_hir(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return;
-    uint path = path_for_callee(compact_hir_payload[call_node].a);
+    uint callee = compact_hir_payload[call_node].a;
+    uint direct_token = callee_token(callee);
+    if (valid_token(direct_token))
+        module_value_path_call_leaf[direct_token] = 1u;
+
+    uint path = path_for_callee(callee);
     if (!valid_path(path) || path_kind[path] != PATH_KIND_VALUE)
         return;
 

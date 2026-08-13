@@ -28,20 +28,21 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPath
                 b.hir_canonical_params.as_entire_binding(),
             ),
             (
-                "family_flag".into(),
-                b.hir_path_segment_family_flag.as_entire_binding(),
+                "tree_count_status".into(),
+                if b.tree_count_uses_status {
+                    b.partial_parse_status.as_entire_binding()
+                } else {
+                    b.ll1_status.as_entire_binding()
+                },
             ),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
             (
-                "family_local_prefix".into(),
+                "owner_local_prefix".into(),
                 b.hir_semantic_local_prefix.as_entire_binding(),
             ),
             (
-                "family_block_prefix".into(),
+                "owner_block_prefix".into(),
                 b.hir_semantic_block_prefix_a.as_entire_binding(),
-            ),
-            (
-                "candidate_raw_by_anchor".into(),
-                b.hir_canonical_anchor_owner.as_entire_binding(),
             ),
             (
                 "path_segment_owner".into(),

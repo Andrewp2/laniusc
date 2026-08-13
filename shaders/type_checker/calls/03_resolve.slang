@@ -29,9 +29,9 @@ StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_param_count;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> path_id_by_owner_hir;
-StructuredBuffer<uint> path_segment_count;
-StructuredBuffer<uint> path_owner_module_id;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
@@ -166,13 +166,23 @@ uint path_id_for_call(uint call_node)
     uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return INVALID;
-    uint path_i = path_id_by_owner_hir[callee_node];
-    if (path_i == INVALID || path_i >= gParams.n_hir_nodes)
-    {
-        uint path_node = path_node_for_callee(callee_node);
-        path_i = valid_node(path_node) ? path_id_by_owner_hir[path_node] : INVALID;
-    }
-    return path_i < gParams.n_hir_nodes ? path_i : INVALID;
+    uint path_node = path_node_for_callee(callee_node);
+    if (!valid_node(path_node))
+        return INVALID;
+    uint path_i = path_id_by_owner_hir[path_node];
+    uint path_count = min(compact_path_count[0u], gParams.n_hir_nodes);
+    return path_i < path_count && compact_paths[path_i].owner == path_node
+               ? path_i
+               : INVALID;
+}
+
+bool call_callee_is_qualified(uint call_node)
+{
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
+        return false;
+
+    uint path_i = path_id_for_call(call_node);
+    return path_i != INVALID && compact_paths[path_i].segment_count > 1u;
 }
 
 uint resolved_function_for_call_path(uint call_node)
@@ -180,9 +190,6 @@ uint resolved_function_for_call_path(uint call_node)
     uint path_i = path_id_for_call(call_node);
     if (path_i == INVALID)
         return INVALID;
-    if (path_owner_module_id[path_i] == INVALID)
-        return INVALID;
-
     if (resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
         return INVALID;
     uint decl_i = resolved_value_decl[path_i];
@@ -280,9 +287,8 @@ void resolve_callee_token(uint callee_i, uint call_node)
     if (call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
         return;
 
-    uint path_i = path_id_for_call(call_node);
     uint fn_i = INVALID;
-    if (path_i != INVALID && path_owner_module_id[path_i] != INVALID)
+    if (call_callee_is_qualified(call_node))
     {
         fn_i = resolved_function_for_call_path(call_node);
         if (!valid_token(fn_i))
@@ -293,7 +299,13 @@ void resolve_callee_token(uint callee_i, uint call_node)
     }
     else
     {
-        fn_i = visible_function_for_callee(callee_i);
+        // Module/path resolution already publishes the declaration identity
+        // for ordinary one-segment function paths. Consume that durable fact
+        // before consulting the lexical declaration index, whose purpose is
+        // fallback resolution for names without a semantic path row.
+        fn_i = resolved_function_for_call_path(call_node);
+        if (!valid_token(fn_i))
+            fn_i = visible_function_for_callee(callee_i);
         if (!valid_token(fn_i))
         {
             call_return_type[callee_i] = TY_UNKNOWN;

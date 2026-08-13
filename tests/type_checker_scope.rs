@@ -83,7 +83,7 @@ fn type_checker_assignment_mismatch_diagnostic_uses_source_span_and_path() {
             assert!(rendered.contains("error[LNC0006]"));
             assert!(rendered.contains(&artifact.path().display().to_string()));
             assert!(rendered.contains("    let value: i32 = false;"));
-            assert!(rendered.contains("expected a different type here"));
+            assert!(rendered.contains(&diagnostic.message));
             assert!(!rendered.contains("GPU type check rejected"));
         }
         other => panic!("expected assignment mismatch diagnostic, got {other:?}"),

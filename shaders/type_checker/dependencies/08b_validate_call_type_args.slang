@@ -218,20 +218,19 @@ bool generic_claim_matches(uint callee, uint slot, uint form, uint tag, uint pay
     uint count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
     uint bucket = call_claim_lookup_bucket(callee, slot, count);
     uint link = call_generic_claim_lookup_head[bucket];
+    uint canonical = INVALID;
     for (uint step = 0u; step < count && link != 0u; step += 1u)
     {
         uint row = link - 1u;
         if (row >= count)
             break;
         if (call_generic_claim_callee[row] == callee &&
-            call_generic_claim_slot[row] == slot &&
-            generic_claim_row_matches(row, form, tag, payload, token))
-        {
-            return true;
-        }
+            call_generic_claim_slot[row] == slot)
+            canonical = min(canonical, row);
         link = call_generic_claim_lookup_next[row];
     }
-    return false;
+    return canonical != INVALID &&
+           generic_claim_row_matches(canonical, form, tag, payload, token);
 }
 
 bool node_matches(uint expected_row, uint local_row, uint callee)

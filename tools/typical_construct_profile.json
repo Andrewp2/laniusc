@@ -65,7 +65,7 @@
   ],
   "rare_frontend_constructs": [
     "trait", "trait_impl", "public_trait_method", "where_clause", "generic_bound", "const_generic", "reference_type",
-    "slice_type", "extern_function", "extern_abi", "extern_without_abi", "void_function",
+    "fixed_array_parameter", "extern_function", "extern_abi", "extern_without_abi", "void_function",
     "bare_return", "inferred_local", "if_without_else", "group_expression", "unary_positive",
     "empty_call", "param_trailing_comma", "call_trailing_comma", "array_trailing_comma",
     "struct_literal_trailing_comma", "assign_add", "assign_subtract", "assign_multiply", "assign_divide",

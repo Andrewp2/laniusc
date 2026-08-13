@@ -1349,7 +1349,10 @@ impl GpuTypeChecker {
                         .clear_generic_claim_type_args
                         .record(encoder)?;
                 }
-                bind_groups.calls.generic_claim_validation.record(encoder)?;
+                bind_groups
+                    .calls
+                    .generic_claim_validation
+                    .record_claims(encoder)?;
                 if let Some(dependency_visibility) = module_path.dependency_visibility.as_ref() {
                     record_compute_indirect(
                         encoder,
@@ -1362,6 +1365,10 @@ impl GpuTypeChecker {
                     )?;
                 }
                 if aggregates_required {
+                    bind_groups
+                        .calls
+                        .contextual_result_requests
+                        .record(encoder)?;
                     bind_groups.aggregate_compare_scan.record(encoder)?;
                     let aggregate_compare_dispatch_args = bind_groups
                         .typecheck_graph
@@ -1382,6 +1389,10 @@ impl GpuTypeChecker {
                     )?;
                     record_type_subtree_comparison_passes(&self.passes, encoder, bind_groups)?;
                 }
+                bind_groups
+                    .calls
+                    .generic_claim_validation
+                    .record_required(encoder)?;
             }
             bind_groups.calls.apply_row_args.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {

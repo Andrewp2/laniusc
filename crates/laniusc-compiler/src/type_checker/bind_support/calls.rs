@@ -159,6 +159,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )?,
         argument_matching,
         generic_claim_validation,
+        contextual_result_requests: indirect(CALLS_CONTEXTUAL_RESULT_REQUESTS)?,
         clear_generic_claim_type_args: indirect(CALLS_GENERIC_CLAIM_CLEAR)?,
         apply_row_args: indirect(CALLS_APPLY_ARGUMENTS)?,
         infer_array_generics: reflected_bind_group_from_resources(

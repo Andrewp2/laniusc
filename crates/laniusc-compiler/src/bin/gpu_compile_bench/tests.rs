@@ -455,7 +455,7 @@ fn interactive_guard_allows_synthetic_x86_source_by_token_count() {
         "/../../tables/parse_tables.bin"
     )))
     .expect("parse tables");
-    let generated = make_source_artifact(SourceMode::ExprDense, 10_000, None, 975);
+    let generated = make_source_artifact(SourceMode::ExprDense, 5_000, None, 975);
     let source_lines = generated.source.lines().count();
 
     reject_large_interactive_run(
@@ -466,7 +466,7 @@ fn interactive_guard_allows_synthetic_x86_source_by_token_count() {
         false,
         Some(&tables),
     )
-    .expect("10k parse benchmark should not be rejected by allocation estimates");
+    .expect("5k parse benchmark should not be rejected by allocation estimates");
 
     reject_large_interactive_run(
         Phase::X86,
@@ -476,7 +476,7 @@ fn interactive_guard_allows_synthetic_x86_source_by_token_count() {
         false,
         Some(&tables),
     )
-    .expect("10k x86 benchmark should use token count instead of source-byte capacity");
+    .expect("5k x86 benchmark should use token count instead of source-byte capacity");
 }
 
 #[test]

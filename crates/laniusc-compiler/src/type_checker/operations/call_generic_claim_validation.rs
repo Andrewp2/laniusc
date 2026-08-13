@@ -54,7 +54,10 @@ impl CallGenericClaimValidationOperation {
         }
     }
 
-    pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+    pub(in crate::type_checker) fn record_claims(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
         self.claim_scan.record(encoder)?;
         self.emit_claims.record(encoder)?;
         self.generic_index.record(encoder)?;
@@ -68,8 +71,14 @@ impl CallGenericClaimValidationOperation {
             "type_check.calls.generic_claim_validation.required_dispatch",
             1,
         )?;
-        self.validate_required.record(encoder)?;
         self.const_index.record(encoder)?;
         self.validate_const.record(encoder)
+    }
+
+    pub(in crate::type_checker) fn record_required(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
+        self.validate_required.record(encoder)
     }
 }

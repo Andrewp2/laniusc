@@ -43,21 +43,24 @@ def write_files(root: Path, files: dict[str, str]) -> list[dict[str, object]]:
     return records
 
 
-def write_ninja(root: Path, cpp: bool) -> None:
+def write_ninja(root: Path, cpp: bool, optimization: str, lane: str) -> None:
     extension = "cpp" if cpp else "c"
     compiler = "c++" if cpp else "cc"
     standard = "-std=c++20" if cpp else "-std=c17"
     sources = sorted((root / "src").glob(f"*.{extension}"))
-    objects = [f"build/{source.stem}.o" for source in sources]
+    objects = [f"build/{lane}/{source.stem}.o" for source in sources]
+    output = f"typical-project-{lane}"
     lines = [
         f"compiler = {compiler}",
-        f"cflags = {standard} -O0 -g0 -Iinclude",
+        f"cflags = {standard} {optimization} -g0 -Iinclude",
         "rule compile",
         "  command = $compiler $cflags -MMD -MF $out.d -c $in -o $out",
         "  depfile = $out.d",
         "  deps = gcc",
         "rule link",
-        "  command = $compiler $in -o $out",
+        "  command = $compiler @$out.rsp -o $out",
+        "  rspfile = $out.rsp",
+        "  rspfile_content = $in",
         "",
     ]
     lines.extend(
@@ -66,12 +69,12 @@ def write_ninja(root: Path, cpp: bool) -> None:
     )
     lines.extend(
         (
-            f"build typical-project: link {' '.join(objects)}",
-            "default typical-project",
+            f"build {output}: link {' '.join(objects)}",
+            f"default {output}",
             "",
         )
     )
-    (root / "build.ninja").write_text("\n".join(lines))
+    (root / f"build-{lane}.ninja").write_text("\n".join(lines))
 
 
 def generate(out: Path, file_count: int, seed: int) -> dict[str, object]:
@@ -88,7 +91,13 @@ def generate(out: Path, file_count: int, seed: int) -> dict[str, object]:
             # project, where there are no imported module files to create it.
             (language_root / "src").mkdir(exist_ok=True)
         if language in {"c", "cpp"}:
-            write_ninja(language_root, cpp=language == "cpp")
+            write_ninja(language_root, cpp=language == "cpp", optimization="-O0", lane="o0")
+            write_ninja(
+                language_root,
+                cpp=language == "cpp",
+                optimization="-O2",
+                lane="optimized",
+            )
         languages[language] = {
             "source_file_count": len(records),
             "source_bytes": sum(record["bytes"] for record in records),
@@ -115,8 +124,14 @@ def generate(out: Path, file_count: int, seed: int) -> dict[str, object]:
         "structure": project.structure(),
         "languages": languages,
         "commands": {
-            "c": {"build": ["ninja", "-C", "c"], "run": ["c/typical-project"]},
-            "cpp": {"build": ["ninja", "-C", "cpp"], "run": ["cpp/typical-project"]},
+            "c": {
+                "o0": {"build": ["ninja", "-C", "c", "-f", "build-o0.ninja"], "run": ["c/typical-project-o0"]},
+                "optimized": {"build": ["ninja", "-C", "c", "-f", "build-optimized.ninja"], "run": ["c/typical-project-optimized"]},
+            },
+            "cpp": {
+                "o0": {"build": ["ninja", "-C", "cpp", "-f", "build-o0.ninja"], "run": ["cpp/typical-project-o0"]},
+                "optimized": {"build": ["ninja", "-C", "cpp", "-f", "build-optimized.ninja"], "run": ["cpp/typical-project-optimized"]},
+            },
             "rust": {
                 "build": ["cargo", "build", "--manifest-path", "rust/Cargo.toml"],
                 "run": ["rust/target/debug/typical_project"],

@@ -1,0 +1,24 @@
+{
+  "schema": "lanius.typical-project-completed-rows.v1",
+  "status": "complete",
+  "samples_per_cell": 20,
+  "coverage": "Native compiler rows for 1-file and 10-file projects",
+  "rows": [
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 2.613147000000005, "max_ms": 181.243147, "median_ms": 88.5558915, "min_ms": 81.372995, "samples": 20}, "file_count": 1, "lane": "o0", "language": "c", "source_bytes": 40491, "source_files": 1},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 11.41899149999999, "max_ms": 223.452723, "median_ms": 190.0583565, "min_ms": 168.323802, "samples": 20}, "file_count": 1, "lane": "optimized", "language": "c", "source_bytes": 40491, "source_files": 1},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 5.031326499999992, "max_ms": 206.206991, "median_ms": 112.744374, "min_ms": 96.932072, "samples": 20}, "file_count": 1, "lane": "o0", "language": "cpp", "source_bytes": 37702, "source_files": 1},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 10.392965000000004, "max_ms": 252.749615, "median_ms": 225.4967435, "min_ms": 188.206678, "samples": 20}, "file_count": 1, "lane": "optimized", "language": "cpp", "source_bytes": 37702, "source_files": 1},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 9.251888000000008, "max_ms": 265.18628, "median_ms": 233.67062850000002, "min_ms": 218.662366, "samples": 20}, "file_count": 1, "lane": "o0", "language": "rust", "source_bytes": 36490, "source_files": 1},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 10.589041999999992, "max_ms": 280.368473, "median_ms": 261.6835125, "min_ms": 241.966394, "samples": 20}, "file_count": 1, "lane": "optimized", "language": "rust", "source_bytes": 36490, "source_files": 1},
+    {"artifact_sha256_count": 20, "compile": {"mad_ms": 18.46009650000002, "max_ms": 458.390487, "median_ms": 423.38795700000003, "min_ms": 378.769666, "samples": 20}, "file_count": 1, "lane": "o0", "language": "zig", "source_bytes": 36524, "source_files": 1},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 93.8713214999998, "max_ms": 3484.454881, "median_ms": 3227.6815185, "min_ms": 3003.991963, "samples": 20}, "file_count": 1, "lane": "optimized", "language": "zig", "source_bytes": 36524, "source_files": 1},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 3.1199585000000027, "max_ms": 80.162139, "median_ms": 66.6810435, "min_ms": 59.593839, "samples": 20}, "file_count": 10, "lane": "o0", "language": "c", "source_bytes": 84466, "source_files": 10},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 2.6479360000000014, "max_ms": 124.097805, "median_ms": 106.2926465, "min_ms": 92.258426, "samples": 20}, "file_count": 10, "lane": "optimized", "language": "c", "source_bytes": 84466, "source_files": 10},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 1.8752050000000011, "max_ms": 91.150348, "median_ms": 80.796405, "min_ms": 74.738322, "samples": 20}, "file_count": 10, "lane": "o0", "language": "cpp", "source_bytes": 77156, "source_files": 10},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 4.318978999999999, "max_ms": 153.257403, "median_ms": 125.8717635, "min_ms": 117.137206, "samples": 20}, "file_count": 10, "lane": "optimized", "language": "cpp", "source_bytes": 77156, "source_files": 10},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 10.138471500000009, "max_ms": 304.470915, "median_ms": 268.420409, "min_ms": 250.64581, "samples": 20}, "file_count": 10, "lane": "o0", "language": "rust", "source_bytes": 73810, "source_files": 10},
+    {"artifact_sha256_count": 2, "compile": {"mad_ms": 8.421189999999996, "max_ms": 371.399773, "median_ms": 338.106457, "min_ms": 317.024916, "samples": 20}, "file_count": 10, "lane": "optimized", "language": "rust", "source_bytes": 73810, "source_files": 10},
+    {"artifact_sha256_count": 20, "compile": {"mad_ms": 17.9195785, "max_ms": 476.719365, "median_ms": 441.08281850000003, "min_ms": 389.550475, "samples": 20}, "file_count": 10, "lane": "o0", "language": "zig", "source_bytes": 74603, "source_files": 10},
+    {"artifact_sha256_count": 1, "compile": {"mad_ms": 110.19014900000002, "max_ms": 3498.792682, "median_ms": 3291.624757, "min_ms": 3115.955833, "samples": 20}, "file_count": 10, "lane": "optimized", "language": "zig", "source_bytes": 74603, "source_files": 10}
+  ]
+}

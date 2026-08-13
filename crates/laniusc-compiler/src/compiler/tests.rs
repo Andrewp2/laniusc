@@ -756,7 +756,7 @@ fn hierarchical_link_execution_store_spills_inline_inputs_to_bounded_pages() {
             artifact_ref(
                 target,
                 SourcePackArtifactKind::CodegenObject,
-                1000 + index,
+                100 + index,
                 100 + index,
             )
         })
@@ -1829,7 +1829,7 @@ fn hierarchical_link_execution_rejects_noncanonical_sidecar_page_sequence() {
             artifact_ref(
                 target,
                 SourcePackArtifactKind::CodegenObject,
-                100 + offset,
+                object_page_capacity + offset,
                 object_page_capacity + offset,
             )
         })
@@ -1839,7 +1839,7 @@ fn hierarchical_link_execution_rejects_noncanonical_sidecar_page_sequence() {
             artifact_ref(
                 target,
                 SourcePackArtifactKind::CodegenObject,
-                200 + offset,
+                1 + offset,
                 1 + offset,
             )
         })

@@ -4346,6 +4346,7 @@ mod tests {
                 "alloc::allocator::alloc"
                     | "alloc::allocator::realloc"
                     | "alloc::allocator::dealloc"
+                    | "alloc::allocator::alloc_failed"
             )
         ) {
             Some("lanius_alloc")
@@ -4964,7 +4965,10 @@ mod tests {
             service["diagnostic_code"] == "LNC0038"
                 && service["accepted_selector_kinds"]
                     == serde_json::json!(RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS)
-                && if matches!(service["service_id"].as_u64(), Some(3 | 9 | 12)) {
+                && if matches!(
+                    service["service_id"].as_u64(),
+                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                ) {
                     service["current_status"] == "executable" && service["executable"] == true
                 } else {
                     service["current_status"] == "known-unbound" && service["executable"] == false
@@ -4982,22 +4986,26 @@ mod tests {
                     == serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
                 && api["executable"] == true
         }));
-        assert!(runtime_apis.iter().all(|api| {
+        for api in runtime_apis {
             let service_id = api["service_id"]
                 .as_u64()
                 .and_then(|service_id| u32::try_from(service_id).ok());
             let service = service_id.and_then(runtime_service_boundary_diagnostic_info);
-            api["diagnostic_code"] == "LNC0038"
-                && api["accepted_selector_kinds"]
-                    == serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
-                && api_json_has_expected_status(api)
-                && service.is_some_and(|service| {
-                    api["service_capability_constant"] == service.capability_constant
-                        && api["service_module_path"] == service.module_path
-                        && api["service_status_probe"] == service.status_probe
-                        && api["service_binding_probe"] == service.binding_probe
-                })
-        }));
+            assert!(
+                api["diagnostic_code"] == "LNC0038"
+                    && api["accepted_selector_kinds"]
+                        == serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
+                    && api_json_has_expected_status(api)
+                    && service.is_some_and(|service| {
+                        api["service_capability_constant"] == service.capability_constant
+                            && api["service_module_path"] == service.module_path
+                            && api["service_status_probe"] == service.status_probe
+                            && api["service_binding_probe"] == service.binding_probe
+                    }),
+                "runtime API explanation row is inconsistent: {}",
+                api["api_name"]
+            );
+        }
 
         let unknown_json = diagnostic_explanation_json_pretty("LNC9999")
             .expect("unknown diagnostic explanation should serialize");
@@ -5368,7 +5376,7 @@ mod tests {
         assert_eq!(label.len, "\"app/helper.lani\"".len());
         assert_eq!(
             label.message,
-            "expected module path after `import`, found string literal"
+            "expected module path after `import`, found `\"app/helper.lani\"`"
         );
     }
 

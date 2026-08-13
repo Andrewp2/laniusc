@@ -431,7 +431,10 @@ void publish_function_lookup(uint fn_node)
     uint return_generic_slot = tag == TYPE_REF_GENERIC_PARAM && valid_token(payload)
         ? type_generic_param_slot_by_token[payload]
         : INVALID;
-    if (return_generic_slot == INVALID)
+    // Only a return whose root reference is itself a generic parameter may
+    // collapse to a scalar inferred from that slot. For `Container<T>`, T is
+    // an argument of the aggregate result, not the result type itself.
+    if (tag == TYPE_REF_GENERIC_PARAM && return_generic_slot == INVALID)
     {
         uint return_node = return_type_node(fn_node);
         uint return_use_token = valid_node(return_node)

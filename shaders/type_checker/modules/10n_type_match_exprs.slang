@@ -15,6 +15,17 @@ StructuredBuffer<uint> compact_match_arm_count;
 StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> resolved_value_decl;
+StructuredBuffer<uint> resolved_value_status;
+StructuredBuffer<uint> decl_kind;
+StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> decl_parent_type_decl;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> status;
 
@@ -28,6 +39,7 @@ static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_EXPR_NONE = 0u;
 static const uint HIR_EXPR_NAME = 2u;
@@ -57,6 +69,31 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_FLOAT = 5u;
+static const uint TY_ENUM_BASE = 6144u;
+static const uint TY_GENERIC_BASE = 8192u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint HIR_ITEM_KIND_ENUM = 7u;
+static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint PATH_RESOLVE_STATUS_OK = 0u;
+
+uint type_code_for_ref(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return payload;
+    if (tag == TYPE_REF_GENERIC_PARAM && valid_token(payload))
+    {
+        uint slot = type_generic_param_slot_by_token[payload];
+        return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
+    }
+    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+    {
+        uint decl_token = type_instance_decl_token[payload];
+        return valid_token(decl_token) ? TY_ENUM_BASE + decl_token : TY_UNKNOWN;
+    }
+    return TY_UNKNOWN;
+}
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -76,9 +113,38 @@ uint visible_type_for_token(uint token)
     if (ty != TY_UNKNOWN)
         return ty;
     uint decl = visible_decl[token];
-    if (valid_token(decl) && visible_type[decl] != TY_UNKNOWN)
-        return visible_type[decl];
+    if (valid_token(decl))
+    {
+        ty = visible_type[decl];
+        if (ty != TY_UNKNOWN)
+            return ty;
+        ty = type_code_for_ref(decl_type_ref_tag[decl], decl_type_ref_payload[decl]);
+        if (ty != TY_UNKNOWN)
+            return ty;
+    }
+    ty = type_code_for_ref(decl_type_ref_tag[token], decl_type_ref_payload[token]);
+    if (ty != TY_UNKNOWN)
+        return ty;
     return call_return_type[token];
+}
+
+uint enum_variant_type_for_node(uint node)
+{
+    if (!valid_hir(node))
+        return TY_UNKNOWN;
+    uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+    uint path = path_id_by_owner_hir[node];
+    if (path >= path_count || resolved_value_status[path] != PATH_RESOLVE_STATUS_OK)
+        return TY_UNKNOWN;
+    uint variant_decl = resolved_value_decl[path];
+    if (variant_decl >= gParams.n_hir_nodes ||
+        decl_kind[variant_decl] != HIR_ITEM_KIND_ENUM_VARIANT)
+        return TY_UNKNOWN;
+    uint enum_decl = decl_parent_type_decl[variant_decl];
+    if (enum_decl >= gParams.n_hir_nodes || decl_kind[enum_decl] != HIR_ITEM_KIND_ENUM)
+        return TY_UNKNOWN;
+    uint enum_token = decl_name_token[enum_decl];
+    return valid_token(enum_token) ? TY_ENUM_BASE + enum_token : TY_UNKNOWN;
 }
 
 uint expression_token(uint node)
@@ -98,8 +164,12 @@ uint direct_node_type(uint node)
     uint literal = hir_scalar_type_for_hir(core.kind, payload.a);
     if (literal != TY_UNKNOWN)
         return literal;
-    if (core.kind == HIR_NAME_EXPR || core.kind == HIR_MEMBER_EXPR)
-        return visible_type_for_token(expression_token(node));
+    if (core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR ||
+        core.kind == HIR_MEMBER_EXPR)
+    {
+        uint ty = visible_type_for_token(expression_token(node));
+        return ty != TY_UNKNOWN ? ty : enum_variant_type_for_node(node);
+    }
     if (core.kind == HIR_STRUCT_LITERAL_EXPR)
         return visible_type_for_token(core.token_start);
     if (core.kind == HIR_INDEX_EXPR || core.kind == HIR_MATCH_EXPR)

@@ -128,7 +128,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint variant_token;
     uint enum_token;
     if (!valid_unit_enum_variant_decl(decl_i, variant_token, enum_token))
+    {
+        // A payload-bearing variant is a constructor, not a first-class unit
+        // value. Its declaration resolves successfully, but a non-call path
+        // must remain an error instead of being silently accepted as an
+        // untyped expression.
+        uint variant = decl_hir_node[decl_i];
+        if (module_value_path_expr_head[owner_token] != 0u &&
+            valid_variant(variant) && compact_variant_payload_count[variant] != 0u)
+            module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
         return;
+    }
 
     visible_decl[owner_token] = variant_token;
     visible_type[owner_token] = TY_ENUM_BASE + enum_token;

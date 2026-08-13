@@ -58,8 +58,11 @@ impl GpuTypeChecker {
         hir_items.call_arg_row_capacity = call_arg_row_capacity;
         hir_items.module_record_capacity = module_record_capacity;
         hir_items.parser_feature_flags = parser_feature_flags;
-        let call_generic_claim_capacity =
-            generic_claim_capacity_for_features(token_capacity, parser_feature_flags);
+        let call_generic_claim_capacity = generic_claim_capacity_for_job(
+            token_capacity,
+            parser_feature_flags,
+            dependency_interfaces.is_some(),
+        );
         let predicate_capacity =
             predicate_capacity_for_features(hir_node_capacity, parser_feature_flags);
         let dependency_capacity = compiler_graph::DependencyWorkspaceCapacity::for_job(

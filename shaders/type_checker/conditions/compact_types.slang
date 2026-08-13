@@ -31,6 +31,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint TK_BOUND_TYPE_IDENT = 174u;
+static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_ERROR = 4u;
 static const uint TYPE_LEN_CONST_PARAM = 2u;
@@ -85,6 +86,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint tag = type_expr_ref_tag[token];
     uint payload = type_expr_ref_payload[token];
+    if (tag == TYPE_REF_INVALID)
+    {
+        record_min_token_error(status, token, ERR_UNKNOWN_TYPE, 0u);
+        return;
+    }
     if (tag == TYPE_REF_ERROR)
     {
         record_min_token_error(status, token, ERR_UNKNOWN_TYPE, payload);

@@ -944,8 +944,6 @@ void emit_claim_for_relation(uint claim_i, uint arg_row, uint relation_i)
         return;
 
     uint fn_i = call_fn_index[callee_i];
-    if (!valid_token(fn_i))
-        return;
 
     uint param_row = arg_row < call_arg_row_count_out[0u] ? call_arg_param_row[arg_row] : INVALID;
     if (param_row == INVALID)

@@ -1,0 +1,95 @@
+{
+  "rows": [
+    {
+      "lane": "o0",
+      "language": "c",
+      "mad_ms": 61.755924499999765,
+      "max_ms": 1320.099444,
+      "median_ms": 1199.7225549999998,
+      "min_ms": 1113.719407,
+      "samples": 20,
+      "speedup_vs_lanius": 19.275817209915587
+    },
+    {
+      "lane": "optimized",
+      "language": "c",
+      "mad_ms": 183.45852800000011,
+      "max_ms": 5994.434676,
+      "median_ms": 5492.0594425,
+      "min_ms": 5216.016632,
+      "samples": 20,
+      "speedup_vs_lanius": 88.24034646878913
+    },
+    {
+      "lane": "o0",
+      "language": "cpp",
+      "mad_ms": 45.67790549999984,
+      "max_ms": 1550.735368,
+      "median_ms": 1344.8353335,
+      "min_ms": 1261.250272,
+      "samples": 20,
+      "speedup_vs_lanius": 21.607329092835027
+    },
+    {
+      "lane": "optimized",
+      "language": "cpp",
+      "mad_ms": 56.09461949999968,
+      "max_ms": 5683.453993,
+      "median_ms": 5581.3905885,
+      "min_ms": 5408.932922,
+      "samples": 20,
+      "speedup_vs_lanius": 89.67562067804019
+    },
+    {
+      "lane": "hot_daemon_variable_project",
+      "language": "lanius",
+      "mad_ms": 2.1942550000000054,
+      "max_ms": 72.395028,
+      "median_ms": 62.239776500000005,
+      "min_ms": 58.066578,
+      "samples": 20,
+      "speedup_vs_lanius": 1.0
+    },
+    {
+      "lane": "o0",
+      "language": "rust",
+      "mad_ms": 49.58615150000003,
+      "max_ms": 2025.583005,
+      "median_ms": 1822.4250670000001,
+      "min_ms": 1691.969091,
+      "samples": 20,
+      "speedup_vs_lanius": 29.28071354819213
+    },
+    {
+      "lane": "optimized",
+      "language": "rust",
+      "mad_ms": 56.25500099999988,
+      "max_ms": 1807.694761,
+      "median_ms": 1515.071618,
+      "min_ms": 1384.524791,
+      "samples": 20,
+      "speedup_vs_lanius": 24.34249772731751
+    },
+    {
+      "lane": "o0",
+      "language": "zig",
+      "mad_ms": 13.967493000000019,
+      "max_ms": 849.825048,
+      "median_ms": 485.4896145,
+      "min_ms": 441.021422,
+      "samples": 20,
+      "speedup_vs_lanius": 7.800311019754385
+    },
+    {
+      "lane": "optimized",
+      "language": "zig",
+      "mad_ms": 32.917531,
+      "max_ms": 1213.895622,
+      "median_ms": 908.657845,
+      "min_ms": 815.109061,
+      "samples": 20,
+      "speedup_vs_lanius": 14.599310860314542
+    }
+  ],
+  "schema": "lanius.compiler-stress-summary.v1"
+}

@@ -2178,7 +2178,7 @@ fn build_graph(
         _call_param_type as "call_param_type" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         _call_param_ref_tag as "call_param_ref_tag" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         _call_param_ref_payload as "call_param_ref_payload" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
-        _call_generic_slot_type as "call_generic_slot_type" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
+        call_generic_slot_type in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         _call_generic_slot_ordinal as "call_generic_slot_ordinal" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         _call_const_slot_len as "call_const_slot_len" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         _call_param_row_count_out as "call_param_row_count_out" in CallArguments => 4;
@@ -3162,6 +3162,7 @@ fn build_graph(
                 kernels,
                 "type_checker/conditions/aggregate_args",
                 reflected_bindings![
+                    "call_generic_slot_type" => call_generic_slot_type: ReadWrite,
                     "type_subtree_compare_scan_input" => type_subtree_compare_scan_input: Write,
                     "type_subtree_compare_left_root" => type_subtree_compare_left_root: Write,
                     "type_subtree_compare_right_root" => type_subtree_compare_right_root: Write,
@@ -3483,6 +3484,7 @@ fn build_graph(
     CALLS_CONST_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
+    CALLS_CONTEXTUAL_RESULT_REQUESTS.register_kernel(&mut graph, kernels)?;
     let aggregate_scan_resources = graph.resolve_prefix_scan_resources(AGGREGATE_SCAN_RESOURCES)?;
     graph.add_fragment(PrefixScanGraph {
         phase: CompilerPhase::TypeCheck,
@@ -3509,6 +3511,7 @@ fn build_graph(
         kernels,
         "type_checker/conditions/aggregate_args",
         reflected_bindings![
+            "call_generic_slot_type" => call_generic_slot_type: ReadWrite,
             "type_subtree_compare_scan_input" => type_subtree_compare_scan_input: Write,
             "type_subtree_compare_left_root" => type_subtree_compare_left_root: Write,
             "type_subtree_compare_right_root" => type_subtree_compare_right_root: Write,
@@ -4232,7 +4235,7 @@ mod tests {
         );
         assert_eq!(
             graph.repeated_regions().len(),
-            4,
+            3,
             "each remaining scalable radix sort and pointer jump must have an explicit repeated region",
         );
         let generic_owner_region = graph
@@ -4245,7 +4248,7 @@ mod tests {
                         .unwrap()
             })
             .expect("generic-owner pointer-jump repeated region");
-        assert_eq!(generic_owner_region.iterations, 5);
+        assert_eq!(generic_owner_region.iterations, 2);
         let visible_radix_region = graph
             .repeated_regions()
             .iter()
@@ -4359,18 +4362,27 @@ mod tests {
                 module_borrow_fence.index(),
             );
         }
-        let declaration_lifetime_end = graph.pass_id(SEMANTIC_ARTIFACT_PROJECT_PASS).unwrap();
+        let semantic_projection = graph.pass_id(SEMANTIC_ARTIFACT_PROJECT_PASS).unwrap();
         for resource in [
             graph.resource_id("decl_name_token").unwrap(),
-            graph.resource_id("decl_id_by_name_token").unwrap(),
             graph.resource_id("decl_kind").unwrap(),
         ] {
             assert_eq!(
                 graph.lifetime(resource).unwrap().last_pass,
-                declaration_lifetime_end,
+                semantic_projection,
                 "compact declaration lookup must survive every type-check consumer",
             );
         }
+        assert_eq!(
+            graph
+                .lifetime(graph.resource_id("decl_id_by_name_token").unwrap())
+                .unwrap()
+                .last_pass,
+            graph
+                .pass_id(SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS)
+                .unwrap(),
+            "the declaration reverse lookup must survive local-constant projection",
+        );
         assert_ne!(
             storage_identity(graph.resource_id("decl_name_token").unwrap()),
             storage_identity(graph.resource_id("decl_kind").unwrap()),
@@ -5245,8 +5257,8 @@ mod tests {
                 .lifetime(resource("type_instance_state"))
                 .unwrap()
                 .last_pass,
-            graph.pass_id(SEMANTIC_ARTIFACT_PROJECT_PASS).unwrap(),
-            "the conservative fence must cover the resident recorder's unmodeled middle schedule",
+            graph_output_boundary,
+            "the retained type-instance state must survive the resident recorder's unmodeled middle schedule",
         );
         let mut function_slots = [
             slot(resource("enclosing_fn")),

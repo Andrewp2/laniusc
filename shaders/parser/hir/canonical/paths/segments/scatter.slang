@@ -1,12 +1,13 @@
 import hir_records;
 import prefix_scan;
+import generated_parse_production_ids;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
-StructuredBuffer<uint> family_flag;
-StructuredBuffer<uint> family_local_prefix;
-StructuredBuffer<uint> family_block_prefix;
-StructuredBuffer<uint> candidate_raw_by_anchor;
+StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> owner_local_prefix;
+StructuredBuffer<uint> owner_block_prefix;
 StructuredBuffer<uint> path_segment_owner;
 StructuredBuffer<uint> path_segment_rank;
 StructuredBuffer<uint> hir_token_pos;
@@ -15,23 +16,35 @@ RWStructuredBuffer<uint> family_count;
 RWStructuredBuffer<HirPathSegment> path_segments;
 RWStructuredBuffer<uint> canonical_status;
 
+static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
-uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
-uint block_count() { return (gCanonical.canonical_capacity + 255u) / 256u; }
+static const uint WG_SIZE = 256u;
+uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
+uint block_count() { return (gCanonical.raw_capacity + WG_SIZE - 1u) / WG_SIZE; }
+uint active_count() {
+    return gCanonical.uses_status_count != 0u
+        ? min(gCanonical.raw_capacity, tree_count_status[5u])
+        : gCanonical.raw_capacity;
+}
+bool path_segment(uint production) {
+    return production == PROD_PATH_IDENT || production == PROD_PATH_IDENT_ARGS ||
+           production == PROD_TYPE_PATH_IDENT || production == PROD_BOUND_TYPE_PATH_IDENT;
+}
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID) {
-    uint anchor = tid(dtid);
-    uint total = inclusive_scan_total(block_count(), family_block_prefix);
-    if (anchor == 0u) family_count[0u] = total;
-    if (anchor >= gCanonical.canonical_capacity || family_flag[anchor] == 0u) return;
-    uint encoded = candidate_raw_by_anchor[anchor];
-    uint raw = encoded == 0u ? 0xffffffffu : encoded - 1u;
-    if (raw >= gCanonical.raw_capacity) return;
-    uint block = anchor / 256u;
-    uint base = block == 0u ? 0u : family_block_prefix[block - 1u];
-    uint row = base + family_local_prefix[anchor];
+    uint raw = tid(dtid);
+    uint total = inclusive_scan_total(block_count(), owner_block_prefix);
+    if (raw == 0u) family_count[0u] = total;
+    if (raw >= active_count() || !path_segment(node_kind[raw])) return;
+
+    uint owner = path_segment_owner[raw];
+    if (owner >= active_count()) return;
+    uint block = owner / WG_SIZE;
+    uint base = (block == 0u ? 0u : owner_block_prefix[block - 1u]) +
+        owner_local_prefix[owner];
+    uint row = base + path_segment_rank[raw];
     if (row >= gCanonical.canonical_capacity) {
         uint ignored;
         InterlockedMax(canonical_status[0u], 3u, ignored);
@@ -39,8 +52,7 @@ void main(uint3 dtid: SV_DispatchThreadID) {
         return;
     }
     HirPathSegment segment;
-    // The raw owner is temporary. The path scatter replaces it with a path-family id.
-    segment.path = path_segment_owner[raw];
+    segment.path = owner;
     segment.name_token = hir_token_pos[raw];
     segment.ordinal = path_segment_rank[raw];
     segment.file_id = hir_token_file_id[raw];

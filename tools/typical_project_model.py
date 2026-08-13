@@ -740,7 +740,7 @@ def render_c_project(project: TypicalProject, cpp: bool) -> dict[str, str]:
     imported_indices = sorted(
         (set(project.roots) - {project.entry_index}) | set(dependency_indices(entry))
     )
-    root_includes = """#ifndef __cplusplus
+    root_includes = ("#include <cstdint>\n" if cpp else "") + """#ifndef __cplusplus
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include <stdio.h>

@@ -774,6 +774,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (method_call_name_id[i] == INVALID)
         return;
 
+    // Direct-call resolution runs first. Method lookup fills unresolved member
+    // and associated calls; it must not erase an already resolved free or
+    // module-qualified function if another path projection also mentioned the
+    // same token.
+    if (call_fn_index[i] != INVALID)
+        return;
+
     call_fn_index[i] = INVALID;
     call_return_type[i] = TY_UNKNOWN;
     call_return_type_token[i] = INVALID;

@@ -2486,25 +2486,23 @@ impl PairBox<i32> {
     }
 }
 
-extern "host" fn make_pair() -> PairBox<i32>;
-
 fn main() {
-    return make_pair().read();
+    return 0;
 }
 "#,
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
             "impl PairBox<i32> {",
-            "trait impl target type is not supported here",
-            "this compiler currently supports trait impls for scalar and non-generic nominal targets here",
+            "inherent impl target has the wrong number of type arguments",
+            "match the target declaration's generic parameter count",
         ],
     );
 }
 
 #[test]
-fn type_checker_rejects_nested_inherent_impl_receiver_arguments_on_gpu() {
-    assert_gpu_type_check_diagnostic(
+fn type_checker_accepts_nested_inherent_impl_receiver_arguments_on_gpu() {
+    assert_gpu_type_check_ok(
         r#"
 struct Boxed<T> {
     value: T,
@@ -2521,16 +2519,11 @@ impl Holder<Boxed<i32>> {
 }
 
 fn main() {
-    return 0;
+    let boxed: Boxed<i32> = Boxed { value: 7 };
+    let holder: Holder<Boxed<i32>> = Holder { value: boxed };
+    return holder.read();
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "impl Holder<Boxed<i32>> {",
-            "trait impl target type is not supported here",
-            "this compiler currently supports trait impls for scalar and non-generic nominal targets here",
-        ],
     );
 }
 
@@ -2893,12 +2886,12 @@ fn main() {
 #[test]
 fn type_checker_accepts_extern_function_calls() {
     let src = r#"
-extern "host" fn host_alloc(size: usize, align: usize) -> u32;
-extern fn host_log_i32(value: i32);
+extern "host" fn host_alloc(size: usize, align: usize) -> ptr;
+extern fn host_log_ptr(value: ptr);
 
 fn main() {
     let ptr: ptr = host_alloc(16, 4);
-    host_log_i32(ptr);
+    host_log_ptr(ptr);
     return 0;
 }
 "#;
@@ -3498,8 +3491,8 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_inline_trait_bound_chains_beyond_gpu_relation() {
-    assert_gpu_type_check_diagnostic(
+fn type_checker_accepts_three_satisfied_inline_trait_bounds() {
+    assert_gpu_type_check_ok(
         r#"
 trait First<T> {
 }
@@ -3528,12 +3521,6 @@ fn main() {
     return value;
 }
 "#,
-        "LNC0008",
-        &[
-            "error[LNC0008]: unsatisfied trait bound",
-            "fn keep<T: First<T> + Second<T> + Third<T> >(value: T) -> T {",
-            "trait bound relation is not supported here",
-        ],
     );
 }
 

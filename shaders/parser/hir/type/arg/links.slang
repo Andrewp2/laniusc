@@ -22,6 +22,9 @@ StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_type_form;
+StructuredBuffer<uint> hir_node_dense_id;
+StructuredBuffer<uint> hir_semantic_parent;
+StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> hir_type_path_owner_by_leaf;
 StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
@@ -37,6 +40,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_TYPE = 5u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 
 uint linear_thread_id(uint3 dtid)
@@ -150,17 +154,31 @@ bool valid_path_type_owner(uint owner, uint leaf)
            hir_type_path_leaf_node[owner] == leaf;
 }
 
-uint owner_seed_for_path_arg(uint node)
+uint owner_seed_for_path_arg(uint node, uint container)
 {
-    uint leaf = previous_sibling_node(node);
-    if (!valid_node(leaf) || !is_type_path_segment(node_kind[leaf]))
+    if (!valid_node(container) ||
+        (!is_type_arg_container(node_kind[container]) &&
+         node_kind[container] != PROD_PATH_IDENT_ARGS))
         return INVALID;
+    uint leaf = previous_sibling_node(node);
+    uint owner = INVALID;
+    if (valid_node(leaf) && is_type_path_segment(node_kind[leaf]))
+    {
+        uint encoded_owner = hir_type_path_owner_by_leaf[leaf];
+        owner = encoded_owner != 0u && encoded_owner <= OWNER_NODE_MASK
+            ? OWNER_NODE_MASK - encoded_owner
+            : hir_bound_path_owner_by_leaf[leaf];
+        if (valid_path_type_owner(owner, leaf))
+            return owner;
+    }
 
-    uint encoded_owner = hir_type_path_owner_by_leaf[leaf];
-    uint owner = encoded_owner != 0u && encoded_owner <= OWNER_NODE_MASK
-        ? OWNER_NODE_MASK - encoded_owner
-        : hir_bound_path_owner_by_leaf[leaf];
-    return valid_path_type_owner(owner, leaf) ? owner : INVALID;
+    // Generic arguments in value paths, such as `Vec<T>::new`, have no
+    // enclosing HIR_TYPE row. Their nearest semantic owner is the compact
+    // HIR_PATH_EXPR that represents the whole callee path.
+    uint row = hir_node_dense_id[node];
+    uint owner_row = row < active_node_count() ? hir_semantic_parent[row] : INVALID;
+    owner = owner_row < active_node_count() ? hir_semantic_dense_node[owner_row] : INVALID;
+    return valid_node(owner) && hir_kind[owner] == HIR_PATH_EXPR ? owner : INVALID;
 }
 
 uint first_arg_for_type_owner(uint owner)
@@ -191,7 +209,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint container = parent_node(node);
     uint prod = valid_node(container) ? node_kind[container] : INVALID;
-    uint path_owner = owner_seed_for_path_arg(node);
+    uint path_owner = owner_seed_for_path_arg(node, container);
     if (valid_node(path_owner))
     {
         hir_type_arg_owner_a[node] = path_owner;

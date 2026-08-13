@@ -32,6 +32,7 @@ StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> module_value_path_call_head;
+StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> resolved_dependency_value_metadata;
 
 RWStructuredBuffer<uint> module_value_path_status;
@@ -94,6 +95,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint owner_token = path_owner_token[path_i];
     if (owner_token >= gParams.n_tokens)
+        return;
+    uint leaf_token = path_segment_token[path_segment_base[path_i] + segment_count - 1u];
+    if (call_fn_index[owner_token] != INVALID ||
+        (leaf_token < gParams.n_tokens && call_fn_index[leaf_token] != INVALID))
         return;
     if (module_value_path_call_head[owner_token] != 0u)
         return;

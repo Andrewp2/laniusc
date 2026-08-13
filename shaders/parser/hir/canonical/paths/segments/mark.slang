@@ -1,35 +1,37 @@
-import generated_parse_production_ids;
+// Compute owner-grouped bases for compact path segments. Source-order
+// compaction cannot keep an outer path contiguous when a generic argument
+// contains a nested path, so the scan is weighted by each raw owner's segment
+// count and the scatter appends owner-local ordinals to that base.
+
+import prefix_scan;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> tree_count_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> path_segment_owner;
-StructuredBuffer<uint> raw_to_hir;
-StructuredBuffer<uint> hir_token_pos;
-RWStructuredBuffer<uint> candidate_raw_by_anchor;
-RWStructuredBuffer<uint> family_flag;
+StructuredBuffer<uint> segment_count_by_owner;
+RWStructuredBuffer<uint> owner_local_prefix;
+RWStructuredBuffer<uint> owner_block_sum;
 
-static const uint INVALID = 0xffffffffu;
+static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
-uint active_count() { return gCanonical.uses_status_count != 0u ? min(gCanonical.raw_capacity, tree_count_status[5u]) : gCanonical.raw_capacity; }
-bool path_segment(uint production) {
-    return production == PROD_PATH_IDENT || production == PROD_PATH_IDENT_ARGS ||
-           production == PROD_TYPE_PATH_IDENT || production == PROD_BOUND_TYPE_PATH_IDENT;
+
+uint group_id(uint3 gid) { return gid.x + gid.y * MAX_GROUPS_X; }
+uint active_count() {
+    return gCanonical.uses_status_count != 0u
+        ? min(gCanonical.raw_capacity, tree_count_status[5u])
+        : gCanonical.raw_capacity;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID) {
-    uint raw = tid(dtid);
-    if (raw >= gCanonical.raw_capacity) return;
-    if (raw >= active_count() || !path_segment(node_kind[raw])) return;
-    uint owner = path_segment_owner[raw];
-    uint anchor = hir_token_pos[raw];
-    if (owner >= gCanonical.raw_capacity || raw_to_hir[owner] == INVALID ||
-        anchor >= gCanonical.canonical_capacity) return;
-    uint ignored;
-    InterlockedMax(candidate_raw_by_anchor[anchor], raw + 1u, ignored);
-    InterlockedMax(family_flag[anchor], 1u, ignored);
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID) {
+    uint block = group_id(gid);
+    uint lane = ltid.x;
+    uint raw = block * WG_SIZE + lane;
+    uint value = raw < active_count() ? segment_count_by_owner[raw] : 0u;
+    uint inclusive = prefix_scan_u32_256(lane, value);
+    if (raw < gCanonical.raw_capacity)
+        owner_local_prefix[raw] = inclusive - value;
+    if (lane == WG_SIZE - 1u)
+        owner_block_sum[block] = inclusive;
 }

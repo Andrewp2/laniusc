@@ -28,6 +28,7 @@ def main() -> int:
     parser.add_argument("--seeds", default=",".join(str(seed) for seed in range(20, 40)))
     parser.add_argument("--warm-seed", type=int, default=19)
     parser.add_argument("--order-seed", type=int, default=0x1A91_05)
+    parser.add_argument("--rust-frontend-threads", type=int, default=16)
     parser.add_argument(
         "--profile",
         choices=tuple(WORKLOAD_PROFILES),
@@ -39,6 +40,8 @@ def main() -> int:
         parser.error("--size must be positive and --seeds must be unique")
     if args.warm_seed in seeds:
         parser.error("--warm-seed must not be a measured seed")
+    if args.rust_frontend_threads <= 0:
+        parser.error("--rust-frontend-threads must be positive")
 
     repo = Path(__file__).resolve().parents[1]
     out = resolve(repo, args.out)
@@ -50,7 +53,7 @@ def main() -> int:
         repo, source_root, args.size, [args.warm_seed, *seeds], args.profile
     )
 
-    command_templates = compiler_commands(repo)
+    command_templates = compiler_commands(repo, args.rust_frontend_threads)
     provenance = collect_provenance(repo, command_templates)
     tasks = [
         (language, lane, seed)
@@ -195,19 +198,19 @@ def generate_sources(
     return expected, variants
 
 
-def compiler_commands(repo: Path) -> dict:
+def compiler_commands(repo: Path, rust_frontend_threads: int = 16) -> dict:
     return {
         "schema": "lanius.compiler-stress-command-templates.v1",
         "o0": {
             "c": ["gcc", "-O0", "-g0", "{source}", "-o", "{output}"],
             "cpp": ["g++", "-O0", "-g0", "{source}", "-o", "{output}"],
-            "rust": ["rustc", "-C", "opt-level=0", "-C", "debuginfo=0", "-C", "strip=debuginfo", "{source}", "-o", "{output}"],
+            "rust": ["rustc", "-Awarnings", f"-Zthreads={rust_frontend_threads}", "-C", "opt-level=0", "-C", "debuginfo=0", "-C", "strip=debuginfo", "{source}", "-o", "{output}"],
             "zig": ["zig", "build-exe", "-lc", "-O", "Debug", "-fstrip", "{source}", "-femit-bin={output}"],
         },
         "optimized": {
             "c": ["gcc", "-O2", "-g0", "{source}", "-o", "{output}"],
             "cpp": ["g++", "-O2", "-g0", "{source}", "-o", "{output}"],
-            "rust": ["rustc", "-C", "opt-level=3", "-C", "debuginfo=0", "-C", "strip=debuginfo", "{source}", "-o", "{output}"],
+            "rust": ["rustc", "-Awarnings", f"-Zthreads={rust_frontend_threads}", "-C", "opt-level=3", "-C", "debuginfo=0", "-C", "strip=debuginfo", "{source}", "-o", "{output}"],
             "zig": ["zig", "build-exe", "-lc", "-O", "ReleaseFast", "-fstrip", "{source}", "-femit-bin={output}"],
         },
         "lanius_daemon": ["target/release/laniusc", "daemon", "--stdio", "--backend", "x86_64", "--stdlib-root", "stdlib"],

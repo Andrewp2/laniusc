@@ -1373,69 +1373,19 @@ fn main() -> i32 {
 }
 
 #[test]
-fn x86_rejects_non_return_match_expression_with_diagnostic() {
-    let source = r#"
+fn x86_executes_match_expression_local_initializer() {
+    assert_source_exit(
+        "match_expression_local_initializer",
+        r#"
 fn main() {
     let observed: i32 = match (0) {
         _ -> 7,
     };
     return observed;
 }
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout("x86 non-return match expression", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect_err(
-        "non-return match expressions should fail closed until x86 match lowering broadens",
+"#,
+        7,
     );
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let rendered = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "match-expression rejection should use the stable x86 diagnostic: {rendered}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "match-expression rejection should stay in the native-codegen category: {rendered}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 match expression")
-                    && rendered.contains("native x86 backend"),
-                "diagnostic should name the unsupported x86 match boundary: {rendered}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the match source line");
-            assert_eq!(
-                source_line, "    let observed: i32 = match (0) {",
-                "diagnostic should point at the unsupported match expression: {rendered}"
-            );
-            let match_start_column = source_line
-                .find("match")
-                .map(|column| column + 1)
-                .expect("fixture should contain the match expression");
-            let match_end_column = match_start_column + "match".len();
-            assert!(
-                (match_start_column..=match_end_column).contains(&label.column),
-                "diagnostic column should fall inside the match token: {rendered}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
 }
 
 #[test]
@@ -1766,6 +1716,29 @@ fn main() -> bool {
         }
         other => panic!("expected x86 diagnostic rejection, got {other:?}"),
     }
+}
+
+#[test]
+fn x86_executes_short_circuit_rhs_remainder_with_static_nonzero_divisor() {
+    assert_source_exit(
+        "short_circuit_static_nonzero_remainder",
+        r#"
+fn check(outer: i32, inner: i32) -> bool {
+    return inner == 1 && (outer % 2) == 0;
+}
+
+fn main() -> i32 {
+    if (check(3, 1)) {
+        return 5;
+    }
+    if (check(4, 1)) {
+        return 7;
+    }
+    return 9;
+}
+"#,
+        7,
+    );
 }
 
 #[test]

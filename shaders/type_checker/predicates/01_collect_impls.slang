@@ -17,6 +17,7 @@ static const uint IMPL_TYPE_REF_SCALAR = 1u;
 static const uint IMPL_TYPE_REF_GENERIC_PARAM = 2u;
 static const uint IMPL_TY_UNKNOWN = 0u;
 static const uint IMPL_TY_GENERIC_BASE = 8192u;
+static const uint HIR_IMPL = 35u;
 
 uint impl_type_code_for_token(uint token)
 {
@@ -81,7 +82,7 @@ void index_trait_impl(uint node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!valid_node(node))
+    if (!valid_node(node) || compact_hir_core[node].kind != HIR_IMPL)
         return;
 
     if (compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_IMPL_TRAIT)

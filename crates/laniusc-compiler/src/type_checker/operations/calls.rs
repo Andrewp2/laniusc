@@ -179,6 +179,11 @@ pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_VALIDATE: ReflectedCompute
     CallArguments,
     "type_checker/calls/03a4_validate_generic_claims"
 );
+pub(in crate::type_checker) const CALLS_CONTEXTUAL_RESULT_REQUESTS: ReflectedComputeSpec = call_pass!(
+    "contextual_result_requests",
+    HirNodes,
+    "type_checker/calls/03a4b_contextual_result_requests"
+);
 pub(in crate::type_checker) const CALLS_REQUIRED_GENERIC_MARK: ReflectedComputeSpec = call_pass!(
     "required_generics.mark",
     HirNodes,

@@ -396,7 +396,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (status != METHOD_KEY_STATUS_PRIVATE_OK)
     {
         method_key_status[fn_i] = status;
-        record_error(error_token_for_method(fn_i), ERR_BAD_HIR, status);
+        // Receiver type-argument shape and arity belong to the impl-header
+        // validator, which can produce a source-level diagnostic. Keep this
+        // method out of the lookup without replacing that diagnostic with an
+        // internal method-key error.
+        if (status != METHOD_KEY_STATUS_INVALID_RECEIVER_ARG)
+            record_error(error_token_for_method(fn_i), ERR_BAD_HIR, status);
         return;
     }
 

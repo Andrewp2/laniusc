@@ -1,0 +1,33 @@
+{
+  "generator_sha256": "dade39f41621710b3e1678e6a18adfdd8cbc5cb55a51c4b31380e1638c026ac0",
+  "model_sha256": "97da01fc47227c1112ce6b0e34cf6b034a76963a4ac6b432f08623a71d4397d1",
+  "runner_sha256": "6c39987d1fc1684a1145071bea3c79d06336250b2ca3848d4cbd47c544111ad1",
+  "schema": "lanius.compiler-stress-provenance.v1",
+  "tools": {
+    "/home/andrew-peterson/code/laniusc/target/release/laniusc": {
+      "path": "/home/andrew-peterson/code/laniusc/target/release/laniusc",
+      "sha256": "f6c0f91b8b9bbd92f42be8741dc41a03a351f63e51fdfe64f38ccad93f44ec2b",
+      "version": "laniusc 0.1.0"
+    },
+    "g++": {
+      "path": "/usr/bin/x86_64-linux-gnu-g++-13",
+      "sha256": "1353e9bdd29a7295c7226bf6c63abccce056d8cac31f112e5cdbecc3f28c2769",
+      "version": "x86_64-linux-gnu-g++-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+    },
+    "gcc": {
+      "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+      "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+      "version": "x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+    },
+    "rustc": {
+      "path": "/usr/bin/rustup",
+      "sha256": "be178b5cdda17e6ab5027dcdd5262014a9e967f02f439b2da618942af5cbad27",
+      "version": "rustup 1.26.0 (2026-04-20)"
+    },
+    "zig": {
+      "path": "/usr/bin/snap",
+      "sha256": "8764c3b9d3dbbc6a59a6e9de607a54cb3e7bc190d479b64548e12f7cd8bc6baf",
+      "version": "snap          2.76.1"
+    }
+  }
+}

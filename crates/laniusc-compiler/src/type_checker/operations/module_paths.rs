@@ -16,7 +16,10 @@ pub(in crate::type_checker) const PATH_STATE_CLEAR: ReflectedComputeSpec = typec
     "type_check.modules.paths.clear",
     HirNodes,
     "type_checker/modules/01a_clear_path_state";
-    writes ["path_id_by_owner_hir", "path_max_segment_count"]
+    writes [
+        "path_id_by_owner_hir",
+        "path_max_segment_count",
+    ]
 );
 
 pub(in crate::type_checker) const PATHS_SCATTER: ReflectedComputeSpec = typecheck_operation!(

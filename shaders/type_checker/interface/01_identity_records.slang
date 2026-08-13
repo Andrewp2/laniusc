@@ -97,7 +97,9 @@ uint active_name_count()
 
 uint active_module_count()
 {
-    return min(module_count_out[0u], gParams.module_capacity);
+    return gParams.module_capacity == 0u
+        ? 0u
+        : max(1u, min(module_count_out[0u], gParams.module_capacity));
 }
 
 bool active_module_segment_slot(uint slot, out uint module_i, out uint segment_i)

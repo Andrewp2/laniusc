@@ -58,7 +58,12 @@ uint active_name_count()
 
 uint active_module_count()
 {
-    return min(module_count_out[0u], gParams.module_capacity);
+    // Sources without an explicit `module` declaration inhabit the default
+    // module (row zero). Persist that empty-path module so public declarations
+    // never reference a module outside the semantic-interface artifact.
+    return gParams.module_capacity == 0u
+        ? 0u
+        : max(1u, min(module_count_out[0u], gParams.module_capacity));
 }
 
 bool active_module_segment_slot(uint slot, out uint module_i, out uint segment_i)

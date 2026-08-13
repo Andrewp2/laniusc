@@ -128,7 +128,7 @@ LANIUS_CONSTRUCT_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "const_generic": (r"<\s*const\s+\w+\s*:\s*usize\s*>",),
     "reference_type": (r"&self\b|:\s*&\w+",),
-    "slice_type": (r"\[[A-Za-z_]\w*(?:::\w+)*\]",),
+    "fixed_array_parameter": (r"\[[A-Za-z_]\w*(?:::\w+)*;\s*\d+\]",),
     "extern_function": (r"\bextern(?:\s+\"[^\"]+\")?\s+fn\s+",),
     "extern_abi": (r"\bextern\s+\"[^\"]+\"\s+fn\s+",),
     "extern_without_abi": (r"\bextern\s+fn\s+",),
@@ -269,7 +269,7 @@ RARE_PATTERN_CONSTRUCTS = {
         "public_trait_method",
     }),
     "const_generic": frozenset({"const_generic"}),
-    "borrowed_views": frozenset({"reference_type", "slice_type"}),
+    "borrowed_views": frozenset({"reference_type", "fixed_array_parameter"}),
     "foreign_api": frozenset({"extern_function", "extern_abi"}),
     "literal_data": frozenset({"string_literal", "char_literal", "float_literal"}),
     "language_forms": frozenset({
@@ -434,7 +434,7 @@ def _render_rare_score(language: str, module_name: str, index: int) -> str:
                 statements.extend(
                     (
                         f"    let const_values: [i32; 4] = [seed, {index}, 3, 7];",
-                        f"    total = (total + first_const_generic(const_values)) & {VALUE_MASK};",
+                        f"    total = (total + first_const_generic(seed, const_values)) & {VALUE_MASK};",
                     )
                 )
             elif pattern == "borrowed_views":
@@ -460,7 +460,7 @@ def _render_rare_score(language: str, module_name: str, index: int) -> str:
                 )
             elif pattern == "const_generic":
                 statements.append(
-                    f"    total = (total + first_const_generic([seed, {index}, 3, 7])) & {VALUE_MASK};"
+                    f"    total = (total + first_const_generic(seed, [seed, {index}, 3, 7])) & {VALUE_MASK};"
                 )
             elif pattern == "borrowed_views":
                 statements.extend(
@@ -494,7 +494,7 @@ def _render_rare_score(language: str, module_name: str, index: int) -> str:
                 statements.extend(
                     (
                         f"    int32_t const_values[4] = {{ seed, {index}, 3, 7 }};",
-                        f"    total = (total + {prefix}first_const_generic(const_values)) & {VALUE_MASK};",
+                        f"    total = (total + {prefix}first_const_generic(seed, const_values)) & {VALUE_MASK};",
                     )
                 )
             elif pattern == "borrowed_views":
@@ -533,7 +533,7 @@ def _render_rare_score(language: str, module_name: str, index: int) -> str:
                 )
             elif pattern == "const_generic":
                 statements.append(
-                    f"    total = (total + first_const_generic(4, [_]i32{{ seed, {index}, 3, 7 }})) & {VALUE_MASK};"
+                    f"    total = (total + first_const_generic(seed, 4, [_]i32{{ seed, {index}, 3, 7 }})) & {VALUE_MASK};"
                 )
             elif pattern == "borrowed_views":
                 statements.extend(
@@ -612,8 +612,8 @@ fn preserve_scored<T>(value: T) -> T where T: ScorePolicy<T> {
 
 """
         if pattern == "const_generic":
-            return """fn first_const_generic<const N: usize>(values: [i32; N]) -> i32 {
-    return values[0];
+            return """fn first_const_generic<const N: usize>(first: i32, values: [i32; N]) -> i32 {
+    return first;
 }
 
 """
@@ -628,7 +628,7 @@ impl BorrowedValue {
     }
 }
 
-fn first_slice(values: [i32]) -> i32 {
+fn first_slice(values: [i32; 4]) -> i32 {
     return values[0];
 }
 
@@ -958,7 +958,7 @@ fn preserve_scored<T: ScorePolicy<T>>(value: T) -> T { value }
 
 """
         if pattern == "const_generic":
-            return """fn first_const_generic<const N: usize>(values: [i32; N]) -> i32 { values[0] }
+            return """fn first_const_generic<const N: usize>(first: i32, values: [i32; N]) -> i32 { first }
 
 """
         if pattern == "borrowed_views":
@@ -1149,7 +1149,7 @@ T preserve_scored(T value) { return value; }
 
 """
         if pattern == "const_generic":
-            return """template<std::size_t N> std::int32_t first_const_generic(const std::int32_t (&values)[N]) { return values[0]; }
+            return """template<std::size_t N> std::int32_t first_const_generic(std::int32_t first, const std::int32_t (&values)[N]) { return first; }
 
 """
         if pattern == "borrowed_views":
@@ -1323,7 +1323,7 @@ static int32_t {prefix}preserve_scored(int32_t value, {prefix}score_policy_contr
 
 '''
         if pattern == "const_generic":
-            return f'''static int32_t {prefix}first_const_generic(const int32_t values[static 4]) {{ return values[0]; }}
+            return f'''static int32_t {prefix}first_const_generic(int32_t first, const int32_t values[static 4]) {{ return first; }}
 
 '''
         if pattern == "borrowed_views":
@@ -1496,7 +1496,7 @@ fn preserve_scored(value: i32, contract: ScorePolicy) i32 { _ = contract.score_p
 
 """
         if pattern == "const_generic":
-            return """fn first_const_generic(comptime N: usize, values: [N]i32) i32 { return values[0]; }
+            return """fn first_const_generic(first: i32, comptime N: usize, values: [N]i32) i32 { _ = values; return first; }
 
 """
         if pattern == "borrowed_views":

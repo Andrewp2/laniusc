@@ -3569,6 +3569,55 @@ fn wasm_emits_more_than_one_type_scan_block_of_functions() {
 }
 
 #[test]
+fn wasm_reused_workspace_preserves_f32_types() {
+    common::require_node();
+    const FUNCTION_COUNT: usize = 257;
+    let mut source = String::new();
+    for index in 0..FUNCTION_COUNT {
+        writeln!(source, "fn value_{index}() -> i32 {{ return {index}; }}")
+            .expect("write generated function");
+    }
+    source.push_str("fn main() {\n");
+    for index in 0..FUNCTION_COUNT {
+        writeln!(source, "    print(value_{index}());").expect("write generated call");
+    }
+    source.push_str("    return 0;\n}\n");
+    common::compile_source_to_wasm_with_timeout(&source)
+        .expect("larger predecessor job should compile before workspace reuse");
+
+    common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Vec3 { x: f32, y: f32, z: f32 }
+impl Vec3 {
+    fn dot(self, right: Vec3) -> f32 {
+        return self.x * right.x + self.y * right.y + self.z * right.z;
+    }
+}
+fn main() -> i32 {
+    let value: Vec3 = Vec3 { x: 2.0, y: 3.0, z: 4.0 };
+    let result: f32 = value.dot(value);
+    if (result > 28.9 && result < 29.1) { return 0; }
+    return 1;
+}
+"#,
+    )
+    .unwrap();
+    let literal = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/wasm/f32_literal_local.lani");
+    common::compile_path_to_wasm_with_timeout(&literal).unwrap();
+
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/wasm/f32_scalar_function.lani");
+    let wasm = common::compile_path_to_wasm_with_timeout(&source).unwrap();
+    let status = common::run_wasm_main_return_with_node(
+        "WASM reused workspace f32 types",
+        "reused_workspace_f32_types",
+        &wasm,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
 fn wasm_executes_mixed_scalar_direct_user_function_call_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

@@ -26,7 +26,6 @@ enum CanonicalConstruct {
     Parameter,
     TypeArgument,
     GenericParameter,
-    PathSegment,
     Path,
     Field,
     Variant,
@@ -45,7 +44,6 @@ impl CanonicalConstruct {
             Self::Parameter => "hir_canonical_param_local",
             Self::TypeArgument => "hir_canonical_type_arg_local",
             Self::GenericParameter => "hir_canonical_generic_param_local",
-            Self::PathSegment => "hir_canonical_path_segment_local",
             Self::Path => "hir_canonical_path_local",
             Self::Field => "hir_canonical_field_local",
             Self::Variant => "hir_canonical_variant_local",
@@ -64,7 +62,6 @@ impl CanonicalConstruct {
             Self::Parameter => &buffers.hir_param_family_flag,
             Self::TypeArgument => &buffers.hir_type_arg_family_flag,
             Self::GenericParameter => &buffers.hir_generic_param_family_flag,
-            Self::PathSegment => &buffers.hir_path_segment_family_flag,
             Self::Path => &buffers.hir_path_family_flag,
             Self::Field => &buffers.hir_field_family_flag,
             Self::Variant => &buffers.hir_variant_family_flag,
@@ -1541,11 +1538,10 @@ pub fn record_canonical_hir_materialization(
     );
     p.hir_canonical_path_segment_mark
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::PathSegment)?;
     p.hir_semantic_prefix_blocks
-        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
     p.hir_canonical_path_segment_scatter
-        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     parser_clear_buffer(
         ctx.encoder,

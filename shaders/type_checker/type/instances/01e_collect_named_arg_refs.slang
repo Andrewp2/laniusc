@@ -35,6 +35,8 @@ static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_ERROR = 4u;
 static const uint TYPE_INSTANCE_UNSUPPORTED = 3u;
+static const uint HIR_TYPE = 5u;
+static const uint HIR_PATH_EXPR = 33u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -56,7 +58,7 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint leaf_token_for_owner(uint owner)
+uint instance_token_for_owner(uint owner)
 {
     if (!valid_compact_node(owner))
         return INVALID;
@@ -67,7 +69,11 @@ uint leaf_token_for_owner(uint owner)
     uint count = path_segment_count[path_i];
     if (count == 0u)
         return INVALID;
-    uint row = path_segment_base[path_i] + count - 1u;
+    uint kind = compact_hir_core[owner].kind;
+    if (kind == HIR_PATH_EXPR && count < 2u)
+        return INVALID;
+    uint segment = kind == HIR_PATH_EXPR && count >= 2u ? count - 2u : count - 1u;
+    uint row = path_segment_base[path_i] + segment;
     return row < gParams.n_tokens ? path_segment_token[row] : INVALID;
 }
 
@@ -75,7 +81,9 @@ void mark_instance_unsupported(uint owner, uint leaf_token)
 {
     if (valid_token(leaf_token))
         type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
-    uint owner_token = valid_compact_node(owner) ? compact_hir_core[owner].token_start : INVALID;
+    uint owner_token = valid_compact_node(owner) && compact_hir_core[owner].kind == HIR_TYPE
+        ? compact_hir_core[owner].token_start
+        : INVALID;
     if (valid_token(owner_token))
     {
         type_expr_ref_tag[owner_token] = TYPE_REF_ERROR;
@@ -101,7 +109,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_compact_node(arg.owner) || !valid_compact_node(arg.value))
         return;
     HirRange owner_args = compact_type_arg_ranges[arg.owner];
-    uint leaf_token = leaf_token_for_owner(arg.owner);
+    uint leaf_token = instance_token_for_owner(arg.owner);
     if (!valid_token(leaf_token) || owner_args.start == INVALID ||
         arg.ordinal >= owner_args.count ||
         type_instance_arg_count[leaf_token] != owner_args.count)

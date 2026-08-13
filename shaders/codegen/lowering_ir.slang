@@ -220,6 +220,7 @@ static const uint SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE = 128u;
 // AND/OR may be lowered eagerly by a target.
 static const uint SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_CALL = 256u;
 static const uint SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_TRAP = 512u;
+// IR_OPCODE
 static const uint SEMANTIC_LIR_FLAG_UNSUPPORTED_MATCH_CONTEXT = 1024u;
 
 // Canonical type-reference tags shared with checked semantic artifacts.

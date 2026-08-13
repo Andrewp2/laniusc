@@ -93,7 +93,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint trait_decl_i = type_decl_for_bound_path(node, owner_decl);
     if (!valid_token(bound_token) || trait_decl_i == INVALID)
     {
-        predicate_status[node] = PREDICATE_STATUS_UNKNOWN_BOUND_TYPE;
+        predicate_status[node] = bound_path_segment_count(node) > 1u
+            ? PREDICATE_STATUS_BOUND_NOT_TRAIT
+            : PREDICATE_STATUS_UNKNOWN_BOUND_TYPE;
         return;
     }
     if (
