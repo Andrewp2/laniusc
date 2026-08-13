@@ -1,9 +1,9 @@
-// Seed one checked scalar result-type record per dense compact-HIR expression.
+// Resolve one checked scalar result-type record per dense compact-HIR expression.
 //
 // Leaves consume type-checker facts directly. Operators whose result type is
-// inherited link to an operand; the following pointer-jump pass resolves every
-// chain in logarithmic parallel steps. Comparisons retain their bool result
-// while backends can read the checked type of their operand rows.
+// inherited link to an operand. Each lane follows that immutable compact-HIR
+// chain locally. Comparisons retain their bool result while backends can read
+// the checked type of their operand rows.
 
 import hir_records;
 import gpu_index;
@@ -29,6 +29,8 @@ RWStructuredBuffer<uint> compact_expr_scalar_type_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_EXPR = 14u;
+static const uint HIR_BINARY_EXPR = 16u;
+static const uint HIR_UNARY_EXPR = 17u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
@@ -198,32 +200,53 @@ uint direct_result_type(uint node)
     return TY_UNKNOWN;
 }
 
+uint inherited_result_link(uint node)
+{
+    if (!valid_hir(node)) return INVALID;
+    uint kind = compact_hir_core[node].kind;
+    if (kind == HIR_CALL_EXPR)
+    {
+        uint call_link = call_generic_return_arg_node[node];
+        return valid_hir(call_link) && call_link != node ? call_link : INVALID;
+    }
+    if (kind != HIR_EXPR && kind != HIR_BINARY_EXPR && kind != HIR_UNARY_EXPR)
+        return INVALID;
+    HirPayload payload = compact_hir_payload[node];
+    return inherited_scalar_form(payload.a) &&
+                   valid_hir(payload.b) && payload.b != node
+               ? payload.b
+               : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     if (!valid_hir(node)) return;
-    if (compact_hir_core[node].kind == HIR_CALL_EXPR)
+    uint current = node;
+    uint ty = TY_UNKNOWN;
+    uint visited = 0u;
+    while (visited < active_hir_count())
     {
-        uint call_link = call_generic_return_arg_node[node];
-        if (valid_hir(call_link) && call_link != node)
+        // A generic call whose result is inherited from an argument must use
+        // that call-site relation even when the token-indexed working table
+        // still carries a concrete result from another invocation of the same
+        // generic declaration. The former pointer-jump seed gave this edge
+        // precedence; preserve that semantic contract in the local walk.
+        bool call = compact_hir_core[current].kind == HIR_CALL_EXPR;
+        uint link = inherited_result_link(current);
+        if (call && valid_hir(link))
         {
-            compact_expr_scalar_type_out[node] =
-                pack_scalar_type(TY_UNKNOWN, call_link);
-            return;
+            current = link;
+            visited += 1u;
+            continue;
         }
+
+        ty = direct_result_type(current);
+        if (ty != TY_UNKNOWN || !valid_hir(link)) break;
+        current = link;
+        visited += 1u;
     }
-    uint ty = direct_result_type(node);
-    if (ty != TY_UNKNOWN)
-    {
-        compact_expr_scalar_type_out[node] = pack_scalar_type(ty, INVALID);
-        return;
-    }
-    HirPayload payload = compact_hir_payload[node];
-    uint link = inherited_scalar_form(payload.a) &&
-                        valid_hir(payload.b) && payload.b != node
-                    ? payload.b
-                    : INVALID;
-    compact_expr_scalar_type_out[node] = pack_scalar_type(TY_UNKNOWN, link);
+    compact_expr_scalar_type_out[node] = pack_scalar_type(ty, INVALID);
 }

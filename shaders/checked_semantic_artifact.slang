@@ -24,3 +24,6 @@ struct CheckedCallArtifact
     uint callable_hir;
     uint callable_ordinal;
 };
+
+// `semantic_calls_by_hir` is sparse by HIR kind. Every HIR_CALL_EXPR row is
+// initialized in full; no consumer may inspect a row of any other kind.

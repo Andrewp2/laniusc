@@ -1,0 +1,164 @@
+[
+  {
+    "event_count": 550,
+    "percent_of_labeled_time": 71.16528744096424,
+    "stage": "parser_hir",
+    "total_time_ms": 81.82393600000003
+  },
+  {
+    "event_count": 622,
+    "percent_of_labeled_time": 18.15551370420777,
+    "stage": "typecheck",
+    "total_time_ms": 20.874722000000006
+  },
+  {
+    "event_count": 77,
+    "percent_of_labeled_time": 2.2478451705699087,
+    "stage": "target_lir.scheduling",
+    "total_time_ms": 2.584512
+  },
+  {
+    "event_count": 5,
+    "percent_of_labeled_time": 2.2118867727245735,
+    "stage": "lexer",
+    "total_time_ms": 2.5431679999999997
+  },
+  {
+    "event_count": 18,
+    "percent_of_labeled_time": 0.912207776918497,
+    "stage": "x86.machine_byte_emission",
+    "total_time_ms": 1.0488320000000002
+  },
+  {
+    "event_count": 21,
+    "percent_of_labeled_time": 0.8431576336876332,
+    "stage": "x86.object_projection",
+    "total_time_ms": 0.96944
+  },
+  {
+    "event_count": 25,
+    "percent_of_labeled_time": 0.6307192043119043,
+    "stage": "other",
+    "total_time_ms": 0.725184
+  },
+  {
+    "event_count": 6,
+    "percent_of_labeled_time": 0.5670405554960171,
+    "stage": "semantic_lir.functions",
+    "total_time_ms": 0.651968
+  },
+  {
+    "event_count": 3,
+    "percent_of_labeled_time": 0.5563532298206234,
+    "stage": "semantic_lir.projection",
+    "total_time_ms": 0.63968
+  },
+  {
+    "event_count": 20,
+    "percent_of_labeled_time": 0.4921179494591427,
+    "stage": "semantic_lir.compaction_scans",
+    "total_time_ms": 0.565824
+  },
+  {
+    "event_count": 36,
+    "percent_of_labeled_time": 0.44536089962929537,
+    "stage": "x86.instruction_lowering",
+    "total_time_ms": 0.512064
+  },
+  {
+    "event_count": 23,
+    "percent_of_labeled_time": 0.3900595555745892,
+    "stage": "semantic_lir.execution_order",
+    "total_time_ms": 0.44848000000000005
+  },
+  {
+    "event_count": 20,
+    "percent_of_labeled_time": 0.23539948063145733,
+    "stage": "x86.operand_resolution",
+    "total_time_ms": 0.27065599999999995
+  },
+  {
+    "event_count": 4,
+    "percent_of_labeled_time": 0.23395223861291448,
+    "stage": "x86.executable_layout",
+    "total_time_ms": 0.268992
+  },
+  {
+    "event_count": 4,
+    "percent_of_labeled_time": 0.2220124919599356,
+    "stage": "x86.lifetime_analysis",
+    "total_time_ms": 0.255264
+  },
+  {
+    "event_count": 19,
+    "percent_of_labeled_time": 0.1937912725983492,
+    "stage": "x86.register_allocation",
+    "total_time_ms": 0.22281599999999996
+  },
+  {
+    "event_count": 9,
+    "percent_of_labeled_time": 0.11241174063259118,
+    "stage": "x86.byte_sizing",
+    "total_time_ms": 0.129248
+  },
+  {
+    "event_count": 6,
+    "percent_of_labeled_time": 0.07361452190472981,
+    "stage": "target_lir.page_planning",
+    "total_time_ms": 0.08464
+  },
+  {
+    "event_count": 3,
+    "percent_of_labeled_time": 0.07083136417676271,
+    "stage": "target_lir.functions",
+    "total_time_ms": 0.08144
+  },
+  {
+    "event_count": 5,
+    "percent_of_labeled_time": 0.06481974348435376,
+    "stage": "target_lir.byte_layout_scan",
+    "total_time_ms": 0.074528
+  },
+  {
+    "event_count": 5,
+    "percent_of_labeled_time": 0.0644022698251587,
+    "stage": "target_lir.instruction_count_scan",
+    "total_time_ms": 0.074048
+  },
+  {
+    "event_count": 2,
+    "percent_of_labeled_time": 0.06103464897431851,
+    "stage": "semantic_lir.locals",
+    "total_time_ms": 0.070176
+  },
+  {
+    "event_count": 1,
+    "percent_of_labeled_time": 0.014945556999183332,
+    "stage": "semantic_lir.strings",
+    "total_time_ms": 0.017184
+  },
+  {
+    "event_count": 1,
+    "percent_of_labeled_time": 0.01441675703086958,
+    "stage": "semantic_lir.call_arguments",
+    "total_time_ms": 0.016576
+  },
+  {
+    "event_count": 1,
+    "percent_of_labeled_time": 0.012023241384817872,
+    "stage": "semantic_lir.aggregates",
+    "total_time_ms": 0.013824
+  },
+  {
+    "event_count": 1,
+    "percent_of_labeled_time": 0.005427157569535846,
+    "stage": "x86.runtime_emission",
+    "total_time_ms": 0.00624
+  },
+  {
+    "event_count": 1,
+    "percent_of_labeled_time": 0.0033676208508401917,
+    "stage": "semantic_lir.control",
+    "total_time_ms": 0.003872
+  }
+]

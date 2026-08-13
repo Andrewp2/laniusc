@@ -1,0 +1,10 @@
+[
+  {
+    "event_count": 45,
+    "first_event_index": 0,
+    "last_event_index": 44,
+    "percent_of_labeled_time": 100.0,
+    "phase": "parser_hir",
+    "total_time_ms": 0.4121280000000001
+  }
+]

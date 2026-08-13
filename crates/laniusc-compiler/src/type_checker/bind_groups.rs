@@ -86,8 +86,6 @@ impl GpuTypeChecker {
         )?;
         let compact_expr_scalar_type_a =
             typecheck_graph.u32_buffer("compact_expr_scalar_type.a")?;
-        let compact_expr_scalar_type_b =
-            typecheck_graph.u32_buffer("compact_expr_scalar_type.b")?;
         let visible_decl = typecheck_graph.u32_buffer("visible_decl")?;
         let visible_type = typecheck_graph.u32_buffer("visible_type")?;
         let module_type_path_type = typecheck_graph.u32_buffer("module_type_path_type")?;
@@ -581,31 +579,7 @@ impl GpuTypeChecker {
             &resources,
         )?;
         resources.validate_graph_pass(compiler_graph::INIT_PASS, &[])?;
-        let compact_expr_scalar_type_step_count = typecheck_graph.step_count();
-        let compact_expr_scalar_type_steps = (0..compact_expr_scalar_type_step_count)
-            .map(|step| {
-                let (input, output) = if step % 2 == 0 {
-                    (&compact_expr_scalar_type_a, &compact_expr_scalar_type_b)
-                } else {
-                    (&compact_expr_scalar_type_b, &compact_expr_scalar_type_a)
-                };
-                resources.buffer("compact_expr_scalar_type_in", input);
-                resources.buffer("compact_expr_scalar_type_out", output);
-                let bind_group = reflected_bind_group_from_resources(
-                    device,
-                    "type_check.expression_types.step",
-                    &passes.kernel("type_checker/semantic/expression_types/01_step"),
-                    &resources,
-                )?;
-                resources.validate_graph_pass(typecheck_graph.step_pass_name(step), &[])?;
-                Ok(bind_group)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let compact_expr_scalar_type = if compact_expr_scalar_type_steps.len() % 2 == 0 {
-            compact_expr_scalar_type_a.clone()
-        } else {
-            compact_expr_scalar_type_b.clone()
-        };
+        let compact_expr_scalar_type = compact_expr_scalar_type_a.clone();
         resources.buffer("compact_expr_scalar_type", &compact_expr_scalar_type);
         let semantic_artifact_project = reflected_bind_group_from_resources(
             device,
@@ -683,14 +657,6 @@ impl GpuTypeChecker {
         resources.validate_graph_pass(
             compiler_graph::CONDITIONS_COMPACT_AGGREGATE_REQUESTS_PASS,
             &[],
-        )?;
-        let predicate_diagnostics = PredicateDiagnosticsOperation::new(
-            device,
-            &typecheck_graph,
-            &resources,
-            passes,
-            hir_node_capacity,
-            &hir_active_dispatch_args,
         )?;
         let condition_finalization = ConditionFinalizationOperation::new(
             device,
@@ -800,54 +766,6 @@ impl GpuTypeChecker {
             compiler_graph::TYPE_INSTANCE_ARG_ROW_CLEAR_PASS,
             compiler_graph::TYPE_INSTANCES_MARK_GENERIC_PARAM_RECORDS_PASS,
         ])?;
-        if generic_decl_owner_step_count(hir_node_capacity) > 0 {
-            resources.validate_graph_pass(
-                compiler_graph::TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_A_TO_B_PASS,
-                &[
-                    (
-                        "generic_decl_owner_by_node_in",
-                        "generic_decl_owner_by_node_a",
-                    ),
-                    (
-                        "predicate_bound_list_by_node_in",
-                        "predicate_bound_list_by_node_a",
-                    ),
-                    ("generic_decl_parent_jump_in", "generic_decl_parent_jump_a"),
-                    (
-                        "generic_decl_owner_by_node_out",
-                        "generic_decl_owner_by_node_b",
-                    ),
-                    (
-                        "predicate_bound_list_by_node_out",
-                        "predicate_bound_list_by_node_b",
-                    ),
-                    ("generic_decl_parent_jump_out", "generic_decl_parent_jump_b"),
-                ],
-            )?;
-            resources.validate_graph_pass(
-                compiler_graph::TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_B_TO_A_PASS,
-                &[
-                    (
-                        "generic_decl_owner_by_node_in",
-                        "generic_decl_owner_by_node_b",
-                    ),
-                    (
-                        "predicate_bound_list_by_node_in",
-                        "predicate_bound_list_by_node_b",
-                    ),
-                    ("generic_decl_parent_jump_in", "generic_decl_parent_jump_b"),
-                    (
-                        "generic_decl_owner_by_node_out",
-                        "generic_decl_owner_by_node_a",
-                    ),
-                    (
-                        "predicate_bound_list_by_node_out",
-                        "predicate_bound_list_by_node_a",
-                    ),
-                    ("generic_decl_parent_jump_out", "generic_decl_parent_jump_a"),
-                ],
-            )?;
-        }
         typecheck_graph.validate_registered_generic_param_bindings(&resources)?;
         let predicates = create_predicate_bind_groups(device, passes, &resources)?;
         resources.validate_graph_passes(compiler_graph::REGISTERED_PREDICATE_DIRECT_PASSES)?;
@@ -877,7 +795,6 @@ impl GpuTypeChecker {
             passes,
             &resources,
             token_capacity,
-            hir_node_capacity,
         )?;
         allocation_stamp!("type_instances");
         resources.buffer("module_id_by_file_id", &module_path.module_id_by_file_id);
@@ -961,7 +878,6 @@ impl GpuTypeChecker {
             cache_key: allocation,
             typecheck_graph,
             compact_expr_scalar_type_init,
-            compact_expr_scalar_type_steps,
             name_capacity,
             if_depth_n_blocks,
             fn_n_blocks,
@@ -997,7 +913,6 @@ impl GpuTypeChecker {
             predicates,
             type_instances,
             returns,
-            predicate_diagnostics,
             conditions_compact_expr,
             conditions_compact_stmt,
             conditions_compact_aggregate_requests,

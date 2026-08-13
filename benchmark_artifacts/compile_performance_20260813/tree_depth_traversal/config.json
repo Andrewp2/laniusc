@@ -6,8 +6,8 @@
   ],
   "first_job_excluded_from_warm_statistics": true,
   "profile": {
-    "after_export": "target/nsight/lanius-tree-depth-traversal-1000-warm-20260813/BASE_UNLOCKED",
-    "before_export": "target/nsight/lanius-batched-canonical-three-1000-warm-20260813/BASE_UNLOCKED",
+    "after_export": "benchmark_artifacts/profiles/nsight_summaries/lanius-tree-depth-traversal-1000-warm-20260813/BASE_UNLOCKED",
+    "before_export": "benchmark_artifacts/profiles/nsight_summaries/lanius-batched-canonical-three-1000-warm-20260813/BASE_UNLOCKED",
     "profiler": "NVIDIA Nsight Graphics 2026.1 GPU Trace"
   },
   "samples_per_run": 20,

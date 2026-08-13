@@ -1,0 +1,56 @@
+{
+  "first_job_excluded_from_warm_statistics": true,
+  "generator_schema": "lanius.typical-project.v1",
+  "rows": [
+    {
+      "cold_capacity_job_ms": 1077.817675,
+      "edit_workspace_warmup_ms": 237.259051,
+      "file_count": 1000,
+      "largest_source_file_bytes": 62542,
+      "source_bytes": 8977128,
+      "source_files": 1000,
+      "transcript": "benchmark_artifacts/typechecker_overhead_20260813/sparse_semantic_project_timing/transcript-1000-x86_64.json",
+      "validated_exit_code": 0,
+      "validated_stdout": "2816\n",
+      "warm_compile": {
+        "mad_ms": 4.930008000000001,
+        "max_ms": 212.912041,
+        "median_ms": 207.982033,
+        "min_ms": 203.052025,
+        "samples": 2
+      },
+      "warm_created_bind_groups": [
+        0,
+        0
+      ],
+      "warm_created_buffers": [
+        0,
+        0
+      ],
+      "warm_job": {
+        "mad_ms": 4.933087499999999,
+        "max_ms": 216.289336,
+        "median_ms": 211.3562485,
+        "min_ms": 206.423161,
+        "samples": 2
+      },
+      "warm_load": {
+        "mad_ms": 0.002694500000000044,
+        "max_ms": 3.366765,
+        "median_ms": 3.3640705,
+        "min_ms": 3.361376,
+        "samples": 2
+      },
+      "warm_write": {
+        "mad_ms": 9.999999999999999e-06,
+        "max_ms": 4.9999999999999996e-05,
+        "median_ms": 3.9999999999999996e-05,
+        "min_ms": 2.9999999999999997e-05,
+        "samples": 2
+      }
+    }
+  ],
+  "schema": "lanius.typical-project-compiler-matrix.v1",
+  "target": "x86_64",
+  "warm_samples_per_cell": 2
+}

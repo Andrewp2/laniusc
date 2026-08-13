@@ -1,0 +1,39 @@
+{
+  "classification": "synthetic_stress",
+  "cpu_languages": [
+    "tcc"
+  ],
+  "daemon_warmup_policy": "one pipeline warmup seed; after CPU trials, one unmeasured capacity warmup per measured seed, then a different-source primer before the contiguous randomized variable-project hot-daemon batch",
+  "debug_info": "disabled in every CPU lane",
+  "order_seed": 1741061,
+  "representative_workload": false,
+  "sample_policy": "all samples retained; median is primary, min/max/MAD are reported",
+  "schema": "lanius.compiler-stress-matrix-config.v1",
+  "seeds": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39
+  ],
+  "size": 1000000,
+  "timing_policy": "wall clock from request/process start through artifact write",
+  "validation_policy": "every artifact must execute with exact model-derived stdout",
+  "warm_seed": 19,
+  "workload_profile": "mixed-function-sizes"
+}

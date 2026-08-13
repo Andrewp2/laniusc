@@ -1,11 +1,14 @@
-// Inserts exact prefix-pair keys into an open-addressed GPU table.
+// Interns exact prefix-pair keys in an open-addressed GPU table.
 //
 // Each atomically published table value is the source row plus one. The pair
 // is reconstructed from immutable round inputs, so no separately written key
-// payload has to become visible to another workgroup after publication.
+// payload has to become visible to another workgroup after publication. Every
+// insertion outcome also identifies the canonical slot, avoiding a redundant
+// lookup dispatch after the table has been populated.
 
 import atomics;
 import gpu_index;
+import status;
 import type_checker.modules.path_prefix_common;
 
 struct Params { uint segment_capacity; uint step; uint reserved0; uint reserved1; };
@@ -15,9 +18,12 @@ StructuredBuffer<uint> path_segment_count_out;
 StructuredBuffer<uint> path_prefix_base;
 StructuredBuffer<uint> path_prefix_id_in;
 RWStructuredBuffer<uint> path_prefix_table_state;
+RWStructuredBuffer<uint> path_prefix_id_out;
+RWStructuredBuffer<uint> status;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint ERR_PATH_PREFIX_TABLE = 58u;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -45,7 +51,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 path_prefix_base,
                 path_prefix_id_in);
             if (occupied_key.x == key.x && occupied_key.y == key.y)
+            {
+                path_prefix_id_out[row] = slot;
                 return;
+            }
             continue;
         }
 
@@ -56,7 +65,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             state,
             replacement);
         if (prior == state)
+        {
+            path_prefix_id_out[row] = slot;
             return;
+        }
 
         if (path_prefix_table_epoch(prior) != epoch)
             continue;
@@ -68,6 +80,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             path_prefix_base,
             path_prefix_id_in);
         if (prior_key.x == key.x && prior_key.y == key.y)
+        {
+            path_prefix_id_out[row] = slot;
             return;
+        }
     }
+
+    path_prefix_id_out[row] = PATH_PREFIX_INVALID;
+    record_min_token_error(status, row, ERR_PATH_PREFIX_TABLE, gParams.step);
 }

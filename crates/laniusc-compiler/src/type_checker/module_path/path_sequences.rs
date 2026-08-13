@@ -14,8 +14,7 @@ pub(in crate::type_checker) struct PathSequences {
 /// lookup pipelines; only immutable uniforms and ping/pong buffer roles differ.
 pub(in crate::type_checker) struct PathPrefixRound {
     pub(in crate::type_checker) _params: LaniusBuffer<PathPrefixRoundParams>,
-    pub(in crate::type_checker) insert: wgpu::BindGroup,
-    pub(in crate::type_checker) lookup: wgpu::BindGroup,
+    pub(in crate::type_checker) intern: wgpu::BindGroup,
 }
 
 pub(in crate::type_checker) fn create_path_sequences(
@@ -119,31 +118,10 @@ pub(in crate::type_checker) fn create_path_sequences(
         } else {
             (&buffers.path_prefix_id_b, &buffers.path_prefix_id_a)
         };
-        let insert = resources.reflected_bind_group_with_overrides(
+        let intern = resources.reflected_bind_group_with_overrides(
             device,
-            "type_check_modules_01c_path_prefix_table_insert",
+            "type_check_modules_01c_path_prefix_table_intern",
             &passes.kernel("type_checker/modules/01c_path_prefix_table_insert"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "path_segment_count_out",
-                    buffers.path_segment_count_out.as_entire_binding(),
-                ),
-                (
-                    "path_prefix_base",
-                    buffers.path_prefix_base.as_entire_binding(),
-                ),
-                ("path_prefix_id_in", read_ids.as_entire_binding()),
-                (
-                    "path_prefix_table_state",
-                    buffers.path_prefix_table_state.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let lookup = resources.reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_01c_path_prefix_table_lookup",
-            &passes.kernel("type_checker/modules/01c_path_prefix_table_lookup"),
             &[
                 ("gParams", params.as_entire_binding()),
                 (
@@ -164,8 +142,7 @@ pub(in crate::type_checker) fn create_path_sequences(
         )?;
         rounds.push(PathPrefixRound {
             _params: params,
-            insert,
-            lookup,
+            intern,
         });
     }
 

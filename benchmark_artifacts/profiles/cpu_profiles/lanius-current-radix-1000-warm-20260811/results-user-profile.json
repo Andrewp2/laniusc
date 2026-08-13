@@ -1,0 +1,92 @@
+{
+  "first_job_excluded_from_warm_statistics": true,
+  "generator_schema": "lanius.typical-project.v1",
+  "rows": [
+    {
+      "cold_capacity_job_ms": 1293.8908150000002,
+      "edit_workspace_warmup_ms": 364.03395700000004,
+      "file_count": 1000,
+      "largest_source_file_bytes": 66476,
+      "source_bytes": 9170650,
+      "source_files": 1000,
+      "transcript": "target/profiles/lanius-current-radix-1000-warm-20260811/transcript-1000-x86_64.json",
+      "validated_exit_code": 0,
+      "validated_stdout": "1310\n",
+      "warm_compile": {
+        "mad_ms": 4.629561499999994,
+        "max_ms": 335.40002699999997,
+        "median_ms": 285.9976185,
+        "min_ms": 273.10806199999996,
+        "samples": 20
+      },
+      "warm_created_bind_groups": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "warm_created_buffers": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "warm_job": {
+        "mad_ms": 4.582833500000049,
+        "max_ms": 338.27351300000004,
+        "median_ms": 289.2388005,
+        "min_ms": 276.408871,
+        "samples": 20
+      },
+      "warm_load": {
+        "mad_ms": 0.06414300000000006,
+        "max_ms": 3.9738559999999996,
+        "median_ms": 3.3409335000000002,
+        "min_ms": 2.864106,
+        "samples": 20
+      },
+      "warm_write": {
+        "mad_ms": 0.0,
+        "max_ms": 9.999999999999999e-05,
+        "median_ms": 4e-05,
+        "min_ms": 2.9999999999999997e-05,
+        "samples": 20
+      }
+    }
+  ],
+  "schema": "lanius.typical-project-compiler-matrix.v1",
+  "target": "x86_64",
+  "warm_samples_per_cell": 20
+}

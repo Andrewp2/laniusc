@@ -1,0 +1,1669 @@
+{
+  "generator_path": "tools/generate_compiler_stress.py",
+  "model_path": "tools/compiler_stress_model.py",
+  "representative_workload": false,
+  "schema": "lanius.compiler-stress-source-manifest.v1",
+  "variants": {
+    "19": {
+      "expected_stdout": "3367\n",
+      "natural_lanius_bytes": 999976,
+      "padding_bytes": 24,
+      "profile": "pareas-common-subset",
+      "seed": 19,
+      "sources": {
+        "c": {
+          "bytes": 982706,
+          "path": "1000000/scaling.c",
+          "sha256": "cbd24e8f2c7b490480188c94e2a60ccc3d61c94db5d8dcde74cc9fe7bc7958ac"
+        },
+        "cpp": {
+          "bytes": 982706,
+          "path": "1000000/scaling.cpp",
+          "sha256": "c491fe1c744df105ff2c9a4ac92e7d5b5cd1ecc7b52afe4d5175a6d2a8f0ec3f"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "57d2e34a4a6c493a7972bb32c3e3140c76836b763a39cf12686d8b897afe0e81"
+        },
+        "pareas": {
+          "bytes": 980493,
+          "path": "1000000/scaling.par",
+          "sha256": "d74ce3f732c37799b805275976d4ad7d37a6e1121b646c03521a55cbba6527eb"
+        },
+        "rust": {
+          "bytes": 1003941,
+          "path": "1000000/scaling.rs",
+          "sha256": "c749592b2ae2dce655925c09c5545b8e19034f3880fb789b4aaae74bc07b09f4"
+        },
+        "zig": {
+          "bytes": 1004092,
+          "path": "1000000/scaling.zig",
+          "sha256": "acadf5525012f5d16b9d24ee17b97d0a9ed0ea3be5c2551bc6475d75e6b04068"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1278,
+        "function_body_line_summary": {
+          "count": 1279,
+          "max": 1143,
+          "mean": 22.05082095387021,
+          "min": 6,
+          "p50": 7,
+          "p90": 38,
+          "p99": 227
+        },
+        "leaf_family_counts": {
+          "bitwise": 128,
+          "loop": 128,
+          "nested_branch": 128,
+          "scalar_capture": 128,
+          "scalar_pair": 128
+        },
+        "leaf_function_count": 640,
+        "leaf_size_class_counts": {
+          "large": 4,
+          "medium": 35,
+          "short": 473,
+          "small": 128
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2100,
+          "branch": 2134,
+          "mul": 2138,
+          "shift": 2100,
+          "xor": 2242
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1279,
+        "reduction_function_count": 639
+      }
+    },
+    "20": {
+      "expected_stdout": "3754\n",
+      "natural_lanius_bytes": 986667,
+      "padding_bytes": 13333,
+      "profile": "pareas-common-subset",
+      "seed": 20,
+      "sources": {
+        "c": {
+          "bytes": 971937,
+          "path": "1000000/scaling.c",
+          "sha256": "fa753436b3a7e7ef0d910e9e47e3c950ec2e5dc293ba15423bb5d5f29d46030e"
+        },
+        "cpp": {
+          "bytes": 971937,
+          "path": "1000000/scaling.cpp",
+          "sha256": "9f94bfd8d5b9fa4b7458a0006f6b21fd3a5aedc4cd4160b8bd2da8f2d0235f25"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "1a7ec79e353e12cc08a3de7937ac6f177ac8ed920272dcbbcda01e258ead4a77"
+        },
+        "pareas": {
+          "bytes": 970046,
+          "path": "1000000/scaling.par",
+          "sha256": "2d14414d6d52531ee5ba99380b1683650d3e404782c7c4c08b00d1f4e35106ea"
+        },
+        "rust": {
+          "bytes": 990058,
+          "path": "1000000/scaling.rs",
+          "sha256": "4ea265f09725ba6d62ab0f5054bcb8500622c33f12c2bc6d03c09e1926722a8f"
+        },
+        "zig": {
+          "bytes": 990195,
+          "path": "1000000/scaling.zig",
+          "sha256": "6c94d9055d73ed88b922daa80a35d8fff1fdc79a566d7bd7527b8eed1f057047"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1090,
+        "function_body_line_summary": {
+          "count": 1091,
+          "max": 1008,
+          "mean": 25.919340054995416,
+          "min": 6,
+          "p50": 7,
+          "p90": 50,
+          "p99": 268
+        },
+        "leaf_family_counts": {
+          "bitwise": 109,
+          "loop": 110,
+          "nested_branch": 109,
+          "scalar_capture": 109,
+          "scalar_pair": 109
+        },
+        "leaf_function_count": 546,
+        "leaf_size_class_counts": {
+          "large": 7,
+          "medium": 29,
+          "short": 378,
+          "small": 132
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2207,
+          "branch": 2326,
+          "mul": 2328,
+          "shift": 2173,
+          "xor": 2301
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1091,
+        "reduction_function_count": 545
+      }
+    },
+    "21": {
+      "expected_stdout": "2849\n",
+      "natural_lanius_bytes": 998501,
+      "padding_bytes": 1499,
+      "profile": "pareas-common-subset",
+      "seed": 21,
+      "sources": {
+        "c": {
+          "bytes": 981771,
+          "path": "1000000/scaling.c",
+          "sha256": "bf67897ed572da0b9bfa9245c7176f9ec4f942d359050b297b0bcbf807bb203a"
+        },
+        "cpp": {
+          "bytes": 981771,
+          "path": "1000000/scaling.cpp",
+          "sha256": "482c90ae7102d5f7b9ea2ead27c523f514a756663c2ace1c4aaedcc5e4f47935"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "ed5f62a438e357541301e501b2fb0990258d224c72b022ae1dc80a66837ddac4"
+        },
+        "pareas": {
+          "bytes": 979626,
+          "path": "1000000/scaling.par",
+          "sha256": "dfde69af023622b1dcd1025b8071650c816301658911bf1082e9c7a8c216e261"
+        },
+        "rust": {
+          "bytes": 1002342,
+          "path": "1000000/scaling.rs",
+          "sha256": "0e68f310d8e2cebbb163109ceaddc4102069f2219fe5ef0ba8a246c3ddae414c"
+        },
+        "zig": {
+          "bytes": 1002489,
+          "path": "1000000/scaling.zig",
+          "sha256": "f61e6b5e5648e57f504f44d6f6365176f59511d9ec96a893cf68aedf2b2f73c2"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1238,
+        "function_body_line_summary": {
+          "count": 1239,
+          "max": 833,
+          "mean": 22.720742534301856,
+          "min": 6,
+          "p50": 7,
+          "p90": 44,
+          "p99": 218
+        },
+        "leaf_family_counts": {
+          "bitwise": 124,
+          "loop": 124,
+          "nested_branch": 124,
+          "scalar_capture": 124,
+          "scalar_pair": 124
+        },
+        "leaf_function_count": 620,
+        "leaf_size_class_counts": {
+          "large": 4,
+          "medium": 36,
+          "short": 443,
+          "small": 137
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2187,
+          "branch": 2148,
+          "mul": 2154,
+          "shift": 2216,
+          "xor": 2181
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1239,
+        "reduction_function_count": 619
+      }
+    },
+    "22": {
+      "expected_stdout": "1889\n",
+      "natural_lanius_bytes": 999744,
+      "padding_bytes": 256,
+      "profile": "pareas-common-subset",
+      "seed": 22,
+      "sources": {
+        "c": {
+          "bytes": 983729,
+          "path": "1000000/scaling.c",
+          "sha256": "8258910253edd63568d32b2fe0637e78d3a6ee6a3ee3a1ff00f3a9d2cdd25775"
+        },
+        "cpp": {
+          "bytes": 983729,
+          "path": "1000000/scaling.cpp",
+          "sha256": "bdc22793aee6fe14039c336e3d012aaee868fd3d67daf5752207b9d914d59c40"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "1d2e7656e82c78fa6df08755ff283488c7dd18855739caf043ed2ecb7cf6bb48"
+        },
+        "pareas": {
+          "bytes": 981673,
+          "path": "1000000/scaling.par",
+          "sha256": "64fba91883be00488b3a026788759113b12114538d3d4ebd7d1c8c2d6a09bba6"
+        },
+        "rust": {
+          "bytes": 1003426,
+          "path": "1000000/scaling.rs",
+          "sha256": "bd30f5333132a6ec77fae931e7eef0daeb761a135e6061609107fec29778c5cd"
+        },
+        "zig": {
+          "bytes": 1003564,
+          "path": "1000000/scaling.zig",
+          "sha256": "01d8068044b529d8fe3b6b75a5478bb79dd180b6e99123405e9b7e6360d6223a"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1186,
+        "function_body_line_summary": {
+          "count": 1187,
+          "max": 1090,
+          "mean": 23.889637742207245,
+          "min": 6,
+          "p50": 7,
+          "p90": 48,
+          "p99": 235
+        },
+        "leaf_family_counts": {
+          "bitwise": 119,
+          "loop": 119,
+          "nested_branch": 119,
+          "scalar_capture": 118,
+          "scalar_pair": 119
+        },
+        "leaf_function_count": 594,
+        "leaf_size_class_counts": {
+          "large": 4,
+          "medium": 33,
+          "short": 412,
+          "small": 145
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2241,
+          "branch": 2216,
+          "mul": 2270,
+          "shift": 2177,
+          "xor": 2280
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1187,
+        "reduction_function_count": 593
+      }
+    },
+    "23": {
+      "expected_stdout": "187\n",
+      "natural_lanius_bytes": 999778,
+      "padding_bytes": 222,
+      "profile": "pareas-common-subset",
+      "seed": 23,
+      "sources": {
+        "c": {
+          "bytes": 982758,
+          "path": "1000000/scaling.c",
+          "sha256": "5a8be4083bc6b1f8cd73599bcd6b45e2f5e462f589ef82f7ea12e1379361a464"
+        },
+        "cpp": {
+          "bytes": 982758,
+          "path": "1000000/scaling.cpp",
+          "sha256": "c36c9155b06206a0a285f3534f0adc7b02ea7c7045cc1addb83e21985e8cd4e3"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "de6a2435131fa0175b85ee33826fca10e06b69adb9263b8526f3cc5c81ceaf30"
+        },
+        "pareas": {
+          "bytes": 980575,
+          "path": "1000000/scaling.par",
+          "sha256": "3e5d3f50d050aab92007167addeb70db9dd34fdab5ae5ed7e06bce3bb2ccccd9"
+        },
+        "rust": {
+          "bytes": 1003685,
+          "path": "1000000/scaling.rs",
+          "sha256": "06316a391c5a4c6da47cc1b2d57e760cedb628bddf606defb369c038ce3f56a4"
+        },
+        "zig": {
+          "bytes": 1003830,
+          "path": "1000000/scaling.zig",
+          "sha256": "2f07d0c2bd2986eaadf85a1f3b0b423736db9dfbad60733e80280bddd8990e14"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1260,
+        "function_body_line_summary": {
+          "count": 1261,
+          "max": 1013,
+          "mean": 22.3187946074544,
+          "min": 6,
+          "p50": 7,
+          "p90": 41,
+          "p99": 227
+        },
+        "leaf_family_counts": {
+          "bitwise": 126,
+          "loop": 126,
+          "nested_branch": 127,
+          "scalar_capture": 126,
+          "scalar_pair": 126
+        },
+        "leaf_function_count": 631,
+        "leaf_size_class_counts": {
+          "large": 3,
+          "medium": 36,
+          "short": 460,
+          "small": 132
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2110,
+          "branch": 2134,
+          "mul": 2159,
+          "shift": 2229,
+          "xor": 2146
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1261,
+        "reduction_function_count": 630
+      }
+    },
+    "24": {
+      "expected_stdout": "3513\n",
+      "natural_lanius_bytes": 994600,
+      "padding_bytes": 5400,
+      "profile": "pareas-common-subset",
+      "seed": 24,
+      "sources": {
+        "c": {
+          "bytes": 977015,
+          "path": "1000000/scaling.c",
+          "sha256": "fd9ae622bc26c831c918ec238fc18ed65eed4b255a376eda86d9cd8c54ab4958"
+        },
+        "cpp": {
+          "bytes": 977015,
+          "path": "1000000/scaling.cpp",
+          "sha256": "cb36d7a5127c48386ec3227f44892cfaaa3a06847c8fc89a63c19c945fe15f62"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "891290ce401c2c38702cd93a8e8b80279ccebca21b47acb812382da64b4fb71e"
+        },
+        "pareas": {
+          "bytes": 974763,
+          "path": "1000000/scaling.par",
+          "sha256": "f8648f1f6f3d29037bc1bf3f17c0fd629f447abdb8c6a994808f7e44eb55f80a"
+        },
+        "rust": {
+          "bytes": 998646,
+          "path": "1000000/scaling.rs",
+          "sha256": "b31011a2a1d3c34341147186d245c4339dd088caf046f24fad996eb891f9068d"
+        },
+        "zig": {
+          "bytes": 998800,
+          "path": "1000000/scaling.zig",
+          "sha256": "878aec70feb7928225ed01cb6a812f75bbe1544d14a0c7fb54a695771870c475"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1302,
+        "function_body_line_summary": {
+          "count": 1303,
+          "max": 760,
+          "mean": 21.54489639293937,
+          "min": 6,
+          "p50": 7,
+          "p90": 40,
+          "p99": 218
+        },
+        "leaf_family_counts": {
+          "bitwise": 131,
+          "loop": 131,
+          "nested_branch": 130,
+          "scalar_capture": 130,
+          "scalar_pair": 130
+        },
+        "leaf_function_count": 652,
+        "leaf_size_class_counts": {
+          "large": 2,
+          "medium": 32,
+          "short": 481,
+          "small": 137
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2016,
+          "branch": 2139,
+          "mul": 2026,
+          "shift": 2061,
+          "xor": 2155
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1303,
+        "reduction_function_count": 651
+      }
+    },
+    "25": {
+      "expected_stdout": "711\n",
+      "natural_lanius_bytes": 998273,
+      "padding_bytes": 1727,
+      "profile": "pareas-common-subset",
+      "seed": 25,
+      "sources": {
+        "c": {
+          "bytes": 981518,
+          "path": "1000000/scaling.c",
+          "sha256": "8242727c5af5dee4dc7bcf27b2ab9838c1f736beb9b7224a9ff575900391a1aa"
+        },
+        "cpp": {
+          "bytes": 981518,
+          "path": "1000000/scaling.cpp",
+          "sha256": "1c186e457936de71561667e00f73ec290b1ac06d6715f16b6d70e25373d66300"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "b4bcc5e8d021b68656fa67f7cff81e3af6902cf46e028cb9388aeaf71f9f5b04"
+        },
+        "pareas": {
+          "bytes": 979372,
+          "path": "1000000/scaling.par",
+          "sha256": "a705d5ee9de46fe7af6268f6e0c7874471c2aafb82670e5af8ef5df6d11c55af"
+        },
+        "rust": {
+          "bytes": 1002129,
+          "path": "1000000/scaling.rs",
+          "sha256": "7a65f3268580d2043a363a6da7f256311b2e0b523d39ca25ba6cc4002e86764e"
+        },
+        "zig": {
+          "bytes": 1002281,
+          "path": "1000000/scaling.zig",
+          "sha256": "9578c0b096979642aff6b87516ee286e1f5446a651d98e9030351a74dbc8cb70"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1240,
+        "function_body_line_summary": {
+          "count": 1241,
+          "max": 966,
+          "mean": 22.680902497985496,
+          "min": 6,
+          "p50": 7,
+          "p90": 42,
+          "p99": 219
+        },
+        "leaf_family_counts": {
+          "bitwise": 124,
+          "loop": 125,
+          "nested_branch": 124,
+          "scalar_capture": 124,
+          "scalar_pair": 124
+        },
+        "leaf_function_count": 621,
+        "leaf_size_class_counts": {
+          "large": 5,
+          "medium": 38,
+          "short": 463,
+          "small": 115
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2190,
+          "branch": 2140,
+          "mul": 2120,
+          "shift": 2183,
+          "xor": 2265
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1241,
+        "reduction_function_count": 620
+      }
+    },
+    "26": {
+      "expected_stdout": "2327\n",
+      "natural_lanius_bytes": 999399,
+      "padding_bytes": 601,
+      "profile": "pareas-common-subset",
+      "seed": 26,
+      "sources": {
+        "c": {
+          "bytes": 984854,
+          "path": "1000000/scaling.c",
+          "sha256": "b20468bc05a59d1076ca457a51534c5d2858288461ec56aed41666feeacf6d78"
+        },
+        "cpp": {
+          "bytes": 984854,
+          "path": "1000000/scaling.cpp",
+          "sha256": "a35dc9e0ca8a2bee9eeed02fcd28b52676bab90b4b1e04785425a9badc1bc6bc"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "40b4935db5e3556756e027b31c6f1950fb0dc9e970c0809cf7b8f4299c8cadcc"
+        },
+        "pareas": {
+          "bytes": 982982,
+          "path": "1000000/scaling.par",
+          "sha256": "b9cada75dc5cc40d9a5e005d0f2f7b7e4da4c09a74f98180b6309a8ef96a1235"
+        },
+        "rust": {
+          "bytes": 1002729,
+          "path": "1000000/scaling.rs",
+          "sha256": "60887171cf56e9dcc7964e471135e5c1baca57b537c47056c1d99d2fe72ce391"
+        },
+        "zig": {
+          "bytes": 1002855,
+          "path": "1000000/scaling.zig",
+          "sha256": "1593ca88e9d260473094b9ae0410bcf274a05f5b1c4a53d5f765c0f95c0f6afd"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1076,
+        "function_body_line_summary": {
+          "count": 1077,
+          "max": 1172,
+          "mean": 26.39740018570102,
+          "min": 6,
+          "p50": 7,
+          "p90": 45,
+          "p99": 252
+        },
+        "leaf_family_counts": {
+          "bitwise": 108,
+          "loop": 107,
+          "nested_branch": 108,
+          "scalar_capture": 108,
+          "scalar_pair": 108
+        },
+        "leaf_function_count": 539,
+        "leaf_size_class_counts": {
+          "large": 5,
+          "medium": 38,
+          "short": 377,
+          "small": 119
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2335,
+          "branch": 2277,
+          "mul": 2421,
+          "shift": 2362,
+          "xor": 2390
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1077,
+        "reduction_function_count": 538
+      }
+    },
+    "27": {
+      "expected_stdout": "781\n",
+      "natural_lanius_bytes": 995176,
+      "padding_bytes": 4824,
+      "profile": "pareas-common-subset",
+      "seed": 27,
+      "sources": {
+        "c": {
+          "bytes": 980016,
+          "path": "1000000/scaling.c",
+          "sha256": "aa6c5a8cac85ee100da87c7d29241bfe142a730d8370075b2a24db2560a30983"
+        },
+        "cpp": {
+          "bytes": 980016,
+          "path": "1000000/scaling.cpp",
+          "sha256": "b969753c75cd7284c4c05b709c540a39fa14a48214396b74211e7b834f24d722"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "99e603e639fd6008a0c4109f9ac590147c1e0142617dcd52e556ae6dbff0b44c"
+        },
+        "pareas": {
+          "bytes": 978067,
+          "path": "1000000/scaling.par",
+          "sha256": "753cce8cd6b505b35fcec260ace0823dc15bf215e193425102c186123c5aea14"
+        },
+        "rust": {
+          "bytes": 998653,
+          "path": "1000000/scaling.rs",
+          "sha256": "c181dd83ffea156307311c656bfff84c6d6343c85aa33f7baca354c68f0767e1"
+        },
+        "zig": {
+          "bytes": 998784,
+          "path": "1000000/scaling.zig",
+          "sha256": "affbd6dd94a68fd14a0aff568fccdb4695bb613d7e005ff887d75b0936bcbce1"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1122,
+        "function_body_line_summary": {
+          "count": 1123,
+          "max": 1144,
+          "mean": 25.287622439893145,
+          "min": 6,
+          "p50": 7,
+          "p90": 45,
+          "p99": 243
+        },
+        "leaf_family_counts": {
+          "bitwise": 112,
+          "loop": 112,
+          "nested_branch": 113,
+          "scalar_capture": 112,
+          "scalar_pair": 113
+        },
+        "leaf_function_count": 562,
+        "leaf_size_class_counts": {
+          "large": 5,
+          "medium": 30,
+          "short": 413,
+          "small": 114
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2218,
+          "branch": 2310,
+          "mul": 2283,
+          "shift": 2285,
+          "xor": 2200
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1123,
+        "reduction_function_count": 561
+      }
+    },
+    "28": {
+      "expected_stdout": "123\n",
+      "natural_lanius_bytes": 994914,
+      "padding_bytes": 5086,
+      "profile": "pareas-common-subset",
+      "seed": 28,
+      "sources": {
+        "c": {
+          "bytes": 978859,
+          "path": "1000000/scaling.c",
+          "sha256": "b99061df2e0e26e9d1118c37688a3a168ee7fdd271bac1a1044a85d7fb240ca7"
+        },
+        "cpp": {
+          "bytes": 978859,
+          "path": "1000000/scaling.cpp",
+          "sha256": "58ef12aa1da7fdb6cb9aeb79200c3d8fb48780b56ecc96a81cd02eae8a65c774"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "b88b07258308434bf0cce2e7a44140c17ba4b6731bcb8a459da3514a85695200"
+        },
+        "pareas": {
+          "bytes": 976799,
+          "path": "1000000/scaling.par",
+          "sha256": "a902399bf3d780ee88c9e0d4f534e3fa555c88d0fc8c09d1e75dacceeab0604a"
+        },
+        "rust": {
+          "bytes": 998600,
+          "path": "1000000/scaling.rs",
+          "sha256": "fbe2f56faf75474d71ae0267c26b0199860422f609a80c3bba901e39ba5fda64"
+        },
+        "zig": {
+          "bytes": 998742,
+          "path": "1000000/scaling.zig",
+          "sha256": "2540ed187451c02be32e6d65e875a91ba0d5df64334fb6a18660ce59bf9c8f6f"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1188,
+        "function_body_line_summary": {
+          "count": 1189,
+          "max": 1029,
+          "mean": 23.69049621530698,
+          "min": 6,
+          "p50": 7,
+          "p90": 48,
+          "p99": 259
+        },
+        "leaf_family_counts": {
+          "bitwise": 119,
+          "loop": 119,
+          "nested_branch": 119,
+          "scalar_capture": 119,
+          "scalar_pair": 119
+        },
+        "leaf_function_count": 595,
+        "leaf_size_class_counts": {
+          "large": 2,
+          "medium": 38,
+          "short": 434,
+          "small": 121
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2219,
+          "branch": 2201,
+          "mul": 2221,
+          "shift": 2254,
+          "xor": 2146
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1189,
+        "reduction_function_count": 594
+      }
+    },
+    "29": {
+      "expected_stdout": "1602\n",
+      "natural_lanius_bytes": 999507,
+      "padding_bytes": 493,
+      "profile": "pareas-common-subset",
+      "seed": 29,
+      "sources": {
+        "c": {
+          "bytes": 982912,
+          "path": "1000000/scaling.c",
+          "sha256": "ea9408b859fe6cab32aee5e514b8873a6d7ad6055b1ffa4adb1e1e6546f3472e"
+        },
+        "cpp": {
+          "bytes": 982912,
+          "path": "1000000/scaling.cpp",
+          "sha256": "79674ffd489f01290ec4421e3abd086ecb3665ba576a7d225b8a67ba4afd2de9"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "d280aa4d3cb74ffe953a67aee8e0a5b5fd1db9decda64ed14275aad9b7a0033e"
+        },
+        "pareas": {
+          "bytes": 980784,
+          "path": "1000000/scaling.par",
+          "sha256": "ff11b899df39571538f5cd8cee2c9a54e533dd1c739af85264e412d82090e660"
+        },
+        "rust": {
+          "bytes": 1003317,
+          "path": "1000000/scaling.rs",
+          "sha256": "5f9463a669ba511862d89ff5ec9f937ddc04c16f05558480a9099fcf4cf8040f"
+        },
+        "zig": {
+          "bytes": 1003463,
+          "path": "1000000/scaling.zig",
+          "sha256": "d95c5ca672dbf79f8a776a8652e174f58f97b5ea24f0d1180cfc784b28c1dbd3"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1228,
+        "function_body_line_summary": {
+          "count": 1229,
+          "max": 1180,
+          "mean": 23.082180634662326,
+          "min": 6,
+          "p50": 7,
+          "p90": 45,
+          "p99": 232
+        },
+        "leaf_family_counts": {
+          "bitwise": 123,
+          "loop": 123,
+          "nested_branch": 123,
+          "scalar_capture": 123,
+          "scalar_pair": 123
+        },
+        "leaf_function_count": 615,
+        "leaf_size_class_counts": {
+          "large": 2,
+          "medium": 35,
+          "short": 443,
+          "small": 135
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2137,
+          "branch": 2239,
+          "mul": 2146,
+          "shift": 2186,
+          "xor": 2101
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1229,
+        "reduction_function_count": 614
+      }
+    },
+    "30": {
+      "expected_stdout": "2593\n",
+      "natural_lanius_bytes": 999839,
+      "padding_bytes": 161,
+      "profile": "pareas-common-subset",
+      "seed": 30,
+      "sources": {
+        "c": {
+          "bytes": 982639,
+          "path": "1000000/scaling.c",
+          "sha256": "e5ba677216f49f624211265e75eb0ef4fb04ae9a67949faedd37fe20ded41681"
+        },
+        "cpp": {
+          "bytes": 982639,
+          "path": "1000000/scaling.cpp",
+          "sha256": "51222a6cc615941ee75aa0f15a4a2d02aa31516f8ebefd2467b494ef833f10d7"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "0a362364644f21aa149e9186615cd5c02d72a1e532a2fe4b73ae0f4cbcc6e8d8"
+        },
+        "pareas": {
+          "bytes": 980438,
+          "path": "1000000/scaling.par",
+          "sha256": "5ea971050dd1000c373d0df8f81b7d68111a4b467945326ab268d06f6c7a4ae6"
+        },
+        "rust": {
+          "bytes": 1003792,
+          "path": "1000000/scaling.rs",
+          "sha256": "56d1ce563a45d1dc19d0b17bc7860066398178110bb15f1faae5414e4abecb5a"
+        },
+        "zig": {
+          "bytes": 1003951,
+          "path": "1000000/scaling.zig",
+          "sha256": "a456eb84b10e0d0b96e41ada4a9f1980fccabb81e8be445b50604f5051faafd3"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1272,
+        "function_body_line_summary": {
+          "count": 1273,
+          "max": 779,
+          "mean": 22.205813040062843,
+          "min": 6,
+          "p50": 7,
+          "p90": 44,
+          "p99": 232
+        },
+        "leaf_family_counts": {
+          "bitwise": 127,
+          "loop": 128,
+          "nested_branch": 127,
+          "scalar_capture": 128,
+          "scalar_pair": 127
+        },
+        "leaf_function_count": 637,
+        "leaf_size_class_counts": {
+          "large": 3,
+          "medium": 27,
+          "short": 469,
+          "small": 138
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2131,
+          "branch": 2181,
+          "mul": 2137,
+          "shift": 2140,
+          "xor": 2042
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1273,
+        "reduction_function_count": 636
+      }
+    },
+    "31": {
+      "expected_stdout": "1204\n",
+      "natural_lanius_bytes": 998785,
+      "padding_bytes": 1215,
+      "profile": "pareas-common-subset",
+      "seed": 31,
+      "sources": {
+        "c": {
+          "bytes": 983065,
+          "path": "1000000/scaling.c",
+          "sha256": "b334d826d039c558d67cba55f8a2bac571d19943a2217b325e42f47b85141ebe"
+        },
+        "cpp": {
+          "bytes": 983065,
+          "path": "1000000/scaling.cpp",
+          "sha256": "e65031dd8ce00be5cb1bf638e28ae3285a08b27a54c31c46fce9ee7e155d3882"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "8c57ddb3adb7f0ad4fafd13dcd6329c05d7d19393a5e335e9adcbe6ee0d90980"
+        },
+        "pareas": {
+          "bytes": 981048,
+          "path": "1000000/scaling.par",
+          "sha256": "c719572c1ef735d3f8a2d0154f1621fd8f5bdf16a3da595b1e4fab34bcabe943"
+        },
+        "rust": {
+          "bytes": 1002386,
+          "path": "1000000/scaling.rs",
+          "sha256": "4ea752779c436e34877ac42493fd466147856c57edcea90201a5028f9ddec9ea"
+        },
+        "zig": {
+          "bytes": 1002529,
+          "path": "1000000/scaling.zig",
+          "sha256": "e5c55c9a367158ee1583d14e2e0c11dda809fa344e690152221fe357beb794d4"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1162,
+        "function_body_line_summary": {
+          "count": 1163,
+          "max": 1059,
+          "mean": 24.39896818572657,
+          "min": 6,
+          "p50": 7,
+          "p90": 46,
+          "p99": 261
+        },
+        "leaf_family_counts": {
+          "bitwise": 116,
+          "loop": 116,
+          "nested_branch": 116,
+          "scalar_capture": 117,
+          "scalar_pair": 117
+        },
+        "leaf_function_count": 582,
+        "leaf_size_class_counts": {
+          "large": 4,
+          "medium": 41,
+          "short": 414,
+          "small": 123
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2253,
+          "branch": 2241,
+          "mul": 2337,
+          "shift": 2198,
+          "xor": 2244
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1163,
+        "reduction_function_count": 581
+      }
+    },
+    "32": {
+      "expected_stdout": "1844\n",
+      "natural_lanius_bytes": 994097,
+      "padding_bytes": 5903,
+      "profile": "pareas-common-subset",
+      "seed": 32,
+      "sources": {
+        "c": {
+          "bytes": 978667,
+          "path": "1000000/scaling.c",
+          "sha256": "23ac68036bda984dba05e5e5eeb1a085554e09c118df45aba011f99a880febf2"
+        },
+        "cpp": {
+          "bytes": 978667,
+          "path": "1000000/scaling.cpp",
+          "sha256": "2cdd3639f7305ef271727fb52003c57fa5e4754396c4f954094473c59898a399"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "de58513961fe87c79245fb3a40feb6803a30a815f574d6b7c71710ea5db61364"
+        },
+        "pareas": {
+          "bytes": 976684,
+          "path": "1000000/scaling.par",
+          "sha256": "2e1e511ea058222e41a4c588795cc4747e097decbe8173a23f8e66d9ca86039d"
+        },
+        "rust": {
+          "bytes": 997636,
+          "path": "1000000/scaling.rs",
+          "sha256": "b0f9fac8a0010b455a312799ba0791c0536bd84186df899f48d28410bb7d9816"
+        },
+        "zig": {
+          "bytes": 997769,
+          "path": "1000000/scaling.zig",
+          "sha256": "caee85b615ddb911588983c285745664e35f3cf25c33999e897a43b98359bf56"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1142,
+        "function_body_line_summary": {
+          "count": 1143,
+          "max": 1074,
+          "mean": 24.726159230096236,
+          "min": 6,
+          "p50": 7,
+          "p90": 48,
+          "p99": 229
+        },
+        "leaf_family_counts": {
+          "bitwise": 114,
+          "loop": 114,
+          "nested_branch": 115,
+          "scalar_capture": 114,
+          "scalar_pair": 115
+        },
+        "leaf_function_count": 572,
+        "leaf_size_class_counts": {
+          "large": 6,
+          "medium": 29,
+          "short": 412,
+          "small": 125
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2180,
+          "branch": 2249,
+          "mul": 2253,
+          "shift": 2246,
+          "xor": 2336
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1143,
+        "reduction_function_count": 571
+      }
+    },
+    "33": {
+      "expected_stdout": "2593\n",
+      "natural_lanius_bytes": 999390,
+      "padding_bytes": 610,
+      "profile": "pareas-common-subset",
+      "seed": 33,
+      "sources": {
+        "c": {
+          "bytes": 982505,
+          "path": "1000000/scaling.c",
+          "sha256": "85edd8bcf66c5697232b9b7beacbbadf13fe3cdea53b78a4c5edd388572c0e08"
+        },
+        "cpp": {
+          "bytes": 982505,
+          "path": "1000000/scaling.cpp",
+          "sha256": "fa511dd4c47765b4a5b4cb92cac7732ea199c004da7243f992c2637c2e1bd544"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "fdb1ddb33428249bd9a4c2fa0e98eb7a51c6607f7f049c36c1f2d4320cd69809"
+        },
+        "pareas": {
+          "bytes": 980339,
+          "path": "1000000/scaling.par",
+          "sha256": "7605ecb0b7f445a6087d985db41b0926d91a7ae1f8435e9326cb435068f95fc7"
+        },
+        "rust": {
+          "bytes": 1003266,
+          "path": "1000000/scaling.rs",
+          "sha256": "8b23892af5e8e5855b35710c66c5e25708c0a1be70bb3acb638494254e3a1a67"
+        },
+        "zig": {
+          "bytes": 1003410,
+          "path": "1000000/scaling.zig",
+          "sha256": "8db8121c289c6c4414d24ca4b9b47b2132c032a9271e579e45f9778f2a0157e2"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1250,
+        "function_body_line_summary": {
+          "count": 1251,
+          "max": 1174,
+          "mean": 22.579536370903277,
+          "min": 6,
+          "p50": 7,
+          "p90": 39,
+          "p99": 237
+        },
+        "leaf_family_counts": {
+          "bitwise": 125,
+          "loop": 125,
+          "nested_branch": 126,
+          "scalar_capture": 125,
+          "scalar_pair": 125
+        },
+        "leaf_function_count": 626,
+        "leaf_size_class_counts": {
+          "large": 3,
+          "medium": 30,
+          "short": 467,
+          "small": 126
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2096,
+          "branch": 2181,
+          "mul": 2130,
+          "shift": 2182,
+          "xor": 2174
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1251,
+        "reduction_function_count": 625
+      }
+    },
+    "34": {
+      "expected_stdout": "2085\n",
+      "natural_lanius_bytes": 999708,
+      "padding_bytes": 292,
+      "profile": "pareas-common-subset",
+      "seed": 34,
+      "sources": {
+        "c": {
+          "bytes": 983093,
+          "path": "1000000/scaling.c",
+          "sha256": "051f0b9b3d2eda8c7e1ee8578f9e328611cf6c955dca42f95e357ee759287191"
+        },
+        "cpp": {
+          "bytes": 983093,
+          "path": "1000000/scaling.cpp",
+          "sha256": "6ffa3f446693d6ab9c79d02578ad25557893844132fb8c15e5ce19c90016443f"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "c56aa922b56d323fa6bfb082113ceaf278dcbfb116bd85402041907a2bbd5a9b"
+        },
+        "pareas": {
+          "bytes": 980961,
+          "path": "1000000/scaling.par",
+          "sha256": "993948a07cce5d4306a1d67bc5948e70abbbad1506b6788cf7e1804d793f935d"
+        },
+        "rust": {
+          "bytes": 1003522,
+          "path": "1000000/scaling.rs",
+          "sha256": "e84c8f0f97a01985b283d001d35db83ec1e303f625b8dad8414edf714b453c25"
+        },
+        "zig": {
+          "bytes": 1003664,
+          "path": "1000000/scaling.zig",
+          "sha256": "0aebf175d0a61aa04263b0a580e9d762c51c5fc26e8ccd4b2ecd3e741470fe22"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1230,
+        "function_body_line_summary": {
+          "count": 1231,
+          "max": 1008,
+          "mean": 23.022745735174656,
+          "min": 6,
+          "p50": 7,
+          "p90": 44,
+          "p99": 246
+        },
+        "leaf_family_counts": {
+          "bitwise": 124,
+          "loop": 123,
+          "nested_branch": 123,
+          "scalar_capture": 123,
+          "scalar_pair": 123
+        },
+        "leaf_function_count": 616,
+        "leaf_size_class_counts": {
+          "large": 3,
+          "medium": 33,
+          "short": 449,
+          "small": 131
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2213,
+          "branch": 2216,
+          "mul": 2144,
+          "shift": 2161,
+          "xor": 2129
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1231,
+        "reduction_function_count": 615
+      }
+    },
+    "35": {
+      "expected_stdout": "1235\n",
+      "natural_lanius_bytes": 997675,
+      "padding_bytes": 2325,
+      "profile": "pareas-common-subset",
+      "seed": 35,
+      "sources": {
+        "c": {
+          "bytes": 982365,
+          "path": "1000000/scaling.c",
+          "sha256": "34133d52d73349404638de9608cbf9e99921d820a9d5ed03b00f61ca079d4575"
+        },
+        "cpp": {
+          "bytes": 982365,
+          "path": "1000000/scaling.cpp",
+          "sha256": "744784ecdd94c18c8c41fc1f0a0a0f0a82520c14be59565b3583037b5a1e24a3"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "9dcdecc24928d7973a53e4e11209801cb8276760baf0ce2458527719ec29cac8"
+        },
+        "pareas": {
+          "bytes": 980402,
+          "path": "1000000/scaling.par",
+          "sha256": "8e906e2308eee7b6cd1f9bbf698239833bae50d8fbea91c535c44de6f7bee300"
+        },
+        "rust": {
+          "bytes": 1001194,
+          "path": "1000000/scaling.rs",
+          "sha256": "e5b795bdf46cb4716ff0694bbaa6f0bd1c7b598fbbae80632006f2c0e60e600f"
+        },
+        "zig": {
+          "bytes": 1001339,
+          "path": "1000000/scaling.zig",
+          "sha256": "e6b856b55d35de376cd932e68dac85d186fabbb7aac56fe58c494eda20a1db52"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1132,
+        "function_body_line_summary": {
+          "count": 1133,
+          "max": 1089,
+          "mean": 24.924977934686673,
+          "min": 6,
+          "p50": 7,
+          "p90": 46,
+          "p99": 226
+        },
+        "leaf_family_counts": {
+          "bitwise": 113,
+          "loop": 114,
+          "nested_branch": 113,
+          "scalar_capture": 114,
+          "scalar_pair": 113
+        },
+        "leaf_function_count": 567,
+        "leaf_size_class_counts": {
+          "large": 7,
+          "medium": 27,
+          "short": 412,
+          "small": 121
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2297,
+          "branch": 2215,
+          "mul": 2388,
+          "shift": 2366,
+          "xor": 2181
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1133,
+        "reduction_function_count": 566
+      }
+    },
+    "36": {
+      "expected_stdout": "2729\n",
+      "natural_lanius_bytes": 999217,
+      "padding_bytes": 783,
+      "profile": "pareas-common-subset",
+      "seed": 36,
+      "sources": {
+        "c": {
+          "bytes": 982312,
+          "path": "1000000/scaling.c",
+          "sha256": "b34436a1190933efcd65fb437c1626f8f6660533c4fd50b6c04ba2f09caa6edc"
+        },
+        "cpp": {
+          "bytes": 982312,
+          "path": "1000000/scaling.cpp",
+          "sha256": "dd37f3dac679a0f255cf4db058991532735eacd40c8ff6fa5da2c00b0553ad95"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "af28f98bfe6be946e7ea8950ab2760b8a5df24df74d17883c007371fc8e83e35"
+        },
+        "pareas": {
+          "bytes": 980146,
+          "path": "1000000/scaling.par",
+          "sha256": "c418bf1b181de03e953abee34810c2f0958d5e840f40ee494f5f3ef1e37880e8"
+        },
+        "rust": {
+          "bytes": 1003093,
+          "path": "1000000/scaling.rs",
+          "sha256": "7111ead3b72c6489d64d90e61b6a5953fa9cc008d8dafb9ae093d11b4b539b6b"
+        },
+        "zig": {
+          "bytes": 1003245,
+          "path": "1000000/scaling.zig",
+          "sha256": "16c7a61d25a847b1085ef818c5ac07fcca0e74dcdbe82c611ba3afa73c581259"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1250,
+        "function_body_line_summary": {
+          "count": 1251,
+          "max": 1113,
+          "mean": 22.630695443645084,
+          "min": 6,
+          "p50": 7,
+          "p90": 46,
+          "p99": 201
+        },
+        "leaf_family_counts": {
+          "bitwise": 125,
+          "loop": 125,
+          "nested_branch": 125,
+          "scalar_capture": 126,
+          "scalar_pair": 125
+        },
+        "leaf_function_count": 626,
+        "leaf_size_class_counts": {
+          "large": 3,
+          "medium": 36,
+          "short": 450,
+          "small": 137
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2172,
+          "branch": 2201,
+          "mul": 2145,
+          "shift": 2117,
+          "xor": 2115
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1251,
+        "reduction_function_count": 625
+      }
+    },
+    "37": {
+      "expected_stdout": "1342\n",
+      "natural_lanius_bytes": 996754,
+      "padding_bytes": 3246,
+      "profile": "pareas-common-subset",
+      "seed": 37,
+      "sources": {
+        "c": {
+          "bytes": 980804,
+          "path": "1000000/scaling.c",
+          "sha256": "4651d9cff6c04d26900dc105970e4414198d3cf4455e8be713df283a19c789ca"
+        },
+        "cpp": {
+          "bytes": 980804,
+          "path": "1000000/scaling.cpp",
+          "sha256": "5c9cf94f4ee5756bf090e198648b5029570166f05486ae47c1804cce047610bb"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "b8deac8505051c09b07f1e05afe5bd17ada138d0e571e5250d6186307437e13b"
+        },
+        "pareas": {
+          "bytes": 978757,
+          "path": "1000000/scaling.par",
+          "sha256": "7b26fd9066f9fda1c1e6cc5b6be4129463fc47bb18f73d0b2ec77ca5ad955ce8"
+        },
+        "rust": {
+          "bytes": 1000413,
+          "path": "1000000/scaling.rs",
+          "sha256": "2730aea30ea46d7e3dba1d604171c5600969ed2cf3a71fb43bde190a329703f4"
+        },
+        "zig": {
+          "bytes": 1000554,
+          "path": "1000000/scaling.zig",
+          "sha256": "4a13b2e59e12748c2b12da53b91148d925451b97c57733939992672c3400cf6a"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1180,
+        "function_body_line_summary": {
+          "count": 1181,
+          "max": 1065,
+          "mean": 23.89839119390347,
+          "min": 6,
+          "p50": 7,
+          "p90": 48,
+          "p99": 246
+        },
+        "leaf_family_counts": {
+          "bitwise": 118,
+          "loop": 118,
+          "nested_branch": 118,
+          "scalar_capture": 118,
+          "scalar_pair": 119
+        },
+        "leaf_function_count": 591,
+        "leaf_size_class_counts": {
+          "large": 2,
+          "medium": 41,
+          "short": 407,
+          "small": 141
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2346,
+          "branch": 2180,
+          "mul": 2229,
+          "shift": 2173,
+          "xor": 2311
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1181,
+        "reduction_function_count": 590
+      }
+    },
+    "38": {
+      "expected_stdout": "2351\n",
+      "natural_lanius_bytes": 997395,
+      "padding_bytes": 2605,
+      "profile": "pareas-common-subset",
+      "seed": 38,
+      "sources": {
+        "c": {
+          "bytes": 981320,
+          "path": "1000000/scaling.c",
+          "sha256": "f8c80eb42dfd737f09623a598f7948d34dc58685adc78e18caaf12ec873586e9"
+        },
+        "cpp": {
+          "bytes": 981320,
+          "path": "1000000/scaling.cpp",
+          "sha256": "9b44169145d075b71c999deac8c93d07e210a29938e604bf2d77be4420ebd2ca"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "4a963149bb075b5f6e14c1ecd4e0c70eda098c56ddda83d3a8592f9616543fb1"
+        },
+        "pareas": {
+          "bytes": 979256,
+          "path": "1000000/scaling.par",
+          "sha256": "486fe029b779b37623f75dc2e22e5b10baba42f1d1f832ca89b235b9b9a5d551"
+        },
+        "rust": {
+          "bytes": 1001085,
+          "path": "1000000/scaling.rs",
+          "sha256": "8136e30d86fb8078445225c2d406fbe89013c1491469c340f44a74ad2e5a1c5d"
+        },
+        "zig": {
+          "bytes": 1001223,
+          "path": "1000000/scaling.zig",
+          "sha256": "1c3be549f40174f14dca93ab4435433487689d8414140f72946d46c7b7fd7c0a"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1190,
+        "function_body_line_summary": {
+          "count": 1191,
+          "max": 1046,
+          "mean": 23.664987405541563,
+          "min": 6,
+          "p50": 7,
+          "p90": 49,
+          "p99": 243
+        },
+        "leaf_family_counts": {
+          "bitwise": 119,
+          "loop": 119,
+          "nested_branch": 120,
+          "scalar_capture": 119,
+          "scalar_pair": 119
+        },
+        "leaf_function_count": 596,
+        "leaf_size_class_counts": {
+          "large": 1,
+          "medium": 46,
+          "short": 417,
+          "small": 132
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2243,
+          "branch": 2177,
+          "mul": 2260,
+          "shift": 2265,
+          "xor": 2192
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1191,
+        "reduction_function_count": 595
+      }
+    },
+    "39": {
+      "expected_stdout": "1694\n",
+      "natural_lanius_bytes": 998141,
+      "padding_bytes": 1859,
+      "profile": "pareas-common-subset",
+      "seed": 39,
+      "sources": {
+        "c": {
+          "bytes": 982066,
+          "path": "1000000/scaling.c",
+          "sha256": "7607ab1c2c51228d9b050a992302f02bbca06c9c385715141196fe84b4a75304"
+        },
+        "cpp": {
+          "bytes": 982066,
+          "path": "1000000/scaling.cpp",
+          "sha256": "a85c19de2cd8da88a7e6429d549720850faacbb74e82e96cd3f0b149876e76cb"
+        },
+        "lanius": {
+          "bytes": 1000000,
+          "path": "1000000/scaling.lani",
+          "sha256": "5df51810c32b774a5c2c2d1f80da33efc0587fc62b307efe48f99713caa04545"
+        },
+        "pareas": {
+          "bytes": 980002,
+          "path": "1000000/scaling.par",
+          "sha256": "b7ef894e4fad24bdcf79800933a128fc6d1bdfe777cf7a7e97c56cc2d9fdde6c"
+        },
+        "rust": {
+          "bytes": 1001831,
+          "path": "1000000/scaling.rs",
+          "sha256": "616f09556879a3c971726e2fa60a3b751fa543dd240f99cb2cb9fd910c6676f7"
+        },
+        "zig": {
+          "bytes": 1001969,
+          "path": "1000000/scaling.zig",
+          "sha256": "e919e8556d18ff4a94de16b2f285ea15a0bebde045d5f8a466dfc9a121993ed2"
+        }
+      },
+      "target_lanius_bytes": 1000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 1190,
+        "function_body_line_summary": {
+          "count": 1191,
+          "max": 1133,
+          "mean": 23.70864819479429,
+          "min": 6,
+          "p50": 7,
+          "p90": 40,
+          "p99": 249
+        },
+        "leaf_family_counts": {
+          "bitwise": 120,
+          "loop": 119,
+          "nested_branch": 119,
+          "scalar_capture": 119,
+          "scalar_pair": 119
+        },
+        "leaf_function_count": 596,
+        "leaf_size_class_counts": {
+          "large": 6,
+          "medium": 27,
+          "short": 438,
+          "small": 125
+        },
+        "max_call_depth": 11,
+        "operation_counts": {
+          "add": 2202,
+          "branch": 2194,
+          "mul": 2207,
+          "shift": 2262,
+          "xor": 2262
+        },
+        "profile": "pareas-common-subset",
+        "profile_description": "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
+        "reachable_function_count": 1191,
+        "reduction_function_count": 595
+      }
+    }
+  },
+  "workload_classification": "synthetic_stress",
+  "workload_profile": "pareas-common-subset"
+}

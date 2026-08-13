@@ -1,0 +1,5969 @@
+[
+  {
+    "count": 6,
+    "max_time_ms": 1.24019,
+    "mean_time_ms": 0.47330633333333333,
+    "min_time_ms": 0.3008,
+    "pass_name": "hir_canonical_relations_step",
+    "stddev_time_ms": 0.34357727706086083,
+    "total_time_ms": 2.839838
+  },
+  {
+    "count": 6,
+    "max_time_ms": 1.7239,
+    "mean_time_ms": 0.44618599999999997,
+    "min_time_ms": 0.184096,
+    "pass_name": "hir_context_relations_step",
+    "stddev_time_ms": 0.5714293666365657,
+    "total_time_ms": 2.677116
+  },
+  {
+    "count": 1,
+    "max_time_ms": 2.45824,
+    "mean_time_ms": 2.45824,
+    "min_time_ms": 2.45824,
+    "pass_name": "pack_varlen",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 2.45824
+  },
+  {
+    "count": 6,
+    "max_time_ms": 1.07517,
+    "mean_time_ms": 0.375019,
+    "min_time_ms": 0.225856,
+    "pass_name": "hir_fn_signature_owner_step",
+    "stddev_time_ms": 0.31316471730970374,
+    "total_time_ms": 2.250114
+  },
+  {
+    "count": 1,
+    "max_time_ms": 2.11094,
+    "mean_time_ms": 2.11094,
+    "min_time_ms": 2.11094,
+    "pass_name": "tree_parent_parallel",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 2.11094
+  },
+  {
+    "count": 1,
+    "max_time_ms": 2.07648,
+    "mean_time_ms": 2.07648,
+    "min_time_ms": 2.07648,
+    "pass_name": "hir_expr_fields",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 2.07648
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.67536,
+    "mean_time_ms": 1.67536,
+    "min_time_ms": 1.67536,
+    "pass_name": "brackets_01_scan_inblock",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.67536
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.52243,
+    "mean_time_ms": 1.52243,
+    "min_time_ms": 1.52243,
+    "pass_name": "tree_spans",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.52243
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.51104,
+    "mean_time_ms": 1.51104,
+    "min_time_ms": 1.51104,
+    "pass_name": "hir_context_relations_init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.51104
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.50883,
+    "mean_time_ms": 1.50883,
+    "min_time_ms": 1.50883,
+    "pass_name": "brackets_pse_04_pair_by_layer",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.50883
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.46739,
+    "mean_time_ms": 1.46739,
+    "min_time_ms": 1.46739,
+    "pass_name": "lir.semantic.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.46739
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.39338,
+    "mean_time_ms": 1.39338,
+    "min_time_ms": 1.39338,
+    "pass_name": "type_check.resident.predicates_clear_bound_arg_facts.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.39338
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.22944,
+    "mean_time_ms": 0.22810666666666668,
+    "min_time_ms": 0.226912,
+    "pass_name": "hir_path_segment_step",
+    "stddev_time_ms": 0.0008809530193047903,
+    "total_time_ms": 1.36864
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.487072,
+    "mean_time_ms": 0.21466133333333334,
+    "min_time_ms": 0.154592,
+    "pass_name": "hir_canonical_variant_payload_owner_step",
+    "stddev_time_ms": 0.12214594135796007,
+    "total_time_ms": 1.287968
+  },
+  {
+    "count": 11,
+    "max_time_ms": 0.82096,
+    "mean_time_ms": 0.11386472727272727,
+    "min_time_ms": 0.039744,
+    "pass_name": "lir.target.schedule.histogram",
+    "stddev_time_ms": 0.22361934913073353,
+    "total_time_ms": 1.252512
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.22483,
+    "mean_time_ms": 1.22483,
+    "min_time_ms": 1.22483,
+    "pass_name": "lir.semantic.project",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.22483
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.22192,
+    "mean_time_ms": 1.22192,
+    "min_time_ms": 1.22192,
+    "pass_name": "hir_path_segment_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.22192
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.20755,
+    "mean_time_ms": 1.20755,
+    "min_time_ms": 1.20755,
+    "pass_name": "parser.tokens_to_kinds.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.20755
+  },
+  {
+    "count": 1,
+    "max_time_ms": 1.13539,
+    "mean_time_ms": 1.13539,
+    "min_time_ms": 1.13539,
+    "pass_name": "tree_depth_traverse",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 1.13539
+  },
+  {
+    "count": 19,
+    "max_time_ms": 0.0552,
+    "mean_time_ms": 0.05429894736842105,
+    "min_time_ms": 0.052256,
+    "pass_name": "hir_binary_span_step",
+    "stddev_time_ms": 0.0005960725382989289,
+    "total_time_ms": 1.03168
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.16736,
+    "mean_time_ms": 0.161344,
+    "min_time_ms": 0.159264,
+    "pass_name": "hir_type_root_owner_step",
+    "stddev_time_ms": 0.0027363898357751137,
+    "total_time_ms": 0.968064
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.157248,
+    "mean_time_ms": 0.15677866666666668,
+    "min_time_ms": 0.156,
+    "pass_name": "hir_type_path_leaf_step",
+    "stddev_time_ms": 0.0005024668037680588,
+    "total_time_ms": 0.940672
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.924928,
+    "mean_time_ms": 0.924928,
+    "min_time_ms": 0.924928,
+    "pass_name": "hir_canonical_core",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.924928
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.919008,
+    "mean_time_ms": 0.919008,
+    "min_time_ms": 0.919008,
+    "pass_name": "hir_match_arm_owner_init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.919008
+  },
+  {
+    "count": 11,
+    "max_time_ms": 0.086944,
+    "mean_time_ms": 0.08345018181818181,
+    "min_time_ms": 0.081408,
+    "pass_name": "lir.target.schedule.scatter",
+    "stddev_time_ms": 0.0016846173462557546,
+    "total_time_ms": 0.917952
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.912928,
+    "mean_time_ms": 0.912928,
+    "min_time_ms": 0.912928,
+    "pass_name": "hir_canonical_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.912928
+  },
+  {
+    "count": 4,
+    "max_time_ms": 0.203488,
+    "mean_time_ms": 0.201944,
+    "min_time_ms": 0.199424,
+    "pass_name": "hir_list_rank_prefix_00_local",
+    "stddev_time_ms": 0.0015549456582144659,
+    "total_time_ms": 0.807776
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.161856,
+    "mean_time_ms": 0.15928319999999999,
+    "min_time_ms": 0.15488,
+    "pass_name": "hir_match_arm_owner_step",
+    "stddev_time_ms": 0.0025268736731384155,
+    "total_time_ms": 0.796416
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.6912,
+    "mean_time_ms": 0.6912,
+    "min_time_ms": 0.6912,
+    "pass_name": "type_check.semantic_artifact.project",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.6912
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.674528,
+    "mean_time_ms": 0.674528,
+    "min_time_ms": 0.674528,
+    "pass_name": "hir_record_clear_base",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.674528
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.42352,
+    "mean_time_ms": 0.11181333333333333,
+    "min_time_ms": 0.048768,
+    "pass_name": "type_check.modules.jump_type_alias_equivalence",
+    "stddev_time_ms": 0.13940008230828113,
+    "total_time_ms": 0.67088
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.656576,
+    "mean_time_ms": 0.656576,
+    "min_time_ms": 0.656576,
+    "pass_name": "hir_enum_variant_links",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.656576
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.63904,
+    "mean_time_ms": 0.63904,
+    "min_time_ms": 0.63904,
+    "pass_name": "artifact.x86.object.bytes",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.63904
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.63872,
+    "mean_time_ms": 0.63872,
+    "min_time_ms": 0.63872,
+    "pass_name": "lexer.dfa-pair-local.batch",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.63872
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.632224,
+    "mean_time_ms": 0.632224,
+    "min_time_ms": 0.632224,
+    "pass_name": "lexer.dfa-local.batch",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.632224
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.173536,
+    "mean_time_ms": 0.10053333333333334,
+    "min_time_ms": 0.085536,
+    "pass_name": "hir_expr_result_root_step",
+    "stddev_time_ms": 0.032649826843168535,
+    "total_time_ms": 0.6032
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.584768,
+    "mean_time_ms": 0.584768,
+    "min_time_ms": 0.584768,
+    "pass_name": "hir_type_arg_links",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.584768
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.577728,
+    "mean_time_ms": 0.577728,
+    "min_time_ms": 0.577728,
+    "pass_name": "hir_match_arm_links",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.577728
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.568256,
+    "mean_time_ms": 0.568256,
+    "min_time_ms": 0.568256,
+    "pass_name": "hir_canonical_relations_init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.568256
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.548864,
+    "mean_time_ms": 0.548864,
+    "min_time_ms": 0.548864,
+    "pass_name": "hir_canonical_identity_aliases",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.548864
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.5368,
+    "mean_time_ms": 0.5368,
+    "min_time_ms": 0.5368,
+    "pass_name": "hir_struct_field_links",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.5368
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.1072,
+    "mean_time_ms": 0.08751466666666667,
+    "min_time_ms": 0.082944,
+    "pass_name": "type_check.modules.hook_type_alias_equivalence",
+    "stddev_time_ms": 0.00881272131006586,
+    "total_time_ms": 0.525088
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.491072,
+    "mean_time_ms": 0.491072,
+    "min_time_ms": 0.491072,
+    "pass_name": "parser.hir-core-stmt-fields.batch",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.491072
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.479712,
+    "mean_time_ms": 0.479712,
+    "min_time_ms": 0.479712,
+    "pass_name": "hir_type_fields",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.479712
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.479392,
+    "mean_time_ms": 0.479392,
+    "min_time_ms": 0.479392,
+    "pass_name": "hir_call_fields",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.479392
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.402528,
+    "mean_time_ms": 0.07754666666666667,
+    "min_time_ms": 0.012064,
+    "pass_name": "hir_array_element_rank_step",
+    "stddev_time_ms": 0.14533664876952254,
+    "total_time_ms": 0.46527999999999997
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.4608,
+    "mean_time_ms": 0.4608,
+    "min_time_ms": 0.4608,
+    "pass_name": "hir_array_element_links",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.4608
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.456448,
+    "mean_time_ms": 0.456448,
+    "min_time_ms": 0.456448,
+    "pass_name": "parser.tokens.delimiter_match.depth_blocks",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.456448
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.378624,
+    "mean_time_ms": 0.049536000000000004,
+    "min_time_ms": 0.006944,
+    "pass_name": "lir.x86.emit",
+    "stddev_time_ms": 0.11635139273768923,
+    "total_time_ms": 0.445824
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.391296,
+    "mean_time_ms": 0.391296,
+    "min_time_ms": 0.391296,
+    "pass_name": "hir_spans",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.391296
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.38656,
+    "mean_time_ms": 0.19536,
+    "min_time_ms": 0.00416,
+    "pass_name": "lir.target.count_scan.hierarchy_up",
+    "stddev_time_ms": 0.1912,
+    "total_time_ms": 0.39072
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.077152,
+    "mean_time_ms": 0.06034133333333333,
+    "min_time_ms": 0.054816,
+    "pass_name": "hir_type_alias_owner_step",
+    "stddev_time_ms": 0.007867351834568534,
+    "total_time_ms": 0.362048
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.359392,
+    "mean_time_ms": 0.359392,
+    "min_time_ms": 0.359392,
+    "pass_name": "type_check.semantic_artifact.expression_refs",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.359392
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.3424,
+    "mean_time_ms": 0.3424,
+    "min_time_ms": 0.3424,
+    "pass_name": "type_check.dependencies.clear_workspace",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.3424
+  },
+  {
+    "count": 11,
+    "max_time_ms": 0.031328,
+    "mean_time_ms": 0.031054545454545453,
+    "min_time_ms": 0.03072,
+    "pass_name": "lir.target.schedule.scan.local",
+    "stddev_time_ms": 0.00017652214058214475,
+    "total_time_ms": 0.3416
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.328896,
+    "mean_time_ms": 0.328896,
+    "min_time_ms": 0.328896,
+    "pass_name": "hir_call_arg_links",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.328896
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.297952,
+    "mean_time_ms": 0.297952,
+    "min_time_ms": 0.297952,
+    "pass_name": "hir_canonical_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.297952
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.297024,
+    "mean_time_ms": 0.297024,
+    "min_time_ms": 0.297024,
+    "pass_name": "parser_hir_literal_values",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.297024
+  },
+  {
+    "count": 22,
+    "max_time_ms": 0.016768,
+    "mean_time_ms": 0.013480727272727273,
+    "min_time_ms": 0.0128,
+    "pass_name": "lir.semantic.execution_rank.step",
+    "stddev_time_ms": 0.0008114486586468888,
+    "total_time_ms": 0.296576
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.296256,
+    "mean_time_ms": 0.296256,
+    "min_time_ms": 0.296256,
+    "pass_name": "lir.semantic.functions.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.296256
+  },
+  {
+    "count": 11,
+    "max_time_ms": 0.026752,
+    "mean_time_ms": 0.026283636363636363,
+    "min_time_ms": 0.026144,
+    "pass_name": "lir.target.schedule.scan.apply",
+    "stddev_time_ms": 0.00016160517134349,
+    "total_time_ms": 0.28912
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.276576,
+    "mean_time_ms": 0.276576,
+    "min_time_ms": 0.276576,
+    "pass_name": "type_check.resident.type_instances_clear.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.276576
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.268736,
+    "mean_time_ms": 0.268736,
+    "min_time_ms": 0.268736,
+    "pass_name": "dfa_02_scan_block_summaries",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.268736
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.266816,
+    "mean_time_ms": 0.266816,
+    "min_time_ms": 0.266816,
+    "pass_name": "lexer.emit.batch",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.266816
+  },
+  {
+    "count": 21,
+    "max_time_ms": 0.04736,
+    "mean_time_ms": 0.012668952380952381,
+    "min_time_ms": 0.008736,
+    "pass_name": "type_check.modules.path_prefix_table_intern",
+    "stddev_time_ms": 0.010632634034967156,
+    "total_time_ms": 0.266048
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.263904,
+    "mean_time_ms": 0.263904,
+    "min_time_ms": 0.263904,
+    "pass_name": "hir_string_compact_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.263904
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.259232,
+    "mean_time_ms": 0.259232,
+    "min_time_ms": 0.259232,
+    "pass_name": "hir_string_offset_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.259232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.257792,
+    "mean_time_ms": 0.257792,
+    "min_time_ms": 0.257792,
+    "pass_name": "hir_fn_signature_owner_init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.257792
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.257728,
+    "mean_time_ms": 0.257728,
+    "min_time_ms": 0.257728,
+    "pass_name": "type_check.expression_types.init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.257728
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.252,
+    "mean_time_ms": 0.252,
+    "min_time_ms": 0.252,
+    "pass_name": "lir.x86.artifact.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.252
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.042112,
+    "mean_time_ms": 0.040639999999999996,
+    "min_time_ms": 0.038464,
+    "pass_name": "hir_enum_variant_rank_step",
+    "stddev_time_ms": 0.0011490332168102592,
+    "total_time_ms": 0.24384
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.24384,
+    "mean_time_ms": 0.24384,
+    "min_time_ms": 0.24384,
+    "pass_name": "hir_canonical_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.24384
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.242944,
+    "mean_time_ms": 0.242944,
+    "min_time_ms": 0.242944,
+    "pass_name": "hir_semantic_prefix_00_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.242944
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.238976,
+    "mean_time_ms": 0.238976,
+    "min_time_ms": 0.238976,
+    "pass_name": "type_check.calls.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.238976
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.229984,
+    "mean_time_ms": 0.229984,
+    "min_time_ms": 0.229984,
+    "pass_name": "hir_canonical_validate",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.229984
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.222624,
+    "mean_time_ms": 0.222624,
+    "min_time_ms": 0.222624,
+    "pass_name": "hir_path_segment_root",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.222624
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.221792,
+    "mean_time_ms": 0.221792,
+    "min_time_ms": 0.221792,
+    "pass_name": "hir_struct_fields",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.221792
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.216288,
+    "mean_time_ms": 0.216288,
+    "min_time_ms": 0.216288,
+    "pass_name": "hir_canonical_variant_payload_owner_init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.216288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.214976,
+    "mean_time_ms": 0.214976,
+    "min_time_ms": 0.214976,
+    "pass_name": "lir.x86.lifetime.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.214976
+  },
+  {
+    "count": 4,
+    "max_time_ms": 0.05504,
+    "mean_time_ms": 0.053168,
+    "min_time_ms": 0.051264,
+    "pass_name": "hir_list_rank_compact_scatter",
+    "stddev_time_ms": 0.0017647209411122196,
+    "total_time_ms": 0.212672
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.207392,
+    "mean_time_ms": 0.207392,
+    "min_time_ms": 0.207392,
+    "pass_name": "type_check.conditions.compact_aggregate_requests",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.207392
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.19936,
+    "mean_time_ms": 0.19936,
+    "min_time_ms": 0.19936,
+    "pass_name": "hir_nodes",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.19936
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.199072,
+    "mean_time_ms": 0.199072,
+    "min_time_ms": 0.199072,
+    "pass_name": "hir_enum_rank_prefix_00_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.199072
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.19872,
+    "mean_time_ms": 0.19872,
+    "min_time_ms": 0.19872,
+    "pass_name": "hir_string_offset_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.19872
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.191904,
+    "mean_time_ms": 0.191904,
+    "min_time_ms": 0.191904,
+    "pass_name": "hir_semantic_compact_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.191904
+  },
+  {
+    "count": 8,
+    "max_time_ms": 0.024256,
+    "mean_time_ms": 0.023612,
+    "min_time_ms": 0.02288,
+    "pass_name": "type_check.methods.mark_call_return_keys",
+    "stddev_time_ms": 0.0004312400723494974,
+    "total_time_ms": 0.188896
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.178464,
+    "mean_time_ms": 0.178464,
+    "min_time_ms": 0.178464,
+    "pass_name": "brackets_03_apply_prefix",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.178464
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.17584,
+    "mean_time_ms": 0.17584,
+    "min_time_ms": 0.17584,
+    "pass_name": "tree_prefix_01_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.17584
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.17232,
+    "mean_time_ms": 0.17232,
+    "min_time_ms": 0.17232,
+    "pass_name": "tree_prefix_03_apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.17232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.17232,
+    "mean_time_ms": 0.17232,
+    "min_time_ms": 0.17232,
+    "pass_name": "hir_match_rank_prefix_00_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.17232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.172288,
+    "mean_time_ms": 0.172288,
+    "min_time_ms": 0.172288,
+    "pass_name": "hir_semantic_parent_traverse",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.172288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.172064,
+    "mean_time_ms": 0.172064,
+    "min_time_ms": 0.172064,
+    "pass_name": "hir_struct_rank_prefix_00_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.172064
+  },
+  {
+    "count": 4,
+    "max_time_ms": 0.044512,
+    "mean_time_ms": 0.0426,
+    "min_time_ms": 0.041696,
+    "pass_name": "type_check.methods.mark_call_keys",
+    "stddev_time_ms": 0.001115964157130508,
+    "total_time_ms": 0.1704
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.17024,
+    "mean_time_ms": 0.17024,
+    "min_time_ms": 0.17024,
+    "pass_name": "hir_canonical_path_segment_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.17024
+  },
+  {
+    "count": 39,
+    "max_time_ms": 0.005152,
+    "mean_time_ms": 0.004343794871794872,
+    "min_time_ms": 0.003616,
+    "pass_name": "hir_canonical_prefix_01_blocks",
+    "stddev_time_ms": 0.000492112097897195,
+    "total_time_ms": 0.169408
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.034112,
+    "mean_time_ms": 0.0331584,
+    "min_time_ms": 0.032128,
+    "pass_name": "type_check.calls.arg_match.consume",
+    "stddev_time_ms": 0.0007029519471485967,
+    "total_time_ms": 0.165792
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.0896,
+    "mean_time_ms": 0.0330432,
+    "min_time_ms": 0.003904,
+    "pass_name": "type_check.interface.name_scan",
+    "stddev_time_ms": 0.036156010257770425,
+    "total_time_ms": 0.165216
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.16384,
+    "mean_time_ms": 0.16384,
+    "min_time_ms": 0.16384,
+    "pass_name": "hir_type_path_leaf_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.16384
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.158208,
+    "mean_time_ms": 0.158208,
+    "min_time_ms": 0.158208,
+    "pass_name": "hir_item_fields",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.158208
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.156192,
+    "mean_time_ms": 0.156192,
+    "min_time_ms": 0.156192,
+    "pass_name": "hir_record_clear_calls",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.156192
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.02592,
+    "mean_time_ms": 0.025621333333333333,
+    "min_time_ms": 0.025408,
+    "pass_name": "type_check.visible.sort_hir_decl_keys.histogram.a.bucket_prefix",
+    "stddev_time_ms": 0.00017099967511340097,
+    "total_time_ms": 0.153728
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.030816,
+    "mean_time_ms": 0.030496,
+    "min_time_ms": 0.030208,
+    "pass_name": "type_check.calls.arg_match.init",
+    "stddev_time_ms": 0.00020934946859259052,
+    "total_time_ms": 0.15248
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.15168,
+    "mean_time_ms": 0.15168,
+    "min_time_ms": 0.15168,
+    "pass_name": "type_check.modules.clear_type_alias_equivalence",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.15168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.151264,
+    "mean_time_ms": 0.151264,
+    "min_time_ms": 0.151264,
+    "pass_name": "hir_context_relations_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.151264
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.150176,
+    "mean_time_ms": 0.150176,
+    "min_time_ms": 0.150176,
+    "pass_name": "type_check.modules.clear_type_alias_forwarding",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.150176
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.149344,
+    "mean_time_ms": 0.149344,
+    "min_time_ms": 0.149344,
+    "pass_name": "hir_range_spans",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.149344
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.147136,
+    "mean_time_ms": 0.147136,
+    "min_time_ms": 0.147136,
+    "pass_name": "hir_canonical_stmt_compact",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.147136
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.139712,
+    "mean_time_ms": 0.139712,
+    "min_time_ms": 0.139712,
+    "pass_name": "hir_canonical_path_segment_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.139712
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.136224,
+    "mean_time_ms": 0.136224,
+    "min_time_ms": 0.136224,
+    "pass_name": "type_check.calls.arguments.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.136224
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.028864,
+    "mean_time_ms": 0.0271488,
+    "min_time_ms": 0.026432,
+    "pass_name": "type_check.calls.arguments.apply",
+    "stddev_time_ms": 0.0008860244691880695,
+    "total_time_ms": 0.135744
+  },
+  {
+    "count": 8,
+    "max_time_ms": 0.023392,
+    "mean_time_ms": 0.016928,
+    "min_time_ms": 0.015872,
+    "pass_name": "type_check.methods.resolve_table",
+    "stddev_time_ms": 0.002444808376948999,
+    "total_time_ms": 0.135424
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.083648,
+    "mean_time_ms": 0.014862222222222223,
+    "min_time_ms": 0.005632,
+    "pass_name": "lir.x86.scatter",
+    "stddev_time_ms": 0.02432150690588146,
+    "total_time_ms": 0.13376
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.084,
+    "mean_time_ms": 0.014826666666666667,
+    "min_time_ms": 0.00544,
+    "pass_name": "lir.x86.scatter.replay",
+    "stddev_time_ms": 0.024457985162768873,
+    "total_time_ms": 0.13344
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.129632,
+    "mean_time_ms": 0.129632,
+    "min_time_ms": 0.129632,
+    "pass_name": "hir_semantic_child_index_traverse",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.129632
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.021952,
+    "mean_time_ms": 0.021194666666666667,
+    "min_time_ms": 0.018752,
+    "pass_name": "hir_call_arg_ordinal_step",
+    "stddev_time_ms": 0.0011044507936325428,
+    "total_time_ms": 0.127168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.126784,
+    "mean_time_ms": 0.126784,
+    "min_time_ms": 0.126784,
+    "pass_name": "type_check.resident.type_instances_struct_init_clear.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.126784
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.125376,
+    "mean_time_ms": 0.125376,
+    "min_time_ms": 0.125376,
+    "pass_name": "hir_canonical_call_arg_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.125376
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.124704,
+    "mean_time_ms": 0.124704,
+    "min_time_ms": 0.124704,
+    "pass_name": "type_check.calls.generic_claims.emit",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.124704
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.123424,
+    "mean_time_ms": 0.123424,
+    "min_time_ms": 0.123424,
+    "pass_name": "hir_path_segment_links",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.123424
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.121696,
+    "mean_time_ms": 0.121696,
+    "min_time_ms": 0.121696,
+    "pass_name": "parser.tokens.brace_match.pair_pse",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.121696
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.120896,
+    "mean_time_ms": 0.120896,
+    "min_time_ms": 0.120896,
+    "pass_name": "hir_type_root_owner_init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.120896
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.119008,
+    "mean_time_ms": 0.119008,
+    "min_time_ms": 0.119008,
+    "pass_name": "hir_param_links",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.119008
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.048992,
+    "mean_time_ms": 0.013006222222222223,
+    "min_time_ms": 0.006944,
+    "pass_name": "lir.x86.count",
+    "stddev_time_ms": 0.012742244018118786,
+    "total_time_ms": 0.11705600000000001
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.116,
+    "mean_time_ms": 0.116,
+    "min_time_ms": 0.116,
+    "pass_name": "hir_binary_spans",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.116
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.020032,
+    "mean_time_ms": 0.019264,
+    "min_time_ms": 0.018752,
+    "pass_name": "type_check.visible.sort_hir_decl_keys.histogram.a.scatter",
+    "stddev_time_ms": 0.00047283541886509865,
+    "total_time_ms": 0.115584
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.115584,
+    "mean_time_ms": 0.115584,
+    "min_time_ms": 0.115584,
+    "pass_name": "type_check.visible.hir_names",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.115584
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.050048,
+    "mean_time_ms": 0.012750222222222222,
+    "min_time_ms": 0.006656,
+    "pass_name": "lir.x86.byte_count",
+    "stddev_time_ms": 0.013200525661063467,
+    "total_time_ms": 0.114752
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.114624,
+    "mean_time_ms": 0.114624,
+    "min_time_ms": 0.114624,
+    "pass_name": "type_check.calls.required_generics.validate",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.114624
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.11152,
+    "mean_time_ms": 0.11152,
+    "min_time_ms": 0.11152,
+    "pass_name": "tree_depth_block_max",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.11152
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.023424,
+    "mean_time_ms": 0.0221504,
+    "min_time_ms": 0.021696,
+    "pass_name": "type_check.interface.type_topology.root_step",
+    "stddev_time_ms": 0.0006571774798332637,
+    "total_time_ms": 0.110752
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.057568,
+    "mean_time_ms": 0.011690666666666667,
+    "min_time_ms": 0.005088,
+    "pass_name": "lir.x86.safety.emit",
+    "stddev_time_ms": 0.016223737012990153,
+    "total_time_ms": 0.105216
+  },
+  {
+    "count": 22,
+    "max_time_ms": 0.004992,
+    "mean_time_ms": 0.004589090909090909,
+    "min_time_ms": 0.004288,
+    "pass_name": "lir.target.schedule.scan.up",
+    "stddev_time_ms": 0.0001928850126349207,
+    "total_time_ms": 0.10096
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.023872,
+    "mean_time_ms": 0.016336,
+    "min_time_ms": 0.014176,
+    "pass_name": "hir_struct_field_rank_step",
+    "stddev_time_ms": 0.003466293313228604,
+    "total_time_ms": 0.098016
+  },
+  {
+    "count": 10,
+    "max_time_ms": 0.022144,
+    "mean_time_ms": 0.0097856,
+    "min_time_ms": 0.003872,
+    "pass_name": "type_check.conditions.aggregate_compare_scan",
+    "stddev_time_ms": 0.007084539832621453,
+    "total_time_ms": 0.097856
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.096608,
+    "mean_time_ms": 0.096608,
+    "min_time_ms": 0.096608,
+    "pass_name": "parser.tokens.match_pattern.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.096608
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.09536,
+    "mean_time_ms": 0.09536,
+    "min_time_ms": 0.09536,
+    "pass_name": "hir_canonical_match_payload_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.09536
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.094592,
+    "mean_time_ms": 0.094592,
+    "min_time_ms": 0.094592,
+    "pass_name": "hir_canonical_variant_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.094592
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.09456,
+    "mean_time_ms": 0.09456,
+    "min_time_ms": 0.09456,
+    "pass_name": "type_check.names.hash_insert",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.09456
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.094304,
+    "mean_time_ms": 0.094304,
+    "min_time_ms": 0.094304,
+    "pass_name": "parser.tokens.match_pattern.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.094304
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.093472,
+    "mean_time_ms": 0.093472,
+    "min_time_ms": 0.093472,
+    "pass_name": "hir_method_fields",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.093472
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.048928,
+    "mean_time_ms": 0.046544,
+    "min_time_ms": 0.04416,
+    "pass_name": "tree_prev_sibling_clear",
+    "stddev_time_ms": 0.0023840000000000007,
+    "total_time_ms": 0.093088
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.091264,
+    "mean_time_ms": 0.091264,
+    "min_time_ms": 0.091264,
+    "pass_name": "hir_binary_span_apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.091264
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.091008,
+    "mean_time_ms": 0.091008,
+    "min_time_ms": 0.091008,
+    "pass_name": "type_check.modules.validate_value_enum_call_payloads",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.091008
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.043712,
+    "mean_time_ms": 0.010087111111111111,
+    "min_time_ms": 0.005056,
+    "pass_name": "lir.x86.resolve.replay",
+    "stddev_time_ms": 0.011893976929937124,
+    "total_time_ms": 0.090784
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.043552,
+    "mean_time_ms": 0.010016,
+    "min_time_ms": 0.00496,
+    "pass_name": "lir.x86.resolve",
+    "stddev_time_ms": 0.011861170262668013,
+    "total_time_ms": 0.090144
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.088544,
+    "mean_time_ms": 0.088544,
+    "min_time_ms": 0.088544,
+    "pass_name": "hir_canonical_match_arm_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.088544
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.087904,
+    "mean_time_ms": 0.087904,
+    "min_time_ms": 0.087904,
+    "pass_name": "hir_enum_variant_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.087904
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.08688,
+    "mean_time_ms": 0.08688,
+    "min_time_ms": 0.08688,
+    "pass_name": "hir_method_signature_status",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.08688
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.086816,
+    "mean_time_ms": 0.086816,
+    "min_time_ms": 0.086816,
+    "pass_name": "hir_array_element_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.086816
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.04032,
+    "mean_time_ms": 0.009614222222222222,
+    "min_time_ms": 0.005024,
+    "pass_name": "lir.x86.locations",
+    "stddev_time_ms": 0.010859600338234039,
+    "total_time_ms": 0.08652800000000001
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.086336,
+    "mean_time_ms": 0.086336,
+    "min_time_ms": 0.086336,
+    "pass_name": "type_check.type_instances.clear_semantic_type_rows",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.086336
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.039712,
+    "mean_time_ms": 0.009536,
+    "min_time_ms": 0.005024,
+    "pass_name": "lir.x86.locations.replay",
+    "stddev_time_ms": 0.010672808898213149,
+    "total_time_ms": 0.085824
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.084032,
+    "mean_time_ms": 0.084032,
+    "min_time_ms": 0.084032,
+    "pass_name": "hir_semantic_subtree_end",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.084032
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.016864,
+    "mean_time_ms": 0.013962666666666667,
+    "min_time_ms": 0.012928,
+    "pass_name": "hir_match_arm_rank_step",
+    "stddev_time_ms": 0.0014097766568581787,
+    "total_time_ms": 0.083776
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.082688,
+    "mean_time_ms": 0.082688,
+    "min_time_ms": 0.082688,
+    "pass_name": "hir_type_alias_owner_init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.082688
+  },
+  {
+    "count": 18,
+    "max_time_ms": 0.005632,
+    "mean_time_ms": 0.004592,
+    "min_time_ms": 0.003776,
+    "pass_name": "hir_list_rank_prefix_01_blocks",
+    "stddev_time_ms": 0.0005947802582093286,
+    "total_time_ms": 0.082656
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.080512,
+    "mean_time_ms": 0.080512,
+    "min_time_ms": 0.080512,
+    "pass_name": "hir_call_arg_ordinal_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.080512
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.045248,
+    "mean_time_ms": 0.015430399999999999,
+    "min_time_ms": 0.003872,
+    "pass_name": "type_check.names.scan",
+    "stddev_time_ms": 0.01597399999499186,
+    "total_time_ms": 0.077152
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.07344,
+    "mean_time_ms": 0.07344,
+    "min_time_ms": 0.07344,
+    "pass_name": "hir_canonical_path_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.07344
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.073184,
+    "mean_time_ms": 0.073184,
+    "min_time_ms": 0.073184,
+    "pass_name": "tree_prev_sibling_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.073184
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.012992,
+    "mean_time_ms": 0.012165333333333334,
+    "min_time_ms": 0.011712,
+    "pass_name": "type_check.visible.sort_hir_decl_keys.histogram.a.histogram",
+    "stddev_time_ms": 0.0004496793919622685,
+    "total_time_ms": 0.072992
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.013056,
+    "mean_time_ms": 0.012021333333333334,
+    "min_time_ms": 0.011648,
+    "pass_name": "hir_type_arg_rank_step",
+    "stddev_time_ms": 0.0005007656360237015,
+    "total_time_ms": 0.072128
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.070208,
+    "mean_time_ms": 0.070208,
+    "min_time_ms": 0.070208,
+    "pass_name": "type_check.methods.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.070208
+  },
+  {
+    "count": 18,
+    "max_time_ms": 0.005696,
+    "mean_time_ms": 0.0038915555555555557,
+    "min_time_ms": 0.003456,
+    "pass_name": "brackets_04_build_min_tree",
+    "stddev_time_ms": 0.0005066541908795411,
+    "total_time_ms": 0.070048
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.070016,
+    "mean_time_ms": 0.070016,
+    "min_time_ms": 0.070016,
+    "pass_name": "type_check.dependencies.resolve_value_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.070016
+  },
+  {
+    "count": 18,
+    "max_time_ms": 0.004384,
+    "mean_time_ms": 0.003848888888888889,
+    "min_time_ms": 0.003584,
+    "pass_name": "tree_prefix_02_scan_blocks",
+    "stddev_time_ms": 0.00020842501686294999,
+    "total_time_ms": 0.06928
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.033664,
+    "mean_time_ms": 0.0332,
+    "min_time_ms": 0.032736,
+    "pass_name": "type_check.resident.type_instances_collect.pass",
+    "stddev_time_ms": 0.00046399999999999914,
+    "total_time_ms": 0.0664
+  },
+  {
+    "count": 10,
+    "max_time_ms": 0.010464,
+    "mean_time_ms": 0.0066016,
+    "min_time_ms": 0.003488,
+    "pass_name": "type_check.conditions.type_subtree_compare_scan",
+    "stddev_time_ms": 0.003000673631036871,
+    "total_time_ms": 0.066016
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.011552,
+    "mean_time_ms": 0.010906666666666667,
+    "min_time_ms": 0.0104,
+    "pass_name": "type_check.modules.jump_type_alias_roots",
+    "stddev_time_ms": 0.00038016604559353045,
+    "total_time_ms": 0.06544
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.06496,
+    "mean_time_ms": 0.06496,
+    "min_time_ms": 0.06496,
+    "pass_name": "hir_canonical_predicate_finalize",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.06496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.064128,
+    "mean_time_ms": 0.064128,
+    "min_time_ms": 0.064128,
+    "pass_name": "hir_semantic_nav",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.064128
+  },
+  {
+    "count": 17,
+    "max_time_ms": 0.004032,
+    "mean_time_ms": 0.003715764705882353,
+    "min_time_ms": 0.003424,
+    "pass_name": "tree_prefix_04_build_max_tree",
+    "stddev_time_ms": 0.0001645955933266762,
+    "total_time_ms": 0.063168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.062496,
+    "mean_time_ms": 0.062496,
+    "min_time_ms": 0.062496,
+    "pass_name": "parser.hir-core-fields.batch",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.062496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.061632,
+    "mean_time_ms": 0.061632,
+    "min_time_ms": 0.061632,
+    "pass_name": "type_check.resident.type_instances.mark_generic_param_records.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.061632
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.031008,
+    "mean_time_ms": 0.03048,
+    "min_time_ms": 0.029952,
+    "pass_name": "type_check.resident.type_instances_collect_named.pass",
+    "stddev_time_ms": 0.0005280000000000007,
+    "total_time_ms": 0.06096
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.060128,
+    "mean_time_ms": 0.060128,
+    "min_time_ms": 0.060128,
+    "pass_name": "hir_canonical_field_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.060128
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.060032,
+    "mean_time_ms": 0.060032,
+    "min_time_ms": 0.060032,
+    "pass_name": "hir_fn_return_type",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.060032
+  },
+  {
+    "count": 4,
+    "max_time_ms": 0.015392,
+    "mean_time_ms": 0.015,
+    "min_time_ms": 0.014656,
+    "pass_name": "lir.semantic.scan.local",
+    "stddev_time_ms": 0.00028475954768892274,
+    "total_time_ms": 0.06
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.026528,
+    "mean_time_ms": 0.0119872,
+    "min_time_ms": 0.003872,
+    "pass_name": "type_check.interface.type_topology.scan",
+    "stddev_time_ms": 0.009301065194911817,
+    "total_time_ms": 0.059935999999999996
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.059744,
+    "mean_time_ms": 0.059744,
+    "min_time_ms": 0.059744,
+    "pass_name": "parser.tokens.bracket_match.pair_pse",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.059744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.059488,
+    "mean_time_ms": 0.059488,
+    "min_time_ms": 0.059488,
+    "pass_name": "type_check.resident.predicates_collect_impls.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.059488
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.02512,
+    "mean_time_ms": 0.0117312,
+    "min_time_ms": 0.003904,
+    "pass_name": "type_check.interface.type_topology.edge_scan",
+    "stddev_time_ms": 0.009137882257941389,
+    "total_time_ms": 0.058656
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.026528,
+    "mean_time_ms": 0.011660799999999999,
+    "min_time_ms": 0.003904,
+    "pass_name": "type_check.type_instance_arg_rows.scan",
+    "stddev_time_ms": 0.009271711608974904,
+    "total_time_ms": 0.058304
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.026176,
+    "mean_time_ms": 0.011622400000000001,
+    "min_time_ms": 0.003968,
+    "pass_name": "type_check.interface.signature.edge_scan",
+    "stddev_time_ms": 0.009211274343976518,
+    "total_time_ms": 0.058112000000000004
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.026624,
+    "mean_time_ms": 0.0116096,
+    "min_time_ms": 0.003872,
+    "pass_name": "type_check.calls.param_rows.scan",
+    "stddev_time_ms": 0.009287663594252324,
+    "total_time_ms": 0.058047999999999995
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.058016,
+    "mean_time_ms": 0.058016,
+    "min_time_ms": 0.058016,
+    "pass_name": "hir_type_alias_target",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.058016
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.025888,
+    "mean_time_ms": 0.0115904,
+    "min_time_ms": 0.003744,
+    "pass_name": "type_check.interface.signature.type_scan",
+    "stddev_time_ms": 0.009195519465478827,
+    "total_time_ms": 0.057952
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.025664,
+    "mean_time_ms": 0.011552,
+    "min_time_ms": 0.003744,
+    "pass_name": "type_check.visible.decl_scan",
+    "stddev_time_ms": 0.009142350157372008,
+    "total_time_ms": 0.05776
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.057504,
+    "mean_time_ms": 0.057504,
+    "min_time_ms": 0.057504,
+    "pass_name": "hir_call_spans",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.057504
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.025344,
+    "mean_time_ms": 0.0114624,
+    "min_time_ms": 0.003808,
+    "pass_name": "type_check.interface.members.scan",
+    "stddev_time_ms": 0.008990107131730967,
+    "total_time_ms": 0.057312
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.057312,
+    "mean_time_ms": 0.057312,
+    "min_time_ms": 0.057312,
+    "pass_name": "lir.x86.lifetime.collect",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.057312
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.056896,
+    "mean_time_ms": 0.056896,
+    "min_time_ms": 0.056896,
+    "pass_name": "type_check.resident.predicates_count_obligation_pairs.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.056896
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.056416,
+    "mean_time_ms": 0.056416,
+    "min_time_ms": 0.056416,
+    "pass_name": "hir_struct_field_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.056416
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.056256,
+    "mean_time_ms": 0.056256,
+    "min_time_ms": 0.056256,
+    "pass_name": "type_check.resident.predicates_validate_bound_args.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.056256
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.056064,
+    "mean_time_ms": 0.056064,
+    "min_time_ms": 0.056064,
+    "pass_name": "type_check.modules.scatter_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.056064
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.056032,
+    "mean_time_ms": 0.056032,
+    "min_time_ms": 0.056032,
+    "pass_name": "hir_enum_rank_compact_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.056032
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.055936,
+    "mean_time_ms": 0.055936,
+    "min_time_ms": 0.055936,
+    "pass_name": "hir_canonical_array_element_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.055936
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.05536,
+    "mean_time_ms": 0.05536,
+    "min_time_ms": 0.05536,
+    "pass_name": "hir_type_arg_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.05536
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.055232,
+    "mean_time_ms": 0.055232,
+    "min_time_ms": 0.055232,
+    "pass_name": "type_check.conditions.compact_predicates",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.055232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.055072,
+    "mean_time_ms": 0.055072,
+    "min_time_ms": 0.055072,
+    "pass_name": "parser.tokens.delimiters.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.055072
+  },
+  {
+    "count": 14,
+    "max_time_ms": 0.004512,
+    "mean_time_ms": 0.003931428571428572,
+    "min_time_ms": 0.003552,
+    "pass_name": "parser.tokens.delimiter_match.build_min_tree",
+    "stddev_time_ms": 0.00022911934328944772,
+    "total_time_ms": 0.05504
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.007744,
+    "mean_time_ms": 0.00608,
+    "min_time_ms": 0.00512,
+    "pass_name": "lir.x86.validate",
+    "stddev_time_ms": 0.0006486526206084596,
+    "total_time_ms": 0.05472
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.054656,
+    "mean_time_ms": 0.054656,
+    "min_time_ms": 0.054656,
+    "pass_name": "type_check.conditions.compact_names",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.054656
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.054496,
+    "mean_time_ms": 0.054496,
+    "min_time_ms": 0.054496,
+    "pass_name": "type_check.modules.clear_type_path_types",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.054496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.053888,
+    "mean_time_ms": 0.053888,
+    "min_time_ms": 0.053888,
+    "pass_name": "hir_canonical_generic_param_candidate_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.053888
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.053568,
+    "mean_time_ms": 0.053568,
+    "min_time_ms": 0.053568,
+    "pass_name": "type_check.modules.clear_path_state",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.053568
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.053568,
+    "mean_time_ms": 0.053568,
+    "min_time_ms": 0.053568,
+    "pass_name": "lir.semantic.count",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.053568
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.05344,
+    "mean_time_ms": 0.05344,
+    "min_time_ms": 0.05344,
+    "pass_name": "hir_match_arm_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.05344
+  },
+  {
+    "count": 15,
+    "max_time_ms": 0.003712,
+    "mean_time_ms": 0.003552,
+    "min_time_ms": 0.003424,
+    "pass_name": "type_check.visible.build_hir_decl_scope_tree",
+    "stddev_time_ms": 7.750784906489577e-05,
+    "total_time_ms": 0.05328
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.052192,
+    "mean_time_ms": 0.052192,
+    "min_time_ms": 0.052192,
+    "pass_name": "type_check.conditions.compact_stmt",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.052192
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.051744,
+    "mean_time_ms": 0.051744,
+    "min_time_ms": 0.051744,
+    "pass_name": "type_check.interface.type_topology.resolve_local_decl",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.051744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.051296,
+    "mean_time_ms": 0.051296,
+    "min_time_ms": 0.051296,
+    "pass_name": "hir_match_rank_compact_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.051296
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.025824,
+    "mean_time_ms": 0.025648,
+    "min_time_ms": 0.025472,
+    "pass_name": "type_check.modules.decl_keys.bucket_prefix",
+    "stddev_time_ms": 0.00017599999999999907,
+    "total_time_ms": 0.051296
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.051232,
+    "mean_time_ms": 0.051232,
+    "min_time_ms": 0.051232,
+    "pass_name": "hir_struct_rank_compact_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.051232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0512,
+    "mean_time_ms": 0.0512,
+    "min_time_ms": 0.0512,
+    "pass_name": "hir_struct_lit_spans",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0512
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.051168,
+    "mean_time_ms": 0.051168,
+    "min_time_ms": 0.051168,
+    "pass_name": "hir_string_compact_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.051168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.050912,
+    "mean_time_ms": 0.050912,
+    "min_time_ms": 0.050912,
+    "pass_name": "parser.tokens.brace_context",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.050912
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.050752,
+    "mean_time_ms": 0.050752,
+    "min_time_ms": 0.050752,
+    "pass_name": "parser.tokens.delimiters.owner_apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.050752
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.022272,
+    "mean_time_ms": 0.010144,
+    "min_time_ms": 0.004,
+    "pass_name": "type_check.calls.arg_rows.scan",
+    "stddev_time_ms": 0.007277928496488544,
+    "total_time_ms": 0.05072
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.05056,
+    "mean_time_ms": 0.05056,
+    "min_time_ms": 0.05056,
+    "pass_name": "type_check.resident.predicates_validate_obligation_pairs.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.05056
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.050464,
+    "mean_time_ms": 0.050464,
+    "min_time_ms": 0.050464,
+    "pass_name": "pair_02_scan_block_totals",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.050464
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.021856,
+    "mean_time_ms": 0.0100736,
+    "min_time_ms": 0.003872,
+    "pass_name": "type_check.type_semantic.scan",
+    "stddev_time_ms": 0.007247965386230814,
+    "total_time_ms": 0.050368
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.050304,
+    "mean_time_ms": 0.050304,
+    "min_time_ms": 0.050304,
+    "pass_name": "type_check.calls.entrypoints.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.050304
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.009472,
+    "mean_time_ms": 0.008336,
+    "min_time_ms": 0.008,
+    "pass_name": "hir_canonical_expr_forest_root_step",
+    "stddev_time_ms": 0.0005139130925231099,
+    "total_time_ms": 0.050016
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.02496,
+    "mean_time_ms": 0.024768,
+    "min_time_ms": 0.024576,
+    "pass_name": "type_check.resident.type_instances_collect_aggregate_details.pass",
+    "stddev_time_ms": 0.00019199999999999946,
+    "total_time_ms": 0.049536
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.021312,
+    "mean_time_ms": 0.0098624,
+    "min_time_ms": 0.003872,
+    "pass_name": "type_check.predicates.obligation_pair_scan",
+    "stddev_time_ms": 0.007019968592522335,
+    "total_time_ms": 0.049312
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.049152,
+    "mean_time_ms": 0.049152,
+    "min_time_ms": 0.049152,
+    "pass_name": "type_check.visible.mark_hir_decl_names",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.049152
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.02144,
+    "mean_time_ms": 0.009792,
+    "min_time_ms": 0.003904,
+    "pass_name": "type_check.calls.required_generics.scan",
+    "stddev_time_ms": 0.007069697362688166,
+    "total_time_ms": 0.048960000000000004
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.024288,
+    "mean_time_ms": 0.024144,
+    "min_time_ms": 0.024,
+    "pass_name": "type_check.resident.type_instances_collect_aggregate_refs.pass",
+    "stddev_time_ms": 0.00014400000000000003,
+    "total_time_ms": 0.048288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.04816,
+    "mean_time_ms": 0.04816,
+    "min_time_ms": 0.04816,
+    "pass_name": "type_check.semantic_artifact.array_index_refs",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.04816
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.02016,
+    "mean_time_ms": 0.0095872,
+    "min_time_ms": 0.00416,
+    "pass_name": "type_check.modules.records.module_scan.local",
+    "stddev_time_ms": 0.0066204156485828,
+    "total_time_ms": 0.047936
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.020256,
+    "mean_time_ms": 0.0095488,
+    "min_time_ms": 0.003968,
+    "pass_name": "type_check.modules.records.import_scan.local",
+    "stddev_time_ms": 0.006508853490439004,
+    "total_time_ms": 0.047744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.047488,
+    "mean_time_ms": 0.047488,
+    "min_time_ms": 0.047488,
+    "pass_name": "type_check.modules.mark_value_call_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.047488
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.02144,
+    "mean_time_ms": 0.009459200000000001,
+    "min_time_ms": 0.003776,
+    "pass_name": "type_check.dependencies.call_compare.scan",
+    "stddev_time_ms": 0.006968439205446224,
+    "total_time_ms": 0.047296
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.047072,
+    "mean_time_ms": 0.047072,
+    "min_time_ms": 0.047072,
+    "pass_name": "type_check.names.scatter_lexemes",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.047072
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.019744,
+    "mean_time_ms": 0.0092992,
+    "min_time_ms": 0.003872,
+    "pass_name": "type_check.modules.records.decl_scan.local",
+    "stddev_time_ms": 0.006415169223021323,
+    "total_time_ms": 0.046496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.046048,
+    "mean_time_ms": 0.046048,
+    "min_time_ms": 0.046048,
+    "pass_name": "type_check.semantic_artifact.local_const_literals",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.046048
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.04576,
+    "mean_time_ms": 0.04576,
+    "min_time_ms": 0.04576,
+    "pass_name": "type_check.modules.select_type_alias_concrete_sources",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.04576
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.045472,
+    "mean_time_ms": 0.045472,
+    "min_time_ms": 0.045472,
+    "pass_name": "type_check.calls.array_state.consume",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.045472
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.045472,
+    "mean_time_ms": 0.045472,
+    "min_time_ms": 0.045472,
+    "pass_name": "type_check.conditions.compact_expr",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.045472
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.045472,
+    "mean_time_ms": 0.045472,
+    "min_time_ms": 0.045472,
+    "pass_name": "lir.semantic.functions.layout.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.045472
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.045376,
+    "mean_time_ms": 0.045376,
+    "min_time_ms": 0.045376,
+    "pass_name": "type_check.semantic_artifact.struct_literal_refs",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.045376
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.045248,
+    "mean_time_ms": 0.045248,
+    "min_time_ms": 0.045248,
+    "pass_name": "type_check.semantic_artifact.struct_literal_refs_early",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.045248
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.045216,
+    "mean_time_ms": 0.045216,
+    "min_time_ms": 0.045216,
+    "pass_name": "type_check.dependencies.resolve_generic_call_results",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.045216
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.044992,
+    "mean_time_ms": 0.044992,
+    "min_time_ms": 0.044992,
+    "pass_name": "hir_canonical_type_arg_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.044992
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.04496,
+    "mean_time_ms": 0.04496,
+    "min_time_ms": 0.04496,
+    "pass_name": "type_check.semantic_artifact.local_const_references",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.04496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0448,
+    "mean_time_ms": 0.0448,
+    "min_time_ms": 0.0448,
+    "pass_name": "type_check.names.mark_lexemes",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0448
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.043968,
+    "mean_time_ms": 0.043968,
+    "min_time_ms": 0.043968,
+    "pass_name": "type_check.dependencies.validate_call_results.substitute",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.043968
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.043968,
+    "mean_time_ms": 0.043968,
+    "min_time_ms": 0.043968,
+    "pass_name": "type_check.conditions.compact_types",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.043968
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.043776,
+    "mean_time_ms": 0.043776,
+    "min_time_ms": 0.043776,
+    "pass_name": "hir_canonical_call_arg_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.043776
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.043424,
+    "mean_time_ms": 0.043424,
+    "min_time_ms": 0.043424,
+    "pass_name": "hir_param_id_clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.043424
+  },
+  {
+    "count": 11,
+    "max_time_ms": 0.004,
+    "mean_time_ms": 0.003866181818181818,
+    "min_time_ms": 0.003776,
+    "pass_name": "lir.target.schedule.scan.down",
+    "stddev_time_ms": 8.610122814224734e-05,
+    "total_time_ms": 0.042528
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.042304,
+    "mean_time_ms": 0.042304,
+    "min_time_ms": 0.042304,
+    "pass_name": "type_check.calls.arguments.pack",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.042304
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.042112,
+    "mean_time_ms": 0.042112,
+    "min_time_ms": 0.042112,
+    "pass_name": "type_check.dependencies.validate_call_results.validate",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.042112
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.041824,
+    "mean_time_ms": 0.041824,
+    "min_time_ms": 0.041824,
+    "pass_name": "type_check.conditions.compact_calls",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.041824
+  },
+  {
+    "count": 9,
+    "max_time_ms": 0.005504,
+    "mean_time_ms": 0.004622222222222222,
+    "min_time_ms": 0.003904,
+    "pass_name": "hir_semantic_prefix_01_blocks",
+    "stddev_time_ms": 0.0006196059281291936,
+    "total_time_ms": 0.0416
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.040864,
+    "mean_time_ms": 0.040864,
+    "min_time_ms": 0.040864,
+    "pass_name": "llp_pairs",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.040864
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.040864,
+    "mean_time_ms": 0.040864,
+    "min_time_ms": 0.040864,
+    "pass_name": "hir_canonical_param_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.040864
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.040736,
+    "mean_time_ms": 0.040736,
+    "min_time_ms": 0.040736,
+    "pass_name": "type_check.modules.scatter_path_segments",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.040736
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.040576,
+    "mean_time_ms": 0.040576,
+    "min_time_ms": 0.040576,
+    "pass_name": "type_check.resident.calls_infer_array_generics.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.040576
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.040192,
+    "mean_time_ms": 0.040192,
+    "min_time_ms": 0.040192,
+    "pass_name": "type_check.interface.type_topology.classify_path",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.040192
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.039808,
+    "mean_time_ms": 0.039808,
+    "min_time_ms": 0.039808,
+    "pass_name": "type_check.resident.type_instances_decl_refs.for_bindings.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.039808
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.039776,
+    "mean_time_ms": 0.039776,
+    "min_time_ms": 0.039776,
+    "pass_name": "type_check.resident.type_instances_decl_refs.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.039776
+  },
+  {
+    "count": 8,
+    "max_time_ms": 0.005408,
+    "mean_time_ms": 0.004972,
+    "min_time_ms": 0.004256,
+    "pass_name": "lir.semantic.scan.hierarchy_up",
+    "stddev_time_ms": 0.0003876286883087987,
+    "total_time_ms": 0.039776
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.039584,
+    "mean_time_ms": 0.039584,
+    "min_time_ms": 0.039584,
+    "pass_name": "type_check.calls.resolve",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.039584
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.039424,
+    "mean_time_ms": 0.039424,
+    "min_time_ms": 0.039424,
+    "pass_name": "type_check.dependencies.resolve_imports",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.039424
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.03936,
+    "mean_time_ms": 0.03936,
+    "min_time_ms": 0.03936,
+    "pass_name": "type_check.resident.predicates_emit_method_validation_rows.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.03936
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.039232,
+    "mean_time_ms": 0.039232,
+    "min_time_ms": 0.039232,
+    "pass_name": "pack_offsets_scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.039232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.039072,
+    "mean_time_ms": 0.039072,
+    "min_time_ms": 0.039072,
+    "pass_name": "parser.tokens.statement_phase.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.039072
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.038752,
+    "mean_time_ms": 0.038752,
+    "min_time_ms": 0.038752,
+    "pass_name": "parser.tokens.statement_phase.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.038752
+  },
+  {
+    "count": 8,
+    "max_time_ms": 0.005728,
+    "mean_time_ms": 0.004792,
+    "min_time_ms": 0.004288,
+    "pass_name": "type_check.dependencies.jump_canonical_type_index",
+    "stddev_time_ms": 0.00046832467370404464,
+    "total_time_ms": 0.038336
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.038176,
+    "mean_time_ms": 0.038176,
+    "min_time_ms": 0.038176,
+    "pass_name": "type_check.semantic_artifact.calls",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.038176
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.037792,
+    "mean_time_ms": 0.037792,
+    "min_time_ms": 0.037792,
+    "pass_name": "parser.tokens_to_identifier_kinds.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.037792
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.037344,
+    "mean_time_ms": 0.037344,
+    "min_time_ms": 0.037344,
+    "pass_name": "type_check.resident.type_instances_array_return_refs.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.037344
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.012736,
+    "mean_time_ms": 0.0074176,
+    "min_time_ms": 0.003936,
+    "pass_name": "type_check.calls.generic_claims.scan",
+    "stddev_time_ms": 0.003917061429183873,
+    "total_time_ms": 0.037088
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.037056,
+    "mean_time_ms": 0.037056,
+    "min_time_ms": 0.037056,
+    "pass_name": "hir_canonical_expr_forest_edges",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.037056
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.036768,
+    "mean_time_ms": 0.036768,
+    "min_time_ms": 0.036768,
+    "pass_name": "type_check.modules.records.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.036768
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.036736,
+    "mean_time_ms": 0.036736,
+    "min_time_ms": 0.036736,
+    "pass_name": "parser.tokens.type_path_context.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.036736
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.03648,
+    "mean_time_ms": 0.03648,
+    "min_time_ms": 0.03648,
+    "pass_name": "hir_canonical_nav",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.03648
+  },
+  {
+    "count": 4,
+    "max_time_ms": 0.009632,
+    "mean_time_ms": 0.00912,
+    "min_time_ms": 0.008576,
+    "pass_name": "lir.semantic.scan.apply",
+    "stddev_time_ms": 0.00045536798306424663,
+    "total_time_ms": 0.03648
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.036384,
+    "mean_time_ms": 0.036384,
+    "min_time_ms": 0.036384,
+    "pass_name": "type_check.calls.generic_claims.aggregate_clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.036384
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.036352,
+    "mean_time_ms": 0.036352,
+    "min_time_ms": 0.036352,
+    "pass_name": "type_check.resident.predicates_collect_bound_arg_facts.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.036352
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.01824,
+    "mean_time_ms": 0.018144,
+    "min_time_ms": 0.018048,
+    "pass_name": "type_check.modules.decl_keys.scatter",
+    "stddev_time_ms": 9.599999999999886e-05,
+    "total_time_ms": 0.036288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.03616,
+    "mean_time_ms": 0.03616,
+    "min_time_ms": 0.03616,
+    "pass_name": "type_check.calls.functions",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.03616
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.036096,
+    "mean_time_ms": 0.036096,
+    "min_time_ms": 0.036096,
+    "pass_name": "type_check.calls.return_refs",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.036096
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.036096,
+    "mean_time_ms": 0.036096,
+    "min_time_ms": 0.036096,
+    "pass_name": "lir.target.functions.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.036096
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.010944,
+    "mean_time_ms": 0.0059893333333333335,
+    "min_time_ms": 0.004352,
+    "pass_name": "brackets_02_scan_block_prefix",
+    "stddev_time_ms": 0.0023160733053069708,
+    "total_time_ms": 0.035936
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.035872,
+    "mean_time_ms": 0.035872,
+    "min_time_ms": 0.035872,
+    "pass_name": "lir.semantic.locals.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.035872
+  },
+  {
+    "count": 5,
+    "max_time_ms": 0.011872,
+    "mean_time_ms": 0.0070528,
+    "min_time_ms": 0.00384,
+    "pass_name": "type_check.dependencies.visible.scan",
+    "stddev_time_ms": 0.0034328468885168766,
+    "total_time_ms": 0.035264000000000004
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.035264,
+    "mean_time_ms": 0.035264,
+    "min_time_ms": 0.035264,
+    "pass_name": "parser.tokens.type_path_context.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.035264
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.035072,
+    "mean_time_ms": 0.035072,
+    "min_time_ms": 0.035072,
+    "pass_name": "lir.x86.decl_slots.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.035072
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.034592,
+    "mean_time_ms": 0.034592,
+    "min_time_ms": 0.034592,
+    "pass_name": "type_check.calls.contextual_result_requests",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.034592
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.034304,
+    "mean_time_ms": 0.034304,
+    "min_time_ms": 0.034304,
+    "pass_name": "parser.tokens.delimiters.owner_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.034304
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.034112,
+    "mean_time_ms": 0.034112,
+    "min_time_ms": 0.034112,
+    "pass_name": "type_check.calls.entrypoints.project",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.034112
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.034112,
+    "mean_time_ms": 0.034112,
+    "min_time_ms": 0.034112,
+    "pass_name": "type_check.methods.resolve",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.034112
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.034048,
+    "mean_time_ms": 0.034048,
+    "min_time_ms": 0.034048,
+    "pass_name": "type_check.visible.scatter_hir_decl_records",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.034048
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.03392,
+    "mean_time_ms": 0.03392,
+    "min_time_ms": 0.03392,
+    "pass_name": "type_check.type_semantic.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.03392
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.021056,
+    "mean_time_ms": 0.011104,
+    "min_time_ms": 0.005856,
+    "pass_name": "parser.tokens.delimiters.scan.owner_header",
+    "stddev_time_ms": 0.007040630274816783,
+    "total_time_ms": 0.033312
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.033152,
+    "mean_time_ms": 0.033152,
+    "min_time_ms": 0.033152,
+    "pass_name": "type_check.calls.arg_rows.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.033152
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.032448,
+    "mean_time_ms": 0.032448,
+    "min_time_ms": 0.032448,
+    "pass_name": "type_check.resident.type_instances_generic_param_use_slots.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.032448
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.031776,
+    "mean_time_ms": 0.031776,
+    "min_time_ms": 0.031776,
+    "pass_name": "lir.target.count_scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.031776
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.031648,
+    "mean_time_ms": 0.031648,
+    "min_time_ms": 0.031648,
+    "pass_name": "lir.target.byte_scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.031648
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.03152,
+    "mean_time_ms": 0.03152,
+    "min_time_ms": 0.03152,
+    "pass_name": "type_check.modules.file_module_map.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.03152
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.031328,
+    "mean_time_ms": 0.031328,
+    "min_time_ms": 0.031328,
+    "pass_name": "lir.target.function_scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.031328
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.031232,
+    "mean_time_ms": 0.031232,
+    "min_time_ms": 0.031232,
+    "pass_name": "type_check.resident.type_instances_member_results.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.031232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.031008,
+    "mean_time_ms": 0.031008,
+    "min_time_ms": 0.031008,
+    "pass_name": "artifact.x86.object.symbol_scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.031008
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.030912,
+    "mean_time_ms": 0.030912,
+    "min_time_ms": 0.030912,
+    "pass_name": "artifact.x86.object.relocation_scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.030912
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.030784,
+    "mean_time_ms": 0.030784,
+    "min_time_ms": 0.030784,
+    "pass_name": "lir.target.functions.scatter_starts",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.030784
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.030592,
+    "mean_time_ms": 0.030592,
+    "min_time_ms": 0.030592,
+    "pass_name": "type_check.fn_context.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.030592
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.030592,
+    "mean_time_ms": 0.030592,
+    "min_time_ms": 0.030592,
+    "pass_name": "type_check.calls.backend_targets",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.030592
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.030496,
+    "mean_time_ms": 0.030496,
+    "min_time_ms": 0.030496,
+    "pass_name": "type_check.interface.identity_bytes",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.030496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.030272,
+    "mean_time_ms": 0.030272,
+    "min_time_ms": 0.030272,
+    "pass_name": "type_check.resident.scope.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.030272
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.030208,
+    "mean_time_ms": 0.030208,
+    "min_time_ms": 0.030208,
+    "pass_name": "type_check.modules.project_type_alias_instances",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.030208
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.030112,
+    "mean_time_ms": 0.030112,
+    "min_time_ms": 0.030112,
+    "pass_name": "type_check.calls.required_generics.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.030112
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.029952,
+    "mean_time_ms": 0.029952,
+    "min_time_ms": 0.029952,
+    "pass_name": "type_check.modules.validate_type_alias_forwarding_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.029952
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02976,
+    "mean_time_ms": 0.02976,
+    "min_time_ms": 0.02976,
+    "pass_name": "artifact.x86.object.relocation_flags",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02976
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0296,
+    "mean_time_ms": 0.0296,
+    "min_time_ms": 0.0296,
+    "pass_name": "type_check.resident.type_instances_member_results_after_final_types.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0296
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.029472,
+    "mean_time_ms": 0.029472,
+    "min_time_ms": 0.029472,
+    "pass_name": "type_check.modules.init_type_alias_arg_edges",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.029472
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.029312,
+    "mean_time_ms": 0.029312,
+    "min_time_ms": 0.029312,
+    "pass_name": "type_check.modules.scatter_variant_decl_records",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.029312
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.029248,
+    "mean_time_ms": 0.029248,
+    "min_time_ms": 0.029248,
+    "pass_name": "type_check.modules.select_type_alias_generic_sources",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.029248
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.029152,
+    "mean_time_ms": 0.029152,
+    "min_time_ms": 0.029152,
+    "pass_name": "type_check.resident.type_instances_validate_aggregate_access.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.029152
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02912,
+    "mean_time_ms": 0.02912,
+    "min_time_ms": 0.02912,
+    "pass_name": "type_check.modules.project_value_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02912
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.028928,
+    "mean_time_ms": 0.028928,
+    "min_time_ms": 0.028928,
+    "pass_name": "hir_canonical_decl_index_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.028928
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.028928,
+    "mean_time_ms": 0.028928,
+    "min_time_ms": 0.028928,
+    "pass_name": "type_check.returns.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.028928
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.028832,
+    "mean_time_ms": 0.028832,
+    "min_time_ms": 0.028832,
+    "pass_name": "type_check.resident.predicates_emit_method_param_validation_rows.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.028832
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.028736,
+    "mean_time_ms": 0.028736,
+    "min_time_ms": 0.028736,
+    "pass_name": "type_check.fn_context.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.028736
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.028736,
+    "mean_time_ms": 0.028736,
+    "min_time_ms": 0.028736,
+    "pass_name": "type_check.returns.validate",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.028736
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.028704,
+    "mean_time_ms": 0.028704,
+    "min_time_ms": 0.028704,
+    "pass_name": "type_check.modules.import_visibility.scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.028704
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.028544,
+    "mean_time_ms": 0.028544,
+    "min_time_ms": 0.028544,
+    "pass_name": "pack_offsets_scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.028544
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02832,
+    "mean_time_ms": 0.02832,
+    "min_time_ms": 0.02832,
+    "pass_name": "type_check.names.hash_prepare",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02832
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.027872,
+    "mean_time_ms": 0.027872,
+    "min_time_ms": 0.027872,
+    "pass_name": "type_check.interface.identity_sizes",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.027872
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02784,
+    "mean_time_ms": 0.02784,
+    "min_time_ms": 0.02784,
+    "pass_name": "lir.target.count_scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02784
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.027616,
+    "mean_time_ms": 0.027616,
+    "min_time_ms": 0.027616,
+    "pass_name": "artifact.x86.object.relocations",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.027616
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02752,
+    "mean_time_ms": 0.02752,
+    "min_time_ms": 0.02752,
+    "pass_name": "type_check.modules.import_visibility.count",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02752
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02752,
+    "mean_time_ms": 0.02752,
+    "min_time_ms": 0.02752,
+    "pass_name": "type_check.resident.type_instances_struct_init_contexts.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02752
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.027456,
+    "mean_time_ms": 0.027456,
+    "min_time_ms": 0.027456,
+    "pass_name": "hir_canonical_method_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.027456
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02736,
+    "mean_time_ms": 0.02736,
+    "min_time_ms": 0.02736,
+    "pass_name": "type_check.calls.intrinsics",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02736
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.027232,
+    "mean_time_ms": 0.027232,
+    "min_time_ms": 0.027232,
+    "pass_name": "type_check.dependencies.project_methods",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.027232
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.011872,
+    "mean_time_ms": 0.008960000000000001,
+    "min_time_ms": 0.004416,
+    "pass_name": "type_check.interface.module_segment_scan",
+    "stddev_time_ms": 0.003255308689919693,
+    "total_time_ms": 0.02688
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.026784,
+    "mean_time_ms": 0.026784,
+    "min_time_ms": 0.026784,
+    "pass_name": "type_check.visible.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.026784
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02656,
+    "mean_time_ms": 0.02656,
+    "min_time_ms": 0.02656,
+    "pass_name": "type_check.resident.type_instances_array_literal_return_refs.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02656
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.026368,
+    "mean_time_ms": 0.026368,
+    "min_time_ms": 0.026368,
+    "pass_name": "type_check.modules.resolve_local_type_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.026368
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.026304,
+    "mean_time_ms": 0.026304,
+    "min_time_ms": 0.026304,
+    "pass_name": "lir.target.function_scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.026304
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.026304,
+    "mean_time_ms": 0.026304,
+    "min_time_ms": 0.026304,
+    "pass_name": "artifact.x86.object.relocation_scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.026304
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.026272,
+    "mean_time_ms": 0.026272,
+    "min_time_ms": 0.026272,
+    "pass_name": "lir.target.byte_scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.026272
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02624,
+    "mean_time_ms": 0.02624,
+    "min_time_ms": 0.02624,
+    "pass_name": "lir.x86.decl_slots.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02624
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02624,
+    "mean_time_ms": 0.02624,
+    "min_time_ms": 0.02624,
+    "pass_name": "artifact.x86.object.symbol_scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02624
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.026208,
+    "mean_time_ms": 0.026208,
+    "min_time_ms": 0.026208,
+    "pass_name": "parser.tokens.generic_shr.raw_apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.026208
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.025984,
+    "mean_time_ms": 0.025984,
+    "min_time_ms": 0.025984,
+    "pass_name": "type_check.names.hash_assign_ids",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.025984
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02592,
+    "mean_time_ms": 0.02592,
+    "min_time_ms": 0.02592,
+    "pass_name": "type_check.methods.bind_self_receivers",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02592
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02576,
+    "mean_time_ms": 0.02576,
+    "min_time_ms": 0.02576,
+    "pass_name": "type_check.resident.type_instances_struct_init_substitute.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02576
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.025696,
+    "mean_time_ms": 0.025696,
+    "min_time_ms": 0.025696,
+    "pass_name": "type_check.resident.type_instances_member_receivers.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.025696
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.025536,
+    "mean_time_ms": 0.025536,
+    "min_time_ms": 0.025536,
+    "pass_name": "type_check.if_depth.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.025536
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.025376,
+    "mean_time_ms": 0.025376,
+    "min_time_ms": 0.025376,
+    "pass_name": "type_check.resident.type_instances_member_receivers_after_final_types.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.025376
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.025248,
+    "mean_time_ms": 0.025248,
+    "min_time_ms": 0.025248,
+    "pass_name": "parser.tokens.generic_shr.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.025248
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02512,
+    "mean_time_ms": 0.02512,
+    "min_time_ms": 0.02512,
+    "pass_name": "type_check.dependencies.project_calls",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02512
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.024768,
+    "mean_time_ms": 0.024768,
+    "min_time_ms": 0.024768,
+    "pass_name": "type_check.modules.resolve_local_value_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.024768
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.024704,
+    "mean_time_ms": 0.024704,
+    "min_time_ms": 0.024704,
+    "pass_name": "hir_canonical_generic_param_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.024704
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.024608,
+    "mean_time_ms": 0.024608,
+    "min_time_ms": 0.024608,
+    "pass_name": "type_check.modules.consume_value_consts",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.024608
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.024512,
+    "mean_time_ms": 0.024512,
+    "min_time_ms": 0.024512,
+    "pass_name": "lir.x86.location.assign",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.024512
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.013088,
+    "mean_time_ms": 0.012240000000000001,
+    "min_time_ms": 0.011392,
+    "pass_name": "type_check.modules.decl_keys.histogram",
+    "stddev_time_ms": 0.0008480000000000007,
+    "total_time_ms": 0.024480000000000002
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02448,
+    "mean_time_ms": 0.02448,
+    "min_time_ms": 0.02448,
+    "pass_name": "type_check.generic_params.slot_scan",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02448
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.024448,
+    "mean_time_ms": 0.024448,
+    "min_time_ms": 0.024448,
+    "pass_name": "parser.tokens.generic_shr.raw_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.024448
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.024416,
+    "mean_time_ms": 0.024416,
+    "min_time_ms": 0.024416,
+    "pass_name": "hir_canonical_method_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.024416
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.004416,
+    "mean_time_ms": 0.004053333333333333,
+    "min_time_ms": 0.003904,
+    "pass_name": "type_check.visible.sort_hir_decl_keys.histogram.a.bucket_bases",
+    "stddev_time_ms": 0.00017880591588522883,
+    "total_time_ms": 0.02432
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.024288,
+    "mean_time_ms": 0.024288,
+    "min_time_ms": 0.024288,
+    "pass_name": "hir_canonical_predicate_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.024288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023904,
+    "mean_time_ms": 0.023904,
+    "min_time_ms": 0.023904,
+    "pass_name": "type_check.modules.resolve_qualified_type_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023904
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023872,
+    "mean_time_ms": 0.023872,
+    "min_time_ms": 0.023872,
+    "pass_name": "hir_canonical_type_arg_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023872
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02384,
+    "mean_time_ms": 0.02384,
+    "min_time_ms": 0.02384,
+    "pass_name": "parser.tokens.impl_header.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02384
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02384,
+    "mean_time_ms": 0.02384,
+    "min_time_ms": 0.02384,
+    "pass_name": "hir_canonical_call_arg_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02384
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02384,
+    "mean_time_ms": 0.02384,
+    "min_time_ms": 0.02384,
+    "pass_name": "type_check.generic_params.slot_scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02384
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023808,
+    "mean_time_ms": 0.023808,
+    "min_time_ms": 0.023808,
+    "pass_name": "hir_canonical_array_element_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023808
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023808,
+    "mean_time_ms": 0.023808,
+    "min_time_ms": 0.023808,
+    "pass_name": "hir_canonical_param_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023808
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023776,
+    "mean_time_ms": 0.023776,
+    "min_time_ms": 0.023776,
+    "pass_name": "parser.tokens.generic_shr.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023776
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023744,
+    "mean_time_ms": 0.023744,
+    "min_time_ms": 0.023744,
+    "pass_name": "hir_canonical_match_arm_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023744,
+    "mean_time_ms": 0.023744,
+    "min_time_ms": 0.023744,
+    "pass_name": "type_check.resident.predicates_collect.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02368,
+    "mean_time_ms": 0.02368,
+    "min_time_ms": 0.02368,
+    "pass_name": "hir_canonical_variant_payload_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02368
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02368,
+    "mean_time_ms": 0.02368,
+    "min_time_ms": 0.02368,
+    "pass_name": "hir_canonical_path_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02368
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023648,
+    "mean_time_ms": 0.023648,
+    "min_time_ms": 0.023648,
+    "pass_name": "type_check.semantic_features.collect",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023648
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023584,
+    "mean_time_ms": 0.023584,
+    "min_time_ms": 0.023584,
+    "pass_name": "hir_canonical_variant_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023584
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023488,
+    "mean_time_ms": 0.023488,
+    "min_time_ms": 0.023488,
+    "pass_name": "type_check.dependencies.validate_call_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023488
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023392,
+    "mean_time_ms": 0.023392,
+    "min_time_ms": 0.023392,
+    "pass_name": "type_check.if_depth.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023392
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02336,
+    "mean_time_ms": 0.02336,
+    "min_time_ms": 0.02336,
+    "pass_name": "type_check.modules.build_import_visible_key_tables.paired",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02336
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02336,
+    "mean_time_ms": 0.02336,
+    "min_time_ms": 0.02336,
+    "pass_name": "type_check.calls.result_instances.project",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02336
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023296,
+    "mean_time_ms": 0.023296,
+    "min_time_ms": 0.023296,
+    "pass_name": "hir_canonical_field_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023296
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023232,
+    "mean_time_ms": 0.023232,
+    "min_time_ms": 0.023232,
+    "pass_name": "hir_canonical_match_payload_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0232,
+    "mean_time_ms": 0.0232,
+    "min_time_ms": 0.0232,
+    "pass_name": "parser.tokens.impl_header.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.023008,
+    "mean_time_ms": 0.023008,
+    "min_time_ms": 0.023008,
+    "pass_name": "lir.semantic.functions.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.023008
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.011712,
+    "mean_time_ms": 0.011488,
+    "min_time_ms": 0.011264,
+    "pass_name": "type_check.dependencies.init_canonical_type_index",
+    "stddev_time_ms": 0.00022400000000000024,
+    "total_time_ms": 0.022976
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.022528,
+    "mean_time_ms": 0.022528,
+    "min_time_ms": 0.022528,
+    "pass_name": "parser.tokens.where_clause.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.022528
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.022336,
+    "mean_time_ms": 0.022336,
+    "min_time_ms": 0.022336,
+    "pass_name": "type_check.modules.declarations.build_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.022336
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.022304,
+    "mean_time_ms": 0.022304,
+    "min_time_ms": 0.022304,
+    "pass_name": "type_check.calls.param_types",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.022304
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.022144,
+    "mean_time_ms": 0.022144,
+    "min_time_ms": 0.022144,
+    "pass_name": "type_check.interface.type_topology.mark_reverse",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.022144
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.011424,
+    "mean_time_ms": 0.011056,
+    "min_time_ms": 0.010688,
+    "pass_name": "type_check.conditions.type_subtree_compare",
+    "stddev_time_ms": 0.00036800000000000027,
+    "total_time_ms": 0.022112
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.022016,
+    "mean_time_ms": 0.022016,
+    "min_time_ms": 0.022016,
+    "pass_name": "type_check.visible.build_hir_decl_scope_leaves",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.022016
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021984,
+    "mean_time_ms": 0.021984,
+    "min_time_ms": 0.021984,
+    "pass_name": "type_check.modules.consume_value_enum_calls",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021984
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021952,
+    "mean_time_ms": 0.021952,
+    "min_time_ms": 0.021952,
+    "pass_name": "type_check.interface.type_topology.init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021952
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021856,
+    "mean_time_ms": 0.021856,
+    "min_time_ms": 0.021856,
+    "pass_name": "type_check.dependencies.clear_visible_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021856
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021824,
+    "mean_time_ms": 0.021824,
+    "min_time_ms": 0.021824,
+    "pass_name": "type_check.modules.scatter_import_visible_value",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021824
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021824,
+    "mean_time_ms": 0.021824,
+    "min_time_ms": 0.021824,
+    "pass_name": "type_check.resident.type_instances_struct_init_fields.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021824
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021536,
+    "mean_time_ms": 0.021536,
+    "min_time_ms": 0.021536,
+    "pass_name": "type_check.dependencies.scatter_call_params",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021536
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021536,
+    "mean_time_ms": 0.021536,
+    "min_time_ms": 0.021536,
+    "pass_name": "type_check.calls.erase_generic_params",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021536
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021472,
+    "mean_time_ms": 0.021472,
+    "min_time_ms": 0.021472,
+    "pass_name": "type_check.modules.decl_namespace.scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021472
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02144,
+    "mean_time_ms": 0.02144,
+    "min_time_ms": 0.02144,
+    "pass_name": "type_check.interface.public_decls.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02144
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021056,
+    "mean_time_ms": 0.021056,
+    "min_time_ms": 0.021056,
+    "pass_name": "type_check.modules.import_visibility.scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021056
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021024,
+    "mean_time_ms": 0.021024,
+    "min_time_ms": 0.021024,
+    "pass_name": "parser.tokens.where_clause.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021024
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.021024,
+    "mean_time_ms": 0.021024,
+    "min_time_ms": 0.021024,
+    "pass_name": "type_check.modules.consume_value_calls_after_methods",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.021024
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.020864,
+    "mean_time_ms": 0.020864,
+    "min_time_ms": 0.020864,
+    "pass_name": "lir.semantic.functions.layout.words",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.020864
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.020736,
+    "mean_time_ms": 0.020736,
+    "min_time_ms": 0.020736,
+    "pass_name": "type_check.modules.validate_type_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.020736
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.020736,
+    "mean_time_ms": 0.020736,
+    "min_time_ms": 0.020736,
+    "pass_name": "type_check.resident.type_instances_member_substitute.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.020736
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.020736,
+    "mean_time_ms": 0.020736,
+    "min_time_ms": 0.020736,
+    "pass_name": "lir.semantic.locals.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.020736
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.020672,
+    "mean_time_ms": 0.020672,
+    "min_time_ms": 0.020672,
+    "pass_name": "type_check.resident.type_instances_member_substitute_after_final_types.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.020672
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02064,
+    "mean_time_ms": 0.02064,
+    "min_time_ms": 0.02064,
+    "pass_name": "type_check.resident.predicates_collect_method_contracts.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02064
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.020448,
+    "mean_time_ms": 0.020448,
+    "min_time_ms": 0.020448,
+    "pass_name": "type_check.modules.decl_public.scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.020448
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.020288,
+    "mean_time_ms": 0.020288,
+    "min_time_ms": 0.020288,
+    "pass_name": "type_check.modules.resolve_qualified_value_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.020288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.020256,
+    "mean_time_ms": 0.020256,
+    "min_time_ms": 0.020256,
+    "pass_name": "type_check.modules.consume_value_calls",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.020256
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.020192,
+    "mean_time_ms": 0.020192,
+    "min_time_ms": 0.020192,
+    "pass_name": "type_check.methods.lookup.validate",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.020192
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02016,
+    "mean_time_ms": 0.02016,
+    "min_time_ms": 0.02016,
+    "pass_name": "source_file_token_end",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02016
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.02016,
+    "mean_time_ms": 0.02016,
+    "min_time_ms": 0.02016,
+    "pass_name": "type_check.modules.decl_namespace.scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.02016
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.00736,
+    "mean_time_ms": 0.006624,
+    "min_time_ms": 0.005952,
+    "pass_name": "parser.tokens.delimiters.scan.owner",
+    "stddev_time_ms": 0.0005765922880742223,
+    "total_time_ms": 0.019872
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019872,
+    "mean_time_ms": 0.019872,
+    "min_time_ms": 0.019872,
+    "pass_name": "type_check.modules.bind_match_patterns",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019872
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019808,
+    "mean_time_ms": 0.019808,
+    "min_time_ms": 0.019808,
+    "pass_name": "type_check.dependencies.resolve_type_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019808
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019808,
+    "mean_time_ms": 0.019808,
+    "min_time_ms": 0.019808,
+    "pass_name": "type_check.interface.artifact",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019808
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019776,
+    "mean_time_ms": 0.019776,
+    "min_time_ms": 0.019776,
+    "pass_name": "type_check.modules.scatter_decl_span_records",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019776
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019776,
+    "mean_time_ms": 0.019776,
+    "min_time_ms": 0.019776,
+    "pass_name": "type_check.modules.type_match_payloads",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019776
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019744,
+    "mean_time_ms": 0.019744,
+    "min_time_ms": 0.019744,
+    "pass_name": "type_check.modules.resolve_imported_type_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019648,
+    "mean_time_ms": 0.019648,
+    "min_time_ms": 0.019648,
+    "pass_name": "hir_stmt_scope",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019648
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.007008,
+    "mean_time_ms": 0.006528,
+    "min_time_ms": 0.005632,
+    "pass_name": "parser.tokens.delimiters.scan.depth",
+    "stddev_time_ms": 0.0006341061951019456,
+    "total_time_ms": 0.019584
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019456,
+    "mean_time_ms": 0.019456,
+    "min_time_ms": 0.019456,
+    "pass_name": "type_check.modules.resolve_imported_value_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019456
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019264,
+    "mean_time_ms": 0.019264,
+    "min_time_ms": 0.019264,
+    "pass_name": "type_check.interface.type_topology.root_init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019264
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019168,
+    "mean_time_ms": 0.019168,
+    "min_time_ms": 0.019168,
+    "pass_name": "type_check.interface.type_topology.attach_unary",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019136,
+    "mean_time_ms": 0.019136,
+    "min_time_ms": 0.019136,
+    "pass_name": "type_check.modules.decl_public.scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019136
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01904,
+    "mean_time_ms": 0.01904,
+    "min_time_ms": 0.01904,
+    "pass_name": "type_check.modules.records.decl_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01904
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01904,
+    "mean_time_ms": 0.01904,
+    "min_time_ms": 0.01904,
+    "pass_name": "type_check.modules.scatter_import_visible_type",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01904
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.019008,
+    "mean_time_ms": 0.019008,
+    "min_time_ms": 0.019008,
+    "pass_name": "type_check.resident.type_instances_hash_arg_rows.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.019008
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.018944,
+    "mean_time_ms": 0.018944,
+    "min_time_ms": 0.018944,
+    "pass_name": "type_check.fn_context.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.018944
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.018784,
+    "mean_time_ms": 0.018784,
+    "min_time_ms": 0.018784,
+    "pass_name": "type_check.dependencies.project_call_params",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.018784
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.018656,
+    "mean_time_ms": 0.018656,
+    "min_time_ms": 0.018656,
+    "pass_name": "type_check.fn_context.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.018656
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.018432,
+    "mean_time_ms": 0.018432,
+    "min_time_ms": 0.018432,
+    "pass_name": "type_check.modules.consume_value_enum_units",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.018432
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01824,
+    "mean_time_ms": 0.01824,
+    "min_time_ms": 0.01824,
+    "pass_name": "hir_canonical_param_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01824
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01824,
+    "mean_time_ms": 0.01824,
+    "min_time_ms": 0.01824,
+    "pass_name": "type_check.modules.finalize_value_enum_calls",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01824
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.018176,
+    "mean_time_ms": 0.018176,
+    "min_time_ms": 0.018176,
+    "pass_name": "type_check.language_type_codes.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.018176
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.018144,
+    "mean_time_ms": 0.018144,
+    "min_time_ms": 0.018144,
+    "pass_name": "type_check.calls.array_state.publish",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.018144
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.017952,
+    "mean_time_ms": 0.017952,
+    "min_time_ms": 0.017952,
+    "pass_name": "lir.semantic.functions.layout.collect",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.017952
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.017792,
+    "mean_time_ms": 0.017792,
+    "min_time_ms": 0.017792,
+    "pass_name": "type_check.conditions.compact_methods",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.017792
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.017728,
+    "mean_time_ms": 0.017728,
+    "min_time_ms": 0.017728,
+    "pass_name": "type_check.modules.count_path_segments",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.017728
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.017664,
+    "mean_time_ms": 0.017664,
+    "min_time_ms": 0.017664,
+    "pass_name": "type_check.interface.signature.flags",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.017664
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.017504,
+    "mean_time_ms": 0.017504,
+    "min_time_ms": 0.017504,
+    "pass_name": "type_check.modules.project_type_paths.after_aliases",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.017504
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01744,
+    "mean_time_ms": 0.01744,
+    "min_time_ms": 0.01744,
+    "pass_name": "type_check.modules.decl_namespace.validate_duplicates",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016992,
+    "mean_time_ms": 0.016992,
+    "min_time_ms": 0.016992,
+    "pass_name": "type_check.modules.clear_import_visible_value_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016992
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016992,
+    "mean_time_ms": 0.016992,
+    "min_time_ms": 0.016992,
+    "pass_name": "type_check.interface.identity_records",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016992
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016992,
+    "mean_time_ms": 0.016992,
+    "min_time_ms": 0.016992,
+    "pass_name": "lir.semantic.strings",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016992
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016832,
+    "mean_time_ms": 0.016832,
+    "min_time_ms": 0.016832,
+    "pass_name": "type_check.dependencies.project_type_instances",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016832
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016704,
+    "mean_time_ms": 0.016704,
+    "min_time_ms": 0.016704,
+    "pass_name": "type_check.modules.project_type_paths.after_alias_equivalence",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016704
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016512,
+    "mean_time_ms": 0.016512,
+    "min_time_ms": 0.016512,
+    "pass_name": "type_check.modules.clear_module_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016512
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01648,
+    "mean_time_ms": 0.01648,
+    "min_time_ms": 0.01648,
+    "pass_name": "type_check.dependencies.project_types",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01648
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016448,
+    "mean_time_ms": 0.016448,
+    "min_time_ms": 0.016448,
+    "pass_name": "type_check.modules.project_type_paths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016448
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016384,
+    "mean_time_ms": 0.016384,
+    "min_time_ms": 0.016384,
+    "pass_name": "type_check.modules.clear_import_visible_type_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016384
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016384,
+    "mean_time_ms": 0.016384,
+    "min_time_ms": 0.016384,
+    "pass_name": "type_check.returns.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016384
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01632,
+    "mean_time_ms": 0.01632,
+    "min_time_ms": 0.01632,
+    "pass_name": "type_check.dependencies.project_types.after_type_clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01632
+  },
+  {
+    "count": 4,
+    "max_time_ms": 0.00448,
+    "mean_time_ms": 0.00408,
+    "min_time_ms": 0.003808,
+    "pass_name": "lir.semantic.scan.hierarchy_down",
+    "stddev_time_ms": 0.00027573900703382523,
+    "total_time_ms": 0.01632
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016288,
+    "mean_time_ms": 0.016288,
+    "min_time_ms": 0.016288,
+    "pass_name": "lir.semantic.execution_rank.init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016192,
+    "mean_time_ms": 0.016192,
+    "min_time_ms": 0.016192,
+    "pass_name": "type_check.modules.init_type_alias_decl_edges",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016192
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016128,
+    "mean_time_ms": 0.016128,
+    "min_time_ms": 0.016128,
+    "pass_name": "type_check.modules.type_match_exprs",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016128
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016096,
+    "mean_time_ms": 0.016096,
+    "min_time_ms": 0.016096,
+    "pass_name": "type_check.modules.import_edges.build",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016096
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016096,
+    "mean_time_ms": 0.016096,
+    "min_time_ms": 0.016096,
+    "pass_name": "type_check.modules.declarations.clear_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016096
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016096,
+    "mean_time_ms": 0.016096,
+    "min_time_ms": 0.016096,
+    "pass_name": "type_check.modules.project_type_paths.after_projected_aliases",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016096
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016096,
+    "mean_time_ms": 0.016096,
+    "min_time_ms": 0.016096,
+    "pass_name": "type_check.resident.type_instances_collect_named_arg_refs.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016096
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.016,
+    "mean_time_ms": 0.016,
+    "min_time_ms": 0.016,
+    "pass_name": "type_check.modules.records.import_flag",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.016
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015904,
+    "mean_time_ms": 0.015904,
+    "min_time_ms": 0.015904,
+    "pass_name": "type_check.modules.records.module_flag",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015904
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015744,
+    "mean_time_ms": 0.015744,
+    "min_time_ms": 0.015744,
+    "pass_name": "type_check.modules.mirror_value_call_leaf_after_module_row_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015744,
+    "mean_time_ms": 0.015744,
+    "min_time_ms": 0.015744,
+    "pass_name": "type_check.modules.mirror_value_call_leaf_after_methods_module_row_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01568,
+    "mean_time_ms": 0.01568,
+    "min_time_ms": 0.01568,
+    "pass_name": "type_check.modules.records.module_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01568
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015648,
+    "mean_time_ms": 0.015648,
+    "min_time_ms": 0.015648,
+    "pass_name": "type_check.modules.records.import_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015648
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.005696,
+    "mean_time_ms": 0.005184,
+    "min_time_ms": 0.004288,
+    "pass_name": "parser.tokens.impl_header.scan",
+    "stddev_time_ms": 0.0006357190154987237,
+    "total_time_ms": 0.015552
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015488,
+    "mean_time_ms": 0.015488,
+    "min_time_ms": 0.015488,
+    "pass_name": "type_check.type_semantic.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015488
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015488,
+    "mean_time_ms": 0.015488,
+    "min_time_ms": 0.015488,
+    "pass_name": "type_check.modules.mirror_value_call_leaf_after_methods",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015488
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015424,
+    "mean_time_ms": 0.015424,
+    "min_time_ms": 0.015424,
+    "pass_name": "parser_hir_string_decode",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015424
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015392,
+    "mean_time_ms": 0.015392,
+    "min_time_ms": 0.015392,
+    "pass_name": "artifact.x86.object.definition_flags",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015392
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015264,
+    "mean_time_ms": 0.015264,
+    "min_time_ms": 0.015264,
+    "pass_name": "type_check.resident.type_instances.decl_generic_params.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015264
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015232,
+    "mean_time_ms": 0.015232,
+    "min_time_ms": 0.015232,
+    "pass_name": "type_check.modules.mirror_value_call_leaf",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015232
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0152,
+    "mean_time_ms": 0.0152,
+    "min_time_ms": 0.0152,
+    "pass_name": "type_check.visible.mark_match_payload_decls",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0152
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015168,
+    "mean_time_ms": 0.015168,
+    "min_time_ms": 0.015168,
+    "pass_name": "type_check.resident.predicates_clear_syntax_tokens.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015168,
+    "mean_time_ms": 0.015168,
+    "min_time_ms": 0.015168,
+    "pass_name": "type_check.modules.records.decl_flag",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015104,
+    "mean_time_ms": 0.015104,
+    "min_time_ms": 0.015104,
+    "pass_name": "type_check.modules.import_edges.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015104
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.015104,
+    "mean_time_ms": 0.015104,
+    "min_time_ms": 0.015104,
+    "pass_name": "type_check.modules.import_cycles.validate",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.015104
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01488,
+    "mean_time_ms": 0.01488,
+    "min_time_ms": 0.01488,
+    "pass_name": "hir_param_id_base",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01488
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.014816,
+    "mean_time_ms": 0.014816,
+    "min_time_ms": 0.014816,
+    "pass_name": "type_check.modules.project_type_aliases.after_projected_refs",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.014816
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01472,
+    "mean_time_ms": 0.01472,
+    "min_time_ms": 0.01472,
+    "pass_name": "type_check.methods.attach_metadata",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01472
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.014688,
+    "mean_time_ms": 0.014688,
+    "min_time_ms": 0.014688,
+    "pass_name": "tree_depth_schedule",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.014688
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.014688,
+    "mean_time_ms": 0.014688,
+    "min_time_ms": 0.014688,
+    "pass_name": "lir.semantic.call_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.014688
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.014592,
+    "mean_time_ms": 0.014592,
+    "min_time_ms": 0.014592,
+    "pass_name": "type_check.resident.predicates_reduce_method_validation_errors.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.014592
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.005568,
+    "mean_time_ms": 0.004842666666666667,
+    "min_time_ms": 0.004064,
+    "pass_name": "parser.tokens.generic_shr.raw_scan",
+    "stddev_time_ms": 0.0006151624898259719,
+    "total_time_ms": 0.014528
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.014496,
+    "mean_time_ms": 0.014496,
+    "min_time_ms": 0.014496,
+    "pass_name": "hir_canonical_field_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.014496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0144,
+    "mean_time_ms": 0.0144,
+    "min_time_ms": 0.0144,
+    "pass_name": "type_check.modules.init_type_alias_forwarding",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0144
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0144,
+    "mean_time_ms": 0.0144,
+    "min_time_ms": 0.0144,
+    "pass_name": "type_check.modules.project_type_instances",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0144
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01424,
+    "mean_time_ms": 0.01424,
+    "min_time_ms": 0.01424,
+    "pass_name": "type_check.generic_params.lookup.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01424
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01424,
+    "mean_time_ms": 0.01424,
+    "min_time_ms": 0.01424,
+    "pass_name": "type_check.struct_fields.lookup.build",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01424
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.014144,
+    "mean_time_ms": 0.014144,
+    "min_time_ms": 0.014144,
+    "pass_name": "type_check.struct_fields.lookup.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.014144
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.014048,
+    "mean_time_ms": 0.014048,
+    "min_time_ms": 0.014048,
+    "pass_name": "type_check.modules.records.attach_modules",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.014048
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.005248,
+    "mean_time_ms": 0.004661333333333333,
+    "min_time_ms": 0.004352,
+    "pass_name": "parser.tokens.statement_phase.scan",
+    "stddev_time_ms": 0.00041504163111133274,
+    "total_time_ms": 0.013984
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013952,
+    "mean_time_ms": 0.013952,
+    "min_time_ms": 0.013952,
+    "pass_name": "type_check.modules.init_type_alias_roots",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013952
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.005216,
+    "mean_time_ms": 0.004629333333333333,
+    "min_time_ms": 0.004192,
+    "pass_name": "hir_enum_rank_prefix_01_blocks",
+    "stddev_time_ms": 0.00043117616920336504,
+    "total_time_ms": 0.013888000000000001
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.005376,
+    "mean_time_ms": 0.0045973333333333335,
+    "min_time_ms": 0.00384,
+    "pass_name": "hir_struct_rank_prefix_01_blocks",
+    "stddev_time_ms": 0.0006272507915942038,
+    "total_time_ms": 0.013792
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013792,
+    "mean_time_ms": 0.013792,
+    "min_time_ms": 0.013792,
+    "pass_name": "type_check.modules.imports.resolve",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013792
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013728,
+    "mean_time_ms": 0.013728,
+    "min_time_ms": 0.013728,
+    "pass_name": "hir_canonical_match_arm_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013728
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013728,
+    "mean_time_ms": 0.013728,
+    "min_time_ms": 0.013728,
+    "pass_name": "type_check.interface.type_topology.edge_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013728
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013696,
+    "mean_time_ms": 0.013696,
+    "min_time_ms": 0.013696,
+    "pass_name": "type_check.generic_params.lookup.build",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013696
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013664,
+    "mean_time_ms": 0.013664,
+    "min_time_ms": 0.013664,
+    "pass_name": "type_check.interface.public_decls.map",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013664
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.005152,
+    "mean_time_ms": 0.004512,
+    "min_time_ms": 0.003904,
+    "pass_name": "parser.tokens.where_clause.scan",
+    "stddev_time_ms": 0.0005099960784162955,
+    "total_time_ms": 0.013536
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.004928,
+    "mean_time_ms": 0.004501333333333334,
+    "min_time_ms": 0.003648,
+    "pass_name": "parser.tokens.generic_shr.scan",
+    "stddev_time_ms": 0.0006033977866125205,
+    "total_time_ms": 0.013504
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013504,
+    "mean_time_ms": 0.013504,
+    "min_time_ms": 0.013504,
+    "pass_name": "hir_canonical_match_payload_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013504
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013504,
+    "mean_time_ms": 0.013504,
+    "min_time_ms": 0.013504,
+    "pass_name": "hir_canonical_generic_param_finalize",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013504
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.005216,
+    "mean_time_ms": 0.004490666666666666,
+    "min_time_ms": 0.003776,
+    "pass_name": "hir_match_rank_prefix_01_blocks",
+    "stddev_time_ms": 0.0005879259212595487,
+    "total_time_ms": 0.013472
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013408,
+    "mean_time_ms": 0.013408,
+    "min_time_ms": 0.013408,
+    "pass_name": "type_check.methods.collect",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013408
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01328,
+    "mean_time_ms": 0.01328,
+    "min_time_ms": 0.01328,
+    "pass_name": "hir_canonical_array_element_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01328
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013216,
+    "mean_time_ms": 0.013216,
+    "min_time_ms": 0.013216,
+    "pass_name": "type_check.methods.lookup.build",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013216
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013184,
+    "mean_time_ms": 0.013184,
+    "min_time_ms": 0.013184,
+    "pass_name": "type_check.modules.finalize_type_alias_equivalence",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013184
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013152,
+    "mean_time_ms": 0.013152,
+    "min_time_ms": 0.013152,
+    "pass_name": "type_check.calls.arg_rows.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013152
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.004992,
+    "mean_time_ms": 0.004373333333333333,
+    "min_time_ms": 0.00384,
+    "pass_name": "parser.tokens.match_pattern.scan",
+    "stddev_time_ms": 0.0004741570297790478,
+    "total_time_ms": 0.01312
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.013088,
+    "mean_time_ms": 0.013088,
+    "min_time_ms": 0.013088,
+    "pass_name": "type_check.modules.validate_import_visible_keys",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.013088
+  },
+  {
+    "count": 3,
+    "max_time_ms": 0.004768,
+    "mean_time_ms": 0.004352,
+    "min_time_ms": 0.004096,
+    "pass_name": "parser.tokens.type_path_context.scan",
+    "stddev_time_ms": 0.00029675579185586235,
+    "total_time_ms": 0.013056
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0128,
+    "mean_time_ms": 0.0128,
+    "min_time_ms": 0.0128,
+    "pass_name": "type_check.generic_params.rows.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0128
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0128,
+    "mean_time_ms": 0.0128,
+    "min_time_ms": 0.0128,
+    "pass_name": "type_check.modules.project_type_aliases",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0128
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012704,
+    "mean_time_ms": 0.012704,
+    "min_time_ms": 0.012704,
+    "pass_name": "hir_canonical_generic_param_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012704
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012704,
+    "mean_time_ms": 0.012704,
+    "min_time_ms": 0.012704,
+    "pass_name": "type_check.resident.predicates_validate_method_type_arg_rows.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012704
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012576,
+    "mean_time_ms": 0.012576,
+    "min_time_ms": 0.012576,
+    "pass_name": "hir_canonical_variant_payload_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012576
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012512,
+    "mean_time_ms": 0.012512,
+    "min_time_ms": 0.012512,
+    "pass_name": "pack_offsets_status",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012512
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01248,
+    "mean_time_ms": 0.01248,
+    "min_time_ms": 0.01248,
+    "pass_name": "type_check.modules.path_prefix_table_clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01248
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012352,
+    "mean_time_ms": 0.012352,
+    "min_time_ms": 0.012352,
+    "pass_name": "type_check.calls.generic_claims.index.build",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012352
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012288,
+    "mean_time_ms": 0.012288,
+    "min_time_ms": 0.012288,
+    "pass_name": "hir_param_id_apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012288,
+    "mean_time_ms": 0.012288,
+    "min_time_ms": 0.012288,
+    "pass_name": "hir_canonical_variant_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012128,
+    "mean_time_ms": 0.012128,
+    "min_time_ms": 0.012128,
+    "pass_name": "type_check.modules.decl_public.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012128
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012032,
+    "mean_time_ms": 0.012032,
+    "min_time_ms": 0.012032,
+    "pass_name": "type_check.modules.initialize_import_visible_keys",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012032
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011936,
+    "mean_time_ms": 0.011936,
+    "min_time_ms": 0.011936,
+    "pass_name": "type_check.dependencies.count_import_visibility",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011936
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011744,
+    "mean_time_ms": 0.011744,
+    "min_time_ms": 0.011744,
+    "pass_name": "lir.semantic.aggregate_elements",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011712,
+    "mean_time_ms": 0.011712,
+    "min_time_ms": 0.011712,
+    "pass_name": "type_check.calls.generic_claims.validate",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011712
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01168,
+    "mean_time_ms": 0.01168,
+    "min_time_ms": 0.01168,
+    "pass_name": "type_check.if_depth.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011584,
+    "mean_time_ms": 0.011584,
+    "min_time_ms": 0.011584,
+    "pass_name": "type_check.methods.lookup.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011584
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011488,
+    "mean_time_ms": 0.011488,
+    "min_time_ms": 0.011488,
+    "pass_name": "type_check.modules.decl_namespace.mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011488
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011424,
+    "mean_time_ms": 0.011424,
+    "min_time_ms": 0.011424,
+    "pass_name": "type_check.language_names.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011424
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011424,
+    "mean_time_ms": 0.011424,
+    "min_time_ms": 0.011424,
+    "pass_name": "type_check.modules.path_prefix_finalize",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011424
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0112,
+    "mean_time_ms": 0.0112,
+    "min_time_ms": 0.0112,
+    "pass_name": "type_check.modules.validate_decls",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0112
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011168,
+    "mean_time_ms": 0.011168,
+    "min_time_ms": 0.011168,
+    "pass_name": "type_check.modules.clear_decl_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011168,
+    "mean_time_ms": 0.011168,
+    "min_time_ms": 0.011168,
+    "pass_name": "type_check.modules.file_module_map.build",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011168
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011072,
+    "mean_time_ms": 0.011072,
+    "min_time_ms": 0.011072,
+    "pass_name": "hir_canonical_method_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011072
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01104,
+    "mean_time_ms": 0.01104,
+    "min_time_ms": 0.01104,
+    "pass_name": "type_check.modules.validate_modules",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01104
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01104,
+    "mean_time_ms": 0.01104,
+    "min_time_ms": 0.01104,
+    "pass_name": "type_check.modules.decl_namespace.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01104
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01104,
+    "mean_time_ms": 0.01104,
+    "min_time_ms": 0.01104,
+    "pass_name": "type_check.calls.const_claims.index.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01104
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.011008,
+    "mean_time_ms": 0.011008,
+    "min_time_ms": 0.011008,
+    "pass_name": "type_check.calls.const_claims.index.build",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.011008
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010944,
+    "mean_time_ms": 0.010944,
+    "min_time_ms": 0.010944,
+    "pass_name": "hir_canonical_expr_forest_root_init",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010944
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010944,
+    "mean_time_ms": 0.010944,
+    "min_time_ms": 0.010944,
+    "pass_name": "type_check.calls.generic_claims.index.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010944
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010752,
+    "mean_time_ms": 0.010752,
+    "min_time_ms": 0.010752,
+    "pass_name": "type_check.calls.const_claims.validate",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010752
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010624,
+    "mean_time_ms": 0.010624,
+    "min_time_ms": 0.010624,
+    "pass_name": "hir_canonical_path_mark",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010624
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010624,
+    "mean_time_ms": 0.010624,
+    "min_time_ms": 0.010624,
+    "pass_name": "type_check.predicates.obligation_pair_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010624
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010496,
+    "mean_time_ms": 0.010496,
+    "min_time_ms": 0.010496,
+    "pass_name": "type_check.dependencies.validate_call_type_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010432,
+    "mean_time_ms": 0.010432,
+    "min_time_ms": 0.010432,
+    "pass_name": "type_check.calls.validate_generic_claim_type_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010432
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010272,
+    "mean_time_ms": 0.010272,
+    "min_time_ms": 0.010272,
+    "pass_name": "type_check.conditions.aggregate_args.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010272
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010112,
+    "mean_time_ms": 0.010112,
+    "min_time_ms": 0.010112,
+    "pass_name": "hir_canonical_predicate_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010112
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.009952,
+    "mean_time_ms": 0.009952,
+    "min_time_ms": 0.009952,
+    "pass_name": "type_check.interface.members.scatter_hir",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.009952
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00992,
+    "mean_time_ms": 0.00992,
+    "min_time_ms": 0.00992,
+    "pass_name": "type_check.interface.type_topology.seed_declarations",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00992
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00976,
+    "mean_time_ms": 0.00976,
+    "min_time_ms": 0.00976,
+    "pass_name": "type_check.interface.type_topology.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00976
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.005024,
+    "mean_time_ms": 0.004848,
+    "min_time_ms": 0.004672,
+    "pass_name": "pack_offsets_scan.hierarchy_up",
+    "stddev_time_ms": 0.00017599999999999994,
+    "total_time_ms": 0.009696
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.009696,
+    "mean_time_ms": 0.009696,
+    "min_time_ms": 0.009696,
+    "pass_name": "hir_canonical_decl_index_clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.009696
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.009632,
+    "mean_time_ms": 0.009632,
+    "min_time_ms": 0.009632,
+    "pass_name": "type_check.calls.params.scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.009632
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.009472,
+    "mean_time_ms": 0.009472,
+    "min_time_ms": 0.009472,
+    "pass_name": "type_check.generic_params.slot_scan.hierarchy_up.rest",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.009472
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.005056,
+    "mean_time_ms": 0.004672,
+    "min_time_ms": 0.004288,
+    "pass_name": "type_check.fn_context.hierarchy_up",
+    "stddev_time_ms": 0.0003839999999999998,
+    "total_time_ms": 0.009344
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.009312,
+    "mean_time_ms": 0.009312,
+    "min_time_ms": 0.009312,
+    "pass_name": "type_check.interface.members.counts",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.009312
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.004992,
+    "mean_time_ms": 0.004656,
+    "min_time_ms": 0.00432,
+    "pass_name": "artifact.x86.object.symbol_scan.hierarchy_up",
+    "stddev_time_ms": 0.00033599999999999993,
+    "total_time_ms": 0.009312
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00928,
+    "mean_time_ms": 0.00928,
+    "min_time_ms": 0.00928,
+    "pass_name": "hir_canonical_type_arg_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00928
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.009184,
+    "mean_time_ms": 0.009184,
+    "min_time_ms": 0.009184,
+    "pass_name": "lir.target.semantic_page_plan",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.009184
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.004576,
+    "mean_time_ms": 0.004544,
+    "min_time_ms": 0.004512,
+    "pass_name": "lir.target.function_scan.hierarchy_up",
+    "stddev_time_ms": 3.199999999999991e-05,
+    "total_time_ms": 0.009088
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.004672,
+    "mean_time_ms": 0.00448,
+    "min_time_ms": 0.004288,
+    "pass_name": "type_check.if_depth.hierarchy_up",
+    "stddev_time_ms": 0.0001919999999999999,
+    "total_time_ms": 0.00896
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.004608,
+    "mean_time_ms": 0.0044480000000000006,
+    "min_time_ms": 0.004288,
+    "pass_name": "lir.target.byte_scan.hierarchy_up",
+    "stddev_time_ms": 0.00015999999999999999,
+    "total_time_ms": 0.008896000000000001
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.004608,
+    "mean_time_ms": 0.004432,
+    "min_time_ms": 0.004256,
+    "pass_name": "artifact.x86.object.relocation_scan.hierarchy_up",
+    "stddev_time_ms": 0.00017599999999999994,
+    "total_time_ms": 0.008864
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.004384,
+    "mean_time_ms": 0.00432,
+    "min_time_ms": 0.004256,
+    "pass_name": "type_check.dependencies.count_declaration_generic_arity",
+    "stddev_time_ms": 6.399999999999982e-05,
+    "total_time_ms": 0.00864
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.004352,
+    "mean_time_ms": 0.00432,
+    "min_time_ms": 0.004288,
+    "pass_name": "artifact.x86.object.definition_scan.hierarchy_up",
+    "stddev_time_ms": 3.199999999999991e-05,
+    "total_time_ms": 0.00864
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.008512,
+    "mean_time_ms": 0.008512,
+    "min_time_ms": 0.008512,
+    "pass_name": "type_check.generic_params.slot_scan.hierarchy_up.first",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.008512
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00848,
+    "mean_time_ms": 0.00848,
+    "min_time_ms": 0.00848,
+    "pass_name": "hir_canonical_string_scatter",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00848
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.008192,
+    "mean_time_ms": 0.008192,
+    "min_time_ms": 0.008192,
+    "pass_name": "type_check.modules.import_visibility.scan.hierarchy_up.rest",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.008192
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.00416,
+    "mean_time_ms": 0.00408,
+    "min_time_ms": 0.004,
+    "pass_name": "type_check.modules.decl_keys.bucket_bases",
+    "stddev_time_ms": 7.999999999999978e-05,
+    "total_time_ms": 0.00816
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.008128,
+    "mean_time_ms": 0.008128,
+    "min_time_ms": 0.008128,
+    "pass_name": "type_check.modules.import_visibility.scan.hierarchy_up.first",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.008128
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.008096,
+    "mean_time_ms": 0.008096,
+    "min_time_ms": 0.008096,
+    "pass_name": "type_check.modules.decl_public.scan.hierarchy_up.first",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.008096
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.008032,
+    "mean_time_ms": 0.008032,
+    "min_time_ms": 0.008032,
+    "pass_name": "type_check.interface.type_topology.type_records",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.008032
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.008,
+    "mean_time_ms": 0.008,
+    "min_time_ms": 0.008,
+    "pass_name": "parser.tokens.generic_shr.close_kinds",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.008
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.007968,
+    "mean_time_ms": 0.007968,
+    "min_time_ms": 0.007968,
+    "pass_name": "type_check.interface.type_topology.edge_counts",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.007968
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.004192,
+    "mean_time_ms": 0.003968,
+    "min_time_ms": 0.003744,
+    "pass_name": "type_check.dependencies.clear_declaration_generic_arity",
+    "stddev_time_ms": 0.00022400000000000024,
+    "total_time_ms": 0.007936
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.007712,
+    "mean_time_ms": 0.007712,
+    "min_time_ms": 0.007712,
+    "pass_name": "type_check.modules.decl_namespace.scan.hierarchy_up.first",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.007712
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.007616,
+    "mean_time_ms": 0.007616,
+    "min_time_ms": 0.007616,
+    "pass_name": "type_check.modules.decl_public.scan.hierarchy_up.rest",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.007616
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.007584,
+    "mean_time_ms": 0.007584,
+    "min_time_ms": 0.007584,
+    "pass_name": "type_check.modules.decl_namespace.scan.hierarchy_up.rest",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.007584
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00752,
+    "mean_time_ms": 0.00752,
+    "min_time_ms": 0.00752,
+    "pass_name": "type_check.if_depth.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00752
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.007456,
+    "mean_time_ms": 0.007456,
+    "min_time_ms": 0.007456,
+    "pass_name": "type_check.dependencies.build_visible_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.007456
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.007424,
+    "mean_time_ms": 0.007424,
+    "min_time_ms": 0.007424,
+    "pass_name": "type_check.generic_params.slot_scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.007424
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00736,
+    "mean_time_ms": 0.00736,
+    "min_time_ms": 0.00736,
+    "pass_name": "type_check.dependencies.scatter_import_visibility",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00736
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.003712,
+    "mean_time_ms": 0.0036160000000000003,
+    "min_time_ms": 0.00352,
+    "pass_name": "type_check.calls.claim_index.dispatch_args",
+    "stddev_time_ms": 9.599999999999995e-05,
+    "total_time_ms": 0.007232000000000001
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0072,
+    "mean_time_ms": 0.0072,
+    "min_time_ms": 0.0072,
+    "pass_name": "lir.semantic.functions.params",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0072
+  },
+  {
+    "count": 2,
+    "max_time_ms": 0.003648,
+    "mean_time_ms": 0.0035840000000000004,
+    "min_time_ms": 0.00352,
+    "pass_name": "type_check.conditions.type_subtree_compare_dispatch_args",
+    "stddev_time_ms": 6.400000000000004e-05,
+    "total_time_ms": 0.007168000000000001
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.007136,
+    "mean_time_ms": 0.007136,
+    "min_time_ms": 0.007136,
+    "pass_name": "type_check.interface.signature.synthetic_types",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.007136
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00704,
+    "mean_time_ms": 0.00704,
+    "min_time_ms": 0.00704,
+    "pass_name": "type_check.interface.type_topology.seed_variants",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00704
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006784,
+    "mean_time_ms": 0.006784,
+    "min_time_ms": 0.006784,
+    "pass_name": "lir.target.functions.finalize",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006784
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006752,
+    "mean_time_ms": 0.006752,
+    "min_time_ms": 0.006752,
+    "pass_name": "lir.x86.lifetime.call_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006752
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006752,
+    "mean_time_ms": 0.006752,
+    "min_time_ms": 0.006752,
+    "pass_name": "artifact.x86.object.definition_scan.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006752
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006752,
+    "mean_time_ms": 0.006752,
+    "min_time_ms": 0.006752,
+    "pass_name": "artifact.x86.object.definitions",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006752
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00672,
+    "mean_time_ms": 0.00672,
+    "min_time_ms": 0.00672,
+    "pass_name": "artifact.x86.object.definition_scan.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00672
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006592,
+    "mean_time_ms": 0.006592,
+    "min_time_ms": 0.006592,
+    "pass_name": "hir_canonical_variant_payload_ordinal",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006592
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006592,
+    "mean_time_ms": 0.006592,
+    "min_time_ms": 0.006592,
+    "pass_name": "lir.x86.entrypoint.reduce",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006592
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006528,
+    "mean_time_ms": 0.006528,
+    "min_time_ms": 0.006528,
+    "pass_name": "lir.x86.lifetime.aggregate_elements",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006528
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006496,
+    "mean_time_ms": 0.006496,
+    "min_time_ms": 0.006496,
+    "pass_name": "type_check.modules.import_visibility.scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006496,
+    "mean_time_ms": 0.006496,
+    "min_time_ms": 0.006496,
+    "pass_name": "type_check.interface.type_topology.seed_params",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006464,
+    "mean_time_ms": 0.006464,
+    "min_time_ms": 0.006464,
+    "pass_name": "type_check.interface.signature.return_edges",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006464
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006432,
+    "mean_time_ms": 0.006432,
+    "min_time_ms": 0.006432,
+    "pass_name": "type_check.modules.decl_namespace.scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006432
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006304,
+    "mean_time_ms": 0.006304,
+    "min_time_ms": 0.006304,
+    "pass_name": "type_check.dependencies.build_module_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006304
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006272,
+    "mean_time_ms": 0.006272,
+    "min_time_ms": 0.006272,
+    "pass_name": "type_check.interface.members.variant_counts",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006272
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00624,
+    "mean_time_ms": 0.00624,
+    "min_time_ms": 0.00624,
+    "pass_name": "type_check.modules.decl_public.scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00624
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00624,
+    "mean_time_ms": 0.00624,
+    "min_time_ms": 0.00624,
+    "pass_name": "type_check.interface.members.generic_counts",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00624
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006208,
+    "mean_time_ms": 0.006208,
+    "min_time_ms": 0.006208,
+    "pass_name": "lir.x86.runtime.emit",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006208
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006144,
+    "mean_time_ms": 0.006144,
+    "min_time_ms": 0.006144,
+    "pass_name": "type_check.interface.type_topology.seed_fields",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006144
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006016,
+    "mean_time_ms": 0.006016,
+    "min_time_ms": 0.006016,
+    "pass_name": "type_check.hir_active_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006016
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005728,
+    "mean_time_ms": 0.005728,
+    "min_time_ms": 0.005728,
+    "pass_name": "type_check.interface.signature.param_edges",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005728
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005696,
+    "mean_time_ms": 0.005696,
+    "min_time_ms": 0.005696,
+    "pass_name": "type_check.interface.members.scatter_generic",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005696
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0056,
+    "mean_time_ms": 0.0056,
+    "min_time_ms": 0.0056,
+    "pass_name": "type_check.interface.type_topology.validate",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0056
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005568,
+    "mean_time_ms": 0.005568,
+    "min_time_ms": 0.005568,
+    "pass_name": "type_check.interface.signature.direct_types",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005568
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005568,
+    "mean_time_ms": 0.005568,
+    "min_time_ms": 0.005568,
+    "pass_name": "type_check.interface.members.method_counts",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005568
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005568,
+    "mean_time_ms": 0.005568,
+    "min_time_ms": 0.005568,
+    "pass_name": "type_check.interface.members.normalize_types",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005568
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005504,
+    "mean_time_ms": 0.005504,
+    "min_time_ms": 0.005504,
+    "pass_name": "type_check.modules.build_module_keys",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005504
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005504,
+    "mean_time_ms": 0.005504,
+    "min_time_ms": 0.005504,
+    "pass_name": "type_check.interface.signature.variant_payload_edges",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005504
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005344,
+    "mean_time_ms": 0.005344,
+    "min_time_ms": 0.005344,
+    "pass_name": "type_check.interface.type_topology.array_lengths",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005344
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004992,
+    "mean_time_ms": 0.004992,
+    "min_time_ms": 0.004992,
+    "pass_name": "hir_semantic_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004992
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00496,
+    "mean_time_ms": 0.00496,
+    "min_time_ms": 0.00496,
+    "pass_name": "type_check.semantic_features.dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00496
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004704,
+    "mean_time_ms": 0.004704,
+    "min_time_ms": 0.004704,
+    "pass_name": "pack_offsets_scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004704
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004576,
+    "mean_time_ms": 0.004576,
+    "min_time_ms": 0.004576,
+    "pass_name": "type_check.visible.match_payload_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004576
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004544,
+    "mean_time_ms": 0.004544,
+    "min_time_ms": 0.004544,
+    "pass_name": "lir.x86.artifact.layout",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004544
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004352,
+    "mean_time_ms": 0.004352,
+    "min_time_ms": 0.004352,
+    "pass_name": "type_check.modules.path_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004352
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00432,
+    "mean_time_ms": 0.00432,
+    "min_time_ms": 0.00432,
+    "pass_name": "tree_active_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00432
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00432,
+    "mean_time_ms": 0.00432,
+    "min_time_ms": 0.00432,
+    "pass_name": "type_check.interface.signature.totals",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00432
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004288,
+    "mean_time_ms": 0.004288,
+    "min_time_ms": 0.004288,
+    "pass_name": "type_check.language_decls.materialize",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004288
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004256,
+    "mean_time_ms": 0.004256,
+    "min_time_ms": 0.004256,
+    "pass_name": "parser_status_from_brackets",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004256
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004224,
+    "mean_time_ms": 0.004224,
+    "min_time_ms": 0.004224,
+    "pass_name": "type_check.modules.append_variant_decl_count",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004224
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004128,
+    "mean_time_ms": 0.004128,
+    "min_time_ms": 0.004128,
+    "pass_name": "parser.active_pair_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004128
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004128,
+    "mean_time_ms": 0.004128,
+    "min_time_ms": 0.004128,
+    "pass_name": "type_check.if_depth.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004128
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004096,
+    "mean_time_ms": 0.004096,
+    "min_time_ms": 0.004096,
+    "pass_name": "parser.tree_feature_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004096
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004064,
+    "mean_time_ms": 0.004064,
+    "min_time_ms": 0.004064,
+    "pass_name": "type_check.fn_context.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004064
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004064,
+    "mean_time_ms": 0.004064,
+    "min_time_ms": 0.004064,
+    "pass_name": "type_check.visible.hir_decl_key_radix_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004064
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004064,
+    "mean_time_ms": 0.004064,
+    "min_time_ms": 0.004064,
+    "pass_name": "lir.target.byte_scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004064
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003968,
+    "mean_time_ms": 0.003968,
+    "min_time_ms": 0.003968,
+    "pass_name": "type_check.modules.path_prefix_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003968
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003968,
+    "mean_time_ms": 0.003968,
+    "min_time_ms": 0.003968,
+    "pass_name": "type_check.modules.import_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003968
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003872,
+    "mean_time_ms": 0.003872,
+    "min_time_ms": 0.003872,
+    "pass_name": "type_check.modules.decl_key_radix_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003872
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003872,
+    "mean_time_ms": 0.003872,
+    "min_time_ms": 0.003872,
+    "pass_name": "type_check.dependencies.clear_module_lookup",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003872
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003744,
+    "mean_time_ms": 0.003744,
+    "min_time_ms": 0.003744,
+    "pass_name": "lir.status.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003744,
+    "mean_time_ms": 0.003744,
+    "min_time_ms": 0.003744,
+    "pass_name": "artifact.x86.object.relocation_scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003744
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003712,
+    "mean_time_ms": 0.003712,
+    "min_time_ms": 0.003712,
+    "pass_name": "type_check.modules.module_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003712
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003712,
+    "mean_time_ms": 0.003712,
+    "min_time_ms": 0.003712,
+    "pass_name": "type_check.visible.compact_hir_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003712
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003712,
+    "mean_time_ms": 0.003712,
+    "min_time_ms": 0.003712,
+    "pass_name": "type_check.conditions.aggregate_compare_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003712
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003712,
+    "mean_time_ms": 0.003712,
+    "min_time_ms": 0.003712,
+    "pass_name": "lir.target.count_scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003712
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003712,
+    "mean_time_ms": 0.003712,
+    "min_time_ms": 0.003712,
+    "pass_name": "lir.target.function_scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003712
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00368,
+    "mean_time_ms": 0.00368,
+    "min_time_ms": 0.00368,
+    "pass_name": "type_check.calls.generic_claim_type_arg_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00368
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003648,
+    "mean_time_ms": 0.003648,
+    "min_time_ms": 0.003648,
+    "pass_name": "artifact.x86.object.symbol_scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003648
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003616,
+    "mean_time_ms": 0.003616,
+    "min_time_ms": 0.003616,
+    "pass_name": "type_check.modules.import_visible_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003616
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003584,
+    "mean_time_ms": 0.003584,
+    "min_time_ms": 0.003584,
+    "pass_name": "type_check.dependencies.call_compare_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003584
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003584,
+    "mean_time_ms": 0.003584,
+    "min_time_ms": 0.003584,
+    "pass_name": "artifact.x86.object.definition_scan.hierarchy_down",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003584
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003552,
+    "mean_time_ms": 0.003552,
+    "min_time_ms": 0.003552,
+    "pass_name": "type_check.calls.generic_claim_validation.required_dispatch",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003552
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003552,
+    "mean_time_ms": 0.003552,
+    "min_time_ms": 0.003552,
+    "pass_name": "artifact.x86.object.normalize_status",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003552
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003168,
+    "mean_time_ms": 0.003168,
+    "min_time_ms": 0.003168,
+    "pass_name": "lir.x86.entrypoint.clear",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003168
+  }
+]

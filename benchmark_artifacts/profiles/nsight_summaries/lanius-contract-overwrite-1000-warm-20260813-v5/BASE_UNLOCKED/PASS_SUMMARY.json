@@ -1,0 +1,362 @@
+[
+  {
+    "count": 1,
+    "max_time_ms": 0.165344,
+    "mean_time_ms": 0.165344,
+    "min_time_ms": 0.165344,
+    "pass_name": "parser.tokens_to_kinds.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.165344
+  },
+  {
+    "count": 6,
+    "max_time_ms": 0.004352,
+    "mean_time_ms": 0.0038453333333333334,
+    "min_time_ms": 0.003552,
+    "pass_name": "parser.tokens.delimiter_match.build_min_tree",
+    "stddev_time_ms": 0.0002810519920267818,
+    "total_time_ms": 0.023072
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.014784,
+    "mean_time_ms": 0.014784,
+    "min_time_ms": 0.014784,
+    "pass_name": "parser.tokens.brace_match.pair_pse",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.014784
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.012864,
+    "mean_time_ms": 0.012864,
+    "min_time_ms": 0.012864,
+    "pass_name": "llp_pairs",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.012864
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.01088,
+    "mean_time_ms": 0.01088,
+    "min_time_ms": 0.01088,
+    "pass_name": "parser.tokens.match_pattern.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.01088
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.010752,
+    "mean_time_ms": 0.010752,
+    "min_time_ms": 0.010752,
+    "pass_name": "parser.tokens.match_pattern.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.010752
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.007296,
+    "mean_time_ms": 0.007296,
+    "min_time_ms": 0.007296,
+    "pass_name": "parser.tokens.delimiters.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.007296
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006912,
+    "mean_time_ms": 0.006912,
+    "min_time_ms": 0.006912,
+    "pass_name": "parser.tokens.delimiters.owner_apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006912
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006272,
+    "mean_time_ms": 0.006272,
+    "min_time_ms": 0.006272,
+    "pass_name": "parser.tokens.brace_context",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006272
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006176,
+    "mean_time_ms": 0.006176,
+    "min_time_ms": 0.006176,
+    "pass_name": "parser.tokens.type_path_context.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006176
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006144,
+    "mean_time_ms": 0.006144,
+    "min_time_ms": 0.006144,
+    "pass_name": "parser.tokens.delimiter_match.depth_blocks",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006144
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.006112,
+    "mean_time_ms": 0.006112,
+    "min_time_ms": 0.006112,
+    "pass_name": "parser.tokens.type_path_context.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.006112
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00592,
+    "mean_time_ms": 0.00592,
+    "min_time_ms": 0.00592,
+    "pass_name": "parser.tokens.impl_header.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00592
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00592,
+    "mean_time_ms": 0.00592,
+    "min_time_ms": 0.00592,
+    "pass_name": "parser.tokens.statement_phase.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00592
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005696,
+    "mean_time_ms": 0.005696,
+    "min_time_ms": 0.005696,
+    "pass_name": "parser.tokens.delimiters.scan.depth",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005696
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0056,
+    "mean_time_ms": 0.0056,
+    "min_time_ms": 0.0056,
+    "pass_name": "parser.tokens.delimiters.scan.owner_header",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0056
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005504,
+    "mean_time_ms": 0.005504,
+    "min_time_ms": 0.005504,
+    "pass_name": "parser.tokens.delimiters.scan.owner",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005504
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005504,
+    "mean_time_ms": 0.005504,
+    "min_time_ms": 0.005504,
+    "pass_name": "parser.tokens.statement_phase.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005504
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005376,
+    "mean_time_ms": 0.005376,
+    "min_time_ms": 0.005376,
+    "pass_name": "parser.tokens_to_identifier_kinds.pass",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005376
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00528,
+    "mean_time_ms": 0.00528,
+    "min_time_ms": 0.00528,
+    "pass_name": "parser.tokens.generic_shr.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00528
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.005152,
+    "mean_time_ms": 0.005152,
+    "min_time_ms": 0.005152,
+    "pass_name": "parser.tokens.delimiters.owner_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.005152
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00512,
+    "mean_time_ms": 0.00512,
+    "min_time_ms": 0.00512,
+    "pass_name": "pack_totals_blocks",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00512
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004992,
+    "mean_time_ms": 0.004992,
+    "min_time_ms": 0.004992,
+    "pass_name": "parser.tokens.generic_shr.raw_apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004992
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004832,
+    "mean_time_ms": 0.004832,
+    "min_time_ms": 0.004832,
+    "pass_name": "parser.tokens.generic_shr.raw_local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004832
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0048,
+    "mean_time_ms": 0.0048,
+    "min_time_ms": 0.0048,
+    "pass_name": "parser.tokens.impl_header.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0048
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.0048,
+    "mean_time_ms": 0.0048,
+    "min_time_ms": 0.0048,
+    "pass_name": "pack_totals_reduce",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.0048
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004768,
+    "mean_time_ms": 0.004768,
+    "min_time_ms": 0.004768,
+    "pass_name": "parser.tokens.generic_shr.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004768
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004672,
+    "mean_time_ms": 0.004672,
+    "min_time_ms": 0.004672,
+    "pass_name": "parser.tokens.impl_header.scan",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004672
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004672,
+    "mean_time_ms": 0.004672,
+    "min_time_ms": 0.004672,
+    "pass_name": "parser.tokens.where_clause.apply",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004672
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004608,
+    "mean_time_ms": 0.004608,
+    "min_time_ms": 0.004608,
+    "pass_name": "parser.tokens.generic_shr.raw_scan",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004608
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004608,
+    "mean_time_ms": 0.004608,
+    "min_time_ms": 0.004608,
+    "pass_name": "parser.tokens.where_clause.local",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004608
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004544,
+    "mean_time_ms": 0.004544,
+    "min_time_ms": 0.004544,
+    "pass_name": "parser.tokens.where_clause.scan",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004544
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004416,
+    "mean_time_ms": 0.004416,
+    "min_time_ms": 0.004416,
+    "pass_name": "parser.tokens.bracket_match.pair_pse",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004416
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004352,
+    "mean_time_ms": 0.004352,
+    "min_time_ms": 0.004352,
+    "pass_name": "parser.tokens.match_pattern.scan",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004352
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004352,
+    "mean_time_ms": 0.004352,
+    "min_time_ms": 0.004352,
+    "pass_name": "parser.tokens.type_path_context.scan",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004352
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.00432,
+    "mean_time_ms": 0.00432,
+    "min_time_ms": 0.00432,
+    "pass_name": "parser.tokens.generic_shr.scan",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.00432
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.004256,
+    "mean_time_ms": 0.004256,
+    "min_time_ms": 0.004256,
+    "pass_name": "parser.tokens.statement_phase.scan",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.004256
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003968,
+    "mean_time_ms": 0.003968,
+    "min_time_ms": 0.003968,
+    "pass_name": "parser.active_pair_dispatch_args",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003968
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003872,
+    "mean_time_ms": 0.003872,
+    "min_time_ms": 0.003872,
+    "pass_name": "pack_totals_status",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003872
+  },
+  {
+    "count": 1,
+    "max_time_ms": 0.003616,
+    "mean_time_ms": 0.003616,
+    "min_time_ms": 0.003616,
+    "pass_name": "parser.tokens.generic_shr.close_kinds",
+    "stddev_time_ms": 0.0,
+    "total_time_ms": 0.003616
+  }
+]

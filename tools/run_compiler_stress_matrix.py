@@ -7,18 +7,40 @@ import json
 import os
 import platform
 import random
+import re
 import select
 import shutil
 import statistics
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
 from compiler_stress_model import WORKLOAD_PROFILES
 
 
-CPU_LANGUAGES = ("c", "cpp", "rust", "zig")
+EXTERNAL_COMPILERS = ("c", "cpp", "rust", "zig", "tcc", "pareas")
 LANES = ("o0", "optimized")
+
+
+def parse_external_compilers(value: str) -> tuple[str, ...]:
+    languages = tuple(part.strip() for part in value.split(",") if part.strip())
+    unknown = set(languages) - set(EXTERNAL_COMPILERS)
+    if not languages or unknown:
+        expected = ",".join(EXTERNAL_COMPILERS)
+        raise argparse.ArgumentTypeError(
+            f"external compilers must be a non-empty subset of {expected}; "
+            f"unknown: {sorted(unknown)}"
+        )
+    return languages
+
+
+def lanes_for(language: str) -> tuple[str, ...]:
+    if language == "tcc":
+        return ("default",)
+    if language == "pareas":
+        return ("cuda",)
+    return LANES
 
 
 def main() -> int:
@@ -30,9 +52,25 @@ def main() -> int:
     parser.add_argument("--order-seed", type=int, default=0x1A91_05)
     parser.add_argument("--rust-frontend-threads", type=int, default=16)
     parser.add_argument(
+        "--external-compilers",
+        type=parse_external_compilers,
+        default=EXTERNAL_COMPILERS,
+    )
+    parser.add_argument("--tcc", default="tcc", help="TCC executable")
+    parser.add_argument(
+        "--pareas",
+        default=str(Path.home() / "code/pareas/build-laniusc-cuda-futhark025/pareas"),
+        help="Pareas CUDA executable",
+    )
+    parser.add_argument(
+        "--tcc-runtime-path",
+        type=Path,
+        help="optional TCC runtime directory for an extracted installation",
+    )
+    parser.add_argument(
         "--profile",
         choices=tuple(WORKLOAD_PROFILES),
-        default="mixed-function-sizes",
+        default="pareas-common-subset",
     )
     args = parser.parse_args()
     seeds = [int(value) for value in args.seeds.split(",")]
@@ -42,6 +80,8 @@ def main() -> int:
         parser.error("--warm-seed must not be a measured seed")
     if args.rust_frontend_threads <= 0:
         parser.error("--rust-frontend-threads must be positive")
+    if "pareas" in args.external_compilers and args.profile != "pareas-common-subset":
+        parser.error("Pareas requires --profile pareas-common-subset")
 
     repo = Path(__file__).resolve().parents[1]
     out = resolve(repo, args.out)
@@ -53,18 +93,29 @@ def main() -> int:
         repo, source_root, args.size, [args.warm_seed, *seeds], args.profile
     )
 
-    command_templates = compiler_commands(repo, args.rust_frontend_threads)
-    provenance = collect_provenance(repo, command_templates)
+    command_templates = compiler_commands(
+        repo,
+        args.rust_frontend_threads,
+        args.tcc,
+        args.tcc_runtime_path,
+        args.pareas,
+    )
+    provenance = collect_provenance(repo, command_templates, args.external_compilers)
     tasks = [
         (language, lane, seed)
         for seed in seeds
-        for lane in LANES
-        for language in CPU_LANGUAGES
+        for language in args.external_compilers
+        for lane in lanes_for(language)
     ]
     random.Random(args.order_seed).shuffle(tasks)
     lanius_seeds = list(seeds)
     random.Random(args.order_seed ^ 0x4C41_4E49).shuffle(lanius_seeds)
 
+    pareas_environment, pareas_environment_owner = (
+        prepare_pareas_environment()
+        if "pareas" in args.external_compilers
+        else (None, None)
+    )
     daemon, ready = start_daemon(repo)
     samples = []
     try:
@@ -80,19 +131,28 @@ def main() -> int:
             output = bin_root / f"{language}-{lane}-{seed}"
             source = source_path(source_root, seed, language)
             command = materialize(command_templates[lane][language], source, output)
-            sample = compile_process(command, repo)
-            stdout = validate_executable(output, expected[seed])
+            sample = compile_process(
+                command,
+                repo,
+                environment=pareas_environment if language == "pareas" else None,
+                parse_pareas_profile=language == "pareas",
+            )
+            if language == "pareas":
+                validate_pareas_artifact(output)
+                stdout = None
+            else:
+                stdout = validate_executable(output, expected[seed])
             samples.append(
                 {
                     "order": order,
-                    "phase": "cpu_randomized",
+                    "phase": "external_randomized",
                     "language": language,
                     "lane": lane,
                     "seed": seed,
                     "source_bytes": source.stat().st_size,
                     "source_sha256": sha256_file(source),
                     "output_sha256": sha256_file(output),
-                    "stdout_sha256": sha256_bytes(stdout.encode()),
+                    "stdout_sha256": sha256_bytes(stdout.encode()) if stdout is not None else None,
                     **sample,
                 }
             )
@@ -136,6 +196,8 @@ def main() -> int:
             })
     finally:
         stop_daemon(daemon)
+        if pareas_environment_owner is not None:
+            pareas_environment_owner.cleanup()
 
     summary = summarize(samples)
     write_json(out / "config.json", {
@@ -146,12 +208,13 @@ def main() -> int:
         "seeds": seeds,
         "warm_seed": args.warm_seed,
         "order_seed": args.order_seed,
+        "external_compilers": args.external_compilers,
         "workload_profile": args.profile,
-        "timing_policy": "wall clock from request/process start through artifact write",
+        "timing_policy": "wall clock from request/process start through artifact write; Pareas compiler_ms is its synchronized frontend plus backend profile and excludes context initialization",
         "sample_policy": "all samples retained; median is primary, min/max/MAD are reported",
-        "validation_policy": "every artifact must execute with exact model-derived stdout",
+        "validation_policy": "C, C++, Rust, Zig, TCC, and Lanius artifacts execute with exact model-derived stdout; Pareas emits raw RISC-V bytes, which must be nonempty, instruction-aligned, and deterministic",
         "daemon_warmup_policy": "one pipeline warmup seed; after CPU trials, one unmeasured capacity warmup per measured seed, then a different-source primer before the contiguous randomized variable-project hot-daemon batch",
-        "debug_info": "disabled in every CPU lane",
+        "debug_info": "disabled in every applicable external compiler lane",
     })
     write_json(out / "commands.json", command_templates)
     write_json(out / "source_manifest.json", {
@@ -198,7 +261,19 @@ def generate_sources(
     return expected, variants
 
 
-def compiler_commands(repo: Path, rust_frontend_threads: int = 16) -> dict:
+def compiler_commands(
+    repo: Path,
+    rust_frontend_threads: int = 16,
+    tcc: str = "tcc",
+    tcc_runtime_path: Path | None = None,
+    pareas: str | None = None,
+) -> dict:
+    tcc_command = [tcc]
+    if tcc_runtime_path is not None:
+        tcc_command.append(f"-B{tcc_runtime_path}")
+    pareas = pareas or str(
+        Path.home() / "code/pareas/build-laniusc-cuda-futhark025/pareas"
+    )
     return {
         "schema": "lanius.compiler-stress-command-templates.v1",
         "o0": {
@@ -213,6 +288,12 @@ def compiler_commands(repo: Path, rust_frontend_threads: int = 16) -> dict:
             "rust": ["rustc", "-Awarnings", f"-Zthreads={rust_frontend_threads}", "-C", "opt-level=3", "-C", "debuginfo=0", "-C", "strip=debuginfo", "{source}", "-o", "{output}"],
             "zig": ["zig", "build-exe", "-lc", "-O", "ReleaseFast", "-fstrip", "{source}", "-femit-bin={output}"],
         },
+        "default": {
+            "tcc": [*tcc_command, "-std=c11", "{source}", "-o", "{output}"],
+        },
+        "cuda": {
+            "pareas": [pareas, "-p", "1", "{source}", "-o", "{output}"],
+        },
         "lanius_daemon": ["target/release/laniusc", "daemon", "--stdio", "--backend", "x86_64", "--stdlib-root", "stdlib"],
     }
 
@@ -221,13 +302,55 @@ def materialize(template: list[str], source: Path, output: Path) -> list[str]:
     return [part.format(source=source, output=output) for part in template]
 
 
-def compile_process(command: list[str], repo: Path) -> dict:
+def compile_process(
+    command: list[str],
+    repo: Path,
+    environment: dict[str, str] | None = None,
+    parse_pareas_profile: bool = False,
+) -> dict:
     started = time.perf_counter_ns()
-    run = subprocess.run(command, cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    run = subprocess.run(
+        command,
+        cwd=repo,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     elapsed = (time.perf_counter_ns() - started) / 1_000_000.0
     if run.returncode != 0:
         raise RuntimeError(f"compile failed: {command!r}\n{run.stderr}")
-    return {"wall_ms": elapsed, "daemon_load_ms": None, "daemon_compile_ms": None, "daemon_write_ms": None}
+    compiler_ms = None
+    context_init_ms = None
+    if parse_pareas_profile:
+        profile = parse_pareas_timings(run.stdout + "\n" + run.stderr)
+        compiler_ms = profile["frontend_ms"] + profile["backend_ms"]
+        context_init_ms = profile["context_init_ms"]
+    return {
+        "wall_ms": elapsed,
+        "compiler_ms": compiler_ms,
+        "context_init_ms": context_init_ms,
+        "daemon_load_ms": None,
+        "daemon_compile_ms": None,
+        "daemon_write_ms": None,
+    }
+
+
+def parse_pareas_timings(output: str) -> dict[str, float]:
+    timings = {
+        match.group(1).replace(" ", "_") + "_ms": int(match.group(2)) / 1000.0
+        for match in re.finditer(
+            r"^(context init|frontend|backend):\s*([0-9]+)(?:µs|us)$",
+            output,
+            re.MULTILINE,
+        )
+    }
+    required = {"context_init_ms", "frontend_ms", "backend_ms"}
+    if timings.keys() != required:
+        raise RuntimeError(
+            f"Pareas profile did not contain exactly {sorted(required)}: {output!r}"
+        )
+    return timings
 
 
 def start_daemon(repo: Path):
@@ -249,7 +372,7 @@ def compile_lanius(process, source: Path, output: Path, request_id: str) -> dict
     elapsed = (time.perf_counter_ns() - started) / 1_000_000.0
     if response.get("id") != request_id or response.get("ok") is not True:
         raise RuntimeError(f"daemon compile failed: {response}")
-    return {"wall_ms": elapsed, "daemon_load_ms": response.get("load_ms"), "daemon_compile_ms": response.get("compile_ms"), "daemon_write_ms": response.get("write_ms")}
+    return {"wall_ms": elapsed, "compiler_ms": response.get("compile_ms"), "context_init_ms": None, "daemon_load_ms": response.get("load_ms"), "daemon_compile_ms": response.get("compile_ms"), "daemon_write_ms": response.get("write_ms")}
 
 
 def stop_daemon(process) -> None:
@@ -285,27 +408,76 @@ def validate_executable(path: Path, expected: str) -> str:
     return run.stdout
 
 
+def validate_pareas_artifact(path: Path) -> None:
+    size = path.stat().st_size
+    if size == 0 or size % 4 != 0:
+        raise RuntimeError(
+            f"Pareas RISC-V artifact must contain whole 32-bit instructions: {path} has {size} bytes"
+        )
+
+
 def summarize(samples: list[dict]) -> list[dict]:
     groups = {}
     for sample in samples:
-        groups.setdefault((sample["language"], sample["lane"]), []).append(sample["wall_ms"])
+        groups.setdefault((sample["language"], sample["lane"]), []).append(sample)
     rows = []
-    for (language, lane), values in sorted(groups.items()):
+    for (language, lane), group in sorted(groups.items()):
+        values = [sample["wall_ms"] for sample in group]
         median = statistics.median(values)
-        rows.append({"language": language, "lane": lane, "samples": len(values), "median_ms": median, "min_ms": min(values), "max_ms": max(values), "mad_ms": statistics.median(abs(value - median) for value in values)})
+        compiler_values = [
+            sample["compiler_ms"]
+            for sample in group
+            if sample.get("compiler_ms") is not None
+        ]
+        compiler_median = statistics.median(compiler_values) if compiler_values else None
+        rows.append({
+            "language": language,
+            "lane": lane,
+            "samples": len(values),
+            "median_ms": median,
+            "min_ms": min(values),
+            "max_ms": max(values),
+            "mad_ms": statistics.median(abs(value - median) for value in values),
+            "compiler_median_ms": compiler_median,
+            "compiler_mad_ms": (
+                statistics.median(abs(value - compiler_median) for value in compiler_values)
+                if compiler_values
+                else None
+            ),
+        })
     lanius = next(row["median_ms"] for row in rows if row["language"] == "lanius")
+    lanius_compiler = next(
+        row["compiler_median_ms"] for row in rows if row["language"] == "lanius"
+    )
     for row in rows:
         row["speedup_vs_lanius"] = row["median_ms"] / lanius
+        row["compiler_speedup_vs_lanius"] = (
+            row["compiler_median_ms"] / lanius_compiler
+            if row["compiler_median_ms"] is not None and lanius_compiler is not None
+            else None
+        )
     return rows
 
 
-def collect_provenance(repo: Path, commands: dict) -> dict:
-    tools = {part[0] for lane in LANES for part in commands[lane].values()}
-    tools.add(str(repo / "target/release/laniusc"))
+def collect_provenance(
+    repo: Path,
+    commands: dict,
+    external_compilers: tuple[str, ...] = EXTERNAL_COMPILERS,
+) -> dict:
+    tools = {
+        commands[lane][language][0]: language
+        for language in external_compilers
+        for lane in lanes_for(language)
+    }
+    tools[str(repo / "target/release/laniusc")] = "lanius"
     rows = {}
-    for tool in sorted(tools):
+    for tool, language in sorted(tools.items()):
         path = Path(shutil.which(tool) or tool).resolve()
-        rows[tool] = {"path": str(path), "sha256": sha256_file(path), "version": subprocess.run([str(path), "--version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.splitlines()[0]}
+        rows[tool] = {
+            "path": str(path),
+            "sha256": sha256_file(path),
+            "version": tool_version(path, language),
+        }
     return {"schema": "lanius.compiler-stress-provenance.v1", "tools": rows, "runner_sha256": sha256_file(repo / "tools/run_compiler_stress_matrix.py"), "generator_sha256": sha256_file(repo / "tools/generate_compiler_stress.py"), "model_sha256": sha256_file(repo / "tools/compiler_stress_model.py")}
 
 
@@ -318,8 +490,57 @@ def command_output(command: list[str]) -> str:
     return run.stdout.strip()
 
 
+def tool_version(path: Path, language: str) -> str:
+    if language == "pareas":
+        for parent in path.parents:
+            if (parent / ".git").exists():
+                commit = command_output(["git", "-C", str(parent), "rev-parse", "HEAD"])
+                return f"git {commit}"
+        return "Pareas CLI has no version flag; executable hash recorded"
+    lines = subprocess.run(
+        [str(path), "--version"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    ).stdout.splitlines()
+    return lines[0] if lines else "no version output"
+
+
+def prepare_pareas_environment():
+    environment = os.environ.copy()
+    cuda_home = environment.get("CUDA_HOME")
+    if cuda_home and (Path(cuda_home) / "include/cuda_runtime.h").exists():
+        return environment, None
+
+    try:
+        import nvidia.cuda_nvcc
+        import nvidia.cuda_nvrtc
+        import nvidia.cuda_runtime
+    except ImportError as error:
+        raise RuntimeError(
+            "Pareas needs CUDA_HOME or the nvidia-cuda-runtime, nvidia-cuda-nvrtc, and nvidia-cuda-nvcc Python packages"
+        ) from error
+
+    runtime = Path(next(iter(nvidia.cuda_runtime.__path__)))
+    nvrtc = Path(next(iter(nvidia.cuda_nvrtc.__path__)))
+    nvcc = Path(next(iter(nvidia.cuda_nvcc.__path__)))
+    owner = tempfile.TemporaryDirectory(prefix="lanius-pareas-cuda-")
+    cuda_root = Path(owner.name)
+    include = cuda_root / "include"
+    include.mkdir()
+    for source in (runtime / "include").iterdir():
+        (include / source.name).symlink_to(source, target_is_directory=source.is_dir())
+    (include / "crt").symlink_to(nvcc / "include/crt", target_is_directory=True)
+    environment["CUDA_HOME"] = str(cuda_root)
+    library_paths = [str(runtime / "lib"), str(nvrtc / "lib")]
+    if environment.get("LD_LIBRARY_PATH"):
+        library_paths.append(environment["LD_LIBRARY_PATH"])
+    environment["LD_LIBRARY_PATH"] = os.pathsep.join(library_paths)
+    return environment, owner
+
+
 def source_path(root: Path, seed: int, language: str) -> Path:
-    suffix = {"c": "c", "cpp": "cpp", "rust": "rs", "zig": "zig", "lanius": "lani"}[language]
+    suffix = {"c": "c", "tcc": "c", "cpp": "cpp", "rust": "rs", "zig": "zig", "lanius": "lani", "pareas": "par"}[language]
     size_dirs = [path for path in (root / f"seed-{seed}").iterdir() if path.is_dir()]
     if len(size_dirs) != 1:
         raise RuntimeError(f"expected one size directory for seed {seed}")
@@ -327,7 +548,7 @@ def source_path(root: Path, seed: int, language: str) -> Path:
 
 
 def write_tsv(path: Path, samples: list[dict]) -> None:
-    fields = ("order", "phase", "language", "lane", "seed", "source_bytes", "wall_ms", "daemon_load_ms", "daemon_compile_ms", "daemon_write_ms", "source_sha256", "output_sha256", "stdout_sha256")
+    fields = ("order", "phase", "language", "lane", "seed", "source_bytes", "wall_ms", "compiler_ms", "context_init_ms", "daemon_load_ms", "daemon_compile_ms", "daemon_write_ms", "source_sha256", "output_sha256", "stdout_sha256")
     lines = ["\t".join(fields)]
     for row in samples:
         lines.append("\t".join("" if row[field] is None else (f"{row[field]:.3f}" if isinstance(row[field], float) else str(row[field])) for field in fields))

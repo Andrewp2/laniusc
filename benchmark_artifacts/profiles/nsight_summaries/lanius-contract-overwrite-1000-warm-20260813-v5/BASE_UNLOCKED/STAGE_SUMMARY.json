@@ -1,0 +1,34 @@
+[
+  {
+    "event_count": 23,
+    "first_event_index": 0,
+    "last_event_index": 39,
+    "percent_of_labeled_time": 30.623495613013436,
+    "stage": "parser.syntax_contexts",
+    "total_time_ms": 0.12620800000000001
+  },
+  {
+    "event_count": 15,
+    "first_event_index": 3,
+    "last_event_index": 24,
+    "percent_of_labeled_time": 20.5217796412765,
+    "stage": "parser.delimiter_matching",
+    "total_time_ms": 0.08457600000000001
+  },
+  {
+    "event_count": 2,
+    "first_event_index": 31,
+    "last_event_index": 35,
+    "percent_of_labeled_time": 41.42402360431711,
+    "stage": "parser.token_classification",
+    "total_time_ms": 0.17071999999999998
+  },
+  {
+    "event_count": 5,
+    "first_event_index": 40,
+    "last_event_index": 44,
+    "percent_of_labeled_time": 7.430701141392965,
+    "stage": "parser.production_parsing_and_packing",
+    "total_time_ms": 0.030624
+  }
+]

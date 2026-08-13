@@ -1,0 +1,57 @@
+HES is not supported on architecture 'Ampere GA10x'.
+Launching process...
+Preparing to launch the GPU Trace Profiler activity on localhost...
+Launched process: python3.12 (pid: 27662)
+/usr/bin/python3.12 tools/run_daemon_benchmark.py --commands target/nsight-current-1000-commands.json --output target/nsight/lanius-canonical-span2-1000-warm-20260813/transcript.json --prequeue-delay 10 --postcompile-delay 12
+
+Attempting to automatically connect...
+Searching for attachable processes on localhost:49152-49215...
+Attachable process detected: laniusc (pid: 27665)
+- Status: Process created
+- Uptime: 0.363s
+Searching for attachable processes on localhost:49152-49215...
+Attachable process updated: laniusc (pid: 27665)
+- Status: No supported graphics API detected. GPU Trace supports OpenGL, Vulkan, Vulkan SC
+- Uptime: 3.1s
+Searching for attachable processes on localhost:49152-49215...
+Searching for attachable processes on localhost:49152-49215...
+Attachable process updated: laniusc (pid: 27665)
+- Status: Waiting for supported graphics API. GPU Trace supports OpenGL, Vulkan, Vulkan SC
+- Uptime: 6.04s
+Searching for attachable processes on localhost:49152-49215...
+Searching for attachable processes on localhost:49152-49215...
+Attachable process updated: laniusc (pid: 27665)
+- Status: Presenting
+- Uptime: 11.7s
+Connecting to laniusc (pid: 27665)...
+Session established. Starting activity...
+Waiting for target ready...
+INFO: Sample duration = 194422ns; Warp State Sampling Interval = 512; GPU PMA Buffer Size (MB) = 4294.9; SOC PMA Buffer Size (MB) = 0 
+Preparing to collect a GPU Trace report...
+Generating a trace after 33 submits with a max duration of 9999ms, limited to 6 submits...
+-- Data transfer progress (100)
+GPU Trace report saved to /home/andrew-peterson/code/laniusc/target/nsight/lanius-canonical-span2-1000-warm-20260813/laniusc_2026_08_13_09_45_54.ngfx-gputrace
+Opening generated GPU Trace report...
+-- Loading progress (80)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (10)
+-- Loading progress (20)
+-- Loading progress (30)
+-- Loading progress (40)
+-- Loading progress (50)
+-- Loading progress (60)
+-- Loading progress (70)
+Succeeded to export data:
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-canonical-span2-1000-warm-20260813/ReportGeneratorTags.txt
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-canonical-span2-1000-warm-20260813/BASE_UNLOCKED/REPRO_INFO.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-canonical-span2-1000-warm-20260813/BASE_UNLOCKED/D3DPERF_EVENTS.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-canonical-span2-1000-warm-20260813/BASE_UNLOCKED/FRAME.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-canonical-span2-1000-warm-20260813/BASE_UNLOCKED/GPUTRACE_FRAME.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-canonical-span2-1000-warm-20260813/BASE_UNLOCKED/GPUTRACE_REGIMES.xls
+Terminating process...
+Activity session destroyed, connection error encountered.

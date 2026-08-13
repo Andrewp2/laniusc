@@ -1,0 +1,43 @@
+{
+  "generator_sha256": "1653868c045051bf821102f78f9fb2e6942e3e4250efd2bfd296e225cc4b25a3",
+  "model_sha256": "65af18e98619f661d45381703e9f5c7a5c0d0024156bfbd9e2facea085ea888d",
+  "runner_sha256": "b41a1ea58443843f9e835cba51d66da3401001c57a975d8a42fdf8e20ae52d53",
+  "schema": "lanius.compiler-stress-provenance.v1",
+  "tools": {
+    "/home/andrew-peterson/code/laniusc/target/release/laniusc": {
+      "path": "/home/andrew-peterson/code/laniusc/target/release/laniusc",
+      "sha256": "47fb2961f96c8e9fa245057a10b6ae791c08713237a01666de7a0ab95b7e4cc4",
+      "version": "laniusc 0.1.0"
+    },
+    "/home/andrew-peterson/code/pareas/build-laniusc-cuda-futhark025/pareas": {
+      "path": "/home/andrew-peterson/code/pareas/build-laniusc-cuda-futhark025/pareas",
+      "sha256": "f75ba5e67a6ac8a70f5d14023f1004db72d4a5e1cd1820d64763030810a8c805",
+      "version": "git c0105fd13eb54176138c2b5cedb950a38d116aa0"
+    },
+    "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc": {
+      "path": "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc",
+      "sha256": "fb07d3c3d5d2ee7fbc5821dbe870c7651aea8f41dc38c089c5dcbb266f62ba89",
+      "version": "tcc version 0.9.27 (x86_64 Linux)"
+    },
+    "g++": {
+      "path": "/usr/bin/x86_64-linux-gnu-g++-13",
+      "sha256": "1353e9bdd29a7295c7226bf6c63abccce056d8cac31f112e5cdbecc3f28c2769",
+      "version": "x86_64-linux-gnu-g++-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+    },
+    "gcc": {
+      "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+      "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+      "version": "x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+    },
+    "rustc": {
+      "path": "/usr/bin/rustup",
+      "sha256": "be178b5cdda17e6ab5027dcdd5262014a9e967f02f439b2da618942af5cbad27",
+      "version": "rustup 1.26.0 (2026-04-20)"
+    },
+    "zig": {
+      "path": "/usr/bin/snap",
+      "sha256": "8764c3b9d3dbbc6a59a6e9de607a54cb3e7bc190d479b64548e12f7cd8bc6baf",
+      "version": "snap          2.76.1"
+    }
+  }
+}

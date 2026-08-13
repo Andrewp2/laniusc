@@ -82,7 +82,6 @@ pub(in crate::type_checker) struct ScanHierarchyStep {
 pub(in crate::type_checker) struct TypeInstanceBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
     pub(in crate::type_checker) mark_generic_param_records: wgpu::BindGroup,
-    pub(in crate::type_checker) propagate_generic_decl_owner: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) type_instance_arg_row_scan: PrefixScanOperation,
     pub(in crate::type_checker) decl_generic_params: wgpu::BindGroup,
     pub(in crate::type_checker) generic_parameter_index: GenericParameterIndex,

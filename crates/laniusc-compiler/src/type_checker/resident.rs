@@ -1627,7 +1627,6 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.predicates_obligations.done");
             }
-            bind_groups.predicate_diagnostics.record(encoder)?;
             bind_groups.returns.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.returns.done");
@@ -1676,17 +1675,6 @@ impl GpuTypeChecker {
                 "type_check.expression_types.init",
                 hir_node_capacity,
             )?;
-            for step in &bind_groups.compact_expr_scalar_type_steps {
-                record_compute(
-                    encoder,
-                    &self
-                        .passes
-                        .kernel("type_checker/semantic/expression_types/01_step"),
-                    step,
-                    "type_check.expression_types.step",
-                    hir_node_capacity,
-                )?;
-            }
             record_compute(
                 encoder,
                 &self

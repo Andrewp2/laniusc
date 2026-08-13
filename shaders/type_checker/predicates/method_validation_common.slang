@@ -94,7 +94,14 @@ bool trait_impl_owner_hir(uint hir)
 
 bool method_contract_lookup_row_valid(uint method_hir)
 {
-    return valid_hir(method_hir) &&
+    if (!valid_hir(method_hir))
+        return false;
+    uint method_row = compact_method_row_for_hir(
+        compact_method_cores,
+        active_method_count(),
+        method_hir);
+    return method_row < active_method_count() &&
+           compact_method_cores[method_row].node == method_hir &&
            valid_hir(predicate_method_contract_owner_hir[method_hir]) &&
            predicate_method_contract_name_id[method_hir] != INVALID;
 }

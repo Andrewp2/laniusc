@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 
 LANGUAGES = ("rust", "c", "cpp", "zig", "lanius")
+PAREAS_LANGUAGE = "pareas"
 VALUE_MASK = 4095
 
 
@@ -37,6 +38,17 @@ WORKLOAD_PROFILES = {
         WorkloadProfile(
             "mixed-function-sizes",
             "synthetic shape combining short functions with rare large functions",
+            (
+                (7200, 2, 10, "short"),
+                (9300, 11, 40, "small"),
+                (9880, 41, 160, "medium"),
+                (9995, 161, 640, "large"),
+                (10000, 1000, 2500, "very_large"),
+            ),
+        ),
+        WorkloadProfile(
+            "pareas-common-subset",
+            "synthetic mixed-size workload restricted to constructs shared by Pareas, Lanius, C, C++, Rust, and Zig",
             (
                 (7200, 2, 10, "short"),
                 (9300, 11, 40, "small"),
@@ -116,7 +128,7 @@ class Workload:
         )
         size_classes = Counter(leaf.size_class for leaf in self.leaves)
         body_lines = sorted(
-            [leaf_body_line_count(leaf) for leaf in self.leaves]
+            [leaf_body_line_count(leaf, self.profile) for leaf in self.leaves]
             + [reducer_body_line_count() for _ in self.reducers]
         )
         return {
@@ -129,7 +141,7 @@ class Workload:
             "call_edge_count": len(self.reducers) * 2,
             "max_call_depth": self.max_call_depth,
             "leaf_family_counts": {
-                family_name(index): families[index] for index in range(5)
+                family_name(index, self.profile): families[index] for index in range(5)
             },
             "operation_counts": {
                 kind: operations[kind]
@@ -218,7 +230,7 @@ def choose_operation_count(
     # functions to contextualize it.
     if profile.name == "short-function-heavy":
         limit = 9700 if index < 64 else 9970 if index < 256 else 10000
-    elif profile.name == "mixed-function-sizes":
+    elif profile.name in ("mixed-function-sizes", "pareas-common-subset"):
         limit = (
             9300
             if index < 64
@@ -247,9 +259,13 @@ def choose_operation_count(
     raise AssertionError(f"profile {profile.name} does not cover all basis points")
 
 
-def leaf_body_line_count(leaf: Leaf) -> int:
+def leaf_body_line_count(leaf: Leaf, profile: str = "mixed-function-sizes") -> int:
     operation_lines = sum(5 if operation.kind == "branch" else 1 for operation in leaf.operations)
-    family_lines = (7, 6, 2, 8, 2)[leaf.family]
+    family_lines = (
+        (7, 5, 3, 8, 2)
+        if profile == "pareas-common-subset"
+        else (7, 6, 2, 8, 2)
+    )[leaf.family]
     return 2 + operation_lines + family_lines
 
 
@@ -344,10 +360,15 @@ def evaluate_leaf(leaf: Leaf, x: int) -> int:
 
 
 def render(language: str, workload: Workload, target_bytes: int | None = None) -> str:
-    if language not in LANGUAGES:
+    if language not in (*LANGUAGES, PAREAS_LANGUAGE):
         raise ValueError(f"unsupported language {language}")
-    prefix = header(language)
-    functions = "".join(render_leaf(language, leaf) for leaf in workload.leaves)
+    if language == PAREAS_LANGUAGE and workload.profile != "pareas-common-subset":
+        raise ValueError("Pareas rendering requires the pareas-common-subset profile")
+    common_subset = workload.profile == "pareas-common-subset"
+    prefix = header(language, common_subset)
+    functions = "".join(
+        render_leaf(language, leaf, common_subset) for leaf in workload.leaves
+    )
     functions += "".join(render_reducer(language, reducer) for reducer in workload.reducers)
     suffix = main_function(language, workload.root)
     source = prefix + functions + suffix
@@ -363,21 +384,31 @@ def render(language: str, workload: Workload, target_bytes: int | None = None) -
     return source
 
 
-def header(language: str) -> str:
+def header(language: str, common_subset: bool = False) -> str:
+    if common_subset:
+        return {
+            "rust": "#![allow(dead_code, unused_parens)]\n\n",
+            "c": "#include <stdio.h>\n\n",
+            "cpp": "#include <cstdio>\n\n",
+            "zig": "const c = @cImport({ @cInclude(\"stdio.h\"); });\n\n",
+            "lanius": "module bench::scaling;\n\n",
+            "pareas": "",
+        }[language]
     return {
         "rust": "#![allow(dead_code, unused_parens)]\n\nstruct Pair { left: i32, right: i32 }\n\n",
         "c": "#include <stdio.h>\n\ntypedef struct { int left; int right; } Pair;\n\n",
         "cpp": "#include <cstdio>\n\nstruct Pair { int left; int right; };\n\n",
         "zig": "const c = @cImport({ @cInclude(\"stdio.h\"); });\n\nconst Pair = struct { left: i32, right: i32 };\n\n",
         "lanius": "module bench::scaling;\n\nstruct Pair {\n    left: i32,\n    right: i32,\n}\n\n",
+        "pareas": "",
     }[language]
 
 
-def render_leaf(language: str, leaf: Leaf) -> str:
+def render_leaf(language: str, leaf: Leaf, common_subset: bool = False) -> str:
     lines = [function_start(language, leaf.name), declare(language, "value", f"(x * {leaf.initial_factor} + {leaf.initial_bias}) & {VALUE_MASK}")]
     for operation in leaf.operations:
         lines.extend(render_operation(language, operation))
-    lines.extend(render_family(language, leaf))
+    lines.extend(render_family(language, leaf, common_subset))
     lines.extend(["    return value;", "}", ""])
     return "\n".join(lines) + "\n"
 
@@ -400,7 +431,7 @@ def render_operation(language: str, operation: Operation) -> list[str]:
     ]
 
 
-def render_family(language: str, leaf: Leaf) -> list[str]:
+def render_family(language: str, leaf: Leaf, common_subset: bool = False) -> list[str]:
     if leaf.family == 0:
         lines = [declare(language, "i", "0")]
         lines.append(f"    while (i < {3 + leaf.family_a % 5}) {{")
@@ -420,6 +451,15 @@ def render_family(language: str, leaf: Leaf) -> list[str]:
             f"(value + {leaf.family_b}) & {VALUE_MASK}",
             f"(x * 3 + {leaf.family_c}) & {VALUE_MASK}",
         ]
+        if common_subset:
+            lines = [
+                declare_readonly(language, f"element_{index}", expression)
+                for index, expression in enumerate(expressions)
+            ]
+            lines.append(
+                f"    value = (element_0 + element_1 * 2 + element_2 * 3 + element_3 * 4) & {VALUE_MASK};"
+            )
+            return lines
         lines = [array_declare(language, expressions), "    value = 0;", index_declare(language)]
         lines.extend([
             "    while (i < 4) {",
@@ -429,6 +469,16 @@ def render_family(language: str, leaf: Leaf) -> list[str]:
         ])
         return lines
     if leaf.family == 2:
+        if common_subset:
+            return [
+                declare_readonly(
+                    language, "left", f"(value + {leaf.family_a}) & {VALUE_MASK}"
+                ),
+                declare_readonly(
+                    language, "right", f"(x * 5 + {leaf.family_b}) & {VALUE_MASK}"
+                ),
+                f"    value = (left * 3 + right * 7 + {leaf.family_c}) & {VALUE_MASK};",
+            ]
         return [
             pair_declare(language, f"(value + {leaf.family_a}) & {VALUE_MASK}", f"(x * 5 + {leaf.family_b}) & {VALUE_MASK}"),
             f"    value = (pair.left * 3 + pair.right * 7 + {leaf.family_c}) & {VALUE_MASK};",
@@ -453,8 +503,8 @@ def render_family(language: str, leaf: Leaf) -> list[str]:
 def render_reducer(language: str, reducer: Reducer) -> str:
     lines = [
         function_start(language, reducer.name),
-        declare_readonly(language, "left", f"{reducer.left}((x + {reducer.left_salt}) & {VALUE_MASK})"),
-        declare_readonly(language, "right", f"{reducer.right}((x + {reducer.right_salt}) & {VALUE_MASK})"),
+        declare_readonly(language, "left", call(language, reducer.left, f"(x + {reducer.left_salt}) & {VALUE_MASK}")),
+        declare_readonly(language, "right", call(language, reducer.right, f"(x + {reducer.right_salt}) & {VALUE_MASK}")),
         declare_readonly(language, "mixed", f"(left + right + {reducer.bias}) & {VALUE_MASK}"),
         f"    if (mixed < {reducer.threshold}) {{",
         f"        return (mixed + x + {reducer.then_salt}) & {VALUE_MASK};",
@@ -473,6 +523,8 @@ def function_start(language: str, name: str) -> str:
         return f"static int {name}(int x) {{"
     if language == "zig":
         return f"fn {name}(x: i32) i32 {{"
+    if language == "pareas":
+        return f"fn {name}[x: int]: int {{"
     return f"fn {name}(x: i32) -> i32 {{"
 
 
@@ -483,6 +535,8 @@ def declare(language: str, name: str, expression: str) -> str:
         return f"    int {name} = {expression};"
     if language == "zig":
         return f"    var {name}: i32 = {expression};"
+    if language == "pareas":
+        return f"    var {name} = {expression};"
     return f"    let {name}: i32 = {expression};"
 
 
@@ -493,6 +547,8 @@ def declare_readonly(language: str, name: str, expression: str) -> str:
         return f"    int {name} = {expression};"
     if language == "zig":
         return f"    const {name}: i32 = {expression};"
+    if language == "pareas":
+        return f"    var {name} = {expression};"
     return f"    let {name}: i32 = {expression};"
 
 
@@ -524,6 +580,8 @@ def index_expr(language: str, name: str) -> str:
 
 
 def increment(language: str, name: str) -> str:
+    if language == "pareas":
+        return f"        {name} = {name} + 1;"
     return f"        {name} += 1;"
 
 
@@ -548,7 +606,14 @@ def main_function(language: str, root: str) -> str:
     return 0;
 }}
 """,
+        "pareas": f"fn main[]: int {{ return {call(language, root, '7')}; }}\n",
     }[language]
+
+
+def call(language: str, name: str, argument: str) -> str:
+    if language == "pareas":
+        return f"{name}[{argument}]"
+    return f"{name}({argument})"
 
 
 def padding_comment(language: str, byte_count: int) -> str:
@@ -557,5 +622,7 @@ def padding_comment(language: str, byte_count: int) -> str:
     return "//" + "p" * (byte_count - 3) + "\n"
 
 
-def family_name(index: int) -> str:
+def family_name(index: int, profile: str = "mixed-function-sizes") -> str:
+    if profile == "pareas-common-subset":
+        return ("loop", "scalar_capture", "scalar_pair", "nested_branch", "bitwise")[index]
     return ("loop", "array", "struct", "nested_branch", "bitwise")[index]

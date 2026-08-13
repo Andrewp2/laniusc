@@ -1,0 +1,48 @@
+HES is not supported on architecture 'Ampere GA10x'.
+Launching process...
+Preparing to launch the GPU Trace Profiler activity on localhost...
+Launched process: python3.12 (pid: 106937)
+/usr/bin/python3.12 tools/run_daemon_benchmark.py --commands target/nsight-current-1000-commands.json --output target/nsight/lanius-semantic-navigation-traversal-1000-warm-20260813/transcript.json
+
+Attempting to automatically connect...
+Searching for attachable processes on localhost:49152-49215...
+Attachable process detected: laniusc (pid: 106940)
+- Status: Process created
+- Uptime: 0.346s
+Searching for attachable processes on localhost:49152-49215...
+Attachable process updated: laniusc (pid: 106940)
+- Status: Presenting
+- Uptime: 2.07s
+Connecting to laniusc (pid: 106940)...
+Session established. Starting activity...
+Waiting for target ready...
+INFO: Sample duration = 194422ns; Warp State Sampling Interval = 512; GPU PMA Buffer Size (MB) = 4294.9; SOC PMA Buffer Size (MB) = 0 
+Preparing to collect a GPU Trace report...
+Generating a trace after 33 submits with a max duration of 9999ms, limited to 6 submits...
+-- Data transfer progress (90)
+-- Data transfer progress (100)
+GPU Trace report saved to /home/andrew-peterson/code/laniusc/target/nsight/lanius-semantic-navigation-traversal-1000-warm-20260813/laniusc_2026_08_13_11_06_11.ngfx-gputrace
+Opening generated GPU Trace report...
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (80)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (10)
+-- Loading progress (20)
+-- Loading progress (30)
+-- Loading progress (40)
+-- Loading progress (50)
+-- Loading progress (60)
+-- Loading progress (70)
+Succeeded to export data:
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-semantic-navigation-traversal-1000-warm-20260813/ReportGeneratorTags.txt
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-semantic-navigation-traversal-1000-warm-20260813/BASE_UNLOCKED/REPRO_INFO.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-semantic-navigation-traversal-1000-warm-20260813/BASE_UNLOCKED/D3DPERF_EVENTS.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-semantic-navigation-traversal-1000-warm-20260813/BASE_UNLOCKED/FRAME.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-semantic-navigation-traversal-1000-warm-20260813/BASE_UNLOCKED/GPUTRACE_FRAME.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-semantic-navigation-traversal-1000-warm-20260813/BASE_UNLOCKED/GPUTRACE_REGIMES.xls
+Terminating process...
+Activity session destroyed, connection error encountered.

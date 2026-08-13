@@ -70,15 +70,6 @@ pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
         "typecheck.type_instances.generic_params.mark.done",
     );
 
-    for bind_group in &type_instances.propagate_generic_decl_owner {
-        record_compute_indirect(
-            encoder,
-            &passes.kernel("type_checker/type/instances/00a1_propagate_generic_decl_owner"),
-            bind_group,
-            "type_check.resident.type_instances.propagate_generic_decl_owner.pass",
-            hir_active_dispatch_args,
-        )?;
-    }
     stamp_typecheck_timer(
         &mut timer,
         encoder,

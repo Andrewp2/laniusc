@@ -1,0 +1,18 @@
+{
+  "generator_sha256": "dade39f41621710b3e1678e6a18adfdd8cbc5cb55a51c4b31380e1638c026ac0",
+  "model_sha256": "97da01fc47227c1112ce6b0e34cf6b034a76963a4ac6b432f08623a71d4397d1",
+  "runner_sha256": "9b04a0be2683639f92eb45a801bda1fb5aa81ac7a8d81dcb8e93cdb3d69f1a56",
+  "schema": "lanius.compiler-stress-provenance.v1",
+  "tools": {
+    "/home/andrew-peterson/code/laniusc/target/release/laniusc": {
+      "path": "/home/andrew-peterson/code/laniusc/target/release/laniusc",
+      "sha256": "47fb2961f96c8e9fa245057a10b6ae791c08713237a01666de7a0ab95b7e4cc4",
+      "version": "laniusc 0.1.0"
+    },
+    "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc": {
+      "path": "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc",
+      "sha256": "fb07d3c3d5d2ee7fbc5821dbe870c7651aea8f41dc38c089c5dcbb266f62ba89",
+      "version": "tcc version 0.9.27 (x86_64 Linux)"
+    }
+  }
+}

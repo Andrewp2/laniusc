@@ -124,9 +124,6 @@ macro_rules! reflected_bindings {
 }
 
 pub(super) const INIT_PASS: &str = "type_check.expression_types.init";
-const STEP_A_TO_B_PASS: &str = "type_check.expression_types.step.a_to_b";
-const STEP_B_TO_A_PASS: &str = "type_check.expression_types.step.b_to_a";
-const STEP_A_TO_B_TAIL_PASS: &str = "type_check.expression_types.step.a_to_b.tail";
 pub(super) const CONDITIONS_COMPACT_EXPR_PASS: &str = "type_check.conditions.compact_expr";
 pub(super) const CONDITIONS_COMPACT_STMT_PASS: &str = "type_check.conditions.compact_stmt";
 pub(super) const CONDITIONS_COMPACT_AGGREGATE_REQUESTS_PASS: &str =
@@ -264,10 +261,6 @@ pub(super) const LANGUAGE_TYPE_CODES_CLEAR_PASS: &str = "type_check.language_typ
 pub(super) const LANGUAGE_DECLS_MATERIALIZE_PASS: &str = "type_check.language_decls.materialize";
 pub(super) const TYPE_INSTANCES_MARK_GENERIC_PARAM_RECORDS_PASS: &str =
     "type_check.type_instances.mark_generic_param_records";
-pub(super) const TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_A_TO_B_PASS: &str =
-    "type_check.type_instances.propagate_generic_owner.a_to_b";
-pub(super) const TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_B_TO_A_PASS: &str =
-    "type_check.type_instances.propagate_generic_owner.b_to_a";
 pub(super) const TYPE_INSTANCES_DECL_GENERIC_PARAMS_PASS: &str =
     "type_check.type_instances.decl_generic_params";
 pub(super) const TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS: &str =
@@ -823,7 +816,6 @@ pub(super) const DEPENDENCY_METHODS_PROJECT_PASS: &str = "type_check.dependencie
 pub(super) struct TypeCheckCompilerGraph {
     materialized: MaterializedCompilerGraph,
     semantic_interface_scans: SemanticInterfaceScanGraph,
-    step_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1308,7 +1300,6 @@ impl TypeCheckCompilerGraph {
         passes: &TypeCheckPasses,
         upstream_workspace: &[crate::gpu::buffers::TrackedBufferView<'_>],
     ) -> Result<Self> {
-        let step_count = pointer_jump_step_count(hir_capacity);
         let graph = build_graph(
             hir_capacity,
             token_capacity,
@@ -1319,7 +1310,6 @@ impl TypeCheckCompilerGraph {
             generic_claim_capacity,
             predicate_capacity,
             dependency_capacity,
-            step_count,
             passes,
         )
         .map_err(anyhow::Error::msg)?;
@@ -1344,12 +1334,7 @@ impl TypeCheckCompilerGraph {
         Ok(Self {
             materialized,
             semantic_interface_scans,
-            step_count,
         })
-    }
-
-    pub(super) fn step_count(&self) -> usize {
-        self.step_count
     }
 
     pub(super) fn semantic_interface_scan_workspace(
@@ -1376,19 +1361,6 @@ impl TypeCheckCompilerGraph {
     ) -> Result<()> {
         self.semantic_interface_scans.validate(scan, resources)
     }
-
-    pub(super) fn step_pass_name(&self, step: usize) -> &'static str {
-        assert!(step < self.step_count, "expression type step is in range");
-        if step % 2 == 0 {
-            if step + 1 == self.step_count && self.step_count % 2 == 1 {
-                STEP_A_TO_B_TAIL_PASS
-            } else {
-                STEP_A_TO_B_PASS
-            }
-        } else {
-            STEP_B_TO_A_PASS
-        }
-    }
 }
 
 impl crate::gpu::operations::ComputeGraph for TypeCheckCompilerGraph {
@@ -1407,10 +1379,6 @@ impl std::ops::Deref for TypeCheckCompilerGraph {
     fn deref(&self) -> &Self::Target {
         &self.materialized
     }
-}
-
-fn pointer_jump_step_count(hir_capacity: u32) -> usize {
-    ((u32::BITS - hir_capacity.max(1).saturating_sub(1).leading_zeros()) as usize).max(1)
 }
 
 fn prefix_scan_hierarchy_levels(block_count: u64) -> u32 {
@@ -1490,7 +1458,6 @@ fn build_graph(
     generic_claim_capacity: u32,
     predicate_capacity: u32,
     dependency_capacity: DependencyWorkspaceCapacity,
-    step_count: usize,
     kernels: &impl crate::gpu::kernels::KernelReflections,
 ) -> Result<CompilerGraph, String> {
     let hir_rows = u64::from(hir_capacity.max(1));
@@ -1532,7 +1499,7 @@ fn build_graph(
         _compact_hir_links as "compact_hir_links" in HirNodes => hir_rows * 16;
         _compact_hir_payload as "compact_hir_payload" in HirNodes => hir_rows * 16;
         _compact_const_value as "compact_const_value" in HirNodes => hir_rows * 4;
-        _compact_hir_semantic_facts as "compact_hir_semantic_facts" in HirNodes =>
+        compact_hir_semantic_facts in HirNodes =>
             hir_rows * core::mem::size_of::<HirSemanticFacts>() as u64;
         _compact_type_root_owner as "compact_type_root_owner" in HirNodes => hir_rows * 4;
         _compact_param_count as "compact_param_count" in Declarations => 4;
@@ -1879,7 +1846,6 @@ fn build_graph(
     });
     graph_resources!(graph, Workspace {
         generic_decl_owner_by_node_a as "generic_decl_owner_by_node" in HirNodes => hir_rows * 4;
-        generic_decl_owner_by_node_b in HirNodes => hir_rows * 4;
         predicate_bound_list_by_node_a as "predicate_bound_list_by_node" in HirNodes => hir_rows * 4;
         predicate_bound_list_by_node_b as "predicate_trait_impl_trait_type_node" in HirNodes => hir_rows * 4;
     });
@@ -1897,8 +1863,6 @@ fn build_graph(
         graph.add_resource_alias(alias, resource)?;
     }
     graph_resources!(graph, Workspace {
-        generic_decl_parent_jump_a in HirNodes => hir_rows * 4;
-        generic_decl_parent_jump_b in HirNodes => hir_rows * 4;
         type_decl_generic_param_count in Tokens => token_rows * 4;
         type_decl_generic_param_count_by_owner_token in Tokens => token_rows * 4;
         _type_decl_const_param_count_by_owner_token as "type_decl_const_param_count_by_owner_token" in Tokens => token_rows * 4;
@@ -1929,7 +1893,7 @@ fn build_graph(
     graph_resources!(graph, Input {
         _compact_generic_param_count as "compact_generic_param_count" in HirNodes => 4;
         _compact_generic_params as "compact_generic_params" in HirNodes => token_rows * 16;
-        _compact_generic_param_ranges as "compact_generic_param_ranges" in HirNodes => hir_rows * 8;
+        compact_generic_param_ranges in HirNodes => hir_rows * 8;
         _compact_variant_count as "compact_variant_count" in HirNodes => 4;
         _compact_variants as "compact_variants" in HirNodes => token_rows * 16;
         _compact_variant_payload_row_count as "compact_variant_payload_row_count" in HirNodes => 4;
@@ -2324,7 +2288,6 @@ fn build_graph(
         _predicate_single_dispatch_args as "predicate_single_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _match_hir_dispatch_args as "match_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         scalar_a as "compact_expr_scalar_type.a" in HirNodes => hir_rows * 4;
-        scalar_b as "compact_expr_scalar_type.b" in HirNodes => hir_rows * 4;
     });
     graph_resources!(graph, External {
         _status as "status" in Bytes => 16;
@@ -2433,9 +2396,6 @@ fn build_graph(
         semantic_member_field_ordinal_by_hir in HirNodes => hir_rows * 4;
         semantic_iterable_kind_by_hir in HirNodes => hir_rows * 4;
         semantic_function_result_word_count_by_hir in HirNodes => hir_rows * 4;
-    });
-    graph_resources!(graph, Workspace {
-        _compact_predicate_diagnostic_facts as "compact_predicate_diagnostic_facts" in HirNodes => hir_rows * 32;
     });
     // Aggregate and recursive-subtree comparison are currently invoked at
     // several noncontiguous points by the resident recorder. Until those
@@ -2804,49 +2764,14 @@ fn build_graph(
         kernels,
         "type_checker/type/instances/00a_mark_generic_param_records",
         reflected_bindings![
+            "compact_hir_count" => compact_hir_count: Read,
+            "compact_hir_core" => compact_hir_core: Read,
+            "compact_hir_semantic_facts" => compact_hir_semantic_facts: Read,
+            "compact_generic_param_ranges" => compact_generic_param_ranges: Read,
             "generic_decl_owner_by_node_a" => generic_decl_owner_by_node_a: Write,
             "predicate_bound_list_by_node_a" => predicate_bound_list_by_node_a: Write,
-            "generic_decl_parent_jump_a" => generic_decl_parent_jump_a: Write,
         ],
     )?;
-    let generic_owner_steps = generic_decl_owner_step_count(hir_capacity);
-    if generic_owner_steps > 0 {
-        graph.add_repeated_region(
-            generic_owner_steps / 2,
-            vec![
-                generic_owner_propagation_pass(
-                    TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_A_TO_B_PASS,
-                    compact_hir_count,
-                    generic_decl_owner_by_node_a,
-                    predicate_bound_list_by_node_a,
-                    generic_decl_parent_jump_a,
-                    generic_decl_owner_by_node_b,
-                    predicate_bound_list_by_node_b,
-                    generic_decl_parent_jump_b,
-                ),
-                generic_owner_propagation_pass(
-                    TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_B_TO_A_PASS,
-                    compact_hir_count,
-                    generic_decl_owner_by_node_b,
-                    predicate_bound_list_by_node_b,
-                    generic_decl_parent_jump_b,
-                    generic_decl_owner_by_node_a,
-                    predicate_bound_list_by_node_a,
-                    generic_decl_parent_jump_a,
-                ),
-            ],
-        )?;
-        for name in [
-            TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_A_TO_B_PASS,
-            TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_B_TO_A_PASS,
-        ] {
-            graph.assign_kernel(
-                name,
-                "type_checker/type/instances/00a1_propagate_generic_decl_owner",
-            )?;
-            graph.require_complete_reflection(name)?;
-        }
-    }
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_DECL_GENERIC_PARAMS_PASS,
         CompilerPhase::TypeCheck,
@@ -2987,11 +2912,7 @@ fn build_graph(
         "member_result_field_ordinal" => member_result_field_ordinal: Write,
         "member_result_field_node" => member_result_field_node: Write,
     ];
-    let final_scalar = if step_count % 2 == 0 {
-        scalar_a
-    } else {
-        scalar_b
-    };
+    let final_scalar = scalar_a;
     let add_expression_type_passes =
         |graph: &mut CompilerGraphBuilder| -> std::result::Result<(), String> {
             graph.add_kernel_pass_by_name(
@@ -3002,33 +2923,6 @@ fn build_graph(
                 "type_checker/semantic/expression_types/00_init",
                 reflected_bindings!["compact_expr_scalar_type_out" => scalar_a: Write],
             )?;
-            let pair_count = step_count / 2;
-            if pair_count > 0 {
-                graph.add_repeated_region(
-                    pair_count as u32,
-                    vec![
-                        step_pass(STEP_A_TO_B_PASS, compact_hir_count, scalar_a, scalar_b),
-                        step_pass(STEP_B_TO_A_PASS, compact_hir_count, scalar_b, scalar_a),
-                    ],
-                )?;
-                for name in [STEP_A_TO_B_PASS, STEP_B_TO_A_PASS] {
-                    graph.assign_kernel(name, "type_checker/semantic/expression_types/01_step")?;
-                    graph.require_complete_reflection(name)?;
-                }
-            }
-            if step_count % 2 == 1 {
-                graph.add_pass(step_pass(
-                    STEP_A_TO_B_TAIL_PASS,
-                    compact_hir_count,
-                    scalar_a,
-                    scalar_b,
-                ))?;
-                graph.assign_kernel(
-                    STEP_A_TO_B_TAIL_PASS,
-                    "type_checker/semantic/expression_types/01_step",
-                )?;
-                graph.require_complete_reflection(STEP_A_TO_B_TAIL_PASS)?;
-            }
             graph.add_kernel_pass_by_name(
                 TYPE_INSTANCES_STRUCT_INIT_SUBSTITUTE_PASS,
                 CompilerPhase::TypeCheck,
@@ -3644,26 +3538,13 @@ fn build_graph(
             "predicate_bound_first_arg_token" => predicate_bound_first_arg_token: Write,
             "predicate_bound_second_arg_token" => predicate_bound_second_arg_token: Write,
             "predicate_status" => predicate_status: Write,
-            "predicate_method_contract_owner_hir" => predicate_method_contract_owner_hir: Write,
-            "predicate_method_contract_name_token" => predicate_method_contract_name_token: Write,
-            "predicate_method_contract_name_id" => predicate_method_contract_name_id: Write,
-            "predicate_method_contract_param_count" => predicate_method_contract_param_count: Write,
-            "predicate_method_contract_return_type_node" => predicate_method_contract_return_type_node: Write,
-            "predicate_method_contract_visibility" => predicate_method_contract_visibility: Write,
-            "predicate_method_contract_status" => predicate_method_contract_status: Write,
-            "predicate_method_contract_param_type_node" => predicate_method_contract_param_type_node: Write,
             "predicate_method_contract_owner_count" => predicate_method_contract_owner_count: Write,
             "predicate_method_contract_lookup_head" => predicate_method_contract_lookup_head: Write,
-            "predicate_method_contract_lookup_next" => predicate_method_contract_lookup_next: Write,
-            "predicate_method_validation_owner_node" => predicate_method_validation_owner_node: Write,
-            "predicate_method_validation_peer_node" => predicate_method_validation_peer_node: Write,
             "predicate_method_validation_status" => predicate_method_validation_status: Write,
-            "predicate_method_validation_detail_token" => predicate_method_validation_detail_token: Write,
             "predicate_method_validation_first_error_row" => predicate_method_validation_first_error_row: Write,
             "predicate_owner_lookup_head" => predicate_owner_lookup_head: Write,
             "predicate_owner_lookup_next" => predicate_owner_lookup_next: Write,
             "predicate_impl_lookup_head" => predicate_impl_lookup_head: Write,
-            "predicate_impl_lookup_next" => predicate_impl_lookup_next: Write,
         ];
         graph.add_kernel_pass_by_name(
             PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS,
@@ -3687,7 +3568,17 @@ fn build_graph(
             ResourceDomain::HirNodes,
             kernels,
             "type_checker/predicates/00c_collect_method_contracts",
-            &[],
+            reflected_bindings![
+                "predicate_method_contract_owner_hir" => predicate_method_contract_owner_hir: Write,
+                "predicate_method_contract_name_token" => predicate_method_contract_name_token: Write,
+                "predicate_method_contract_name_id" => predicate_method_contract_name_id: Write,
+                "predicate_method_contract_param_count" => predicate_method_contract_param_count: Write,
+                "predicate_method_contract_return_type_node" => predicate_method_contract_return_type_node: Write,
+                "predicate_method_contract_visibility" => predicate_method_contract_visibility: Write,
+                "predicate_method_contract_status" => predicate_method_contract_status: Write,
+                "predicate_method_contract_param_type_node" => predicate_method_contract_param_type_node: Write,
+                "predicate_method_contract_lookup_next" => predicate_method_contract_lookup_next: Write,
+            ],
         )?;
         graph.add_kernel_pass_by_name(
             PREDICATES_COLLECT_PASS,
@@ -3711,7 +3602,9 @@ fn build_graph(
             ResourceDomain::HirNodes,
             kernels,
             "type_checker/predicates/01_collect_impls",
-            &[],
+            reflected_bindings![
+                "predicate_impl_lookup_next" => predicate_impl_lookup_next: Write,
+            ],
         )?;
         graph.add_kernel_pass_by_name(
             PREDICATES_EMIT_METHOD_VALIDATION_ROWS_PASS,
@@ -3719,7 +3612,11 @@ fn build_graph(
             ResourceDomain::HirNodes,
             kernels,
             "type_checker/predicates/01f_emit_method_validation_rows",
-            &[],
+            reflected_bindings![
+                "predicate_method_validation_owner_node" => predicate_method_validation_owner_node: Write,
+                "predicate_method_validation_peer_node" => predicate_method_validation_peer_node: Write,
+                "predicate_method_validation_detail_token" => predicate_method_validation_detail_token: Write,
+            ],
         )?;
         graph.add_kernel_pass_by_name(
             PREDICATES_EMIT_METHOD_PARAM_VALIDATION_ROWS_PASS,
@@ -3777,7 +3674,6 @@ fn build_graph(
             &[],
         )?;
     }
-    PredicateDiagnosticsOperation::register(&mut graph, kernels)?;
     ReturnValidationOperation::register(&mut graph, kernels)?;
     let dependency_call_compare_scan_input = graph
         .resource_id("dependency_call_compare_scan_input")
@@ -4133,51 +4029,6 @@ fn build_graph(
     graph.build()
 }
 
-fn step_pass(
-    name: &'static str,
-    hir_count: ResourceId,
-    input: ResourceId,
-    output: ResourceId,
-) -> PassDesc {
-    PassDesc {
-        name,
-        phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("compact_hir_count", hir_count),
-            PassAccess::read("compact_expr_scalar_type_in", input),
-            PassAccess::write("compact_expr_scalar_type_out", output),
-        ],
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn generic_owner_propagation_pass(
-    name: &'static str,
-    compact_hir_count: ResourceId,
-    owner_in: ResourceId,
-    bound_list_in: ResourceId,
-    jump_in: ResourceId,
-    owner_out: ResourceId,
-    bound_list_out: ResourceId,
-    jump_out: ResourceId,
-) -> PassDesc {
-    PassDesc {
-        name,
-        phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("compact_hir_count", compact_hir_count),
-            PassAccess::read("generic_decl_owner_by_node_in", owner_in),
-            PassAccess::read("predicate_bound_list_by_node_in", bound_list_in),
-            PassAccess::read("generic_decl_parent_jump_in", jump_in),
-            PassAccess::write("generic_decl_owner_by_node_out", owner_out),
-            PassAccess::write("predicate_bound_list_by_node_out", bound_list_out),
-            PassAccess::write("generic_decl_parent_jump_out", jump_out),
-        ],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4197,7 +4048,6 @@ mod tests {
             768,
             10_000,
             DependencyWorkspaceCapacity::default(),
-            10,
             &kernels,
         )
         .unwrap();
@@ -4235,20 +4085,9 @@ mod tests {
         );
         assert_eq!(
             graph.repeated_regions().len(),
-            3,
-            "each remaining scalable radix sort and pointer jump must have an explicit repeated region",
+            1,
+            "the remaining scalable radix sort must have an explicit repeated region",
         );
-        let generic_owner_region = graph
-            .repeated_regions()
-            .iter()
-            .find(|region| {
-                region.first_pass
-                    == graph
-                        .pass_id(TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_A_TO_B_PASS)
-                        .unwrap()
-            })
-            .expect("generic-owner pointer-jump repeated region");
-        assert_eq!(generic_owner_region.iterations, 2);
         let visible_radix_region = graph
             .repeated_regions()
             .iter()
@@ -4263,12 +4102,6 @@ mod tests {
             visible_radix_region.iterations,
             visible_decl_key_radix_steps(4096) / 2,
         );
-        let expression_region = graph
-            .repeated_regions()
-            .iter()
-            .find(|region| region.first_pass == graph.pass_id(STEP_A_TO_B_PASS).unwrap())
-            .expect("expression pointer-jump repeated region");
-        assert_eq!(expression_region.iterations, 5);
         let early_struct_refs = graph
             .pass_id(SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS)
             .unwrap();
@@ -4296,10 +4129,6 @@ mod tests {
                 .map_or(resource.index(), |assignment| assignment.slot as usize)
         };
         let slot = storage_identity;
-        assert_ne!(
-            storage_identity(resource("compact_expr_scalar_type.a")),
-            storage_identity(resource("compact_expr_scalar_type.b")),
-        );
         let name_workspace = [
             graph.resource_id("name_lexeme_flag").unwrap(),
             graph.resource_id("name_lexeme_kind").unwrap(),
@@ -4627,29 +4456,28 @@ mod tests {
                     .index(),
             "predicate syntax markers are cleared before their module-path producer runs",
         );
-        let generic_owner_workspace = [
+        let generic_owner_artifacts = [
             resource("generic_decl_owner_by_node_a"),
-            resource("generic_decl_owner_by_node_b"),
             resource("predicate_bound_list_by_node_a"),
             resource("predicate_bound_list_by_node_b"),
-            resource("generic_decl_parent_jump_a"),
-            resource("generic_decl_parent_jump_b"),
         ];
-        for resource in generic_owner_workspace {
+        for resource in generic_owner_artifacts {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
                 ResourceClass::Resident,
-                "generic-owner pointer jumping needs dedicated storage until the recorder is graph-driven",
+                "generic-owner artifacts need dedicated storage until the recorder is graph-driven",
             );
         }
-        let mut generic_owner_slots = generic_owner_workspace.map(storage_identity);
-        generic_owner_slots.sort_unstable();
-        assert!(
-            generic_owner_slots
-                .windows(2)
-                .all(|pair| pair[0] != pair[1]),
-            "all generic-owner pointer-jump inputs and outputs are simultaneously bound",
-        );
+        for removed_scratch in [
+            "generic_decl_owner_by_node_b",
+            "generic_decl_parent_jump_a",
+            "generic_decl_parent_jump_b",
+        ] {
+            assert!(
+                graph.resource_id(removed_scratch).is_none(),
+                "local owner traversal must not retain `{removed_scratch}` pointer-jump scratch",
+            );
+        }
         assert!(
             graph
                 .pass_id(TYPE_INSTANCE_ARG_ROW_CLEAR_PASS)
@@ -4663,14 +4491,14 @@ mod tests {
         );
         assert!(
             graph
-                .pass_id(TYPE_INSTANCES_PROPAGATE_GENERIC_OWNER_B_TO_A_PASS)
+                .pass_id(TYPE_INSTANCES_MARK_GENERIC_PARAM_RECORDS_PASS)
                 .unwrap()
                 .index()
                 < graph
                     .pass_id(TYPE_INSTANCE_CORE_COLLECT_INITIAL_PASS)
                     .unwrap()
                     .index(),
-            "generic-owner propagation completes before type-instance collection",
+            "generic-owner traversal completes before type-instance collection",
         );
         let generic_use_pass = graph
             .pass(
@@ -4894,11 +4722,6 @@ mod tests {
             assert_ne!(
                 member_slot,
                 storage_identity(resource("compact_expr_scalar_type.a")),
-                "member results are live while expression scalar propagation runs",
-            );
-            assert_ne!(
-                member_slot,
-                storage_identity(resource("compact_expr_scalar_type.b")),
                 "member results are live while expression scalar propagation runs",
             );
         }
@@ -5343,9 +5166,6 @@ mod tests {
         assert!(graph.pass_id(CONDITIONS_CALLS.name).is_some());
         assert!(graph.pass_id(CONDITIONS_TYPES.name).is_some());
         assert!(graph.pass_id(CONDITIONS_METHODS.name).is_some());
-        assert!(graph.pass_id(PREDICATE_DIAGNOSTICS_CLEAR.name).is_some());
-        assert!(graph.pass_id(PREDICATE_DIAGNOSTICS_CLAIM.name).is_some());
-        assert!(graph.pass_id(PREDICATE_DIAGNOSTICS_PROJECT.name).is_some());
         assert!(graph.pass_id(CONDITIONS_PREDICATES.name).is_some());
         assert!(graph.pass_id(CONDITIONS_NAMES.name).is_some());
         assert!(graph.pass_id(CALLS_ARRAY_STATE_PUBLISH.name).is_some());
@@ -5496,47 +5316,29 @@ mod tests {
             slot(resource("aggregate_compare_prefix")),
             "aggregate scan input and output are simultaneously live",
         );
-        let predicate_clear = graph.pass_id(PREDICATE_DIAGNOSTICS_CLEAR.name).unwrap();
-        let predicate_claim = graph.pass_id(PREDICATE_DIAGNOSTICS_CLAIM.name).unwrap();
-        let predicate_projection = graph.pass_id(PREDICATE_DIAGNOSTICS_PROJECT.name).unwrap();
         let predicate_reducer = graph.pass_id(CONDITIONS_PREDICATES.name).unwrap();
-        assert!(predicate_clear.index() < predicate_claim.index());
-        assert!(predicate_claim.index() < predicate_projection.index());
-        assert!(predicate_projection.index() < graph.pass_id(RETURNS_CLEAR.name).unwrap().index());
-        assert!(predicate_projection.index() < predicate_reducer.index());
-        assert_eq!(
-            graph
-                .resource(resource("compact_predicate_diagnostic_facts"))
-                .unwrap()
-                .class,
-            ResourceClass::Resident,
-            "raw predicate diagnostics need dedicated storage until the recorder is graph-driven",
-        );
         assert!(
             graph
-                .pass(predicate_projection)
-                .unwrap()
-                .accesses
-                .iter()
-                .any(|access| {
-                    access.resource == resource("compact_predicate_diagnostic_facts")
-                        && access.mode.writes()
-                }),
-            "the raw-to-dense projection must own diagnostic-fact writes",
+                .resource_id("compact_predicate_diagnostic_facts")
+                .is_none(),
+            "predicate reduction must consume producer-owned columns without materializing a duplicate HIR table",
         );
-        assert!(
-            graph
-                .pass(predicate_reducer)
-                .unwrap()
-                .accesses
-                .iter()
-                .any(|access| {
-                    access.resource == resource("compact_predicate_diagnostic_facts")
-                        && access.mode.reads()
-                        && !access.mode.writes()
+        let reducer = graph.pass(predicate_reducer).unwrap();
+        for source in [
+            "predicate_status",
+            "predicate_method_contract_status",
+            "predicate_method_validation_status",
+            "predicate_method_validation_detail_token",
+        ] {
+            let source = resource(source);
+            assert!(
+                reducer.accesses.iter().any(|access| {
+                    access.resource == source && access.mode.reads() && !access.mode.writes()
                 }),
-            "the compact reducer may only read projected facts",
-        );
+                "predicate reducer must read `{}` directly",
+                graph.resource(source).unwrap().name,
+            );
+        }
         assert!(artifact_pass.index() > graph.pass_id(CONDITIONS_NAMES.name).unwrap().index());
         for resource in [
             resource("semantic_value_decl_by_hir"),
@@ -5588,14 +5390,8 @@ mod tests {
             slot(resource("compact_expr_scalar_type.a")),
             "expression typing reads the checked-call artifact while writing scalar scratch",
         );
-        assert_ne!(
-            slot(resource("semantic_calls_by_hir")),
-            slot(resource("compact_expr_scalar_type.b")),
-            "checked-call artifacts survive scalar pointer jumping",
-        );
         for resource in [
             resource("compact_expr_scalar_type.a"),
-            resource("compact_expr_scalar_type.b"),
             resource("call_result_instance"),
             resource("call_generic_return_arg_node"),
             resource("call_arg_row_count_out"),
@@ -5703,11 +5499,11 @@ mod tests {
             slot(resource("call_required_generic_prefix")),
             "scan input and output prefix are simultaneously bound",
         );
-        assert!(graph.pass_id(STEP_A_TO_B_TAIL_PASS).is_none());
+        assert!(graph.resource_id("compact_expr_scalar_type.b").is_none());
     }
 
     #[test]
-    fn odd_expression_type_jump_count_has_a_real_tail_pass() {
+    fn expression_types_use_one_local_traversal_without_jump_scratch() {
         let kernels = crate::gpu::kernels::KernelCatalog::load_prefixes(&["type_checker"]).unwrap();
         let graph = build_graph(
             1024,
@@ -5719,7 +5515,6 @@ mod tests {
             768,
             512,
             DependencyWorkspaceCapacity::default(),
-            11,
             &kernels,
         )
         .unwrap();
@@ -5755,12 +5550,7 @@ mod tests {
                 "predicate indexing should not allocate removed sort resource `{name}`",
             );
         }
-        let expression_region = graph
-            .repeated_regions()
-            .iter()
-            .find(|region| region.first_pass == graph.pass_id(STEP_A_TO_B_PASS).unwrap())
-            .expect("expression pointer-jump repeated region");
-        assert_eq!(expression_region.iterations, 5);
-        assert!(graph.pass_id(STEP_A_TO_B_TAIL_PASS).is_some());
+        assert!(graph.pass_id(INIT_PASS).is_some());
+        assert!(graph.resource_id("compact_expr_scalar_type.b").is_none());
     }
 }

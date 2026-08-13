@@ -129,8 +129,18 @@ bool local_enum_variant_for_call(
     return true;
 }
 
-CheckedCallArtifact empty_call()
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
 {
+    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    // This HIR-keyed table is sparse by contract: consumers inspect it only
+    // for call-expression rows. Avoid writing a 56-byte empty record for every
+    // other syntax node. Active call rows are still rewritten in full on every
+    // daemon job, so stale workspace contents cannot cross the semantic ABI.
+    if (!valid_hir(row) || compact_hir_core[row].kind != HIR_CALL_EXPR) return;
+    semantic_aggregate_word_count_by_hir[row] = 0u;
+
     CheckedCallArtifact call;
     call.target_token = INVALID;
     call.dependency_library_id = INVALID;
@@ -146,19 +156,6 @@ CheckedCallArtifact empty_call()
     call.callable_kind = CALLABLE_NONE;
     call.callable_hir = INVALID;
     call.callable_ordinal = INVALID;
-    return call;
-}
-
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
-{
-    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    if (row >= gParams.n_hir_nodes) return;
-    semantic_aggregate_word_count_by_hir[row] = 0u;
-
-    CheckedCallArtifact call = empty_call();
-    if (valid_hir(row) && compact_hir_core[row].kind == HIR_CALL_EXPR)
     {
         uint callee = compact_hir_payload[row].a;
         uint callee_token = callee_token_for_call(row);

@@ -1,0 +1,50 @@
+[
+  {
+    "event_count": 5,
+    "first_event_index": 0,
+    "last_event_index": 4,
+    "percent_of_labeled_time": 2.426697159870972,
+    "phase": "lexer",
+    "total_time_ms": 1.8684479999999999
+  },
+  {
+    "event_count": 479,
+    "first_event_index": 5,
+    "last_event_index": 483,
+    "percent_of_labeled_time": 65.45028933892722,
+    "phase": "parser_hir",
+    "total_time_ms": 50.39378800000001
+  },
+  {
+    "event_count": 590,
+    "first_event_index": 484,
+    "last_event_index": 1073,
+    "percent_of_labeled_time": 22.064910896889113,
+    "phase": "typecheck",
+    "total_time_ms": 16.988992000000003
+  },
+  {
+    "event_count": 58,
+    "first_event_index": 1074,
+    "last_event_index": 1131,
+    "percent_of_labeled_time": 2.205219327317711,
+    "phase": "semantic_lir",
+    "total_time_ms": 1.6979200000000008
+  },
+  {
+    "event_count": 96,
+    "first_event_index": 1132,
+    "last_event_index": 1288,
+    "percent_of_labeled_time": 3.2460695503358927,
+    "phase": "target_lir",
+    "total_time_ms": 2.4993280000000007
+  },
+  {
+    "event_count": 132,
+    "first_event_index": 1209,
+    "last_event_index": 1359,
+    "percent_of_labeled_time": 4.6068137266590945,
+    "phase": "x86_codegen",
+    "total_time_ms": 3.54704
+  }
+]

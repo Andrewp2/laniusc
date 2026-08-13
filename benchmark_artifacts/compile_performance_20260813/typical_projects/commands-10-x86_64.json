@@ -1,0 +1,315 @@
+{
+  "lanius": {
+    "daemon_start": [
+      "target/release/laniusc",
+      "daemon",
+      "--stdio",
+      "--backend",
+      "x86_64",
+      "--stdlib-root",
+      "stdlib",
+      "--idle-buffer-timeout-ms",
+      "0"
+    ],
+    "requests": [
+      {
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "cold-capacity",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4096;",
+          "old": "        total &= 4095;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-warmup",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4097;",
+          "old": "        total &= 4096;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-01",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4098;",
+          "old": "        total &= 4097;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-02",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4099;",
+          "old": "        total &= 4098;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-03",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4100;",
+          "old": "        total &= 4099;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-04",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4101;",
+          "old": "        total &= 4100;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-05",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4102;",
+          "old": "        total &= 4101;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-06",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4103;",
+          "old": "        total &= 4102;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-07",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4104;",
+          "old": "        total &= 4103;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-08",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4105;",
+          "old": "        total &= 4104;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-09",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4106;",
+          "old": "        total &= 4105;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-10",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4107;",
+          "old": "        total &= 4106;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-11",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4108;",
+          "old": "        total &= 4107;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-12",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4109;",
+          "old": "        total &= 4108;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-13",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4110;",
+          "old": "        total &= 4109;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-14",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4111;",
+          "old": "        total &= 4110;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-15",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4112;",
+          "old": "        total &= 4111;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-16",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4113;",
+          "old": "        total &= 4112;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-17",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4114;",
+          "old": "        total &= 4113;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-18",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4115;",
+          "old": "        total &= 4114;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-19",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4116;",
+          "old": "        total &= 4115;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-20",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4095;",
+          "old": "        total &= 4116;",
+          "path": "target/typical-project-10/lanius/src/typical/orders_processor_1.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "restore-source",
+        "input": "target/typical-project-10/lanius/main.lani",
+        "output": "target/typical-project-10/lanius/matrix-artifact",
+        "source_root": "target/typical-project-10/lanius/src"
+      },
+      {
+        "command": "shutdown",
+        "id": "shutdown"
+      }
+    ]
+  }
+}

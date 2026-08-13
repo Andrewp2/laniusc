@@ -1,10 +1,7 @@
-// Initialize compact-HIR owner propagation needed by generic and predicate consumers.
+// Resolve compact-HIR owners needed by generic and predicate consumers.
 //
 // Scheduling contract:
 // - Dispatch after compact generic-parameter ranges are available.
-// - This initializes generic-declaration and predicate-list owner propagation. Follow with
-//   type_check_type_instances_00a1_propagate_generic_decl_owner until the
-//   parent jump table reaches the root.
 // - Only nodes with actual compact generic-parameter rows seed the ownership
 //   relation; syntactically eligible wrappers are not declaration owners.
 
@@ -26,7 +23,6 @@ StructuredBuffer<HirRange> compact_generic_param_ranges;
 
 RWStructuredBuffer<uint> generic_decl_owner_by_node_a;
 RWStructuredBuffer<uint> predicate_bound_list_by_node_a;
-RWStructuredBuffer<uint> generic_decl_parent_jump_a;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -55,14 +51,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    generic_decl_owner_by_node_a[node] =
-        compact_generic_param_ranges[node].count != 0u ? node : INVALID;
-    predicate_bound_list_by_node_a[node] =
-        compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_TYPE_PARAM_BOUND_LIST
-            ? node
-            : INVALID;
-    generic_decl_parent_jump_a[node] = valid_node(compact_hir_core[node].parent)
-        ? compact_hir_core[node].parent
-        : INVALID;
+    uint owner = INVALID;
+    uint bound_list = INVALID;
+    uint current = node;
+    uint visited = 0u;
+    while (valid_node(current) && visited < active_hir_node_count())
+    {
+        if (owner == INVALID && compact_generic_param_ranges[current].count != 0u)
+            owner = current;
+        if (bound_list == INVALID &&
+            compact_hir_semantic_facts[current].semantic_kind ==
+                HIR_SEMANTIC_TYPE_PARAM_BOUND_LIST)
+            bound_list = current;
+        if (owner != INVALID && bound_list != INVALID)
+            break;
+        current = compact_hir_core[current].parent;
+        visited += 1u;
+    }
+    generic_decl_owner_by_node_a[node] = owner;
+    predicate_bound_list_by_node_a[node] = bound_list;
 
 }

@@ -1,0 +1,44 @@
+[
+  {
+    "event_count": 550,
+    "percent_of_labeled_time": 71.16528744096424,
+    "phase": "parser_hir",
+    "total_time_ms": 81.82393600000003
+  },
+  {
+    "event_count": 622,
+    "percent_of_labeled_time": 18.15551370420777,
+    "phase": "typecheck",
+    "total_time_ms": 20.874722000000006
+  },
+  {
+    "event_count": 132,
+    "percent_of_labeled_time": 3.2037206922402097,
+    "phase": "x86_codegen",
+    "total_time_ms": 3.6835520000000006
+  },
+  {
+    "event_count": 96,
+    "percent_of_labeled_time": 2.5215130699609136,
+    "phase": "target_lir",
+    "total_time_ms": 2.8991680000000004
+  },
+  {
+    "event_count": 5,
+    "percent_of_labeled_time": 2.2118867727245735,
+    "phase": "lexer",
+    "total_time_ms": 2.5431679999999997
+  },
+  {
+    "event_count": 58,
+    "percent_of_labeled_time": 2.111359115590402,
+    "phase": "semantic_lir",
+    "total_time_ms": 2.427584
+  },
+  {
+    "event_count": 25,
+    "percent_of_labeled_time": 0.6307192043119043,
+    "phase": "other",
+    "total_time_ms": 0.725184
+  }
+]

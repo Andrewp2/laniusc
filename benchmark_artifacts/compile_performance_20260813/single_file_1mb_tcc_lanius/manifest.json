@@ -1,0 +1,145 @@
+{
+  "files": [
+    {
+      "bytes": 1660,
+      "path": "commands.json",
+      "sha256": "327ff3ebeaaea8ff01bdab5a60900569f06c556694ef8bfa2a92f37ce8612c08"
+    },
+    {
+      "bytes": 980,
+      "path": "config.json",
+      "sha256": "7455a42736dcadf2b47a7b1c36f5e5a598d99f1e4c020359c209d3828d107767"
+    },
+    {
+      "bytes": 1498,
+      "path": "machine_info.json",
+      "sha256": "73a3f261ae853544bf631c91d73a2367b16fd9f842e5d664a26fca7e3b81bc37"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-20.stdout",
+      "sha256": "7884a944a65f94cef35ac0813b3f4dbb2c59b017df71ea92162bff3b636ea4f2"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-21.stdout",
+      "sha256": "4b8503f5cc3c887e174d8f87c11cbeaddf1d5c328173e46157233b97a91aae42"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-22.stdout",
+      "sha256": "cb25726f1026acf87f2389188e9c5916403c489260944d537b814f812325f3f9"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-23.stdout",
+      "sha256": "a35a5e69d88d7a6780c200af2a370834cf58149be217857a7c783ebb1e1ea8b6"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-24.stdout",
+      "sha256": "17ac5a5ce9bb8f29cf9b3e1db92ad2429665f272d62f2edc8d905da27744c34d"
+    },
+    {
+      "bytes": 4,
+      "path": "outputs/seed-25.stdout",
+      "sha256": "7231b4356461444276804b82875365393249b8de04af57ebb55eda875c0cff1c"
+    },
+    {
+      "bytes": 4,
+      "path": "outputs/seed-26.stdout",
+      "sha256": "207db6cbeab7cf4aa8ddfbcec34f4df58186e3354cbe7822756864df81e7dc6f"
+    },
+    {
+      "bytes": 4,
+      "path": "outputs/seed-27.stdout",
+      "sha256": "04e0e75067e564d696d0d38be18b52aca9e015c750ce94153f0f97edac76bcc9"
+    },
+    {
+      "bytes": 4,
+      "path": "outputs/seed-28.stdout",
+      "sha256": "181210f8f9c779c26da1d9b2075bde0127302ee0e3fca38c9a83f5b1dd8e5d3b"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-29.stdout",
+      "sha256": "d1506f9b33d16a9d93f8b6aa03d6b12739f1b4a2fcb7403546b53e8c03fcff26"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-30.stdout",
+      "sha256": "31cdf141064994b026c768d958e74a47c2e1868687aadb038c9b93bdcac275b6"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-31.stdout",
+      "sha256": "21124d883146b99d7dc9f67c936ceb4f9c9e605ea3d1c0f8c44d332a68dd3d41"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-32.stdout",
+      "sha256": "525940b113125824d48679d0e4c42322b3ea1c10366c499b6cdc6ca3819ad739"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-33.stdout",
+      "sha256": "cf9566ee3f015d1a08ee2b968d6fdb84537390072846a803f0b60d81b30b5ab4"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-34.stdout",
+      "sha256": "3840f7c45ddb32c37fa0e586d9ff9bfb4912684c08f3b5e8486e65337597eeca"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-35.stdout",
+      "sha256": "a93dbf1e95ddc4cfa84e9cd3cfa6c9e0e14affd79812abde4bca688224430a65"
+    },
+    {
+      "bytes": 4,
+      "path": "outputs/seed-36.stdout",
+      "sha256": "c52f2536a9e8462dc8d533cf99662098c86d035cd6e9fd58579e0c101c2e0aa5"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-37.stdout",
+      "sha256": "289c175d22ff2c80560fb3deb24d15dc488f8a543f5fae8d70d5d14c9f325f35"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-38.stdout",
+      "sha256": "db230531d1c298300b8ba551d9e5db5b8fe63ea1c2ab453a9b851fcd7c9fefc3"
+    },
+    {
+      "bytes": 5,
+      "path": "outputs/seed-39.stdout",
+      "sha256": "63ec4a5391e90da34af5379188488b6e8a354f3280d7081a5b9b5f56f979dc03"
+    },
+    {
+      "bytes": 851,
+      "path": "provenance.json",
+      "sha256": "62421a90a0786a8ee26aafe93acf2cd3b7845978c6efebe469b0cd9438f07756"
+    },
+    {
+      "bytes": 11133,
+      "path": "results.tsv",
+      "sha256": "353aaf24794a0e5dd968c56091ee1c8cc0bfeb148be072b0004cc2b702d34325"
+    },
+    {
+      "bytes": 23618,
+      "path": "samples.json",
+      "sha256": "04d9fe80fbe6da950f953332695bfc062b1c0d616ab36cc4ac24f390b088e33b"
+    },
+    {
+      "bytes": 47506,
+      "path": "source_manifest.json",
+      "sha256": "98133d30391a089d1ff2f1e31c87ef32e802cced46dc832d20e6b4d0308f869e"
+    },
+    {
+      "bytes": 584,
+      "path": "summary.json",
+      "sha256": "295d2953a7b2192736faa6ae56dd4c74a879dc317ce3547056a233e73188a323"
+    }
+  ],
+  "schema": "lanius.compiler-stress-matrix-manifest.v1"
+}

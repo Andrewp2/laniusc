@@ -1,0 +1,25 @@
+{
+  "rows": [
+    {
+      "lane": "hot_daemon_variable_project",
+      "language": "lanius",
+      "mad_ms": 0.9725335000000008,
+      "max_ms": 67.321021,
+      "median_ms": 58.675107499999996,
+      "min_ms": 54.781794,
+      "samples": 20,
+      "speedup_vs_lanius": 1.0
+    },
+    {
+      "lane": "default",
+      "language": "tcc",
+      "mad_ms": 0.46536199999999894,
+      "max_ms": 21.47275,
+      "median_ms": 18.369427,
+      "min_ms": 17.061546,
+      "samples": 20,
+      "speedup_vs_lanius": 0.313070189091686
+    }
+  ],
+  "schema": "lanius.compiler-stress-summary.v1"
+}

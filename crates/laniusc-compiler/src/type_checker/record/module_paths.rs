@@ -145,16 +145,8 @@ fn record_module_path_stage(
             record_compute_indirect_offset(
                 encoder,
                 &passes.kernel("type_checker/modules/01c_path_prefix_table_insert"),
-                &round.insert,
-                "type_check.modules.path_prefix_table_insert",
-                &state.path_prefix_round_dispatch_args,
-                offset,
-            )?;
-            record_compute_indirect_offset(
-                encoder,
-                &passes.kernel("type_checker/modules/01c_path_prefix_table_lookup"),
-                &round.lookup,
-                "type_check.modules.path_prefix_table_lookup",
+                &round.intern,
+                "type_check.modules.path_prefix_table_intern",
                 &state.path_prefix_round_dispatch_args,
                 offset,
             )?;

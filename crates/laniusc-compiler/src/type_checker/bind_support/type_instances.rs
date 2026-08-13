@@ -1,21 +1,5 @@
 use super::super::*;
 
-/// Returns the propagation passes needed to attach generic params to owners.
-pub(in crate::type_checker) fn generic_decl_owner_step_count(hir_node_capacity: u32) -> u32 {
-    let mut covered_depth = 1u32;
-    let mut steps = 0u32;
-    let target = hir_node_capacity.max(1);
-    while covered_depth < target {
-        covered_depth = covered_depth.saturating_mul(16);
-        steps = steps.saturating_add(1);
-    }
-    if steps % 2 == 0 {
-        steps
-    } else {
-        steps.saturating_add(1)
-    }
-}
-
 /// Builds bind groups for collecting, sorting, and projecting type instances.
 pub(in crate::type_checker) fn create_type_instance_bind_groups(
     device: &wgpu::Device,
@@ -23,62 +7,11 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     passes: &TypeCheckPasses,
     resources: &ResourceMap<'_>,
     token_capacity: u32,
-    hir_node_capacity: u32,
 ) -> Result<TypeInstanceBindGroups> {
-    let owner_steps = generic_decl_owner_step_count(hir_node_capacity);
     let generic_parameter_index =
         GenericParameterIndex::new(device, graph, passes, resources, token_capacity.max(1))?;
     let struct_field_index =
         StructFieldIndex::new(device, graph, passes, resources, token_capacity.max(1))?;
-
-    let mut propagate_generic_decl_owner = Vec::with_capacity(owner_steps as usize);
-    for step in 0..owner_steps {
-        let read_owner = if step % 2 == 0 {
-            resources["generic_decl_owner_by_node_a"].clone()
-        } else {
-            resources["generic_decl_owner_by_node_b"].clone()
-        };
-        let read_jump = if step % 2 == 0 {
-            resources["generic_decl_parent_jump_a"].clone()
-        } else {
-            resources["generic_decl_parent_jump_b"].clone()
-        };
-        let read_bound_list = if step % 2 == 0 {
-            resources["predicate_bound_list_by_node_a"].clone()
-        } else {
-            resources["predicate_bound_list_by_node_b"].clone()
-        };
-        let write_owner = if step % 2 == 0 {
-            resources["generic_decl_owner_by_node_b"].clone()
-        } else {
-            resources["generic_decl_owner_by_node_a"].clone()
-        };
-        let write_jump = if step % 2 == 0 {
-            resources["generic_decl_parent_jump_b"].clone()
-        } else {
-            resources["generic_decl_parent_jump_a"].clone()
-        };
-        let write_bound_list = if step % 2 == 0 {
-            resources["predicate_bound_list_by_node_b"].clone()
-        } else {
-            resources["predicate_bound_list_by_node_a"].clone()
-        };
-        propagate_generic_decl_owner.push(resources.reflected_bind_group_with_overrides(
-            device,
-            "type_check_type_instances_00a1_propagate_generic_decl_owner",
-            &passes.kernel("type_checker/type/instances/00a1_propagate_generic_decl_owner"),
-            &[
-                ("gParams", resources["gParams"].clone()),
-                ("compact_hir_count", resources["compact_hir_count"].clone()),
-                ("generic_decl_owner_by_node_in", read_owner),
-                ("predicate_bound_list_by_node_in", read_bound_list),
-                ("generic_decl_parent_jump_in", read_jump),
-                ("generic_decl_owner_by_node_out", write_owner),
-                ("predicate_bound_list_by_node_out", write_bound_list),
-                ("generic_decl_parent_jump_out", write_jump),
-            ],
-        )?);
-    }
 
     let type_instance_arg_row_scan = PrefixScanOperation::from_spec(
         device,
@@ -102,7 +35,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             &passes.kernel("type_checker/type/instances/00a_mark_generic_param_records"),
             resources,
         )?,
-        propagate_generic_decl_owner,
         type_instance_arg_row_scan,
         decl_generic_params: reflected_bind_group_from_resources(
             device,

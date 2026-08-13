@@ -1,0 +1,46 @@
+HES is not supported on architecture 'Ampere GA10x'.
+Launching process...
+Preparing to launch the GPU Trace Profiler activity on localhost...
+Launched process: python3.12 (pid: 425644)
+/usr/bin/python3.12 tools/run_daemon_benchmark.py --commands benchmark_artifacts/typechecker_overhead_20260813/direct_predicate_reduction/commands-1000-x86_64.json --output target/nsight/lanius-direct-predicate-1000-warm-20260813/transcript.json --startup-timeout 900 --job-timeout 900
+
+Attempting to automatically connect...
+Searching for attachable processes on localhost:49152-49215...
+Attachable process detected: laniusc (pid: 425646)
+- Status: Process created
+- Uptime: 0.458s
+Attachable process updated: laniusc (pid: 425646)
+- Status: Presenting
+- Uptime: 1.47s
+Connecting to laniusc (pid: 425646)...
+Session established. Starting activity...
+Waiting for target ready...
+INFO: Sample duration = 194422ns; Warp State Sampling Interval = 512; GPU PMA Buffer Size (MB) = 4294.9; SOC PMA Buffer Size (MB) = 0 
+Preparing to collect a GPU Trace report...
+Generating a trace after 33 submits with a max duration of 9999ms, limited to 6 submits...
+GPU Trace report saved to /home/andrew-peterson/code/laniusc/target/nsight/lanius-direct-predicate-1000-warm-20260813/laniusc_2026_08_13_16_02_24.ngfx-gputrace
+Opening generated GPU Trace report...
+-- Data transfer progress (100)
+-- Loading progress (80)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (10)
+-- Loading progress (20)
+-- Loading progress (30)
+-- Loading progress (40)
+-- Loading progress (50)
+-- Loading progress (60)
+-- Loading progress (70)
+Succeeded to export data:
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-direct-predicate-1000-warm-20260813/ReportGeneratorTags.txt
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-direct-predicate-1000-warm-20260813/BASE_UNLOCKED/REPRO_INFO.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-direct-predicate-1000-warm-20260813/BASE_UNLOCKED/D3DPERF_EVENTS.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-direct-predicate-1000-warm-20260813/BASE_UNLOCKED/FRAME.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-direct-predicate-1000-warm-20260813/BASE_UNLOCKED/GPUTRACE_FRAME.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-direct-predicate-1000-warm-20260813/BASE_UNLOCKED/GPUTRACE_REGIMES.xls
+Terminating process...
+Activity session destroyed, connection error encountered.

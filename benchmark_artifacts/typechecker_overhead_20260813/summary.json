@@ -1,0 +1,92 @@
+{
+  "schema": "lanius.typechecker-overhead-experiment.v2",
+  "workload": {
+    "file_count": 1000,
+    "source_bytes": 8977129,
+    "largest_source_file_bytes": 62542,
+    "target": "x86_64"
+  },
+  "retained_changes": [
+    "Resolve expression scalar types with one compact-HIR local traversal.",
+    "Resolve generic declaration owners with one compact-HIR local traversal.",
+    "Intern path-prefix pairs and publish their canonical slot in one atomic shader.",
+    "Project checked call artifacts only for compact call-expression HIR rows.",
+    "Reduce predicate diagnostics directly from producer-owned columns without a materialized per-HIR diagnostic table.",
+    "Treat compact method rows as the source of truth and stop clearing overwrite-only method-contract, validation-metadata, and trait-implementation link columns.",
+    "Project semantic function, type, and parameter columns only over their compact semantic domains and leave inactive workspace tails untouched."
+  ],
+  "schedule": {
+    "recorded_compute_passes_before": 1422,
+    "recorded_compute_passes_after": 1367,
+    "typechecker_compute_passes_before": 642,
+    "typechecker_compute_passes_after": 587,
+    "removed_compute_passes": 55
+  },
+  "code_and_memory": {
+    "removed_hir_scratch_arrays": 5,
+    "removed_scratch_bytes_per_hir_capacity_row": 48,
+    "typechecker_and_shader_added_lines": 359,
+    "typechecker_and_shader_deleted_lines": 1165,
+    "typechecker_and_shader_net_lines": -806,
+    "predicate_clear_storage_bindings_before": 29,
+    "predicate_clear_storage_bindings_after": 16,
+    "predicate_clear_storage_bindings_removed": 13
+  },
+  "nsight_gpu_trace": {
+    "call_projection_before_ms": 2.52378,
+    "call_projection_after_ms": 0.038176,
+    "call_projection_reduction_percent": 98.49,
+    "path_prefix_insert_and_lookup_before_ms": 0.45056,
+    "path_prefix_intern_after_ms": 0.241184,
+    "predicate_diagnostic_clear_before_removal_ms": 1.1848,
+    "direct_predicate_reduction_after_ms": 0.055232,
+    "sparse_semantic_artifact_block_observed_ms": 0.27,
+    "sparse_semantic_artifact_other_timed_samples_below_ms": 0.2,
+    "after_trace": "../profiles/nsight_summaries/lanius-direct-predicate-1000-warm-20260813/BASE_UNLOCKED/PASS_METRICS.json"
+  },
+  "warm_x86_compile_ms": [
+    {
+      "result": "final/typical-1000-x86.json",
+      "samples": 20,
+      "median_ms": 186.834229,
+      "mad_ms": 2.5211785
+    },
+    {
+      "result": "final_repeat/typical-1000-x86.json",
+      "samples": 20,
+      "median_ms": 193.026474,
+      "mad_ms": 5.6216165
+    },
+    {
+      "result": "sparse_calls/typical-1000-x86.json",
+      "samples": 20,
+      "median_ms": 200.637117,
+      "mad_ms": 3.435272
+    },
+    {
+      "result": "direct_predicate_reduction/typical-1000-x86.json",
+      "samples": 20,
+      "median_ms": 201.352999,
+      "mad_ms": 4.360925
+    },
+    {
+      "result": "contract_overwrite_final/typical-1000-x86.json",
+      "samples": 20,
+      "median_ms": 203.8873835,
+      "mad_ms": 3.8866505
+    },
+    {
+      "result": "sparse_semantic_project/typical-1000-x86.json",
+      "samples": 20,
+      "median_ms": 206.041133,
+      "mad_ms": 19.4531755
+    }
+  ],
+  "comparison_note": "The pass and existing Nsight shader-time reductions are deterministic. Warm wall time remains sensitive to concurrent desktop load and GPU clock state; retained runs span 186.83-203.89 ms after the changes versus a 221.19 ms recent baseline. The post-clear-change Nsight attempt captured only the parser submit segment, so it is retained as a diagnostic artifact but is not used as type-checker timing evidence.",
+  "rejected_experiment": {
+    "description": "Replace dependency canonical-root and reverse-subtree pointer jumping with local traversal.",
+    "median_ms": 409.790947,
+    "mad_ms": 46.42174,
+    "disposition": "fully reverted because reverse-subtree chains duplicated excessive memory traffic"
+  }
+}

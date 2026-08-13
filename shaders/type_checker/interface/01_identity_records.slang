@@ -181,7 +181,11 @@ void write_decl(uint dst, uint decl, uint name_ref)
     interface_declaration_words[base + 10u] = persisted_owner;
     uint hir = decl_hir_node[decl];
     interface_declaration_words[base + 11u] = 0u;
-    interface_declaration_words[base + 12u] = semantic_function_host_service_by_hir[hir];
+    uint kind = decl_kind[decl];
+    interface_declaration_words[base + 12u] =
+        (kind == 4u || kind == 5u) && hir < gParams.hir_capacity
+            ? semantic_function_host_service_by_hir[hir]
+            : INVALID;
     uint value_hir = hir != INVALID ? compact_const_value[hir] : INVALID;
     interface_declaration_words[base + 13u] =
         decl_kind[decl] == 3u && value_hir < gParams.hir_capacity &&

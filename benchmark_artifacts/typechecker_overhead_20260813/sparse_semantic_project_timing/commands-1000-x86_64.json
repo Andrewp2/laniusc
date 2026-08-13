@@ -1,0 +1,81 @@
+{
+  "lanius": {
+    "daemon_start": [
+      "target/release/laniusc",
+      "daemon",
+      "--stdio",
+      "--backend",
+      "x86_64",
+      "--stdlib-root",
+      "stdlib",
+      "--idle-buffer-timeout-ms",
+      "0"
+    ],
+    "requests": [
+      {
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "cold-capacity",
+        "input": "target/typical-project-1000/lanius/main.lani",
+        "output": "target/typical-project-1000/lanius/matrix-artifact",
+        "source_root": "target/typical-project-1000/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4096;",
+          "old": "        total &= 4095;",
+          "path": "target/typical-project-1000/lanius/src/typical/orders_processor_991.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-warmup",
+        "input": "target/typical-project-1000/lanius/main.lani",
+        "output": "target/typical-project-1000/lanius/matrix-artifact",
+        "source_root": "target/typical-project-1000/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4097;",
+          "old": "        total &= 4096;",
+          "path": "target/typical-project-1000/lanius/src/typical/orders_processor_991.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-01",
+        "input": "target/typical-project-1000/lanius/main.lani",
+        "output": "target/typical-project-1000/lanius/matrix-artifact",
+        "source_root": "target/typical-project-1000/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4098;",
+          "old": "        total &= 4097;",
+          "path": "target/typical-project-1000/lanius/src/typical/orders_processor_991.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "edit-02",
+        "input": "target/typical-project-1000/lanius/main.lani",
+        "output": "target/typical-project-1000/lanius/matrix-artifact",
+        "source_root": "target/typical-project-1000/lanius/src"
+      },
+      {
+        "benchmark_source_edit": {
+          "new": "        total &= 4095;",
+          "old": "        total &= 4098;",
+          "path": "target/typical-project-1000/lanius/src/typical/orders_processor_991.lani"
+        },
+        "command": "compile",
+        "emit": "x86_64",
+        "id": "restore-source",
+        "input": "target/typical-project-1000/lanius/main.lani",
+        "output": "target/typical-project-1000/lanius/matrix-artifact",
+        "source_root": "target/typical-project-1000/lanius/src"
+      },
+      {
+        "command": "shutdown",
+        "id": "shutdown"
+      }
+    ]
+  }
+}

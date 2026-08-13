@@ -19,7 +19,7 @@ from generate_typical_project import generate
 from run_typical_lanius_matrix import parse_counts
 
 
-LANGUAGES = ("c", "cpp", "rust", "zig")
+LANGUAGES = ("c", "cpp", "rust", "zig", "tcc")
 LANES = ("o0", "optimized")
 
 
@@ -37,11 +37,22 @@ def parse_languages(value: str) -> tuple[str, ...]:
 def entry_source(project: Path, language: str) -> Path:
     relative = {
         "c": "c/src/main.c",
+        "tcc": "c/src/main.c",
         "cpp": "cpp/src/main.cpp",
         "rust": "rust/src/main.rs",
         "zig": "zig/main.zig",
     }[language]
     return project / relative
+
+
+def source_language(language: str) -> str:
+    return "c" if language == "tcc" else language
+
+
+def lanes_for(language: str) -> tuple[str, ...]:
+    # TCC deliberately omits an optimizer, so separate optimization lanes would
+    # measure the same compiler configuration under misleading names.
+    return ("default",) if language == "tcc" else LANES
 
 
 def write_variant(path: Path, original: str, lane: str, sample: int) -> None:
@@ -80,8 +91,28 @@ def command_for(
     lane: str,
     sample: int,
     rust_frontend_threads: int,
+    tcc: str = "tcc",
+    tcc_runtime_path: Path | None = None,
 ) -> tuple[list[str], Path, Path, dict[str, str]]:
     env = os.environ.copy()
+    if language == "tcc":
+        root = project / "c"
+        output = root / "typical-project-tcc"
+        output.unlink(missing_ok=True)
+        sources = sorted(
+            str(path.relative_to(root)) for path in (root / "src").glob("*.c")
+        )
+        if not sources:
+            raise RuntimeError(f"TCC project has no C sources: {root}")
+        command = [tcc]
+        if tcc_runtime_path is not None:
+            command.append(f"-B{tcc_runtime_path}")
+        return (
+            [*command, "-std=c11", "-Iinclude", "-o", str(output), *sources],
+            root,
+            output,
+            env,
+        )
     if language in {"c", "cpp"}:
         root = project / language
         build_file = f"build-{lane}.ninja"
@@ -155,6 +186,12 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--languages", type=parse_languages, default=LANGUAGES)
     parser.add_argument("--rust-frontend-threads", type=int, default=16)
+    parser.add_argument("--tcc", default="tcc", help="TCC executable")
+    parser.add_argument(
+        "--tcc-runtime-path",
+        type=Path,
+        help="optional TCC runtime directory for an extracted installation",
+    )
     parser.add_argument("--skip-generation", action="store_true")
     parser.add_argument("--skip-lanius", action="store_true")
     args = parser.parse_args()
@@ -199,7 +236,7 @@ def main() -> int:
         manifest = json.loads((project / "manifest.json").read_text())
         expected = manifest["expected_stdout"]
         for language in args.languages:
-            for lane in LANES:
+            for lane in lanes_for(language):
                 elapsed = []
                 artifact_hashes = []
                 source = entry_source(project, language)
@@ -220,6 +257,8 @@ def main() -> int:
                             lane,
                             sample,
                             args.rust_frontend_threads,
+                            args.tcc,
+                            args.tcc_runtime_path,
                         )
                         wall_ms = timed_checked(command, cwd, env)
                         artifact_hashes.append(validate(artifact, expected, project))
@@ -238,8 +277,8 @@ def main() -> int:
                     source.write_text(original)
                 row = {
                     "file_count": count,
-                    "source_files": manifest["languages"][language]["source_file_count"],
-                    "source_bytes": manifest["languages"][language]["source_bytes"],
+                    "source_files": manifest["languages"][source_language(language)]["source_file_count"],
+                    "source_bytes": manifest["languages"][source_language(language)]["source_bytes"],
                     "language": language,
                     "lane": lane,
                     "compile": median_mad(elapsed),
@@ -272,11 +311,23 @@ def main() -> int:
                 if row["file_count"] == count:
                     row["speedup_vs_lanius"] = row["compile"]["median_ms"] / lanius_ms
 
+    versions = {
+        "gcc": tool_version(["gcc", "--version"]),
+        "g++": tool_version(["g++", "--version"]),
+        "rustc": tool_version(["rustc", "--version"]),
+        "cargo": tool_version(["cargo", "--version"]),
+        "zig": tool_version(["zig", "version"]),
+        "ninja": tool_version(["ninja", "--version"]),
+    }
+    if "tcc" in args.languages:
+        versions["tcc"] = tool_version([args.tcc, "-v"])
+
     document = {
         "schema": "lanius.typical-project-comparison.v1",
         "measurement_policy": {
             "native": "clean build; cleanup occurs before timed interval; default compiler parallelism",
             "native_source_variation": "a semantics-neutral entry-source marker changes for every sample",
+            "tcc": "one TCC process compiles and links every generated C source; TCC has one default, non-optimizing lane",
             "zig_cache": "fresh local build cache per sample; persistent compiler-global cache; one unmeasured primer per lane",
             "lanius": "warm daemon edit job including request, source load, compile, and artifact write",
             "debug_info": "disabled",
@@ -294,14 +345,7 @@ def main() -> int:
                 capture_output=True,
                 text=True,
             ).stdout.strip(),
-            "versions": {
-                "gcc": tool_version(["gcc", "--version"]),
-                "g++": tool_version(["g++", "--version"]),
-                "rustc": tool_version(["rustc", "--version"]),
-                "cargo": tool_version(["cargo", "--version"]),
-                "zig": tool_version(["zig", "version"]),
-                "ninja": tool_version(["ninja", "--version"]),
-            },
+            "versions": versions,
         },
         "rows": rows,
         "native_samples": samples,

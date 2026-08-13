@@ -1,6 +1,13 @@
 import hir_records;
 import gpu_index;
 
+// Projection columns are sparse by their compact semantic domain. Value,
+// enclosing-function, control-depth, and expression-type columns cover every
+// active HIR row. Function metadata covers HIR_FN/HIR_CONST_ITEM rows, type
+// identity covers HIR_TYPE rows, and parameter types cover compact parameter
+// rows. Consumers must establish the corresponding compact-row identity before
+// reading a sparse column; inactive workspace tails are never initialized.
+
 struct Params
 {
     uint n_tokens;
@@ -57,6 +64,7 @@ RWStructuredBuffer<uint> semantic_type_external_unit_id_by_hir;
 RWStructuredBuffer<uint> semantic_type_external_local_index_by_hir;
 
 static const uint INVALID = 0xffffffffu;
+static const uint HIR_FN = 3u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_NAME_EXPR = 22u;
@@ -120,115 +128,114 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (row < gParams.n_hir_nodes)
+    if (row >= hir_count)
+        return;
+
+    HirCore core = compact_hir_core[row];
+    HirPayload payload = compact_hir_payload[row];
+    uint declaration = INVALID;
+    uint type_id = 0u;
+    uint const_value = 0u;
+    uint const_present = 0u;
+    if ((core.kind == HIR_NAME_EXPR || payload.a == HIR_EXPR_NAME) &&
+        valid_token(payload.d))
     {
-        uint declaration = INVALID;
-        uint type_id = 0u;
-        uint const_value = 0u;
-        uint const_present = 0u;
-        if (row < hir_count)
+        declaration = visible_decl[payload.d];
+        type_id = visible_type[payload.d];
+        if (token_is_wildcard(core.token_start))
         {
-            HirCore core = compact_hir_core[row];
-            HirPayload payload = compact_hir_payload[row];
-            if ((core.kind == HIR_NAME_EXPR || payload.a == HIR_EXPR_NAME) &&
-                valid_token(payload.d))
+            declaration = core.token_start;
+            type_id = 0u;
+        }
+    }
+    else if ((core.kind == HIR_LET_STMT ||
+              (core.kind == HIR_STMT &&
+               (payload.a == HIR_STMT_LET || payload.a == HIR_STMT_CONST))) &&
+             valid_token(payload.b))
+    {
+        declaration = payload.b;
+        type_id = visible_type[payload.b];
+    }
+    else if (core.kind == HIR_CONST_ITEM && valid_token(payload.b))
+    {
+        declaration = payload.b;
+        type_id = visible_type[payload.b];
+    }
+    if (core.kind == HIR_PATH_EXPR)
+    {
+        uint path = path_id_by_owner_hir[row];
+        if (path != INVALID && path < gParams.n_hir_nodes)
+        {
+            uint value_base = path * 3u;
+            if (resolved_dependency_value_metadata[value_base] == HIR_ITEM_KIND_CONST)
             {
-                declaration = visible_decl[payload.d];
-                type_id = visible_type[payload.d];
-                if (token_is_wildcard(core.token_start))
-                {
-                    declaration = core.token_start;
-                    type_id = 0u;
-                }
-            }
-            else if ((core.kind == HIR_LET_STMT ||
-                      (core.kind == HIR_STMT &&
-                       (payload.a == HIR_STMT_LET || payload.a == HIR_STMT_CONST))) &&
-                     valid_token(payload.b))
-            {
-                declaration = payload.b;
-                type_id = visible_type[payload.b];
-            }
-            else if (core.kind == HIR_CONST_ITEM && valid_token(payload.b))
-            {
-                declaration = payload.b;
-                type_id = visible_type[payload.b];
-            }
-            if (core.kind == HIR_PATH_EXPR)
-            {
-                uint path = path_id_by_owner_hir[row];
-                if (path != INVALID && path < gParams.n_hir_nodes)
-                {
-                    uint value_base = path * 3u;
-                    if (resolved_dependency_value_metadata[value_base] == HIR_ITEM_KIND_CONST)
-                    {
-                        type_id = resolved_dependency_value_metadata[value_base + 1u];
-                        const_value = resolved_dependency_value_metadata[value_base + 2u];
-                        const_present = CONST_PRESENT;
-                    }
-                }
+                type_id = resolved_dependency_value_metadata[value_base + 1u];
+                const_value = resolved_dependency_value_metadata[value_base + 2u];
+                const_present = CONST_PRESENT;
             }
         }
-        semantic_value_decl_by_hir[row] = declaration;
-        semantic_value_type_by_hir[row] = type_id;
-        semantic_value_const_by_hir[row] = const_value;
-        semantic_value_const_present_by_hir[row] = const_present;
-        uint token = row < hir_count ? compact_hir_core[row].token_start : INVALID;
-        uint nearest_fn = row < hir_count ? compact_hir_nearest_fn[row] : INVALID;
-        semantic_enclosing_fn_by_hir[row] = nearest_fn < hir_count ? nearest_fn + 1u : 0u;
-        semantic_function_return_type_by_hir[row] = valid_token(token) ? call_return_type[token] : 0u;
-        semantic_function_entrypoint_by_hir[row] = valid_token(token) ? fn_entrypoint_tag[token] : 0u;
-        semantic_function_host_service_by_hir[row] = row < hir_count
-            ? host_service_for_function(compact_hir_payload[row]) : INVALID;
-        semantic_control_depth_by_hir[row] = valid_token(token)
-            ? uint(max(if_depth[token], 0)) : 0u;
-            semantic_expr_scalar_type_by_hir[row] = row < hir_count
-            ? compact_expr_scalar_type[row] : 0u;
+    }
+    semantic_value_decl_by_hir[row] = declaration;
+    semantic_value_type_by_hir[row] = type_id;
+    semantic_value_const_by_hir[row] = const_value;
+    semantic_value_const_present_by_hir[row] = const_present;
 
+    uint token = core.token_start;
+    uint nearest_fn = compact_hir_nearest_fn[row];
+    semantic_enclosing_fn_by_hir[row] = nearest_fn < hir_count ? nearest_fn + 1u : 0u;
+    if (core.kind == HIR_FN || core.kind == HIR_CONST_ITEM)
+    {
+        semantic_function_return_type_by_hir[row] = valid_token(token)
+            ? call_return_type[token] : 0u;
+        semantic_function_entrypoint_by_hir[row] = valid_token(token)
+            ? fn_entrypoint_tag[token] : 0u;
+        semantic_function_host_service_by_hir[row] = host_service_for_function(payload);
+    }
+    semantic_control_depth_by_hir[row] = valid_token(token)
+        ? uint(max(if_depth[token], 0)) : 0u;
+    semantic_expr_scalar_type_by_hir[row] = compact_expr_scalar_type[row];
+
+    if (core.kind == HIR_TYPE)
+    {
         uint type_tag = INVALID;
         uint type_payload = INVALID;
         uint external_library = INVALID;
         uint external_unit = INVALID;
         uint external_local = INVALID;
         uint generic_param_slot = INVALID;
-        if (row < hir_count && compact_hir_core[row].kind == HIR_TYPE)
+        uint leaf = type_leaf_token(row, core, payload);
+        uint head = core.token_start;
+        uint identity_token = valid_token(leaf) ? leaf : head;
+        if (valid_token(identity_token))
         {
-            HirCore core = compact_hir_core[row];
-            HirPayload payload = compact_hir_payload[row];
-            uint leaf = type_leaf_token(row, core, payload);
-            uint head = core.token_start;
-            uint identity_token = valid_token(leaf) ? leaf : head;
-            if (valid_token(identity_token))
-            {
-                type_tag = type_expr_ref_tag[identity_token];
-                type_payload = type_expr_ref_payload[identity_token];
-            }
-            if ((type_tag == INVALID || type_tag == 0u) && valid_token(head))
-            {
-                type_tag = type_expr_ref_tag[head];
-                type_payload = type_expr_ref_payload[head];
-            }
-            if (type_tag == 2u)
-            {
-                uint parameter_token = valid_token(type_payload) ? type_payload : identity_token;
-                if (valid_token(parameter_token))
-                    generic_param_slot = type_generic_param_slot_by_token[parameter_token];
-            }
-            uint external_token = valid_token(identity_token) &&
-                external_type_library_id[identity_token] != INVALID
-                ? identity_token : INVALID;
-            if (external_token == INVALID && valid_token(type_payload) &&
-                external_type_library_id[type_payload] != INVALID)
-                external_token = type_payload;
-            if (external_token == INVALID && valid_token(head) &&
-                external_type_library_id[head] != INVALID)
-                external_token = head;
-            if (external_token != INVALID)
-            {
-                external_library = external_type_library_id[external_token];
-                external_unit = external_type_unit_id[external_token];
-                external_local = external_type_local_index[external_token];
-            }
+            type_tag = type_expr_ref_tag[identity_token];
+            type_payload = type_expr_ref_payload[identity_token];
+        }
+        if ((type_tag == INVALID || type_tag == 0u) && valid_token(head))
+        {
+            type_tag = type_expr_ref_tag[head];
+            type_payload = type_expr_ref_payload[head];
+        }
+        if (type_tag == 2u)
+        {
+            uint parameter_token = valid_token(type_payload) ? type_payload : identity_token;
+            if (valid_token(parameter_token))
+                generic_param_slot = type_generic_param_slot_by_token[parameter_token];
+        }
+        uint external_token = valid_token(identity_token) &&
+            external_type_library_id[identity_token] != INVALID
+            ? identity_token : INVALID;
+        if (external_token == INVALID && valid_token(type_payload) &&
+            external_type_library_id[type_payload] != INVALID)
+            external_token = type_payload;
+        if (external_token == INVALID && valid_token(head) &&
+            external_type_library_id[head] != INVALID)
+            external_token = head;
+        if (external_token != INVALID)
+        {
+            external_library = external_type_library_id[external_token];
+            external_unit = external_type_unit_id[external_token];
+            external_local = external_type_local_index[external_token];
         }
         semantic_type_ref_tag_by_hir[row] = type_tag;
         semantic_type_ref_payload_by_hir[row] = type_payload;
@@ -236,18 +243,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_type_external_library_id_by_hir[row] = external_library;
         semantic_type_external_unit_id_by_hir[row] = external_unit;
         semantic_type_external_local_index_by_hir[row] = external_local;
-
     }
 
     uint param_count = min(compact_param_count[0u], gParams.n_hir_nodes);
-    if (row < gParams.n_hir_nodes)
+    if (row < param_count)
     {
-        uint type_id = 0u;
-        if (row < param_count)
-        {
-            uint token = compact_params[row].name_token;
-            if (valid_token(token)) type_id = visible_type[token];
-        }
-        semantic_param_type_by_row[row] = type_id;
+        uint param_type_id = 0u;
+        uint param_token = compact_params[row].name_token;
+        if (valid_token(param_token)) param_type_id = visible_type[param_token];
+        semantic_param_type_by_row[row] = param_type_id;
     }
 }

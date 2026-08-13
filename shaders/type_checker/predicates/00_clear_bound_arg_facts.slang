@@ -22,26 +22,13 @@ RWStructuredBuffer<uint> predicate_owner_node;
 RWStructuredBuffer<uint> predicate_subject_token;
 RWStructuredBuffer<uint> predicate_bound_token;
 RWStructuredBuffer<uint> predicate_bound_decl_id;
-RWStructuredBuffer<uint> predicate_method_contract_owner_hir;
-RWStructuredBuffer<uint> predicate_method_contract_name_token;
-RWStructuredBuffer<uint> predicate_method_contract_name_id;
-RWStructuredBuffer<uint> predicate_method_contract_param_count;
-RWStructuredBuffer<uint> predicate_method_contract_return_type_node;
-RWStructuredBuffer<uint> predicate_method_contract_visibility;
-RWStructuredBuffer<uint> predicate_method_contract_status;
-RWStructuredBuffer<uint> predicate_method_contract_param_type_node;
 RWStructuredBuffer<uint> predicate_method_contract_owner_count;
 RWStructuredBuffer<uint> predicate_method_contract_lookup_head;
-RWStructuredBuffer<uint> predicate_method_contract_lookup_next;
-RWStructuredBuffer<uint> predicate_method_validation_owner_node;
-RWStructuredBuffer<uint> predicate_method_validation_peer_node;
 RWStructuredBuffer<uint> predicate_method_validation_status;
-RWStructuredBuffer<uint> predicate_method_validation_detail_token;
 RWStructuredBuffer<uint> predicate_method_validation_first_error_row;
 RWStructuredBuffer<uint> predicate_owner_lookup_head;
 RWStructuredBuffer<uint> predicate_owner_lookup_next;
 RWStructuredBuffer<uint> predicate_impl_lookup_head;
-RWStructuredBuffer<uint> predicate_impl_lookup_next;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -87,7 +74,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         predicate_impl_lookup_head[node * 2u + 1u] = 0u;
     }
     predicate_owner_lookup_next[node] = 0u;
-    predicate_impl_lookup_next[node] = 0u;
 
     uint method_count = active_method_count();
     if (node < method_count)
@@ -95,7 +81,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         predicate_method_contract_lookup_head[node * 2u] = 0u;
         predicate_method_contract_lookup_head[node * 2u + 1u] = 0u;
     }
-    predicate_method_contract_lookup_next[node] = 0u;
     predicate_method_contract_owner_count[node] = 0u;
 
     predicate_bound_arg_count[node] = 0u;
@@ -107,17 +92,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     predicate_subject_token[node] = INVALID;
     predicate_bound_token[node] = INVALID;
     predicate_bound_decl_id[node] = INVALID;
-    predicate_method_contract_owner_hir[node] = INVALID;
-    predicate_method_contract_name_token[node] = INVALID;
-    predicate_method_contract_name_id[node] = INVALID;
-    predicate_method_contract_param_count[node] = 0u;
-    predicate_method_contract_return_type_node[node] = INVALID;
-    predicate_method_contract_visibility[node] = 0u;
-    predicate_method_contract_status[node] = INVALID;
-    predicate_method_contract_param_type_node[node] = INVALID;
-    predicate_method_validation_owner_node[node] = INVALID;
-    predicate_method_validation_peer_node[node] = INVALID;
     predicate_method_validation_status[node] = INVALID;
-    predicate_method_validation_detail_token[node] = INVALID;
     predicate_method_validation_first_error_row[node] = INVALID;
 }

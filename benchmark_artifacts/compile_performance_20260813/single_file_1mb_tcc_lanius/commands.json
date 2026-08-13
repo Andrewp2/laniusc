@@ -1,0 +1,106 @@
+{
+  "default": {
+    "tcc": [
+      "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc",
+      "-B/tmp/lanius-tcc.JrXWwY/root/usr/lib/x86_64-linux-gnu/tcc",
+      "-std=c11",
+      "{source}",
+      "-o",
+      "{output}"
+    ]
+  },
+  "lanius_daemon": [
+    "target/release/laniusc",
+    "daemon",
+    "--stdio",
+    "--backend",
+    "x86_64",
+    "--stdlib-root",
+    "stdlib"
+  ],
+  "o0": {
+    "c": [
+      "gcc",
+      "-O0",
+      "-g0",
+      "{source}",
+      "-o",
+      "{output}"
+    ],
+    "cpp": [
+      "g++",
+      "-O0",
+      "-g0",
+      "{source}",
+      "-o",
+      "{output}"
+    ],
+    "rust": [
+      "rustc",
+      "-Awarnings",
+      "-Zthreads=16",
+      "-C",
+      "opt-level=0",
+      "-C",
+      "debuginfo=0",
+      "-C",
+      "strip=debuginfo",
+      "{source}",
+      "-o",
+      "{output}"
+    ],
+    "zig": [
+      "zig",
+      "build-exe",
+      "-lc",
+      "-O",
+      "Debug",
+      "-fstrip",
+      "{source}",
+      "-femit-bin={output}"
+    ]
+  },
+  "optimized": {
+    "c": [
+      "gcc",
+      "-O2",
+      "-g0",
+      "{source}",
+      "-o",
+      "{output}"
+    ],
+    "cpp": [
+      "g++",
+      "-O2",
+      "-g0",
+      "{source}",
+      "-o",
+      "{output}"
+    ],
+    "rust": [
+      "rustc",
+      "-Awarnings",
+      "-Zthreads=16",
+      "-C",
+      "opt-level=3",
+      "-C",
+      "debuginfo=0",
+      "-C",
+      "strip=debuginfo",
+      "{source}",
+      "-o",
+      "{output}"
+    ],
+    "zig": [
+      "zig",
+      "build-exe",
+      "-lc",
+      "-O",
+      "ReleaseFast",
+      "-fstrip",
+      "{source}",
+      "-femit-bin={output}"
+    ]
+  },
+  "schema": "lanius.compiler-stress-command-templates.v1"
+}

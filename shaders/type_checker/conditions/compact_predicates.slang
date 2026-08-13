@@ -19,6 +19,7 @@ struct PredicateDiagnosticFact
     uint method_validation_detail_token;
     uint winner_raw;
 };
+struct TokenIn { uint kind; uint start; uint len; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -41,7 +42,15 @@ StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<CompactMethodCore> compact_method_cores;
-StructuredBuffer<PredicateDiagnosticFact> compact_predicate_diagnostic_facts;
+StructuredBuffer<TokenIn> token_words;
+StructuredBuffer<uint> predicate_bound_first_arg_token;
+StructuredBuffer<uint> predicate_bound_second_arg_token;
+StructuredBuffer<uint> predicate_bound_token;
+StructuredBuffer<uint> predicate_status;
+StructuredBuffer<uint> predicate_method_contract_status;
+StructuredBuffer<uint> predicate_method_validation_first_error_row;
+StructuredBuffer<uint> predicate_method_validation_status;
+StructuredBuffer<uint> predicate_method_validation_detail_token;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -82,6 +91,9 @@ static const uint HIR_TYPE = 5u;
 static const uint HIR_IMPL = 35u;
 static const uint HIR_IMPL_INHERENT = 1u;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
+static const uint TK_LT = 12u;
+static const uint TK_GENERIC_PARAM_LT = 133u;
+static const uint TK_BOUND_TYPE_IDENT = 174u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
@@ -96,6 +108,73 @@ uint active_path_count() { return min(gParams.n_hir_nodes, compact_path_count[0u
 uint active_path_segment_count() { return min(gParams.n_tokens, compact_path_segment_count[0u]); }
 bool valid_hir(uint hir) { return hir != INVALID && hir < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
+
+bool method_contract_row(uint hir)
+{
+    if (!valid_hir(hir)) return false;
+    uint row = compact_method_row_for_hir(
+        compact_method_cores,
+        active_method_count(),
+        hir);
+    return row < active_method_count() && compact_method_cores[row].node == hir;
+}
+
+uint fallback_bound_arg_token(uint dense)
+{
+    uint bound_token = valid_hir(dense) ? compact_hir_core[dense].token_start : INVALID;
+    if (!valid_token(bound_token)) return INVALID;
+    [unroll]
+    for (uint offset = 1u; offset <= 3u; ++offset)
+    {
+        uint candidate = bound_token + offset;
+        if (candidate < bound_token || !valid_token(candidate)) continue;
+        uint kind = token_words[candidate].kind;
+        if (kind == TK_BOUND_TYPE_IDENT) return candidate;
+        if (offset <= 2u && (kind == TK_LT || kind == TK_GENERIC_PARAM_LT))
+        {
+            uint arg = candidate + 1u;
+            return arg >= candidate && valid_token(arg) ? arg : INVALID;
+        }
+    }
+    return INVALID;
+}
+
+PredicateDiagnosticFact predicate_diagnostic_fact(uint dense)
+{
+    PredicateDiagnosticFact fact;
+    fact.status = INVALID;
+    fact.first_arg_token = INVALID;
+    fact.second_arg_token = INVALID;
+    fact.fallback_arg_token = INVALID;
+    fact.method_contract_status = INVALID;
+    fact.method_validation_status = INVALID;
+    fact.method_validation_detail_token = INVALID;
+    fact.winner_raw = INVALID;
+    if (!valid_hir(dense)) return fact;
+
+    fact.status = predicate_status[dense];
+    if (fact.status != INVALID && fact.status != PREDICATE_STATUS_OK)
+    {
+        fact.first_arg_token = predicate_bound_first_arg_token[dense];
+        fact.second_arg_token = predicate_bound_second_arg_token[dense];
+        fact.fallback_arg_token = fallback_bound_arg_token(dense);
+        fact.winner_raw = dense;
+    }
+    if (method_contract_row(dense))
+        fact.method_contract_status = predicate_method_contract_status[dense];
+    fact.method_validation_status = predicate_method_validation_status[dense];
+    fact.method_validation_detail_token = predicate_method_validation_detail_token[dense];
+    uint error_row = predicate_method_validation_first_error_row[dense];
+    if ((fact.method_validation_status == INVALID ||
+         fact.method_validation_status == PREDICATE_STATUS_OK) &&
+        valid_hir(error_row))
+    {
+        fact.method_validation_status = predicate_method_validation_status[error_row];
+        fact.method_validation_detail_token =
+            predicate_method_validation_detail_token[error_row];
+    }
+    return fact;
+}
 
 uint generic_predicate_for_bound(uint bound)
 {
@@ -201,7 +280,7 @@ bool method_validation_can_override(uint predicate_status)
 void validate_generic_bound(HirPredicate predicate)
 {
     if (!valid_hir(predicate.bound)) return;
-    PredicateDiagnosticFact fact = compact_predicate_diagnostic_facts[predicate.bound];
+    PredicateDiagnosticFact fact = predicate_diagnostic_fact(predicate.bound);
     uint detail = fact.status;
     if (detail == INVALID || detail == PREDICATE_STATUS_OK) return;
 
@@ -241,7 +320,7 @@ void validate_generic_bound(HirPredicate predicate)
 void validate_trait_impl(HirPredicate predicate)
 {
     if (!valid_hir(predicate.owner)) return;
-    PredicateDiagnosticFact fact = compact_predicate_diagnostic_facts[predicate.owner];
+    PredicateDiagnosticFact fact = predicate_diagnostic_fact(predicate.owner);
     uint detail = fact.status;
     uint method_detail_token = INVALID;
     bool method_target_error =
@@ -296,7 +375,7 @@ void validate_method(uint row)
 {
     CompactMethodCore method = compact_method_cores[row];
     if (!valid_hir(method.node)) return;
-    PredicateDiagnosticFact fact = compact_predicate_diagnostic_facts[method.node];
+    PredicateDiagnosticFact fact = predicate_diagnostic_fact(method.node);
     uint detail = fact.method_validation_status;
     bool validation_error = detail != INVALID && detail != PREDICATE_STATUS_OK;
     if (!validation_error)
@@ -325,16 +404,21 @@ void validate_method(uint row)
 
 void validate_dense_method_fact(uint dense)
 {
-    PredicateDiagnosticFact fact = compact_predicate_diagnostic_facts[dense];
+    PredicateDiagnosticFact fact = predicate_diagnostic_fact(dense);
     uint detail = fact.method_validation_status;
-    if ((detail == INVALID || detail == PREDICATE_STATUS_OK) &&
-        compact_hir_core[dense].kind == HIR_IMPL &&
-        compact_hir_payload[dense].a == HIR_IMPL_INHERENT)
+    bool inherent_impl = compact_hir_core[dense].kind == HIR_IMPL &&
+                         compact_hir_payload[dense].a == HIR_IMPL_INHERENT;
+    if ((detail == INVALID || detail == PREDICATE_STATUS_OK) && inherent_impl)
         detail = fact.status;
     if (detail == INVALID || detail == PREDICATE_STATUS_OK) return;
     uint token = valid_token(fact.method_validation_detail_token)
                      ? fact.method_validation_detail_token
                      : compact_hir_core[dense].token_start;
+    // Inherent-impl target validation is produced from the receiver type path.
+    // Its recorded receiver token remains source-addressable even when the HIR
+    // owner's span is anchored to the resolved nominal declaration.
+    if (inherent_impl && valid_token(predicate_bound_token[dense]))
+        token = predicate_bound_token[dense];
     record_min_token_error(
         status,
         valid_token(token) ? token : 0u,

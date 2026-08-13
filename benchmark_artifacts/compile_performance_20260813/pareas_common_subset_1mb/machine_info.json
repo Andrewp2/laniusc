@@ -1,0 +1,55 @@
+{
+  "cpu": "x86_64",
+  "daemon_ready": {
+    "compute_pipelines_created": 571,
+    "event": "ready",
+    "idle_buffer_timeout_ms": 30000,
+    "pid": 627568,
+    "recorded_compute_passes": 0,
+    "resident_set_bytes": 402018304,
+    "schema": "lanius.compiler-daemon.v1",
+    "startup_ms": 707.2327750000001,
+    "targets": [
+      "x86_64"
+    ],
+    "tracked_gpu_buffers": {
+      "allocations": 3,
+      "bytes": 52,
+      "peak_allocations": 3,
+      "peak_bytes": 52,
+      "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+      "untracked_allocations": 0,
+      "user_owned_wgpu_buffers": 3
+    },
+    "wgpu_resources": {
+      "bind_groups": {
+        "kept_from_user": 0,
+        "released_from_user": 0
+      },
+      "buffers": {
+        "kept_from_user": 3,
+        "released_from_user": 0
+      },
+      "command_buffers": {
+        "kept_from_user": 0,
+        "released_from_user": 0
+      },
+      "command_encoders": {
+        "kept_from_user": 0,
+        "released_from_user": 0
+      },
+      "compute_pipelines": {
+        "kept_from_user": 571,
+        "released_from_user": 0
+      },
+      "query_sets": {
+        "kept_from_user": 0,
+        "released_from_user": 0
+      }
+    }
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 580.173.02, 24576",
+  "logical_cpus": 32,
+  "schema": "lanius.compiler-stress-machine.v1",
+  "system": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39"
+}

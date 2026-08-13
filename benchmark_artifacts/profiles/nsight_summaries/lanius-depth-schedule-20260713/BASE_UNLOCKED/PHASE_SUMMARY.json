@@ -1,0 +1,32 @@
+[
+  {
+    "event_count": 219,
+    "percent_of_labeled_time": 37.40508810777542,
+    "phase": "typecheck",
+    "total_time_ms": 5.2525099999999965
+  },
+  {
+    "event_count": 239,
+    "percent_of_labeled_time": 34.66841529631255,
+    "phase": "x86_codegen",
+    "total_time_ms": 4.868220000000002
+  },
+  {
+    "event_count": 336,
+    "percent_of_labeled_time": 27.194533291497645,
+    "phase": "parser_hir",
+    "total_time_ms": 3.8187200000000017
+  },
+  {
+    "event_count": 6,
+    "percent_of_labeled_time": 0.4245478319190522,
+    "phase": "other",
+    "total_time_ms": 0.059616
+  },
+  {
+    "event_count": 3,
+    "percent_of_labeled_time": 0.30741547249533085,
+    "phase": "lexer",
+    "total_time_ms": 0.043168
+  }
+]

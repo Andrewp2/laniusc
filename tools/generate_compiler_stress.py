@@ -121,15 +121,20 @@ def generate_source_set(
     workload = build_workload(seed, leaf_count, profile)
     natural_lanius_bytes = len(render("lanius", workload).encode())
     lanius_source = render("lanius", workload, target_bytes)
+    languages = (
+        (*LANGUAGES, "pareas")
+        if profile == "pareas-common-subset"
+        else LANGUAGES
+    )
     sources = {
         language: (
             lanius_source if language == "lanius" else render(language, workload)
         )
-        for language in LANGUAGES
+        for language in languages
     }
     set_dir = out / str(target_bytes)
     set_dir.mkdir(parents=True, exist_ok=True)
-    paths = {language: set_dir / source_name(language) for language in LANGUAGES}
+    paths = {language: set_dir / source_name(language) for language in languages}
     for language, path in paths.items():
         path.write_text(sources[language])
 
@@ -182,6 +187,7 @@ def source_name(language: str) -> str:
         "cpp": "scaling.cpp",
         "zig": "scaling.zig",
         "lanius": "scaling.lani",
+        "pareas": "scaling.par",
     }[language]
 
 

@@ -1,0 +1,59 @@
+HES is not supported on architecture 'Ampere GA10x'.
+Launching process...
+Preparing to launch the GPU Trace Profiler activity on localhost...
+Launched process: laniusc (pid: 132071)
+/home/andrew-peterson/code/laniusc/target/release/laniusc daemon --unix-socket /tmp/laniusc-nsight-alias-after.sock --backend x86_64 --stdlib-root stdlib --idle-buffer-timeout-ms 0
+
+Attempting to automatically connect...
+Searching for attachable processes on localhost:49152-49215...
+Attachable process detected: laniusc (pid: 132071)
+- Status: Process created
+- Uptime: 0.403s
+Searching for attachable processes on localhost:49152-49215...
+Attachable process updated: laniusc (pid: 132071)
+- Status: No supported graphics API detected. GPU Trace supports OpenGL, Vulkan, Vulkan SC
+- Uptime: 3.04s
+Searching for attachable processes on localhost:49152-49215...
+Searching for attachable processes on localhost:49152-49215...
+Attachable process updated: laniusc (pid: 132071)
+- Status: Waiting for supported graphics API. GPU Trace supports OpenGL, Vulkan, Vulkan SC
+- Uptime: 6.09s
+Searching for attachable processes on localhost:49152-49215...
+Searching for attachable processes on localhost:49152-49215...
+Attachable process updated: laniusc (pid: 132071)
+- Status: Presenting
+- Uptime: 10.2s
+Connecting to laniusc (pid: 132071)...
+Session established. Starting activity...
+Waiting for target ready...
+INFO: Sample duration = 194422ns; Warp State Sampling Interval = 512; GPU PMA Buffer Size (MB) = 4294.9; SOC PMA Buffer Size (MB) = 0 
+Preparing to collect a GPU Trace report...
+ with a max duration of 9999ms, limited to 6 submits...
+-- Data transfer progress (10)
+-- Data transfer progress (20)
+-- Data transfer progress (30)
+-- Data transfer progress (40)
+-- Data transfer progress (50)
+-- Data transfer progress (60)
+-- Data transfer progress (80)
+-- Data transfer progress (90)
+-- Data transfer progress (100)
+GPU Trace report saved to /home/andrew-peterson/code/laniusc/target/nsight/lanius-alias-rounds-after-1101000/laniusc_2026_07_15_23_58_14.ngfx-gputrace
+Opening generated GPU Trace report...
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (100)
+-- Loading progress (10)
+-- Loading progress (20)
+-- Loading progress (30)
+-- Loading progress (40)
+Succeeded to export data:
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-alias-rounds-after-1101000/ReportGeneratorTags.txt
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-alias-rounds-after-1101000/BASE_UNLOCKED/REPRO_INFO.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-alias-rounds-after-1101000/BASE_UNLOCKED/D3DPERF_EVENTS.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-alias-rounds-after-1101000/BASE_UNLOCKED/FRAME.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-alias-rounds-after-1101000/BASE_UNLOCKED/GPUTRACE_FRAME.xls
+    /home/andrew-peterson/code/laniusc/target/nsight/lanius-alias-rounds-after-1101000/BASE_UNLOCKED/GPUTRACE_REGIMES.xls
+Terminating process...
+Activity session destroyed, connection error encountered.

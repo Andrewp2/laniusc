@@ -50,6 +50,26 @@ class CompilerStressModelTests(unittest.TestCase):
             for language in ("rust", "c", "cpp", "zig", "lanius"):
                 self.assertGreater(len(render(language, larger)), len(render(language, smaller)))
 
+    def test_pareas_uses_the_same_scalar_common_subset_as_other_languages(self) -> None:
+        workload = build_workload(19, 16, "pareas-common-subset")
+        pareas = render("pareas", workload)
+
+        self.assertIn("fn leaf_0000000[x: int]: int {", pareas)
+        self.assertIn("fn main[]: int { return reduce_", pareas)
+        self.assertIn("element_0", pareas)
+        self.assertNotIn("values[", pareas)
+        self.assertNotIn("Pair", pareas)
+        for language in ("rust", "c", "cpp", "zig", "lanius"):
+            source = render(language, workload)
+            self.assertIn("element_0", source)
+            self.assertNotIn("values[", source)
+            self.assertNotIn("pair.", source)
+            self.assertNotIn("Pair", source)
+
+    def test_pareas_rejects_a_workload_with_unsupported_constructs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "pareas-common-subset"):
+            render("pareas", build_workload(19, 8, "mixed-function-sizes"))
+
     def test_bounded_project_is_explicitly_stress_only_and_respects_file_capacity(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)

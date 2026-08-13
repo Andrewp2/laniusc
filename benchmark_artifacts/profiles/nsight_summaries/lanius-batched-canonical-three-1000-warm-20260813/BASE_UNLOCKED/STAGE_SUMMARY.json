@@ -1,0 +1,362 @@
+[
+  {
+    "event_count": 5,
+    "first_event_index": 0,
+    "last_event_index": 4,
+    "percent_of_labeled_time": 2.859488373053397,
+    "stage": "lexer",
+    "total_time_ms": 2.92208
+  },
+  {
+    "event_count": 37,
+    "first_event_index": 5,
+    "last_event_index": 72,
+    "percent_of_labeled_time": 0.7984584628605981,
+    "stage": "parser.syntax_contexts",
+    "total_time_ms": 0.8159359999999999
+  },
+  {
+    "event_count": 56,
+    "first_event_index": 10,
+    "last_event_index": 108,
+    "percent_of_labeled_time": 3.884233621828435,
+    "stage": "parser.delimiter_matching",
+    "total_time_ms": 3.9692559999999997
+  },
+  {
+    "event_count": 2,
+    "first_event_index": 60,
+    "last_event_index": 66,
+    "percent_of_labeled_time": 1.5076117359506038,
+    "stage": "parser.token_classification",
+    "total_time_ms": 1.540612
+  },
+  {
+    "event_count": 10,
+    "first_event_index": 73,
+    "last_event_index": 109,
+    "percent_of_labeled_time": 3.820655294199733,
+    "stage": "parser.production_parsing_and_packing",
+    "total_time_ms": 3.904286
+  },
+  {
+    "event_count": 66,
+    "first_event_index": 110,
+    "last_event_index": 470,
+    "percent_of_labeled_time": 9.3024928047476,
+    "stage": "parser.raw_tree_recovery",
+    "total_time_ms": 9.506115999999999
+  },
+  {
+    "event_count": 7,
+    "first_event_index": 153,
+    "last_event_index": 344,
+    "percent_of_labeled_time": 3.1230629625073796,
+    "stage": "hir.core_records",
+    "total_time_ms": 3.1914239999999996
+  },
+  {
+    "event_count": 67,
+    "first_event_index": 154,
+    "last_event_index": 487,
+    "percent_of_labeled_time": 10.116855146023186,
+    "stage": "hir.expression_and_control_relations",
+    "total_time_ms": 10.338304
+  },
+  {
+    "event_count": 12,
+    "first_event_index": 177,
+    "last_event_index": 527,
+    "percent_of_labeled_time": 0.5447166429312144,
+    "stage": "hir.semantic_compaction",
+    "total_time_ms": 0.55664
+  },
+  {
+    "event_count": 1,
+    "first_event_index": 183,
+    "last_event_index": 183,
+    "percent_of_labeled_time": 0.1079412629022073,
+    "stage": "hir.semantic_subtree_ranges",
+    "total_time_ms": 0.110304
+  },
+  {
+    "event_count": 7,
+    "first_event_index": 184,
+    "last_event_index": 190,
+    "percent_of_labeled_time": 1.7354211919864886,
+    "stage": "hir.semantic_parents",
+    "total_time_ms": 1.7734079999999999
+  },
+  {
+    "event_count": 1,
+    "first_event_index": 191,
+    "last_event_index": 191,
+    "percent_of_labeled_time": 0.09870346987750432,
+    "stage": "hir.semantic_navigation_batch",
+    "total_time_ms": 0.100864
+  },
+  {
+    "event_count": 21,
+    "first_event_index": 192,
+    "last_event_index": 212,
+    "percent_of_labeled_time": 1.7831445701886834,
+    "stage": "hir.semantic_depth",
+    "total_time_ms": 1.8221760000000002
+  },
+  {
+    "event_count": 22,
+    "first_event_index": 213,
+    "last_event_index": 234,
+    "percent_of_labeled_time": 1.5315634543905015,
+    "stage": "hir.semantic_child_indices",
+    "total_time_ms": 1.5650880000000003
+  },
+  {
+    "event_count": 55,
+    "first_event_index": 237,
+    "last_event_index": 486,
+    "percent_of_labeled_time": 10.757550892753432,
+    "stage": "hir.declaration_and_type_relations",
+    "total_time_ms": 10.993024
+  },
+  {
+    "event_count": 26,
+    "first_event_index": 248,
+    "last_event_index": 412,
+    "percent_of_labeled_time": 1.3551059503423608,
+    "stage": "hir.family_compaction",
+    "total_time_ms": 1.3847679999999998
+  },
+  {
+    "event_count": 36,
+    "first_event_index": 267,
+    "last_event_index": 471,
+    "percent_of_labeled_time": 4.124690242806193,
+    "stage": "hir.aggregate_relations",
+    "total_time_ms": 4.214976000000002
+  },
+  {
+    "event_count": 6,
+    "first_event_index": 345,
+    "last_event_index": 356,
+    "percent_of_labeled_time": 1.2207978341289676,
+    "stage": "hir.literals_and_strings",
+    "total_time_ms": 1.24752
+  },
+  {
+    "event_count": 48,
+    "first_event_index": 361,
+    "last_event_index": 550,
+    "percent_of_labeled_time": 3.4264403055086903,
+    "stage": "hir.canonical_core_compaction",
+    "total_time_ms": 3.501442
+  },
+  {
+    "event_count": 17,
+    "first_event_index": 368,
+    "last_event_index": 516,
+    "percent_of_labeled_time": 2.890207949179612,
+    "stage": "hir.canonical_relationships",
+    "total_time_ms": 2.953471999999999
+  },
+  {
+    "event_count": 49,
+    "first_event_index": 369,
+    "last_event_index": 547,
+    "percent_of_labeled_time": 6.167743642632062,
+    "stage": "hir.canonical_side_tables",
+    "total_time_ms": 6.302749999999999
+  },
+  {
+    "event_count": 642,
+    "first_event_index": 551,
+    "last_event_index": 1192,
+    "percent_of_labeled_time": 20.37894718712627,
+    "stage": "typecheck",
+    "total_time_ms": 20.825023999999996
+  },
+  {
+    "event_count": 1,
+    "first_event_index": 1193,
+    "last_event_index": 1193,
+    "percent_of_labeled_time": 0.003883004525637861,
+    "stage": "semantic_lir.control",
+    "total_time_ms": 0.003968
+  },
+  {
+    "event_count": 6,
+    "first_event_index": 1194,
+    "last_event_index": 1210,
+    "percent_of_labeled_time": 0.6415725542037781,
+    "stage": "semantic_lir.functions",
+    "total_time_ms": 0.655616
+  },
+  {
+    "event_count": 20,
+    "first_event_index": 1195,
+    "last_event_index": 1246,
+    "percent_of_labeled_time": 0.3346586239152566,
+    "stage": "semantic_lir.compaction_scans",
+    "total_time_ms": 0.341984
+  },
+  {
+    "event_count": 2,
+    "first_event_index": 1200,
+    "last_event_index": 1217,
+    "percent_of_labeled_time": 0.06773337733027977,
+    "stage": "semantic_lir.locals",
+    "total_time_ms": 0.069216
+  },
+  {
+    "event_count": 3,
+    "first_event_index": 1211,
+    "last_event_index": 1247,
+    "percent_of_labeled_time": 0.6360298783889563,
+    "stage": "semantic_lir.projection",
+    "total_time_ms": 0.649952
+  },
+  {
+    "event_count": 23,
+    "first_event_index": 1218,
+    "last_event_index": 1240,
+    "percent_of_labeled_time": 0.4384976804234432,
+    "stage": "semantic_lir.execution_order",
+    "total_time_ms": 0.44809599999999994
+  },
+  {
+    "event_count": 1,
+    "first_event_index": 1248,
+    "last_event_index": 1248,
+    "percent_of_labeled_time": 0.0162209382603259,
+    "stage": "semantic_lir.call_arguments",
+    "total_time_ms": 0.016576
+  },
+  {
+    "event_count": 1,
+    "first_event_index": 1249,
+    "last_event_index": 1249,
+    "percent_of_labeled_time": 0.013308684866097506,
+    "stage": "semantic_lir.aggregates",
+    "total_time_ms": 0.0136
+  },
+  {
+    "event_count": 1,
+    "first_event_index": 1250,
+    "last_event_index": 1250,
+    "percent_of_labeled_time": 0.016941172970726472,
+    "stage": "semantic_lir.strings",
+    "total_time_ms": 0.017312
+  },
+  {
+    "event_count": 77,
+    "first_event_index": 1251,
+    "last_event_index": 1327,
+    "percent_of_labeled_time": 2.557083738343035,
+    "stage": "target_lir.scheduling",
+    "total_time_ms": 2.613056
+  },
+  {
+    "event_count": 4,
+    "first_event_index": 1328,
+    "last_event_index": 1331,
+    "percent_of_labeled_time": 0.25649750056048154,
+    "stage": "x86.lifetime_analysis",
+    "total_time_ms": 0.26211199999999996
+  },
+  {
+    "event_count": 19,
+    "first_event_index": 1332,
+    "last_event_index": 1454,
+    "percent_of_labeled_time": 0.22361722030306425,
+    "stage": "x86.register_allocation",
+    "total_time_ms": 0.22851200000000002
+  },
+  {
+    "event_count": 36,
+    "first_event_index": 1333,
+    "last_event_index": 1453,
+    "percent_of_labeled_time": 0.5038824663067647,
+    "stage": "x86.instruction_lowering",
+    "total_time_ms": 0.514912
+  },
+  {
+    "event_count": 5,
+    "first_event_index": 1342,
+    "last_event_index": 1346,
+    "percent_of_labeled_time": 0.07374577143449325,
+    "stage": "target_lir.instruction_count_scan",
+    "total_time_ms": 0.07536000000000001
+  },
+  {
+    "event_count": 6,
+    "first_event_index": 1347,
+    "last_event_index": 1353,
+    "percent_of_labeled_time": 0.08260778982768287,
+    "stage": "target_lir.page_planning",
+    "total_time_ms": 0.08441599999999999
+  },
+  {
+    "event_count": 3,
+    "first_event_index": 1348,
+    "last_event_index": 1355,
+    "percent_of_labeled_time": 0.08019656927547228,
+    "stage": "target_lir.functions",
+    "total_time_ms": 0.08195200000000001
+  },
+  {
+    "event_count": 20,
+    "first_event_index": 1356,
+    "last_event_index": 1455,
+    "percent_of_labeled_time": 0.2681151995847691,
+    "stage": "x86.operand_resolution",
+    "total_time_ms": 0.27398400000000006
+  },
+  {
+    "event_count": 9,
+    "first_event_index": 1362,
+    "last_event_index": 1402,
+    "percent_of_labeled_time": 0.1260097597674738,
+    "stage": "x86.byte_sizing",
+    "total_time_ms": 0.128768
+  },
+  {
+    "event_count": 5,
+    "first_event_index": 1403,
+    "last_event_index": 1407,
+    "percent_of_labeled_time": 0.07383971509237158,
+    "stage": "target_lir.byte_layout_scan",
+    "total_time_ms": 0.07545600000000001
+  },
+  {
+    "event_count": 4,
+    "first_event_index": 1408,
+    "last_event_index": 1412,
+    "percent_of_labeled_time": 0.26044313419137166,
+    "stage": "x86.executable_layout",
+    "total_time_ms": 0.266144
+  },
+  {
+    "event_count": 21,
+    "first_event_index": 1411,
+    "last_event_index": 1478,
+    "percent_of_labeled_time": 0.9621709439899107,
+    "stage": "x86.object_projection",
+    "total_time_ms": 0.9832320000000001
+  },
+  {
+    "event_count": 18,
+    "first_event_index": 1416,
+    "last_event_index": 1457,
+    "percent_of_labeled_time": 0.8211928280671552,
+    "stage": "x86.machine_byte_emission",
+    "total_time_ms": 0.8391679999999999
+  },
+  {
+    "event_count": 1,
+    "first_event_index": 1458,
+    "last_event_index": 1458,
+    "percent_of_labeled_time": 0.005918450446335126,
+    "stage": "x86.runtime_emission",
+    "total_time_ms": 0.006048
+  }
+]
