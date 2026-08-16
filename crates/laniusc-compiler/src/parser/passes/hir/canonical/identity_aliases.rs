@@ -40,35 +40,12 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalIden
                 },
             ),
             (
-                "canonical_flag".into(),
-                b.hir_semantic_flag.as_entire_binding(),
-            ),
-            (
-                "canonical_local_prefix".into(),
-                b.hir_semantic_local_prefix.as_entire_binding(),
-            ),
-            (
-                "canonical_block_prefix".into(),
-                b.hir_semantic_block_prefix_a.as_entire_binding(),
-            ),
-            (
                 "canonical_anchor_owner".into(),
                 b.hir_canonical_anchor_owner.as_entire_binding(),
             ),
-            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
-            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
-            ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
             (
-                "hir_stmt_record".into(),
-                b.hir_stmt_record.as_entire_binding(),
-            ),
-            (
-                "hir_expr_record".into(),
-                b.hir_expr_record.as_entire_binding(),
-            ),
-            (
-                "hir_call_callee_node".into(),
-                b.hir_call_callee_node.as_entire_binding(),
+                "canonical_raw_to_dense".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
             ),
             (
                 "raw_to_hir".into(),

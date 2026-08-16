@@ -10,6 +10,7 @@ struct Params
     uint uses_status_count;
     uint semantic_parent_local_ancestor_span;
     uint retain_debug_rows;
+    uint parser_feature_flags;
 };
 
 ConstantBuffer<Params> gClear;
@@ -17,7 +18,6 @@ ConstantBuffer<Params> gClear;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> token_count;
 
-RWStructuredBuffer<uint> hir_item_kind;
 RWStructuredBuffer<uint> hir_item_name_token;
 RWStructuredBuffer<uint> hir_item_namespace;
 RWStructuredBuffer<uint> hir_item_visibility;
@@ -55,12 +55,12 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-static const uint HIR_ITEM_KIND_NONE = 0u;
 static const uint HIR_ITEM_NAMESPACE_NONE = 0u;
 static const uint HIR_ITEM_VIS_PRIVATE = 0u;
 static const uint HIR_ITEM_IMPORT_TARGET_NONE = 0u;
 static const uint STMT_RECORD_KIND_NONE = 0u;
 static const uint RECORD_STRIDE = 4u;
+static const uint PARSER_FEATURE_PREDICATES = 0x00000020u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -103,18 +103,30 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_param_record[slot(node, 3u)] = INVALID;
     }
 
-    hir_item_kind[node] = HIR_ITEM_KIND_NONE;
-    hir_type_alias_target_node[node] = INVALID;
-    hir_fn_return_type_node[node] = INVALID;
+    if (gClear.retain_debug_rows != 0u)
+    {
+        hir_type_alias_target_node[node] = INVALID;
+        hir_fn_return_type_node[node] = INVALID;
+    }
+    else if (node < token_count[0u])
+    {
+        // Production stores these owner facts by canonical HIR row, whose
+        // checked upper bound is the token count.
+        hir_type_alias_target_node[node] = INVALID;
+        hir_fn_return_type_node[node] = INVALID;
+    }
     hir_type_len_value[node] = INVALID;
-    hir_method_owner_node[node] = INVALID;
-    hir_method_impl_node[node] = INVALID;
-    hir_method_name_token[node] = INVALID;
-    hir_method_first_param_token[node] = INVALID;
-    hir_method_receiver_mode[node] = 0u;
-    hir_method_visibility[node] = HIR_ITEM_VIS_PRIVATE;
-    hir_method_signature_flags[node] = 0u;
-    hir_method_impl_receiver_type_node[node] = INVALID;
+    if ((gClear.parser_feature_flags & PARSER_FEATURE_PREDICATES) != 0u)
+    {
+        hir_method_owner_node[node] = INVALID;
+        hir_method_impl_node[node] = INVALID;
+        hir_method_name_token[node] = INVALID;
+        hir_method_first_param_token[node] = INVALID;
+        hir_method_receiver_mode[node] = 0u;
+        hir_method_visibility[node] = HIR_ITEM_VIS_PRIVATE;
+        hir_method_signature_flags[node] = 0u;
+        hir_method_impl_receiver_type_node[node] = INVALID;
+    }
 
     hir_expr_result_root_scratch_node[node] = INVALID;
     if (node == 0u)

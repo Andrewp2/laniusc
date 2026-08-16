@@ -57,8 +57,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
-                "hir_token_file_id".into(),
-                b.hir_token_file_id.as_entire_binding(),
+                "token_file_id".into(),
+                b.default_token_file_id.as_entire_binding(),
             ),
             (
                 "owner_value".into(),

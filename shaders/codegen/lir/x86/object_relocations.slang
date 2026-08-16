@@ -57,12 +57,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (function_index >= function_count) return;
     TargetLirFunction function = target_functions[function_index];
 
-    bool aggregate_symbol = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL &&
-        (core.type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
-         (core.type_ref_tag == SEMANTIC_TYPE_REF_SCALAR && core.type_ref_payload >= 128u) ||
-         (core.type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u));
+    uint type_ref_tag = semantic_lir_type_ref_tag(core);
+    bool aggregate_symbol = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL &&
+        (type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
+         (type_ref_tag == SEMANTIC_TYPE_REF_SCALAR && core.type_ref_payload >= 128u) ||
+         (type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u));
     uint aggregate_words = core.value_word_count;
-    uint instruction_bytes = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL
+    uint instruction_bytes = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
         ? (aggregate_symbol
             ? aggregate_words > 2u ? 19u : 19u + aggregate_words * 7u
             : 11u) : 17u;
@@ -77,12 +78,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     X86ArtifactLayout layout = x86_artifact_layout[0u];
     uint wrapper_length = layout.body_offset - layout.text_offset;
     relocation.site_offset = wrapper_length + target_byte_offset[target_row] + prefix_bytes +
-        (core.op == SEMANTIC_LIR_OP_CALL_SYMBOL
+        (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
             ? aggregate_symbol && aggregate_words > 2u ? 8u : 1u
             : 2u);
-    relocation.addend_lo = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xfffffffcu : 0u;
-    relocation.addend_hi = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xffffffffu : 0u;
-    if (core.op == SEMANTIC_LIR_OP_CALL_SYMBOL)
+    relocation.addend_lo = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xfffffffcu : 0u;
+    relocation.addend_hi = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xffffffffu : 0u;
+    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL)
     {
         uint symbol_index = x86_object_symbol_prefix[row];
         relocation.kind = RELOCATION_CALL_REL32;

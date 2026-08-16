@@ -51,8 +51,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // the call opcode.
     relocation.body_byte_offset = wasm_code_entry_offset[function_id] + 22u +
         function.local_count * 6u + relative_instruction_byte + 1u;
-    bool data = instruction.op == SEMANTIC_LIR_OP_CONST_STRING;
-    bool symbolic = instruction.op == SEMANTIC_LIR_OP_CALL_SYMBOL;
+    bool data = semantic_lir_op(instruction) == SEMANTIC_LIR_OP_CONST_STRING;
+    bool symbolic = semantic_lir_op(instruction) == SEMANTIC_LIR_OP_CALL_SYMBOL;
     relocation.target_kind = data ? 3u : symbolic ? RELOCATION_SYMBOL : RELOCATION_LOCAL_FUNCTION;
     relocation.target_index = data ? semantic_lir_strings[operands.a].data_offset
         : symbolic ? wasm_object_symbol_prefix[row] : operands.a;

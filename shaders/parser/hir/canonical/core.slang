@@ -21,7 +21,7 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_item_namespace;
@@ -162,7 +162,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint count = min(canonical_count[0u], gCanonical.canonical_capacity);
     if (row >= count) return;
     uint raw = canonical_dense_to_raw[row];
-    uint item_kind = hir_item_kind[raw];
+    uint item_kind = gCanonical.records_use_token_rows != 0u
+        ? hir_item_kind[row]
+        : hir_item_kind[raw];
     uint item_anchor = hir_token_pos[raw];
 
     HirCore core;
@@ -197,7 +199,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     links.first_child = INVALID;
     links.next_sibling = INVALID;
     links.subtree_end = dense_boundary(subtree_end[raw]);
-    links.file_id = hir_token_file_id[raw];
+    uint anchor = hir_token_pos[raw];
+    links.file_id = anchor < gCanonical.canonical_capacity ? token_file_id[anchor] : INVALID;
 
     HirPayload payload;
     payload.a = INVALID;
@@ -302,7 +305,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // expression containing the call. Following its result-root link can
         // incorrectly turn `f()` inside `f() + g()` into the outer binary
         // node and causes backends to suppress the binary as callee syntax.
-        payload.a = dense_id(hir_call_callee_node[raw]);
+        uint call_record_row = gCanonical.records_use_token_rows != 0u ? row : raw;
+        payload.a = dense_id(hir_call_callee_node[call_record_row]);
         payload.b = call_args.start;
         payload.c = call_args.count;
         payload.d = hir_canonical_context_stmt[row];
@@ -384,7 +388,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else if (expr_form == HIR_EXPR_FLOAT)
             payload.b = hir_expr_float_bits[literal_row];
         else if (core.kind == HIR_NAME_EXPR)
-            payload.b = hir_expr_name_role[raw];
+            payload.b = hir_expr_name_role[literal_row];
     }
 
     hir_core[row] = core;
@@ -393,17 +397,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirSemanticFacts semantic_facts;
     semantic_facts.semantic_kind = semantic_kind(production);
     semantic_facts.type_path_leaf = semantic_id(hir_type_path_leaf_node[raw]);
-    semantic_facts.method_impl_receiver_type =
-        semantic_id(hir_method_impl_receiver_type_node[raw]);
+    // Method storage is an absent-family sentinel when the unit contains no
+    // trait or impl declarations. Only impl nodes own this relation.
+    semantic_facts.method_impl_receiver_type = core.kind == HIR_IMPL
+        ? semantic_id(hir_method_impl_receiver_type_node[raw])
+        : INVALID;
     semantic_facts.expr_result_root = dense_id(hir_expr_result_root_node[raw]);
     semantic_facts.struct_lit_head = semantic_id(hir_struct_lit_head_node[raw]);
     semantic_facts.predicate_owner = INVALID;
     semantic_facts.predicate_subject = INVALID;
     hir_canonical_semantic_facts[row] = semantic_facts;
-    hir_canonical_scope_end[row] = hir_stmt_scope_end[raw];
-    hir_canonical_fn_return_type[row] = semantic_id(hir_fn_return_type_node[raw]);
+    uint owner_record_row = gCanonical.records_use_token_rows != 0u ? row : raw;
+    hir_canonical_scope_end[row] = hir_stmt_scope_end[owner_record_row];
+    hir_canonical_fn_return_type[row] =
+        semantic_id(hir_fn_return_type_node[owner_record_row]);
     hir_canonical_type_root_owner[row] = semantic_id(hir_type_root_owner[raw]);
-    hir_canonical_type_alias_target[row] = semantic_id(hir_type_alias_target_node[raw]);
+    hir_canonical_type_alias_target[row] =
+        semantic_id(hir_type_alias_target_node[owner_record_row]);
     hir_canonical_const_type[row] = item_kind == 3u
         ? dense_id(hir_stmt_record[stmt_base + 3u])
         : INVALID;

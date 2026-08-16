@@ -11,6 +11,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirType;
@@ -87,10 +88,17 @@ void clear_type(uint i)
     hir_type_value_node[i] = INVALID;
     hir_type_len_token[i] = INVALID;
     hir_type_path_leaf_node[i] = INVALID;
-    hir_bound_path_owner_by_leaf[i] = INVALID;
-    hir_type_arg_start[i] = INVALID;
-    hir_type_arg_count[i] = 0u;
-    hir_type_arg_next[i] = INVALID;
+    // Production stores this sparse reverse relation by the leaf's distinct
+    // token anchor and uses zero as its job-clear sentinel. Debug parsing
+    // retains the historical raw-node row and INVALID sentinel.
+    if (gHirType.retain_debug_rows != 0u)
+        hir_bound_path_owner_by_leaf[i] = INVALID;
+    if (gHirType.retain_debug_rows != 0u)
+    {
+        hir_type_arg_start[i] = INVALID;
+        hir_type_arg_count[i] = 0u;
+        hir_type_arg_next[i] = INVALID;
+    }
 }
 
 void publish_path_type(uint i)

@@ -11,6 +11,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirStmt;
@@ -29,6 +30,7 @@ StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
+StructuredBuffer<uint> raw_to_hir;
 
 RWStructuredBuffer<uint> hir_stmt_record;
 RWStructuredBuffer<uint> hir_stmt_scope_end;
@@ -157,7 +159,15 @@ void clear_record(uint i)
     hir_stmt_record[stmt_slot(i, 1u)] = INVALID;
     hir_stmt_record[stmt_slot(i, 2u)] = INVALID;
     hir_stmt_record[stmt_slot(i, 3u)] = INVALID;
-    hir_stmt_scope_end[i] = INVALID;
+    if (gHirStmt.retain_debug_rows != 0u)
+        hir_stmt_scope_end[i] = INVALID;
+}
+
+void publish_scope_end(uint node, uint scope_end)
+{
+    uint output_row = gHirStmt.retain_debug_rows != 0u ? node : raw_to_hir[node];
+    if (output_row != INVALID)
+        hir_stmt_scope_end[output_row] = scope_end;
 }
 
 uint valid_child_or_invalid(uint node)
@@ -443,7 +453,7 @@ void publish_let(uint node)
     hir_stmt_record[stmt_slot(node, 1u)] = name_token;
     hir_stmt_record[stmt_slot(node, 2u)] = init_expr;
     hir_stmt_record[stmt_slot(node, 3u)] = type_node;
-    hir_stmt_scope_end[node] = lexical_statement_list_scope_end(node);
+    publish_scope_end(node, lexical_statement_list_scope_end(node));
 }
 
 void publish_return(uint node)
@@ -526,7 +536,7 @@ void publish_for(uint node)
         ? iterable
         : INVALID;
     hir_stmt_record[stmt_slot(node, 3u)] = body;
-    hir_stmt_scope_end[node] = valid_end_or_invalid(body);
+    publish_scope_end(node, valid_end_or_invalid(body));
 }
 
 void publish_loop_control(uint node, uint kind)
@@ -553,7 +563,7 @@ void publish_const(uint node)
     hir_stmt_record[stmt_slot(node, 3u)] = valid_node(type_node) && hir_kind[type_node] == HIR_TYPE
         ? type_node
         : INVALID;
-    hir_stmt_scope_end[node] = lexical_statement_list_scope_end(node);
+    publish_scope_end(node, lexical_statement_list_scope_end(node));
 }
 
 void publish_assignment(uint node)

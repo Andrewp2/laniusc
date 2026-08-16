@@ -223,6 +223,12 @@ impl GpuParser {
                 "parser.hir_semantic_child_index_traverse",
             );
             if include_hir_spans {
+                parser_clear_buffer(ctx.encoder, &bufs.source_file_token_end, 0, None);
+                self.passes.source_file_token_end.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(bufs.token_input_capacity),
+                )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.source_file_token_end");
                 if parser_dependency_batching_enabled(timer_ref) {
                     let bg_cache = ctx
                         .bg_cache
@@ -278,12 +284,6 @@ impl GpuParser {
                     0,
                     Some(u64::from(bufs.tree_capacity) * 4),
                 );
-                parser_clear_buffer(ctx.encoder, &bufs.source_file_token_end, 0, None);
-                self.passes.source_file_token_end.record_pass(
-                    &mut ctx,
-                    crate::gpu::passes_core::InputElements::Elements1D(bufs.token_input_capacity),
-                )?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.source_file_token_end");
                 if parser_dependency_batching_enabled(timer_ref) {
                     let bg_cache = ctx
                         .bg_cache
@@ -306,13 +306,6 @@ impl GpuParser {
                         &bufs.tree_active_dispatch_args,
                     )?;
                     drop(batch);
-                    // Type-argument linking consumes the leaf-to-type-owner
-                    // relation published by hir_type_path_leaf_scatter. Keep
-                    // that producer/consumer edge across a compute-pass
-                    // boundary so storage writes are visible before linking.
-                    self.passes
-                        .hir_type_arg_links
-                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 } else {
                     self.passes
                         .hir_type_path_leaf_scatter
@@ -322,11 +315,19 @@ impl GpuParser {
                         .hir_spans
                         .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_spans");
-                    self.passes
-                        .hir_type_arg_links
-                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_links");
                 }
+                // Exact general spans now exist, so establish dense semantic
+                // identity before the remaining type/item/call families.
+                crate::parser::passes::record_canonical_hir_identity_maps(&mut ctx, &self.passes)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_canonical_identity_maps");
+                // Type-argument linking consumes the leaf-to-type-owner
+                // relation published by hir_type_path_leaf_scatter. The
+                // identity passes above also provide the required storage
+                // visibility boundary after the optional dependency batch.
+                self.passes
+                    .hir_type_arg_links
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_links");
                 clear_type_arg_rank_b(ctx.encoder, bufs);
                 self.passes
                     .hir_list_rank_prefix_local
@@ -427,11 +428,13 @@ impl GpuParser {
                     .hir_enum_variant_scatter
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_variant_scatter");
+                parser_clear_buffer(ctx.encoder, &bufs.hir_item_kind, 0, None);
                 self.passes
                     .hir_item_fields
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_item_fields");
                 parser_clear_buffer(ctx.encoder, &bufs.hir_path_root_owner, 0, None);
+                parser_clear_buffer(ctx.encoder, &bufs.hir_path_segment_count, 0, None);
                 self.passes
                     .hir_path_segment_root
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
@@ -496,10 +499,14 @@ impl GpuParser {
                     .hir_fn_return_type
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_fn_return_type");
-                self.passes
-                    .hir_method_signature_status
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_method_signature_status");
+                if bufs.parser_feature_flags & crate::lexer::features::PARSER_FEATURE_PREDICATES
+                    != 0
+                {
+                    self.passes
+                        .hir_method_signature_status
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_method_signature_status");
+                }
                 self.passes
                     .hir_param_links
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
@@ -726,21 +733,15 @@ impl GpuParser {
                     ctx.encoder,
                     "parser.hir_struct_lit_identity_spans",
                 );
-                crate::parser::passes::record_canonical_hir_identity(
+                crate::parser::passes::record_canonical_hir_record_compaction(
                     &mut ctx,
                     &self.passes,
                     raw_expression_records,
                 )?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_canonical_identity");
-                self.passes.hir_canonical_identity_aliases.record_pass(
-                    &mut ctx,
-                    crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
-                )?;
-                crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
                 stamp_timer(
                     timer_ref,
                     ctx.encoder,
-                    "parser.hir_canonical_identity_aliases",
+                    "parser.hir_canonical_record_compaction",
                 );
                 crate::parser::passes::record_canonical_variants(&mut ctx, &self.passes)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_variant_compact");
@@ -1027,10 +1028,14 @@ impl GpuParser {
                     ctx.encoder,
                     "parser.hir_context_relations_scatter",
                 );
-                self.passes
-                    .hir_method_fields
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_method_fields");
+                if bufs.parser_feature_flags & crate::lexer::features::PARSER_FEATURE_PREDICATES
+                    != 0
+                {
+                    self.passes
+                        .hir_method_fields
+                        .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_method_fields");
+                }
                 self.passes.hir_stmt_scope.record_pass(
                     &mut ctx,
                     crate::gpu::passes_core::InputElements::Elements1D(bufs.hir_canonical_capacity),

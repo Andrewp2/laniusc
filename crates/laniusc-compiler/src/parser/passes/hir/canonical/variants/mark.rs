@@ -53,10 +53,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalVari
                 "family_flag".into(),
                 b.hir_variant_family_flag.as_entire_binding(),
             ),
-            (
-                "raw_to_variant".into(),
-                b.hir_variant_raw_to_row.as_entire_binding(),
-            ),
         ])
     }
 }

@@ -157,6 +157,12 @@ impl Default for CompiledUnitCache {
 }
 
 impl CompiledUnitCache {
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.hints.clear();
+        self.resident_bytes = 0;
+    }
+
     fn get(&mut self, key: &CompiledUnitCacheKey) -> Option<CompiledSourcePackUnit> {
         self.clock = self.clock.wrapping_add(1);
         let entry = self.entries.get_mut(key);
@@ -253,6 +259,18 @@ impl CompiledSourcePackUnit {
 }
 
 impl GpuCompiler<'_> {
+    /// Drops compiled source-unit results without releasing GPU job capacity.
+    ///
+    /// This is intentionally separate from `release_resident_job_buffers`: a
+    /// benchmark or daemon client can force a complete recompilation while
+    /// retaining the workspace and bind groups established by an earlier job.
+    pub(crate) fn clear_compiled_unit_cache(&self) {
+        self.compiled_unit_cache
+            .lock()
+            .expect("compiled-unit cache mutex poisoned")
+            .clear();
+    }
+
     pub(super) fn cached_compiled_unit_by_hint(
         &self,
         hint: &CompiledUnitCacheHintKey,
@@ -350,6 +368,37 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_ne!(base, changed);
+    }
+
+    #[test]
+    fn clearing_cache_preserves_counters_but_removes_resident_results() {
+        let mut cache = CompiledUnitCache::default();
+        let key = CompiledUnitCacheKey::new(
+            SourcePackArtifactTarget::X86_64,
+            1,
+            2,
+            &["fn value() -> i32 { return 1; }".into()],
+            &[],
+        )
+        .unwrap();
+        cache.misses = 3;
+        cache.hints.insert(
+            CompiledUnitCacheHintKey {
+                target: key.target,
+                library_id: key.library_id,
+                unit_id: key.unit_id,
+                content_hash: key.content_hash,
+            },
+            key,
+        );
+        cache.resident_bytes = 17;
+
+        cache.clear();
+
+        assert!(cache.entries.is_empty());
+        assert!(cache.hints.is_empty());
+        assert_eq!(cache.resident_bytes, 0);
+        assert_eq!(cache.misses, 3);
     }
 
     #[test]

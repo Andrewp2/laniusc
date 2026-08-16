@@ -553,7 +553,10 @@ static const uint X86_LIR_METADATA_RHS_NARROW = 0x10000000u;
 // semantic value. Tagged aggregate discriminants use this path so target
 // lowering does not need to manufacture a fake source expression.
 static const uint X86_LIR_METADATA_IMMEDIATE = 0x08000000u;
-static const uint X86_LIR_METADATA_PACKED_STRING = 0x04000000u;
+// The instruction belongs to a native string's pointer/length pair. This is
+// deliberately explicit: concrete aggregate type IDs may share their low byte
+// with a primitive type tag and must never be classified by truncation.
+static const uint X86_LIR_METADATA_STRING_PAIR = 0x04000000u;
 
 // Semantic AGGREGATE_NEW metadata. The high bit distinguishes tagged enums;
 // the remaining bits contain the checked variant ordinal.
@@ -579,21 +582,32 @@ static const uint X86_TEMP_REGISTER_FIRST = 8u;
 
 struct SemanticLirCore
 {
-    uint op;
     uint type_id;
     // Canonical checked type identity. `type_id` remains the compact machine
     // class used by instruction selection; aggregate identity and generic
-    // structure live in this tag/payload pair instead of numeric heuristics.
-    uint type_ref_tag;
+    // structure live in the payload and the two high flag bits instead of a
+    // mostly empty word in every instruction.
     uint type_ref_payload;
-    uint source_hir;
     uint flags;
     // Fixed-size aggregate width in machine words. Scalar rows use zero.
     uint value_word_count;
-    // Checked fixed-array length for indexed operations. Other operations and
-    // unsized bases use LIR_INVALID.
-    uint array_length;
 };
+
+static const uint SEMANTIC_LIR_TYPE_REF_TAG_SHIFT = 30u;
+static const uint SEMANTIC_LIR_TYPE_REF_TAG_MASK = 3u << SEMANTIC_LIR_TYPE_REF_TAG_SHIFT;
+static const uint SEMANTIC_LIR_OP_SHIFT = 24u;
+static const uint SEMANTIC_LIR_OP_MASK = 0x3fu << SEMANTIC_LIR_OP_SHIFT;
+
+uint semantic_lir_op(SemanticLirCore core)
+{
+    return (core.flags & SEMANTIC_LIR_OP_MASK) >> SEMANTIC_LIR_OP_SHIFT;
+}
+
+uint semantic_lir_type_ref_tag(SemanticLirCore core)
+{
+    return (core.flags & SEMANTIC_LIR_TYPE_REF_TAG_MASK) >>
+        SEMANTIC_LIR_TYPE_REF_TAG_SHIFT;
+}
 
 struct SemanticLirOperands
 {
@@ -712,14 +726,14 @@ struct LoweringStatus
     uint diagnostic_aux;
 };
 
-// Lexicographic target scheduling key. The eventual radix stage processes the
-// words from `execution_tie` back to `function_id` with stable passes.
+// Capacity-packed lexicographic target scheduling key. Fields are encoded in
+// least-significant order as execution tie, execution rank, execution region,
+// then function ID. The radix stage consumes the packed bytes directly.
 struct TargetScheduleKey
 {
-    uint function_id;
-    uint execution_region;
-    uint execution_rank;
-    uint execution_tie;
+    uint word0;
+    uint word1;
+    uint word2;
 };
 
 // Compact ranges over the target's final scheduled instruction stream.  Both

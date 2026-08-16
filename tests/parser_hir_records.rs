@@ -16,9 +16,11 @@ use laniusc_compiler::{
                 HIR_EXPR_FORM_FLOAT,
                 HIR_EXPR_FORM_FORWARD,
                 HIR_EXPR_FORM_GE,
+                HIR_EXPR_FORM_GT,
                 HIR_EXPR_FORM_INDEX,
                 HIR_EXPR_FORM_INT,
                 HIR_EXPR_FORM_LE,
+                HIR_EXPR_FORM_LT,
                 HIR_EXPR_FORM_MUL,
                 HIR_EXPR_FORM_NAME,
                 HIR_EXPR_FORM_NEG,
@@ -178,6 +180,15 @@ fn make_pair(value: i32) -> Pair {
         }
         literal_count += 1;
         let dense = parsed.hir_canonical_raw_to_dense[raw];
+        let head = parsed.hir_struct_lit_head_node[raw] as usize;
+        assert_eq!(
+            parsed.hir_canonical_raw_to_dense[head], dense,
+            "constructor path and struct literal must share one compact identity"
+        );
+        assert_eq!(
+            parsed.hir_canonical_dense_to_raw[dense as usize], raw as u32,
+            "the struct literal must win its constructor-path token anchor"
+        );
         let paths = parsed
             .hir_path_owner
             .iter()
@@ -4174,6 +4185,43 @@ fn main() {
 }
 
 #[test]
+fn parser_compact_generic_type_uses_remain_children_of_their_declaration() {
+    let parsed = parse_resident_source_pack(&[r#"
+module core::id;
+
+pub fn identity<T>(value: T) -> T {
+    return value;
+}
+"#]);
+    let cores = parsed
+        .hir_canonical_core_words
+        .chunks_exact(4)
+        .collect::<Vec<_>>();
+    let owner = cores
+        .iter()
+        .position(|core| core[0] == HIR_NODE_FN)
+        .expect("fixture should contain one compact function");
+    let type_nodes = cores
+        .iter()
+        .enumerate()
+        .filter_map(|(node, core)| (core[0] == HIR_NODE_TYPE).then_some(node))
+        .collect::<Vec<_>>();
+    assert_eq!(type_nodes.len(), 2, "compact cores={cores:?}");
+    for node in type_nodes {
+        let mut ancestor = cores[node][1] as usize;
+        let mut remaining = cores.len();
+        while ancestor < cores.len() && ancestor != owner && remaining != 0 {
+            ancestor = cores[ancestor][1] as usize;
+            remaining -= 1;
+        }
+        assert_eq!(
+            ancestor, owner,
+            "generic type-use node {node} must remain under function {owner}; compact cores={cores:?}",
+        );
+    }
+}
+
+#[test]
 fn parser_compact_hir_generic_params_cover_methods_impls_and_const_params() {
     let parsed = parse_resident_source(
         r#"
@@ -4495,6 +4543,64 @@ fn main() {
 }
 
 #[test]
+fn parser_compact_hir_call_identity_does_not_alias_its_first_argument() {
+    let source = r#"
+fn consume(value: i32) -> i32 { return value; }
+fn helper() -> i32 { return 1; }
+fn main() -> i32 {
+    let mix5: i32 = (26 << 1) + (45 >> 1);
+    return consume(mix5 + 63) + helper();
+}
+"#;
+    let parsed = parse_resident_source(source);
+    let records = parse_resident_source_pack(&[source]);
+    let calls = records
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, kind)| (*kind == HIR_NODE_CALL_EXPR).then_some(node))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        calls.len(),
+        2,
+        "fixture should contain one nonempty and one empty call"
+    );
+
+    let nonempty_call = calls
+        .iter()
+        .copied()
+        .find(|call| records.hir_call_arg_count[*call] == 1)
+        .expect("consume call should have one argument");
+    let argument = records.hir_call_arg_start[nonempty_call] as usize;
+    let argument_root = resolve_forward_expr_record(&records, argument, "consume argument");
+    assert_eq!(
+        records.hir_expr_record_form[argument_root], HIR_EXPR_FORM_ADD,
+        "consume argument should resolve to its addition root"
+    );
+    let argument_left = resolve_forward_expr_record(
+        &records,
+        records.hir_expr_record_left[argument_root] as usize,
+        "consume argument left operand",
+    );
+    assert_eq!(records.hir_kind[argument_left], HIR_NODE_NAME_EXPR);
+    assert_ne!(
+        parsed.hir_canonical_raw_to_dense[nonempty_call],
+        parsed.hir_canonical_raw_to_dense[argument_left],
+        "a call must be anchored at `(`, not at its first argument token"
+    );
+
+    for call in calls {
+        let callee = records.hir_call_callee_node[call] as usize;
+        assert_ne!(
+            parsed.hir_canonical_raw_to_dense[call], parsed.hir_canonical_raw_to_dense[callee],
+            "empty and nonempty calls must remain distinct from their callees"
+        );
+    }
+    common::type_check_source_with_timeout(source)
+        .expect("calls with empty and expression arguments should type-check");
+}
+
+#[test]
 fn parser_compact_hir_index_identity_preserves_base_operand() {
     let parsed = parse_resident_source(
         r#"
@@ -4707,6 +4813,51 @@ fn main() {
         member_dense, call_dense,
         "member and call identities must differ"
     );
+}
+
+#[test]
+fn parser_compact_hir_member_identity_does_not_alias_comparison_operators() {
+    let source = r#"
+struct Vec3 { x: f32, y: f32, z: f32 }
+fn main() {
+    let value: Vec3 = Vec3 { x: 0.5, y: 0.7, z: 1.0 };
+    if (!(value.x > 0.49 && value.x < 0.51)) { return 2; }
+    return 0;
+}
+"#;
+    let parsed = parse_resident_source(source);
+    let records = parse_resident_source_pack(&[source]);
+    let members = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(raw, kind)| (*kind == HIR_NODE_MEMBER_EXPR).then_some(raw))
+        .collect::<Vec<_>>();
+    let comparisons = records
+        .hir_expr_record_form
+        .iter()
+        .enumerate()
+        .filter_map(|(raw, form)| {
+            matches!(*form, HIR_EXPR_FORM_GT | HIR_EXPR_FORM_LT).then_some(raw)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(members.len(), 2);
+    assert_eq!(comparisons.len(), 2);
+    let mut identities = members
+        .iter()
+        .chain(&comparisons)
+        .map(|raw| parsed.hir_canonical_raw_to_dense[*raw])
+        .collect::<Vec<_>>();
+    assert!(identities.iter().all(|dense| *dense != INVALID));
+    identities.sort_unstable();
+    identities.dedup();
+    assert_eq!(
+        identities.len(),
+        4,
+        "member names and surrounding comparison operators need distinct token identities"
+    );
+    common::type_check_source_with_timeout(source)
+        .expect("member comparisons should retain their float operands");
 }
 
 #[test]

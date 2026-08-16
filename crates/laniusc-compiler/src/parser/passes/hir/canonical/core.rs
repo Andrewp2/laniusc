@@ -64,8 +64,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
             (
-                "hir_token_file_id".into(),
-                b.hir_token_file_id.as_entire_binding(),
+                "token_file_id".into(),
+                b.default_token_file_id.as_entire_binding(),
             ),
             ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
             (
@@ -124,18 +124,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
             (
                 "hir_bound_path_owner_by_leaf".into(),
                 b.hir_bound_path_owner_by_leaf.as_entire_binding(),
-            ),
-            (
-                "hir_type_arg_start".into(),
-                b.hir_type_arg_start.as_entire_binding(),
-            ),
-            (
-                "hir_type_arg_count".into(),
-                b.hir_type_arg_count.as_entire_binding(),
-            ),
-            (
-                "hir_type_arg_next".into(),
-                b.hir_type_arg_next.as_entire_binding(),
             ),
             (
                 "hir_method_impl_receiver_type_node".into(),

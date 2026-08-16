@@ -9,7 +9,7 @@
 //! `docs/compiler/type-checker.md`.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::{Hash, Hasher},
     sync::Mutex,
 };
@@ -191,6 +191,10 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub call_param_row_capacity: u32,
     /// Token-bounded upper capacity for compact call-argument rows.
     pub call_arg_row_capacity: u32,
+    /// Whether this job records a persisted semantic interface after type
+    /// checking. Ordinary executable compilation leaves the interface-only
+    /// workspace unmaterialized.
+    pub semantic_interface_required: bool,
     /// The parser's compact semantic artifact. Keeping this as one typed view
     /// preserves allocation identity for compiler-graph validation and makes
     /// it impossible for type-check code to assemble a partial HIR from raw
@@ -284,11 +288,11 @@ struct ResidentTypeCheckCacheKey {
     source_file_capacity: u32,
     token_capacity: u32,
     hir_node_capacity: u32,
-    parser_hir_node_capacity: u32,
     module_record_capacity: u32,
     call_param_row_capacity: u32,
     call_arg_row_capacity: u32,
     parser_feature_flags: u32,
+    semantic_interface_required: bool,
     input_fingerprint: u64,
 }
 
@@ -313,11 +317,11 @@ impl ResidentTypeCheckCacheKey {
             ),
             token_capacity: Self::capacity_bucket(self.token_capacity, rows),
             hir_node_capacity: Self::capacity_bucket(self.hir_node_capacity, rows),
-            parser_hir_node_capacity: Self::capacity_bucket(self.parser_hir_node_capacity, rows),
             module_record_capacity: Self::capacity_bucket(self.module_record_capacity, rows),
             call_param_row_capacity: Self::capacity_bucket(self.call_param_row_capacity, rows),
             call_arg_row_capacity: Self::capacity_bucket(self.call_arg_row_capacity, rows),
             parser_feature_flags: self.parser_feature_flags,
+            semantic_interface_required: self.semantic_interface_required,
             input_fingerprint: self.input_fingerprint,
         }
     }
@@ -328,9 +332,6 @@ impl ResidentTypeCheckCacheKey {
             source_file_capacity: self.source_file_capacity.max(required.source_file_capacity),
             token_capacity: self.token_capacity.max(required.token_capacity),
             hir_node_capacity: self.hir_node_capacity.max(required.hir_node_capacity),
-            parser_hir_node_capacity: self
-                .parser_hir_node_capacity
-                .max(required.parser_hir_node_capacity),
             module_record_capacity: self
                 .module_record_capacity
                 .max(required.module_record_capacity),
@@ -341,6 +342,8 @@ impl ResidentTypeCheckCacheKey {
                 .call_arg_row_capacity
                 .max(required.call_arg_row_capacity),
             parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
+            semantic_interface_required: self.semantic_interface_required
+                || required.semantic_interface_required,
             // Buffer identities describe the bindings used by the replacement
             // workspace. Capacities and optional storage remain monotonic even
             // when one upstream slot grows and changes that identity.
@@ -354,12 +357,12 @@ impl ResidentTypeCheckCacheKey {
             && self.source_file_capacity >= required.source_file_capacity
             && self.token_capacity >= required.token_capacity
             && self.hir_node_capacity >= required.hir_node_capacity
-            && self.parser_hir_node_capacity >= required.parser_hir_node_capacity
             && self.module_record_capacity >= required.module_record_capacity
             && self.call_param_row_capacity >= required.call_param_row_capacity
             && self.call_arg_row_capacity >= required.call_arg_row_capacity
             && self.parser_feature_flags & required.parser_feature_flags
                 == required.parser_feature_flags
+            && (self.semantic_interface_required || !required.semantic_interface_required)
     }
 }
 
@@ -373,11 +376,11 @@ mod resident_typecheck_cache_key_tests {
             source_file_capacity: capacity,
             token_capacity: capacity,
             hir_node_capacity: capacity,
-            parser_hir_node_capacity: capacity,
             module_record_capacity: capacity,
             call_param_row_capacity: capacity,
             call_arg_row_capacity: capacity,
             parser_feature_flags: features,
+            semantic_interface_required: false,
             input_fingerprint: fingerprint,
         }
     }
@@ -399,6 +402,17 @@ mod resident_typecheck_cache_key_tests {
         edited.source_byte_capacity = 5_238_111;
         assert_eq!(allocation.source_byte_capacity, 5_238_784);
         assert!(allocation.covers(edited));
+    }
+
+    #[test]
+    fn interface_workspace_grows_monotonically_only_when_requested() {
+        let ordinary = key(100, 0, 11);
+        let mut interface = ordinary;
+        interface.semantic_interface_required = true;
+        assert!(!ordinary.covers(interface));
+        let grown = ordinary.grow_to_cover(interface);
+        assert!(grown.covers(interface));
+        assert!(grown.covers(ordinary));
     }
 }
 
@@ -431,6 +445,13 @@ type TypeCheckPasses = KernelRegistry;
 // consumed indirectly by a reflected bind group.
 struct ResidentTypeCheckWorkspace {
     resettable_buffers: Vec<crate::gpu::buffers::ResettableBuffer>,
+    /// Dead storage inherited from the parser/lexer boundary.
+    ///
+    /// The type-check graph may consume only a subset of these allocations.
+    /// Keep the complete set alive and forward it to semantic lowering after
+    /// type checking so an allocation does not disappear from the reusable
+    /// workspace merely because this phase had no compatible slot for it.
+    upstream_workspace: Vec<LaniusBuffer<u8>>,
     cache_key: ResidentTypeCheckCacheKey,
     typecheck_graph: compiler_graph::TypeCheckCompilerGraph,
     compact_expr_scalar_type_init: wgpu::BindGroup,
@@ -531,6 +552,37 @@ impl ResidentTypeCheckWorkspace {
             public_decl_index_by_hir: self.module_path.interface_public_decl_index_by_hir.clone(),
             struct_init_field_ordinal_by_row: graph.buffer("struct_init_field_ordinal_by_row")?,
         })
+    }
+
+    fn post_typecheck_workspace<'a>(
+        &'a self,
+        semantic: &OwnedGpuSemanticArtifact,
+    ) -> Vec<crate::gpu::buffers::TrackedBufferView<'a>> {
+        let retained = semantic.retained_allocation_ids();
+        let mut reusable =
+            std::collections::BTreeMap::<u64, crate::gpu::buffers::TrackedBufferView<'a>>::new();
+        let candidates = self
+            .resettable_buffers
+            .iter()
+            .map(crate::gpu::buffers::ResettableBuffer::tracked_view)
+            .chain(self.upstream_workspace.iter().map(Into::into));
+        for candidate in candidates {
+            let Some(allocation) = candidate.allocation_id() else {
+                continue;
+            };
+            if retained.contains(&allocation) {
+                continue;
+            }
+            reusable
+                .entry(allocation)
+                .and_modify(|current| {
+                    if candidate.byte_size > current.byte_size {
+                        *current = candidate;
+                    }
+                })
+                .or_insert(candidate);
+        }
+        reusable.into_values().collect()
     }
 }
 
@@ -637,6 +689,36 @@ pub(crate) struct OwnedGpuSemanticArtifact {
 }
 
 impl OwnedGpuSemanticArtifact {
+    fn retained_allocation_ids(&self) -> HashSet<u64> {
+        [
+            self.value_decl_by_hir.allocation_id(),
+            self.value_type_by_hir.allocation_id(),
+            self.value_const_by_hir.allocation_id(),
+            self.value_const_present_by_hir.allocation_id(),
+            self.param_type_by_row.allocation_id(),
+            self.enclosing_fn_by_hir.allocation_id(),
+            self.function_return_type_by_hir.allocation_id(),
+            self.function_entrypoint_by_hir.allocation_id(),
+            self.function_host_service_by_hir.allocation_id(),
+            self.control_depth_by_hir.allocation_id(),
+            self.calls_by_hir.allocation_id(),
+            self.expr_ref_tag_by_hir.allocation_id(),
+            self.expr_ref_payload_by_hir.allocation_id(),
+            self.aggregate_decl_token_by_hir.allocation_id(),
+            self.aggregate_word_count_by_hir.allocation_id(),
+            self.array_length_by_hir.allocation_id(),
+            self.member_field_ordinal_by_hir.allocation_id(),
+            self.iterable_kind_by_hir.allocation_id(),
+            self.function_result_word_count_by_hir.allocation_id(),
+            self.expr_scalar_type_by_hir.allocation_id(),
+            self.public_decl_index_by_hir.allocation_id(),
+            self.struct_init_field_ordinal_by_row.allocation_id(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+
     pub(crate) fn view(&self) -> GpuSemanticArtifactView<'_> {
         GpuSemanticArtifactView {
             value_decl_by_hir: &self.value_decl_by_hir,
@@ -678,63 +760,63 @@ pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
     pub module_capacity: u32,
     pub declaration_capacity: u32,
     pub module_segment_capacity: u32,
-    pub name_count_out: &'a wgpu::Buffer,
-    pub name_spans: &'a wgpu::Buffer,
-    pub name_hash_lo: &'a wgpu::Buffer,
-    pub name_hash_hi: &'a wgpu::Buffer,
-    pub name_id_by_token: &'a wgpu::Buffer,
-    pub language_symbol_bytes: &'a wgpu::Buffer,
-    pub module_count_out: &'a wgpu::Buffer,
-    pub module_key_segment_count: &'a wgpu::Buffer,
-    pub module_key_segment_base: &'a wgpu::Buffer,
-    pub module_key_segment_name_id: &'a wgpu::Buffer,
-    pub decl_count_out: &'a wgpu::Buffer,
-    pub decl_module_id: &'a wgpu::Buffer,
-    pub decl_name_id: &'a wgpu::Buffer,
-    pub decl_kind: &'a wgpu::Buffer,
-    pub decl_namespace: &'a wgpu::Buffer,
-    pub decl_visibility: &'a wgpu::Buffer,
-    pub decl_parent_type_decl: &'a wgpu::Buffer,
-    pub decl_hir_node: &'a wgpu::Buffer,
+    pub name_count_out: TrackedBufferView<'a>,
+    pub name_spans: TrackedBufferView<'a>,
+    pub name_hash_lo: TrackedBufferView<'a>,
+    pub name_hash_hi: TrackedBufferView<'a>,
+    pub name_id_by_token: TrackedBufferView<'a>,
+    pub language_symbol_bytes: TrackedBufferView<'a>,
+    pub module_count_out: TrackedBufferView<'a>,
+    pub module_key_segment_count: TrackedBufferView<'a>,
+    pub module_key_segment_base: TrackedBufferView<'a>,
+    pub module_key_segment_name_id: TrackedBufferView<'a>,
+    pub decl_count_out: TrackedBufferView<'a>,
+    pub decl_module_id: TrackedBufferView<'a>,
+    pub decl_name_id: TrackedBufferView<'a>,
+    pub decl_kind: TrackedBufferView<'a>,
+    pub decl_namespace: TrackedBufferView<'a>,
+    pub decl_visibility: TrackedBufferView<'a>,
+    pub decl_parent_type_decl: TrackedBufferView<'a>,
+    pub decl_hir_node: TrackedBufferView<'a>,
     /// Evaluated scalar constant bits keyed by dense HIR row.
-    pub semantic_value_const_by_hir: &'a wgpu::Buffer,
+    pub semantic_value_const_by_hir: TrackedBufferView<'a>,
     /// Constant-presence state keyed by dense HIR row.
-    pub semantic_value_const_present_by_hir: &'a wgpu::Buffer,
+    pub semantic_value_const_present_by_hir: TrackedBufferView<'a>,
     /// Runtime host-service identity for an extern function declaration,
     /// keyed by its dense HIR row. Non-host declarations carry `u32::MAX`.
-    pub function_host_service_by_hir: &'a wgpu::Buffer,
-    pub public_decl_count: &'a wgpu::Buffer,
-    pub public_decl_local_id: &'a wgpu::Buffer,
-    pub public_decl_index_by_local: &'a wgpu::Buffer,
-    pub public_decl_index_by_hir: &'a wgpu::Buffer,
-    pub type_expr_ref_tag: &'a wgpu::Buffer,
-    pub type_expr_ref_payload: &'a wgpu::Buffer,
-    pub type_generic_param_slot_by_token: &'a wgpu::Buffer,
-    pub type_const_param_slot_by_token: &'a wgpu::Buffer,
-    pub type_instance_decl_token: &'a wgpu::Buffer,
-    pub external_type_library_id: &'a wgpu::Buffer,
-    pub external_type_unit_id: &'a wgpu::Buffer,
-    pub external_type_local_index: &'a wgpu::Buffer,
-    pub semantic_type_ref_tag_by_hir: &'a wgpu::Buffer,
-    pub semantic_type_ref_payload_by_hir: &'a wgpu::Buffer,
-    pub semantic_type_generic_param_slot_by_hir: &'a wgpu::Buffer,
-    pub semantic_type_external_library_id_by_hir: &'a wgpu::Buffer,
-    pub semantic_type_external_unit_id_by_hir: &'a wgpu::Buffer,
-    pub semantic_type_external_local_index_by_hir: &'a wgpu::Buffer,
-    pub resolved_dependency_library_id: &'a wgpu::Buffer,
-    pub resolved_dependency_unit_id: &'a wgpu::Buffer,
-    pub resolved_dependency_local_index: &'a wgpu::Buffer,
-    pub path_id_by_owner_hir: &'a wgpu::Buffer,
-    pub path_id_by_owner_token: &'a wgpu::Buffer,
-    pub resolved_type_decl: &'a wgpu::Buffer,
-    pub decl_id_by_name_token: &'a wgpu::Buffer,
-    pub generic_param_count_out: &'a wgpu::Buffer,
-    pub generic_param_owner_token: &'a wgpu::Buffer,
-    pub generic_param_name_id: &'a wgpu::Buffer,
-    pub generic_param_token: &'a wgpu::Buffer,
-    pub generic_param_kind: &'a wgpu::Buffer,
-    pub type_decl_generic_param_count_by_owner_token: &'a wgpu::Buffer,
-    pub type_decl_const_param_count_by_owner_token: &'a wgpu::Buffer,
+    pub function_host_service_by_hir: TrackedBufferView<'a>,
+    pub public_decl_count: TrackedBufferView<'a>,
+    pub public_decl_local_id: TrackedBufferView<'a>,
+    pub public_decl_index_by_local: TrackedBufferView<'a>,
+    pub public_decl_index_by_hir: TrackedBufferView<'a>,
+    pub type_expr_ref_tag: TrackedBufferView<'a>,
+    pub type_expr_ref_payload: TrackedBufferView<'a>,
+    pub type_generic_param_slot_by_token: TrackedBufferView<'a>,
+    pub type_const_param_slot_by_token: TrackedBufferView<'a>,
+    pub type_instance_decl_token: TrackedBufferView<'a>,
+    pub external_type_library_id: TrackedBufferView<'a>,
+    pub external_type_unit_id: TrackedBufferView<'a>,
+    pub external_type_local_index: TrackedBufferView<'a>,
+    pub semantic_type_ref_tag_by_hir: TrackedBufferView<'a>,
+    pub semantic_type_ref_payload_by_hir: TrackedBufferView<'a>,
+    pub semantic_type_generic_param_slot_by_hir: TrackedBufferView<'a>,
+    pub semantic_type_external_library_id_by_hir: TrackedBufferView<'a>,
+    pub semantic_type_external_unit_id_by_hir: TrackedBufferView<'a>,
+    pub semantic_type_external_local_index_by_hir: TrackedBufferView<'a>,
+    pub resolved_dependency_library_id: TrackedBufferView<'a>,
+    pub resolved_dependency_unit_id: TrackedBufferView<'a>,
+    pub resolved_dependency_local_index: TrackedBufferView<'a>,
+    pub path_id_by_owner_hir: TrackedBufferView<'a>,
+    pub path_id_by_owner_token: TrackedBufferView<'a>,
+    pub resolved_type_decl: TrackedBufferView<'a>,
+    pub decl_id_by_name_token: TrackedBufferView<'a>,
+    pub generic_param_count_out: TrackedBufferView<'a>,
+    pub generic_param_owner_token: TrackedBufferView<'a>,
+    pub generic_param_name_id: TrackedBufferView<'a>,
+    pub generic_param_token: TrackedBufferView<'a>,
+    pub generic_param_kind: TrackedBufferView<'a>,
+    pub type_decl_generic_param_count_by_owner_token: TrackedBufferView<'a>,
+    pub type_decl_const_param_count_by_owner_token: TrackedBufferView<'a>,
 }
 
 /// Parser-owned checked HIR relations needed to discover the public signature

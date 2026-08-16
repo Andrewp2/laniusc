@@ -8,7 +8,8 @@ StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> canonical_count;
 StructuredBuffer<uint> canonical_dense_to_raw;
 StructuredBuffer<uint> raw_to_hir;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> hir_type_arg_owner;
 StructuredBuffer<uint> hir_type_arg_rank;
 RWStructuredBuffer<uint> family_count;
@@ -20,6 +21,10 @@ static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 uint block_count() { return (gCanonical.canonical_capacity + 255u) / 256u; }
 uint mapped(uint raw) { return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID; }
+uint file_for_raw(uint raw) {
+    uint token = raw < gCanonical.raw_capacity ? hir_token_pos[raw] : INVALID;
+    return token < gCanonical.canonical_capacity ? token_file_id[token] : INVALID;
+}
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID) {
@@ -42,7 +47,7 @@ void main(uint3 dtid: SV_DispatchThreadID) {
     arg.owner = mapped(hir_type_arg_owner[raw]);
     arg.value = mapped(raw);
     arg.ordinal = hir_type_arg_rank[raw];
-    arg.file_id = hir_token_file_id[raw];
+    arg.file_id = file_for_raw(raw);
     hir_type_args[row] = arg;
     if (arg.owner < gCanonical.canonical_capacity) {
         uint ignored;

@@ -23,6 +23,7 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
+StructuredBuffer<uint> canonical_raw_to_dense;
 
 RWStructuredBuffer<uint> hir_call_callee_node;
 RWStructuredBuffer<uint> hir_call_callee_path_node;
@@ -156,9 +157,9 @@ uint callee_for_call(uint call_node)
 
 void clear_fields(uint i)
 {
-    hir_call_callee_node[i] = INVALID;
     if (gHirCall.retain_debug_rows != 0u)
     {
+        hir_call_callee_node[i] = INVALID;
         hir_call_callee_path_node[i] = INVALID;
         hir_call_arg_start[i] = INVALID;
     }
@@ -177,7 +178,12 @@ void clear_fields(uint i)
 void publish_call_expr(uint i)
 {
     uint callee = callee_for_call(i);
-    hir_call_callee_node[i] = callee;
+    uint output_row = gHirCall.retain_debug_rows != 0u
+        ? i
+        : canonical_raw_to_dense[i];
+    if (output_row == INVALID)
+        return;
+    hir_call_callee_node[output_row] = callee;
     if (valid_node(callee))
     {
         if (gHirCall.retain_debug_rows != 0u)

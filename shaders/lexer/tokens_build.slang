@@ -64,6 +64,7 @@ static const uint PARSER_FEATURE_TYPE_ARGS = 0x00000001u;
 static const uint PARSER_FEATURE_ARRAYS = 0x00000002u;
 static const uint PARSER_FEATURE_ENUMS = 0x00000004u;
 static const uint PARSER_FEATURE_MATCHES = 0x00000008u;
+static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
 static const uint PARSER_FEATURE_PREDICATES = 0x00000020u;
 static const uint PARSER_FEATURE_MEMBERS = 0x00000040u;
 static const uint PARSER_FEATURE_IMPORTS = 0x00000080u;
@@ -79,6 +80,8 @@ uint parser_features_for_lexical_token(uint kind)
         flags |= PARSER_FEATURE_ENUMS;
     if (kind == TK_MATCH)
         flags |= PARSER_FEATURE_MATCHES;
+    if (kind == TK_STRUCT)
+        flags |= PARSER_FEATURE_STRUCTS;
     if (kind == TK_IMPL || kind == TK_TRAIT || kind == TK_WHERE)
         flags |= PARSER_FEATURE_PREDICATES;
     if (kind == TK_DOT)

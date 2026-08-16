@@ -45,8 +45,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCall
                 b.hir_expr_result_root_node.as_entire_binding(),
             ),
             (
-                "hir_token_file_id".into(),
-                b.hir_token_file_id.as_entire_binding(),
+                "token_file_id".into(),
+                b.default_token_file_id.as_entire_binding(),
             ),
             (
                 "hir_call_arg_parent_call".into(),

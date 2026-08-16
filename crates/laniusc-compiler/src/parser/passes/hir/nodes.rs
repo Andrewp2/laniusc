@@ -17,6 +17,8 @@ pub struct Params {
     /// Whether legacy raw-tree HIR rows are retained for parser diagnostics.
     /// Production compilation projects phase results directly into compact HIR.
     pub retain_debug_rows: u32,
+    /// Conservative syntax-family presence mask produced by the GPU lexer.
+    pub parser_feature_flags: u32,
 }
 
 /// Ancestors each GPU lane examines locally before global pointer jumping.

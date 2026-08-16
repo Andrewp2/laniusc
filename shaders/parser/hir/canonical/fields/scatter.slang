@@ -2,7 +2,7 @@ import hir_records;
 import prefix_scan;
 import canonical_hir_identity;
 import generated_parse_production_ids;
-struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
+struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; uint records_use_token_rows; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;
@@ -69,11 +69,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     bool declaration = node_kind[raw] == PROD_STRUCT_FIELD;
+    uint literal_row = gCanonical.records_use_token_rows != 0u ? anchor : raw;
     HirField field;
-    uint raw_owner = declaration ? decl_owner[raw] : literal_owner[raw];
+    uint raw_owner = declaration ? decl_owner[raw] : literal_owner[literal_row];
     field.owner = mapped(raw_owner);
     field.name_token = hir_token_pos[raw];
-    uint raw_value = declaration ? decl_type[raw] : literal_value[raw];
+    uint raw_value = declaration ? decl_type[raw] : literal_value[literal_row];
     field.value = declaration ? mapped(raw_value) : mapped_expression(raw_value);
     field.ordinal = declaration ? decl_ordinal[raw] : literal_ordinal[raw];
     hir_fields[row] = field;

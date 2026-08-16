@@ -9,7 +9,7 @@ StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> candidate_raw_by_anchor;
 StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> variant_parent_enum;
 StructuredBuffer<uint> variant_ordinal;
 RWStructuredBuffer<uint> raw_to_variant;
@@ -25,6 +25,11 @@ uint block_count() { return (gCanonical.canonical_capacity + 255u) / 256u; }
 uint mapped(uint raw)
 {
     return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID;
+}
+uint file_for_raw(uint raw)
+{
+    uint token = raw < gCanonical.raw_capacity ? hir_token_pos[raw] : INVALID;
+    return token < gCanonical.canonical_capacity ? token_file_id[token] : INVALID;
 }
 
 [shader("compute")]
@@ -52,9 +57,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     variant.owner = mapped(variant_parent_enum[raw]);
     variant.name_token = hir_token_pos[raw];
     variant.ordinal = variant_ordinal[raw];
-    variant.file_id = hir_token_file_id[raw];
+    variant.file_id = file_for_raw(raw);
     hir_variants[row] = variant;
-    raw_to_variant[raw] = row;
+    raw_to_variant[anchor] = row;
     variant_payload_start[row] = INVALID;
     variant_payload_count[row] = 0u;
 }

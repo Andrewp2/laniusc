@@ -6,6 +6,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint parser_feature_flags;
 };
 
 ConstantBuffer<Params> gHirPostfix;
@@ -36,6 +37,7 @@ static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
 static const uint HIR_EXPR_RECORD_LEFT = 1u;
 static const uint HIR_EXPR_RECORD_RIGHT = 2u;
+static const uint PARSER_FEATURE_MEMBERS = 0x00000040u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -215,13 +217,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node == INVALID)
         return;
 
-    hir_member_receiver_node[node] = INVALID;
-    hir_member_receiver_token[node] = INVALID;
-    hir_member_name_token[node] = INVALID;
-
     uint kind = hir_kind[node];
-    if (kind == HIR_MEMBER_EXPR)
+    if ((gHirPostfix.parser_feature_flags & PARSER_FEATURE_MEMBERS) != 0u &&
+        kind == HIR_MEMBER_EXPR)
+    {
+        hir_member_receiver_node[node] = INVALID;
+        hir_member_receiver_token[node] = INVALID;
+        hir_member_name_token[node] = INVALID;
         publish_member(node);
+    }
     else if (kind == HIR_INDEX_EXPR)
         publish_index_span(node);
 }

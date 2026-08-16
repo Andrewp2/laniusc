@@ -18,7 +18,6 @@ RWStructuredBuffer<HirRange> match_arm_ranges;
 RWStructuredBuffer<uint> match_pattern_to_arm;
 RWStructuredBuffer<HirRange> param_ranges;
 RWStructuredBuffer<HirRange> type_arg_ranges;
-RWStructuredBuffer<HirRange> generic_param_ranges;
 
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
@@ -58,7 +57,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
             match_pattern_to_arm[dense] = 0xffffffffu;
             param_ranges[dense] = empty_range;
             type_arg_ranges[dense] = empty_range;
-            generic_param_ranges[dense] = empty_range;
         }
         else InterlockedMax(canonical_status[3u], node + 1u);
     }

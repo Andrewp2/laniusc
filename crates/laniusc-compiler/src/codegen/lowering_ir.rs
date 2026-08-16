@@ -128,8 +128,10 @@ impl HostService {
     }
 }
 
-/// Largest schedule-key width: four complete `u32` fields.
-pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 16;
+/// Resident schedule keys contain three packed `u32` words. The default
+/// five-MiB frontend-unit bound needs at most 95 significant bits, including
+/// the expression-tie and sentinel encodings.
+pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 12;
 
 /// Capacity-derived bit layout for the semantic schedule key.
 ///
@@ -143,6 +145,7 @@ pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 16;
 pub(crate) struct TargetScheduleRadixLayout {
     pub(crate) packed_bits: u32,
     pub(crate) steps: u32,
+    pub(crate) total_bits: u32,
 }
 
 impl TargetScheduleRadixLayout {
@@ -155,18 +158,24 @@ impl TargetScheduleRadixLayout {
             radix_bits_for_capacity(token_or_hir),
             radix_bits_for_capacity(capacities.hir_nodes),
         ];
-        let steps = bits.iter().copied().sum::<u32>().div_ceil(8);
+        let total_bits = bits.iter().copied().sum::<u32>();
+        let steps = total_bits.div_ceil(8);
         let packed_bits =
             (1u32 << 31) | bits[0] | (bits[1] << 6) | (bits[2] << 12) | (bits[3] << 18);
-        debug_assert!(steps > 0 && steps <= TARGET_SCHEDULE_MAX_RADIX_STEPS);
-        Self { packed_bits, steps }
+        debug_assert!(steps > 0);
+        Self {
+            packed_bits,
+            steps,
+            total_bits,
+        }
     }
 
     #[cfg(test)]
-    pub(crate) const fn full_width() -> Self {
+    pub(crate) const fn packed_width() -> Self {
         Self {
-            packed_bits: 32 | (32 << 6) | (32 << 12) | (32 << 18),
+            packed_bits: (1 << 31) | 24 | (24 << 6) | (24 << 12) | (24 << 18),
             steps: TARGET_SCHEDULE_MAX_RADIX_STEPS,
+            total_bits: 96,
         }
     }
 }
@@ -429,16 +438,10 @@ fn add_schedule_graph_passes(
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
 pub struct SemanticLirCore {
-    pub op: u32,
     pub type_id: u32,
-    pub type_ref_tag: u32,
     pub type_ref_payload: u32,
-    pub source_hir: u32,
     pub flags: u32,
     pub value_word_count: u32,
-    /// Checked fixed-array length for indexed operations, or `u32::MAX` when
-    /// the base has no statically sized array type.
-    pub array_length: u32,
 }
 
 #[repr(C)]
@@ -526,15 +529,6 @@ pub struct SemanticLirLocal {
     pub type_id: u32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
-pub struct SemanticLirSchedule {
-    pub function_id: u32,
-    pub execution_region: u32,
-    pub execution_rank: u32,
-    pub execution_tie: u32,
-}
-
 /// GPU-derived semantic interval needed to produce one target page.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
@@ -577,10 +571,9 @@ pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_HIR: u32 = 2;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
 pub struct TargetScheduleKey {
-    pub function_id: u32,
-    pub execution_region: u32,
-    pub execution_rank: u32,
-    pub execution_tie: u32,
+    pub word0: u32,
+    pub word1: u32,
+    pub word2: u32,
 }
 
 #[repr(C)]
@@ -787,6 +780,17 @@ pub enum LoweringTarget {
     Wasm,
 }
 
+/// Artifact boundary requested from one lowering job.
+///
+/// Executable and relocatable-object projection share semantic and target LIR,
+/// but their retained output tables are mutually exclusive. Keeping this in
+/// the graph key prevents an executable request from reserving object storage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LoweringArtifactKind {
+    Executable,
+    Object,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LoweringCapacities {
     pub source_bytes: u32,
@@ -958,18 +962,31 @@ pub fn lowering_compiler_graph(
     capacities: LoweringCapacities,
     target: LoweringTarget,
 ) -> Result<CompilerGraph, String> {
-    build_lowering_compiler_graph(capacities, Some(target))
+    build_lowering_compiler_graph(capacities, Some(target), true)
+}
+
+pub(crate) fn lowering_compiler_graph_for_artifact(
+    capacities: LoweringCapacities,
+    target: LoweringTarget,
+    artifact_kind: LoweringArtifactKind,
+) -> Result<CompilerGraph, String> {
+    build_lowering_compiler_graph(
+        capacities,
+        Some(target),
+        artifact_kind == LoweringArtifactKind::Object,
+    )
 }
 
 pub fn semantic_lowering_compiler_graph(
     capacities: LoweringCapacities,
 ) -> Result<CompilerGraph, String> {
-    build_lowering_compiler_graph(capacities, None)
+    build_lowering_compiler_graph(capacities, None, false)
 }
 
 fn build_lowering_compiler_graph(
     capacities: LoweringCapacities,
     target: Option<LoweringTarget>,
+    include_object: bool,
 ) -> Result<CompilerGraph, String> {
     let mut graph = CompilerGraphBuilder::new();
     let value_capacity = capacities.declaration_capacity();
@@ -1600,7 +1617,7 @@ fn build_lowering_compiler_graph(
         } else {
             ResourceClass::Workspace
         },
-        bytes: LoweringCapacities::bytes::<SemanticLirSchedule>(capacities.semantic_instructions),
+        bytes: LoweringCapacities::bytes::<TargetScheduleKey>(capacities.semantic_instructions),
         usage: WorkspaceUsageClass::Storage,
     })?;
     let semantic_owner = graph.add_resource(retained_semantic(
@@ -2896,7 +2913,7 @@ fn build_lowering_compiler_graph(
     } else {
         None
     };
-    let x86_object = if target == LoweringTarget::X86_64 {
+    let x86_object = if target == LoweringTarget::X86_64 && include_object {
         let relocation_capacity = capacities.semantic_instructions.max(1);
         let function_capacity = capacities.hir_nodes.max(1);
         let relocation_blocks = relocation_capacity.div_ceil(256);
@@ -3181,7 +3198,7 @@ fn build_lowering_compiler_graph(
     } else {
         None
     };
-    let wasm_object = if target == LoweringTarget::Wasm {
+    let wasm_object = if target == LoweringTarget::Wasm && include_object {
         let relocation_capacity = capacities.semantic_instructions.max(1);
         let function_capacity = capacities.hir_nodes.max(1);
         let relocation_blocks = relocation_capacity.div_ceil(256);
@@ -3375,6 +3392,13 @@ fn build_lowering_compiler_graph(
     };
 
     let schedule_radix_layout = TargetScheduleRadixLayout::for_capacities(capacities);
+    if schedule_radix_layout.steps > TARGET_SCHEDULE_MAX_RADIX_STEPS {
+        return Err(format!(
+            "semantic schedule requires {} packed bits, exceeding the {}-bit resident key capacity",
+            schedule_radix_layout.total_bits,
+            TARGET_SCHEDULE_MAX_RADIX_STEPS * 8,
+        ));
+    }
     let schedule_resources = ScheduleGraphResources {
         total: semantic_total,
         keys: semantic_schedule,
@@ -3514,6 +3538,10 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_lir_total", semantic_total),
             PassAccess::read("semantic_lir_core", semantic_core),
             PassAccess::read("semantic_lir_operands", semantic_operands),
+            PassAccess::read(
+                "semantic_lir_layout_word_offset",
+                semantic_layout_word_offset,
+            ),
             PassAccess::read("semantic_schedule_order", schedule_order),
             PassAccess::read("semantic_owner_by_instruction", semantic_owner),
             PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
@@ -5192,6 +5220,38 @@ mod tests {
     }
 
     #[test]
+    fn executable_lowering_does_not_reserve_relocatable_object_storage() {
+        for (target, object_output) in [
+            (LoweringTarget::X86_64, "artifact.x86.object.relocations"),
+            (LoweringTarget::Wasm, "artifact.wasm.object.relocations"),
+        ] {
+            let capacities = LoweringCapacities::from_frontend_unit(
+                1024 * 1024,
+                1024 * 1024,
+                1024 * 1024,
+                target,
+            )
+            .unwrap();
+            let executable = lowering_compiler_graph_for_artifact(
+                capacities,
+                target,
+                LoweringArtifactKind::Executable,
+            )
+            .unwrap();
+            let object = lowering_compiler_graph_for_artifact(
+                capacities,
+                target,
+                LoweringArtifactKind::Object,
+            )
+            .unwrap();
+
+            assert!(executable.resource_id(object_output).is_none());
+            assert!(object.resource_id(object_output).is_some());
+            assert!(executable.workspace_bytes() < object.workspace_bytes());
+        }
+    }
+
+    #[test]
     fn target_records_are_physically_bounded_and_offsets_survive_replay() {
         let target_rows = TARGET_LIR_PAGE_ROWS * 3 + 17;
         for (target, core_name, core_stride, replay_name) in [
@@ -5246,15 +5306,14 @@ mod tests {
     }
 
     #[test]
-    fn lowering_records_match_shader_uint4_layouts() {
-        assert_eq!(std::mem::size_of::<SemanticLirCore>(), 32);
+    fn lowering_records_match_shader_storage_layouts() {
+        assert_eq!(std::mem::size_of::<SemanticLirCore>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirOperands>(), 16);
-        assert_eq!(std::mem::size_of::<SemanticLirSchedule>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirFunction>(), 52);
         assert_eq!(std::mem::size_of::<SemanticLirParam>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirLocal>(), 16);
         assert_eq!(std::mem::size_of::<LoweringStatus>(), 32);
-        assert_eq!(std::mem::size_of::<TargetScheduleKey>(), 16);
+        assert_eq!(std::mem::size_of::<TargetScheduleKey>(), 12);
         assert_eq!(std::mem::size_of::<TargetLirFunction>(), 16);
         assert_eq!(std::mem::size_of::<X86LirCore>(), 16);
         assert_eq!(std::mem::size_of::<X86LirOperands>(), 16);
@@ -5292,6 +5351,7 @@ mod tests {
         });
         assert_eq!(layout.packed_bits, 0x8041_1453);
         assert_eq!(layout.steps, 9);
+        assert_eq!(layout.total_bits, 69);
 
         let small_capacities = LoweringCapacities {
             source_bytes: 4_096,
@@ -5336,6 +5396,40 @@ mod tests {
                 && graph.passes()[region.first_pass.index()].name
                     == "lir.semantic.schedule.histogram.odd"
         }));
+    }
+
+    #[test]
+    fn semantic_schedule_key_covers_the_default_frontend_unit() {
+        let maximum = (5 * 1024 * 1024) as u32;
+        let capacities = LoweringCapacities::from_frontend_unit(
+            maximum,
+            maximum,
+            maximum,
+            LoweringTarget::X86_64,
+        )
+        .unwrap()
+        .bucketed();
+        let layout = TargetScheduleRadixLayout::for_capacities(capacities);
+        assert_eq!(layout.total_bits, 95);
+        assert_eq!(layout.steps, TARGET_SCHEDULE_MAX_RADIX_STEPS);
+        lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap();
+    }
+
+    #[test]
+    fn semantic_schedule_key_rejects_an_overwide_unit() {
+        let capacities = LoweringCapacities {
+            source_bytes: 1,
+            tokens: 1 << 29,
+            hir_nodes: 1 << 29,
+            semantic_instructions: 1 << 31,
+            call_arguments: 1,
+            parameters: 1,
+            aggregate_elements: 1,
+            target_instructions: 1,
+            artifact_bytes: 1,
+        };
+        let error = lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap_err();
+        assert!(error.contains("exceeding the 96-bit resident key capacity"));
     }
 
     #[test]

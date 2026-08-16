@@ -69,7 +69,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         match_pattern_to_arm[arm_node] = row;
     if (arm.pattern < gCanonical.canonical_capacity)
         match_pattern_to_arm[arm.pattern] = row;
-    raw_to_arm[raw] = row;
+    raw_to_arm[anchor] = row;
     payload_start[row] = INVALID;
     payload_count[row] = 0u;
     if (arm.owner < gCanonical.canonical_capacity)

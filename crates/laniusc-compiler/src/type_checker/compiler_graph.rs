@@ -815,7 +815,7 @@ pub(super) const DEPENDENCY_METHODS_PROJECT_PASS: &str = "type_check.dependencie
 /// sole physical owner.
 pub(super) struct TypeCheckCompilerGraph {
     materialized: MaterializedCompilerGraph,
-    semantic_interface_scans: SemanticInterfaceScanGraph,
+    semantic_interface_scans: Option<SemanticInterfaceScanGraph>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -873,6 +873,7 @@ impl SemanticInterfaceScanGraph {
         token_capacity: u32,
         source_file_capacity: u32,
         declaration_capacity: u32,
+        kernels: &impl crate::gpu::kernels::KernelReflections,
     ) -> Result<Self> {
         let capacities = [
             u64::from(token_capacity) * 2
@@ -1129,6 +1130,216 @@ impl SemanticInterfaceScanGraph {
         .into_iter()
         .collect::<Result<Vec<_>, String>>()
         .map_err(anyhow::Error::msg)?;
+        // The semantic-interface recorder is still handwritten, so the scan
+        // graph does not yet encode every compute dispatch in execution order.
+        // Register the shader-facing names of its graph-owned resources and
+        // use Slang reflection to keep any co-bound rows in distinct physical
+        // arenas. Logical Resident slots alone prevent lifetime coloring, but
+        // disjoint Resident ranges may still share one wgpu buffer; reflection
+        // is what preserves the per-buffer read/write usage boundary.
+        for (binding, resource_name) in [
+            ("interface_name_ref_len", "semantic_interface.name_ref_len"),
+            ("interface_modules", "semantic_interface.modules"),
+            (
+                "interface_module_segments",
+                "semantic_interface.module_segments",
+            ),
+            (
+                "interface_declaration_words",
+                "semantic_interface.declarations",
+            ),
+            ("interface_type_parent", "semantic_interface.type.parent"),
+            (
+                "interface_type_seed_owner",
+                "semantic_interface.type.seed_owner",
+            ),
+            (
+                "interface_type_child_ordinal",
+                "semantic_interface.type.child_ordinal",
+            ),
+            (
+                "interface_decl_direct_type_hir",
+                "semantic_interface.type.direct_hir_by_decl",
+            ),
+            (
+                "interface_type_index_by_hir",
+                "semantic_interface.type.index_by_hir",
+            ),
+            (
+                "interface_type_root_link",
+                "semantic_interface.type.root_link_a",
+            ),
+            (
+                "interface_type_reverse_flag",
+                "semantic_interface.type.reverse_flag",
+            ),
+            (
+                "interface_type_hir_order",
+                "semantic_interface.type.hir_order",
+            ),
+            (
+                "interface_type_edge_count",
+                "semantic_interface.type.edge_count",
+            ),
+            ("interface_type_edges", "semantic_interface.type.edges"),
+            (
+                "interface_type_edge_written",
+                "semantic_interface.type.edge_written",
+            ),
+            (
+                "interface_type_local_decl_by_hir",
+                "semantic_interface.type.local_decl_by_hir",
+            ),
+            (
+                "interface_type_path_classification",
+                "semantic_interface.type.path_classification",
+            ),
+            ("interface_types", "semantic_interface.type.types"),
+            (
+                "interface_signature_type_flag",
+                "semantic_interface.signature.type_flag",
+            ),
+            (
+                "interface_signature_edge_count",
+                "semantic_interface.signature.edge_count",
+            ),
+            (
+                "interface_signature_type_by_decl",
+                "semantic_interface.signature.type_by_decl",
+            ),
+            (
+                "interface_complete_type_count",
+                "semantic_interface.complete_type_count",
+            ),
+            (
+                "interface_complete_edge_total",
+                "semantic_interface.complete_edge_total",
+            ),
+            (
+                "interface_variant_count_by_hir",
+                "semantic_interface.members.variant_count_by_hir",
+            ),
+            (
+                "interface_field_count_by_hir",
+                "semantic_interface.members.field_count_by_hir",
+            ),
+            (
+                "interface_generic_type_count_by_decl",
+                "semantic_interface.members.generic_type_count_by_decl",
+            ),
+            (
+                "interface_generic_const_count_by_decl",
+                "semantic_interface.members.generic_const_count_by_decl",
+            ),
+            (
+                "interface_member_count",
+                "semantic_interface.members.row_count",
+            ),
+            (
+                "interface_member_cursor",
+                "semantic_interface.members.cursor",
+            ),
+            (
+                "interface_member_words",
+                "semantic_interface.members.records",
+            ),
+            (
+                "interface_member_name_id",
+                "semantic_interface.members.name_id",
+            ),
+            (
+                "interface_member_index_by_generic_row",
+                "semantic_interface.members.index_by_generic_row",
+            ),
+            (
+                "interface_member_written",
+                "semantic_interface.members.written",
+            ),
+        ] {
+            let resource = builder.resource_id(resource_name).ok_or_else(|| {
+                anyhow::anyhow!("missing semantic-interface graph resource {resource_name}")
+            })?;
+            builder
+                .add_resource_alias(binding, resource)
+                .map_err(anyhow::Error::msg)?;
+        }
+        for (binding, resource) in [
+            (
+                "interface_name_ref_prefix",
+                scans[SemanticInterfaceScan::Names as usize].0.output_prefix,
+            ),
+            (
+                "module_segment_prefix",
+                scans[SemanticInterfaceScan::Modules as usize]
+                    .0
+                    .output_prefix,
+            ),
+            (
+                "module_segment_total",
+                scans[SemanticInterfaceScan::Modules as usize].0.total,
+            ),
+            (
+                "interface_signature_type_prefix",
+                scans[SemanticInterfaceScan::SignatureTypes as usize]
+                    .0
+                    .output_prefix,
+            ),
+            (
+                "interface_signature_type_total",
+                scans[SemanticInterfaceScan::SignatureTypes as usize]
+                    .0
+                    .total,
+            ),
+            (
+                "interface_signature_edge_prefix",
+                scans[SemanticInterfaceScan::SignatureEdges as usize]
+                    .0
+                    .output_prefix,
+            ),
+            (
+                "interface_signature_edge_total",
+                scans[SemanticInterfaceScan::SignatureEdges as usize]
+                    .0
+                    .total,
+            ),
+            (
+                "interface_member_prefix",
+                scans[SemanticInterfaceScan::Members as usize]
+                    .0
+                    .output_prefix,
+            ),
+            (
+                "interface_member_total",
+                scans[SemanticInterfaceScan::Members as usize].0.total,
+            ),
+            (
+                "interface_type_reverse_prefix",
+                scans[SemanticInterfaceScan::TypeOrder as usize]
+                    .0
+                    .output_prefix,
+            ),
+            (
+                "interface_type_count",
+                scans[SemanticInterfaceScan::TypeOrder as usize].0.total,
+            ),
+            (
+                "interface_type_edge_prefix",
+                scans[SemanticInterfaceScan::TypeEdges as usize]
+                    .0
+                    .output_prefix,
+            ),
+            (
+                "interface_type_edge_total",
+                scans[SemanticInterfaceScan::TypeEdges as usize].0.total,
+            ),
+        ] {
+            builder
+                .add_resource_alias(binding, resource)
+                .map_err(anyhow::Error::msg)?;
+        }
+        builder
+            .add_reflected_arena_conflicts(kernels)
+            .map_err(anyhow::Error::msg)?;
         let graph = builder.build().map_err(anyhow::Error::msg)?;
         let materialized = MaterializedCompilerGraph::new_with_upstream_storage(
             device,
@@ -1297,6 +1508,7 @@ impl TypeCheckCompilerGraph {
         generic_claim_capacity: u32,
         predicate_capacity: u32,
         dependency_capacity: DependencyWorkspaceCapacity,
+        semantic_interface_required: bool,
         passes: &TypeCheckPasses,
         upstream_workspace: &[crate::gpu::buffers::TrackedBufferView<'_>],
     ) -> Result<Self> {
@@ -1324,13 +1536,18 @@ impl TypeCheckCompilerGraph {
             upstream_workspace,
         )
         .map_err(anyhow::Error::msg)?;
-        let semantic_interface_scans = SemanticInterfaceScanGraph::new(
-            device,
-            hir_capacity,
-            token_capacity,
-            source_file_capacity,
-            module_record_capacity,
-        )?;
+        let semantic_interface_scans = semantic_interface_required
+            .then(|| {
+                SemanticInterfaceScanGraph::new(
+                    device,
+                    hir_capacity,
+                    token_capacity,
+                    source_file_capacity,
+                    module_record_capacity,
+                    passes,
+                )
+            })
+            .transpose()?;
         Ok(Self {
             materialized,
             semantic_interface_scans,
@@ -1339,19 +1556,19 @@ impl TypeCheckCompilerGraph {
 
     pub(super) fn semantic_interface_scan_workspace(
         &self,
-    ) -> PrefixScanWorkspace<&LaniusBuffer<u32>> {
-        self.semantic_interface_scans.workspace()
+    ) -> Result<PrefixScanWorkspace<&LaniusBuffer<u32>>> {
+        Ok(self.semantic_interface_scans()?.workspace())
     }
 
     pub(super) fn semantic_interface_scan_outputs(
         &self,
         scan: SemanticInterfaceScan,
     ) -> Result<(LaniusBuffer<u32>, LaniusBuffer<u32>)> {
-        self.semantic_interface_scans.outputs(scan)
+        self.semantic_interface_scans()?.outputs(scan)
     }
 
     pub(super) fn semantic_interface_buffer(&self, name: &str) -> Result<LaniusBuffer<u32>> {
-        self.semantic_interface_scans.buffer(name)
+        self.semantic_interface_scans()?.buffer(name)
     }
 
     pub(super) fn validate_semantic_interface_scan(
@@ -1359,7 +1576,13 @@ impl TypeCheckCompilerGraph {
         scan: SemanticInterfaceScan,
         resources: &ResourceMap<'_>,
     ) -> Result<()> {
-        self.semantic_interface_scans.validate(scan, resources)
+        self.semantic_interface_scans()?.validate(scan, resources)
+    }
+
+    fn semantic_interface_scans(&self) -> Result<&SemanticInterfaceScanGraph> {
+        self.semantic_interface_scans.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("semantic-interface workspace was not requested for this job")
+        })
     }
 }
 
@@ -1922,14 +2145,10 @@ fn build_graph(
             import_visible_rows * 4,
         )?;
     }
-    // Logical reflected name supplied by an alias at bind-group construction.
-    // Its backing path-prefix resource is graph-owned.
-    graph.add_storage(
-        "path_prefix_id",
-        ResourceDomain::HirNodes,
-        ResourceClass::Input,
-        hir_rows * 4,
-    )?;
+    // Logical reflected name supplied by bind-group construction. Model it as
+    // the same graph-owned path-prefix allocation so reflection-derived arena
+    // conflicts follow the real binding identity.
+    graph.add_resource_alias("path_prefix_id", _path_prefix_id_a)?;
     graph.add_storage(
         "compact_fn_return_type",
         ResourceDomain::HirNodes,
@@ -2027,12 +2246,6 @@ fn build_graph(
             u64::from(module_record_capacity.max(1)) * 4,
         ),
         ("dependency_visible_total", ResourceDomain::Declarations, 4),
-        ("canonical_type_roots", ResourceDomain::Declarations, 4),
-        (
-            "canonical_type_subtree_start",
-            ResourceDomain::Declarations,
-            4,
-        ),
         (
             "dependency_call_compare_scan_input",
             ResourceDomain::HirNodes,
@@ -2086,6 +2299,62 @@ fn build_graph(
             rows * 4,
         )?;
     }
+    let dependency_canonical_type_roots_a = graph
+        .resource_id("dependency_canonical_type_roots_a")
+        .expect("dependency canonical root A resource");
+    let dependency_canonical_type_roots_b = graph
+        .resource_id("dependency_canonical_type_roots_b")
+        .expect("dependency canonical root B resource");
+    let dependency_canonical_type_subtree_a = graph
+        .resource_id("dependency_canonical_type_subtree_a")
+        .expect("dependency canonical subtree A resource");
+    let dependency_canonical_type_subtree_b = graph
+        .resource_id("dependency_canonical_type_subtree_b")
+        .expect("dependency canonical subtree B resource");
+    for binding in [
+        "canonical_type_roots",
+        "canonical_type_roots_in",
+        "canonical_type_roots_out",
+    ] {
+        graph.add_reflected_binding_resources(
+            binding,
+            [
+                dependency_canonical_type_roots_a,
+                dependency_canonical_type_roots_b,
+            ],
+        )?;
+    }
+    for binding in [
+        "canonical_type_subtree_start",
+        "canonical_type_subtree_start_in",
+        "canonical_type_subtree_start_out",
+    ] {
+        graph.add_reflected_binding_resources(
+            binding,
+            [
+                dependency_canonical_type_subtree_a,
+                dependency_canonical_type_subtree_b,
+            ],
+        )?;
+    }
+    let mut canonical_type_jump_rounds = 0u32;
+    let mut canonical_type_jump_reach = 1u32;
+    while canonical_type_jump_reach < dependency_capacity.type_rows.max(1) {
+        canonical_type_jump_reach = canonical_type_jump_reach.saturating_mul(16);
+        canonical_type_jump_rounds += 1;
+    }
+    let (dependency_canonical_type_roots, dependency_canonical_type_subtree_start) =
+        if canonical_type_jump_rounds % 2 == 0 {
+            (
+                dependency_canonical_type_roots_a,
+                dependency_canonical_type_subtree_a,
+            )
+        } else {
+            (
+                dependency_canonical_type_roots_b,
+                dependency_canonical_type_subtree_b,
+            )
+        };
     let _dependency_resolved_value_decl = graph.add_storage(
         "dependency_resolved_value_decl",
         ResourceDomain::Declarations,
@@ -2122,11 +2391,18 @@ fn build_graph(
         ResourceClass::Resident,
         u64::from(module_record_capacity.max(1)) * 3 * 4,
     )?;
-    graph.add_storage(
+    let dependency_declaration_field_count = graph.add_storage(
         "dependency_declaration_field_count",
         ResourceDomain::Declarations,
         ResourceClass::Resident,
         dependency_declaration_rows * 4,
+    )?;
+    // The dependency shaders expose this compact interface column under the
+    // shorter reflected name. Preserve its real graph identity so any output
+    // co-bound with it is assigned to a different physical WGPU buffer.
+    graph.add_reflected_binding_resources(
+        "declaration_field_count",
+        [dependency_declaration_field_count],
     )?;
     graph_resources!(graph, Workspace {
         hir_value_decl_name_present in Declarations => (token_rows + u64::from(LANGUAGE_SYMBOL_COUNT)) * 4;
@@ -3696,7 +3972,10 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/dependencies/08_validate_call_args",
-        &[],
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
+        ],
     )?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_CALL_RESULTS_SUBSTITUTE_PASS,
@@ -3705,6 +3984,8 @@ fn build_graph(
         kernels,
         "type_checker/dependencies/08a_validate_call_results",
         reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
             "call_result_instance" => call_result_instance: Write,
         ],
     )?;
@@ -3715,6 +3996,8 @@ fn build_graph(
         kernels,
         "type_checker/dependencies/08a_validate_call_results",
         reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
             "call_result_instance" => call_result_instance: Write,
         ],
     )?;
@@ -3739,7 +4022,10 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/dependencies/08b_validate_call_type_args",
-        &[],
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
+        ],
     )?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_METHODS_PROJECT_PASS,
@@ -3747,7 +4033,9 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/dependencies/15_project_methods",
-        &[],
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        ],
     )?;
     graph.add_kernel_pass_by_name(
         CALLS_BACKEND_TARGETS_PASS,
@@ -3894,6 +4182,7 @@ fn build_graph(
         reflected_bindings![
             "compact_const_value" => _compact_const_value: Read,
             "decl_id_by_name_token" => decl_id_by_name_token: Read,
+            "decl_kind" => decl_kind: Read,
             "decl_hir_node" => _decl_hir_node: Read,
             "semantic_value_const_by_hir" => semantic_value_const_by_hir: ReadWrite,
             "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
@@ -4021,10 +4310,11 @@ fn build_graph(
     ])?;
     // The resident type-check recorder still interleaves and repeats several
     // operation groups in an order that this graph does not encode exactly.
-    // Coloring from the partial order is unsound: a repeated consumer can read
-    // storage already assigned to another logical relation. Keep type-check
-    // workspace identities distinct until recording is driven by this graph's
-    // complete schedule.
+    // Keep their logical lifetimes distinct, while reflection from every
+    // prepared kernel prevents simultaneously bound ranges from sharing one
+    // physical arena. This permits allocation consolidation without inferring
+    // semantic lifetime reuse from the partial command schedule.
+    graph.add_reflected_arena_conflicts(kernels)?;
     graph.dedicate_all_workspace();
     graph.build()
 }
@@ -4032,6 +4322,92 @@ fn build_graph(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dependency_ping_pong_bindings_protect_their_actual_resources() {
+        let kernels =
+            crate::gpu::kernels::KernelCatalog::load_prefixes(&["type_checker", "scan", "radix"])
+                .unwrap();
+        let graph = build_graph(
+            1024,
+            4096,
+            4,
+            4096,
+            1024,
+            768,
+            768,
+            10_000,
+            DependencyWorkspaceCapacity {
+                visible_rows: 16,
+                lookup_rows: 32,
+                type_rows: 2,
+                declaration_rows: 16,
+            },
+            &kernels,
+        )
+        .unwrap();
+        graph.validate_assigned_pass_reflections(&kernels).unwrap();
+
+        let validate_results = graph
+            .pass(
+                graph
+                    .pass_id(DEPENDENCY_CALL_RESULTS_VALIDATE_PASS)
+                    .unwrap(),
+            )
+            .unwrap();
+        for (binding, expected_resource) in [
+            ("canonical_type_roots", "dependency_canonical_type_roots_b"),
+            (
+                "canonical_type_subtree_start",
+                "dependency_canonical_type_subtree_b",
+            ),
+        ] {
+            let access = validate_results
+                .accesses
+                .iter()
+                .find(|access| access.binding == binding)
+                .unwrap_or_else(|| panic!("missing reflected binding `{binding}`"));
+            assert_eq!(
+                access.resource,
+                graph.resource_id(expected_resource).unwrap(),
+                "one 16-link jump round leaves the canonical dependency relation in buffer B",
+            );
+        }
+
+        let arena_layout = graph
+            .workspace_arena_layout(&wgpu::Limits::default())
+            .unwrap();
+        let physical_arena = |name| {
+            let slot = graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == name)
+                .unwrap_or_else(|| panic!("missing workspace assignment `{name}`"))
+                .slot;
+            arena_layout
+                .placements
+                .iter()
+                .find(|placement| placement.slot == slot)
+                .unwrap_or_else(|| panic!("missing arena placement for `{name}`"))
+                .arena
+        };
+        let writable_call_arena = physical_arena("call_result_instance");
+        for name in [
+            "dependency_canonical_type_roots_a",
+            "dependency_canonical_type_roots_b",
+            "dependency_canonical_type_subtree_a",
+            "dependency_canonical_type_subtree_b",
+        ] {
+            assert_ne!(
+                physical_arena(name),
+                writable_call_arena,
+                "read-only dependency canonical relation `{name}` must not share a physical buffer with writable call results",
+            );
+        }
+        assert!(graph.resource_id("canonical_type_roots").is_none());
+        assert!(graph.resource_id("canonical_type_subtree_start").is_none());
+    }
 
     #[test]
     fn typecheck_graph_dedicates_scratch_until_the_recorder_is_graph_driven() {
@@ -4057,6 +4433,29 @@ mod tests {
                 .resource_id(name)
                 .unwrap_or_else(|| panic!("missing graph resource `{name}`"))
         };
+        let arena_layout = graph
+            .workspace_arena_layout(&wgpu::Limits::default())
+            .unwrap();
+        let physical_arena = |name| {
+            let slot = graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == name)
+                .unwrap_or_else(|| panic!("missing workspace assignment `{name}`"))
+                .slot;
+            arena_layout
+                .placements
+                .iter()
+                .find(|placement| placement.slot == slot)
+                .unwrap_or_else(|| panic!("missing arena placement for `{name}`"))
+                .arena
+        };
+        assert_ne!(
+            physical_arena("module_type_path_type"),
+            physical_arena("type_instance_len_kind"),
+            "reflection must keep resources co-bound by aggregate-detail collection in separate physical buffers",
+        );
         for name in [
             "name_scan_total",
             "name_spans",
@@ -4192,24 +4591,31 @@ mod tests {
             );
         }
         let semantic_projection = graph.pass_id(SEMANTIC_ARTIFACT_PROJECT_PASS).unwrap();
-        for resource in [
-            graph.resource_id("decl_name_token").unwrap(),
-            graph.resource_id("decl_kind").unwrap(),
-        ] {
-            assert_eq!(
-                graph.lifetime(resource).unwrap().last_pass,
-                semantic_projection,
-                "compact declaration lookup must survive every type-check consumer",
-            );
-        }
+        assert_eq!(
+            graph
+                .lifetime(graph.resource_id("decl_name_token").unwrap())
+                .unwrap()
+                .last_pass,
+            semantic_projection,
+            "compact declaration names must survive semantic artifact projection",
+        );
+        let local_const_reference_projection = graph
+            .pass_id(SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS)
+            .unwrap();
+        assert_eq!(
+            graph
+                .lifetime(graph.resource_id("decl_kind").unwrap())
+                .unwrap()
+                .last_pass,
+            local_const_reference_projection,
+            "declaration kinds must survive local-constant reference projection",
+        );
         assert_eq!(
             graph
                 .lifetime(graph.resource_id("decl_id_by_name_token").unwrap())
                 .unwrap()
                 .last_pass,
-            graph
-                .pass_id(SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS)
-                .unwrap(),
+            local_const_reference_projection,
             "the declaration reverse lookup must survive local-constant projection",
         );
         assert_ne!(

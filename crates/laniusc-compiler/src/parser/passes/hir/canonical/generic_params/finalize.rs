@@ -53,6 +53,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 "family_flag".into(),
                 b.hir_generic_param_family_flag.as_entire_binding(),
             ),
+            (
+                "generic_param_ranges".into(),
+                b.hir_generic_param_ranges.as_entire_binding(),
+            ),
         ])
     }
 }

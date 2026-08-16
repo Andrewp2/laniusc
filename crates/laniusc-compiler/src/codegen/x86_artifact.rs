@@ -405,10 +405,10 @@ impl GpuX86ArtifactStage {
                 self.artifact_capacity,
             );
         }
-        self.output_readback.read(
+        self.output_readback.read_buffer(
             device,
             queue,
-            &self.words.buffer,
+            &self.words,
             0,
             length,
             "x86 artifact byte readback",
@@ -486,7 +486,7 @@ mod tests {
         let semantic_core = storage_ro_from_bytes::<SemanticLirCore>(
             &gpu.device,
             "test.x86_artifact.sem.core",
-            &records(&[[0; 6]; 12]),
+            &records(&[[0; 4]; 12]),
             12,
         );
         let semantic_operands = storage_ro_from_bytes::<SemanticLirOperands>(

@@ -54,10 +54,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalMatc
                 "family_flag".into(),
                 b.hir_match_arm_family_flag.as_entire_binding(),
             ),
-            (
-                "raw_to_arm".into(),
-                b.hir_match_arm_raw_to_row.as_entire_binding(),
-            ),
         ])
     }
 }

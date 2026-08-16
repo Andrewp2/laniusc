@@ -1,6 +1,6 @@
 import token_features;
 import generated_parse_production_ids;
-struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
+struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; uint records_use_token_rows; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> token_feature_flags;
@@ -25,9 +25,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     uint prod = raw < active_count() ? node_kind[raw] : INVALID;
     bool declaration = prod == PROD_STRUCT_FIELD && decl_owner[raw] != INVALID;
-    bool initializer = prod == PROD_STRUCT_LIT_FIELD && literal_owner[raw] != INVALID;
-    if (!declaration && !initializer) return;
     uint anchor = hir_token_pos[raw];
+    uint literal_row = gCanonical.records_use_token_rows != 0u ? anchor : raw;
+    bool initializer = prod == PROD_STRUCT_LIT_FIELD &&
+        anchor < gCanonical.canonical_capacity && literal_owner[literal_row] != INVALID;
+    if (!declaration && !initializer) return;
     if (anchor >= gCanonical.canonical_capacity) return;
     uint ignored;
     InterlockedMax(candidate_raw_by_anchor[anchor], raw + 1u, ignored);

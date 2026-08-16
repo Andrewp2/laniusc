@@ -138,7 +138,7 @@ fn bounded_wasm_worker_emits_runnable_output_through_multiple_link_levels() {
             "hierarchical_bounded_entry",
             &wasm,
         ),
-        4
+        112
     );
 }
 
@@ -156,7 +156,7 @@ fn bounded_x86_worker_emits_runnable_output_through_multiple_link_levels() {
         "hierarchical_bounded_entry",
         &elf,
     );
-    assert_eq!(output.status.code(), Some(4));
+    assert_eq!(output.status.code(), Some(112));
 }
 
 #[derive(Clone, Copy)]
@@ -346,17 +346,45 @@ impl SmallLimitProject {
         let mut paths = Vec::new();
         for index in 0..4 {
             let path = source_root.join(format!("m{index}.lani"));
-            std::fs::write(
-                &path,
-                format!("module app::m{index};\npub fn value() -> i32 {{ return {index}; }}\n"),
-            )
-            .expect("write hierarchical module");
+            let source = if index == 0 {
+                r#"module app::m0;
+
+enum Adjustment {
+    Add(i32),
+    Hold,
+}
+
+type SummaryScore = i32;
+const SUMMARY_OFFSET: SummaryScore = 4194;
+
+fn choose_adjustment(seed: i32) -> Adjustment {
+    if ((seed & 1) == 0) {
+        return Add((seed % 7) + 1);
+    }
+    return Hold;
+}
+
+pub fn value() -> i32 {
+    let seed: i32 = 6;
+    let adjustment: Adjustment = choose_adjustment(seed);
+    let adjusted: i32 = match (adjustment) {
+        Add(amount) -> (seed + amount) & 4095,
+        Hold -> (seed - 1) & 4095,
+    };
+    return (adjusted + SUMMARY_OFFSET) & 4095;
+}
+"#
+                .to_owned()
+            } else {
+                format!("module app::m{index};\npub fn value() -> i32 {{ return {index}; }}\n")
+            };
+            std::fs::write(&path, source).expect("write hierarchical module");
             paths.push(path);
         }
         let entry = source_root.join("main.lani");
         std::fs::write(
             &entry,
-            "module app::main;\nimport app::m3;\nfn main() -> i32 { return app::m3::value() + 1; }\n",
+            "module app::main;\nimport app::m0;\nfn main() -> i32 { return app::m0::value() + 1; }\n",
         )
         .expect("write hierarchical entry");
         paths.push(entry);
@@ -366,6 +394,10 @@ impl SmallLimitProject {
 
 impl Drop for SmallLimitProject {
     fn drop(&mut self) {
+        if std::env::var_os("LANIUS_KEEP_TEMP_ARTIFACTS").is_some() {
+            eprintln!("kept bounded test project {}", self.root.display());
+            return;
+        }
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }

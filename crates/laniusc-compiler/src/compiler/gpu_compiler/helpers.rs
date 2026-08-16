@@ -1,13 +1,5 @@
 use super::*;
 
-/// Caps parser-emitted HIR capacity to the parser tree capacity.
-pub(super) fn hir_node_capacity_for_parser_emit(
-    parser_tree_capacity: u32,
-    parser_emit_len: u32,
-) -> u32 {
-    parser_emit_len.max(1).min(parser_tree_capacity.max(1))
-}
-
 /// Emits a WASM compile trace line when WASM tracing is enabled.
 pub(super) fn trace_wasm_compile(stage: &str) {
     if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {

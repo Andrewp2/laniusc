@@ -10,6 +10,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirStruct;
@@ -20,6 +21,7 @@ StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_token_pos;
 
 RWStructuredBuffer<uint> hir_struct_field_type_node;
 RWStructuredBuffer<uint> hir_struct_lit_head_node;
@@ -250,8 +252,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (prod == PROD_STRUCT_LIT_FIELD)
     {
-        hir_struct_lit_field_value_node[node] =
-            first_child_with_hir_kind(node, HIR_EXPR);
+        uint output_row = gHirStruct.retain_debug_rows != 0u
+            ? node
+            : hir_token_pos[node];
+        if (output_row != INVALID)
+            hir_struct_lit_field_value_node[output_row] =
+                first_child_with_hir_kind(node, HIR_EXPR);
         seed_literal_field(node);
     }
 }

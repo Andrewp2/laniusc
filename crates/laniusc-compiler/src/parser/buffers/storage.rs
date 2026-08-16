@@ -1,4 +1,100 @@
-use crate::gpu::buffers::{LaniusBuffer, storage_rw_for_array};
+use crate::gpu::buffers::{LaniusBuffer, storage_rw_for_array, storage_rw_uninit_bytes};
+
+fn align_up(value: u64, alignment: u64) -> u64 {
+    value.div_ceil(alignment) * alignment
+}
+
+/// Returns the physical byte size required for independently bindable rows in
+/// one phase-local arena. Every row begins at the device's storage-buffer
+/// offset alignment; row sizes themselves remain exact.
+pub(super) fn phase_arena_bytes(
+    device: &wgpu::Device,
+    rows: impl IntoIterator<Item = (usize, usize)>,
+) -> u64 {
+    let alignment = u64::from(device.limits().min_storage_buffer_offset_alignment.max(1));
+    rows.into_iter().fold(0u64, |offset, (count, stride)| {
+        let row_bytes = count
+            .max(1)
+            .checked_mul(stride.max(1))
+            .expect("phase arena row byte size overflow") as u64;
+        align_up(offset, alignment)
+            .checked_add(row_bytes)
+            .expect("phase arena byte size overflow")
+    })
+}
+
+/// Assigns typed, aligned, non-overlapping views within one physical arena.
+///
+/// This cursor only packs rows that coexist in one phase. Reusing the arena
+/// across phases is a separate lifetime decision made by the caller.
+pub(super) struct PhaseArenaCursor<'a> {
+    device: &'a wgpu::Device,
+    source: &'a LaniusBuffer<u32>,
+    next_offset: u64,
+}
+
+impl<'a> PhaseArenaCursor<'a> {
+    pub(super) fn new(device: &'a wgpu::Device, source: &'a LaniusBuffer<u32>) -> Self {
+        Self {
+            device,
+            source,
+            next_offset: 0,
+        }
+    }
+
+    pub(super) fn row<T>(&mut self, logical_label: &str, count: usize) -> LaniusBuffer<T> {
+        let count = count.max(1);
+        let byte_size = count
+            .checked_mul(core::mem::size_of::<T>().max(1))
+            .expect("phase arena row byte size overflow") as u64;
+        let alignment = u64::from(
+            self.device
+                .limits()
+                .min_storage_buffer_offset_alignment
+                .max(1),
+        );
+        let offset = align_up(self.next_offset, alignment);
+        self.next_offset = offset
+            .checked_add(byte_size)
+            .expect("phase arena cursor overflow");
+        self.source
+            .subrange(offset, byte_size, count)
+            .unwrap_or_else(|error| panic!("phase arena row {logical_label} does not fit: {error}"))
+    }
+}
+
+/// Allocator for parser rows that are all dead once compact HIR has been
+/// materialized.
+///
+/// Rows remain independently bindable. Physical arena packing belongs in the
+/// compiler graph because WebGPU tracks access per physical buffer and correct
+/// write-to-read transitions depend on the complete reflected pass schedule.
+pub(super) struct PostHirWorkspaceArenas<'a> {
+    device: &'a wgpu::Device,
+}
+
+impl<'a> PostHirWorkspaceArenas<'a> {
+    pub(super) fn new(device: &'a wgpu::Device, _label: &'static str, _arena_bytes: u64) -> Self {
+        Self { device }
+    }
+
+    /// Allocates one independently bindable four-byte-element row. Parser tree
+    /// and scan rows use `u32` or `i32`, which have identical storage layout.
+    pub(super) fn row<T>(&mut self, logical_label: &str, count: usize) -> LaniusBuffer<T> {
+        assert_eq!(
+            core::mem::size_of::<T>(),
+            4,
+            "post-HIR workspace row {logical_label} must have four-byte elements",
+        );
+        let count = count.max(1);
+        let byte_size = count
+            .checked_mul(4)
+            .expect("post-HIR workspace row byte size overflow");
+        storage_rw_uninit_bytes(self.device, logical_label, byte_size, byte_size)
+            .subrange(0, byte_size as u64, count)
+            .expect("post-HIR workspace row must fit its allocation")
+    }
+}
 
 /// Reinterprets one typed storage buffer as another typed buffer with a new element count.
 pub(super) fn alias_storage_buffer<T, U>(

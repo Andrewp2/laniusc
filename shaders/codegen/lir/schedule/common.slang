@@ -9,7 +9,7 @@ uint target_schedule_field_width(uint packed_bits, uint field)
     return clamp((packed_bits >> (field * 6u)) & 0x3fu, 1u, 32u);
 }
 
-uint target_schedule_field(TargetScheduleKey key, uint field)
+uint target_schedule_field(SemanticLirSchedule key, uint field)
 {
     return field == 0u ? key.execution_tie
         : field == 1u ? key.execution_rank
@@ -23,7 +23,7 @@ uint target_schedule_field_mask(uint width)
 }
 
 uint target_schedule_encoded_field(
-    TargetScheduleKey key,
+    SemanticLirSchedule key,
     uint field,
     uint width,
     uint packed_bits)
@@ -46,30 +46,49 @@ uint target_schedule_encoded_field(
     return value & mask;
 }
 
+void target_schedule_or_word(inout TargetScheduleKey key, uint word, uint value)
+{
+    if (word == 0u) key.word0 |= value;
+    else if (word == 1u) key.word1 |= value;
+    else key.word2 |= value;
+}
+
+TargetScheduleKey target_schedule_pack(
+    SemanticLirSchedule schedule,
+    uint packed_bits)
+{
+    TargetScheduleKey key;
+    key.word0 = 0u;
+    key.word1 = 0u;
+    key.word2 = 0u;
+    uint destination_bit = 0u;
+    for (uint field = 0u; field < 4u; field += 1u)
+    {
+        uint width = target_schedule_field_width(packed_bits, field);
+        uint value = target_schedule_encoded_field(
+            schedule, field, width, packed_bits);
+        uint word = destination_bit / 32u;
+        uint shift = destination_bit % 32u;
+        target_schedule_or_word(key, word, value << shift);
+        if (shift != 0u && width > 32u - shift)
+            target_schedule_or_word(key, word + 1u, value >> (32u - shift));
+        destination_bit += width;
+    }
+    return key;
+}
+
+uint target_schedule_word(TargetScheduleKey key, uint word)
+{
+    return word == 0u ? key.word0 : word == 1u ? key.word1 : key.word2;
+}
+
 uint target_schedule_radix_key(TargetScheduleKey key, uint key_step, uint packed_bits)
 {
     uint source_bit = key_step * 8u;
-    uint field = 0u;
-    for (; field < 4u; field += 1u)
-    {
-        uint width = target_schedule_field_width(packed_bits, field);
-        if (source_bit < width)
-            break;
-        source_bit -= width;
-    }
-
-    uint result = 0u;
-    uint written = 0u;
-    for (uint part = 0u; part < 4u && field < 4u && written < 8u; part += 1u)
-    {
-        uint width = target_schedule_field_width(packed_bits, field);
-        uint take = min(width - source_bit, 8u - written);
-        uint value = target_schedule_encoded_field(key, field, width, packed_bits);
-        uint take_mask = (1u << take) - 1u;
-        result |= ((value >> source_bit) & take_mask) << written;
-        written += take;
-        field += 1u;
-        source_bit = 0u;
-    }
-    return result;
+    uint word = source_bit / 32u;
+    uint shift = source_bit % 32u;
+    uint result = target_schedule_word(key, word) >> shift;
+    if (shift > 24u && word < 2u)
+        result |= target_schedule_word(key, word + 1u) << (32u - shift);
+    return result & 0xffu;
 }

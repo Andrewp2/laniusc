@@ -65,6 +65,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCallSpansPass
                 b.hir_semantic_count.as_entire_binding(),
             ),
             (
+                "canonical_raw_to_dense".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
+            ),
+            (
                 "hir_call_callee_node".into(),
                 b.hir_call_callee_node.as_entire_binding(),
             ),

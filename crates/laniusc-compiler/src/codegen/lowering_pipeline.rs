@@ -1,19 +1,28 @@
 //! One graph-owned lowering pipeline from compact semantic HIR to the selected
 //! target LIR and artifact boundary.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Result;
 
 use super::{
     lowering::{GpuSemanticHirInputs, GpuSemanticLoweringStage},
-    lowering_ir::{LoweringCapacities, LoweringStatus, LoweringTarget, lowering_compiler_graph},
+    lowering_ir::{
+        LoweringArtifactKind,
+        LoweringCapacities,
+        LoweringStatus,
+        LoweringTarget,
+        lowering_compiler_graph_for_artifact,
+    },
     wasm_lowering::GpuWasmLirStage,
     x86_lowering::GpuX86LirStage,
 };
 use crate::{
     gpu::{
-        buffers::{LaniusBuffer, readback_bytes, with_uniform_buffer_arena},
+        buffers::{LaniusBuffer, TrackedBufferView, readback_bytes, with_uniform_buffer_arena},
         compiler_graph::CompilerGraphWorkspace,
         passes_core::map_readback_blocking,
     },
@@ -116,7 +125,12 @@ impl TargetStage {
         }
     }
 
-    fn set_object_identity(&self, queue: &wgpu::Queue, library_id: u32, unit_id: u32) {
+    fn set_object_identity(
+        &self,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<()> {
         match self {
             Self::X86_64(stage) => stage.set_object_identity(queue, library_id, unit_id),
             Self::Wasm(stage) => stage.set_object_identity(queue, library_id, unit_id),
@@ -132,6 +146,8 @@ impl TargetStage {
 /// identities and reused while their graph-owned inputs remain resident.
 pub(crate) struct GpuLoweringPipeline {
     capacities: LoweringCapacities,
+    artifact_kind: LoweringArtifactKind,
+    upstream_signature: Vec<(u64, u64, u64)>,
     _workspace: CompilerGraphWorkspace,
     semantic: GpuSemanticLoweringStage,
     target: TargetStage,
@@ -149,6 +165,27 @@ pub(crate) struct GpuLoweringWorkspaceCache {
     current: Mutex<Option<Arc<GpuLoweringPipeline>>>,
 }
 
+fn upstream_storage_signature(upstream: &[TrackedBufferView<'_>]) -> Vec<(u64, u64, u64)> {
+    let mut unique = BTreeMap::<u64, (u64, u64)>::new();
+    for buffer in upstream {
+        let Some(allocation) = buffer.allocation_id() else {
+            continue;
+        };
+        unique
+            .entry(allocation)
+            .and_modify(|range| {
+                if buffer.byte_size > range.1 {
+                    *range = (buffer.byte_offset, buffer.byte_size);
+                }
+            })
+            .or_insert((buffer.byte_offset, buffer.byte_size));
+    }
+    unique
+        .into_iter()
+        .map(|(allocation, (offset, bytes))| (allocation, offset, bytes))
+        .collect()
+}
+
 impl GpuLoweringWorkspaceCache {
     pub(crate) fn new(target: LoweringTarget) -> Self {
         Self {
@@ -163,6 +200,8 @@ impl GpuLoweringWorkspaceCache {
         source_bytes: u32,
         tokens: u32,
         hir_nodes: u32,
+        artifact_kind: LoweringArtifactKind,
+        upstream: &[TrackedBufferView<'_>],
     ) -> Result<Arc<GpuLoweringPipeline>, String> {
         let required =
             LoweringCapacities::from_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?
@@ -171,8 +210,11 @@ impl GpuLoweringWorkspaceCache {
             .current
             .lock()
             .expect("lowering workspace cache poisoned");
+        let upstream_signature = upstream_storage_signature(upstream);
         if let Some(pipeline) = current.as_ref()
             && pipeline.capacities.covers(required)
+            && pipeline.artifact_kind == artifact_kind
+            && pipeline.upstream_signature == upstream_signature
         {
             return Ok(Arc::clone(pipeline));
         }
@@ -187,8 +229,15 @@ impl GpuLoweringWorkspaceCache {
         drop(old);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         let pipeline = Arc::new(
-            GpuLoweringPipeline::new(device, capacities, self.target)
-                .map_err(|err| err.to_string())?,
+            GpuLoweringPipeline::new_with_upstream(
+                device,
+                capacities,
+                self.target,
+                artifact_kind,
+                upstream,
+                upstream_signature,
+            )
+            .map_err(|err| err.to_string())?,
         );
         *current = Some(Arc::clone(&pipeline));
         Ok(pipeline)
@@ -225,17 +274,43 @@ impl GpuLoweringWorkspaceCache {
 }
 
 impl GpuLoweringPipeline {
+    #[cfg(test)]
     pub(crate) fn new(
         device: &wgpu::Device,
         capacities: LoweringCapacities,
         target: LoweringTarget,
+    ) -> Result<Self> {
+        Self::new_with_upstream(
+            device,
+            capacities,
+            target,
+            LoweringArtifactKind::Object,
+            &[],
+            Vec::new(),
+        )
+    }
+
+    fn new_with_upstream(
+        device: &wgpu::Device,
+        capacities: LoweringCapacities,
+        target: LoweringTarget,
+        artifact_kind: LoweringArtifactKind,
+        upstream: &[TrackedBufferView<'_>],
+        upstream_signature: Vec<(u64, u64, u64)>,
     ) -> Result<Self> {
         let label = match target {
             LoweringTarget::X86_64 => "codegen.x86.lowering.uniform_arena",
             LoweringTarget::Wasm => "codegen.wasm.lowering.uniform_arena",
         };
         with_uniform_buffer_arena(device, label, || {
-            Self::new_with_uniform_arena(device, capacities, target)
+            Self::new_with_uniform_arena(
+                device,
+                capacities,
+                target,
+                artifact_kind,
+                upstream,
+                upstream_signature,
+            )
         })
     }
 
@@ -243,10 +318,19 @@ impl GpuLoweringPipeline {
         device: &wgpu::Device,
         capacities: LoweringCapacities,
         target: LoweringTarget,
+        artifact_kind: LoweringArtifactKind,
+        upstream: &[TrackedBufferView<'_>],
+        upstream_signature: Vec<(u64, u64, u64)>,
     ) -> Result<Self> {
-        let graph = lowering_compiler_graph(capacities, target).map_err(anyhow::Error::msg)?;
-        let workspace = CompilerGraphWorkspace::new(device, "codegen.lowering", &graph)
+        let graph = lowering_compiler_graph_for_artifact(capacities, target, artifact_kind)
             .map_err(anyhow::Error::msg)?;
+        let workspace = CompilerGraphWorkspace::new_with_upstream_storage(
+            device,
+            "codegen.lowering",
+            &graph,
+            upstream,
+        )
+        .map_err(anyhow::Error::msg)?;
         let semantic = GpuSemanticLoweringStage::from_workspace(
             device,
             capacities,
@@ -260,6 +344,7 @@ impl GpuLoweringPipeline {
                 &workspace,
                 capacities,
                 semantic.output(),
+                artifact_kind == LoweringArtifactKind::Object,
             )?),
             LoweringTarget::Wasm => TargetStage::Wasm(GpuWasmLirStage::new(
                 device,
@@ -267,11 +352,14 @@ impl GpuLoweringPipeline {
                 &workspace,
                 capacities,
                 semantic.output(),
+                artifact_kind == LoweringArtifactKind::Object,
             )?),
         };
         let status_readback = readback_bytes(device, "lowering.status.readback", 32, 32);
         Ok(Self {
             capacities,
+            artifact_kind,
+            upstream_signature,
             _workspace: workspace,
             semantic,
             target,
@@ -304,10 +392,10 @@ impl GpuLoweringPipeline {
             self.target.record_count_page(encoder, page_id)?;
         }
         self.record_target_pages(encoder, false)?;
-        encoder.copy_buffer_to_buffer(
-            &self.semantic.status().buffer,
+        TrackedBufferView::from(self.semantic.status()).copy_to(
+            encoder,
             0,
-            &self.status_readback.buffer,
+            (&self.status_readback).into(),
             0,
             32,
         );
@@ -343,12 +431,13 @@ impl GpuLoweringPipeline {
         for page_id in 0..self.target.count_page_count() {
             self.target.record_count_page(encoder, page_id)?;
         }
-        self.target.set_object_identity(queue, library_id, unit_id);
+        self.target
+            .set_object_identity(queue, library_id, unit_id)?;
         self.record_target_pages(encoder, true)?;
-        encoder.copy_buffer_to_buffer(
-            &self.semantic.status().buffer,
+        TrackedBufferView::from(self.semantic.status()).copy_to(
+            encoder,
             0,
-            &self.status_readback.buffer,
+            (&self.status_readback).into(),
             0,
             32,
         );

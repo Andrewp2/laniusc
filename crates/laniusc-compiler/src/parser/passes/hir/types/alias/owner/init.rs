@@ -57,6 +57,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeAliasOwne
                 "hir_semantic_parent".into(),
                 b.hir_semantic_parent.as_entire_binding(),
             ),
+            (
+                "raw_to_hir".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
+            ),
             ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
             (
                 "hir_type_alias_owner_link_a".into(),

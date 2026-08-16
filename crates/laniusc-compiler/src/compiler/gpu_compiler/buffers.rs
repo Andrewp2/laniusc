@@ -36,12 +36,14 @@ pub(super) fn typecheck_hir_item_buffers<'a>(
     module_record_capacity: u32,
     call_param_row_capacity: u32,
     call_arg_row_capacity: u32,
+    semantic_interface_required: bool,
 ) -> GpuTypeCheckHirItemBuffers<'a> {
     GpuTypeCheckHirItemBuffers {
         parser_feature_flags,
         module_record_capacity,
         call_param_row_capacity,
         call_arg_row_capacity,
+        semantic_interface_required,
         hir,
         upstream_workspace,
     }

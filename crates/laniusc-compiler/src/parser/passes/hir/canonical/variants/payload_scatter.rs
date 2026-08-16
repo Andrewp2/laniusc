@@ -52,8 +52,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
             ),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
-                "hir_token_file_id".into(),
-                b.hir_token_file_id.as_entire_binding(),
+                "token_file_id".into(),
+                b.default_token_file_id.as_entire_binding(),
             ),
             (
                 "payload_owner_raw".into(),

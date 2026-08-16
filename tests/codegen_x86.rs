@@ -233,6 +233,33 @@ fn assert_source_exit(name: &str, source: &str, expected: i32) {
     );
 }
 
+#[test]
+fn x86_call_and_argument_keep_distinct_dense_hir_rows_after_control_flow() {
+    let bytes = compile_source(
+        "x86 dense call and argument identity",
+        r#"
+fn helper() -> i32 {
+    let flag: bool = (20 < 3) && !(8 == 8);
+    if (flag) { print(20); } else { print(3); }
+    if ((6 <= 12) || !(12 != 6)) { print(6); } else { print(12); }
+    if ((26 >= 51) || (26 == 14)) { print(26); } else { print(14); }
+    let first: i32 = (26 + 22) * (36 - 43);
+    print(first);
+    let second: i32 = (24 & 45) | (57 ^ 56);
+    print(second);
+    let third: i32 = (26 << 1) + (45 >> 1);
+    print(third + 63);
+    return 0;
+}
+
+fn main() -> i32 {
+    return helper();
+}
+"#,
+    );
+    assert_x86_64_elf_header(&bytes);
+}
+
 fn assert_x86_stdout(context: &str, artifact_stem: &str, bytes: &[u8], expected: &str) {
     let output = common::run_x86_64_elf_output(context, artifact_stem, bytes);
     common::assert_command_success(format!("{context}: native ELF execution"), &output);
@@ -372,6 +399,22 @@ fn x86_executes_representative_scalar_programs() {
     for (name, source, expected) in cases {
         assert_source_exit(name, source, expected);
     }
+}
+
+#[test]
+fn x86_executes_scalar_constant_through_type_alias() {
+    assert_source_exit(
+        "scalar_constant_through_type_alias",
+        r#"
+type SummaryScore = i32;
+const SUMMARY_OFFSET: SummaryScore = 4194;
+
+fn main() -> i32 {
+    return SUMMARY_OFFSET & 4095;
+}
+"#,
+        98,
+    );
 }
 
 #[test]
@@ -1153,6 +1196,45 @@ fn main() {
 }
 "#,
         65,
+    );
+}
+
+#[test]
+fn x86_executes_match_on_local_enum_returned_by_call() {
+    assert_source_exit(
+        "match_local_enum_returned_by_call",
+        r#"
+module app::m0;
+
+enum Adjustment {
+    Add(i32),
+    Hold,
+}
+
+fn choose_adjustment(seed: i32) -> Adjustment {
+    if ((seed & 1) == 0) {
+        return Add((seed % 7) + 1);
+    }
+    return Hold;
+}
+
+fn score(seed: i32) -> i32 {
+    let adjustment: Adjustment = choose_adjustment(seed);
+    return match (adjustment) {
+        Add(amount) -> (seed + amount) & 4095,
+        Hold -> (seed - 1) & 4095,
+    };
+}
+
+pub fn value() -> i32 {
+    return score(6) + score(7);
+}
+
+fn main() -> i32 {
+    return value();
+}
+"#,
+        19,
     );
 }
 
@@ -5546,6 +5628,57 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_string_local_through_user_function_parameter() {
+    let bytes = compile_source(
+        "x86 string local through user function parameter",
+        r#"
+extern "lanius_std" fn open_read_path(path: str) -> i32;
+extern "lanius_std" fn read_i32(handle: i32, fallback: i32) -> i32;
+
+fn open_named(path: str) -> i32 {
+    let file: i32 = open_read_path(path);
+    if (file < 0) {
+        return 41;
+    }
+    return file;
+}
+
+fn main() -> i32 {
+    let path: str = "present.txt";
+    let file: i32 = open_named(path);
+    if (file < 0) {
+        return 41;
+    }
+    let value: i32 = read_i32(file, -1);
+    if (value != 23) {
+        return 42;
+    }
+    return 0;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_string_param", "run_dir", None);
+        std::fs::create_dir(run_dir.path())
+            .unwrap_or_else(|err| panic!("create string-parameter run directory: {err}"));
+        std::fs::write(run_dir.path().join("present.txt"), b"23\n")
+            .unwrap_or_else(|err| panic!("write string-parameter input: {err}"));
+        let output = run_x86_64_elf_output_in_dir(
+            "x86 string local through user function parameter",
+            "x86_string_local_user_function",
+            &bytes,
+            run_dir.path(),
+        );
+        common::assert_command_success("x86 string local through user function parameter", &output);
+        std::fs::remove_dir_all(run_dir.path())
+            .unwrap_or_else(|err| panic!("remove string-parameter run directory: {err}"));
+    }
+}
+
+#[test]
 fn x86_executes_source_pack_open_read_path_stub_as_negative() {
     let sources = [r#"
 module app::main;
@@ -6579,6 +6712,66 @@ fn x86_executes_source_pack_qualified_const_local_initializer_and_alias() {
         "x86_source_pack_qualified_const_local_initializer_alias",
         &bytes,
         0,
+    );
+}
+
+#[test]
+fn x86_executes_qualified_i32_alias_constant() {
+    let sources = [
+        "module typical::checkout_policy_4194;\npub type SummaryScore = i32;\npub const SUMMARY_OFFSET: SummaryScore = 4194;\n",
+        "module app::main;\nimport typical::checkout_policy_4194;\nfn main() -> i32 { return typical::checkout_policy_4194::SUMMARY_OFFSET & 4095; }\n",
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 qualified i32 alias constant", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("qualified i32 alias constant should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 qualified i32 alias constant",
+        "x86_qualified_i32_alias_constant",
+        &bytes,
+        98,
+    );
+}
+
+#[test]
+fn x86_executes_qualified_alias_constant_in_generic_struct() {
+    let sources = [
+        r#"module typical::checkout_policy_4194;
+pub type SummaryScore = i32;
+const SUMMARY_OFFSET: SummaryScore = 4194;
+
+struct Envelope<T> {
+    value: T,
+}
+
+fn unwrap<T>(envelope: Envelope<T>) -> T {
+    return envelope.value;
+}
+
+pub fn evaluate(seed: i32) -> i32 {
+    let envelope: Envelope<i32> = Envelope { value: seed + SUMMARY_OFFSET };
+    return unwrap(envelope) & 4095;
+}
+"#,
+        "module app::main;\nimport typical::checkout_policy_4194;\nfn main() -> i32 { return typical::checkout_policy_4194::evaluate(0); }\n",
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 qualified alias constant in generic struct",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("qualified alias constant in generic struct should compile to x86_64");
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 qualified alias constant in generic struct",
+        "x86_qualified_alias_constant_in_generic_struct",
+        &bytes,
+        98,
     );
 }
 

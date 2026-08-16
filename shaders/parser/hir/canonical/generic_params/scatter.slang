@@ -10,7 +10,7 @@ StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> candidate_raw_by_anchor;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> owner_value;
 StructuredBuffer<uint> raw_to_hir;
 RWStructuredBuffer<uint> family_count;
@@ -33,6 +33,11 @@ uint name_token(uint raw, uint prod)
     if (prod == PROD_ENUM_CONST_PARAM)
         return start == INVALID ? INVALID : start + 1u;
     return INVALID;
+}
+uint file_for_raw(uint raw)
+{
+    uint token = raw < gCanonical.raw_capacity ? hir_token_pos[raw] : INVALID;
+    return token < gCanonical.canonical_capacity ? token_file_id[token] : INVALID;
 }
 
 [shader("compute")]
@@ -65,7 +70,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     parameter.owner = owner_raw < gCanonical.raw_capacity ? raw_to_hir[owner_raw] : INVALID;
     parameter.name_token = name_token(raw, prod);
     parameter.kind = prod == PROD_ENUM_CONST_PARAM ? GENERIC_PARAM_KIND_CONST : GENERIC_PARAM_KIND_TYPE;
-    parameter.file_id = hir_token_file_id[raw];
+    parameter.file_id = file_for_raw(raw);
     hir_generic_params[row] = parameter;
     if (parameter.owner < gCanonical.canonical_capacity)
     {

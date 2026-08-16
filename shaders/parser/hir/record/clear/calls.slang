@@ -9,6 +9,7 @@ struct Params
     uint uses_status_count;
     uint semantic_parent_local_ancestor_span;
     uint retain_debug_rows;
+    uint parser_feature_flags;
 };
 
 ConstantBuffer<Params> gClear;
@@ -30,6 +31,7 @@ RWStructuredBuffer<uint> hir_call_arg_ordinal;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint PARSER_FEATURE_MEMBERS = 0x00000040u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -49,13 +51,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= active_node_count())
         return;
 
-    hir_member_receiver_node[node] = INVALID;
-    hir_member_receiver_token[node] = INVALID;
-    hir_member_name_token[node] = INVALID;
+    if ((gClear.parser_feature_flags & PARSER_FEATURE_MEMBERS) != 0u)
+    {
+        hir_member_receiver_node[node] = INVALID;
+        hir_member_receiver_token[node] = INVALID;
+        hir_member_name_token[node] = INVALID;
+    }
 
-    hir_call_callee_node[node] = INVALID;
     if (gClear.retain_debug_rows != 0u)
     {
+        hir_call_callee_node[node] = INVALID;
         hir_call_callee_path_node[node] = INVALID;
         hir_call_parent_by_callee[node] = INVALID;
         hir_call_arg_start[node] = INVALID;

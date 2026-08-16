@@ -66,6 +66,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStructFieldSc
                 "hir_struct_lit_field_previous".into(),
                 b.hir_struct_lit_field_previous.as_entire_binding(),
             ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "hir_struct_field_parent_struct".into(),
                 b.hir_struct_field_parent_struct.as_entire_binding(),

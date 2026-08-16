@@ -64,6 +64,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeArgLinksP
                 "hir_semantic_dense_node".into(),
                 b.hir_semantic_dense_node.as_entire_binding(),
             ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "hir_type_path_leaf_node".into(),
                 b.hir_type_path_leaf_node.as_entire_binding(),

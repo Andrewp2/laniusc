@@ -1,5 +1,8 @@
 use super::*;
-use crate::codegen::unit::DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES;
+use crate::codegen::{
+    lowering_ir::LoweringArtifactKind,
+    unit::DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES,
+};
 
 mod backends;
 pub use backends::GpuCompilerBackends;
@@ -18,7 +21,6 @@ mod unit_cache;
 use helpers::{
     StageExecutionFailure,
     first_nonempty_source_span,
-    hir_node_capacity_for_parser_emit,
     parser_execution_failed_for_source,
     parser_execution_failed_for_source_pack,
     source_tokenization_failed_for_source,
@@ -388,6 +390,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         source_bytes: u32,
         tokens: u32,
         hir_nodes: u32,
+        artifact_kind: LoweringArtifactKind,
+        upstream_workspace: &[crate::gpu::buffers::TrackedBufferView<'_>],
     ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
     {
         let maximum = u32::try_from(DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES)
@@ -403,7 +407,14 @@ impl<'gpu> GpuCompiler<'gpu> {
         }
         .as_deref()
         .map_err(Clone::clone)?;
-        cache.ensure(&self.gpu.device, source_bytes, tokens, hir_nodes)
+        cache.ensure(
+            &self.gpu.device,
+            source_bytes,
+            tokens,
+            hir_nodes,
+            artifact_kind,
+            upstream_workspace,
+        )
     }
 
     pub(super) fn lowering_pipeline(

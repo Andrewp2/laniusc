@@ -101,7 +101,6 @@ pub(in crate::type_checker) struct BindGroups {
 /// keep those buffers alive across recorded checks.
 pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) n_blocks: u32,
-    pub(in crate::type_checker) parser_hir_n_blocks: u32,
     pub(in crate::type_checker) module_n_blocks: u32,
     pub(in crate::type_checker) token_capacity: u32,
     pub(in crate::type_checker) import_visible_capacity: u32,

@@ -35,6 +35,9 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPath
                     b.ll1_status.as_entire_binding()
                 },
             ),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "segment_count_by_owner".into(),
                 b.hir_path_segment_count.as_entire_binding(),

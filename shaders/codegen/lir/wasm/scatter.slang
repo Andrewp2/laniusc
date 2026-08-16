@@ -58,12 +58,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     semantic_to_target_start[semantic_row] = target_start;
     SemanticLirCore core = semantic_lir_core[semantic_row];
     SemanticLirOperands operands = semantic_lir_operands[semantic_row];
-    bool host_operation = core.op == SEMANTIC_LIR_OP_CALL_HOST;
+    bool host_operation = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_HOST;
     bool inline_host_operation = host_operation && operands.a == HOST_SERVICE_I32_TO_F32;
     uint host_import = host_operation && !inline_host_operation
         ? wasm_host_import_for_service(operands.a) : WASM_HOST_INVALID;
     bool imported_host_operation = host_import != WASM_HOST_INVALID;
-    bool supported_intrinsic = core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+    bool supported_intrinsic = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
         (operands.a == 1u || operands.a == INTRINSIC_I32_ARRAY_DATA_PTR);
     uint flags = wasm_lir_supported(core) || inline_host_operation ||
         imported_host_operation || supported_intrinsic
@@ -76,7 +76,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (inline_host_operation) opcode = WASM_LIR_OP_F32_CONVERT_I32_S;
     else if (imported_host_operation) opcode = WASM_LIR_OP_CALL;
     uint immediate = 0u;
-    if (core.op == SEMANTIC_LIR_OP_CONST_STRING)
+    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CONST_STRING)
     {
         uint string_count = semantic_lir_string_total[0u];
         if (operands.a < string_count)
@@ -89,7 +89,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     }
-    else if (core.op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
+    else if (semantic_lir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW)
     {
         uint element_rows = operands.b * 6u;
         bool tagged_enum = (operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u;
@@ -135,12 +135,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             immediate = phase == 2u ? core.value_word_count * 4u : 0u;
         }
     }
-    else if (core.op == SEMANTIC_LIR_OP_LOAD &&
+    else if (semantic_lir_op(core) == SEMANTIC_LIR_OP_LOAD &&
              (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
     {
         bool call_index_base = operands.a < semantic_count &&
-            (semantic_lir_core[operands.a].op == SEMANTIC_LIR_OP_CALL ||
-             semantic_lir_core[operands.a].op == SEMANTIC_LIR_OP_CALL_SYMBOL);
+            (semantic_lir_op(semantic_lir_core[operands.a]) == SEMANTIC_LIR_OP_CALL ||
+             semantic_lir_op(semantic_lir_core[operands.a]) == SEMANTIC_LIR_OP_CALL_SYMBOL);
         if (call_index_base)
         {
             // Calls are effect rows and therefore follow the already emitted
@@ -165,7 +165,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             immediate = local_row == 0u ? 4u : 0u;
         }
     }
-    else if (core.op == SEMANTIC_LIR_OP_LOAD &&
+    else if (semantic_lir_op(core) == SEMANTIC_LIR_OP_LOAD &&
              (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
     {
         opcode = local_row == 0u ? WASM_LIR_OP_I32_CONST
@@ -176,11 +176,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         immediate = local_row == 0u ? semantic_lir_layout_word_offset[semantic_row]
             : local_row == 1u ? 4u : 0u;
     }
-    else if (core.op == SEMANTIC_LIR_OP_STORE &&
+    else if (semantic_lir_op(core) == SEMANTIC_LIR_OP_STORE &&
              (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
     {
         bool direct_receiver = operands.a < semantic_count &&
-            semantic_lir_core[operands.a].op == SEMANTIC_LIR_OP_VALUE_GET;
+            semantic_lir_op(semantic_lir_core[operands.a]) == SEMANTIC_LIR_OP_VALUE_GET;
         uint receiver_declaration = direct_receiver
             ? semantic_lir_operands[operands.a].a : WASM_LIR_INVALID;
         uint temporary = core.type_id == TY_FLOAT
@@ -214,15 +214,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : local_row == 2u ? 4u : 0u;
         }
     }
-    else if ((core.op == SEMANTIC_LIR_OP_VALUE_GET ||
-              core.op == SEMANTIC_LIR_OP_VALUE_SET) &&
+    else if ((semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
+              semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_SET) &&
              core.type_id == 7u)
     {
-        opcode = core.op == SEMANTIC_LIR_OP_VALUE_GET
+        opcode = semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_GET
             ? WASM_LIR_OP_LOCAL_GET : WASM_LIR_OP_LOCAL_SET;
         immediate = operands.a;
     }
-    else if (core.op == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT)
+    else if (semantic_lir_op(core) == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT)
     {
         opcode = local_row == 0u ? WASM_LIR_OP_I32_CONST : WASM_LIR_OP_I32_MUL;
         if (local_row == 0u)
@@ -234,13 +234,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             immediate = 0xffffffffu;
         }
     }
-    else if (core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == 1u)
+    else if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == 1u)
     {
         opcode = local_row == 0u
             ? WASM_LIR_OP_I64_EXTEND_I32_S : WASM_LIR_OP_CALL;
         immediate = 0u;
     }
-    else if (core.op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+    else if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
              operands.a == INTRINSIC_I32_ARRAY_DATA_PTR)
     {
         // Aggregate values are represented by their linear-memory pointer on
@@ -249,7 +249,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET : WASM_LIR_OP_LOCAL_GET;
         immediate = WASM_SYNTHETIC_I32_TEMP;
     }
-    else if (core.op == SEMANTIC_LIR_OP_BRANCH_IF &&
+    else if (semantic_lir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF &&
              (core.flags & SEMANTIC_LIR_FLAG_BRANCH_FALSE) != 0u)
     {
         opcode = local_row == 0u ? WASM_LIR_OP_I32_EQZ : WASM_LIR_OP_BRANCH_IF;
@@ -257,15 +257,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else if (imported_host_operation)
         immediate = host_import;
-    else if (core.op == SEMANTIC_LIR_OP_CONST_I32 || core.op == SEMANTIC_LIR_OP_CONST_F32 ||
-             core.op == SEMANTIC_LIR_OP_VALUE_GET || core.op == SEMANTIC_LIR_OP_VALUE_SET ||
-             core.op == SEMANTIC_LIR_OP_STORE ||
-             core.op == SEMANTIC_LIR_OP_CALL || core.op == SEMANTIC_LIR_OP_CALL_HOST ||
-             core.op == SEMANTIC_LIR_OP_BRANCH || core.op == SEMANTIC_LIR_OP_BRANCH_IF)
-        immediate = core.op == SEMANTIC_LIR_OP_CALL
+    else if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CONST_I32 || semantic_lir_op(core) == SEMANTIC_LIR_OP_CONST_F32 ||
+             semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_GET || semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_SET ||
+             semantic_lir_op(core) == SEMANTIC_LIR_OP_STORE ||
+             semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL || semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_HOST ||
+             semantic_lir_op(core) == SEMANTIC_LIR_OP_BRANCH || semantic_lir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF)
+        immediate = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL
             ? WASM_HOST_IMPORT_COUNT + operands.a
-            : (core.op == SEMANTIC_LIR_OP_BRANCH ||
-                     core.op == SEMANTIC_LIR_OP_BRANCH_IF) &&
+            : (semantic_lir_op(core) == SEMANTIC_LIR_OP_BRANCH ||
+                     semantic_lir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF) &&
                     (core.flags & SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID) != 0u
             ? operands.b : operands.a;
 
@@ -280,19 +280,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // semantic function id; symbolic calls retain their exact declaration
     // identity. The object projector therefore never has to recover a target
     // from an already encoded immediate or from source/HIR rows.
-    target_operands.a = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ||
-        core.op == SEMANTIC_LIR_OP_CALL ? operands.a : 0u;
-    target_operands.b = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.b : 0u;
-    target_operands.c = core.op == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.c : 0u;
+    target_operands.a = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ||
+        semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL ? operands.a : 0u;
+    target_operands.b = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.b : 0u;
+    target_operands.c = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.c : 0u;
     target_operands.metadata = core.type_id;
-    if ((core.op == SEMANTIC_LIR_OP_VALUE_GET ||
-         core.op == SEMANTIC_LIR_OP_VALUE_SET) && core.type_id == 7u)
+    if ((semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
+         semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_SET) && core.type_id == 7u)
     {
         target_operands.a = operands.a;
         // local.set consumes the top stack value. Assign a two-word string
         // in reverse component order so `(data_ptr, byte_len)` remains the
         // ordered local pair after the stores.
-        target_operands.c = core.op == SEMANTIC_LIR_OP_VALUE_SET
+        target_operands.c = semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_SET
             ? 1u - local_row : local_row;
     }
     target_lir_operands[page_row] = target_operands;

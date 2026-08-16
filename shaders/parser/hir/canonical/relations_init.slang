@@ -4,7 +4,7 @@
 
 import generated_parse_production_ids;
 
-struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
+struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; uint records_use_token_rows; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
@@ -12,6 +12,7 @@ StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_method_signature_flags;
 StructuredBuffer<uint> raw_to_hir;
+StructuredBuffer<uint> raw_to_item;
 StructuredBuffer<uint> canonical_flag;
 StructuredBuffer<uint> canonical_prefix_before_raw;
 RWStructuredBuffer<uint> relation_link_a;
@@ -44,10 +45,13 @@ bool generic_decl_item_kind(uint kind)
 bool generic_decl_node(uint node)
 {
     if (!valid(node) || raw_to_hir[node] == INVALID) return false;
+    uint item_kind_row = gCanonical.records_use_token_rows != 0u
+        ? raw_to_item[node]
+        : node;
     uint prod = node_kind[node];
     if (prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB || prod == PROD_IMPL_FN)
         return (hir_method_signature_flags[node] & METHOD_SIGNATURE_HAS_GENERICS) != 0u;
-    return generic_decl_item_kind(hir_item_kind[node]) ||
+    return (item_kind_row != INVALID && generic_decl_item_kind(hir_item_kind[item_kind_row])) ||
            prod == PROD_IMPL_INHERENT || prod == PROD_IMPL_TRAIT;
 }
 

@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.lir.x86.common;
 import gpu_index;
 
 struct Params { uint token_capacity; uint parameter_capacity; uint local_capacity; uint function_capacity; };
@@ -58,7 +59,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (param.declaration_id < gParams.token_capacity && valid_function(param.function_id))
         {
             TargetLirFunction function = target_function_for(param.function_id);
-            uint slot = function.instruction_count + param.ordinal;
+            uint slot = function.instruction_count +
+                x86_declaration_slot_offset(param.ordinal);
             x86_decl_location_by_token[param.declaration_id] =
                 declaration_location(param.function_id, param.ordinal,
                     param.type_id, slot);
@@ -74,7 +76,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             TargetLirFunction function = target_function_for(local.function_id);
             SemanticLirFunction semantic_function = semantic_lir_functions[local.function_id];
             uint ordinal = semantic_function.param_count + local.ordinal;
-            uint slot = function.instruction_count + ordinal;
+            uint slot = function.instruction_count +
+                x86_declaration_slot_offset(ordinal);
             x86_decl_location_by_token[local.declaration_id] =
                 declaration_location(local.function_id, ordinal,
                     local.type_id, slot);

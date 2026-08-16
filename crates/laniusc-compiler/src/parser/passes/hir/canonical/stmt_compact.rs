@@ -38,12 +38,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalStmt
                 b.hir_semantic_flag.as_entire_binding(),
             ),
             (
-                "canonical_local_prefix".into(),
-                b.hir_semantic_local_prefix.as_entire_binding(),
-            ),
-            (
-                "canonical_block_prefix".into(),
-                b.hir_semantic_block_prefix_a.as_entire_binding(),
+                "canonical_raw_to_dense".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
             ),
             (
                 "raw_stmt_record".into(),

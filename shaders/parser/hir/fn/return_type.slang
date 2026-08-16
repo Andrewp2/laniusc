@@ -11,6 +11,8 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint semantic_parent_local_ancestor_span;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirFnReturnType;
@@ -22,6 +24,7 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_fn_signature_return_owner;
 StructuredBuffer<uint> hir_fn_signature_function_owner;
+StructuredBuffer<uint> raw_to_hir;
 
 RWStructuredBuffer<uint> hir_fn_return_type_node;
 
@@ -81,5 +84,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_original_node(function_owner) || hir_kind[function_owner] != HIR_FN)
         return;
 
-    InterlockedMin(hir_fn_return_type_node[function_owner], node);
+    uint output_row = gHirFnReturnType.retain_debug_rows != 0u
+        ? function_owner
+        : raw_to_hir[function_owner];
+    if (output_row != INVALID)
+        InterlockedMin(hir_fn_return_type_node[output_row], node);
 }

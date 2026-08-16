@@ -267,7 +267,7 @@ impl GpuParser {
                 "tokens_generic_shr_04_close_kinds",
                 make_tokens_generic_shr_04_close_kinds_pass
             ),
-            passes: { ParserPasses::new(&ctx.device)? },
+            passes: ParserPasses::new(&ctx.device)?,
             bg_cache: std::sync::Mutex::new(BindGroupCache::new()),
             resident_buffers: std::sync::Mutex::new(None),
             resident_token_kind_bind_groups: std::sync::Mutex::new(None),

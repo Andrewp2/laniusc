@@ -13,6 +13,7 @@ use crate::{
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
+    pub parser_feature_flags: u32,
 }
 
 /// Pass that records member fields and normalizes index-expression spans.

@@ -8,6 +8,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirType;
@@ -20,6 +21,7 @@ StructuredBuffer<uint> hir_node_dense_id;
 StructuredBuffer<uint> hir_semantic_parent;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_type_path_leaf_value_a;
+StructuredBuffer<uint> hir_token_pos;
 
 RWStructuredBuffer<uint> hir_type_value_node;
 RWStructuredBuffer<uint> hir_type_path_leaf_node;
@@ -88,7 +90,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         if (node_kind[node] == PROD_BOUND_TYPE_PATH)
         {
-            hir_bound_path_owner_by_leaf[leaf] = owner;
+            uint owner_row = gHirType.retain_debug_rows != 0u
+                ? owner
+                : OWNER_NODE_MASK - owner;
+            uint leaf_row = gHirType.retain_debug_rows != 0u
+                ? leaf
+                : hir_token_pos[leaf];
+            hir_bound_path_owner_by_leaf[leaf_row] = owner_row;
             return;
         }
         // Grammar wrapper records can publish the same leaf as their semantic

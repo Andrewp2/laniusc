@@ -10,6 +10,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirType;
@@ -25,6 +26,7 @@ StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_node_dense_id;
 StructuredBuffer<uint> hir_semantic_parent;
 StructuredBuffer<uint> hir_semantic_dense_node;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> hir_type_path_owner_by_leaf;
 StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
@@ -165,9 +167,20 @@ uint owner_seed_for_path_arg(uint node, uint container)
     if (valid_node(leaf) && is_type_path_segment(node_kind[leaf]))
     {
         uint encoded_owner = hir_type_path_owner_by_leaf[leaf];
-        owner = encoded_owner != 0u && encoded_owner <= OWNER_NODE_MASK
-            ? OWNER_NODE_MASK - encoded_owner
-            : hir_bound_path_owner_by_leaf[leaf];
+        if (encoded_owner != 0u && encoded_owner <= OWNER_NODE_MASK)
+            owner = OWNER_NODE_MASK - encoded_owner;
+        else
+        {
+            uint bound_row = gHirType.retain_debug_rows != 0u
+                ? leaf
+                : hir_token_pos[leaf];
+            uint bound_owner = hir_bound_path_owner_by_leaf[bound_row];
+            owner = gHirType.retain_debug_rows != 0u
+                ? bound_owner
+                : (bound_owner != 0u && bound_owner <= OWNER_NODE_MASK
+                    ? OWNER_NODE_MASK - bound_owner
+                    : INVALID);
+        }
         if (valid_path_type_owner(owner, leaf))
             return owner;
     }

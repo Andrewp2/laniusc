@@ -24,12 +24,14 @@ LANES = ("o0", "optimized")
 
 
 def parse_external_compilers(value: str) -> tuple[str, ...]:
+    if value.strip().lower() == "none":
+        return ()
     languages = tuple(part.strip() for part in value.split(",") if part.strip())
     unknown = set(languages) - set(EXTERNAL_COMPILERS)
     if not languages or unknown:
         expected = ",".join(EXTERNAL_COMPILERS)
         raise argparse.ArgumentTypeError(
-            f"external compilers must be a non-empty subset of {expected}; "
+            f"external compilers must be 'none' or a non-empty subset of {expected}; "
             f"unknown: {sorted(unknown)}"
         )
     return languages

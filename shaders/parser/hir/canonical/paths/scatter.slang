@@ -2,15 +2,17 @@ import hir_records;
 import prefix_scan;
 import generated_parse_production_ids;
 
-struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
+struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; uint records_use_token_rows; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;
 StructuredBuffer<uint> family_local_prefix;
 StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> segment_table_count;
 StructuredBuffer<uint> raw_to_hir;
+StructuredBuffer<uint> raw_to_item;
 StructuredBuffer<HirCore> canonical_core;
 StructuredBuffer<uint> segment_count_by_raw_owner;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
@@ -38,7 +40,14 @@ uint block_count() { return (gCanonical.canonical_capacity + 255u) / 256u; }
 
 uint semantic_path_kind(uint raw)
 {
-    uint item_kind = hir_item_kind[raw];
+    uint dense = raw_to_item[raw];
+    uint item_kind_row = gCanonical.records_use_token_rows != 0u ? dense : raw;
+    uint item_kind_capacity = gCanonical.records_use_token_rows != 0u
+        ? gCanonical.canonical_capacity
+        : gCanonical.raw_capacity;
+    uint item_kind = item_kind_row < item_kind_capacity
+        ? hir_item_kind[item_kind_row]
+        : 0u;
     uint kind = hir_kind[raw];
     if (item_kind == HIR_ITEM_KIND_MODULE || kind == HIR_MODULE_ITEM)
         return PATH_KIND_MODULE_DECL;
@@ -96,7 +105,15 @@ void main(uint3 dtid: SV_DispatchThreadID) {
     HirPath path;
     path.owner = raw_owner < gCanonical.raw_capacity ? raw_to_hir[raw_owner] : INVALID;
     path.segment_start = segment_row;
-    path.segment_count = raw_owner < gCanonical.raw_capacity ? segment_count_by_raw_owner[raw_owner] : 0u;
+    uint owner_record_row = gCanonical.records_use_token_rows != 0u && raw_owner < gCanonical.raw_capacity
+        ? hir_token_pos[raw_owner]
+        : raw_owner;
+    uint owner_record_capacity = gCanonical.records_use_token_rows != 0u
+        ? gCanonical.canonical_capacity
+        : gCanonical.raw_capacity;
+    path.segment_count = owner_record_row < owner_record_capacity
+        ? segment_count_by_raw_owner[owner_record_row]
+        : 0u;
     path.kind = semantic_path_kind(raw_owner);
     paths[path_row] = path;
 }

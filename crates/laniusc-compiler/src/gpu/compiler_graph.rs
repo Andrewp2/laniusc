@@ -67,13 +67,14 @@ pub enum ResourceClass {
     Artifact,
     /// Mutable scratch whose storage may be reused after its final access.
     Workspace,
-    /// Mutable graph-owned storage with a dedicated physical slot.
+    /// Mutable graph-owned storage with a dedicated logical slot.
     ///
     /// Use this while a resource crosses a composition boundary whose full
     /// pass schedule is not yet represented in this graph. It preserves
     /// allocation ownership and binding validation without making an
-    /// unsound liveness claim. Once the complete schedule is registered, the
-    /// resource can become `Workspace` and participate in phase coloring.
+    /// unsound liveness claim. Its non-overlapping range may still live in a
+    /// shared physical arena. Once the complete schedule is registered, the
+    /// resource can become `Workspace` and participate in lifetime coloring.
     Resident,
     /// Mutable graph result retained after the final pass.
     Output,
@@ -474,6 +475,7 @@ impl BoundGraphResource {
 pub struct CompilerGraph {
     resources: Vec<ResourceDesc>,
     resource_aliases: BTreeMap<&'static str, ResourceId>,
+    reflected_arena_conflicts: BTreeSet<(ResourceId, ResourceId)>,
     passes: Vec<PassDesc>,
     pass_kernels: Vec<Option<&'static str>>,
     reflection_complete: Vec<bool>,
@@ -542,14 +544,118 @@ pub struct CompilerGraphAllocations {
     allocation_by_resource: Vec<Option<GraphAllocationRange>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct UpstreamSlotPlacement {
+    slot_index: usize,
+    upstream_index: usize,
+    byte_offset: u64,
+}
+
+fn unique_physical_upstream_views<'a>(
+    upstream: &[TrackedBufferView<'a>],
+) -> Vec<TrackedBufferView<'a>> {
+    let mut unique = Vec::<TrackedBufferView<'a>>::new();
+    for candidate in upstream.iter().copied() {
+        let Some(allocation_id) = candidate.allocation_id() else {
+            continue;
+        };
+        if unique
+            .iter()
+            .any(|current| current.buffer == candidate.buffer)
+        {
+            continue;
+        }
+        // Cross-phase imports are valid only when the producer declares its
+        // complete physical allocation dead. Recover that whole allocation
+        // from any logical alias so the consumer can pack several slots into
+        // it without inheriting producer-side fragmentation.
+        unique.push(TrackedBufferView::from_parts(
+            candidate.buffer,
+            0,
+            candidate.buffer.size(),
+            Some(allocation_id),
+        ));
+    }
+    unique
+}
+
+/// Packs simultaneously-live consumer slots into disjoint ranges of storage
+/// whose producer phase is complete. Exclusive slots are placed before
+/// flexible slots because consuming even one byte of an upstream allocation
+/// makes it unavailable to a later exclusive slot. Within each constraint
+/// class, larger slots are placed first and best-fit limits fragmentation
+/// without depending on the producer's logical array boundaries.
+fn pack_slots_into_upstream_storage(
+    slot_ids: &[u32],
+    slot_bytes: &[u64],
+    upstream_bytes: &[u64],
+    alignment: u64,
+    incompatible_slots: &BTreeSet<(u32, u32)>,
+    exclusive_slots: &BTreeSet<u32>,
+) -> Vec<UpstreamSlotPlacement> {
+    debug_assert_eq!(slot_ids.len(), slot_bytes.len());
+    let alignment = alignment.max(1);
+    let mut cursors = vec![0u64; upstream_bytes.len()];
+    let mut upstream_slots = vec![Vec::<u32>::new(); upstream_bytes.len()];
+    let mut upstream_is_exclusive = vec![false; upstream_bytes.len()];
+    let mut placements = Vec::with_capacity(slot_bytes.len());
+    let mut slot_indices = (0..slot_bytes.len()).collect::<Vec<_>>();
+    slot_indices.sort_unstable_by_key(|&slot_index| {
+        (
+            !exclusive_slots.contains(&slot_ids[slot_index]),
+            std::cmp::Reverse(slot_bytes[slot_index]),
+            slot_ids[slot_index],
+        )
+    });
+    for slot_index in slot_indices {
+        let bytes = slot_bytes[slot_index];
+        let slot = slot_ids[slot_index];
+        let candidate = upstream_bytes
+            .iter()
+            .enumerate()
+            .filter_map(|(upstream_index, &capacity)| {
+                if upstream_is_exclusive[upstream_index]
+                    || (exclusive_slots.contains(&slot)
+                        && !upstream_slots[upstream_index].is_empty())
+                {
+                    return None;
+                }
+                if upstream_slots[upstream_index]
+                    .iter()
+                    .any(|&other| incompatible_slots.contains(&(slot.min(other), slot.max(other))))
+                {
+                    return None;
+                }
+                let offset = cursors[upstream_index].next_multiple_of(alignment);
+                let end = offset.checked_add(bytes)?;
+                (end <= capacity).then(|| (upstream_index, offset, capacity - end))
+            })
+            .min_by_key(|&(upstream_index, _, remaining)| (remaining, upstream_index));
+        let Some((upstream_index, byte_offset, _)) = candidate else {
+            continue;
+        };
+        cursors[upstream_index] = byte_offset + bytes;
+        upstream_slots[upstream_index].push(slot);
+        upstream_is_exclusive[upstream_index] = exclusive_slots.contains(&slot);
+        placements.push(UpstreamSlotPlacement {
+            slot_index,
+            upstream_index,
+            byte_offset,
+        });
+    }
+    placements.sort_unstable_by_key(|placement| placement.slot_index);
+    placements
+}
+
 impl CompilerGraphWorkspace {
     pub fn new(device: &wgpu::Device, label: &str, graph: &CompilerGraph) -> Result<Self, String> {
         Self::new_with_imports(device, label, graph, &[])
     }
 
     /// Reuses dead storage-only allocations from the preceding compiler phase.
-    /// Largest compatible graph-owned slots are selected first; unmatched
-    /// slots keep the normal stable allocation path.
+    /// Largest compatible graph-owned slots are selected first and packed
+    /// into disjoint aligned ranges; unmatched slots keep the normal stable
+    /// allocation path.
     pub fn new_with_upstream_storage(
         device: &wgpu::Device,
         label: &str,
@@ -560,23 +666,10 @@ impl CompilerGraphWorkspace {
             return Self::new(device, label, graph);
         }
         // A phase may expose several typed aliases of the same physical
-        // allocation. Treat that allocation as one candidate; assigning two
-        // aliases to different slots would defeat the graph's overlap proof.
-        let mut unique = BTreeMap::<u64, TrackedBufferView<'_>>::new();
-        for buffer in upstream.iter().copied() {
-            let Some(allocation) = buffer.allocation_id() else {
-                continue;
-            };
-            unique
-                .entry(allocation)
-                .and_modify(|current| {
-                    if buffer.byte_size > current.byte_size {
-                        *current = buffer;
-                    }
-                })
-                .or_insert(buffer);
-        }
-        let mut available = unique.into_values().collect::<Vec<_>>();
+        // allocation. Treat that allocation as one candidate. The producer
+        // phase is complete, so multiple consumer slots may safely occupy
+        // disjoint ranges of that candidate.
+        let available = unique_physical_upstream_views(upstream);
         let mut slots = graph
             .workspace
             .slots
@@ -599,17 +692,39 @@ impl CompilerGraphWorkspace {
             .collect::<Vec<_>>();
         slots.sort_unstable_by_key(|slot| std::cmp::Reverse(slot.bytes));
 
-        let mut imports = Vec::new();
-        for slot in slots {
-            let Some((available_index, _)) = available
+        let arena_conflicts = graph.workspace_arena_conflicts();
+        let placements = pack_slots_into_upstream_storage(
+            &slots.iter().map(|slot| slot.slot).collect::<Vec<_>>(),
+            &slots.iter().map(|slot| slot.bytes).collect::<Vec<_>>(),
+            &available
                 .iter()
-                .enumerate()
-                .filter(|(_, buffer)| buffer.byte_size >= slot.bytes)
-                .min_by_key(|(_, buffer)| buffer.byte_size)
-            else {
-                continue;
-            };
-            let buffer = available.swap_remove(available_index);
+                .map(|buffer| buffer.byte_size)
+                .collect::<Vec<_>>(),
+            u64::from(device.limits().min_storage_buffer_offset_alignment),
+            &arena_conflicts,
+            &BTreeSet::new(),
+        );
+        for (index, left) in placements.iter().enumerate() {
+            for right in &placements[index + 1..] {
+                if left.upstream_index != right.upstream_index {
+                    continue;
+                }
+                let left_slot = slots[left.slot_index].slot;
+                let right_slot = slots[right.slot_index].slot;
+                assert!(
+                    !arena_conflicts
+                        .contains(&(left_slot.min(right_slot), left_slot.max(right_slot))),
+                    "upstream arena packing placed incompatible slots {left_slot} and {right_slot} in allocation candidate {}",
+                    left.upstream_index,
+                );
+            }
+        }
+
+        let mut imports = Vec::new();
+        for placement in placements {
+            let slot = slots[placement.slot_index];
+            let allocation = available[placement.upstream_index];
+            let buffer = allocation.subrange(placement.byte_offset, slot.bytes)?;
             let assignment = graph
                 .workspace
                 .assignments
@@ -640,11 +755,11 @@ impl CompilerGraphWorkspace {
                     assignment.name,
                     buffer.allocation_id(),
                     buffer.byte_offset,
-                    buffer.byte_size,
+                    allocation.byte_size,
                     slot.bytes,
                 );
             }
-            imports.push((resource, buffer.alias::<u8>(buffer.byte_size as usize)));
+            imports.push((resource, buffer.alias::<u8>(slot.bytes as usize)));
         }
         Self::new_with_imports(device, label, graph, &imports)
     }
@@ -1171,10 +1286,46 @@ impl CompilerGraph {
                 }
             }
         }
-        // Retained outputs and resident state cross the graph's scheduling
-        // boundary. Keep each at offset zero in its own physical allocation
-        // until the downstream consumer is represented in this graph; raw
-        // external APIs cannot otherwise carry the logical arena range.
+        for &(left_resource, right_resource) in &self.reflected_arena_conflicts {
+            let (Some(&left), Some(&right)) = (
+                slot_by_resource.get(&left_resource),
+                slot_by_resource.get(&right_resource),
+            ) else {
+                continue;
+            };
+            if left != right {
+                conflicts.insert((left.min(right), left.max(right)));
+            }
+        }
+        // A range retained across the phase boundary keeps its complete
+        // physical allocation alive. Mixing one such range with phase-local
+        // scratch would therefore make the scratch allocation unavailable to
+        // the next compiler graph even though its logical lifetime ended.
+        // Keep retained outputs in output-only arenas. Multiple outputs may
+        // still share one arena through disjoint ranges when no pass binds
+        // them together.
+        let output_slots = self
+            .workspace
+            .assignments
+            .iter()
+            .filter_map(|assignment| {
+                let resource = self.resource_id(assignment.name)?;
+                (self.resource(resource)?.class == ResourceClass::Output).then_some(assignment.slot)
+            })
+            .collect::<BTreeSet<_>>();
+        for &output in &output_slots {
+            for &other in &all_slots {
+                if output != other && !output_slots.contains(&other) {
+                    conflicts.insert((output.min(other), output.max(other)));
+                }
+            }
+        }
+        // WGPU's indirect-dispatch API receives a raw buffer plus one offset,
+        // so keep those slots at offset zero in exclusive physical arenas.
+        // Retained outputs are different: every compiler phase boundary now
+        // carries `LaniusBuffer`/`TrackedBufferView`, including copies and
+        // readbacks, so outputs may occupy disjoint ranges of one arena while
+        // retaining distinct logical slots and allocation identity.
         let dedicated_slots = self
             .workspace
             .assignments
@@ -1186,12 +1337,7 @@ impl CompilerGraph {
                 }) {
                     return Some(assignment.slot);
                 }
-                let resource = self.resource_id(assignment.name)?;
-                matches!(
-                    self.resource(resource)?.class,
-                    ResourceClass::Resident | ResourceClass::Output
-                )
-                .then_some(assignment.slot)
+                None
             })
             .collect::<BTreeSet<_>>();
         for dedicated in dedicated_slots {
@@ -2414,6 +2560,8 @@ pub struct CompilerGraphBuilder {
     reflection_complete: Vec<bool>,
     resource_names: BTreeSet<&'static str>,
     resource_aliases: BTreeMap<&'static str, ResourceId>,
+    reflected_binding_resources: BTreeMap<&'static str, BTreeSet<ResourceId>>,
+    reflected_arena_conflicts: BTreeSet<(ResourceId, ResourceId)>,
     pass_names: BTreeSet<&'static str>,
     repeated_regions: Vec<RepeatedPassRegion>,
     paged_regions: Vec<PagedPassRegion>,
@@ -2551,6 +2699,101 @@ impl CompilerGraphBuilder {
                 resource.class = ResourceClass::Resident;
             }
         }
+    }
+
+    /// Adds physical-allocation conflicts for every prepared compute kernel.
+    ///
+    /// Some compiler phases still have a handwritten command recorder whose
+    /// exact pass order is not yet represented by this graph. Their logical
+    /// resources therefore remain `Resident`, but physical arenas may still
+    /// pack disjoint ranges together when no shader ever binds them in the
+    /// same dispatch. Slang reflection supplies that conservative co-binding
+    /// relation without duplicating shader interfaces in Rust.
+    pub(crate) fn add_reflected_arena_conflicts(
+        &mut self,
+        kernels: &impl KernelReflections,
+    ) -> Result<(), String> {
+        let mut reflected_conflicts = BTreeSet::new();
+        let mapped_resources = |binding: &str| {
+            if let Some(resources) = self.reflected_binding_resources.get(binding) {
+                return resources.clone();
+            }
+            if let Some(resource) = self.resource_id(binding) {
+                return BTreeSet::from([resource]);
+            }
+            let resources = self
+                .passes
+                .iter()
+                .flat_map(|pass| pass.accesses.iter())
+                .filter(|access| access.reflected && access.binding == binding)
+                .map(|access| access.resource)
+                .collect::<BTreeSet<_>>();
+            if resources.len() == 1 {
+                resources
+            } else {
+                BTreeSet::new()
+            }
+        };
+
+        for key in kernels.reflection_keys() {
+            let mut bound_resources = reflected_parameters(kernels.reflection(key)?)
+                .into_iter()
+                .filter(|parameter| {
+                    slang_category_and_type_to_wgpu(parameter, &parameter.ty).is_some_and(|ty| {
+                        matches!(
+                            ty,
+                            wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { .. },
+                                ..
+                            }
+                        )
+                    })
+                })
+                .flat_map(|parameter| mapped_resources(&parameter.name))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            bound_resources.sort_unstable();
+            for (index, &left) in bound_resources.iter().enumerate() {
+                for &right in &bound_resources[index + 1..] {
+                    reflected_conflicts.insert((left, right));
+                }
+            }
+        }
+        self.reflected_arena_conflicts.extend(reflected_conflicts);
+        Ok(())
+    }
+
+    /// Declares the graph resources which a shader-facing binding may name.
+    ///
+    /// Handwritten recorders sometimes bind one of several ping-pong resources
+    /// under the same reflected parameter name. Arena conflict generation must
+    /// protect every possible physical resource rather than inventing a
+    /// same-named placeholder resource or assuming one fixed alias.
+    pub fn add_reflected_binding_resources(
+        &mut self,
+        binding: &'static str,
+        resources: impl IntoIterator<Item = ResourceId>,
+    ) -> Result<(), String> {
+        let resources = resources.into_iter().collect::<BTreeSet<_>>();
+        if resources.is_empty() {
+            return Err(format!(
+                "reflected binding `{binding}` must name at least one graph resource"
+            ));
+        }
+        for resource in &resources {
+            if self.resources.get(resource.index()).is_none() {
+                return Err(format!(
+                    "reflected binding `{binding}` targets unknown resource {}",
+                    resource.index(),
+                ));
+            }
+        }
+        self.reflected_binding_resources
+            .entry(binding)
+            .or_default()
+            .extend(resources);
+        Ok(())
     }
 
     /// Gives one physical ownership identity another logical operation name.
@@ -3563,6 +3806,7 @@ impl CompilerGraphBuilder {
         Ok(CompilerGraph {
             resources: self.resources,
             resource_aliases: self.resource_aliases,
+            reflected_arena_conflicts: self.reflected_arena_conflicts,
             passes: self.passes,
             pass_kernels: self.pass_kernels,
             reflection_complete: self.reflection_complete,
@@ -3719,6 +3963,203 @@ fn plan_graph_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upstream_storage_recovers_one_whole_dead_physical_allocation() {
+        let device = &crate::gpu::device::global().device;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("compiler_graph.physical_upstream_identity"),
+            size: 256,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let views = [
+            TrackedBufferView::from_parts(&buffer, 0, 64, Some(1)),
+            TrackedBufferView::from_parts(&buffer, 64, 128, Some(2)),
+        ];
+
+        let unique = unique_physical_upstream_views(&views);
+        assert_eq!(unique.len(), 1);
+        assert_eq!(unique[0].byte_offset, 0);
+        assert_eq!(unique[0].byte_size, 256);
+    }
+
+    #[test]
+    fn upstream_storage_packs_multiple_consumer_slots_into_disjoint_ranges() {
+        let placements = pack_slots_into_upstream_storage(
+            &[0, 1, 2],
+            &[400, 300, 200],
+            &[1024],
+            64,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(
+            placements,
+            vec![
+                UpstreamSlotPlacement {
+                    slot_index: 0,
+                    upstream_index: 0,
+                    byte_offset: 0,
+                },
+                UpstreamSlotPlacement {
+                    slot_index: 1,
+                    upstream_index: 0,
+                    byte_offset: 448,
+                },
+                UpstreamSlotPlacement {
+                    slot_index: 2,
+                    upstream_index: 0,
+                    byte_offset: 768,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn upstream_storage_leaves_slots_unplaced_when_aligned_ranges_do_not_fit() {
+        let placements = pack_slots_into_upstream_storage(
+            &[0, 1],
+            &[129, 128],
+            &[256],
+            128,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(
+            placements,
+            vec![UpstreamSlotPlacement {
+                slot_index: 0,
+                upstream_index: 0,
+                byte_offset: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn upstream_storage_separates_slots_used_by_the_same_pass() {
+        let placements = pack_slots_into_upstream_storage(
+            &[4, 9],
+            &[128, 128],
+            &[512, 512],
+            64,
+            &BTreeSet::from([(4, 9)]),
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(placements.len(), 2);
+        assert_ne!(placements[0].upstream_index, placements[1].upstream_index);
+    }
+
+    #[test]
+    fn upstream_storage_gives_dedicated_slots_exclusive_physical_buffers() {
+        let placements = pack_slots_into_upstream_storage(
+            &[4, 9, 12],
+            &[128, 128, 128],
+            &[512, 512, 512],
+            64,
+            &BTreeSet::new(),
+            &BTreeSet::from([4, 12]),
+        );
+
+        assert_eq!(placements.len(), 3);
+        assert_eq!(placements[0].slot_index, 0);
+        assert_eq!(placements[1].slot_index, 1);
+        assert_eq!(placements[2].slot_index, 2);
+        assert_ne!(placements[0].upstream_index, placements[1].upstream_index);
+        assert_ne!(placements[0].upstream_index, placements[2].upstream_index);
+        assert_ne!(placements[1].upstream_index, placements[2].upstream_index);
+    }
+
+    #[test]
+    fn upstream_storage_places_exclusive_slots_before_flexible_slots() {
+        let placements = pack_slots_into_upstream_storage(
+            &[0, 1, 2],
+            &[128, 128, 128],
+            &[256, 128],
+            64,
+            &BTreeSet::new(),
+            &BTreeSet::from([2]),
+        );
+
+        assert_eq!(placements.len(), 3);
+        let exclusive_upstream = placements[2].upstream_index;
+        assert!(
+            placements[..2]
+                .iter()
+                .all(|placement| placement.upstream_index != exclusive_upstream)
+        );
+        assert_eq!(placements[0].upstream_index, placements[1].upstream_index);
+    }
+
+    #[test]
+    fn retained_output_slots_do_not_share_an_arena_with_phase_scratch() {
+        let mut builder = CompilerGraphBuilder::new();
+        let scratch = builder
+            .add_storage(
+                "scratch",
+                ResourceDomain::HirNodes,
+                ResourceClass::Workspace,
+                128,
+            )
+            .unwrap();
+        let output = builder
+            .add_storage(
+                "output",
+                ResourceDomain::HirNodes,
+                ResourceClass::Output,
+                128,
+            )
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "produce.scratch",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::HirNodes,
+                accesses: vec![PassAccess::write("scratch", scratch)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "produce.output",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::HirNodes,
+                accesses: vec![PassAccess::write("output", output)],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+        let scratch_slot = graph
+            .workspace_plan()
+            .assignments
+            .iter()
+            .find(|assignment| assignment.name == "scratch")
+            .unwrap()
+            .slot;
+        let output_slot = graph
+            .workspace_plan()
+            .assignments
+            .iter()
+            .find(|assignment| assignment.name == "output")
+            .unwrap()
+            .slot;
+        let conflicts = graph.workspace_arena_conflicts();
+        assert!(
+            conflicts.contains(&(scratch_slot.min(output_slot), scratch_slot.max(output_slot),))
+        );
+
+        let placements = pack_slots_into_upstream_storage(
+            &[scratch_slot, output_slot],
+            &[128, 128],
+            &[512, 512],
+            64,
+            &conflicts,
+            &BTreeSet::new(),
+        );
+        assert_eq!(placements.len(), 2);
+        assert_ne!(placements[0].upstream_index, placements[1].upstream_index);
+    }
 
     fn workspace(name: &'static str, domain: ResourceDomain, bytes: u64) -> ResourceDesc {
         ResourceDesc {
@@ -3903,6 +4344,81 @@ mod tests {
         let graph = builder.build().unwrap();
         assert_eq!(graph.resource(output).unwrap().class, ResourceClass::Output);
         assert_eq!(graph.workspace_plan().slots.len(), 2);
+        let layout = graph
+            .workspace_arena_layout(&wgpu::Limits::default())
+            .unwrap();
+        let arena = |resource| {
+            let slot = graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == resource)
+                .unwrap()
+                .slot;
+            layout
+                .placements
+                .iter()
+                .find(|placement| placement.slot == slot)
+                .unwrap()
+                .arena
+        };
+        assert_ne!(arena("stage.output"), arena("later.scratch"));
+    }
+
+    #[test]
+    fn retained_outputs_use_disjoint_ranges_of_one_physical_arena() {
+        let mut builder = CompilerGraphBuilder::new();
+        let left = builder
+            .add_resource(workspace("stage.left", ResourceDomain::Types, 64))
+            .unwrap();
+        let right = builder
+            .add_resource(workspace("stage.right", ResourceDomain::Types, 96))
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "stage.write_left",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("left", left)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "stage.write_right",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("right", right)],
+            })
+            .unwrap();
+        builder
+            .retain_outputs(&["stage.left", "stage.right"])
+            .unwrap();
+
+        let graph = builder.build().unwrap();
+        let layout = graph
+            .workspace_arena_layout(&wgpu::Limits::default())
+            .unwrap();
+        let placement = |resource| {
+            let slot = graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == resource)
+                .unwrap()
+                .slot;
+            layout
+                .placements
+                .iter()
+                .find(|placement| placement.slot == slot)
+                .unwrap()
+        };
+        let left = placement("stage.left");
+        let right = placement("stage.right");
+        assert_eq!(left.arena, right.arena);
+        assert!(
+            left.byte_offset + left.byte_size <= right.byte_offset
+                || right.byte_offset + right.byte_size <= left.byte_offset
+        );
     }
 
     #[test]

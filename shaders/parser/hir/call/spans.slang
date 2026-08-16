@@ -7,6 +7,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirCall;
@@ -15,6 +16,7 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
+StructuredBuffer<uint> canonical_raw_to_dense;
 StructuredBuffer<uint> hir_call_callee_node;
 
 RWStructuredBuffer<uint> hir_token_pos;
@@ -62,7 +64,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node == INVALID || hir_kind[node] != HIR_CALL_EXPR)
         return;
 
-    uint callee = hir_call_callee_node[node];
+    uint record_row = gHirCall.retain_debug_rows != 0u
+        ? node
+        : canonical_raw_to_dense[node];
+    if (record_row == INVALID)
+        return;
+    uint callee = hir_call_callee_node[record_row];
     if (!valid_node(callee))
         return;
 

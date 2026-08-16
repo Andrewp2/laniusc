@@ -12,6 +12,9 @@ from run_compiler_stress_matrix import (
 
 
 class CompilerStressMatrixTests(unittest.TestCase):
+    def test_external_compilers_can_be_frozen_for_a_lanius_only_rerun(self) -> None:
+        self.assertEqual(parse_external_compilers("none"), ())
+
     def test_tcc_has_one_default_lane(self) -> None:
         self.assertEqual(parse_external_compilers("tcc"), ("tcc",))
         self.assertEqual(lanes_for("tcc"), ("default",))

@@ -48,9 +48,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.op == X86_LIR_OP_CALL_ARG)
     {
         uint base = target_value(operands.a, total);
-        uint component =
-            (operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u
-                ? 0u : operands.c;
+        uint component = operands.c;
         operands.a = base < total && component < total - base
             ? base + component : INVALID;
         operands.c = 0u;

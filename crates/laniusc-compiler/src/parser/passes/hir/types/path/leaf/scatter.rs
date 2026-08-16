@@ -64,6 +64,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypePathLeafS
                 "hir_type_path_leaf_value_a".into(),
                 b.hir_type_path_leaf_value_a.as_entire_binding(),
             ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "hir_type_value_node".into(),
                 b.hir_type_value_node.as_entire_binding(),

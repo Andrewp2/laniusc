@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.safety;
 import gpu_index;
@@ -105,12 +106,18 @@ uint argument_register(uint ordinal)
 uint param_store_bytes(SemanticLirFunction function, uint hidden_sret)
 {
     uint bytes = hidden_sret != 0u ? 7u : 0u;
-    for (uint ordinal = 0u;
-         ordinal < min(function.param_count, 6u - hidden_sret); ordinal += 1u)
+    uint abi_ordinal = hidden_sret;
+    for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
     {
         SemanticLirParam param = semantic_lir_params[function.param_start + ordinal];
-        bytes += x86_move64_from_fixed_bytes(argument_register(ordinal + hidden_sret),
-            declaration_location(param.declaration_id));
+        uint width = x86_abi_type_width(param.type_id);
+        if (abi_ordinal + width > 6u) break;
+        uint destination = declaration_location(param.declaration_id);
+        bytes += x86_move64_from_fixed_bytes(argument_register(abi_ordinal), destination);
+        if (width == 2u)
+            bytes += x86_move64_from_fixed_bytes(argument_register(abi_ordinal + 1u),
+                destination + 1u);
+        abi_ordinal += width;
     }
     return bytes;
 }

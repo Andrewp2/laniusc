@@ -108,6 +108,8 @@ impl ParserHirFunctionReturnReadbacks {
 
     /// Encodes copies for function return-type record readback.
     pub fn encode_copies(&self, encoder: &mut wgpu::CommandEncoder, bufs: &ParserBuffers) {
+        let mut logical_encoder = LogicalCopyEncoder(encoder);
+        let encoder = &mut logical_encoder;
         encoder.copy_buffer_to_buffer(
             &bufs.ll1_status,
             0,

@@ -20,6 +20,12 @@ struct Settings {
     samples_per_pixel: i32,
 }
 
+const NON_FALLBACK_SETTINGS: Settings = Settings {
+    width: 19,
+    height: 10,
+    samples_per_pixel: 1,
+};
+
 #[derive(Clone, Copy)]
 struct Vec3 {
     x: f32,
@@ -81,8 +87,11 @@ fn raytracer_ppm_compiles_runs_and_matches_oracle() {
     use std::os::unix::fs::PermissionsExt;
 
     let source_path = fixture_path("raytracer.lani");
-    let expected_ppm = read_fixture("expected.ppm");
-    let expected_stdout = read_fixture("expected.stdout");
+    let expected_ppm = reference_ppm(NON_FALLBACK_SETTINGS);
+    let expected_stdout = format!(
+        "{}\n",
+        NON_FALLBACK_SETTINGS.width * NON_FALLBACK_SETTINGS.height
+    );
     let bytes = common::run_gpu_codegen_with_timeout("raytracer PPM fixture native compile", {
         let source_path = source_path.clone();
         move || {
@@ -103,11 +112,16 @@ fn raytracer_ppm_compiles_runs_and_matches_oracle() {
         .unwrap_or_else(|err| panic!("chmod raytracer executable {}: {err}", exe.path().display()));
 
     let work_dir = TempDir::new("raytracer_ppm");
-    fs::copy(
-        fixture_path("render_settings.txt"),
+    fs::write(
         work_dir.path().join("render_settings.txt"),
+        format!(
+            "{}\n{}\n{}\n",
+            NON_FALLBACK_SETTINGS.width,
+            NON_FALLBACK_SETTINGS.height,
+            NON_FALLBACK_SETTINGS.samples_per_pixel
+        ),
     )
-    .unwrap_or_else(|err| panic!("copy raytracer settings into temp cwd: {err}"));
+    .unwrap_or_else(|err| panic!("write non-fallback raytracer settings: {err}"));
 
     let mut command = Command::new(exe.path());
     command.current_dir(work_dir.path());
@@ -132,10 +146,18 @@ fn raytracer_ppm_compiles_to_wasm_runs_and_matches_oracle() {
     common::require_node();
 
     let source_path = fixture_path("raytracer.lani");
-    let expected_ppm = read_fixture("expected.ppm");
-    let expected_stdout = read_fixture("expected.stdout");
-    let settings =
-        fs::read(fixture_path("render_settings.txt")).expect("read raytracer settings fixture");
+    let expected_ppm = reference_ppm(NON_FALLBACK_SETTINGS);
+    let expected_stdout = format!(
+        "{}\n",
+        NON_FALLBACK_SETTINGS.width * NON_FALLBACK_SETTINGS.height
+    );
+    let settings = format!(
+        "{}\n{}\n{}\n",
+        NON_FALLBACK_SETTINGS.width,
+        NON_FALLBACK_SETTINGS.height,
+        NON_FALLBACK_SETTINGS.samples_per_pixel
+    )
+    .into_bytes();
     let bytes = common::run_gpu_codegen_with_timeout("raytracer PPM fixture Wasm compile", {
         let source_path = source_path.clone();
         move || {

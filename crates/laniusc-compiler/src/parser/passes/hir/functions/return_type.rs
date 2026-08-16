@@ -61,6 +61,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirFnReturnTypeP
                 b.hir_fn_signature_function_owner_a.as_entire_binding(),
             ),
             (
+                "raw_to_hir".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
+            ),
+            (
                 "hir_fn_return_type_node".into(),
                 b.hir_fn_return_type_node.as_entire_binding(),
             ),

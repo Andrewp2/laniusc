@@ -9,7 +9,7 @@ StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> candidate_raw_by_anchor;
 StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> expr_result_root;
 StructuredBuffer<uint> element_owner;
 StructuredBuffer<uint> element_ordinal;
@@ -32,6 +32,11 @@ uint mapped_expression(uint raw)
     uint root = expr_result_root[raw];
     uint dense = mapped(root);
     return dense != INVALID ? dense : mapped(raw);
+}
+uint file_for_raw(uint raw)
+{
+    uint token = raw < gCanonical.raw_capacity ? hir_token_pos[raw] : INVALID;
+    return token < gCanonical.canonical_capacity ? token_file_id[token] : INVALID;
 }
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -58,7 +63,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     element.array = mapped(element_owner[raw]);
     element.value = mapped_expression(raw);
     element.ordinal = element_ordinal[raw];
-    element.file_id = hir_token_file_id[raw];
+    element.file_id = file_for_raw(raw);
     hir_array_elements[row] = element;
     if (element.array < gCanonical.canonical_capacity)
     {

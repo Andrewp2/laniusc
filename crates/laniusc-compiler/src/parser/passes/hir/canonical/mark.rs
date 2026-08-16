@@ -44,26 +44,19 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalMark
                 },
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("parent".into(), b.parent.as_entire_binding()),
+            ("first_child".into(), b.first_child.as_entire_binding()),
+            ("next_sibling".into(), b.next_sibling.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
-            ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
-            ("hir_type_form".into(), b.hir_type_form.as_entire_binding()),
-            (
-                "hir_param_record".into(),
-                b.hir_param_record.as_entire_binding(),
-            ),
-            (
-                "hir_stmt_record".into(),
-                b.hir_stmt_record.as_entire_binding(),
-            ),
             (
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
             ),
             (
-                "hir_call_callee_node".into(),
-                b.hir_call_callee_node.as_entire_binding(),
+                "canonical_anchor_by_raw".into(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
             (
                 "canonical_flag".into(),

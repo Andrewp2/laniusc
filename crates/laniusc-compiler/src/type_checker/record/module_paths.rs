@@ -442,7 +442,7 @@ fn record_module_path_stage(
             "type_check.modules.mark_value_call_paths",
             state
                 .token_capacity
-                .max(state.parser_hir_n_blocks.saturating_mul(256))
+                .max(state.n_blocks.saturating_mul(256))
                 .max(1),
         )?;
         record_compute_indirect(

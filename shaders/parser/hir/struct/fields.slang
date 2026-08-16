@@ -48,6 +48,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_struct_lit_field_count[node] = 0u;
     }
     hir_struct_lit_head_node[node] = INVALID;
-    hir_struct_lit_field_parent_lit[node] = INVALID;
-    hir_struct_lit_field_value_node[node] = INVALID;
+    if (gHirStruct.retain_debug_rows != 0u)
+    {
+        hir_struct_lit_field_parent_lit[node] = INVALID;
+        hir_struct_lit_field_value_node[node] = INVALID;
+    }
 }

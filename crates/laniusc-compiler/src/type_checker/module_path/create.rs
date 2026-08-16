@@ -20,7 +20,6 @@ pub(in crate::type_checker) fn create_with_passes(
     inputs: CreateInputs<'_>,
     resources: &ResourceMap<'_>,
 ) -> Result<State> {
-    let parser_hir_n_blocks = inputs.parser_hir_node_capacity.div_ceil(256).max(1);
     let layout = Layout::new(
         inputs.source_file_capacity,
         inputs.token_capacity,
@@ -838,7 +837,6 @@ pub(in crate::type_checker) fn create_with_passes(
     retained_params.push(import_visibility_mark_params);
     Ok(State {
         n_blocks,
-        parser_hir_n_blocks,
         module_n_blocks,
         token_capacity,
         import_visible_capacity: import_visible_capacity_u32,

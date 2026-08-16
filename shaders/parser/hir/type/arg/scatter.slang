@@ -6,6 +6,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirType;
@@ -52,6 +53,11 @@ bool valid_type_arg_owner(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
+    // Canonical HIR is produced directly from owner/rank below; this pass is
+    // now only the legacy raw-table projection used by parser debug readback.
+    if (gHirType.retain_debug_rows == 0u)
+        return;
+
     uint node = linear_thread_id(dtid);
     if (node >= gHirType.n || !valid_node(node) || hir_kind[node] != HIR_TYPE)
         return;

@@ -10,6 +10,9 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint semantic_parent_local_ancestor_span;
+    uint retain_debug_rows;
+    uint parser_feature_flags;
 };
 
 ConstantBuffer<Params> gHir;
@@ -182,5 +185,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     hir_kind[i] = classify(emit_stream[i]);
     hir_token_pos[i] = emit_pos[i];
-    hir_token_file_id[i] = hir_file_for_emit_pos(emit_pos[i]);
+    if (gHir.retain_debug_rows != 0u)
+        hir_token_file_id[i] = hir_file_for_emit_pos(emit_pos[i]);
 }

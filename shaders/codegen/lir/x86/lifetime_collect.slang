@@ -35,7 +35,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     SemanticLirCore core = semantic_lir_core[row];
     SemanticLirOperands operands = semantic_lir_operands[row];
-    uint op = core.op;
+    uint op = semantic_lir_op(core);
     if (op == SEMANTIC_LIR_OP_VALUE_SET || op == SEMANTIC_LIR_OP_STORE)
     {
         if (op == SEMANTIC_LIR_OP_STORE &&

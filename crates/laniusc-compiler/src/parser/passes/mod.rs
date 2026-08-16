@@ -744,6 +744,10 @@ pub fn record_all_passes(
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     p.hir_semantic_child_index_traverse
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    let token_input_capacity = ctx.buffers.token_input_capacity;
+    parser_clear_buffer(ctx.encoder, &ctx.buffers.source_file_token_end, 0, None);
+    p.source_file_token_end
+        .record_pass(&mut ctx, E1D(token_input_capacity))?;
     p.hir_record_clear_base.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_record_clear_calls
         .record_pass(&mut ctx, E1D(n_tree))?;
@@ -758,11 +762,11 @@ pub fn record_all_passes(
     );
     p.hir_type_path_leaf_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
-    let token_input_capacity = ctx.buffers.token_input_capacity;
-    parser_clear_buffer(ctx.encoder, &ctx.buffers.source_file_token_end, 0, None);
-    p.source_file_token_end
-        .record_pass(&mut ctx, E1D(token_input_capacity))?;
     p.hir_spans.record_pass(&mut ctx, E1D(n_tree))?;
+    // Establish stable dense IDs as soon as the general source spans exist.
+    // Later semantic-family passes can target compact rows without replacing
+    // exact call/path anchors with raw-subtree approximations.
+    record_canonical_hir_identity_maps(&mut ctx, p)?;
     p.hir_type_arg_links.record_pass(&mut ctx, E1D(n_tree))?;
     clear_type_arg_rank_b(ctx.encoder, ctx.buffers);
     p.hir_list_rank_prefix_local.record_for_owner_link(
@@ -815,9 +819,11 @@ pub fn record_all_passes(
     )?;
     p.hir_enum_variant_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
+    parser_clear_buffer(ctx.encoder, &ctx.buffers.hir_item_kind, 0, None);
     p.hir_item_fields
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     parser_clear_buffer(ctx.encoder, &ctx.buffers.hir_path_root_owner, 0, None);
+    parser_clear_buffer(ctx.encoder, &ctx.buffers.hir_path_segment_count, 0, None);
     p.hir_path_segment_root.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_path_segment_links
         .record_pass(&mut ctx, E1D(n_tree))?;
@@ -1025,10 +1031,7 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_struct_field_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
-    record_canonical_hir_identity(&mut ctx, p, raw_expression_records)?;
-    p.hir_canonical_identity_aliases
-        .record_pass(&mut ctx, E1D(n_tree))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    record_canonical_hir_record_compaction(&mut ctx, p, raw_expression_records)?;
     record_canonical_fields(&mut ctx, p)?;
     // Struct ranking owns the shared list workspace. Context propagation
     // aliases those rows, so it can begin only after declaration/literal
@@ -1087,6 +1090,12 @@ pub fn record_canonical_variants(
         0,
         Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
     );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_variant_raw_to_row.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
     p.hir_canonical_variant_mark
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     record_canonical_scan(ctx, p, CanonicalConstruct::Variant)?;
@@ -1136,10 +1145,9 @@ pub fn record_canonical_variants(
 
 /// Selects token-anchored semantic nodes and establishes the stable dense/raw
 /// identity maps before later HIR enrichment allocates family metadata.
-pub(crate) fn record_canonical_hir_identity(
+pub(crate) fn record_canonical_hir_identity_maps(
     ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
     p: &ParserPasses,
-    _raw_expression_records: RawExpressionRecordsFinalized,
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1D;
 
@@ -1171,10 +1179,26 @@ pub(crate) fn record_canonical_hir_identity(
         .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
     p.hir_semantic_prefix_blocks
         .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_stmt_compact
+    p.hir_canonical_scatter
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    p.hir_canonical_scatter
+    p.hir_canonical_identity_aliases
+        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    Ok(())
+}
+
+/// Gathers finalized raw statement/expression records using the durable dense
+/// identity map. The prefix-scan scratch used to create that map has already
+/// been released to subsequent HIR operations.
+pub(crate) fn record_canonical_hir_record_compaction(
+    ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
+    p: &ParserPasses,
+    _raw_expression_records: RawExpressionRecordsFinalized,
+) -> Result<(), anyhow::Error> {
+    use InputElements::Elements1D as E1D;
+
+    p.hir_canonical_stmt_compact
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     Ok(())
@@ -1258,6 +1282,12 @@ pub fn record_canonical_matches(
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_canonical_anchor_owner.buffer,
+        0,
+        Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
+    );
+    parser_clear_buffer(
+        ctx.encoder,
+        &ctx.buffers.hir_match_arm_raw_to_row.buffer,
         0,
         Some(u64::from(ctx.buffers.hir_canonical_capacity) * 4),
     );
@@ -1537,14 +1567,16 @@ pub fn record_canonical_hir_materialization(
         0,
         None,
     );
-    p.hir_canonical_method_mark
-        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
-    record_canonical_scan(ctx, p, CanonicalConstruct::Method)?;
-    p.hir_semantic_prefix_blocks
-        .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
-    p.hir_canonical_method_scatter
-        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
-    crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    if ctx.buffers.parser_feature_flags & crate::lexer::features::PARSER_FEATURE_PREDICATES != 0 {
+        p.hir_canonical_method_mark
+            .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+        record_canonical_scan(ctx, p, CanonicalConstruct::Method)?;
+        p.hir_semantic_prefix_blocks
+            .record_compact_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        p.hir_canonical_method_scatter
+            .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+        crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    }
     parser_clear_buffer(
         ctx.encoder,
         &ctx.buffers.hir_predicate_table_count.buffer,

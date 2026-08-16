@@ -5,6 +5,14 @@
 /traces/
 __pycache__/
 *.pyc
+node_modules/
+tools/perf-viewer/public/performance-data.js
+
+# Generated benchmark workspaces and derived indexes. Canonical, reviewable
+# measurements live in benchmark_artifacts/performance/*.json.
+benchmark_artifacts/compile_performance_*/
+benchmark_artifacts/performance/catalog.json
+benchmark_artifacts/performance-viewer/
 
 # Reproducible benchmark intermediates. Keep compact results, manifests,
 # machine information, summaries, and visualizations under benchmark_artifacts/.

@@ -662,6 +662,25 @@ async fn run_session(
             )?;
             continue;
         }
+        if request.command == "clear-compiled-unit-cache" {
+            let before = compiler.compiled_unit_cache_stats();
+            compiler.clear_compiled_unit_cache();
+            let after = compiler.compiled_unit_cache_stats();
+            write_response(
+                &mut output,
+                &json!({
+                    "schema": DAEMON_SCHEMA,
+                    "id": request.id,
+                    "ok": true,
+                    "event": "compiled-unit-cache-cleared",
+                    "entries_before": before.entries,
+                    "resident_bytes_before": before.resident_bytes,
+                    "entries_after": after.entries,
+                    "resident_bytes_after": after.resident_bytes,
+                }),
+            )?;
+            continue;
+        }
         if request.command == "status" {
             write_response(
                 &mut output,
@@ -683,7 +702,7 @@ async fn run_session(
                 &mut output,
                 &protocol_error(
                     request.id,
-                    "command must be compile, trim, status, or shutdown",
+                    "command must be compile, clear-compiled-unit-cache, trim, status, or shutdown",
                 ),
             )?;
             continue;
@@ -705,8 +724,19 @@ async fn run_session(
                         false,
                     ));
         let breakdown_before = resource_breakdown_enabled.then(job_resource_creation_breakdown);
+        let job_trace_name = request.id.as_str().map_or_else(
+            || format!("daemon.job.{}", request.id),
+            |id| format!("daemon.job.{id}"),
+        );
+        let job_trace_started = Instant::now();
         let mut response =
             compile_request(&compiler, options, &mut source_pack_cache, request).await;
+        crate::gpu::trace::record_host_span(
+            "host.daemon",
+            &job_trace_name,
+            job_trace_started,
+            Instant::now(),
+        );
         let resources_after = job_resource_creation_counts();
         let recorded_compute_passes_during_job =
             recorded_compute_pass_count().saturating_sub(compute_passes_before);
@@ -1086,6 +1116,14 @@ fn tracked_gpu_buffer_metrics() -> Value {
         "user_owned_wgpu_buffers": user_owned_wgpu_buffers,
         "untracked_allocations": untracked_allocations,
         "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+        "phase_snapshots": crate::gpu::buffers::tracked_buffer_phase_snapshots()
+            .into_iter()
+            .map(|snapshot| json!({
+                "phase": snapshot.phase.as_ref(),
+                "allocations": snapshot.stats.allocations,
+                "bytes": snapshot.stats.bytes,
+            }))
+            .collect::<Vec<_>>(),
     });
     if crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
         for snapshot in crate::gpu::buffers::tracked_buffer_phase_snapshots() {

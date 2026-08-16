@@ -99,7 +99,7 @@ pub(crate) struct GpuX86LirStage {
     #[cfg(test)]
     saved_gpr_mask_by_function: LaniusBuffer<u32>,
     artifact: GpuX86ArtifactStage,
-    object: GpuX86ObjectStage,
+    object: Option<GpuX86ObjectStage>,
 }
 
 struct X86LirPage {
@@ -136,6 +136,7 @@ impl GpuX86LirStage {
         workspace: &CompilerGraphWorkspace,
         capacities: LoweringCapacities,
         semantic: GpuSemanticLirView<'_>,
+        include_object: bool,
     ) -> Result<Self> {
         let allocations = target_lowering_allocations(graph, workspace, semantic)?;
         let resource = |name: &str| {
@@ -494,15 +495,19 @@ impl GpuX86LirStage {
             &locations,
             &semantic_origins,
         )?;
-        let object = GpuX86ObjectStage::new(
-            device,
-            graph,
-            workspace,
-            &allocations,
-            capacities,
-            semantic,
-            artifact.object_view(),
-        )?;
+        let object = include_object
+            .then(|| {
+                GpuX86ObjectStage::new(
+                    device,
+                    graph,
+                    workspace,
+                    &allocations,
+                    capacities,
+                    semantic,
+                    artifact.object_view(),
+                )
+            })
+            .transpose()?;
         Ok(Self {
             count_pages,
             pages,
@@ -597,7 +602,10 @@ impl GpuX86LirStage {
     ) -> Result<()> {
         self.artifact.record_layout_after_byte_counts(encoder)?;
         if object {
-            self.object.record_status_normalization(encoder)?;
+            self.object
+                .as_ref()
+                .context("x86 object projection was not allocated for this lowering job")?
+                .record_status_normalization(encoder)?;
         }
         self.artifact.record_clear(encoder)?;
         Ok(())
@@ -620,15 +628,27 @@ impl GpuX86LirStage {
         self.artifact
             .record_extra_emits(encoder, self.pages.len())?;
         if object {
-            self.object.record_projection(encoder)
+            self.object
+                .as_ref()
+                .context("x86 object projection was not allocated for this lowering job")?
+                .record_projection(encoder)
         } else {
             self.artifact.record_length_readback(encoder);
             Ok(())
         }
     }
 
-    pub(crate) fn set_object_identity(&self, queue: &wgpu::Queue, library_id: u32, unit_id: u32) {
-        self.object.set_identity(queue, library_id, unit_id);
+    pub(crate) fn set_object_identity(
+        &self,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<()> {
+        self.object
+            .as_ref()
+            .context("x86 object projection was not allocated for this lowering job")?
+            .set_identity(queue, library_id, unit_id);
+        Ok(())
     }
 
     #[cfg(test)]
@@ -672,7 +692,10 @@ impl GpuX86LirStage {
         library_id: u32,
         unit_id: u32,
     ) -> Result<super::x86::GpuX86RelocatableObject> {
-        self.object.finish(device, queue, library_id, unit_id)
+        self.object
+            .as_ref()
+            .context("x86 object projection was not allocated for this lowering job")?
+            .finish(device, queue, library_id, unit_id)
     }
 }
 
@@ -718,6 +741,30 @@ mod tests {
             .collect()
     }
 
+    fn compact_semantic_core_records(records: &[[u32; 8]]) -> Vec<[u32; 4]> {
+        records
+            .iter()
+            .map(|record| {
+                let [
+                    op,
+                    type_id,
+                    type_ref_tag,
+                    type_ref_payload,
+                    _,
+                    flags,
+                    words,
+                    _,
+                ] = *record;
+                [
+                    type_id,
+                    type_ref_payload,
+                    flags | ((op & 0x3f) << 24) | ((type_ref_tag & 3) << 30),
+                    words,
+                ]
+            })
+            .collect()
+    }
+
     fn read_words(device: &wgpu::Device, buffer: &LaniusBuffer<u8>) -> Vec<u32> {
         let slice = buffer.slice(..);
         map_readback_blocking(device, &slice, "x86 LIR readback").unwrap();
@@ -754,7 +801,7 @@ mod tests {
         let page_core = storage_ro_from_bytes::<SemanticLirCore>(
             &gpu.device,
             "test.x86_lir.page_core",
-            &record_bytes(&[
+            &record_bytes(&compact_semantic_core_records(&[
                 [
                     opcode::SEMANTIC_LIR_OP_CONST_I32,
                     3,
@@ -835,7 +882,7 @@ mod tests {
                     0,
                     u32::MAX,
                 ],
-            ]),
+            ])),
             8,
         );
         let page_operands = storage_ro_from_bytes::<SemanticLirOperands>(
@@ -861,8 +908,15 @@ mod tests {
             )
             .unwrap();
         semantic_order.write(&gpu.queue, 0, &record_bytes(&[[1u32, 0, 2, 3, 5, 6, 4, 7]]));
-        let semantic_owners =
-            storage_ro_from_u32s(&gpu.device, "test.x86_lir.semantic_owners", &[0; 8]);
+        let semantic_layout_metadata =
+            storage_ro_from_u32s(&gpu.device, "test.x86_lir.layout_metadata", &[0; 8]);
+        let semantic_owners = storage_ro_from_u32s(
+            &gpu.device,
+            "test.x86_lir.semantic_owners",
+            &[1, 0, 2, 3, 5, 6, 4, 7],
+        );
+        let semantic_function_ids =
+            storage_ro_from_u32s(&gpu.device, "test.x86_lir.function_ids", &[0; 8]);
         let semantic_ops = storage_ro_from_u32s(
             &gpu.device,
             "test.x86_lir.semantic_ops",
@@ -972,10 +1026,10 @@ mod tests {
                 count: &total,
                 core: &page_core,
                 operands: &page_operands,
-                layout_word_offset: &semantic_owners,
+                layout_word_offset: &semantic_layout_metadata,
                 owner_by_instruction: &semantic_owners,
                 op_by_instruction: &semantic_ops,
-                function_id_by_hir: &semantic_owners,
+                function_id_by_hir: &semantic_function_ids,
                 call_args: &call_args,
                 call_arg_start_by_hir: &call_arg_start_by_hir,
                 call_arg_count_by_hir: &call_arg_count_by_hir,
@@ -994,6 +1048,7 @@ mod tests {
                 execution_order: Some(&semantic_order),
                 status: &status,
             },
+            true,
         )
         .unwrap();
         let pipelines_before = pipeline_creation_count();

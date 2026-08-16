@@ -240,6 +240,8 @@ static NEXT_BUFFER_ALLOCATION_ID: AtomicU64 = AtomicU64::new(1);
 static BUFFER_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static LIVE_BUFFER_BYTES_BY_LABEL: LazyLock<Mutex<HashMap<Arc<str>, (u64, u64)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+static LIVE_BUFFER_IDENTITIES: LazyLock<Mutex<HashMap<wgpu::Buffer, (u64, Arc<str>, u64)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 static BUFFER_CREATIONS_BY_LABEL: LazyLock<Mutex<HashMap<Arc<str>, u64>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static BUFFER_PHASE_SNAPSHOTS: LazyLock<Mutex<Vec<TrackedBufferPhaseSnapshot>>> =
@@ -362,10 +364,24 @@ struct BufferAllocationLedger {
     id: u64,
     bytes: u64,
     label: Arc<str>,
+    buffer: Option<wgpu::Buffer>,
 }
 
 impl BufferAllocationLedger {
+    #[cfg(test)]
     fn new(bytes: u64, label: impl Into<Arc<str>>) -> Arc<Self> {
+        Self::new_inner(None, bytes, label)
+    }
+
+    fn new_for_buffer(buffer: &wgpu::Buffer, bytes: u64, label: impl Into<Arc<str>>) -> Arc<Self> {
+        Self::new_inner(Some(buffer.clone()), bytes, label)
+    }
+
+    fn new_inner(
+        buffer: Option<wgpu::Buffer>,
+        bytes: u64,
+        label: impl Into<Arc<str>>,
+    ) -> Arc<Self> {
         BUFFER_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
         let label = label.into();
         *BUFFER_CREATIONS_BY_LABEL
@@ -383,16 +399,30 @@ impl BufferAllocationLedger {
         entry.0 += 1;
         entry.1 += bytes;
         drop(labels);
+        let id = NEXT_BUFFER_ALLOCATION_ID.fetch_add(1, Ordering::Relaxed);
+        if let Some(buffer) = buffer.as_ref() {
+            LIVE_BUFFER_IDENTITIES
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(buffer.clone(), (id, label.clone(), bytes));
+        }
         Arc::new(Self {
-            id: NEXT_BUFFER_ALLOCATION_ID.fetch_add(1, Ordering::Relaxed),
+            id,
             bytes,
             label,
+            buffer,
         })
     }
 }
 
 impl Drop for BufferAllocationLedger {
     fn drop(&mut self) {
+        if let Some(buffer) = self.buffer.as_ref() {
+            LIVE_BUFFER_IDENTITIES
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(buffer);
+        }
         LIVE_BUFFER_ALLOCATIONS.fetch_sub(1, Ordering::Relaxed);
         LIVE_BUFFER_BYTES.fetch_sub(self.bytes, Ordering::Relaxed);
         let mut labels = LIVE_BUFFER_BYTES_BY_LABEL
@@ -408,6 +438,17 @@ impl Drop for BufferAllocationLedger {
             labels.remove(&self.label);
         }
     }
+}
+
+/// Returns the compiler allocation identity attached to a raw WGPU handle.
+/// This is used only for ownership validation and opt-in liveness telemetry;
+/// semantic code must continue to pass `LaniusBuffer`/`TrackedBufferView`.
+pub(crate) fn tracked_buffer_identity(buffer: &wgpu::Buffer) -> Option<(u64, Arc<str>, u64)> {
+    LIVE_BUFFER_IDENTITIES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(buffer)
+        .cloned()
 }
 
 /// A thin wrapper around `wgpu::Buffer` that also tracks element count and byte size.
@@ -761,12 +802,13 @@ impl<T> LaniusBuffer<T> {
         count: usize,
         label: impl Into<Arc<str>>,
     ) -> Self {
+        let allocation = BufferAllocationLedger::new_for_buffer(&buffer, byte_size, label);
         Self {
             buffer,
             byte_offset: 0,
             byte_size: byte_size as usize,
             count,
-            _allocation: Some(BufferAllocationLedger::new(byte_size, label)),
+            _allocation: Some(allocation),
             _borrowed_allocation_id: None,
             _marker: std::marker::PhantomData,
         }

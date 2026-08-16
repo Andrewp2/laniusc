@@ -1804,18 +1804,19 @@ pub mod bind_group {
         struct BoundBuffer<'a> {
             name: &'a str,
             buffer: &'a wgpu::Buffer,
+            logical_writable: bool,
             offset: u64,
             end: u64,
-            writable: bool,
         }
 
         let mut buffers = Vec::<BoundBuffer<'_>>::new();
+        let trace_bindings = crate::gpu::env::env_bool_strict("LANIUS_GPU_BINDING_LIVENESS", false);
         for parameter in reflected_parameters_for_set(reflection, set_index) {
             let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
             else {
                 continue;
             };
-            let writable = matches!(
+            let logical_writable = matches!(
                 binding_type,
                 wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -1831,10 +1832,43 @@ pub mod bind_group {
                 || binding.buffer.size().saturating_sub(offset),
                 |size| size.get(),
             ));
+            if trace_bindings
+                && let Some((allocation, allocation_label, allocation_bytes)) =
+                    crate::gpu::buffers::tracked_buffer_identity(binding.buffer)
+            {
+                eprintln!(
+                    "gpu_binding_liveness pass={label:?} set={set_index} binding={:?} access={} allocation={} allocation_label={:?} allocation_bytes={} offset={} bytes={}",
+                    parameter.name,
+                    if logical_writable {
+                        "read_write"
+                    } else {
+                        "read"
+                    },
+                    allocation,
+                    allocation_label,
+                    allocation_bytes,
+                    offset,
+                    end.saturating_sub(offset),
+                );
+            }
             for prior in &buffers {
-                let ranges_overlap = offset < prior.end && prior.offset < end;
-                if binding.buffer == prior.buffer && ranges_overlap && writable != prior.writable {
-                    let (read_only_name, writable_name) = if prior.writable {
+                if binding.buffer != prior.buffer {
+                    continue;
+                }
+                let overlaps = offset < prior.end && prior.offset < end;
+                if overlaps && (logical_writable || prior.logical_writable) {
+                    let error = anyhow!(
+                        "bind group `{label}` has overlapping physical ranges for `{}` and `{}` where at least one binding is writable",
+                        prior.name,
+                        parameter.name,
+                    );
+                    if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
+                        eprintln!("{error:#}");
+                    }
+                    return Err(error);
+                }
+                if logical_writable != prior.logical_writable {
+                    let (read_only_name, writable_name) = if prior.logical_writable {
                         (parameter.name.as_str(), prior.name)
                     } else {
                         (prior.name, parameter.name.as_str())
@@ -1853,9 +1887,9 @@ pub mod bind_group {
             buffers.push(BoundBuffer {
                 name: &parameter.name,
                 buffer: binding.buffer,
+                logical_writable,
                 offset,
                 end,
-                writable,
             });
         }
         Ok(())

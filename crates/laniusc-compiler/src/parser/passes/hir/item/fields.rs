@@ -13,6 +13,7 @@ use crate::{
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
+    pub retain_debug_rows: u32,
 }
 
 /// Absence of an item kind.
@@ -116,6 +117,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirItemFieldsPas
             (
                 "hir_semantic_count".into(),
                 b.hir_semantic_count.as_entire_binding(),
+            ),
+            (
+                "raw_to_hir".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
             ),
             ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
             (

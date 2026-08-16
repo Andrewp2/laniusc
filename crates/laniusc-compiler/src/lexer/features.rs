@@ -27,6 +27,7 @@ pub const PARSER_FEATURE_STRING_EXPRS: u32 = 0x0000_0200;
 pub const LEXICALLY_PROVEN_PARSER_FEATURES: u32 = PARSER_FEATURE_ARRAYS
     | PARSER_FEATURE_ENUMS
     | PARSER_FEATURE_MATCHES
+    | PARSER_FEATURE_STRUCTS
     | PARSER_FEATURE_PREDICATES
     | PARSER_FEATURE_MEMBERS
     | PARSER_FEATURE_IMPORTS
@@ -41,12 +42,16 @@ pub const CONSERVATIVE_PARSER_FEATURES: u32 = u32::MAX;
 
 /// Converts the lexer's proven feature set into a safe parser-allocation set.
 ///
-/// Struct literals may name a type imported from another source file, so the
-/// absence of a local `struct` keyword does not prove that struct-family parser
-/// storage is unused. Until semantic classification has run, that family must
-/// remain provisioned.
+/// Struct literals may name a type imported from another source file. A unit
+/// therefore needs struct-family storage when it either declares a struct or
+/// contains imports; when neither token occurs, no struct type can be in scope
+/// for a literal and absence is proven lexically.
 pub const fn parser_allocation_features(lexical_features: u32) -> u32 {
-    lexical_features | PARSER_FEATURE_STRUCTS
+    if lexical_features & PARSER_FEATURE_IMPORTS != 0 {
+        lexical_features | PARSER_FEATURE_STRUCTS
+    } else {
+        lexical_features
+    }
 }
 
 #[cfg(test)]
@@ -59,5 +64,14 @@ mod tests {
             parser_allocation_features(PARSER_FEATURE_IMPORTS),
             PARSER_FEATURE_IMPORTS | PARSER_FEATURE_STRUCTS
         );
+    }
+
+    #[test]
+    fn parser_allocation_does_not_enable_structs_without_declarations_or_imports() {
+        assert_eq!(
+            parser_allocation_features(PARSER_FEATURE_ARRAYS),
+            PARSER_FEATURE_ARRAYS
+        );
+        assert_eq!(parser_allocation_features(0), 0);
     }
 }

@@ -49,6 +49,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 "raw_to_hir".into(),
                 b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "payload_parent_pattern".into(),
                 b.hir_match_pattern_parent.as_entire_binding(),

@@ -1,0 +1,3033 @@
+{
+  "machine": {
+    "cpu": "x86_64",
+    "gpu": "NVIDIA GeForce RTX 3090, 580.173.02, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39"
+  },
+  "measurements": [
+    {
+      "commands": {
+        "legacy_template": [
+          "gcc",
+          "-O0",
+          "-g0",
+          "{source}",
+          "-o",
+          "{output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "c",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "o0",
+      "configuration_display": "o0",
+      "id": "c-o0",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 981771,
+          "source_sloc": 30755,
+          "wall_ms": 1137.653211
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 984854,
+          "source_sloc": 30693,
+          "wall_ms": 1055.379036
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 982639,
+          "source_sloc": 30944,
+          "wall_ms": 1100.968663
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 981518,
+          "source_sloc": 30756,
+          "wall_ms": 1109.816714
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 982758,
+          "source_sloc": 30794,
+          "wall_ms": 1074.507903
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 981320,
+          "source_sloc": 30688,
+          "wall_ms": 1042.928936
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 978667,
+          "source_sloc": 30664,
+          "wall_ms": 1174.404323
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 978859,
+          "source_sloc": 30667,
+          "wall_ms": 1185.510919
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 980016,
+          "source_sloc": 30758,
+          "wall_ms": 1111.586823
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 977015,
+          "source_sloc": 30812,
+          "wall_ms": 1070.857978
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 983729,
+          "source_sloc": 30852,
+          "wall_ms": 1307.290805
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 980804,
+          "source_sloc": 30706,
+          "wall_ms": 1168.161108
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 983093,
+          "source_sloc": 30928,
+          "wall_ms": 1088.078679
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 982912,
+          "source_sloc": 30951,
+          "wall_ms": 1473.210795
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 982365,
+          "source_sloc": 30622,
+          "wall_ms": 1155.050119
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 982066,
+          "source_sloc": 30740,
+          "wall_ms": 1041.617898
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 983065,
+          "source_sloc": 30820,
+          "wall_ms": 1195.898091
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 982505,
+          "source_sloc": 30876,
+          "wall_ms": 1349.878778
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 971937,
+          "source_sloc": 30572,
+          "wall_ms": 1257.404034
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 982312,
+          "source_sloc": 30940,
+          "wall_ms": 1251.324934
+        }
+      ],
+      "source": {
+        "bytes": 981771,
+        "file_records": [
+          {
+            "bytes": 981771,
+            "lines": 31995,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-21/1000000/scaling.c",
+            "sloc": 30755
+          }
+        ],
+        "files": 1,
+        "kilobytes": 981.771,
+        "largest_file_bytes": 981771,
+        "megabytes": 0.981771,
+        "physical_lines": 31995,
+        "sloc": 30755,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 856737.3555081276,
+        "median_sloc_per_second": 26772.56256997383,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              9,
+              6,
+              2,
+              2,
+              1
+            ],
+            "edges": [
+              1041.617898,
+              1127.9364774,
+              1214.2550568,
+              1300.5736362,
+              1386.8922155999999,
+              1473.210795
+            ],
+            "unit": "ms"
+          },
+          "mad": 65.05837400000019,
+          "maximum": 1473.210795,
+          "mean": 1167.57648735,
+          "median": 1146.3516650000001,
+          "minimum": 1041.617898,
+          "p95": 1356.0453788500001,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "gcc",
+          "-O2",
+          "-g0",
+          "{source}",
+          "-o",
+          "{output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "c",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "optimized",
+      "configuration_display": "optimized",
+      "id": "c-optimized",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 982505,
+          "source_sloc": 30876,
+          "wall_ms": 5836.629925
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 981518,
+          "source_sloc": 30756,
+          "wall_ms": 4706.998897
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 980804,
+          "source_sloc": 30706,
+          "wall_ms": 4663.131178
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 982312,
+          "source_sloc": 30940,
+          "wall_ms": 4738.947227
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 977015,
+          "source_sloc": 30812,
+          "wall_ms": 4779.953049
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 981320,
+          "source_sloc": 30688,
+          "wall_ms": 4777.497757
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 982365,
+          "source_sloc": 30622,
+          "wall_ms": 4790.349813
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 982066,
+          "source_sloc": 30740,
+          "wall_ms": 5075.616082
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 983065,
+          "source_sloc": 30820,
+          "wall_ms": 4834.569129
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 980016,
+          "source_sloc": 30758,
+          "wall_ms": 4689.86051
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 982639,
+          "source_sloc": 30944,
+          "wall_ms": 4713.886352
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 981771,
+          "source_sloc": 30755,
+          "wall_ms": 4884.992796
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 984854,
+          "source_sloc": 30693,
+          "wall_ms": 5095.531132
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 982912,
+          "source_sloc": 30951,
+          "wall_ms": 4907.746209
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 982758,
+          "source_sloc": 30794,
+          "wall_ms": 4888.960334
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 983729,
+          "source_sloc": 30852,
+          "wall_ms": 4756.619171
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 978667,
+          "source_sloc": 30664,
+          "wall_ms": 5001.942012
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 978859,
+          "source_sloc": 30667,
+          "wall_ms": 4744.095122
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 971937,
+          "source_sloc": 30572,
+          "wall_ms": 4635.297517
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 983093,
+          "source_sloc": 30928,
+          "wall_ms": 5017.948656
+        }
+      ],
+      "source": {
+        "bytes": 982505,
+        "file_records": [
+          {
+            "bytes": 982505,
+            "lines": 32128,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-33/1000000/scaling.c",
+            "sloc": 30876
+          }
+        ],
+        "files": 1,
+        "kilobytes": 982.505,
+        "largest_file_bytes": 982505,
+        "megabytes": 0.982505,
+        "physical_lines": 32128,
+        "sloc": 30876,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 204735.05683613414,
+        "median_sloc_per_second": 6407.94063976004,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              12,
+              7,
+              0,
+              0,
+              1
+            ],
+            "edges": [
+              4635.297517,
+              4875.5639986,
+              5115.8304802,
+              5356.0969618,
+              5596.3634434000005,
+              5836.629925
+            ],
+            "unit": "ms"
+          },
+          "mad": 97.56614300000001,
+          "maximum": 5836.629925,
+          "mean": 4877.0286434,
+          "median": 4785.151431,
+          "minimum": 4635.297517,
+          "p95": 5132.586071650001,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "g++",
+          "-O0",
+          "-g0",
+          "{source}",
+          "-o",
+          "{output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "cpp",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "o0",
+      "configuration_display": "o0",
+      "id": "cpp-o0",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 980016,
+          "source_sloc": 30758,
+          "wall_ms": 1196.559041
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 981771,
+          "source_sloc": 30755,
+          "wall_ms": 1363.090929
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 971937,
+          "source_sloc": 30572,
+          "wall_ms": 1153.81547
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 983729,
+          "source_sloc": 30852,
+          "wall_ms": 1269.005895
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 983093,
+          "source_sloc": 30928,
+          "wall_ms": 1238.65408
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 978859,
+          "source_sloc": 30667,
+          "wall_ms": 1161.799304
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 981320,
+          "source_sloc": 30688,
+          "wall_ms": 1369.464745
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 982312,
+          "source_sloc": 30940,
+          "wall_ms": 1193.85725
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 984854,
+          "source_sloc": 30693,
+          "wall_ms": 1524.053904
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 977015,
+          "source_sloc": 30812,
+          "wall_ms": 1213.705284
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 982505,
+          "source_sloc": 30876,
+          "wall_ms": 1202.622087
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 981518,
+          "source_sloc": 30756,
+          "wall_ms": 1197.794512
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 982758,
+          "source_sloc": 30794,
+          "wall_ms": 1507.450173
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 982066,
+          "source_sloc": 30740,
+          "wall_ms": 1270.313886
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 978667,
+          "source_sloc": 30664,
+          "wall_ms": 1164.410997
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 982639,
+          "source_sloc": 30944,
+          "wall_ms": 1221.838614
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 982912,
+          "source_sloc": 30951,
+          "wall_ms": 1181.709647
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 980804,
+          "source_sloc": 30706,
+          "wall_ms": 1542.708581
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 983065,
+          "source_sloc": 30820,
+          "wall_ms": 1650.62956
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 982365,
+          "source_sloc": 30622,
+          "wall_ms": 1495.787623
+        }
+      ],
+      "source": {
+        "bytes": 980016,
+        "file_records": [
+          {
+            "bytes": 980016,
+            "lines": 31882,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-27/1000000/scaling.cpp",
+            "sloc": 30758
+          }
+        ],
+        "files": 1,
+        "kilobytes": 980.016,
+        "largest_file_bytes": 980016,
+        "megabytes": 0.980016,
+        "physical_lines": 31882,
+        "sloc": 30758,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 798954.0948048448,
+        "median_sloc_per_second": 25147.402159781166,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              11,
+              2,
+              2,
+              4,
+              1
+            ],
+            "edges": [
+              1153.81547,
+              1253.178288,
+              1352.5411060000001,
+              1451.9039240000002,
+              1551.266742,
+              1650.62956
+            ],
+            "unit": "ms"
+          },
+          "mad": 57.186025000000086,
+          "maximum": 1650.62956,
+          "mean": 1305.9635791,
+          "median": 1230.246347,
+          "minimum": 1153.81547,
+          "p95": 1548.1046299500003,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "g++",
+          "-O2",
+          "-g0",
+          "{source}",
+          "-o",
+          "{output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "cpp",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "optimized",
+      "configuration_display": "optimized",
+      "id": "cpp-optimized",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 982758,
+          "source_sloc": 30794,
+          "wall_ms": 4856.09626
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 980804,
+          "source_sloc": 30706,
+          "wall_ms": 4942.68318
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 983093,
+          "source_sloc": 30928,
+          "wall_ms": 4925.553023
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 983065,
+          "source_sloc": 30820,
+          "wall_ms": 4838.405958
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 982639,
+          "source_sloc": 30944,
+          "wall_ms": 4943.625081
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 981320,
+          "source_sloc": 30688,
+          "wall_ms": 5025.27976
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 978667,
+          "source_sloc": 30664,
+          "wall_ms": 5217.181075
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 981771,
+          "source_sloc": 30755,
+          "wall_ms": 5273.016495
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 983729,
+          "source_sloc": 30852,
+          "wall_ms": 4917.525926
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 977015,
+          "source_sloc": 30812,
+          "wall_ms": 5358.630631
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 982912,
+          "source_sloc": 30951,
+          "wall_ms": 5322.734102
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 984854,
+          "source_sloc": 30693,
+          "wall_ms": 5551.147033
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 981518,
+          "source_sloc": 30756,
+          "wall_ms": 5208.215483
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 982312,
+          "source_sloc": 30940,
+          "wall_ms": 5135.688605
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 982505,
+          "source_sloc": 30876,
+          "wall_ms": 5859.09844
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 982066,
+          "source_sloc": 30740,
+          "wall_ms": 4903.085214
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 980016,
+          "source_sloc": 30758,
+          "wall_ms": 5443.632993
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 971937,
+          "source_sloc": 30572,
+          "wall_ms": 4822.467469
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 978859,
+          "source_sloc": 30667,
+          "wall_ms": 4835.840395
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 982365,
+          "source_sloc": 30622,
+          "wall_ms": 5407.315282
+        }
+      ],
+      "source": {
+        "bytes": 982758,
+        "file_records": [
+          {
+            "bytes": 982758,
+            "lines": 32056,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-23/1000000/scaling.cpp",
+            "sloc": 30794
+          }
+        ],
+        "files": 1,
+        "kilobytes": 982.758,
+        "largest_file_bytes": 982758,
+        "megabytes": 0.982758,
+        "physical_lines": 32056,
+        "sloc": 30794,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 193274.20590811022,
+        "median_sloc_per_second": 6065.616630206043,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              10,
+              3,
+              5,
+              1,
+              1
+            ],
+            "edges": [
+              4822.467469,
+              5029.7936632,
+              5237.1198574,
+              5444.4460516,
+              5651.7722458,
+              5859.09844
+            ],
+            "unit": "ms"
+          },
+          "mad": 208.4601174999998,
+          "maximum": 5859.09844,
+          "mean": 5139.361120250001,
+          "median": 5080.4841825,
+          "minimum": 4822.467469,
+          "p95": 5566.544603350001,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "target/release/laniusc",
+          "daemon",
+          "--stdio",
+          "--backend",
+          "x86_64",
+          "--stdlib-root",
+          "stdlib"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final"
+      },
+      "compiler": {
+        "name": "lanius",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "hot_daemon_variable_project",
+      "configuration_display": "preallocated (legacy variable-project run)",
+      "id": "lanius-hot_daemon_variable_project",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": 50.881823,
+          "index": 0,
+          "request_phases_ms": {
+            "compile": 50.881823,
+            "load": 2.163354,
+            "write": 0.711216
+          },
+          "seed": 39,
+          "source_bytes": 1000000,
+          "source_sloc": 30743,
+          "wall_ms": 53.957636
+        },
+        {
+          "compiler_ms": 47.906917,
+          "index": 1,
+          "request_phases_ms": {
+            "compile": 47.906917,
+            "load": 2.145285,
+            "write": 0.7958219999999999
+          },
+          "seed": 37,
+          "source_bytes": 1000000,
+          "source_sloc": 30709,
+          "wall_ms": 51.053387
+        },
+        {
+          "compiler_ms": 50.681371000000006,
+          "index": 2,
+          "request_phases_ms": {
+            "compile": 50.681371000000006,
+            "load": 2.258991,
+            "write": 0.885979
+          },
+          "seed": 24,
+          "source_bytes": 1000000,
+          "source_sloc": 30815,
+          "wall_ms": 54.063792
+        },
+        {
+          "compiler_ms": 55.134344,
+          "index": 3,
+          "request_phases_ms": {
+            "compile": 55.134344,
+            "load": 2.31527,
+            "write": 1.395762
+          },
+          "seed": 33,
+          "source_bytes": 1000000,
+          "source_sloc": 30879,
+          "wall_ms": 59.097906
+        },
+        {
+          "compiler_ms": 54.628743,
+          "index": 4,
+          "request_phases_ms": {
+            "compile": 54.628743,
+            "load": 2.223552,
+            "write": 0.8558399999999999
+          },
+          "seed": 31,
+          "source_bytes": 1000000,
+          "source_sloc": 30823,
+          "wall_ms": 57.939796
+        },
+        {
+          "compiler_ms": 56.836205,
+          "index": 5,
+          "request_phases_ms": {
+            "compile": 56.836205,
+            "load": 2.6984660000000003,
+            "write": 0.897449
+          },
+          "seed": 29,
+          "source_bytes": 1000000,
+          "source_sloc": 30954,
+          "wall_ms": 60.648142
+        },
+        {
+          "compiler_ms": 52.568614,
+          "index": 6,
+          "request_phases_ms": {
+            "compile": 52.568614,
+            "load": 2.189654,
+            "write": 0.7642639999999999
+          },
+          "seed": 36,
+          "source_bytes": 1000000,
+          "source_sloc": 30943,
+          "wall_ms": 55.730674
+        },
+        {
+          "compiler_ms": 56.968361,
+          "index": 7,
+          "request_phases_ms": {
+            "compile": 56.968361,
+            "load": 2.225142,
+            "write": 0.86642
+          },
+          "seed": 34,
+          "source_bytes": 1000000,
+          "source_sloc": 30931,
+          "wall_ms": 60.299424
+        },
+        {
+          "compiler_ms": 53.032818,
+          "index": 8,
+          "request_phases_ms": {
+            "compile": 53.032818,
+            "load": 2.244411,
+            "write": 0.890099
+          },
+          "seed": 35,
+          "source_bytes": 1000000,
+          "source_sloc": 30625,
+          "wall_ms": 56.39253
+        },
+        {
+          "compiler_ms": 50.745528,
+          "index": 9,
+          "request_phases_ms": {
+            "compile": 50.745528,
+            "load": 2.3301979999999998,
+            "write": 0.921878
+          },
+          "seed": 21,
+          "source_bytes": 1000000,
+          "source_sloc": 30758,
+          "wall_ms": 54.267365
+        },
+        {
+          "compiler_ms": 54.677891,
+          "index": 10,
+          "request_phases_ms": {
+            "compile": 54.677891,
+            "load": 2.408936,
+            "write": 0.771243
+          },
+          "seed": 30,
+          "source_bytes": 1000000,
+          "source_sloc": 30947,
+          "wall_ms": 58.089142
+        },
+        {
+          "compiler_ms": 56.029624,
+          "index": 11,
+          "request_phases_ms": {
+            "compile": 56.029624,
+            "load": 2.191363,
+            "write": 0.924308
+          },
+          "seed": 22,
+          "source_bytes": 1000000,
+          "source_sloc": 30855,
+          "wall_ms": 59.404365
+        },
+        {
+          "compiler_ms": 56.152249000000005,
+          "index": 12,
+          "request_phases_ms": {
+            "compile": 56.152249000000005,
+            "load": 2.218973,
+            "write": 1.0630730000000002
+          },
+          "seed": 23,
+          "source_bytes": 1000000,
+          "source_sloc": 30797,
+          "wall_ms": 59.760603
+        },
+        {
+          "compiler_ms": 50.451809,
+          "index": 13,
+          "request_phases_ms": {
+            "compile": 50.451809,
+            "load": 2.204503,
+            "write": 0.811862
+          },
+          "seed": 20,
+          "source_bytes": 1000000,
+          "source_sloc": 30575,
+          "wall_ms": 53.709874
+        },
+        {
+          "compiler_ms": 59.381317,
+          "index": 14,
+          "request_phases_ms": {
+            "compile": 59.381317,
+            "load": 2.435585,
+            "write": 0.942557
+          },
+          "seed": 25,
+          "source_bytes": 1000000,
+          "source_sloc": 30759,
+          "wall_ms": 63.021829
+        },
+        {
+          "compiler_ms": 56.449429,
+          "index": 15,
+          "request_phases_ms": {
+            "compile": 56.449429,
+            "load": 2.3742170000000002,
+            "write": 1.048063
+          },
+          "seed": 27,
+          "source_bytes": 1000000,
+          "source_sloc": 30761,
+          "wall_ms": 60.164699
+        },
+        {
+          "compiler_ms": 56.308842999999996,
+          "index": 16,
+          "request_phases_ms": {
+            "compile": 56.308842999999996,
+            "load": 2.2284520000000003,
+            "write": 1.080443
+          },
+          "seed": 28,
+          "source_bytes": 1000000,
+          "source_sloc": 30670,
+          "wall_ms": 59.903088
+        },
+        {
+          "compiler_ms": 53.566789,
+          "index": 17,
+          "request_phases_ms": {
+            "compile": 53.566789,
+            "load": 2.2158130000000003,
+            "write": 0.932418
+          },
+          "seed": 26,
+          "source_bytes": 1000000,
+          "source_sloc": 30696,
+          "wall_ms": 56.971041
+        },
+        {
+          "compiler_ms": 54.001545,
+          "index": 18,
+          "request_phases_ms": {
+            "compile": 54.001545,
+            "load": 2.401746,
+            "write": 0.83419
+          },
+          "seed": 32,
+          "source_bytes": 1000000,
+          "source_sloc": 30667,
+          "wall_ms": 57.452814
+        },
+        {
+          "compiler_ms": 50.272744,
+          "index": 19,
+          "request_phases_ms": {
+            "compile": 50.272744,
+            "load": 2.158105,
+            "write": 0.806802
+          },
+          "seed": 38,
+          "source_bytes": 1000000,
+          "source_sloc": 30691,
+          "wall_ms": 53.447153
+        }
+      ],
+      "source": {
+        "bytes": 1000000,
+        "file_records": [
+          {
+            "bytes": 1000000,
+            "lines": 31936,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-39/1000000/scaling.lani",
+            "sloc": 30743
+          }
+        ],
+        "files": 1,
+        "kilobytes": 1000.0,
+        "largest_file_bytes": 1000000,
+        "megabytes": 1.0,
+        "physical_lines": 31936,
+        "sloc": 30743,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              5,
+              6,
+              7,
+              1
+            ],
+            "edges": [
+              47.906917,
+              50.201797,
+              52.496677,
+              54.791557,
+              57.086437000000004,
+              59.381317
+            ],
+            "unit": "ms"
+          },
+          "mad": 2.0639919999999954,
+          "maximum": 59.381317,
+          "mean": 53.8338482,
+          "median": 54.315144000000004,
+          "minimum": 47.906917,
+          "p95": 57.0890088,
+          "samples": 20
+        },
+        "median_bytes_per_second": 17332441.142624084,
+        "median_sloc_per_second": 533263.6635765469,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              6,
+              5,
+              6,
+              2
+            ],
+            "edges": [
+              51.053387,
+              53.4470754,
+              55.8407638,
+              58.2344522,
+              60.628140599999995,
+              63.021829
+            ],
+            "unit": "ms"
+          },
+          "mad": 2.3375885000000025,
+          "maximum": 63.021829,
+          "mean": 57.268763,
+          "median": 57.696304999999995,
+          "minimum": 51.053387,
+          "p95": 60.76682635,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "/home/andrew-peterson/code/pareas/build-laniusc-cuda-futhark025/pareas",
+          "-p",
+          "1",
+          "{source}",
+          "-o",
+          "{output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "pareas",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "cuda",
+      "configuration_display": "cuda",
+      "id": "pareas-cuda",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": 303.716,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 980339,
+          "source_sloc": 30875,
+          "wall_ms": 615.476019
+        },
+        {
+          "compiler_ms": 223.99699999999999,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 980438,
+          "source_sloc": 30943,
+          "wall_ms": 513.925701
+        },
+        {
+          "compiler_ms": 276.259,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 981673,
+          "source_sloc": 30851,
+          "wall_ms": 572.312764
+        },
+        {
+          "compiler_ms": 226.055,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 974763,
+          "source_sloc": 30811,
+          "wall_ms": 519.546526
+        },
+        {
+          "compiler_ms": 290.33000000000004,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 978757,
+          "source_sloc": 30705,
+          "wall_ms": 599.772739
+        },
+        {
+          "compiler_ms": 301.79,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 978067,
+          "source_sloc": 30757,
+          "wall_ms": 562.203865
+        },
+        {
+          "compiler_ms": 277.836,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 970046,
+          "source_sloc": 30571,
+          "wall_ms": 609.177593
+        },
+        {
+          "compiler_ms": 314.865,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 980402,
+          "source_sloc": 30621,
+          "wall_ms": 609.86678
+        },
+        {
+          "compiler_ms": 251.05599999999998,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 979372,
+          "source_sloc": 30755,
+          "wall_ms": 573.340113
+        },
+        {
+          "compiler_ms": 296.09000000000003,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 980784,
+          "source_sloc": 30950,
+          "wall_ms": 613.642784
+        },
+        {
+          "compiler_ms": 284.023,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 980146,
+          "source_sloc": 30939,
+          "wall_ms": 595.842392
+        },
+        {
+          "compiler_ms": 259.258,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 976799,
+          "source_sloc": 30666,
+          "wall_ms": 498.436197
+        },
+        {
+          "compiler_ms": 288.682,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 982982,
+          "source_sloc": 30692,
+          "wall_ms": 695.525286
+        },
+        {
+          "compiler_ms": 294.583,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 980575,
+          "source_sloc": 30793,
+          "wall_ms": 642.303358
+        },
+        {
+          "compiler_ms": 284.552,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 979256,
+          "source_sloc": 30687,
+          "wall_ms": 648.437378
+        },
+        {
+          "compiler_ms": 288.25100000000003,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 976684,
+          "source_sloc": 30663,
+          "wall_ms": 571.291807
+        },
+        {
+          "compiler_ms": 278.44,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 980002,
+          "source_sloc": 30739,
+          "wall_ms": 575.390054
+        },
+        {
+          "compiler_ms": 245.282,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 980961,
+          "source_sloc": 30927,
+          "wall_ms": 505.759453
+        },
+        {
+          "compiler_ms": 278.717,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 981048,
+          "source_sloc": 30819,
+          "wall_ms": 560.989895
+        },
+        {
+          "compiler_ms": 241.743,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 979626,
+          "source_sloc": 30754,
+          "wall_ms": 505.835823
+        }
+      ],
+      "source": {
+        "bytes": 980339,
+        "file_records": [
+          {
+            "bytes": 980339,
+            "lines": 32126,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-33/1000000/scaling.par",
+            "sloc": 30875
+          }
+        ],
+        "files": 1,
+        "kilobytes": 980.339,
+        "largest_file_bytes": 980339,
+        "megabytes": 0.980339,
+        "physical_lines": 32126,
+        "sloc": 30875,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": {
+          "histogram": {
+            "counts": [
+              3,
+              3,
+              3,
+              8,
+              3
+            ],
+            "edges": [
+              223.99699999999999,
+              242.17059999999998,
+              260.3442,
+              278.51779999999997,
+              296.6914,
+              314.865
+            ],
+            "unit": "ms"
+          },
+          "mad": 13.966500000000025,
+          "maximum": 314.865,
+          "mean": 275.27625,
+          "median": 281.37,
+          "minimum": 223.99699999999999,
+          "p95": 304.27345,
+          "samples": 20
+        },
+        "median_bytes_per_second": 1705691.3553381679,
+        "median_sloc_per_second": 53532.349153712385,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              5,
+              6,
+              6,
+              2,
+              1
+            ],
+            "edges": [
+              498.436197,
+              537.8540148,
+              577.2718326,
+              616.6896504,
+              656.1074682000001,
+              695.525286
+            ],
+            "unit": "ms"
+          },
+          "mad": 37.38969850000001,
+          "maximum": 695.525286,
+          "mean": 579.45382635,
+          "median": 574.3650835,
+          "minimum": 498.436197,
+          "p95": 650.7917734,
+          "samples": 20
+        }
+      },
+      "target": "riscv32",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "rustc",
+          "-Awarnings",
+          "-Zthreads=16",
+          "-C",
+          "opt-level=0",
+          "-C",
+          "debuginfo=0",
+          "-C",
+          "strip=debuginfo",
+          "{source}",
+          "-o",
+          "{output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "rust",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "o0",
+      "configuration_display": "o0",
+      "id": "rust-o0",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 997636,
+          "source_sloc": 30664,
+          "wall_ms": 1248.699556
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 1003426,
+          "source_sloc": 30852,
+          "wall_ms": 1267.968828
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 998600,
+          "source_sloc": 30667,
+          "wall_ms": 1023.084887
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 1001831,
+          "source_sloc": 30740,
+          "wall_ms": 1207.907923
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 1001085,
+          "source_sloc": 30688,
+          "wall_ms": 1098.33292
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 1003317,
+          "source_sloc": 30951,
+          "wall_ms": 1090.652886
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 1000413,
+          "source_sloc": 30706,
+          "wall_ms": 1166.195285
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 1003685,
+          "source_sloc": 30794,
+          "wall_ms": 1090.708388
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 1002342,
+          "source_sloc": 30755,
+          "wall_ms": 1172.447645
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 1003266,
+          "source_sloc": 30876,
+          "wall_ms": 1170.380174
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 1003522,
+          "source_sloc": 30928,
+          "wall_ms": 1155.888635
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 1003792,
+          "source_sloc": 30944,
+          "wall_ms": 1107.093383
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 1002386,
+          "source_sloc": 30820,
+          "wall_ms": 1152.653327
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 1003093,
+          "source_sloc": 30940,
+          "wall_ms": 1250.013248
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 990058,
+          "source_sloc": 30572,
+          "wall_ms": 1285.353794
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 998646,
+          "source_sloc": 30812,
+          "wall_ms": 1088.177524
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 998653,
+          "source_sloc": 30758,
+          "wall_ms": 1282.582754
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 1001194,
+          "source_sloc": 30622,
+          "wall_ms": 1235.759417
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 1002729,
+          "source_sloc": 30693,
+          "wall_ms": 1276.154811
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 1002129,
+          "source_sloc": 30756,
+          "wall_ms": 1139.933469
+        }
+      ],
+      "source": {
+        "bytes": 997636,
+        "file_records": [
+          {
+            "bytes": 997636,
+            "lines": 31808,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-32/1000000/scaling.rs",
+            "sloc": 30664
+          }
+        ],
+        "files": 1,
+        "kilobytes": 997.636,
+        "largest_file_bytes": 997636,
+        "megabytes": 0.997636,
+        "physical_lines": 31808,
+        "sloc": 30664,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 857528.6151700928,
+        "median_sloc_per_second": 26355.619215998682,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              5,
+              6,
+              1,
+              7
+            ],
+            "edges": [
+              1023.084887,
+              1075.5386684,
+              1127.9924498,
+              1180.4462312,
+              1232.9000126,
+              1285.353794
+            ],
+            "unit": "ms"
+          },
+          "mad": 73.7670754999998,
+          "maximum": 1285.353794,
+          "mean": 1175.4994427,
+          "median": 1168.2877294999998,
+          "minimum": 1023.084887,
+          "p95": 1282.721306,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "rustc",
+          "-Awarnings",
+          "-Zthreads=16",
+          "-C",
+          "opt-level=3",
+          "-C",
+          "debuginfo=0",
+          "-C",
+          "strip=debuginfo",
+          "{source}",
+          "-o",
+          "{output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "rust",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "optimized",
+      "configuration_display": "optimized",
+      "id": "rust-optimized",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 1002342,
+          "source_sloc": 30755,
+          "wall_ms": 998.328083
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 1003426,
+          "source_sloc": 30852,
+          "wall_ms": 824.815405
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 1000413,
+          "source_sloc": 30706,
+          "wall_ms": 797.294917
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 1003522,
+          "source_sloc": 30928,
+          "wall_ms": 879.265161
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 1003093,
+          "source_sloc": 30940,
+          "wall_ms": 945.975318
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 1003266,
+          "source_sloc": 30876,
+          "wall_ms": 1070.417564
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 998600,
+          "source_sloc": 30667,
+          "wall_ms": 878.629469
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 997636,
+          "source_sloc": 30664,
+          "wall_ms": 937.495935
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 1003317,
+          "source_sloc": 30951,
+          "wall_ms": 923.064662
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 1002129,
+          "source_sloc": 30756,
+          "wall_ms": 925.700017
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 1002386,
+          "source_sloc": 30820,
+          "wall_ms": 849.591566
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 1001085,
+          "source_sloc": 30688,
+          "wall_ms": 959.515263
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 990058,
+          "source_sloc": 30572,
+          "wall_ms": 830.845902
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 1003792,
+          "source_sloc": 30944,
+          "wall_ms": 894.157805
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 1001194,
+          "source_sloc": 30622,
+          "wall_ms": 894.669294
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 998646,
+          "source_sloc": 30812,
+          "wall_ms": 961.45204
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 1001831,
+          "source_sloc": 30740,
+          "wall_ms": 922.31193
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 998653,
+          "source_sloc": 30758,
+          "wall_ms": 902.117401
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 1002729,
+          "source_sloc": 30693,
+          "wall_ms": 853.647071
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 1003685,
+          "source_sloc": 30794,
+          "wall_ms": 975.777274
+        }
+      ],
+      "source": {
+        "bytes": 1002342,
+        "file_records": [
+          {
+            "bytes": 1002342,
+            "lines": 31995,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-21/1000000/scaling.rs",
+            "sloc": 30755
+          }
+        ],
+        "files": 1,
+        "kilobytes": 1002.342,
+        "largest_file_bytes": 1002342,
+        "megabytes": 1.002342,
+        "physical_lines": 31995,
+        "sloc": 30755,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 1096975.602652445,
+        "median_sloc_per_second": 33813.01796455891,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              4,
+              6,
+              6,
+              3,
+              1
+            ],
+            "edges": [
+              797.294917,
+              851.9194464000001,
+              906.5439758000001,
+              961.1685052,
+              1015.7930346,
+              1070.417564
+            ],
+            "unit": "ms"
+          },
+          "mad": 40.5306250000001,
+          "maximum": 1070.417564,
+          "mean": 911.25360385,
+          "median": 912.2146654999999,
+          "minimum": 797.294917,
+          "p95": 1001.93255705,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc",
+          "-B/tmp/lanius-tcc.JrXWwY/root/usr/lib/x86_64-linux-gnu/tcc",
+          "-std=c11",
+          "{source}",
+          "-o",
+          "{output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "tcc",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "default",
+      "configuration_display": "default",
+      "id": "tcc-default",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 983093,
+          "source_sloc": 30928,
+          "wall_ms": 17.511915
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 982066,
+          "source_sloc": 30740,
+          "wall_ms": 16.68163
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 983729,
+          "source_sloc": 30852,
+          "wall_ms": 17.978475
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 982912,
+          "source_sloc": 30951,
+          "wall_ms": 16.980278
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 982758,
+          "source_sloc": 30794,
+          "wall_ms": 15.568205
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 980804,
+          "source_sloc": 30706,
+          "wall_ms": 15.798235
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 982312,
+          "source_sloc": 30940,
+          "wall_ms": 18.320912
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 980016,
+          "source_sloc": 30758,
+          "wall_ms": 17.557155
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 982365,
+          "source_sloc": 30622,
+          "wall_ms": 17.908622
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 984854,
+          "source_sloc": 30693,
+          "wall_ms": 18.082786
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 971937,
+          "source_sloc": 30572,
+          "wall_ms": 17.541534
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 982505,
+          "source_sloc": 30876,
+          "wall_ms": 17.571388
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 978859,
+          "source_sloc": 30667,
+          "wall_ms": 17.694444
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 982639,
+          "source_sloc": 30944,
+          "wall_ms": 19.104761
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 981518,
+          "source_sloc": 30756,
+          "wall_ms": 17.665819
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 978667,
+          "source_sloc": 30664,
+          "wall_ms": 14.122979
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 983065,
+          "source_sloc": 30820,
+          "wall_ms": 19.155068
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 981771,
+          "source_sloc": 30755,
+          "wall_ms": 17.777844
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 981320,
+          "source_sloc": 30688,
+          "wall_ms": 17.716607
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 977015,
+          "source_sloc": 30812,
+          "wall_ms": 18.051384
+        }
+      ],
+      "source": {
+        "bytes": 983093,
+        "file_records": [
+          {
+            "bytes": 983093,
+            "lines": 32160,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-34/1000000/scaling.c",
+            "sloc": 30928
+          }
+        ],
+        "files": 1,
+        "kilobytes": 983.093,
+        "largest_file_bytes": 983093,
+        "megabytes": 0.983093,
+        "physical_lines": 32160,
+        "sloc": 30928,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 55398796.217286654,
+        "median_sloc_per_second": 1737066.0478426777,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              2,
+              2,
+              12,
+              3
+            ],
+            "edges": [
+              14.122979,
+              15.1293968,
+              16.1358146,
+              17.1422324,
+              18.1486502,
+              19.155068
+            ],
+            "unit": "ms"
+          },
+          "mad": 0.3347979999999975,
+          "maximum": 19.155068,
+          "mean": 17.439502049999998,
+          "median": 17.6801315,
+          "minimum": 14.122979,
+          "p95": 19.10727635,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "zig",
+          "build-exe",
+          "-lc",
+          "-O",
+          "Debug",
+          "-fstrip",
+          "{source}",
+          "-femit-bin={output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "zig",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "o0",
+      "configuration_display": "o0",
+      "id": "zig-o0",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 1003245,
+          "source_sloc": 30940,
+          "wall_ms": 410.320627
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 1003951,
+          "source_sloc": 30944,
+          "wall_ms": 441.297384
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 1002489,
+          "source_sloc": 30755,
+          "wall_ms": 452.481894
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 998800,
+          "source_sloc": 30812,
+          "wall_ms": 481.932209
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 1003830,
+          "source_sloc": 30794,
+          "wall_ms": 483.745238
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 1002529,
+          "source_sloc": 30820,
+          "wall_ms": 455.456732
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 1003664,
+          "source_sloc": 30928,
+          "wall_ms": 464.26235
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 1002281,
+          "source_sloc": 30756,
+          "wall_ms": 453.726815
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 1001339,
+          "source_sloc": 30622,
+          "wall_ms": 466.932829
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 1002855,
+          "source_sloc": 30693,
+          "wall_ms": 503.941147
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 1003463,
+          "source_sloc": 30951,
+          "wall_ms": 492.408302
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 1001223,
+          "source_sloc": 30688,
+          "wall_ms": 468.847654
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 990195,
+          "source_sloc": 30572,
+          "wall_ms": 473.439043
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 1001969,
+          "source_sloc": 30740,
+          "wall_ms": 481.7295
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 998742,
+          "source_sloc": 30667,
+          "wall_ms": 477.798965
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 1003410,
+          "source_sloc": 30876,
+          "wall_ms": 504.979223
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 1003564,
+          "source_sloc": 30852,
+          "wall_ms": 452.955509
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 998784,
+          "source_sloc": 30758,
+          "wall_ms": 527.484178
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 997769,
+          "source_sloc": 30664,
+          "wall_ms": 501.58074
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 1000554,
+          "source_sloc": 30706,
+          "wall_ms": 514.071629
+        }
+      ],
+      "source": {
+        "bytes": 1003245,
+        "file_records": [
+          {
+            "bytes": 1003245,
+            "lines": 32192,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-36/1000000/scaling.zig",
+            "sloc": 30940
+          }
+        ],
+        "files": 1,
+        "kilobytes": 1003.245,
+        "largest_file_bytes": 1003245,
+        "megabytes": 1.003245,
+        "physical_lines": 32192,
+        "sloc": 30940,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 2090895.8556036735,
+        "median_sloc_per_second": 64379.104462002404,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              5,
+              5,
+              6,
+              3
+            ],
+            "edges": [
+              410.320627,
+              433.75333720000003,
+              457.1860474,
+              480.61875760000004,
+              504.05146780000007,
+              527.484178
+            ],
+            "unit": "ms"
+          },
+          "mad": 21.02723050000003,
+          "maximum": 527.484178,
+          "mean": 475.4695984,
+          "median": 475.619004,
+          "minimum": 410.320627,
+          "p95": 514.74225645,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    },
+    {
+      "commands": {
+        "legacy_template": [
+          "zig",
+          "build-exe",
+          "-lc",
+          "-O",
+          "ReleaseFast",
+          "-fstrip",
+          "{source}",
+          "-femit-bin={output}"
+        ],
+        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+      },
+      "compiler": {
+        "name": "zig",
+        "version": "recorded in legacy provenance"
+      },
+      "configuration": "optimized",
+      "configuration_display": "optimized",
+      "id": "zig-optimized",
+      "measurement_semantics": {
+        "imported": true,
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "request_phases_ms": null,
+          "seed": 38,
+          "source_bytes": 1001223,
+          "source_sloc": 30688,
+          "wall_ms": 915.376915
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "request_phases_ms": null,
+          "seed": 20,
+          "source_bytes": 990195,
+          "source_sloc": 30572,
+          "wall_ms": 854.061557
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "request_phases_ms": null,
+          "seed": 27,
+          "source_bytes": 998784,
+          "source_sloc": 30758,
+          "wall_ms": 793.11337
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "request_phases_ms": null,
+          "seed": 34,
+          "source_bytes": 1003664,
+          "source_sloc": 30928,
+          "wall_ms": 815.092291
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "request_phases_ms": null,
+          "seed": 21,
+          "source_bytes": 1002489,
+          "source_sloc": 30755,
+          "wall_ms": 761.546197
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "request_phases_ms": null,
+          "seed": 29,
+          "source_bytes": 1003463,
+          "source_sloc": 30951,
+          "wall_ms": 761.06852
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "request_phases_ms": null,
+          "seed": 35,
+          "source_bytes": 1001339,
+          "source_sloc": 30622,
+          "wall_ms": 774.601806
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "request_phases_ms": null,
+          "seed": 25,
+          "source_bytes": 1002281,
+          "source_sloc": 30756,
+          "wall_ms": 751.168038
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "request_phases_ms": null,
+          "seed": 23,
+          "source_bytes": 1003830,
+          "source_sloc": 30794,
+          "wall_ms": 785.314345
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "request_phases_ms": null,
+          "seed": 24,
+          "source_bytes": 998800,
+          "source_sloc": 30812,
+          "wall_ms": 839.267155
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "request_phases_ms": null,
+          "seed": 39,
+          "source_bytes": 1001969,
+          "source_sloc": 30740,
+          "wall_ms": 831.408505
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "request_phases_ms": null,
+          "seed": 36,
+          "source_bytes": 1003245,
+          "source_sloc": 30940,
+          "wall_ms": 865.349554
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "request_phases_ms": null,
+          "seed": 32,
+          "source_bytes": 997769,
+          "source_sloc": 30664,
+          "wall_ms": 827.732047
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "request_phases_ms": null,
+          "seed": 31,
+          "source_bytes": 1002529,
+          "source_sloc": 30820,
+          "wall_ms": 822.698479
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "request_phases_ms": null,
+          "seed": 28,
+          "source_bytes": 998742,
+          "source_sloc": 30667,
+          "wall_ms": 898.190241
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "request_phases_ms": null,
+          "seed": 22,
+          "source_bytes": 1003564,
+          "source_sloc": 30852,
+          "wall_ms": 844.313646
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "request_phases_ms": null,
+          "seed": 30,
+          "source_bytes": 1003951,
+          "source_sloc": 30944,
+          "wall_ms": 856.450046
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "request_phases_ms": null,
+          "seed": 37,
+          "source_bytes": 1000554,
+          "source_sloc": 30706,
+          "wall_ms": 864.982405
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "request_phases_ms": null,
+          "seed": 33,
+          "source_bytes": 1003410,
+          "source_sloc": 30876,
+          "wall_ms": 910.999043
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "request_phases_ms": null,
+          "seed": 26,
+          "source_bytes": 1002855,
+          "source_sloc": 30693,
+          "wall_ms": 797.92818
+        }
+      ],
+      "source": {
+        "bytes": 1001223,
+        "file_records": [
+          {
+            "bytes": 1001223,
+            "lines": 31880,
+            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-38/1000000/scaling.zig",
+            "sloc": 30688
+          }
+        ],
+        "files": 1,
+        "kilobytes": 1001.223,
+        "largest_file_bytes": 1001223,
+        "megabytes": 1.001223,
+        "physical_lines": 31880,
+        "sloc": 30688,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 1205285.7787499863,
+        "median_sloc_per_second": 37009.60296655532,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              4,
+              4,
+              5,
+              4,
+              3
+            ],
+            "edges": [
+              751.168038,
+              784.0098134,
+              816.8515888000001,
+              849.6933642,
+              882.5351396000001,
+              915.376915
+            ],
+            "unit": "ms"
+          },
+          "mad": 35.59570350000007,
+          "maximum": 915.376915,
+          "mean": 828.533117,
+          "median": 829.5702759999999,
+          "minimum": 751.168038,
+          "p95": 911.2179366,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "legacy_artifacts_validated": true
+      }
+    }
+  ],
+  "run": {
+    "git_commit": "a79d9236b09907b2a62af02a2444b0e2b91cbde8",
+    "git_dirty": true,
+    "id": "imported-single-file-1000000-comparison",
+    "recorded_at": "2026-08-16T00:03:15.919339+00:00"
+  },
+  "schema": "lanius.performance-run.v1",
+  "workload": {
+    "classification": "imported controlled cross-language compiler stress",
+    "generator": "tools/generate_compiler_stress.py",
+    "id": "imported-single-file-1000000-comparison",
+    "kind": "single_file",
+    "legacy_import": true
+  }
+}

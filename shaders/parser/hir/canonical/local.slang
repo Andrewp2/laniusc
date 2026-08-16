@@ -1,57 +1,16 @@
 import prefix_scan;
-import canonical_hir_identity;
-
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
 RWStructuredBuffer<uint> canonical_flag;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> canonical_anchor_by_raw;
 StructuredBuffer<uint> canonical_anchor_owner;
 RWStructuredBuffer<uint> canonical_local_prefix;
 RWStructuredBuffer<uint> canonical_block_sum;
 RWStructuredBuffer<uint> canonical_status;
 
 static const uint MAX_GROUPS_X = 65535u;
-static const uint HIR_FILE = 1u;
-static const uint HIR_PARAM = 4u;
-static const uint HIR_TYPE = 5u;
-static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_LITERAL_EXPR = 23u;
-static const uint HIR_CALL_EXPR = 19u;
-static const uint HIR_INDEX_EXPR = 20u;
-static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_ARRAY_EXPR = 24u;
-static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
-static const uint HIR_PATH_EXPR = 33u;
-static const uint HIR_MATCH_EXPR = 34u;
-static const uint HIR_ASSIGN_EXPR = 15u;
-static const uint STMT_ASSIGN = 5u;
 uint group_id(uint3 gid) { return gid.x + gid.y * MAX_GROUPS_X; }
 static const uint INVALID = 0xffffffffu;
-uint anchor_for(uint node) {
-    uint kind = hir_kind[node];
-    bool assignment_stmt = hir_stmt_record[node * 4u] == STMT_ASSIGN;
-    uint expr_form = hir_expr_record[node * 4u];
-    uint identity_kind = canonical_hir_identity_kind(kind, expr_form, assignment_stmt);
-    uint callee = hir_call_callee_node[node];
-    uint open = callee < gCanonical.raw_capacity ? hir_token_end[callee] : INVALID;
-    uint right = assignment_stmt
-        ? hir_stmt_record[node * 4u + 2u]
-        : hir_expr_record[node * 4u + 2u];
-    uint right_start = right < gCanonical.raw_capacity ? hir_token_pos[right] : INVALID;
-    uint operator_token = canonical_hir_operator_anchor(
-        identity_kind, expr_form, right_start, hir_token_end[node],
-        gCanonical.canonical_capacity);
-    uint value_token = hir_expr_record[node * 4u + 3u];
-    return canonical_hir_anchor(
-        identity_kind, hir_token_pos[node], hir_token_end[node], open, value_token,
-        operator_token, gCanonical.canonical_capacity);
-}
-uint encoded_winner(uint node) { return (canonical_hir_priority(hir_kind[node]) << 28u) | (node + 1u); }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -63,8 +22,9 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint flag = 0u;
     if (node < gCanonical.raw_capacity && canonical_flag[node] != 0u)
     {
-        uint anchor = anchor_for(node);
-        flag = canonical_anchor_owner[anchor] == encoded_winner(node) ? 1u : 0u;
+        uint anchor = canonical_anchor_by_raw[node];
+        uint winner = canonical_anchor_owner[anchor] & 0x0fffffffu;
+        flag = winner == node + 1u ? 1u : 0u;
         canonical_flag[node] = flag;
         if (flag != 0u)
         {

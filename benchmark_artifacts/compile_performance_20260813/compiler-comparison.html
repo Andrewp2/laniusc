@@ -1037,7 +1037,7 @@ html&gt;body{padding:0}&lt;/style&gt;
     const y=logarithmic
       ? d3.scaleLog().domain([35,25000]).range([height-margin.bottom,margin.top])
       : d3.scaleLinear().domain([0,d3.max(multi.flatMap(d=&gt;d.values.filter(value=&gt;value !== null)))*1.08]).nice().range([height-margin.bottom,margin.top]);
-    const yTicks=logarithmic ? [50,100,300,1000,3000,10000] : y.ticks(6);
+    const yTicks=logarithmic ? [100,1000,10000] : y.ticks(6);
     svg.append(&quot;rect&quot;).attr(&quot;data-chart-frame&quot;,&quot;&quot;).attr(&quot;x&quot;,margin.left).attr(&quot;y&quot;,margin.top).attr(&quot;width&quot;,width-margin.left-margin.right).attr(&quot;height&quot;,height-margin.top-margin.bottom);
     svg.append(&quot;g&quot;).attr(&quot;class&quot;,&quot;grid&quot;).attr(&quot;transform&quot;,`translate(${margin.left},0)`).call(d3.axisLeft(y).tickValues(yTicks).tickSize(-(width-margin.left-margin.right)).tickFormat(&quot;&quot;));
     svg.append(&quot;g&quot;).attr(&quot;class&quot;,&quot;axis&quot;).attr(&quot;transform&quot;,`translate(0,${height-margin.bottom})`).call(d3.axisBottom(x).tickFormat(d3.format(&quot;,&quot;)));

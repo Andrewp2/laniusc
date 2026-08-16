@@ -28,6 +28,11 @@ RWStructuredBuffer<uint> hir_match_scrutinee_node;
 RWStructuredBuffer<uint> hir_match_arm_pattern_node;
 RWStructuredBuffer<uint> hir_match_pattern_owner_arm;
 RWStructuredBuffer<uint> hir_match_arm_result_node;
+RWStructuredBuffer<uint> hir_match_arm_start;
+RWStructuredBuffer<uint> hir_match_arm_count;
+RWStructuredBuffer<uint> hir_match_arm_next;
+RWStructuredBuffer<uint> hir_match_arm_payload_start;
+RWStructuredBuffer<uint> hir_match_arm_payload_count;
 RWStructuredBuffer<uint> hir_match_arm_owner_a;
 RWStructuredBuffer<uint> hir_match_arm_link_a;
 RWStructuredBuffer<uint> hir_match_arm_rank_a;
@@ -282,6 +287,26 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_thread_id(dtid);
     if (node >= gHirMatch.n)
         return;
+
+    hir_match_scrutinee_node[node] = INVALID;
+    hir_match_arm_pattern_node[node] = INVALID;
+    hir_match_arm_result_node[node] = INVALID;
+    if (gHirMatch.retain_debug_rows != 0u)
+    {
+        hir_match_arm_start[node] = INVALID;
+        hir_match_arm_count[node] = 0u;
+        hir_match_arm_next[node] = INVALID;
+        hir_match_arm_payload_start[node] = INVALID;
+        hir_match_arm_payload_count[node] = 0u;
+    }
+    else if (node == 0u)
+    {
+        hir_match_arm_start[0u] = INVALID;
+        hir_match_arm_count[0u] = 0u;
+        hir_match_arm_next[0u] = INVALID;
+        hir_match_arm_payload_start[0u] = INVALID;
+        hir_match_arm_payload_count[0u] = 0u;
+    }
 
     hir_match_arm_owner_a[node] = INVALID;
     hir_match_arm_link_a[node] = INVALID;

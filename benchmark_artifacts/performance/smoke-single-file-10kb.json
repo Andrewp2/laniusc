@@ -1,0 +1,5312 @@
+{
+  "machine": {
+    "cpu": "x86_64",
+    "gpu": "NVIDIA GeForce RTX 3090, 580.173.02, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39"
+  },
+  "measurements": [
+    {
+      "commands": {
+        "compile": {
+          "argv": [
+            "/home/andrew-peterson/code/laniusc/target/release/laniusc",
+            "--emit",
+            "x86_64",
+            "--stdlib-root",
+            "/home/andrew-peterson/code/laniusc/stdlib",
+            "-o",
+            "/home/andrew-peterson/code/laniusc/target/lanius-perf-artifacts/single-file-10000-seed-19-x86_64/process_cold.bin",
+            "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/single-file-10000-seed-19-x86_64/10000/scaling.lani"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "/home/andrew-peterson/code/laniusc/target/release/laniusc --emit x86_64 --stdlib-root /home/andrew-peterson/code/laniusc/stdlib -o /home/andrew-peterson/code/laniusc/target/lanius-perf-artifacts/single-file-10000-seed-19-x86_64/process_cold.bin /home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/single-file-10000-seed-19-x86_64/10000/scaling.lani",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "lanius",
+        "version": "laniusc 0.1.0\nlanguage-edition: unstable-alpha\nedition-policy: no stable production language edition yet; accepts the current alpha slice only\ntargets: x86_64, wasm\ndefault-target: x86_64\ntarget-triples: x86_64-unknown-linux-gnu, wasm32-unknown-unknown\nx86_64: bounded HIR main-return, same-module resolver-backed scalar constants, and direct scalar helper-call source-pack slices; unsupported source shapes are reported as unsupported-feature diagnostics\nformatter: unstable-alpha lexical full-document formatter\nrelease-channel: source-worktree\ndistribution-status: not-production-release; no stable install artifact or package manager channel\nlsp-capabilities-schema-name: laniusc.lsp.capabilities\nlsp-capabilities-schema: 15\nlsp-experimental-schema-name: laniusc.lsp.experimental\nlsp-experimental-schema: 13\nlsp-error-data-schema-name: laniusc.lsp.error-data\nlsp-error-data-schema: 2\nslangc: 2026.2\nwgpu: 29.0.3\nbuild-profile: release\nshader-artifact-digest: 0308022c31a901ac\nshader-artifact-count: 585\nshader-artifact-max-bytes: 271864\nshader-artifact-max-name: type_checker/methods/07_resolve_table\nshader-artifact-size-guard: enforced\nshader-artifact-max-spv-bytes: 524288\nslangc-version-timeout-ms: 2000\nshader-compile-timeout-ms: 120000"
+      },
+      "configuration": "process_cold",
+      "daemon_ready_samples": [],
+      "id": "lanius-x86_64-process_cold",
+      "measurement_semantics": {
+        "compiled_unit_results_reused": false,
+        "daemon_started_before_timer": false,
+        "driver_shader_cache": "ambient machine state",
+        "gpu_workspace_preallocated": false,
+        "process": "new compiler process for every measured sample"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "wall_ms": 894.413373
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "wall_ms": 801.991611
+        }
+      ],
+      "source": {
+        "bytes": 10000,
+        "file_records": [
+          {
+            "bytes": 10000,
+            "lines": 324,
+            "path": "target/lanius-perf-workloads/single-file-10000-seed-19-x86_64/10000/scaling.lani",
+            "sloc": 306
+          }
+        ],
+        "files": 1,
+        "kilobytes": 10.0,
+        "largest_file_bytes": 10000,
+        "megabytes": 0.01,
+        "physical_lines": 324,
+        "sloc": 306,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 11824.735485944562,
+        "median_sloc_per_second": 361.8369058699036,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              1
+            ],
+            "edges": [
+              801.991611,
+              848.202492,
+              894.413373
+            ],
+            "unit": "ms"
+          },
+          "mad": 46.21088099999997,
+          "maximum": 894.413373,
+          "mean": 848.202492,
+          "median": 848.202492,
+          "minimum": 801.991611,
+          "p95": 889.7922849,
+          "samples": 2
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifact_bytes": 27881,
+        "compile_exit_status": 0
+      }
+    },
+    {
+      "commands": {
+        "compile_request": {
+          "command": "compile",
+          "emit": "x86_64",
+          "id": "measure-N",
+          "input": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/single-file-10000-seed-19-x86_64/10000/scaling.lani",
+          "output": "/home/andrew-peterson/code/laniusc/target/lanius-perf-artifacts/single-file-10000-seed-19-x86_64/daemon_cold_workspace.bin"
+        },
+        "daemon_start": {
+          "argv": [
+            "/home/andrew-peterson/code/laniusc/target/release/laniusc",
+            "daemon",
+            "--stdio",
+            "--backend",
+            "x86_64",
+            "--stdlib-root",
+            "/home/andrew-peterson/code/laniusc/stdlib",
+            "--idle-buffer-timeout-ms",
+            "0"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "/home/andrew-peterson/code/laniusc/target/release/laniusc daemon --stdio --backend x86_64 --stdlib-root /home/andrew-peterson/code/laniusc/stdlib --idle-buffer-timeout-ms 0",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "lanius",
+        "version": "laniusc 0.1.0\nlanguage-edition: unstable-alpha\nedition-policy: no stable production language edition yet; accepts the current alpha slice only\ntargets: x86_64, wasm\ndefault-target: x86_64\ntarget-triples: x86_64-unknown-linux-gnu, wasm32-unknown-unknown\nx86_64: bounded HIR main-return, same-module resolver-backed scalar constants, and direct scalar helper-call source-pack slices; unsupported source shapes are reported as unsupported-feature diagnostics\nformatter: unstable-alpha lexical full-document formatter\nrelease-channel: source-worktree\ndistribution-status: not-production-release; no stable install artifact or package manager channel\nlsp-capabilities-schema-name: laniusc.lsp.capabilities\nlsp-capabilities-schema: 15\nlsp-experimental-schema-name: laniusc.lsp.experimental\nlsp-experimental-schema: 13\nlsp-error-data-schema-name: laniusc.lsp.error-data\nlsp-error-data-schema: 2\nslangc: 2026.2\nwgpu: 29.0.3\nbuild-profile: release\nshader-artifact-digest: 0308022c31a901ac\nshader-artifact-count: 585\nshader-artifact-max-bytes: 271864\nshader-artifact-max-name: type_checker/methods/07_resolve_table\nshader-artifact-size-guard: enforced\nshader-artifact-max-spv-bytes: 524288\nslangc-version-timeout-ms: 2000\nshader-compile-timeout-ms: 120000"
+      },
+      "configuration": "daemon_cold_workspace",
+      "daemon_ready_samples": [
+        {
+          "compute_pipelines_created": 571,
+          "event": "ready",
+          "idle_buffer_timeout_ms": null,
+          "pid": 902266,
+          "recorded_compute_passes": 0,
+          "resident_set_bytes": 360611840,
+          "schema": "lanius.compiler-daemon.v1",
+          "startup_ms": 585.0397280000001,
+          "targets": [
+            "x86_64"
+          ],
+          "tracked_gpu_buffers": {
+            "allocations": 3,
+            "bytes": 52,
+            "peak_allocations": 3,
+            "peak_bytes": 52,
+            "phase_snapshots": [],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 0,
+            "user_owned_wgpu_buffers": 3
+          },
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 3,
+              "released_from_user": 0
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "compute_pipelines": {
+              "kept_from_user": 571,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          }
+        },
+        {
+          "compute_pipelines_created": 571,
+          "event": "ready",
+          "idle_buffer_timeout_ms": null,
+          "pid": 902285,
+          "recorded_compute_passes": 0,
+          "resident_set_bytes": 360755200,
+          "schema": "lanius.compiler-daemon.v1",
+          "startup_ms": 572.607147,
+          "targets": [
+            "x86_64"
+          ],
+          "tracked_gpu_buffers": {
+            "allocations": 3,
+            "bytes": 52,
+            "peak_allocations": 3,
+            "peak_bytes": 52,
+            "phase_snapshots": [],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 0,
+            "user_owned_wgpu_buffers": 3
+          },
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 3,
+              "released_from_user": 0
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "compute_pipelines": {
+              "kept_from_user": 571,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          }
+        }
+      ],
+      "id": "lanius-x86_64-daemon_cold_workspace",
+      "measurement_semantics": {
+        "compiled_unit_results_reused": false,
+        "daemon_started_before_timer": true,
+        "driver_shader_cache": "ambient machine state",
+        "gpu_workspace_preallocated": false,
+        "process": "fresh ready daemon for every measured sample"
+      },
+      "samples": [
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 105.47693,
+          "gpu_memory": {
+            "allocations": 393,
+            "bytes": 18512914,
+            "peak_allocations": 393,
+            "peak_bytes": 18512914,
+            "phase_snapshots": [
+              {
+                "allocations": 315,
+                "bytes": 11955196,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 398
+          },
+          "index": 0,
+          "recorded_compute_passes": 787,
+          "request_phases_ms": {
+            "compile": 105.47693,
+            "load": 0.153194,
+            "write": 0.14066499999999998
+          },
+          "resources_created": {
+            "bind_groups": 695,
+            "buffers": 677,
+            "compute_pipelines": 0
+          },
+          "wall_ms": 106.104267,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 569,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 398,
+              "released_from_user": 0
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 571,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "cold_or_grown_workspace"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 107.442819,
+          "gpu_memory": {
+            "allocations": 393,
+            "bytes": 18512914,
+            "peak_allocations": 393,
+            "peak_bytes": 18512914,
+            "phase_snapshots": [
+              {
+                "allocations": 315,
+                "bytes": 11955196,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 398
+          },
+          "index": 1,
+          "recorded_compute_passes": 787,
+          "request_phases_ms": {
+            "compile": 107.442819,
+            "load": 0.15482500000000002,
+            "write": 0.14910400000000001
+          },
+          "resources_created": {
+            "bind_groups": 695,
+            "buffers": 677,
+            "compute_pipelines": 0
+          },
+          "wall_ms": 108.097595,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 569,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 398,
+              "released_from_user": 0
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 571,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "cold_or_grown_workspace"
+        }
+      ],
+      "source": {
+        "bytes": 10000,
+        "file_records": [
+          {
+            "bytes": 10000,
+            "lines": 324,
+            "path": "target/lanius-perf-workloads/single-file-10000-seed-19-x86_64/10000/scaling.lani",
+            "sloc": 306
+          }
+        ],
+        "files": 1,
+        "kilobytes": 10.0,
+        "largest_file_bytes": 10000,
+        "megabytes": 0.01,
+        "physical_lines": 324,
+        "sloc": 306,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              1
+            ],
+            "edges": [
+              105.47693,
+              106.4598745,
+              107.442819
+            ],
+            "unit": "ms"
+          },
+          "mad": 0.9829445000000021,
+          "maximum": 107.442819,
+          "mean": 106.4598745,
+          "median": 106.4598745,
+          "minimum": 105.47693,
+          "p95": 107.34452455,
+          "samples": 2
+        },
+        "median_bytes_per_second": 93377.95636303863,
+        "median_sloc_per_second": 2857.365464708982,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              1
+            ],
+            "edges": [
+              106.104267,
+              107.100931,
+              108.097595
+            ],
+            "unit": "ms"
+          },
+          "mad": 0.9966640000000027,
+          "maximum": 108.097595,
+          "mean": 107.100931,
+          "median": 107.100931,
+          "minimum": 106.104267,
+          "p95": 107.9979286,
+          "samples": 2
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifact_bytes": 27881,
+        "compile_exit_status": 0
+      }
+    },
+    {
+      "commands": {
+        "before_each_sample": {
+          "command": "clear-compiled-unit-cache"
+        },
+        "compile_request": {
+          "command": "compile",
+          "emit": "x86_64",
+          "id": "measure-N",
+          "input": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/single-file-10000-seed-19-x86_64/10000/scaling.lani",
+          "output": "/home/andrew-peterson/code/laniusc/target/lanius-perf-artifacts/single-file-10000-seed-19-x86_64/daemon_warm_workspace.bin"
+        },
+        "daemon_start": {
+          "argv": [
+            "/home/andrew-peterson/code/laniusc/target/release/laniusc",
+            "daemon",
+            "--stdio",
+            "--backend",
+            "x86_64",
+            "--stdlib-root",
+            "/home/andrew-peterson/code/laniusc/stdlib",
+            "--idle-buffer-timeout-ms",
+            "0"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "/home/andrew-peterson/code/laniusc/target/release/laniusc daemon --stdio --backend x86_64 --stdlib-root /home/andrew-peterson/code/laniusc/stdlib --idle-buffer-timeout-ms 0",
+          "environment_overrides": {}
+        },
+        "workspace_primer_repeated_until_stable": 3,
+        "workspace_primer_request": {
+          "command": "compile",
+          "emit": "x86_64",
+          "id": "workspace-primer",
+          "input": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/single-file-10000-seed-19-x86_64/10000/scaling.lani",
+          "output": "/home/andrew-peterson/code/laniusc/target/lanius-perf-artifacts/single-file-10000-seed-19-x86_64/daemon_warm_workspace.bin"
+        }
+      },
+      "compiler": {
+        "name": "lanius",
+        "version": "laniusc 0.1.0\nlanguage-edition: unstable-alpha\nedition-policy: no stable production language edition yet; accepts the current alpha slice only\ntargets: x86_64, wasm\ndefault-target: x86_64\ntarget-triples: x86_64-unknown-linux-gnu, wasm32-unknown-unknown\nx86_64: bounded HIR main-return, same-module resolver-backed scalar constants, and direct scalar helper-call source-pack slices; unsupported source shapes are reported as unsupported-feature diagnostics\nformatter: unstable-alpha lexical full-document formatter\nrelease-channel: source-worktree\ndistribution-status: not-production-release; no stable install artifact or package manager channel\nlsp-capabilities-schema-name: laniusc.lsp.capabilities\nlsp-capabilities-schema: 15\nlsp-experimental-schema-name: laniusc.lsp.experimental\nlsp-experimental-schema: 13\nlsp-error-data-schema-name: laniusc.lsp.error-data\nlsp-error-data-schema: 2\nslangc: 2026.2\nwgpu: 29.0.3\nbuild-profile: release\nshader-artifact-digest: 0308022c31a901ac\nshader-artifact-count: 585\nshader-artifact-max-bytes: 271864\nshader-artifact-max-name: type_checker/methods/07_resolve_table\nshader-artifact-size-guard: enforced\nshader-artifact-max-spv-bytes: 524288\nslangc-version-timeout-ms: 2000\nshader-compile-timeout-ms: 120000"
+      },
+      "configuration": "daemon_warm_workspace",
+      "daemon_ready_samples": [
+        {
+          "compute_pipelines_created": 571,
+          "event": "ready",
+          "idle_buffer_timeout_ms": null,
+          "pid": 902299,
+          "recorded_compute_passes": 0,
+          "resident_set_bytes": 360640512,
+          "schema": "lanius.compiler-daemon.v1",
+          "startup_ms": 586.955468,
+          "targets": [
+            "x86_64"
+          ],
+          "tracked_gpu_buffers": {
+            "allocations": 3,
+            "bytes": 52,
+            "peak_allocations": 3,
+            "peak_bytes": 52,
+            "phase_snapshots": [],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 0,
+            "user_owned_wgpu_buffers": 3
+          },
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 3,
+              "released_from_user": 0
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "compute_pipelines": {
+              "kept_from_user": 571,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          }
+        }
+      ],
+      "id": "lanius-x86_64-daemon_warm_workspace",
+      "measurement_semantics": {
+        "compiled_unit_results_reused": false,
+        "daemon_started_before_timer": true,
+        "driver_shader_cache": "ambient machine state",
+        "gpu_workspace_preallocated": true,
+        "process": "one daemon for primer and every measured sample",
+        "source_manifest_metadata_may_be_resident": true
+      },
+      "profile": {
+        "excluded_from_timing_statistics": true,
+        "execution_graph": {
+          "edges": [
+            {
+              "source": "0370928cb405be37",
+              "target": "9981e32fb49c5968",
+              "transitions": 1
+            },
+            {
+              "source": "073ae81b68fe4562",
+              "target": "afe597fc736c7165",
+              "transitions": 1
+            },
+            {
+              "source": "114b7d52fb8f5ec6",
+              "target": "f46e690e57a89155",
+              "transitions": 1
+            },
+            {
+              "source": "11a16badf34c2de6",
+              "target": "f2ee9bea59451e07",
+              "transitions": 1
+            },
+            {
+              "source": "1291f84e5c8ca6c8",
+              "target": "cdacd055a7c56527",
+              "transitions": 1
+            },
+            {
+              "source": "19a40ecae7763765",
+              "target": "36b0a95e3e7d92a6",
+              "transitions": 1
+            },
+            {
+              "source": "1add0c696b898822",
+              "target": "d5a0205fd4bad616",
+              "transitions": 1
+            },
+            {
+              "source": "1d1afebc63624c2e",
+              "target": "3859cf455af13a0c",
+              "transitions": 1
+            },
+            {
+              "source": "1f23fb08741e2401",
+              "target": "6dac5266d159d4b4",
+              "transitions": 1
+            },
+            {
+              "source": "20638a94c47e75bb",
+              "target": "6de1902c9f826e13",
+              "transitions": 1
+            },
+            {
+              "source": "21b8ab984040d0d5",
+              "target": "3fd206b89ef23c5c",
+              "transitions": 1
+            },
+            {
+              "source": "2499d00048f37e1a",
+              "target": "ee9aab502a182506",
+              "transitions": 1
+            },
+            {
+              "source": "2701666675272ec0",
+              "target": "971f55ab223fb5d6",
+              "transitions": 1
+            },
+            {
+              "source": "276297649a5806ed",
+              "target": "5a9f3dc313f127fe",
+              "transitions": 1
+            },
+            {
+              "source": "2aecfc6dc52640ea",
+              "target": "9c8b25b935b5bbe2",
+              "transitions": 1
+            },
+            {
+              "source": "2d1b2250095a9832",
+              "target": "19a40ecae7763765",
+              "transitions": 1
+            },
+            {
+              "source": "30c22c28419a17a5",
+              "target": "8848403126944361",
+              "transitions": 1
+            },
+            {
+              "source": "31415ce96234a660",
+              "target": "a3187c9ff175c81f",
+              "transitions": 1
+            },
+            {
+              "source": "343c1cccc6d7c99f",
+              "target": "ead7ab96ac3726ce",
+              "transitions": 1
+            },
+            {
+              "source": "3571826821f7ebd3",
+              "target": "7c012a8cdcd59220",
+              "transitions": 1
+            },
+            {
+              "source": "36b0a95e3e7d92a6",
+              "target": "5942fd6b0f7d22b0",
+              "transitions": 1
+            },
+            {
+              "source": "3859cf455af13a0c",
+              "target": "21b8ab984040d0d5",
+              "transitions": 1
+            },
+            {
+              "source": "3efc5d9b6854cf08",
+              "target": "b99f3eb3f9d9fc2d",
+              "transitions": 1
+            },
+            {
+              "source": "3fd206b89ef23c5c",
+              "target": "343c1cccc6d7c99f",
+              "transitions": 1
+            },
+            {
+              "source": "4382e79e14b54b1f",
+              "target": "a3fa9b4dbc0c7c57",
+              "transitions": 1
+            },
+            {
+              "source": "45b28c71fa00fb42",
+              "target": "bbf96d505e321642",
+              "transitions": 1
+            },
+            {
+              "source": "4a4e733bb105206c",
+              "target": "3571826821f7ebd3",
+              "transitions": 1
+            },
+            {
+              "source": "4dda66e5174a4f08",
+              "target": "93a8aecf425f7344",
+              "transitions": 1
+            },
+            {
+              "source": "4ecabe2731d42fc8",
+              "target": "1add0c696b898822",
+              "transitions": 1
+            },
+            {
+              "source": "4f913cdc977d4fd5",
+              "target": "5fb47a6350453249",
+              "transitions": 1
+            },
+            {
+              "source": "53fddaa84959d458",
+              "target": "2aecfc6dc52640ea",
+              "transitions": 1
+            },
+            {
+              "source": "54d3e9cafed0fec9",
+              "target": "1f23fb08741e2401",
+              "transitions": 1
+            },
+            {
+              "source": "55871b25a1afae06",
+              "target": "9092afff08037e5c",
+              "transitions": 1
+            },
+            {
+              "source": "5942fd6b0f7d22b0",
+              "target": "baa58ce61b15d87a",
+              "transitions": 1
+            },
+            {
+              "source": "5a0af6f4a5ac90c6",
+              "target": "1291f84e5c8ca6c8",
+              "transitions": 1
+            },
+            {
+              "source": "5a1ce9cf4a3f7486",
+              "target": "a696ea2c9bf00a27",
+              "transitions": 1
+            },
+            {
+              "source": "5a9f3dc313f127fe",
+              "target": "d84701b419759b28",
+              "transitions": 1
+            },
+            {
+              "source": "5f3e79bbdf482886",
+              "target": "d90847ef030fd443",
+              "transitions": 1
+            },
+            {
+              "source": "5fb47a6350453249",
+              "target": "325eb26b70ce158c",
+              "transitions": 1
+            },
+            {
+              "source": "60ee0aa5be96eabc",
+              "target": "ad8c18474b76a816",
+              "transitions": 1
+            },
+            {
+              "source": "643f0878e5bd524c",
+              "target": "45b28c71fa00fb42",
+              "transitions": 1
+            },
+            {
+              "source": "65171d241e85209e",
+              "target": "8388345c8a463ab6",
+              "transitions": 1
+            },
+            {
+              "source": "67ee7b210e6d76bd",
+              "target": "4f913cdc977d4fd5",
+              "transitions": 1
+            },
+            {
+              "source": "687e99df0959578f",
+              "target": "ac24327858a90a30",
+              "transitions": 1
+            },
+            {
+              "source": "69a62c6e0ae30886",
+              "target": "54d3e9cafed0fec9",
+              "transitions": 1
+            },
+            {
+              "source": "6b87d9c8cc2f3c7d",
+              "target": "3efc5d9b6854cf08",
+              "transitions": 1
+            },
+            {
+              "source": "6de1902c9f826e13",
+              "target": "67ee7b210e6d76bd",
+              "transitions": 1
+            },
+            {
+              "source": "6dfd0b1f53895cb7",
+              "target": "f4ddec389f7a18b6",
+              "transitions": 1
+            },
+            {
+              "source": "6f0997731fb9619f",
+              "target": "4a4e733bb105206c",
+              "transitions": 1
+            },
+            {
+              "source": "70625abfa8646384",
+              "target": "7ce256b54f49f64d",
+              "transitions": 1
+            },
+            {
+              "source": "796ac5eb7e61f5e8",
+              "target": "114b7d52fb8f5ec6",
+              "transitions": 1
+            },
+            {
+              "source": "7a3cf43039ff0d97",
+              "target": "2499d00048f37e1a",
+              "transitions": 1
+            },
+            {
+              "source": "7c012a8cdcd59220",
+              "target": "5a0af6f4a5ac90c6",
+              "transitions": 1
+            },
+            {
+              "source": "7c02e420b26b1087",
+              "target": "2701666675272ec0",
+              "transitions": 1
+            },
+            {
+              "source": "7ca95203fe34467b",
+              "target": "2d1b2250095a9832",
+              "transitions": 1
+            },
+            {
+              "source": "7ce256b54f49f64d",
+              "target": "dcad1cf77a5a9623",
+              "transitions": 1
+            },
+            {
+              "source": "8388345c8a463ab6",
+              "target": "70625abfa8646384",
+              "transitions": 1
+            },
+            {
+              "source": "8848403126944361",
+              "target": "7c6acec103c9f7b7",
+              "transitions": 1
+            },
+            {
+              "source": "8f0b3191eb14c06a",
+              "target": "c999f143b1ab3d1f",
+              "transitions": 1
+            },
+            {
+              "source": "9092afff08037e5c",
+              "target": "5f3e79bbdf482886",
+              "transitions": 1
+            },
+            {
+              "source": "90ddb46a81df76dc",
+              "target": "7a3cf43039ff0d97",
+              "transitions": 1
+            },
+            {
+              "source": "91d6a930ddaa3859",
+              "target": "7ca95203fe34467b",
+              "transitions": 1
+            },
+            {
+              "source": "93a8aecf425f7344",
+              "target": "cb244ddf6fe2bb3b",
+              "transitions": 1
+            },
+            {
+              "source": "94695b5a7527a1bb",
+              "target": "276297649a5806ed",
+              "transitions": 1
+            },
+            {
+              "source": "95fd5123ee41fff9",
+              "target": "dab51c6781874e50",
+              "transitions": 1
+            },
+            {
+              "source": "971f55ab223fb5d6",
+              "target": "cd7d4dc1549b7d48",
+              "transitions": 1
+            },
+            {
+              "source": "9981e32fb49c5968",
+              "target": "90ddb46a81df76dc",
+              "transitions": 1
+            },
+            {
+              "source": "9c8b25b935b5bbe2",
+              "target": "43e0731e7dc9b038",
+              "transitions": 1
+            },
+            {
+              "source": "a3187c9ff175c81f",
+              "target": "ae3d1a88e5b98455",
+              "transitions": 1
+            },
+            {
+              "source": "a3fa9b4dbc0c7c57",
+              "target": "643f0878e5bd524c",
+              "transitions": 1
+            },
+            {
+              "source": "a50ab7cad89e8bdf",
+              "target": "69a62c6e0ae30886",
+              "transitions": 1
+            },
+            {
+              "source": "a696ea2c9bf00a27",
+              "target": "55871b25a1afae06",
+              "transitions": 1
+            },
+            {
+              "source": "a7ada39b0f21651a",
+              "target": "e99fccf6b210be77",
+              "transitions": 1
+            },
+            {
+              "source": "ac24327858a90a30",
+              "target": "7c02e420b26b1087",
+              "transitions": 1
+            },
+            {
+              "source": "ad8c18474b76a816",
+              "target": "ae23ce8b55e722b8",
+              "transitions": 1
+            },
+            {
+              "source": "ae23ce8b55e722b8",
+              "target": "dcf4cd209bfc923e",
+              "transitions": 1
+            },
+            {
+              "source": "ae3d1a88e5b98455",
+              "target": "1d1afebc63624c2e",
+              "transitions": 1
+            },
+            {
+              "source": "af0acc69c097d221",
+              "target": "20638a94c47e75bb",
+              "transitions": 1
+            },
+            {
+              "source": "afe597fc736c7165",
+              "target": "d2f118e6a481eab2",
+              "transitions": 1
+            },
+            {
+              "source": "b91f651589e51bd7",
+              "target": "eea252c666c274ee",
+              "transitions": 1
+            },
+            {
+              "source": "b99f3eb3f9d9fc2d",
+              "target": "5a1ce9cf4a3f7486",
+              "transitions": 1
+            },
+            {
+              "source": "b9bfdd85f54481f1",
+              "target": "073ae81b68fe4562",
+              "transitions": 1
+            },
+            {
+              "source": "baa58ce61b15d87a",
+              "target": "4382e79e14b54b1f",
+              "transitions": 1
+            },
+            {
+              "source": "bbf96d505e321642",
+              "target": "6dfd0b1f53895cb7",
+              "transitions": 1
+            },
+            {
+              "source": "bd4e1dced80be2da",
+              "target": "94695b5a7527a1bb",
+              "transitions": 1
+            },
+            {
+              "source": "c36a8e0c86358ec6",
+              "target": "6f0997731fb9619f",
+              "transitions": 1
+            },
+            {
+              "source": "c50b762c631b5b3f",
+              "target": "11a16badf34c2de6",
+              "transitions": 1
+            },
+            {
+              "source": "c999f143b1ab3d1f",
+              "target": "796ac5eb7e61f5e8",
+              "transitions": 1
+            },
+            {
+              "source": "cd7d4dc1549b7d48",
+              "target": "53fddaa84959d458",
+              "transitions": 1
+            },
+            {
+              "source": "cdacd055a7c56527",
+              "target": "faebd816c65d583f",
+              "transitions": 1
+            },
+            {
+              "source": "d2f118e6a481eab2",
+              "target": "0370928cb405be37",
+              "transitions": 1
+            },
+            {
+              "source": "d5a0205fd4bad616",
+              "target": "c36a8e0c86358ec6",
+              "transitions": 1
+            },
+            {
+              "source": "d84701b419759b28",
+              "target": "91d6a930ddaa3859",
+              "transitions": 1
+            },
+            {
+              "source": "d90847ef030fd443",
+              "target": "e51e39ace360dce9",
+              "transitions": 1
+            },
+            {
+              "source": "dab51c6781874e50",
+              "target": "b91f651589e51bd7",
+              "transitions": 1
+            },
+            {
+              "source": "dcad1cf77a5a9623",
+              "target": "c50b762c631b5b3f",
+              "transitions": 1
+            },
+            {
+              "source": "dcf4cd209bfc923e",
+              "target": "b9bfdd85f54481f1",
+              "transitions": 1
+            },
+            {
+              "source": "e2a8aa36c8eee09f",
+              "target": "95fd5123ee41fff9",
+              "transitions": 1
+            },
+            {
+              "source": "e51e39ace360dce9",
+              "target": "30c22c28419a17a5",
+              "transitions": 1
+            },
+            {
+              "source": "e99fccf6b210be77",
+              "target": "8f0b3191eb14c06a",
+              "transitions": 1
+            },
+            {
+              "source": "ead7ab96ac3726ce",
+              "target": "60ee0aa5be96eabc",
+              "transitions": 1
+            },
+            {
+              "source": "ee9aab502a182506",
+              "target": "bd4e1dced80be2da",
+              "transitions": 1
+            },
+            {
+              "source": "eea252c666c274ee",
+              "target": "687e99df0959578f",
+              "transitions": 1
+            },
+            {
+              "source": "f2ee9bea59451e07",
+              "target": "31415ce96234a660",
+              "transitions": 1
+            },
+            {
+              "source": "f46e690e57a89155",
+              "target": "4ecabe2731d42fc8",
+              "transitions": 1
+            },
+            {
+              "source": "f4ddec389f7a18b6",
+              "target": "e2a8aa36c8eee09f",
+              "transitions": 1
+            },
+            {
+              "source": "faebd816c65d583f",
+              "target": "65171d241e85209e",
+              "transitions": 1
+            }
+          ],
+          "nodes": [
+            {
+              "id": "43e0731e7dc9b038",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "compile.after_count.recorded",
+              "total_duration_ms": 1.092608
+            },
+            {
+              "id": "e2a8aa36c8eee09f",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.array_literal_return_refs.done",
+              "total_duration_ms": 0.018432
+            },
+            {
+              "id": "f4ddec389f7a18b6",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.array_return_refs.done",
+              "total_duration_ms": 0.062464
+            },
+            {
+              "id": "b9bfdd85f54481f1",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.calls.done",
+              "total_duration_ms": 0.195584
+            },
+            {
+              "id": "cd7d4dc1549b7d48",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.calls_backend_targets.done",
+              "total_duration_ms": 0.011264
+            },
+            {
+              "id": "643f0878e5bd524c",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.calls_infer_array_generics.done",
+              "total_duration_ms": 0.81408
+            },
+            {
+              "id": "45b28c71fa00fb42",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.calls_mark_array_args.done",
+              "total_duration_ms": 0.017408
+            },
+            {
+              "id": "baa58ce61b15d87a",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.calls_resolve.done",
+              "total_duration_ms": 0.022528
+            },
+            {
+              "id": "4382e79e14b54b1f",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.calls_row_args.done",
+              "total_duration_ms": 0.044032
+            },
+            {
+              "id": "bbf96d505e321642",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.calls_validate_array_results.done",
+              "total_duration_ms": 0.014336
+            },
+            {
+              "id": "971f55ab223fb5d6",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.compact_conditions.done",
+              "total_duration_ms": 0.002048
+            },
+            {
+              "id": "9c8b25b935b5bbe2",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.done",
+              "total_duration_ms": 0.007168
+            },
+            {
+              "id": "53fddaa84959d458",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.expression_types.done",
+              "total_duration_ms": 0.237568
+            },
+            {
+              "id": "dcf4cd209bfc923e",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.fn_context.done",
+              "total_duration_ms": 0.043008
+            },
+            {
+              "id": "a7ada39b0f21651a",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.frontend_boundary.done",
+              "total_duration_ms": 0.068608
+            },
+            {
+              "id": "e99fccf6b210be77",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.if_depth.done",
+              "total_duration_ms": 0.038912
+            },
+            {
+              "id": "c999f143b1ab3d1f",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.language_decls.done",
+              "total_duration_ms": 0.001024
+            },
+            {
+              "id": "276297649a5806ed",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.member_receivers.done",
+              "total_duration_ms": 0.017408
+            },
+            {
+              "id": "d84701b419759b28",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.member_results.done",
+              "total_duration_ms": 0.021504
+            },
+            {
+              "id": "91d6a930ddaa3859",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.member_substitute.done",
+              "total_duration_ms": 0.01536
+            },
+            {
+              "id": "94695b5a7527a1bb",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.methods.done",
+              "total_duration_ms": 0.048128
+            },
+            {
+              "id": "a3fa9b4dbc0c7c57",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.methods_call_returns.done",
+              "total_duration_ms": 0.423936
+            },
+            {
+              "id": "6dfd0b1f53895cb7",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.methods_resolve.done",
+              "total_duration_ms": 0.084992
+            },
+            {
+              "id": "7c012a8cdcd59220",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.module_paths.done",
+              "total_duration_ms": 0.047104
+            },
+            {
+              "id": "c36a8e0c86358ec6",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.decl_namespace_keys.done",
+              "total_duration_ms": 0.185344
+            },
+            {
+              "id": "6f0997731fb9619f",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.import_visibility_scatter.done",
+              "total_duration_ms": 0.078848
+            },
+            {
+              "id": "4a4e733bb105206c",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.import_visible_tables.done",
+              "total_duration_ms": 0.050176000000000005
+            },
+            {
+              "id": "796ac5eb7e61f5e8",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.mark_records.done",
+              "total_duration_ms": 0.024576
+            },
+            {
+              "id": "f46e690e57a89155",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.module_lookup.done",
+              "total_duration_ms": 0.075776
+            },
+            {
+              "id": "4ecabe2731d42fc8",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.module_maps.done",
+              "total_duration_ms": 0.173056
+            },
+            {
+              "id": "114b7d52fb8f5ec6",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.paths.done",
+              "total_duration_ms": 0.181248
+            },
+            {
+              "id": "f2ee9bea59451e07",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.project_type_paths.after_aliases.done",
+              "total_duration_ms": 0.014336
+            },
+            {
+              "id": "3859cf455af13a0c",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.project_type_paths.after_projected_aliases.done",
+              "total_duration_ms": 0.014336
+            },
+            {
+              "id": "1add0c696b898822",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.record_scans_and_import_decl_records.done",
+              "total_duration_ms": 0.048128
+            },
+            {
+              "id": "3571826821f7ebd3",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.resolve_paths.done",
+              "total_duration_ms": 0.08704
+            },
+            {
+              "id": "d5a0205fd4bad616",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.modules.sort_decl_keys.done",
+              "total_duration_ms": 0.078848
+            },
+            {
+              "id": "8f0b3191eb14c06a",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.names.done",
+              "total_duration_ms": 0.115712
+            },
+            {
+              "id": "dab51c6781874e50",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.predicates_bound_args.done",
+              "total_duration_ms": 0.079872
+            },
+            {
+              "id": "eea252c666c274ee",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.predicates_collect.done",
+              "total_duration_ms": 0.036864
+            },
+            {
+              "id": "ac24327858a90a30",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.predicates_indices.done",
+              "total_duration_ms": 0.002048
+            },
+            {
+              "id": "b91f651589e51bd7",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.predicates_method_contracts.done",
+              "total_duration_ms": 0.013312
+            },
+            {
+              "id": "687e99df0959578f",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.predicates_method_validation_rows.done",
+              "total_duration_ms": 0.048128
+            },
+            {
+              "id": "7c02e420b26b1087",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.predicates_obligations.done",
+              "total_duration_ms": 0.078848
+            },
+            {
+              "id": "2701666675272ec0",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.returns.done",
+              "total_duration_ms": 0.037888
+            },
+            {
+              "id": "5942fd6b0f7d22b0",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.scope.done",
+              "total_duration_ms": 0.017408
+            },
+            {
+              "id": "2aecfc6dc52640ea",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.semantic_artifact.done",
+              "total_duration_ms": 0.028672
+            },
+            {
+              "id": "7ca95203fe34467b",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.struct_init_clear.done",
+              "total_duration_ms": 0.01024
+            },
+            {
+              "id": "2d1b2250095a9832",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.struct_init_contexts.done",
+              "total_duration_ms": 0.018432
+            },
+            {
+              "id": "19a40ecae7763765",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.struct_init_fields.done",
+              "total_duration_ms": 0.02048
+            },
+            {
+              "id": "36b0a95e3e7d92a6",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instance_fields.done",
+              "total_duration_ms": 0.016384
+            },
+            {
+              "id": "5a0af6f4a5ac90c6",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.clear.done",
+              "total_duration_ms": 0.011264
+            },
+            {
+              "id": "faebd816c65d583f",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.decl_generic_params.done",
+              "total_duration_ms": 0.013312
+            },
+            {
+              "id": "21b8ab984040d0d5",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.done",
+              "total_duration_ms": 0.002048
+            },
+            {
+              "id": "8388345c8a463ab6",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.generic_param_slots.compact.done",
+              "total_duration_ms": 0.001024
+            },
+            {
+              "id": "70625abfa8646384",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.generic_param_use_slots.done",
+              "total_duration_ms": 0.01536
+            },
+            {
+              "id": "65171d241e85209e",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.generic_params.index.done",
+              "total_duration_ms": 0.067584
+            },
+            {
+              "id": "1291f84e5c8ca6c8",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.generic_params.mark.done",
+              "total_duration_ms": 0.017408
+            },
+            {
+              "id": "cdacd055a7c56527",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.generic_params.owner.done",
+              "total_duration_ms": 0.001024
+            },
+            {
+              "id": "11a16badf34c2de6",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.initial.collect_aggregate_details.done",
+              "total_duration_ms": 0.01536
+            },
+            {
+              "id": "c50b762c631b5b3f",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.initial.collect_aggregate_refs.done",
+              "total_duration_ms": 0.013312
+            },
+            {
+              "id": "dcad1cf77a5a9623",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.initial.collect_named.done",
+              "total_duration_ms": 0.014336
+            },
+            {
+              "id": "7ce256b54f49f64d",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.initial.collect_scalar.done",
+              "total_duration_ms": 0.014336
+            },
+            {
+              "id": "1d1afebc63624c2e",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.projected.collect_aggregate_details.done",
+              "total_duration_ms": 0.014336
+            },
+            {
+              "id": "ae3d1a88e5b98455",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.projected.collect_aggregate_refs.done",
+              "total_duration_ms": 0.013312
+            },
+            {
+              "id": "a3187c9ff175c81f",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.projected.collect_named.done",
+              "total_duration_ms": 0.013312
+            },
+            {
+              "id": "31415ce96234a660",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.projected.collect_scalar.done",
+              "total_duration_ms": 0.014336
+            },
+            {
+              "id": "5a9f3dc313f127fe",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances.struct_field_lookup.done",
+              "total_duration_ms": 0.022528
+            },
+            {
+              "id": "60ee0aa5be96eabc",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances_arg_hash.done",
+              "total_duration_ms": 0.014336
+            },
+            {
+              "id": "343c1cccc6d7c99f",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances_arg_row_scan.done",
+              "total_duration_ms": 0.031744
+            },
+            {
+              "id": "ae23ce8b55e722b8",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances_collect.done",
+              "total_duration_ms": 0.001024
+            },
+            {
+              "id": "bd4e1dced80be2da",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances_decl_refs.done",
+              "total_duration_ms": 0.03072
+            },
+            {
+              "id": "95fd5123ee41fff9",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances_late_consumers.done",
+              "total_duration_ms": 0.002048
+            },
+            {
+              "id": "ead7ab96ac3726ce",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances_named_arg_refs.done",
+              "total_duration_ms": 0.013312
+            },
+            {
+              "id": "3fd206b89ef23c5c",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances_project.done",
+              "total_duration_ms": 0.026624
+            },
+            {
+              "id": "ad8c18474b76a816",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.type_instances_semantic_rows.done",
+              "total_duration_ms": 0.063488
+            },
+            {
+              "id": "073ae81b68fe4562",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.visible.clear.done",
+              "total_duration_ms": 0.009216
+            },
+            {
+              "id": "0370928cb405be37",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.visible.decl_scan.done",
+              "total_duration_ms": 0.033792
+            },
+            {
+              "id": "ee9aab502a182506",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.visible.done",
+              "total_duration_ms": 0.003072
+            },
+            {
+              "id": "7a3cf43039ff0d97",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.visible.hir_decl_scope_tree.done",
+              "total_duration_ms": 0.060416
+            },
+            {
+              "id": "2499d00048f37e1a",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.visible.hir_names.done",
+              "total_duration_ms": 0.021504
+            },
+            {
+              "id": "afe597fc736c7165",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.visible.mark_hir_decl_names.done",
+              "total_duration_ms": 0.022528
+            },
+            {
+              "id": "d2f118e6a481eab2",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.visible.mark_match_payload_decls.done",
+              "total_duration_ms": 0.019456
+            },
+            {
+              "id": "9981e32fb49c5968",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.visible.scatter_decl_records.done",
+              "total_duration_ms": 0.016384
+            },
+            {
+              "id": "90ddb46a81df76dc",
+              "invocations": 1,
+              "lane": "gpu.frontend",
+              "name": "typecheck.visible.sort_hir_decl_keys.done",
+              "total_duration_ms": 1.538048
+            },
+            {
+              "id": "e51e39ace360dce9",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.finish.semantic_interface",
+              "total_duration_ms": 0.002909999999916181
+            },
+            {
+              "id": "30c22c28419a17a5",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.finish.target_artifact",
+              "total_duration_ms": 1.2018870000001043
+            },
+            {
+              "id": "d90847ef030fd443",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.finish.typecheck_status",
+              "total_duration_ms": 8.206052999999956
+            },
+            {
+              "id": "7c6acec103c9f7b7",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.finish.wasm_object",
+              "total_duration_ms": 0.0008800000000046566
+            },
+            {
+              "id": "8848403126944361",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.finish.x86_object",
+              "total_duration_ms": 0.0013499999999767168
+            },
+            {
+              "id": "5f3e79bbdf482886",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.record.lowering",
+              "total_duration_ms": 0.8604290000000038
+            },
+            {
+              "id": "6b87d9c8cc2f3c7d",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.record.parser_capacity_reused",
+              "total_duration_ms": 0.2329419999999227
+            },
+            {
+              "id": "b99f3eb3f9d9fc2d",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.record.parser_encoder_finish",
+              "total_duration_ms": 3.3007200000000885
+            },
+            {
+              "id": "3efc5d9b6854cf08",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.record.parser_record",
+              "total_duration_ms": 1.555323999999906
+            },
+            {
+              "id": "a696ea2c9bf00a27",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.record.parser_status",
+              "total_duration_ms": 6.73460699999996
+            },
+            {
+              "id": "5a1ce9cf4a3f7486",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.record.parser_submit",
+              "total_duration_ms": 0.22780200000002515
+            },
+            {
+              "id": "9092afff08037e5c",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.record.semantic_interface",
+              "total_duration_ms": 0.003418999999994412
+            },
+            {
+              "id": "55871b25a1afae06",
+              "invocations": 1,
+              "lane": "host.compiler",
+              "name": "compile.source-pack.record.typecheck",
+              "total_duration_ms": 3.1685359999999636
+            },
+            {
+              "id": "6de1902c9f826e13",
+              "invocations": 1,
+              "lane": "host.lexer",
+              "name": "compile.source-pack.encoder_finish",
+              "total_duration_ms": 5.198991999999969
+            },
+            {
+              "id": "5fb47a6350453249",
+              "invocations": 1,
+              "lane": "host.lexer",
+              "name": "compile.source-pack.finish",
+              "total_duration_ms": 9.418849999999976
+            },
+            {
+              "id": "20638a94c47e75bb",
+              "invocations": 1,
+              "lane": "host.lexer",
+              "name": "compile.source-pack.record_more",
+              "total_duration_ms": 16.11083799999999
+            },
+            {
+              "id": "67ee7b210e6d76bd",
+              "invocations": 1,
+              "lane": "host.lexer",
+              "name": "compile.source-pack.submit",
+              "total_duration_ms": 0.26680099999997764
+            },
+            {
+              "id": "325eb26b70ce158c",
+              "invocations": 1,
+              "lane": "host.lexer",
+              "name": "compile.source-pack.timer_readback",
+              "total_duration_ms": 0.04634799999988172
+            },
+            {
+              "id": "af0acc69c097d221",
+              "invocations": 1,
+              "lane": "host.lexer",
+              "name": "lex.source-pack.count_boundary",
+              "total_duration_ms": 0.516331000000122
+            },
+            {
+              "id": "4f913cdc977d4fd5",
+              "invocations": 1,
+              "lane": "host.lexer",
+              "name": "lex.source-pack.resident.retained",
+              "total_duration_ms": 0.0006800000000512227
+            },
+            {
+              "id": "54d3e9cafed0fec9",
+              "invocations": 1,
+              "lane": "host.readback",
+              "name": "lowering status readback",
+              "total_duration_ms": 0.0017700000000186265
+            },
+            {
+              "id": "a50ab7cad89e8bdf",
+              "invocations": 1,
+              "lane": "host.readback",
+              "name": "parser.recorded-ll1-hir.status",
+              "total_duration_ms": 6.721197000000044
+            },
+            {
+              "id": "69a62c6e0ae30886",
+              "invocations": 1,
+              "lane": "host.readback",
+              "name": "type_check.status",
+              "total_duration_ms": 8.174734999999986
+            },
+            {
+              "id": "6dac5266d159d4b4",
+              "invocations": 1,
+              "lane": "host.readback",
+              "name": "x86 artifact byte readback",
+              "total_duration_ms": 1.093170000000042
+            },
+            {
+              "id": "1f23fb08741e2401",
+              "invocations": 1,
+              "lane": "host.readback",
+              "name": "x86 artifact length readback",
+              "total_duration_ms": 0.0006600000000325963
+            },
+            {
+              "id": "cb244ddf6fe2bb3b",
+              "invocations": 1,
+              "lane": "host.submit",
+              "name": "compile.source-pack.after-token-count",
+              "total_duration_ms": 0.2598710000000428
+            },
+            {
+              "id": "93a8aecf425f7344",
+              "invocations": 1,
+              "lane": "host.submit",
+              "name": "compiler.typecheck.source_pack.parser-boundary",
+              "total_duration_ms": 0.2208420000000624
+            },
+            {
+              "id": "4dda66e5174a4f08",
+              "invocations": 1,
+              "lane": "host.submit",
+              "name": "lex.source-pack.resident-count-boundary",
+              "total_duration_ms": 0.03729799999995157
+            }
+          ],
+          "semantics": "consecutive traced operations within each execution lane; repeated nodes and edges are collapsed"
+        },
+        "reason": "named pass accounting and tracing add measurement overhead",
+        "response": {
+          "compile_ms": 31.629566999999998,
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "elapsed_ms": 31.871458999999998,
+          "emit": "x86_64",
+          "id": "profile",
+          "input": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/single-file-10000-seed-19-x86_64/10000/scaling.lani",
+          "load_ms": 0.042089,
+          "ok": true,
+          "output": "/home/andrew-peterson/code/laniusc/target/lanius-perf-artifacts/single-file-10000-seed-19-x86_64/profile.bin",
+          "output_bytes": 27881,
+          "recorded_compute_pass_breakdown": [
+            {
+              "label": "lir.semantic.execution_rank.step",
+              "passes": 14
+            },
+            {
+              "label": "type_check.modules.path_prefix_table_intern",
+              "passes": 12
+            },
+            {
+              "label": "brackets_04_build_min_tree",
+              "passes": 10
+            },
+            {
+              "label": "hir_binary_span_step",
+              "passes": 10
+            },
+            {
+              "label": "hir_canonical_prefix_01_blocks",
+              "passes": 10
+            },
+            {
+              "label": "tree_prefix_02_scan_blocks",
+              "passes": 9
+            },
+            {
+              "label": "tree_prefix_04_build_max_tree",
+              "passes": 8
+            },
+            {
+              "label": "type_check.methods.mark_call_return_keys",
+              "passes": 8
+            },
+            {
+              "label": "type_check.methods.resolve_table",
+              "passes": 8
+            },
+            {
+              "label": "lir.target.schedule.histogram",
+              "passes": 7
+            },
+            {
+              "label": "lir.target.schedule.scan.apply",
+              "passes": 7
+            },
+            {
+              "label": "lir.target.schedule.scan.local",
+              "passes": 7
+            },
+            {
+              "label": "lir.target.schedule.scan.up",
+              "passes": 7
+            },
+            {
+              "label": "lir.target.schedule.scatter",
+              "passes": 7
+            },
+            {
+              "label": "hir_list_rank_prefix_01_blocks",
+              "passes": 6
+            },
+            {
+              "label": "type_check.visible.build_hir_decl_scope_tree",
+              "passes": 6
+            },
+            {
+              "label": "parser.tokens.delimiter_match.build_min_tree",
+              "passes": 5
+            },
+            {
+              "label": "type_check.calls.arg_match.consume",
+              "passes": 5
+            },
+            {
+              "label": "type_check.calls.arg_match.init",
+              "passes": 5
+            },
+            {
+              "label": "type_check.calls.arguments.apply",
+              "passes": 5
+            },
+            {
+              "label": "brackets_02_scan_block_prefix",
+              "passes": 4
+            },
+            {
+              "label": "hir_array_element_rank_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_call_arg_ordinal_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_canonical_relations_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_canonical_variant_payload_owner_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_context_relations_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_enum_variant_rank_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_expr_result_root_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_fn_signature_owner_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_list_rank_compact_scatter",
+              "passes": 4
+            },
+            {
+              "label": "hir_list_rank_prefix_00_local",
+              "passes": 4
+            },
+            {
+              "label": "hir_path_segment_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_struct_field_rank_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_type_alias_owner_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_type_arg_rank_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_type_path_leaf_step",
+              "passes": 4
+            },
+            {
+              "label": "hir_type_root_owner_step",
+              "passes": 4
+            },
+            {
+              "label": "lir.semantic.scan.apply",
+              "passes": 4
+            },
+            {
+              "label": "lir.semantic.scan.hierarchy_up",
+              "passes": 4
+            },
+            {
+              "label": "lir.semantic.scan.local",
+              "passes": 4
+            },
+            {
+              "label": "type_check.methods.mark_call_keys",
+              "passes": 4
+            },
+            {
+              "label": "type_check.visible.sort_hir_decl_keys.histogram.a.bucket_bases",
+              "passes": 4
+            },
+            {
+              "label": "type_check.visible.sort_hir_decl_keys.histogram.a.bucket_prefix",
+              "passes": 4
+            },
+            {
+              "label": "type_check.visible.sort_hir_decl_keys.histogram.a.histogram",
+              "passes": 4
+            },
+            {
+              "label": "type_check.visible.sort_hir_decl_keys.histogram.a.scatter",
+              "passes": 4
+            },
+            {
+              "label": "hir_canonical_expr_forest_root_step",
+              "passes": 3
+            },
+            {
+              "label": "hir_semantic_prefix_01_blocks",
+              "passes": 3
+            },
+            {
+              "label": "type_check.calls.arg_rows.scan",
+              "passes": 3
+            },
+            {
+              "label": "type_check.calls.param_rows.scan",
+              "passes": 3
+            },
+            {
+              "label": "type_check.conditions.aggregate_compare_scan",
+              "passes": 3
+            },
+            {
+              "label": "type_check.conditions.type_subtree_compare_scan",
+              "passes": 3
+            },
+            {
+              "label": "type_check.modules.records.decl_scan.local",
+              "passes": 3
+            },
+            {
+              "label": "type_check.modules.records.import_scan.local",
+              "passes": 3
+            },
+            {
+              "label": "type_check.modules.records.module_scan.local",
+              "passes": 3
+            },
+            {
+              "label": "type_check.names.scan",
+              "passes": 3
+            },
+            {
+              "label": "type_check.predicates.obligation_pair_scan",
+              "passes": 3
+            },
+            {
+              "label": "type_check.type_instance_arg_rows.scan",
+              "passes": 3
+            },
+            {
+              "label": "type_check.type_semantic.scan",
+              "passes": 3
+            },
+            {
+              "label": "type_check.visible.decl_scan",
+              "passes": 3
+            },
+            {
+              "label": "tree_prev_sibling_clear",
+              "passes": 2
+            },
+            {
+              "label": "type_check.resident.type_instances_collect.pass",
+              "passes": 2
+            },
+            {
+              "label": "type_check.resident.type_instances_collect_aggregate_details.pass",
+              "passes": 2
+            },
+            {
+              "label": "type_check.resident.type_instances_collect_aggregate_refs.pass",
+              "passes": 2
+            },
+            {
+              "label": "type_check.resident.type_instances_collect_named.pass",
+              "passes": 2
+            },
+            {
+              "label": "brackets_01_scan_inblock",
+              "passes": 1
+            },
+            {
+              "label": "brackets_03_apply_prefix",
+              "passes": 1
+            },
+            {
+              "label": "brackets_pse_04_pair_by_layer",
+              "passes": 1
+            },
+            {
+              "label": "dfa_02_scan_block_summaries",
+              "passes": 1
+            },
+            {
+              "label": "hir_array_element_links",
+              "passes": 1
+            },
+            {
+              "label": "hir_array_element_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_binary_span_apply",
+              "passes": 1
+            },
+            {
+              "label": "hir_binary_spans",
+              "passes": 1
+            },
+            {
+              "label": "hir_call_arg_links",
+              "passes": 1
+            },
+            {
+              "label": "hir_call_arg_ordinal_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_call_fields",
+              "passes": 1
+            },
+            {
+              "label": "hir_call_spans",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_array_element_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_array_element_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_array_element_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_call_arg_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_call_arg_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_call_arg_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_core",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_decl_index_clear",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_decl_index_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_expr_forest_edges",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_expr_forest_root_init",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_field_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_field_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_field_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_generic_param_candidate_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_generic_param_finalize",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_generic_param_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_generic_param_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_identity_aliases",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_nav",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_param_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_param_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_param_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_path_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_path_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_path_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_path_segment_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_path_segment_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_predicate_finalize",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_predicate_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_predicate_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_relations_init",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_stmt_compact",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_string_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_type_arg_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_type_arg_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_type_arg_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_validate",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_variant_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_variant_mark",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_variant_payload_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_variant_payload_ordinal",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_variant_payload_owner_init",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_variant_payload_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_canonical_variant_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_context_relations_init",
+              "passes": 1
+            },
+            {
+              "label": "hir_context_relations_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_enum_rank_compact_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_enum_rank_prefix_00_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_enum_rank_prefix_01_blocks",
+              "passes": 1
+            },
+            {
+              "label": "hir_enum_variant_links",
+              "passes": 1
+            },
+            {
+              "label": "hir_enum_variant_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_expr_fields",
+              "passes": 1
+            },
+            {
+              "label": "hir_fn_return_type",
+              "passes": 1
+            },
+            {
+              "label": "hir_fn_signature_owner_init",
+              "passes": 1
+            },
+            {
+              "label": "hir_item_fields",
+              "passes": 1
+            },
+            {
+              "label": "hir_nodes",
+              "passes": 1
+            },
+            {
+              "label": "hir_param_id_apply",
+              "passes": 1
+            },
+            {
+              "label": "hir_param_id_base",
+              "passes": 1
+            },
+            {
+              "label": "hir_param_id_clear",
+              "passes": 1
+            },
+            {
+              "label": "hir_param_links",
+              "passes": 1
+            },
+            {
+              "label": "hir_path_segment_links",
+              "passes": 1
+            },
+            {
+              "label": "hir_path_segment_root",
+              "passes": 1
+            },
+            {
+              "label": "hir_path_segment_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_range_spans",
+              "passes": 1
+            },
+            {
+              "label": "hir_record_clear_base",
+              "passes": 1
+            },
+            {
+              "label": "hir_record_clear_calls",
+              "passes": 1
+            },
+            {
+              "label": "hir_semantic_child_index_traverse",
+              "passes": 1
+            },
+            {
+              "label": "hir_semantic_compact_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_semantic_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "hir_semantic_nav",
+              "passes": 1
+            },
+            {
+              "label": "hir_semantic_parent_traverse",
+              "passes": 1
+            },
+            {
+              "label": "hir_semantic_prefix_00_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_semantic_subtree_end",
+              "passes": 1
+            },
+            {
+              "label": "hir_spans",
+              "passes": 1
+            },
+            {
+              "label": "hir_stmt_scope",
+              "passes": 1
+            },
+            {
+              "label": "hir_string_compact_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_string_compact_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_string_offset_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_string_offset_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_struct_field_links",
+              "passes": 1
+            },
+            {
+              "label": "hir_struct_field_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_struct_fields",
+              "passes": 1
+            },
+            {
+              "label": "hir_struct_lit_spans",
+              "passes": 1
+            },
+            {
+              "label": "hir_struct_rank_compact_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_struct_rank_prefix_00_local",
+              "passes": 1
+            },
+            {
+              "label": "hir_struct_rank_prefix_01_blocks",
+              "passes": 1
+            },
+            {
+              "label": "hir_type_alias_owner_init",
+              "passes": 1
+            },
+            {
+              "label": "hir_type_alias_target",
+              "passes": 1
+            },
+            {
+              "label": "hir_type_arg_links",
+              "passes": 1
+            },
+            {
+              "label": "hir_type_arg_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_type_fields",
+              "passes": 1
+            },
+            {
+              "label": "hir_type_path_leaf_scatter",
+              "passes": 1
+            },
+            {
+              "label": "hir_type_root_owner_init",
+              "passes": 1
+            },
+            {
+              "label": "lexer.dfa-local.batch",
+              "passes": 1
+            },
+            {
+              "label": "lexer.dfa-pair-local.batch",
+              "passes": 1
+            },
+            {
+              "label": "lexer.emit.batch",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.aggregate_elements",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.call_args",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.count",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.execution_rank.init",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.functions.layout.clear",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.functions.layout.collect",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.functions.layout.words",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.functions.mark",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.functions.params",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.functions.scatter",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.locals.mark",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.locals.scatter",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.project",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.scatter",
+              "passes": 1
+            },
+            {
+              "label": "lir.semantic.strings",
+              "passes": 1
+            },
+            {
+              "label": "lir.status.clear",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.byte_scan.apply",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.byte_scan.hierarchy_up",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.byte_scan.local",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.count_scan.apply",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.count_scan.hierarchy_up",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.count_scan.local",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.function_scan.apply",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.function_scan.hierarchy_up",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.function_scan.local",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.functions.finalize",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.functions.mark",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.functions.scatter_starts",
+              "passes": 1
+            },
+            {
+              "label": "lir.target.semantic_page_plan",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.artifact.clear",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.artifact.layout",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.byte_count",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.count",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.decl_slots.clear",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.decl_slots.scatter",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.emit",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.entrypoint.clear",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.entrypoint.reduce",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.lifetime.aggregate_elements",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.lifetime.call_args",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.lifetime.clear",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.lifetime.collect",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.location.assign",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.locations",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.locations.replay",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.resolve",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.resolve.replay",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.runtime.emit",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.safety.emit",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.scatter",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.scatter.replay",
+              "passes": 1
+            },
+            {
+              "label": "lir.x86.validate",
+              "passes": 1
+            },
+            {
+              "label": "llp_pairs",
+              "passes": 1
+            },
+            {
+              "label": "pack_offsets_scan.apply",
+              "passes": 1
+            },
+            {
+              "label": "pack_offsets_scan.hierarchy_up",
+              "passes": 1
+            },
+            {
+              "label": "pack_offsets_scan.local",
+              "passes": 1
+            },
+            {
+              "label": "pack_offsets_status",
+              "passes": 1
+            },
+            {
+              "label": "pack_varlen",
+              "passes": 1
+            },
+            {
+              "label": "pair_02_scan_block_totals",
+              "passes": 1
+            },
+            {
+              "label": "parser.active_pair_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "parser.hir-core-fields.batch",
+              "passes": 1
+            },
+            {
+              "label": "parser.hir-core-stmt-fields.batch",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.brace_context",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.brace_match.pair_pse",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.bracket_match.pair_pse",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.delimiter_match.depth_blocks",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.delimiters.local",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.delimiters.owner_apply",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.delimiters.owner_local",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.delimiters.scan.depth",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.delimiters.scan.owner",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.delimiters.scan.owner_header",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.generic_shr.apply",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.generic_shr.close_kinds",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.generic_shr.local",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.generic_shr.raw_apply",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.generic_shr.raw_local",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.generic_shr.raw_scan",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.generic_shr.scan",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.impl_header.apply",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.impl_header.local",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.impl_header.scan",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.match_pattern.apply",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.match_pattern.local",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.match_pattern.scan",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.statement_phase.apply",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.statement_phase.local",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.statement_phase.scan",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.type_path_context.apply",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.type_path_context.local",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.type_path_context.scan",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.where_clause.apply",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.where_clause.local",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens.where_clause.scan",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens_to_identifier_kinds.pass",
+              "passes": 1
+            },
+            {
+              "label": "parser.tokens_to_kinds.pass",
+              "passes": 1
+            },
+            {
+              "label": "parser.tree_feature_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "parser_hir_literal_values",
+              "passes": 1
+            },
+            {
+              "label": "parser_hir_string_decode",
+              "passes": 1
+            },
+            {
+              "label": "parser_status_from_brackets",
+              "passes": 1
+            },
+            {
+              "label": "source_file_token_end",
+              "passes": 1
+            },
+            {
+              "label": "tree_active_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "tree_depth_block_max",
+              "passes": 1
+            },
+            {
+              "label": "tree_depth_schedule",
+              "passes": 1
+            },
+            {
+              "label": "tree_depth_traverse",
+              "passes": 1
+            },
+            {
+              "label": "tree_parent_parallel",
+              "passes": 1
+            },
+            {
+              "label": "tree_prefix_01_local",
+              "passes": 1
+            },
+            {
+              "label": "tree_prefix_03_apply",
+              "passes": 1
+            },
+            {
+              "label": "tree_prev_sibling_scatter",
+              "passes": 1
+            },
+            {
+              "label": "tree_spans",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.arg_rows.mark",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.arg_rows.scatter",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.arguments.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.arguments.pack",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.array_state.consume",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.array_state.publish",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.backend_targets",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.entrypoints.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.entrypoints.project",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.functions",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.intrinsics",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.param_types",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.params.scatter",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.resolve",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.result_instances.project",
+              "passes": 1
+            },
+            {
+              "label": "type_check.calls.return_refs",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.aggregate_args.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.aggregate_compare_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.compact_aggregate_requests",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.compact_calls",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.compact_expr",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.compact_methods",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.compact_names",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.compact_predicates",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.compact_stmt",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.compact_types",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.type_subtree_compare",
+              "passes": 1
+            },
+            {
+              "label": "type_check.conditions.type_subtree_compare_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.expression_types.init",
+              "passes": 1
+            },
+            {
+              "label": "type_check.fn_context.apply",
+              "passes": 1
+            },
+            {
+              "label": "type_check.fn_context.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.fn_context.hierarchy_up",
+              "passes": 1
+            },
+            {
+              "label": "type_check.fn_context.local",
+              "passes": 1
+            },
+            {
+              "label": "type_check.fn_context.mark",
+              "passes": 1
+            },
+            {
+              "label": "type_check.generic_params.lookup.build",
+              "passes": 1
+            },
+            {
+              "label": "type_check.generic_params.lookup.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.generic_params.rows.scatter",
+              "passes": 1
+            },
+            {
+              "label": "type_check.generic_params.slot_scan",
+              "passes": 1
+            },
+            {
+              "label": "type_check.generic_params.slot_scan.apply",
+              "passes": 1
+            },
+            {
+              "label": "type_check.generic_params.slot_scan.hierarchy_up.first",
+              "passes": 1
+            },
+            {
+              "label": "type_check.hir_active_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.if_depth.apply",
+              "passes": 1
+            },
+            {
+              "label": "type_check.if_depth.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.if_depth.hierarchy_up",
+              "passes": 1
+            },
+            {
+              "label": "type_check.if_depth.local",
+              "passes": 1
+            },
+            {
+              "label": "type_check.if_depth.mark",
+              "passes": 1
+            },
+            {
+              "label": "type_check.interface.public_decls.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.interface.public_decls.map",
+              "passes": 1
+            },
+            {
+              "label": "type_check.language_decls.materialize",
+              "passes": 1
+            },
+            {
+              "label": "type_check.language_names.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.language_type_codes.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.methods.attach_metadata",
+              "passes": 1
+            },
+            {
+              "label": "type_check.methods.bind_self_receivers",
+              "passes": 1
+            },
+            {
+              "label": "type_check.methods.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.methods.collect",
+              "passes": 1
+            },
+            {
+              "label": "type_check.methods.lookup.build",
+              "passes": 1
+            },
+            {
+              "label": "type_check.methods.lookup.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.methods.lookup.validate",
+              "passes": 1
+            },
+            {
+              "label": "type_check.methods.resolve",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.append_variant_decl_count",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.build_import_visible_key_tables.paired",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.build_module_keys",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.clear_decl_lookup",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.clear_import_visible_type_lookup",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.clear_import_visible_value_lookup",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.clear_module_lookup",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.clear_path_state",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.clear_type_path_types",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.consume_value_calls",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.consume_value_calls_after_methods",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.consume_value_consts",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.consume_value_enum_units",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.count_path_segments",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_key_radix_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_keys.bucket_bases",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_keys.bucket_prefix",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_keys.histogram",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_keys.scatter",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_namespace.mark",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_namespace.scan.apply",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_namespace.scan.hierarchy_up.first",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_namespace.scan.local",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_namespace.scatter",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_namespace.validate_duplicates",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_public.mark",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_public.scan.apply",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_public.scan.hierarchy_up.first",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.decl_public.scan.local",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.declarations.build_lookup",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.declarations.clear_lookup",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.file_module_map.build",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.file_module_map.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.import_cycles.validate",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.import_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.import_edges.build",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.import_edges.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.import_visibility.count",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.import_visibility.scan.apply",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.import_visibility.scan.hierarchy_up.first",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.import_visibility.scan.local",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.import_visible_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.imports.resolve",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.initialize_import_visible_keys",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.mark_value_call_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.mirror_value_call_leaf",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.mirror_value_call_leaf_after_methods",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.mirror_value_call_leaf_after_methods_module_row_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.mirror_value_call_leaf_after_module_row_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.module_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.path_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.path_prefix_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.path_prefix_finalize",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.path_prefix_table_clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.project_type_instances",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.project_type_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.project_type_paths.after_alias_equivalence",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.project_type_paths.after_aliases",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.project_type_paths.after_projected_aliases",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.project_value_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.records.attach_modules",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.records.decl_flag",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.records.decl_scatter",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.records.import_flag",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.records.import_scatter",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.records.mark",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.records.module_flag",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.records.module_scatter",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.resolve_imported_type_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.resolve_imported_value_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.resolve_local_type_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.resolve_local_value_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.resolve_qualified_type_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.resolve_qualified_value_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.scatter_decl_span_records",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.scatter_import_visible_type",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.scatter_import_visible_value",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.scatter_path_segments",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.scatter_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.scatter_variant_decl_records",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.validate_decls",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.validate_import_visible_keys",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.validate_modules",
+              "passes": 1
+            },
+            {
+              "label": "type_check.modules.validate_type_paths",
+              "passes": 1
+            },
+            {
+              "label": "type_check.names.hash_assign_ids",
+              "passes": 1
+            },
+            {
+              "label": "type_check.names.hash_insert",
+              "passes": 1
+            },
+            {
+              "label": "type_check.names.hash_prepare",
+              "passes": 1
+            },
+            {
+              "label": "type_check.names.mark_lexemes",
+              "passes": 1
+            },
+            {
+              "label": "type_check.names.scatter_lexemes",
+              "passes": 1
+            },
+            {
+              "label": "type_check.predicates.obligation_pair_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.calls_infer_array_generics.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_clear_bound_arg_facts.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_clear_syntax_tokens.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_collect.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_collect_bound_arg_facts.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_collect_impls.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_collect_method_contracts.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_count_obligation_pairs.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_emit_method_param_validation_rows.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_emit_method_validation_rows.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_reduce_method_validation_errors.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_validate_bound_args.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_validate_method_type_arg_rows.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.predicates_validate_obligation_pairs.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.scope.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances.decl_generic_params.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances.mark_generic_param_records.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_array_literal_return_refs.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_array_return_refs.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_clear.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_collect_named_arg_refs.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_decl_refs.for_bindings.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_decl_refs.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_generic_param_use_slots.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_hash_arg_rows.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_member_receivers.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_member_receivers_after_final_types.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_member_results.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_member_results_after_final_types.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_member_substitute.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_member_substitute_after_final_types.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_struct_init_clear.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_struct_init_contexts.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_struct_init_fields.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_struct_init_substitute.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.resident.type_instances_validate_aggregate_access.pass",
+              "passes": 1
+            },
+            {
+              "label": "type_check.returns.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.returns.mark",
+              "passes": 1
+            },
+            {
+              "label": "type_check.returns.validate",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_artifact.array_index_refs",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_artifact.calls",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_artifact.expression_refs",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_artifact.local_const_literals",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_artifact.local_const_references",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_artifact.project",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_artifact.struct_literal_refs",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_artifact.struct_literal_refs_early",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_features.collect",
+              "passes": 1
+            },
+            {
+              "label": "type_check.semantic_features.dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.struct_fields.lookup.build",
+              "passes": 1
+            },
+            {
+              "label": "type_check.struct_fields.lookup.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.type_instances.clear_semantic_type_rows",
+              "passes": 1
+            },
+            {
+              "label": "type_check.type_semantic.mark",
+              "passes": 1
+            },
+            {
+              "label": "type_check.type_semantic.scatter",
+              "passes": 1
+            },
+            {
+              "label": "type_check.visible.build_hir_decl_scope_leaves",
+              "passes": 1
+            },
+            {
+              "label": "type_check.visible.clear",
+              "passes": 1
+            },
+            {
+              "label": "type_check.visible.compact_hir_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.visible.hir_decl_key_radix_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.visible.hir_names",
+              "passes": 1
+            },
+            {
+              "label": "type_check.visible.mark_hir_decl_names",
+              "passes": 1
+            },
+            {
+              "label": "type_check.visible.mark_match_payload_decls",
+              "passes": 1
+            },
+            {
+              "label": "type_check.visible.match_payload_dispatch_args",
+              "passes": 1
+            },
+            {
+              "label": "type_check.visible.scatter_hir_decl_records",
+              "passes": 1
+            }
+          ],
+          "recorded_compute_passes_during_job": 743,
+          "resident_set_bytes": 390963200,
+          "resource_creation_breakdown": {
+            "bind_groups": [],
+            "buffers": []
+          },
+          "resource_creations_after_job": {
+            "bind_groups": 784,
+            "buffers": 680,
+            "compute_pipelines": 571
+          },
+          "resource_creations_before_job": {
+            "bind_groups": 784,
+            "buffers": 680,
+            "compute_pipelines": 571
+          },
+          "resources_created_during_job": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "schema": "lanius.compiler-daemon.v1",
+          "source_root": null,
+          "tracked_gpu_buffers": {
+            "allocations": 393,
+            "bytes": 18512914,
+            "largest_allocations_by_label": [
+              {
+                "allocations": 1,
+                "bytes": 1048576,
+                "label": "codegen.x86.lowering.uniform_arena.0"
+              },
+              {
+                "allocations": 1,
+                "bytes": 1048576,
+                "label": "parser.uniform_arena.0"
+              },
+              {
+                "allocations": 1,
+                "bytes": 1048576,
+                "label": "type_check.uniform_arena.0"
+              },
+              {
+                "allocations": 1,
+                "bytes": 733176,
+                "label": "pack.tables_blob"
+              },
+              {
+                "allocations": 1,
+                "bytes": 606208,
+                "label": "artifact.x86.bytes.readback"
+              },
+              {
+                "allocations": 1,
+                "bytes": 606208,
+                "label": "codegen.lowering.arena.0"
+              },
+              {
+                "allocations": 1,
+                "bytes": 583696,
+                "label": "parser.action_table"
+              },
+              {
+                "allocations": 1,
+                "bytes": 458752,
+                "label": "codegen.lowering.arena.1"
+              },
+              {
+                "allocations": 1,
+                "bytes": 458752,
+                "label": "codegen.lowering.arena.2"
+              },
+              {
+                "allocations": 1,
+                "bytes": 458752,
+                "label": "codegen.lowering.arena.3"
+              },
+              {
+                "allocations": 1,
+                "bytes": 458752,
+                "label": "codegen.lowering.arena.4"
+              },
+              {
+                "allocations": 1,
+                "bytes": 458752,
+                "label": "codegen.lowering.arena.5"
+              },
+              {
+                "allocations": 1,
+                "bytes": 458752,
+                "label": "parser.hir_expr_record"
+              },
+              {
+                "allocations": 1,
+                "bytes": 458752,
+                "label": "parser.hir_stmt_record"
+              },
+              {
+                "allocations": 1,
+                "bytes": 360536,
+                "label": "brackets.exscan_inblock"
+              },
+              {
+                "allocations": 1,
+                "bytes": 360536,
+                "label": "brackets.layer"
+              },
+              {
+                "allocations": 1,
+                "bytes": 360536,
+                "label": "pack.out_sc"
+              },
+              {
+                "allocations": 1,
+                "bytes": 147456,
+                "label": "tokens_out"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114692,
+                "label": "parser.tree_prefix"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "brackets.match_for_index"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "pack.out_emit"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "pack.out_emit_pos"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.first_child"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_expr_result_root_node"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_expr_result_root_scratch_node"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_kind"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_list0_link_b"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_list0_rank_b"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_list1_link_b"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_member_name_token"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_member_receiver_node"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_member_receiver_token"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_node_dense_id"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_path_segment_owner"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_path_segment_rank"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_previous_scratch"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_rank_flag"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_rank_local_prefix"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_rank_node"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_semantic_child_index"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_semantic_dense_node"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_semantic_depth"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_semantic_first_child"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_semantic_flag"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_semantic_local_prefix"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_semantic_next_sibling"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_semantic_prefix_before_node"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_semantic_subtree_end"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_token_end"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_token_pos"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_type_arg_owner_a"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_type_arg_rank_a"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_type_path_leaf_node"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.hir_type_root_owner"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.next_sibling"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.node_kind"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.parent"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.prev_sibling"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.subtree_end"
+              },
+              {
+                "allocations": 1,
+                "bytes": 114688,
+                "label": "parser.tree_prefix_inblock"
+              },
+              {
+                "allocations": 1,
+                "bytes": 65568,
+                "label": "parser.out_headers"
+              },
+              {
+                "allocations": 1,
+                "bytes": 65536,
+                "label": "parser.hir_canonical_expr_record"
+              },
+              {
+                "allocations": 1,
+                "bytes": 65536,
+                "label": "parser.hir_canonical_stmt_record"
+              },
+              {
+                "allocations": 1,
+                "bytes": 65536,
+                "label": "parser.hir_core"
+              }
+            ],
+            "largest_allocations_listed_bytes": 15194420,
+            "largest_allocations_omitted_bytes": 3318494,
+            "peak_allocations": 393,
+            "peak_bytes": 18512914,
+            "phase_snapshots": [
+              {
+                "allocations": 393,
+                "bytes": 18512914,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 398
+          },
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 658,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 398,
+              "released_from_user": 2
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 571,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            }
+          },
+          "workspace_request_kind": "retained_capacity",
+          "write_ms": 0.17912399999999998
+        },
+        "timeline": [
+          {
+            "category": "host",
+            "duration_ms": 0.516331000000122,
+            "lane": "host.lexer",
+            "name": "lex.source-pack.count_boundary",
+            "start_ms": 0.09696699999994599
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.03729799999995157,
+            "lane": "host.submit",
+            "name": "lex.source-pack.resident-count-boundary",
+            "start_ms": 0.29581000000005586
+          },
+          {
+            "category": "host",
+            "duration_ms": 16.11083799999999,
+            "lane": "host.lexer",
+            "name": "compile.source-pack.record_more",
+            "start_ms": 0.613298000000068
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.2329419999999227,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.record.parser_capacity_reused",
+            "start_ms": 0.6364970000000904
+          },
+          {
+            "category": "host",
+            "duration_ms": 1.555323999999906,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.record.parser_record",
+            "start_ms": 0.8694390000000131
+          },
+          {
+            "category": "host",
+            "duration_ms": 3.3007200000000885,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.record.parser_encoder_finish",
+            "start_ms": 2.424762999999919
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.22780200000002515,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.record.parser_submit",
+            "start_ms": 5.725483000000008
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.2208420000000624,
+            "lane": "host.submit",
+            "name": "compiler.typecheck.source_pack.parser-boundary",
+            "start_ms": 5.729762999999919
+          },
+          {
+            "category": "host",
+            "duration_ms": 6.73460699999996,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.record.parser_status",
+            "start_ms": 5.953285000000033
+          },
+          {
+            "category": "host",
+            "duration_ms": 6.721197000000044,
+            "lane": "host.readback",
+            "name": "parser.recorded-ll1-hir.status",
+            "start_ms": 5.958734999999986
+          },
+          {
+            "category": "host",
+            "duration_ms": 3.1685359999999636,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.record.typecheck",
+            "start_ms": 12.687891999999993
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.003418999999994412,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.record.semantic_interface",
+            "start_ms": 15.856427999999957
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.8604290000000038,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.record.lowering",
+            "start_ms": 15.85984699999995
+          },
+          {
+            "category": "host",
+            "duration_ms": 5.198991999999969,
+            "lane": "host.lexer",
+            "name": "compile.source-pack.encoder_finish",
+            "start_ms": 16.72413600000006
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.26680099999997764,
+            "lane": "host.lexer",
+            "name": "compile.source-pack.submit",
+            "start_ms": 21.923128000000027
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.2598710000000428,
+            "lane": "host.submit",
+            "name": "compile.source-pack.after-token-count",
+            "start_ms": 21.92805799999996
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.068608,
+            "lane": "gpu.frontend",
+            "name": "typecheck.frontend_boundary.done",
+            "start_ms": 22.187929000000004
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.0006800000000512227,
+            "lane": "host.lexer",
+            "name": "lex.source-pack.resident.retained",
+            "start_ms": 22.189929000000003
+          },
+          {
+            "category": "host",
+            "duration_ms": 9.418849999999976,
+            "lane": "host.lexer",
+            "name": "compile.source-pack.finish",
+            "start_ms": 22.190609000000055
+          },
+          {
+            "category": "host",
+            "duration_ms": 8.206052999999956,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.finish.typecheck_status",
+            "start_ms": 22.19188900000008
+          },
+          {
+            "category": "host",
+            "duration_ms": 8.174734999999986,
+            "lane": "host.readback",
+            "name": "type_check.status",
+            "start_ms": 22.19904799999995
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.038912,
+            "lane": "gpu.frontend",
+            "name": "typecheck.if_depth.done",
+            "start_ms": 22.256537000000012
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.115712,
+            "lane": "gpu.frontend",
+            "name": "typecheck.names.done",
+            "start_ms": 22.295449000000023
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.001024,
+            "lane": "gpu.frontend",
+            "name": "typecheck.language_decls.done",
+            "start_ms": 22.411160999999964
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.024576,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.mark_records.done",
+            "start_ms": 22.412185000000054
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.181248,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.paths.done",
+            "start_ms": 22.436761000000057
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.075776,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.module_lookup.done",
+            "start_ms": 22.61800899999996
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.173056,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.module_maps.done",
+            "start_ms": 22.693785000000034
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.048128,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.record_scans_and_import_decl_records.done",
+            "start_ms": 22.866841000000015
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.078848,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.sort_decl_keys.done",
+            "start_ms": 22.914969000000042
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.185344,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.decl_namespace_keys.done",
+            "start_ms": 22.99381700000004
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.078848,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.import_visibility_scatter.done",
+            "start_ms": 23.179160999999965
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.050176000000000005,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.import_visible_tables.done",
+            "start_ms": 23.258008999999962
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.08704,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.resolve_paths.done",
+            "start_ms": 23.308185000000055
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.047104,
+            "lane": "gpu.frontend",
+            "name": "typecheck.module_paths.done",
+            "start_ms": 23.395224999999975
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.011264,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.clear.done",
+            "start_ms": 23.442329000000026
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.017408,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.generic_params.mark.done",
+            "start_ms": 23.453592999999994
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.001024,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.generic_params.owner.done",
+            "start_ms": 23.471001000000047
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.013312,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.decl_generic_params.done",
+            "start_ms": 23.472025000000023
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.067584,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.generic_params.index.done",
+            "start_ms": 23.485337000000058
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.001024,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.generic_param_slots.compact.done",
+            "start_ms": 23.552920999999973
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.01536,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.generic_param_use_slots.done",
+            "start_ms": 23.55394499999995
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.014336,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.initial.collect_scalar.done",
+            "start_ms": 23.56930500000005
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.014336,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.initial.collect_named.done",
+            "start_ms": 23.58364100000006
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.013312,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.initial.collect_aggregate_refs.done",
+            "start_ms": 23.597976999999954
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.01536,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.initial.collect_aggregate_details.done",
+            "start_ms": 23.61128899999999
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.014336,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.project_type_paths.after_aliases.done",
+            "start_ms": 23.626648999999976
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.014336,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.projected.collect_scalar.done",
+            "start_ms": 23.640984999999986
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.013312,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.projected.collect_named.done",
+            "start_ms": 23.655320999999997
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.013312,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.projected.collect_aggregate_refs.done",
+            "start_ms": 23.668633000000032
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.014336,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.projected.collect_aggregate_details.done",
+            "start_ms": 23.68194499999995
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.014336,
+            "lane": "gpu.frontend",
+            "name": "typecheck.modules.project_type_paths.after_projected_aliases.done",
+            "start_ms": 23.69628099999996
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.002048,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.done",
+            "start_ms": 23.71061699999997
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.026624,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances_project.done",
+            "start_ms": 23.712665000000037
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.031744,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances_arg_row_scan.done",
+            "start_ms": 23.73928899999999
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.013312,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances_named_arg_refs.done",
+            "start_ms": 23.771033000000052
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.014336,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances_arg_hash.done",
+            "start_ms": 23.784344999999973
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.063488,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances_semantic_rows.done",
+            "start_ms": 23.79868099999998
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.001024,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances_collect.done",
+            "start_ms": 23.862168999999994
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.043008,
+            "lane": "gpu.frontend",
+            "name": "typecheck.fn_context.done",
+            "start_ms": 23.86319299999997
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.195584,
+            "lane": "gpu.frontend",
+            "name": "typecheck.calls.done",
+            "start_ms": 23.906201
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.009216,
+            "lane": "gpu.frontend",
+            "name": "typecheck.visible.clear.done",
+            "start_ms": 24.10178500000003
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.022528,
+            "lane": "gpu.frontend",
+            "name": "typecheck.visible.mark_hir_decl_names.done",
+            "start_ms": 24.111001000000048
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.019456,
+            "lane": "gpu.frontend",
+            "name": "typecheck.visible.mark_match_payload_decls.done",
+            "start_ms": 24.13352899999998
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.033792,
+            "lane": "gpu.frontend",
+            "name": "typecheck.visible.decl_scan.done",
+            "start_ms": 24.152984999999987
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.016384,
+            "lane": "gpu.frontend",
+            "name": "typecheck.visible.scatter_decl_records.done",
+            "start_ms": 24.186777000000003
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 1.538048,
+            "lane": "gpu.frontend",
+            "name": "typecheck.visible.sort_hir_decl_keys.done",
+            "start_ms": 24.203160999999962
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.060416,
+            "lane": "gpu.frontend",
+            "name": "typecheck.visible.hir_decl_scope_tree.done",
+            "start_ms": 25.741209000000033
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.021504,
+            "lane": "gpu.frontend",
+            "name": "typecheck.visible.hir_names.done",
+            "start_ms": 25.801625
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.003072,
+            "lane": "gpu.frontend",
+            "name": "typecheck.visible.done",
+            "start_ms": 25.82312899999996
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.03072,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances_decl_refs.done",
+            "start_ms": 25.826201
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.048128,
+            "lane": "gpu.frontend",
+            "name": "typecheck.methods.done",
+            "start_ms": 25.85692099999997
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.017408,
+            "lane": "gpu.frontend",
+            "name": "typecheck.member_receivers.done",
+            "start_ms": 25.905048999999998
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.022528,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances.struct_field_lookup.done",
+            "start_ms": 25.922457000000055
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.021504,
+            "lane": "gpu.frontend",
+            "name": "typecheck.member_results.done",
+            "start_ms": 25.944984999999985
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.01536,
+            "lane": "gpu.frontend",
+            "name": "typecheck.member_substitute.done",
+            "start_ms": 25.96648900000006
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.01024,
+            "lane": "gpu.frontend",
+            "name": "typecheck.struct_init_clear.done",
+            "start_ms": 25.981849000000047
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.018432,
+            "lane": "gpu.frontend",
+            "name": "typecheck.struct_init_contexts.done",
+            "start_ms": 25.992089000000036
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.02048,
+            "lane": "gpu.frontend",
+            "name": "typecheck.struct_init_fields.done",
+            "start_ms": 26.01052099999995
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.016384,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instance_fields.done",
+            "start_ms": 26.031001000000046
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.017408,
+            "lane": "gpu.frontend",
+            "name": "typecheck.scope.done",
+            "start_ms": 26.04738500000001
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.022528,
+            "lane": "gpu.frontend",
+            "name": "typecheck.calls_resolve.done",
+            "start_ms": 26.06479299999995
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.044032,
+            "lane": "gpu.frontend",
+            "name": "typecheck.calls_row_args.done",
+            "start_ms": 26.087320999999996
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.423936,
+            "lane": "gpu.frontend",
+            "name": "typecheck.methods_call_returns.done",
+            "start_ms": 26.131353000000004
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.81408,
+            "lane": "gpu.frontend",
+            "name": "typecheck.calls_infer_array_generics.done",
+            "start_ms": 26.55528899999999
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.017408,
+            "lane": "gpu.frontend",
+            "name": "typecheck.calls_mark_array_args.done",
+            "start_ms": 27.36936899999995
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.014336,
+            "lane": "gpu.frontend",
+            "name": "typecheck.calls_validate_array_results.done",
+            "start_ms": 27.386777000000002
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.084992,
+            "lane": "gpu.frontend",
+            "name": "typecheck.methods_resolve.done",
+            "start_ms": 27.401113000000013
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.062464,
+            "lane": "gpu.frontend",
+            "name": "typecheck.array_return_refs.done",
+            "start_ms": 27.48610499999998
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.018432,
+            "lane": "gpu.frontend",
+            "name": "typecheck.array_literal_return_refs.done",
+            "start_ms": 27.54856900000002
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.002048,
+            "lane": "gpu.frontend",
+            "name": "typecheck.type_instances_late_consumers.done",
+            "start_ms": 27.567001000000047
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.079872,
+            "lane": "gpu.frontend",
+            "name": "typecheck.predicates_bound_args.done",
+            "start_ms": 27.569049
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.013312,
+            "lane": "gpu.frontend",
+            "name": "typecheck.predicates_method_contracts.done",
+            "start_ms": 27.648920999999973
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.036864,
+            "lane": "gpu.frontend",
+            "name": "typecheck.predicates_collect.done",
+            "start_ms": 27.662233000000008
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.048128,
+            "lane": "gpu.frontend",
+            "name": "typecheck.predicates_method_validation_rows.done",
+            "start_ms": 27.699096999999952
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.002048,
+            "lane": "gpu.frontend",
+            "name": "typecheck.predicates_indices.done",
+            "start_ms": 27.747224999999975
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.078848,
+            "lane": "gpu.frontend",
+            "name": "typecheck.predicates_obligations.done",
+            "start_ms": 27.749273000000045
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.037888,
+            "lane": "gpu.frontend",
+            "name": "typecheck.returns.done",
+            "start_ms": 27.828121000000042
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.002048,
+            "lane": "gpu.frontend",
+            "name": "typecheck.compact_conditions.done",
+            "start_ms": 27.866008999999963
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.011264,
+            "lane": "gpu.frontend",
+            "name": "typecheck.calls_backend_targets.done",
+            "start_ms": 27.86805700000003
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.237568,
+            "lane": "gpu.frontend",
+            "name": "typecheck.expression_types.done",
+            "start_ms": 27.879320999999997
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.028672,
+            "lane": "gpu.frontend",
+            "name": "typecheck.semantic_artifact.done",
+            "start_ms": 28.116888999999965
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 0.007168,
+            "lane": "gpu.frontend",
+            "name": "typecheck.done",
+            "start_ms": 28.145560999999987
+          },
+          {
+            "category": "gpu",
+            "duration_ms": 1.092608,
+            "lane": "gpu.frontend",
+            "name": "compile.after_count.recorded",
+            "start_ms": 28.15272900000005
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.002909999999916181,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.finish.semantic_interface",
+            "start_ms": 30.39794200000004
+          },
+          {
+            "category": "host",
+            "duration_ms": 1.2018870000001043,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.finish.target_artifact",
+            "start_ms": 30.400851999999954
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.0017700000000186265,
+            "lane": "host.readback",
+            "name": "lowering status readback",
+            "start_ms": 30.413562000000034
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.0006600000000325963,
+            "lane": "host.readback",
+            "name": "x86 artifact length readback",
+            "start_ms": 30.420201999999932
+          },
+          {
+            "category": "host",
+            "duration_ms": 1.093170000000042,
+            "lane": "host.readback",
+            "name": "x86 artifact byte readback",
+            "start_ms": 30.503168999999993
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.0013499999999767168,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.finish.x86_object",
+            "start_ms": 31.60273900000006
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.0008800000000046566,
+            "lane": "host.compiler",
+            "name": "compile.source-pack.finish.wasm_object",
+            "start_ms": 31.604089000000037
+          },
+          {
+            "category": "host",
+            "duration_ms": 0.04634799999988172,
+            "lane": "host.lexer",
+            "name": "compile.source-pack.timer_readback",
+            "start_ms": 31.609459000000033
+          }
+        ],
+        "trace_path": "target/lanius-perf-artifacts/single-file-10000-seed-19-x86_64/profile-trace.json",
+        "wall_ms": 33.459691
+      },
+      "samples": [
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 24.744766000000002,
+          "gpu_memory": {
+            "allocations": 393,
+            "bytes": 18512914,
+            "peak_allocations": 393,
+            "peak_bytes": 18512914,
+            "phase_snapshots": [
+              {
+                "allocations": 393,
+                "bytes": 18512914,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 398
+          },
+          "index": 0,
+          "recorded_compute_passes": 743,
+          "request_phases_ms": {
+            "compile": 24.744766000000002,
+            "load": 0.030789,
+            "write": 0.138295
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "wall_ms": 25.110313,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 658,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 398,
+              "released_from_user": 0
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 571,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 22.359123,
+          "gpu_memory": {
+            "allocations": 393,
+            "bytes": 18512914,
+            "peak_allocations": 393,
+            "peak_bytes": 18512914,
+            "phase_snapshots": [
+              {
+                "allocations": 393,
+                "bytes": 18512914,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 398
+          },
+          "index": 1,
+          "recorded_compute_passes": 743,
+          "request_phases_ms": {
+            "compile": 22.359123,
+            "load": 0.030508999999999998,
+            "write": 0.146324
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "wall_ms": 22.737139,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 658,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 398,
+              "released_from_user": 0
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 571,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        }
+      ],
+      "source": {
+        "bytes": 10000,
+        "file_records": [
+          {
+            "bytes": 10000,
+            "lines": 324,
+            "path": "target/lanius-perf-workloads/single-file-10000-seed-19-x86_64/10000/scaling.lani",
+            "sloc": 306
+          }
+        ],
+        "files": 1,
+        "kilobytes": 10.0,
+        "largest_file_bytes": 10000,
+        "megabytes": 0.01,
+        "physical_lines": 324,
+        "sloc": 306,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              1
+            ],
+            "edges": [
+              22.359123,
+              23.5519445,
+              24.744766000000002
+            ],
+            "unit": "ms"
+          },
+          "mad": 1.1928215000000009,
+          "maximum": 24.744766000000002,
+          "mean": 23.5519445,
+          "median": 23.5519445,
+          "minimum": 22.359123,
+          "p95": 24.625483850000002,
+          "samples": 2
+        },
+        "median_bytes_per_second": 419025.9088818727,
+        "median_sloc_per_second": 12822.192811785306,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              1
+            ],
+            "edges": [
+              22.737139,
+              23.923726000000002,
+              25.110313
+            ],
+            "unit": "ms"
+          },
+          "mad": 1.1865870000000012,
+          "maximum": 25.110313,
+          "mean": 23.923726000000002,
+          "median": 23.923726000000002,
+          "minimum": 22.737139,
+          "p95": 24.991654300000004,
+          "samples": 2
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifact_bytes": 27881,
+        "compile_exit_status": 0
+      }
+    }
+  ],
+  "run": {
+    "git_commit": "a79d9236b09907b2a62af02a2444b0e2b91cbde8",
+    "git_dirty": true,
+    "id": "single-file-10000-seed-19-x86_64",
+    "recorded_at": "2026-08-15T23:58:42.030053+00:00"
+  },
+  "schema": "lanius.performance-run.v1",
+  "workload": {
+    "classification": "synthetic compiler stress with a realistic function-size distribution",
+    "generation_command": {
+      "argv": [
+        "/home/andrew-peterson/bin/python3",
+        "tools/generate_compiler_stress.py",
+        "--out",
+        "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/single-file-10000-seed-19-x86_64",
+        "--layout",
+        "comparative-single-file",
+        "--sizes",
+        "10000",
+        "--seed",
+        "19",
+        "--profile",
+        "mixed-function-sizes"
+      ],
+      "cwd": "/home/andrew-peterson/code/laniusc",
+      "display": "/home/andrew-peterson/bin/python3 tools/generate_compiler_stress.py --out /home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/single-file-10000-seed-19-x86_64 --layout comparative-single-file --sizes 10000 --seed 19 --profile mixed-function-sizes",
+      "environment_overrides": {}
+    },
+    "generator": "tools/generate_compiler_stress.py",
+    "id": "single-file-10000-seed-19-x86_64",
+    "kind": "single_file",
+    "seed": 19,
+    "target_source_bytes": 10000
+  }
+}

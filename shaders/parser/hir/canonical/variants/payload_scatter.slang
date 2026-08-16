@@ -9,7 +9,7 @@ StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> candidate_raw_by_anchor;
 StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> payload_owner_raw;
 StructuredBuffer<uint> raw_to_variant;
 RWStructuredBuffer<uint> variant_payload_start;
@@ -24,6 +24,11 @@ uint block_count() { return (gCanonical.canonical_capacity + 255u) / 256u; }
 uint mapped(uint raw)
 {
     return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID;
+}
+uint file_for_raw(uint raw)
+{
+    uint token = raw < gCanonical.raw_capacity ? hir_token_pos[raw] : INVALID;
+    return token < gCanonical.canonical_capacity ? token_file_id[token] : INVALID;
 }
 
 [shader("compute")]
@@ -48,12 +53,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     uint owner_raw = payload_owner_raw[raw];
-    uint variant = owner_raw < gCanonical.raw_capacity ? raw_to_variant[owner_raw] : INVALID;
+    uint owner_anchor = owner_raw < gCanonical.raw_capacity ? hir_token_pos[owner_raw] : INVALID;
+    uint variant = owner_anchor < gCanonical.canonical_capacity
+        ? raw_to_variant[owner_anchor]
+        : INVALID;
     HirVariantPayload payload;
     payload.variant = variant;
     payload.type_node = mapped(raw);
     payload.ordinal = INVALID;
-    payload.file_id = hir_token_file_id[raw];
+    payload.file_id = file_for_raw(raw);
     hir_variant_payloads[row] = payload;
     if (variant < gCanonical.canonical_capacity)
     {

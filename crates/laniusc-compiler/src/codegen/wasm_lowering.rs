@@ -114,7 +114,7 @@ pub(crate) struct GpuWasmLirStage {
     #[cfg(test)]
     abi_functions: LaniusBuffer<super::lowering_ir::WasmLirFunction>,
     module: GpuWasmModuleStage,
-    object: GpuWasmObjectStage,
+    object: Option<GpuWasmObjectStage>,
     artifact_length_readback: LaniusBuffer<u8>,
     artifact_readback: PagedReadback,
     _param_widths: LaniusBuffer<u32>,
@@ -157,6 +157,7 @@ impl GpuWasmLirStage {
         workspace: &CompilerGraphWorkspace,
         capacities: LoweringCapacities,
         semantic: GpuSemanticLirView<'_>,
+        include_object: bool,
     ) -> Result<Self> {
         let allocations = target_lowering_allocations(graph, workspace, semantic)?;
         let resource = |name: &str| {
@@ -597,15 +598,19 @@ impl GpuWasmLirStage {
             &abi_functions,
             &artifact_words,
         )?;
-        let object = GpuWasmObjectStage::new(
-            device,
-            graph,
-            workspace,
-            &allocations,
-            capacities,
-            semantic,
-            module.object_projection_inputs(),
-        )?;
+        let object = include_object
+            .then(|| {
+                GpuWasmObjectStage::new(
+                    device,
+                    graph,
+                    workspace,
+                    &allocations,
+                    capacities,
+                    semantic,
+                    module.object_projection_inputs(),
+                )
+            })
+            .transpose()?;
         let artifact_length_readback =
             readback_bytes(device, "artifact.wasm.length.readback", 4, 4);
         let artifact_readback = PagedReadback::new(
@@ -654,7 +659,10 @@ impl GpuWasmLirStage {
 
     #[cfg(test)]
     pub(crate) fn object(&self) -> super::wasm_object_artifact::GpuWasmObjectView<'_> {
-        self.object.output()
+        self.object
+            .as_ref()
+            .expect("test Wasm stage includes object projection")
+            .output()
     }
 
     /// Records the same lowering and module layout as executable mode, then
@@ -668,14 +676,26 @@ impl GpuWasmLirStage {
         library_id: u32,
         unit_id: u32,
     ) -> Result<()> {
-        self.object.set_identity(queue, library_id, unit_id);
+        self.object
+            .as_ref()
+            .context("Wasm object projection was not allocated for this lowering job")?
+            .set_identity(queue, library_id, unit_id);
         self.record_counts(encoder)?;
         self.record_after_counts(encoder)?;
         self.record_after_target_pages(encoder, true)
     }
 
-    pub(crate) fn set_object_identity(&self, queue: &wgpu::Queue, library_id: u32, unit_id: u32) {
-        self.object.set_identity(queue, library_id, unit_id);
+    pub(crate) fn set_object_identity(
+        &self,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+    ) -> Result<()> {
+        self.object
+            .as_ref()
+            .context("Wasm object projection was not allocated for this lowering job")?
+            .set_identity(queue, library_id, unit_id);
+        Ok(())
     }
 
     pub(crate) fn finish_object(
@@ -685,7 +705,10 @@ impl GpuWasmLirStage {
         library_id: u32,
         unit_id: u32,
     ) -> Result<super::wasm::GpuWasmRelocatableObject> {
-        self.object.finish(device, queue, library_id, unit_id)
+        self.object
+            .as_ref()
+            .context("Wasm object projection was not allocated for this lowering job")?
+            .finish(device, queue, library_id, unit_id)
     }
 
     /// Maps the daemon-resident readback buffers after the command buffer has
@@ -791,7 +814,10 @@ impl GpuWasmLirStage {
     ) -> Result<()> {
         self.module.record(encoder)?;
         if object {
-            self.object.record(encoder)
+            self.object
+                .as_ref()
+                .context("Wasm object projection was not allocated for this lowering job")?
+                .record(encoder)
         } else {
             let artifact = self.module.output();
             artifact
@@ -865,6 +891,30 @@ mod tests {
             .collect()
     }
 
+    fn compact_semantic_core_records(records: &[[u32; 8]]) -> Vec<[u32; 4]> {
+        records
+            .iter()
+            .map(|record| {
+                let [
+                    op,
+                    type_id,
+                    type_ref_tag,
+                    type_ref_payload,
+                    _,
+                    flags,
+                    words,
+                    _,
+                ] = *record;
+                [
+                    type_id,
+                    type_ref_payload,
+                    flags | ((op & 0x3f) << 24) | ((type_ref_tag & 3) << 30),
+                    words,
+                ]
+            })
+            .collect()
+    }
+
     fn read_words(device: &wgpu::Device, buffer: &LaniusBuffer<u8>) -> Vec<u32> {
         let slice = buffer.slice(..);
         map_readback_blocking(device, &slice, "Wasm LIR readback").unwrap();
@@ -908,7 +958,7 @@ mod tests {
         let semantic_page_core = storage_ro_from_bytes::<SemanticLirCore>(
             &gpu.device,
             "test.wasm_stage.semantic_page_core",
-            &words(&[
+            &words(&compact_semantic_core_records(&[
                 [
                     opcode::SEMANTIC_LIR_OP_CONST_I32,
                     3,
@@ -990,7 +1040,7 @@ mod tests {
                     0,
                     u32::MAX,
                 ],
-            ]),
+            ])),
             8,
         );
         let semantic_page_operands = storage_ro_from_bytes::<SemanticLirOperands>(
@@ -1137,6 +1187,7 @@ mod tests {
                 execution_order: Some(&semantic_order),
                 status: &semantic_status,
             },
+            true,
         )
         .unwrap();
         let pipelines_before = pipeline_creation_count();

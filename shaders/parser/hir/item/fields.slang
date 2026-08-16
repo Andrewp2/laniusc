@@ -9,6 +9,7 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirItem;
@@ -23,6 +24,7 @@ StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_variant_parent_enum;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
+StructuredBuffer<uint> raw_to_hir;
 
 RWStructuredBuffer<uint> hir_item_kind;
 RWStructuredBuffer<uint> hir_item_name_token;
@@ -250,9 +252,16 @@ uint name_token_for_item(uint i, uint prod, uint start)
     return INVALID;
 }
 
-void clear_item(uint i)
+uint item_row(uint raw)
 {
-    hir_item_kind[i] = HIR_ITEM_KIND_NONE;
+    return gHirItem.retain_debug_rows != 0u ? raw : raw_to_hir[raw];
+}
+
+void publish_item_kind(uint raw, uint kind)
+{
+    uint row = item_row(raw);
+    if (row != INVALID)
+        hir_item_kind[row] = kind;
 }
 
 uint import_target_kind(uint i)
@@ -323,7 +332,7 @@ void publish_module_or_import(uint i, uint prod)
     uint anchor = hir_token_pos[i];
     if (anchor == INVALID)
         return;
-    hir_item_kind[i] = item_kind;
+    publish_item_kind(i, item_kind);
     hir_item_namespace[anchor] = namespace_for_item(item_kind);
     hir_item_visibility[anchor] = HIR_ITEM_VIS_PRIVATE;
     hir_item_name_token[anchor] = INVALID;
@@ -338,7 +347,7 @@ void publish_decl(uint i, uint prod, uint start, uint visibility)
     if (start == INVALID)
         return;
     uint item_kind = item_kind_for_production(prod);
-    hir_item_kind[i] = item_kind;
+    publish_item_kind(i, item_kind);
     hir_item_namespace[start] = namespace_for_item(item_kind);
     hir_item_visibility[start] = visibility;
     hir_item_name_token[start] = name_token_for_item(i, prod, start);
@@ -364,8 +373,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = semantic_row_node(row);
     if (i == INVALID)
         return;
-
-    clear_item(i);
 
     uint prod = node_kind[i];
     if (!hir_kind_matches_item_production(i, prod))

@@ -3,11 +3,12 @@
 import atomics;
 import generated_parse_production_ids;
 
-struct Params { uint n; uint uses_status_count; };
+struct Params { uint n; uint uses_status_count; uint retain_debug_rows; };
 ConstantBuffer<Params> gHirPath;
 
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_path_segment_owner_a;
 StructuredBuffer<uint> hir_path_segment_rank_a;
 RWStructuredBuffer<uint> hir_path_segment_count;
@@ -34,5 +35,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner = hir_path_segment_owner_a[node];
     if (!valid_node(owner))
         return;
-    atomic_u32_max(hir_path_segment_count, owner, hir_path_segment_rank_a[node] + 1u);
+    uint owner_row = gHirPath.retain_debug_rows != 0u ? owner : hir_token_pos[owner];
+    if (owner_row == INVALID)
+        return;
+    atomic_u32_max(hir_path_segment_count, owner_row, hir_path_segment_rank_a[node] + 1u);
 }

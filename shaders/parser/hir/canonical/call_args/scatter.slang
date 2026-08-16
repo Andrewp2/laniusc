@@ -8,7 +8,7 @@ StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_result_root_node;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> hir_call_arg_parent_call;
 StructuredBuffer<uint> hir_call_arg_ordinal;
 StructuredBuffer<uint> hir_call_arg_end;
@@ -39,6 +39,10 @@ uint expression(uint raw) {
     uint value = mapped(root);
     return value != INVALID ? value : mapped(raw);
 }
+uint file_for_raw(uint raw) {
+    uint token = raw < gCanonical.raw_capacity ? hir_token_pos[raw] : INVALID;
+    return token < gCanonical.canonical_capacity ? token_file_id[token] : INVALID;
+}
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID) {
@@ -67,7 +71,7 @@ void main(uint3 dtid: SV_DispatchThreadID) {
     arg.call = call;
     arg.value = expression(raw);
     arg.ordinal = ordinal;
-    arg.file_id = hir_token_file_id[raw];
+    arg.file_id = file_for_raw(raw);
     hir_call_args[row] = arg;
     if (arg.ordinal == 0u && call != INVALID) {
         HirRange range;

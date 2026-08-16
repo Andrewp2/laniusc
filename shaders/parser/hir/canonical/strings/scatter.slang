@@ -11,7 +11,7 @@ struct Params {
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> raw_string_count;
 StructuredBuffer<uint> raw_string_node;
 StructuredBuffer<uint> raw_string_data_offset;
@@ -26,6 +26,11 @@ uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 uint mapped(uint raw)
 {
     return raw < gCanonical.raw_capacity ? raw_to_hir[raw] : INVALID;
+}
+uint file_for_raw(uint raw)
+{
+    uint token = raw < gCanonical.raw_capacity ? hir_token_pos[raw] : INVALID;
+    return token < gCanonical.canonical_capacity ? token_file_id[token] : INVALID;
 }
 
 [shader("compute")]
@@ -43,7 +48,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     string_row.node = mapped(raw);
     string_row.data_offset = raw_string_data_offset[literal_row];
     string_row.decoded_len = raw_string_decoded_len[literal_row];
-    string_row.file_id = hir_token_file_id[raw];
+    string_row.file_id = file_for_raw(raw);
     hir_strings[row] = string_row;
     if (string_row.node != INVALID)
     {

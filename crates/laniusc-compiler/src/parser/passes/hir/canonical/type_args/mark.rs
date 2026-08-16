@@ -45,14 +45,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalType
             ),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
-                "hir_type_arg_start".into(),
-                b.hir_type_arg_start.as_entire_binding(),
-            ),
-            (
-                "hir_type_arg_count".into(),
-                b.hir_type_arg_count.as_entire_binding(),
-            ),
-            (
                 "family_flag".into(),
                 b.hir_type_arg_family_flag.as_entire_binding(),
             ),

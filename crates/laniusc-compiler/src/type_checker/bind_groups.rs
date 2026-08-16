@@ -25,7 +25,6 @@ impl GpuTypeChecker {
         let source_file_capacity = allocation.source_file_capacity;
         let token_capacity = allocation.token_capacity;
         let hir_node_capacity = allocation.hir_node_capacity;
-        let parser_hir_node_capacity = allocation.parser_hir_node_capacity;
         let allocation_timing =
             crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
         let allocation_start = std::time::Instant::now();
@@ -69,7 +68,14 @@ impl GpuTypeChecker {
             token_capacity,
             dependency_interfaces,
         )?;
-        let upstream_workspace = Some(hir_items.upstream_workspace);
+        // Preserve the complete dead frontend workspace across this phase.
+        // `TypeCheckCompilerGraph` imports whichever ranges fit its own slots;
+        // semantic lowering must still be able to reuse the remaining ranges.
+        let upstream_workspace = hir_items
+            .upstream_workspace
+            .iter()
+            .map(|buffer| buffer.alias::<u8>(buffer.byte_size as usize))
+            .collect::<Vec<_>>();
         let typecheck_graph = compiler_graph::TypeCheckCompilerGraph::new(
             device,
             hir_node_capacity,
@@ -81,8 +87,9 @@ impl GpuTypeChecker {
             call_generic_claim_capacity,
             predicate_capacity,
             dependency_capacity,
+            allocation.semantic_interface_required,
             passes,
-            upstream_workspace.unwrap_or(&[]),
+            hir_items.upstream_workspace,
         )?;
         let compact_expr_scalar_type_a =
             typecheck_graph.u32_buffer("compact_expr_scalar_type.a")?;
@@ -510,7 +517,6 @@ impl GpuTypeChecker {
                 source_file_capacity,
                 token_capacity,
                 hir_node_capacity,
-                parser_hir_node_capacity,
                 hir_active_count_buf: &hir_active_count,
                 hir_active_dispatch_args: &hir_active_dispatch_args,
                 hir_items,
@@ -875,6 +881,7 @@ impl GpuTypeChecker {
 
         Ok(ResidentTypeCheckWorkspace {
             resettable_buffers: Vec::new(),
+            upstream_workspace,
             cache_key: allocation,
             typecheck_graph,
             compact_expr_scalar_type_init,

@@ -9,6 +9,8 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint semantic_parent_local_ancestor_span;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirTypeAliasTarget;
@@ -18,6 +20,7 @@ StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_type_alias_owner_value;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_type_form;
 
@@ -56,6 +59,14 @@ bool valid_semantic_row(uint row)
     return row != INVALID && row < active_semantic_count();
 }
 
+uint item_kind_for_raw(uint node)
+{
+    if (!valid_original_node(node))
+        return 0u;
+    uint item_row = gHirTypeAliasTarget.retain_debug_rows != 0u ? node : raw_to_hir[node];
+    return item_row != INVALID ? hir_item_kind[item_row] : 0u;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -71,8 +82,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint owner = hir_type_alias_owner_value[row];
     if (!valid_original_node(owner) || owner == node ||
-        hir_item_kind[owner] != HIR_ITEM_KIND_TYPE_ALIAS)
+        item_kind_for_raw(owner) != HIR_ITEM_KIND_TYPE_ALIAS)
         return;
 
-    InterlockedMin(hir_type_alias_target_node[owner], node);
+    uint output_row = gHirTypeAliasTarget.retain_debug_rows != 0u
+        ? owner
+        : raw_to_hir[owner];
+    if (output_row != INVALID)
+        InterlockedMin(hir_type_alias_target_node[output_row], node);
 }

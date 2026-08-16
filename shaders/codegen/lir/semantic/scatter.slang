@@ -1,5 +1,6 @@
 import codegen.lir.semantic.common;
 import codegen.lir.semantic.materialize;
+import codegen.lir.schedule.common;
 import codegen.lowering_ir;
 import gpu_index;
 
@@ -7,7 +8,7 @@ StructuredBuffer<uint> semantic_lir_total;
 RWStructuredBuffer<SemanticLirCore> semantic_lir_core;
 RWStructuredBuffer<SemanticLirOperands> semantic_lir_operands;
 RWStructuredBuffer<uint> semantic_lir_layout_word_offset;
-RWStructuredBuffer<SemanticLirSchedule> semantic_lir_schedule;
+RWStructuredBuffer<TargetScheduleKey> semantic_lir_schedule;
 RWStructuredBuffer<uint> semantic_owner_by_instruction;
 RWStructuredBuffer<uint> semantic_op_by_instruction;
 
@@ -44,14 +45,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint local_count = semantic_lir_count[node];
     uint local_row = row - first_row;
     if (local_row >= local_count) return;
-    semantic_lir_schedule[row] = semantic_schedule(
-        node,
-        local_row,
-        local_count,
-        hir_count,
-        compact_hir_core[node],
-        compact_hir_links[node],
-        compact_hir_payload[node]);
+    SemanticLirSchedule schedule = semantic_schedule(
+        node, local_row, local_count, hir_count, compact_hir_core[node],
+        compact_hir_links[node], compact_hir_payload[node]);
+    semantic_lir_schedule[row] =
+        target_schedule_pack(schedule, gParams.schedule_packed_bits);
     semantic_owner_by_instruction[row] = node;
     uint op = semantic_materialized_op(node, local_row, local_count);
     if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 2u)
@@ -63,7 +61,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 5u)
         op = SEMANTIC_LIR_OP_AGGREGATE_NEW;
     semantic_op_by_instruction[row] = op;
-    if (row < gParams.reserved1)
+    if (row < gParams.resident_rows)
     {
         SemanticLirRow result =
             materialize_semantic_lir_row(node, local_row, hir_count);

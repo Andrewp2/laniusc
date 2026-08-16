@@ -19,7 +19,7 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> source_file_token_end;
 StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<int> brace_match_depth;
@@ -196,7 +196,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (hir_kind[i] == HIR_FILE)
     {
-        uint file_id = hir_token_file_id[i];
+        uint file_id = start < token_count[0u] ? token_file_id[start] : INVALID;
         if (file_id != INVALID && file_id < gHir.token_capacity)
         {
             uint file_end = source_file_token_end[file_id];

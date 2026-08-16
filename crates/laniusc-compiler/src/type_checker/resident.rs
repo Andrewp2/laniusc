@@ -314,10 +314,10 @@ impl GpuTypeChecker {
         token_file_id_buf: TrackedBufferView<'_>,
         source_buf: TrackedBufferView<'_>,
         hir_node_capacity: u32,
-        parser_hir_node_capacity: u32,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         dependency_pages: Option<&GpuDependencyInterfacePages>,
         timer: Option<&mut crate::gpu::timer::GpuTimer>,
+        release_workspace_consumers: impl FnOnce(),
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
         self.record_resident_token_buffer_with_hir_impl_on_gpu(
             device,
@@ -331,10 +331,10 @@ impl GpuTypeChecker {
             token_file_id_buf,
             source_buf,
             hir_node_capacity,
-            parser_hir_node_capacity,
             hir_items,
             dependency_pages,
             timer,
+            release_workspace_consumers,
         )
     }
 
@@ -352,10 +352,10 @@ impl GpuTypeChecker {
         token_file_id_buf: TrackedBufferView<'_>,
         source_buf: TrackedBufferView<'_>,
         hir_node_capacity: u32,
-        parser_hir_node_capacity: u32,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         dependency_pages: Option<&GpuDependencyInterfacePages>,
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
+        release_workspace_consumers: impl FnOnce(),
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
         // Type-check phases contain dependent scans, sorts, and resolution
         // passes. Coalescing them into one compute pass provides no storage
@@ -405,11 +405,11 @@ impl GpuTypeChecker {
             source_file_capacity,
             token_capacity,
             hir_node_capacity,
-            parser_hir_node_capacity,
             module_record_capacity,
             call_param_row_capacity,
             call_arg_row_capacity,
             parser_feature_flags,
+            semantic_interface_required: hir_items.semantic_interface_required,
             input_fingerprint,
         }
         .bucketed();
@@ -435,15 +435,13 @@ impl GpuTypeChecker {
             {
                 if let Some(previous) = resident_workspace_guard.as_ref() {
                     eprintln!(
-                        "[gpu_compile_host_timer] typecheck.resident_cache_miss: input_fingerprint={:#018x}->{:#018x} token_capacity={}->{} hir_capacity={}->{} parser_hir_capacity={}->{} module_capacity={}->{} call_param_capacity={}->{} call_arg_capacity={}->{} features={:#010x}->{:#010x}",
+                        "[gpu_compile_host_timer] typecheck.resident_cache_miss: input_fingerprint={:#018x}->{:#018x} token_capacity={}->{} hir_capacity={}->{} module_capacity={}->{} call_param_capacity={}->{} call_arg_capacity={}->{} features={:#010x}->{:#010x} semantic_interface={}->{}",
                         previous.cache_key.input_fingerprint,
                         cache_key.input_fingerprint,
                         previous.cache_key.token_capacity,
                         cache_key.token_capacity,
                         previous.cache_key.hir_node_capacity,
                         cache_key.hir_node_capacity,
-                        previous.cache_key.parser_hir_node_capacity,
-                        cache_key.parser_hir_node_capacity,
                         previous.cache_key.module_record_capacity,
                         cache_key.module_record_capacity,
                         previous.cache_key.call_param_row_capacity,
@@ -452,31 +450,33 @@ impl GpuTypeChecker {
                         cache_key.call_arg_row_capacity,
                         previous.cache_key.parser_feature_flags,
                         cache_key.parser_feature_flags,
+                        previous.cache_key.semantic_interface_required,
+                        cache_key.semantic_interface_required,
                     );
                 }
             }
             if resident_cache_trace {
                 eprintln!(
-                    "[typecheck.resident_cache] rebuild={needs_rebuild} source={} files={} tokens={} hir={} parser_hir={} modules={} call_params={} call_args={} features={:#010x} fingerprint={:#018x} allocation_source={} allocation_files={} allocation_tokens={} allocation_hir={} allocation_parser_hir={} allocation_modules={} allocation_call_params={} allocation_call_args={} allocation_features={:#010x}",
+                    "[typecheck.resident_cache] rebuild={needs_rebuild} source={} files={} tokens={} hir={} modules={} call_params={} call_args={} features={:#010x} semantic_interface={} fingerprint={:#018x} allocation_source={} allocation_files={} allocation_tokens={} allocation_hir={} allocation_modules={} allocation_call_params={} allocation_call_args={} allocation_features={:#010x} allocation_semantic_interface={}",
                     cache_key.source_byte_capacity,
                     cache_key.source_file_capacity,
                     cache_key.token_capacity,
                     cache_key.hir_node_capacity,
-                    cache_key.parser_hir_node_capacity,
                     cache_key.module_record_capacity,
                     cache_key.call_param_row_capacity,
                     cache_key.call_arg_row_capacity,
                     cache_key.parser_feature_flags,
+                    cache_key.semantic_interface_required,
                     cache_key.input_fingerprint,
                     allocation.source_byte_capacity,
                     allocation.source_file_capacity,
                     allocation.token_capacity,
                     allocation.hir_node_capacity,
-                    allocation.parser_hir_node_capacity,
                     allocation.module_record_capacity,
                     allocation.call_param_row_capacity,
                     allocation.call_arg_row_capacity,
                     allocation.parser_feature_flags,
+                    allocation.semantic_interface_required,
                 );
             }
             let rebuilt = needs_rebuild;
@@ -491,6 +491,12 @@ impl GpuTypeChecker {
                     .expect("GpuTypeChecker.current_semantic_artifact poisoned")
                     .take();
                 resident_workspace_guard.take();
+                // Lowering stages and reflected bind-group caches borrow the
+                // type-checker's semantic buffers. The compiler owns those
+                // downstream consumers, so give it a replacement boundary
+                // after the old type-check owner has been dropped and before
+                // allocating the new multi-gigabyte workspace.
+                release_workspace_consumers();
                 let (state, resettable_buffers) = crate::gpu::buffers::with_uniform_buffer_arena(
                     device,
                     "type_check.uniform_arena",
@@ -1878,6 +1884,20 @@ impl GpuTypeChecker {
             .clone()
     }
 
+    pub(crate) fn with_post_typecheck_workspace<R>(
+        &self,
+        semantic: &OwnedGpuSemanticArtifact,
+        consume: impl FnOnce(&[crate::gpu::buffers::TrackedBufferView<'_>]) -> R,
+    ) -> Option<R> {
+        let guard = self
+            .resident_workspace
+            .lock()
+            .expect("GpuTypeChecker.resident_workspace poisoned");
+        let state = guard.as_ref()?;
+        let workspace = state.post_typecheck_workspace(semantic);
+        Some(consume(&workspace))
+    }
+
     /// Borrows the stable-identity and typed-root tables needed by the
     /// source-pack semantic-interface exporter.
     pub fn with_semantic_interface_identity_buffers<R>(
@@ -1989,74 +2009,78 @@ impl GpuTypeChecker {
                 .unwrap_or(u32::MAX),
             module_segment_capacity: u32::try_from(module_path.module_key_segment_name_id.count)
                 .unwrap_or(u32::MAX),
-            name_count_out: &name_scan_total,
-            name_spans: &name_spans,
+            name_count_out: (&name_scan_total).into(),
+            name_spans: (&name_spans).into(),
             // The exact-name hash passes intentionally retain their outputs in
             // the name-order scratch rows after id assignment.
-            name_hash_lo: &state.name_order_in,
-            name_hash_hi: &state.name_order_tmp,
-            name_id_by_token: &state.name_id_by_token,
-            language_symbol_bytes: &state.language_symbol_bytes,
-            module_count_out: &module_path.module_count_out,
-            module_key_segment_count: &module_path.module_key_segment_count,
-            module_key_segment_base: &module_path.module_key_segment_base,
-            module_key_segment_name_id: &module_path.module_key_segment_name_id,
-            decl_count_out: &module_path.decl_count_out,
-            decl_module_id: &module_path.decl_module_id,
-            decl_name_id: &module_path.decl_name_id,
-            decl_kind: &module_path.decl_kind,
-            decl_namespace: &module_path.decl_namespace,
-            decl_visibility: &module_path.decl_visibility,
-            decl_parent_type_decl: &module_path.decl_parent_type_decl,
-            decl_hir_node: &module_path.decl_hir_node,
-            semantic_value_const_by_hir: &semantic_value_const_by_hir,
-            semantic_value_const_present_by_hir: &semantic_value_const_present_by_hir,
-            function_host_service_by_hir: &function_host_service_by_hir,
-            public_decl_count: &module_path.interface_public_decl_count,
-            public_decl_local_id: &module_path.interface_public_decl_local_id,
-            public_decl_index_by_local: &module_path.interface_public_decl_index_by_local,
-            public_decl_index_by_hir: &module_path.interface_public_decl_index_by_hir,
-            type_expr_ref_tag: &type_expr_ref_tag,
-            type_expr_ref_payload: &type_expr_ref_payload,
-            type_generic_param_slot_by_token: &type_generic_param_slot_by_token,
-            type_const_param_slot_by_token: &type_const_param_slot_by_token,
-            type_instance_decl_token: &state.type_instance_decl_token,
-            external_type_library_id: &external_type_library_id,
-            external_type_unit_id: &external_type_unit_id,
-            external_type_local_index: &external_type_local_index,
-            semantic_type_ref_tag_by_hir: &semantic_type_ref_tag_by_hir,
-            semantic_type_ref_payload_by_hir: &semantic_type_ref_payload_by_hir,
-            semantic_type_generic_param_slot_by_hir: &semantic_type_generic_param_slot_by_hir,
-            semantic_type_external_library_id_by_hir: &semantic_type_external_library_id_by_hir,
-            semantic_type_external_unit_id_by_hir: &semantic_type_external_unit_id_by_hir,
-            semantic_type_external_local_index_by_hir: &semantic_type_external_local_index_by_hir,
+            name_hash_lo: (&state.name_order_in).into(),
+            name_hash_hi: (&state.name_order_tmp).into(),
+            name_id_by_token: (&state.name_id_by_token).into(),
+            language_symbol_bytes: (&state.language_symbol_bytes).into(),
+            module_count_out: (&module_path.module_count_out).into(),
+            module_key_segment_count: (&module_path.module_key_segment_count).into(),
+            module_key_segment_base: (&module_path.module_key_segment_base).into(),
+            module_key_segment_name_id: (&module_path.module_key_segment_name_id).into(),
+            decl_count_out: (&module_path.decl_count_out).into(),
+            decl_module_id: (&module_path.decl_module_id).into(),
+            decl_name_id: (&module_path.decl_name_id).into(),
+            decl_kind: (&module_path.decl_kind).into(),
+            decl_namespace: (&module_path.decl_namespace).into(),
+            decl_visibility: (&module_path.decl_visibility).into(),
+            decl_parent_type_decl: (&module_path.decl_parent_type_decl).into(),
+            decl_hir_node: (&module_path.decl_hir_node).into(),
+            semantic_value_const_by_hir: (&semantic_value_const_by_hir).into(),
+            semantic_value_const_present_by_hir: (&semantic_value_const_present_by_hir).into(),
+            function_host_service_by_hir: (&function_host_service_by_hir).into(),
+            public_decl_count: (&module_path.interface_public_decl_count).into(),
+            public_decl_local_id: (&module_path.interface_public_decl_local_id).into(),
+            public_decl_index_by_local: (&module_path.interface_public_decl_index_by_local).into(),
+            public_decl_index_by_hir: (&module_path.interface_public_decl_index_by_hir).into(),
+            type_expr_ref_tag: (&type_expr_ref_tag).into(),
+            type_expr_ref_payload: (&type_expr_ref_payload).into(),
+            type_generic_param_slot_by_token: (&type_generic_param_slot_by_token).into(),
+            type_const_param_slot_by_token: (&type_const_param_slot_by_token).into(),
+            type_instance_decl_token: (&state.type_instance_decl_token).into(),
+            external_type_library_id: (&external_type_library_id).into(),
+            external_type_unit_id: (&external_type_unit_id).into(),
+            external_type_local_index: (&external_type_local_index).into(),
+            semantic_type_ref_tag_by_hir: (&semantic_type_ref_tag_by_hir).into(),
+            semantic_type_ref_payload_by_hir: (&semantic_type_ref_payload_by_hir).into(),
+            semantic_type_generic_param_slot_by_hir: (&semantic_type_generic_param_slot_by_hir)
+                .into(),
+            semantic_type_external_library_id_by_hir: (&semantic_type_external_library_id_by_hir)
+                .into(),
+            semantic_type_external_unit_id_by_hir: (&semantic_type_external_unit_id_by_hir).into(),
+            semantic_type_external_local_index_by_hir: (&semantic_type_external_local_index_by_hir)
+                .into(),
             resolved_dependency_library_id: module_path
                 .dependency_visibility
                 .as_deref()
-                .map(|visibility| &visibility.resolved_dependency_library_id)
-                .unwrap_or(&external_type_library_id),
+                .map(|visibility| (&visibility.resolved_dependency_library_id).into())
+                .unwrap_or_else(|| (&external_type_library_id).into()),
             resolved_dependency_unit_id: module_path
                 .dependency_visibility
                 .as_deref()
-                .map(|visibility| &visibility.resolved_dependency_unit_id)
-                .unwrap_or(&external_type_library_id),
+                .map(|visibility| (&visibility.resolved_dependency_unit_id).into())
+                .unwrap_or_else(|| (&external_type_library_id).into()),
             resolved_dependency_local_index: module_path
                 .dependency_visibility
                 .as_deref()
-                .map(|visibility| &visibility.resolved_dependency_local_index)
-                .unwrap_or(&external_type_library_id),
-            path_id_by_owner_hir: &module_path.path_id_by_owner_hir,
-            path_id_by_owner_token: &module_path.path_id_by_owner_token,
-            resolved_type_decl: &module_path.resolved_type_decl,
-            decl_id_by_name_token: &module_path.decl_id_by_name_token,
-            generic_param_count_out: &generic_param_count_out,
-            generic_param_owner_token: &generic_param_owner_token,
-            generic_param_name_id: &generic_param_name_id,
-            generic_param_token: &generic_param_token,
-            generic_param_kind: &generic_param_kind,
+                .map(|visibility| (&visibility.resolved_dependency_local_index).into())
+                .unwrap_or_else(|| (&external_type_library_id).into()),
+            path_id_by_owner_hir: (&module_path.path_id_by_owner_hir).into(),
+            path_id_by_owner_token: (&module_path.path_id_by_owner_token).into(),
+            resolved_type_decl: (&module_path.resolved_type_decl).into(),
+            decl_id_by_name_token: (&module_path.decl_id_by_name_token).into(),
+            generic_param_count_out: (&generic_param_count_out).into(),
+            generic_param_owner_token: (&generic_param_owner_token).into(),
+            generic_param_name_id: (&generic_param_name_id).into(),
+            generic_param_token: (&generic_param_token).into(),
+            generic_param_kind: (&generic_param_kind).into(),
             type_decl_generic_param_count_by_owner_token:
-                &type_decl_generic_param_count_by_owner_token,
-            type_decl_const_param_count_by_owner_token: &type_decl_const_param_count_by_owner_token,
+                (&type_decl_generic_param_count_by_owner_token).into(),
+            type_decl_const_param_count_by_owner_token:
+                (&type_decl_const_param_count_by_owner_token).into(),
         }))
     }
 

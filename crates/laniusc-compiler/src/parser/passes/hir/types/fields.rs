@@ -13,6 +13,10 @@ use crate::{
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
+    /// Raw start/count/next rows exist only for parser-debug readback. The
+    /// production compiler compacts type arguments directly from owner/rank
+    /// relations into dense HIR side tables.
+    pub retain_debug_rows: u32,
 }
 
 /// Absence of a type form.

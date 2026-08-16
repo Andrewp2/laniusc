@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.lir.x86.common;
 import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.safety;
@@ -177,9 +178,18 @@ void move_rax_to_argument(inout uint cursor, uint ordinal)
 
 uint base_frame_slots(TargetLirFunction function, SemanticLirFunction semantic_function)
 {
-    return function.instruction_count + semantic_function.param_count +
-        semantic_function.local_count +
+    return function.instruction_count +
+        x86_declaration_slot_count(semantic_function.param_count,
+            semantic_function.local_count) +
         (semantic_function.result_word_count > 2u ? 1u : 0u);
+}
+
+uint hidden_sret_slot(TargetLirFunction function,
+                      SemanticLirFunction semantic_function)
+{
+    return function.instruction_count +
+        x86_declaration_slot_count(semantic_function.param_count,
+            semantic_function.local_count);
 }
 
 uint frame_size(TargetLirFunction function, SemanticLirFunction semantic_function,
@@ -246,6 +256,13 @@ void store_declaration32(inout uint cursor, uint source, uint location)
     else store_stack32(cursor, source, x86_location_payload(location));
 }
 
+void load_declaration32(inout uint cursor, uint location, uint destination)
+{
+    if (x86_location_is_register(location))
+        move32_register(cursor, x86_location_payload(location), destination);
+    else load_stack32(cursor, x86_location_payload(location), destination);
+}
+
 void load_declaration64(inout uint cursor, uint location, uint destination)
 {
     if (x86_location_is_register(location))
@@ -301,17 +318,20 @@ void emit_prologue(inout uint cursor, TargetLirFunction function,
     save_registers(cursor, saved_mask, first_saved_slot);
     uint sret_shift = semantic_function.result_word_count > 2u ? 1u : 0u;
     if (sret_shift != 0u)
-    {
-        uint sret_slot = function.instruction_count + semantic_function.param_count +
-            semantic_function.local_count;
-        store_stack64(cursor, argument_register(0u), sret_slot);
-    }
-    for (uint ordinal = 0u;
-         ordinal < min(semantic_function.param_count, 6u - sret_shift); ordinal += 1u)
+        store_stack64(cursor, argument_register(0u),
+            hidden_sret_slot(function, semantic_function));
+    uint abi_ordinal = sret_shift;
+    for (uint ordinal = 0u; ordinal < semantic_function.param_count; ordinal += 1u)
     {
         SemanticLirParam param = semantic_lir_params[semantic_function.param_start + ordinal];
-        store_declaration64(cursor, argument_register(ordinal + sret_shift),
-            declaration_location(param.declaration_id));
+        uint width = x86_abi_type_width(param.type_id);
+        if (abi_ordinal + width > 6u) break;
+        uint destination = declaration_location(param.declaration_id);
+        store_declaration64(cursor, argument_register(abi_ordinal), destination);
+        if (width == 2u)
+            store_declaration64(cursor, argument_register(abi_ordinal + 1u),
+                destination + 1u);
+        abi_ordinal += width;
     }
 }
 
@@ -371,11 +391,21 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     }
     else if (core.op == X86_LIR_OP_ALIAS)
     {
-        // Value slots are eight bytes so aggregate references are first-class
-        // values. Scalar consumers still read the low dword.
-        uint source = declaration_location(operands.a);
-        load_declaration64(cursor, source, 0u);
-        store_value64(cursor, 0u, locations.result, function);
+        uint component = (operands.metadata & X86_LIR_METADATA_STRING_PAIR) != 0u
+            ? operands.c : 0u;
+        uint source = declaration_location(operands.a) + component;
+        if ((operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u)
+        {
+            load_declaration32(cursor, source, 0u);
+            store_value32(cursor, 0u, locations.result, function);
+        }
+        else
+        {
+            // Value slots are eight bytes so pointers and aggregate references
+            // remain first-class values. Scalar consumers read the low dword.
+            load_declaration64(cursor, source, 0u);
+            store_value64(cursor, 0u, locations.result, function);
+        }
     }
     else if (core.op == X86_LIR_OP_STORE_LOCAL)
     {
@@ -388,14 +418,13 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             emit_u32(cursor, displacement(first_word_slot));
             store_declaration64(cursor, 0u, declaration_location(operands.a));
         }
-        else if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
+        else if ((operands.metadata & X86_LIR_METADATA_STRING_PAIR) != 0u)
         {
-            load_value32(cursor, locations.b, 0u, function);
-            load_value32(cursor, locations.c, 1u, function);
-            emit_u8(cursor, 0x48u); emit_u8(cursor, 0xc1u);
-            emit_u8(cursor, 0xe1u); emit_u8(cursor, 0x20u);
-            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x09u); emit_u8(cursor, 0xc8u);
-            store_declaration64(cursor, 0u, declaration_location(operands.a));
+            uint destination = declaration_location(operands.a);
+            load_value64(cursor, locations.b, 0u, function);
+            store_declaration64(cursor, 0u, destination);
+            load_value32(cursor, locations.c, 0u, function);
+            store_declaration32(cursor, 0u, destination + 1u);
         }
         else if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
         {
@@ -598,9 +627,8 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         {
             if (operands.c > 2u)
             {
-                uint sret_slot = function.instruction_count + semantic_function.param_count +
-                    semantic_function.local_count;
-                load_stack64(cursor, sret_slot, 0u);
+                load_stack64(cursor,
+                    hidden_sret_slot(function, semantic_function), 0u);
             }
         }
         else if (operands.a == INVALID || core.op == X86_LIR_OP_RETURN_VOID)
@@ -614,30 +642,17 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     }
     else if (core.op == X86_LIR_OP_CALL_ARG)
     {
-        if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
+        bool wide = (operands.metadata &
+            (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u;
+        if (wide)
         {
             load_value64(cursor, locations.a, 0u, function);
-            if ((operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u)
-            {
-                emit_u8(cursor, 0x48u); emit_u8(cursor, 0xc1u);
-                emit_u8(cursor, 0xe8u); emit_u8(cursor, 0x20u);
-            }
-            move_eax_to_argument(cursor, operands.b);
+            move_rax_to_argument(cursor, operands.b);
         }
         else
         {
-            bool wide = (operands.metadata &
-                (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u;
-            if (wide)
-            {
-                load_value64(cursor, locations.a, 0u, function);
-                move_rax_to_argument(cursor, operands.b);
-            }
-            else
-            {
-                load_value32(cursor, locations.a, 0u, function);
-                move_eax_to_argument(cursor, operands.b);
-            }
+            load_value32(cursor, locations.a, 0u, function);
+            move_eax_to_argument(cursor, operands.b);
         }
     }
     else if (core.op == X86_LIR_OP_CALL)
@@ -751,9 +766,8 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         else
         {
             load_value64(cursor, locations.a, 0u, function);
-            uint sret_slot = function.instruction_count + semantic_function.param_count +
-                semantic_function.local_count;
-            load_stack64(cursor, sret_slot, 10u);
+            load_stack64(cursor,
+                hidden_sret_slot(function, semantic_function), 10u);
             if (operands.b == 0u)
             {
                 emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x08u);

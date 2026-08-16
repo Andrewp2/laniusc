@@ -13,6 +13,7 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_id_by_name_token;
+StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_hir_node;
 RWStructuredBuffer<uint> semantic_value_const_by_hir;
 RWStructuredBuffer<uint> semantic_value_const_present_by_hir;
@@ -22,6 +23,7 @@ static const uint HIR_EXPR = 14u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_EXPR_NAME = 2u;
+static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint CONST_PRESENT = 0x80000000u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -42,6 +44,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint declaration_token = visible_decl[payload.d];
     uint decl = declaration_token < gParams.n_tokens
         ? decl_id_by_name_token[declaration_token] : INVALID;
+    if (decl >= gParams.n_hir_nodes || decl_kind[decl] != HIR_ITEM_KIND_CONST)
+        return;
     uint decl_hir = decl < gParams.n_hir_nodes ? decl_hir_node[decl] : INVALID;
     uint value_hir = decl_hir < hir_count ? compact_const_value[decl_hir] : INVALID;
     if (value_hir >= hir_count ||

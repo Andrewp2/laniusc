@@ -9,6 +9,8 @@ struct Params
 {
     uint n;
     uint uses_status_count;
+    uint semantic_parent_local_ancestor_span;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirStmtScope;
@@ -60,5 +62,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (scope_end == 0u || scope_end == INVALID)
         return;
 
-    hir_stmt_scope_end[node] = scope_end;
+    uint output_row = gHirStmtScope.retain_debug_rows != 0u ? node : row;
+    hir_stmt_scope_end[output_row] = scope_end;
 }

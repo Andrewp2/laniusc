@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.lir.x86.common;
 import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.safety;
@@ -51,14 +52,29 @@ uint declaration_location(uint token)
 uint param_store_bytes(SemanticLirFunction function, uint hidden_sret)
 {
     uint bytes = hidden_sret != 0u ? 7u : 0u;
-    for (uint ordinal = 0u;
-         ordinal < min(function.param_count, 6u - hidden_sret); ordinal += 1u)
+    uint abi_ordinal = hidden_sret;
+    for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
     {
         SemanticLirParam param = semantic_lir_params[function.param_start + ordinal];
-        bytes += x86_move64_from_fixed_bytes(argument_register(ordinal + hidden_sret),
-            declaration_location(param.declaration_id));
+        uint width = x86_abi_type_width(param.type_id);
+        if (abi_ordinal + width > 6u) break;
+        uint destination = declaration_location(param.declaration_id);
+        bytes += x86_move64_from_fixed_bytes(argument_register(abi_ordinal), destination);
+        if (width == 2u)
+            bytes += x86_move64_from_fixed_bytes(argument_register(abi_ordinal + 1u),
+                destination + 1u);
+        abi_ordinal += width;
     }
     return bytes;
+}
+
+uint function_abi_param_count(SemanticLirFunction function)
+{
+    uint count = 0u;
+    for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
+        count += x86_abi_type_width(
+            semantic_lir_params[function.param_start + ordinal].type_id);
+    return count;
 }
 
 uint instruction_bytes(X86LirCore core, X86LirOperands operands,
@@ -71,17 +87,23 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
             : x86_move32_from_fixed_bytes(0u, locations.result));
     if (core.op == X86_LIR_OP_ALIAS)
     {
-        uint source = declaration_location(operands.a);
-        return x86_move64_to_fixed_bytes(source, 0u) +
-            x86_move64_from_fixed_bytes(0u, locations.result);
+        uint component = (operands.metadata & X86_LIR_METADATA_STRING_PAIR) != 0u
+            ? operands.c : 0u;
+        uint source = declaration_location(operands.a) + component;
+        return (operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u
+            ? x86_move32_to_fixed_bytes(source, 0u) +
+              x86_move32_from_fixed_bytes(0u, locations.result)
+            : x86_move64_to_fixed_bytes(source, 0u) +
+              x86_move64_from_fixed_bytes(0u, locations.result);
     }
     if (core.op == X86_LIR_OP_STORE_LOCAL)
     {
         uint destination = declaration_location(operands.a);
-        if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
-            return x86_move32_to_fixed_bytes(locations.b, 0u) +
-                x86_move32_to_fixed_bytes(locations.c, 1u) + 7u +
-                x86_move64_from_fixed_bytes(0u, destination);
+        if ((operands.metadata & X86_LIR_METADATA_STRING_PAIR) != 0u)
+            return x86_move64_to_fixed_bytes(locations.b, 0u) +
+                x86_move64_from_fixed_bytes(0u, destination) +
+                x86_move32_to_fixed_bytes(locations.c, 0u) +
+                x86_move32_from_fixed_bytes(0u, destination + 1u);
         bool wide = (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u ||
             (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER;
         return (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u
@@ -135,10 +157,6 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     if (core.op == X86_LIR_OP_CALL_ARG)
     {
         if (operands.b >= 6u) return 0u;
-        if ((operands.metadata & X86_LIR_METADATA_PACKED_STRING) != 0u)
-            return x86_move64_to_fixed_bytes(locations.a, 0u) +
-                ((operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u ? 4u : 0u) +
-                (operands.b < 4u ? 2u : 3u);
         bool wide = (operands.metadata &
             (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u;
         return (wide ? x86_move64_to_fixed_bytes(locations.a, 0u)
@@ -286,7 +304,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
     }
     uint hidden_sret = semantic_function.result_word_count > 2u ? 1u : 0u;
-    if (semantic_function.param_count + hidden_sret > 6u)
+    if (function_abi_param_count(semantic_function) + hidden_sret > 6u)
     {
         InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
         InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);

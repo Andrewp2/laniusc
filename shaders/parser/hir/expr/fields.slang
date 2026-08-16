@@ -4,11 +4,14 @@
 // can consume HIR records instead of rediscovering operators from token shapes.
 
 import generated_parse_production_ids;
+import atomics;
 
 struct Params
 {
     uint n;
     uint uses_status_count;
+    uint token_capacity;
+    uint retain_debug_rows;
 };
 
 ConstantBuffer<Params> gHirExpr;
@@ -530,9 +533,17 @@ void publish_expr(uint i)
 {
     uint prod = node_kind[i];
     uint child = first_child_node(i);
-    hir_expr_name_role[i] = prod == PROD_SELF_VALUE
+    uint name_role = prod == PROD_SELF_VALUE
         ? HIR_EXPR_NAME_ROLE_SELF
         : HIR_EXPR_NAME_ROLE_NONE;
+    if (gHirExpr.retain_debug_rows != 0u)
+        hir_expr_name_role[i] = name_role;
+    else if (name_role != HIR_EXPR_NAME_ROLE_NONE)
+    {
+        uint token = hir_token_pos[i];
+        if (token < gHirExpr.token_capacity)
+            atomic_u32_max(hir_expr_name_role, token, name_role);
+    }
 
     if (is_direct_result_hir_kind(hir_kind[i]))
         publish_expr_result(i, i);

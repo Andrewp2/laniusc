@@ -9,7 +9,6 @@ StructuredBuffer<uint> arm_owner_match;
 StructuredBuffer<uint> hir_token_pos;
 RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
-RWStructuredBuffer<uint> raw_to_arm;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
@@ -20,7 +19,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint raw = tid(dtid);
     if (raw >= gCanonical.raw_capacity) return;
-    raw_to_arm[raw] = INVALID;
     if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_MATCHES))
         return;
     if (raw >= active_count() || node_kind[raw] != PROD_MATCH_ARM ||

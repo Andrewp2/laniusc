@@ -94,10 +94,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalScat
                 "type_arg_ranges".into(),
                 b.hir_type_arg_ranges.as_entire_binding(),
             ),
-            (
-                "generic_param_ranges".into(),
-                b.hir_generic_param_ranges.as_entire_binding(),
-            ),
         ])
     }
 }

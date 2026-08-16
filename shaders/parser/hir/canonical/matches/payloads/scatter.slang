@@ -8,6 +8,7 @@ StructuredBuffer<uint> family_local_prefix;
 StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> candidate_raw_by_anchor;
 StructuredBuffer<uint> raw_to_hir;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> payload_parent_pattern;
 StructuredBuffer<uint> payload_owner_arm;
 StructuredBuffer<uint> payload_ordinal;
@@ -49,7 +50,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     uint owner_raw = payload_owner_arm[raw];
-    uint arm = owner_raw < gCanonical.raw_capacity ? raw_to_arm[owner_raw] : INVALID;
+    uint owner_anchor = owner_raw < gCanonical.raw_capacity ? hir_token_pos[owner_raw] : INVALID;
+    uint arm = owner_anchor < gCanonical.canonical_capacity
+        ? raw_to_arm[owner_anchor]
+        : INVALID;
     if (arm == INVALID)
     {
         uint owner_pattern = mapped(owner_raw);

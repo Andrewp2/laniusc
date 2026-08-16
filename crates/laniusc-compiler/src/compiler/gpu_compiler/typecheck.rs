@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::{
+    codegen::lowering_ir::LoweringArtifactKind,
     gpu::buffers::LaniusBuffer,
     lexer::{
         types::{GpuToken, Token},
@@ -54,6 +55,30 @@ impl<'a> DependencyInterfacePages<'a> {
 }
 
 impl<'gpu> GpuCompiler<'gpu> {
+    fn ensure_lowering_pipeline_for_semantic(
+        &self,
+        target: LoweringTarget,
+        source_bytes: u32,
+        tokens: u32,
+        hir_nodes: u32,
+        artifact_kind: LoweringArtifactKind,
+        semantic: &gpu_type_checker::OwnedGpuSemanticArtifact,
+    ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
+    {
+        self.type_checker
+            .with_post_typecheck_workspace(semantic, |workspace| {
+                self.ensure_lowering_pipeline(
+                    target,
+                    source_bytes,
+                    tokens,
+                    hir_nodes,
+                    artifact_kind,
+                    workspace,
+                )
+            })
+            .ok_or_else(|| "type-check workspace is unavailable for lowering".to_string())?
+    }
+
     fn release_for_frontend_workspace_replacement(
         &self,
         device: &wgpu::Device,
@@ -485,8 +510,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &parser_failure,
                         ));
                     }
-                    let active_tree_capacity =
-                        hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
                     let (typecheck_hir, type_check) = self
                         .parser
                         .with_current_resident_buffers_with_tree_capacity_and_features(
@@ -508,9 +531,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     bufs,
                                     parse_bufs,
                                     &hir,
-                                    active_tree_capacity,
-                                    parser_tree_capacity,
+                                    hir.capacity,
                                     None,
+                                    false,
                                     timer.as_deref_mut(),
                                     |err| {
                                         type_check_execution_failed_for_source(
@@ -527,19 +550,21 @@ impl<'gpu> GpuCompiler<'gpu> {
                         timer.stamp(encoder, "typecheck.done");
                     }
                     if let Some(target) = target {
-                        let pipeline = self
-                            .ensure_lowering_pipeline(
-                                target,
-                                bufs.n,
-                                token_capacity,
-                                typecheck_hir.capacity,
-                            )
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
                             CompileError::GpuCodegen(
                                 "semantic lowering buffers are unavailable".into(),
                             )
                         })?;
+                        let pipeline = self
+                            .ensure_lowering_pipeline_for_semantic(
+                                target,
+                                bufs.n,
+                                token_capacity,
+                                typecheck_hir.capacity,
+                                LoweringArtifactKind::Executable,
+                                &semantic,
+                            )
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         pipeline
                             .record_checked_hir(device, encoder, &typecheck_hir, semantic.view())
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
@@ -806,8 +831,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &parser_failure,
                         ));
                     }
-                    let active_tree_capacity =
-                        hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
                     let (typecheck_hir, type_check) = self
                         .parser
                         .with_current_resident_buffers_with_tree_capacity_and_features(
@@ -829,9 +852,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     bufs,
                                     parse_bufs,
                                     &hir,
-                                    active_tree_capacity,
-                                    parser_tree_capacity,
+                                    hir.capacity,
                                     dependency_pages.as_ref(),
+                                    emit_semantic_interface,
                                     timer.as_deref_mut(),
                                     |err| {
                                         type_check_execution_failed_for_source_pack(
@@ -878,37 +901,41 @@ impl<'gpu> GpuCompiler<'gpu> {
                         ));
                     }
                     if let Some(target) = lowering_target {
-                        let pipeline = self
-                            .ensure_lowering_pipeline(
-                                target,
-                                bufs.n,
-                                token_capacity,
-                                typecheck_hir.capacity,
-                            )
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
                             CompileError::GpuCodegen(
                                 "semantic lowering buffers are unavailable".into(),
                             )
                         })?;
+                        let pipeline = self
+                            .ensure_lowering_pipeline_for_semantic(
+                                target,
+                                bufs.n,
+                                token_capacity,
+                                typecheck_hir.capacity,
+                                LoweringArtifactKind::Executable,
+                                &semantic,
+                            )
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         pipeline
                             .record_checked_hir(device, encoder, &typecheck_hir, semantic.view())
                             .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     }
                     if let Some(request) = object_request {
-                        let pipeline = self
-                            .ensure_lowering_pipeline(
-                                request.target(),
-                                bufs.n,
-                                token_capacity,
-                                typecheck_hir.capacity,
-                            )
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
                             CompileError::GpuCodegen(
                                 "semantic lowering buffers are unavailable".into(),
                             )
                         })?;
+                        let pipeline = self
+                            .ensure_lowering_pipeline_for_semantic(
+                                request.target(),
+                                bufs.n,
+                                token_capacity,
+                                typecheck_hir.capacity,
+                                LoweringArtifactKind::Object,
+                                &semantic,
+                            )
+                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                         let (library_id, unit_id) = request.ids();
                         pipeline
                             .record_checked_hir_object(
@@ -1042,8 +1069,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         parse_bufs: &crate::parser::buffers::ParserBuffers,
         hir: &crate::parser::buffers::GpuHirView,
         hir_node_capacity: u32,
-        parser_hir_node_capacity: u32,
         dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
+        semantic_interface_required: bool,
         timer: Option<&mut GpuTimer>,
         map_execution_error: impl FnOnce(GpuTypeCheckError) -> CompileError,
     ) -> Result<gpu_type_checker::RecordedTypeCheck, CompileError> {
@@ -1056,6 +1083,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             parse_bufs.n_tokens.saturating_sub(2).max(1),
+            semantic_interface_required,
         );
         self.type_checker
             .record_resident_token_buffer_with_hir_items_on_gpu(
@@ -1070,10 +1098,19 @@ impl<'gpu> GpuCompiler<'gpu> {
                 (&lexer_bufs.token_file_id).into(),
                 (&lexer_bufs.in_bytes).into(),
                 hir_node_capacity,
-                parser_hir_node_capacity,
                 hir_items,
                 dependency_pages,
                 timer,
+                || {
+                    if let Ok(cache) = &self.wasm_lowering {
+                        cache.release();
+                    }
+                    if let Ok(cache) = &self.x86_lowering {
+                        cache.release();
+                    }
+                    crate::gpu::passes_core::release_reflected_bind_group_caches();
+                    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+                },
             )
             .map_err(map_execution_error)
     }

@@ -19,6 +19,7 @@ StructuredBuffer<uint> hir_struct_field_rank_a;
 StructuredBuffer<uint> hir_struct_lit_field_owner_a;
 StructuredBuffer<uint> hir_struct_lit_field_rank_a;
 StructuredBuffer<uint> hir_struct_lit_field_previous;
+StructuredBuffer<uint> hir_token_pos;
 
 RWStructuredBuffer<uint> hir_struct_field_parent_struct;
 RWStructuredBuffer<uint> hir_struct_field_ordinal;
@@ -73,7 +74,11 @@ void publish_literal_field(uint node)
 
     uint ordinal = hir_struct_lit_field_rank_a[node];
     uint previous = hir_struct_lit_field_previous[node];
-    hir_struct_lit_field_parent_lit[node] = owner;
+    uint output_row = gHirStruct.retain_debug_rows != 0u
+        ? node
+        : hir_token_pos[node];
+    if (output_row != INVALID)
+        hir_struct_lit_field_parent_lit[output_row] = owner;
     if (gHirStruct.retain_debug_rows != 0u)
     {
         atomic_u32_min(hir_struct_lit_field_start, owner, node);

@@ -47,11 +47,16 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPath
                 "raw_to_hir".into(),
                 b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
+            (
+                "raw_to_item".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
+            ),
             ("canonical_core".into(), b.hir_core.as_entire_binding()),
             (
                 "segment_count_by_raw_owner".into(),
                 b.hir_path_segment_count.as_entire_binding(),
             ),
+            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),

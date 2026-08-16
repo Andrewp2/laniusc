@@ -142,6 +142,35 @@ use super::{
         },
     },
 };
+use crate::gpu::buffers::LaniusBuffer;
+
+/// Offset-aware adapter for copying logical parser views into raw staging
+/// buffers. Directly dereferencing `LaniusBuffer` exposes the physical arena
+/// and would silently discard a non-zero logical byte offset.
+struct LogicalCopyEncoder<'a>(&'a mut wgpu::CommandEncoder);
+
+impl LogicalCopyEncoder<'_> {
+    fn copy_buffer_to_buffer<T>(
+        &mut self,
+        source: &LaniusBuffer<T>,
+        source_offset: u64,
+        destination: &wgpu::Buffer,
+        destination_offset: u64,
+        size: u64,
+    ) {
+        assert!(
+            source_offset.saturating_add(size) <= source.byte_size as u64,
+            "parser readback copy exceeds its logical source view"
+        );
+        self.0.copy_buffer_to_buffer(
+            &source.buffer,
+            source.absolute_offset(source_offset),
+            destination,
+            destination_offset,
+            size,
+        );
+    }
+}
 
 pub(crate) fn project_hir_item_decl_tokens(kinds: &[u32], token_pos: &[u32]) -> Vec<u32> {
     kinds
@@ -696,6 +725,8 @@ impl ParserReadbacks {
     /// Record copy commands from device-local outputs into staging buffers.
     /// Encodes copies from parser GPU buffers into the staging readback buffers.
     pub fn encode_copies(&self, encoder: &mut wgpu::CommandEncoder, bufs: &ParserBuffers) {
+        let mut logical_encoder = LogicalCopyEncoder(encoder);
+        let encoder = &mut logical_encoder;
         encoder.copy_buffer_to_buffer(
             &bufs.ll1_status,
             0,

@@ -43,7 +43,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                 },
             ),
             ("token_count".into(), b.token_count.as_entire_binding()),
-            ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
             (
                 "hir_item_name_token".into(),
                 b.hir_item_name_token.as_entire_binding(),

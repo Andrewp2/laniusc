@@ -1,4 +1,5 @@
 import generated_parse_production_ids;
+import hir_records;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
@@ -8,6 +9,7 @@ StructuredBuffer<uint> owner_value;
 StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
+RWStructuredBuffer<HirRange> generic_param_ranges;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
@@ -18,6 +20,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint anchor = tid(dtid);
     if (anchor >= gCanonical.canonical_capacity) return;
+    HirRange empty_range;
+    empty_range.start = INVALID;
+    empty_range.count = 0u;
+    generic_param_ranges[anchor] = empty_range;
     uint encoded = candidate_raw_by_anchor[anchor];
     uint raw = encoded == 0u ? INVALID : encoded - 1u;
     if (raw >= gCanonical.raw_capacity) {

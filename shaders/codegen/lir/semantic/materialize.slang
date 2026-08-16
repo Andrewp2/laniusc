@@ -3,7 +3,17 @@ import codegen.lir.semantic.common;
 import codegen.lir.semantic.loop_recipe;
 import codegen.lowering_ir;
 
-struct Params { uint n_hir_nodes; uint lir_capacity; uint n_tokens; uint reserved1; };
+struct Params
+{
+    uint n_hir_nodes;
+    uint lir_capacity;
+    uint n_tokens;
+    uint resident_rows;
+    uint schedule_packed_bits;
+    uint reserved0;
+    uint reserved1;
+    uint reserved2;
+};
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
@@ -736,20 +746,20 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         ? (local_row - 3u) % 12u : LIR_INVALID;
 
     SemanticLirCore core;
-    core.op = op;
     core.type_id = semantic_type_for_hir(node, hir_count);
+    uint type_ref_tag;
     semantic_type_ref_for_hir(node, hir_count,
-        core.type_ref_tag, core.type_ref_payload);
+        type_ref_tag, core.type_ref_payload);
     if (match_scrutinee_set)
     {
         core.type_id = SEMANTIC_LIR_TY_POINTER;
-        core.type_ref_tag = 1u;
+        type_ref_tag = 1u;
         core.type_ref_payload = SEMANTIC_LIR_TY_POINTER;
     }
     else if (match_expression && !match_result_get)
     {
         core.type_id = match_phase == 2u ? SEMANTIC_LIR_TY_POINTER : 3u;
-        core.type_ref_tag = 1u;
+        type_ref_tag = 1u;
         core.type_ref_payload = core.type_id;
     }
     else if (match_binding)
@@ -760,14 +770,14 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         if (local_row == 0u)
         {
             core.type_id = SEMANTIC_LIR_TY_POINTER;
-            core.type_ref_tag = 1u;
+            type_ref_tag = 1u;
             core.type_ref_payload = SEMANTIC_LIR_TY_POINTER;
         }
         else
         {
             core.type_id = semantic_value_type[node];
             semantic_type_ref_for_hir(node, hir_count,
-                core.type_ref_tag, core.type_ref_payload);
+                type_ref_tag, core.type_ref_payload);
         }
     }
     if ((op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_VALUE_SET ||
@@ -779,7 +789,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     // aggregates from scalar values without reconstructing declaration syntax.
     if (op == SEMANTIC_LIR_OP_VALUE_SET && !match_expression && payload.c < hir_count)
         semantic_type_ref_for_hir(payload.c, hir_count,
-            core.type_ref_tag, core.type_ref_payload);
+            type_ref_tag, core.type_ref_payload);
     if (semantic_lir_is_assignment(hir, payload) && payload.b < hir_count)
     {
         // The lvalue's declaration type is not necessarily the type of the
@@ -789,31 +799,31 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         // compound operations.
         core.type_id = semantic_type_for_hir(payload.b, hir_count);
         semantic_type_ref_for_hir(payload.b, hir_count,
-            core.type_ref_tag, core.type_ref_payload);
+            type_ref_tag, core.type_ref_payload);
     }
     if (op == SEMANTIC_LIR_OP_RETURN &&
         semantic_function_id[node] != LIR_INVALID)
     {
         core.type_id = semantic_lir_functions[semantic_function_id[node]].result_type;
         semantic_type_ref_for_hir(payload.b, hir_count,
-            core.type_ref_tag, core.type_ref_payload);
+            type_ref_tag, core.type_ref_payload);
     }
     if (range_for)
     {
         core.type_id = 3u;
-        core.type_ref_tag = 1u;
+        type_ref_tag = 1u;
         core.type_ref_payload = 3u;
     }
     if (array_for)
     {
         core.type_id = 3u;
-        core.type_ref_tag = 1u;
+        type_ref_tag = 1u;
         core.type_ref_payload = 3u;
         if (local_row == 9u)
         {
             core.type_id = semantic_type_for_hir(payload.c, hir_count);
             semantic_type_ref_for_hir(payload.c, hir_count,
-                core.type_ref_tag, core.type_ref_payload);
+                type_ref_tag, core.type_ref_payload);
         }
         else if (local_row == 11u || local_row == 12u)
         {
@@ -822,21 +832,30 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
             // declaration row for this synthetic load/store pair.
             core.type_id = semantic_type_for_hir(node, hir_count);
             semantic_type_ref_for_hir(node, hir_count,
-                core.type_ref_tag, core.type_ref_payload);
+                type_ref_tag, core.type_ref_payload);
         }
     }
     // Comparisons produce bool but machine selection depends on the operand
     // representation. The semantic instruction type therefore records the
     // compared value type for this opcode.
-    if (op == SEMANTIC_LIR_OP_COMPARE && !match_expression && payload.b < hir_count)
+    // Loop-recipe comparisons operate on the synthetic integer induction
+    // value and bound produced by the recipe. `payload.b` belongs to the
+    // source `for` statement (the binding token), not to this synthetic
+    // comparison; interpreting it as an operand HIR can borrow an unrelated
+    // scalar type from another packed module and select an f32 comparison.
+    if (op == SEMANTIC_LIR_OP_COMPARE && !match_expression &&
+        !range_for && !array_for && payload.b < hir_count)
     {
         core.type_id = semantic_type_for_hir(payload.b, hir_count);
         semantic_type_ref_for_hir(payload.b, hir_count,
-            core.type_ref_tag, core.type_ref_payload);
+            type_ref_tag, core.type_ref_payload);
     }
-    core.source_hir = node;
-    core.flags = 0u;
-    core.array_length = LIR_INVALID;
+    core.flags = ((type_ref_tag & 3u) << SEMANTIC_LIR_TYPE_REF_TAG_SHIFT) |
+        ((op & 0x3fu) << SEMANTIC_LIR_OP_SHIFT);
+    // Field word offsets and indexed-array lengths are mutually exclusive
+    // projection metadata. They share the existing per-row side table instead
+    // of widening every semantic instruction.
+    uint projection_metadata = LIR_INVALID;
     uint value_node = match_scrutinee_set ? payload.a
         : op == SEMANTIC_LIR_OP_VALUE_SET && payload.c < hir_count
         ? payload.c : node;
@@ -894,13 +913,13 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
             ? assignment_lhs_payload.b : payload.b;
         if (indexed_base < hir_count)
         {
-            core.array_length = semantic_array_length[indexed_base];
-            if (core.array_length == LIR_INVALID)
+            projection_metadata = semantic_array_length[indexed_base];
+            if (projection_metadata == LIR_INVALID)
             {
                 uint projected_words = aggregate_word_count_for_hir(
                     indexed_base, hir_count);
                 if (projected_words != 0u)
-                    core.array_length = projected_words;
+                    projection_metadata = projected_words;
             }
         }
     }
@@ -951,7 +970,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     if (loop_recipe.kind != SEMANTIC_LOOP_RECIPE_NONE)
         core.flags |= semantic_loop_recipe_flags(loop_recipe.kind, local_row);
     if (array_for && (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
-        core.array_length = array_length;
+        projection_metadata = array_length;
     if (semantic_short_circuit_rhs(node, hir_count))
     {
         if (op == SEMANTIC_LIR_OP_CALL || op == SEMANTIC_LIR_OP_CALL_HOST ||
@@ -961,7 +980,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
             ? assignment_lhs_payload.c : payload.c;
         bool indexed_may_trap =
             (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u &&
-            !static_index_in_bounds(index_hir, core.array_length, hir_count);
+            !static_index_in_bounds(index_hir, projection_metadata, hir_count);
         bool division_may_trap =
             (op == SEMANTIC_LIR_OP_DIV || op == SEMANTIC_LIR_OP_REM) &&
             !static_nonzero_integer(payload.c, hir_count);
@@ -974,7 +993,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     operands.a = LIR_INVALID;
     operands.b = LIR_INVALID;
     operands.c = LIR_INVALID;
-    uint layout_word_offset = LIR_INVALID;
+    uint layout_word_offset = projection_metadata;
 
     if (match_expression)
     {

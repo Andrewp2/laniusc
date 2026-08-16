@@ -11,7 +11,7 @@ StructuredBuffer<uint> owner_block_prefix;
 StructuredBuffer<uint> path_segment_owner;
 StructuredBuffer<uint> path_segment_rank;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> token_file_id;
 RWStructuredBuffer<uint> family_count;
 RWStructuredBuffer<HirPathSegment> path_segments;
 RWStructuredBuffer<uint> canonical_status;
@@ -29,6 +29,10 @@ uint active_count() {
 bool path_segment(uint production) {
     return production == PROD_PATH_IDENT || production == PROD_PATH_IDENT_ARGS ||
            production == PROD_TYPE_PATH_IDENT || production == PROD_BOUND_TYPE_PATH_IDENT;
+}
+uint file_for_raw(uint raw) {
+    uint token = raw < gCanonical.raw_capacity ? hir_token_pos[raw] : INVALID;
+    return token < gCanonical.canonical_capacity ? token_file_id[token] : INVALID;
 }
 
 [shader("compute")]
@@ -55,6 +59,6 @@ void main(uint3 dtid: SV_DispatchThreadID) {
     segment.path = owner;
     segment.name_token = hir_token_pos[raw];
     segment.ordinal = path_segment_rank[raw];
-    segment.file_id = hir_token_file_id[raw];
+    segment.file_id = file_for_raw(raw);
     path_segments[row] = segment;
 }

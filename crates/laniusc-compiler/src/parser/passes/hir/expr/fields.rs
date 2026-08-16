@@ -13,6 +13,8 @@ use crate::{
 pub struct Params {
     pub n: u32,
     pub uses_status_count: u32,
+    pub token_capacity: u32,
+    pub retain_debug_rows: u32,
 }
 
 /// Absence of an expression form.
