@@ -1,0 +1,384 @@
+{
+  "machine": {
+    "gpu": "NVIDIA GeForce RTX 3090, 580.173.02, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39"
+  },
+  "measurements": [
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "cargo",
+            "build",
+            "--quiet"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/typical-project-10/rust",
+          "display": "cargo build --quiet",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "rust",
+        "version": "rustc 1.99.0-nightly (87e5904f5 2026-07-20)"
+      },
+      "configuration": "o0",
+      "configuration_display": null,
+      "id": "rust-o0",
+      "measurement_semantics": {
+        "cache": "clean build; cleanup occurs before the timed interval",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": 16,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-rust-parallel-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "wall_ms": 261.094193
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "wall_ms": 300.436067
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "wall_ms": 248.090447
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "wall_ms": 234.676118
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "wall_ms": 271.540368
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "wall_ms": 234.775045
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "wall_ms": 238.715472
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "wall_ms": 257.894758
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "wall_ms": 266.394409
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "wall_ms": 238.260189
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "wall_ms": 246.673943
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "wall_ms": 266.864741
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "wall_ms": 226.367281
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "wall_ms": 240.377658
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "wall_ms": 241.518883
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "wall_ms": 272.173235
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "wall_ms": 262.067087
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "wall_ms": 259.768306
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "wall_ms": 264.687606
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "wall_ms": 253.510629
+        }
+      ],
+      "source": {
+        "bytes": 73810,
+        "files": 10,
+        "kilobytes": 73.81,
+        "largest_file_bytes": 18489,
+        "megabytes": 0.07381,
+        "physical_lines": 2616,
+        "sloc": 2428,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 288676.75886666356,
+        "median_sloc_per_second": 9496.100400057701,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              6,
+              4,
+              7,
+              2,
+              1
+            ],
+            "edges": [
+              226.367281,
+              241.1810382,
+              255.9947954,
+              270.8085526,
+              285.6223098,
+              300.436067
+            ],
+            "unit": "ms"
+          },
+          "mad": 12.672928999999996,
+          "maximum": 300.436067,
+          "mean": 254.29432175000002,
+          "median": 255.7026935,
+          "minimum": 226.367281,
+          "p95": 273.5863766,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    },
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "cargo",
+            "build",
+            "--quiet",
+            "--release"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/typical-project-10/rust",
+          "display": "cargo build --quiet --release",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "rust",
+        "version": "rustc 1.99.0-nightly (87e5904f5 2026-07-20)"
+      },
+      "configuration": "optimized",
+      "configuration_display": null,
+      "id": "rust-optimized",
+      "measurement_semantics": {
+        "cache": "clean build; cleanup occurs before the timed interval",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": 16,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-rust-parallel-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "wall_ms": 329.475023
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "wall_ms": 312.222002
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "wall_ms": 345.794881
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "wall_ms": 302.848526
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "wall_ms": 350.571985
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "wall_ms": 323.512365
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "wall_ms": 319.989821
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "wall_ms": 337.162576
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "wall_ms": 299.244916
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "wall_ms": 320.891788
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "wall_ms": 348.218067
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "wall_ms": 310.072827
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "wall_ms": 379.444957
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "wall_ms": 292.778758
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "wall_ms": 323.572934
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "wall_ms": 347.013085
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "wall_ms": 292.890493
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "wall_ms": 304.775773
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "wall_ms": 289.11113
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "wall_ms": 298.510386
+        }
+      ],
+      "source": {
+        "bytes": 73810,
+        "files": 10,
+        "kilobytes": 73.81,
+        "largest_file_bytes": 18489,
+        "megabytes": 0.07381,
+        "physical_lines": 2616,
+        "sloc": 2428,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 230339.411091153,
+        "median_sloc_per_second": 7577.077498026277,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              7,
+              6,
+              2,
+              4,
+              1
+            ],
+            "edges": [
+              289.11113,
+              307.1778954,
+              325.2446608,
+              343.3114262,
+              361.3781916,
+              379.444957
+            ],
+            "unit": "ms"
+          },
+          "mad": 19.394083500000022,
+          "maximum": 379.444957,
+          "mean": 321.40511465,
+          "median": 320.4408045,
+          "minimum": 289.11113,
+          "p95": 352.0156336,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    }
+  ],
+  "run": {
+    "git_commit": "a79d9236b09907b2a62af02a2444b0e2b91cbde8",
+    "git_dirty": true,
+    "id": "frozen-typical-project-10-files-rust",
+    "recorded_at": "2026-08-13T06:40:25.709408+00:00"
+  },
+  "schema": "lanius.performance-run.v1",
+  "workload": {
+    "baseline_only": true,
+    "classification": "frozen external compiler baseline for the corpus-calibrated typical project",
+    "comparison_group": "typical-project/v1/seed-20260808/files-10",
+    "generator": "tools/generate_typical_project.py",
+    "id": "typical-project-10-files-seed-20260808",
+    "kind": "typical_project",
+    "requested_source_files": 10,
+    "seed": 20260808
+  }
+}
+

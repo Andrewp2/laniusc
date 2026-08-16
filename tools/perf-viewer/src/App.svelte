@@ -6,39 +6,48 @@
   import Histogram from './components/Histogram.svelte';
   import MeasurementTable from './components/MeasurementTable.svelte';
   import MemoryChart from './components/MemoryChart.svelte';
+  import NsightGpuProfile from './components/NsightGpuProfile.svelte';
   import PhaseChart from './components/PhaseChart.svelte';
   import Timeline from './components/Timeline.svelte';
   import { loadCatalog } from './lib/catalog';
+  import { composeMeasurements, selectableResults } from './lib/comparison';
   import {
     analysisCapabilities, formatMs, formatRecordedAt, hasMemoryData, hasPhaseData,
-    measurementColor, measurementLabel, resultLabel,
+    measurementColor, measurementLabel, resultLabel, resultOptionLabel,
   } from './lib/format';
   import type { PerformanceRun } from './lib/types';
 
   type WorkloadFilter = 'all' | PerformanceRun['workload']['kind'];
   const catalog = loadCatalog();
+  const resultsNewestFirst = [...catalog.results].sort((left, right) =>
+    recordedAt(right.document) - recordedAt(left.document) || left.path.localeCompare(right.path));
+  const selectableEntries = selectableResults(resultsNewestFirst);
   let workloadFilter = $state<WorkloadFilter>('all');
-  let selectedPath = $state(catalog.results[0]?.path ?? '');
+  let selectedPath = $state(selectableEntries[0]?.path ?? '');
   let selectedIndex = $state(0);
-  let analysisSelectedIndex = $state(firstAnalysisIndex(catalog.results[0]?.document));
+  let analysisSelectedIndex = $state(firstAnalysisIndex(selectableEntries[0]?.document));
   let logarithmic = $state(true);
   let graphOpen = $state(false);
-  const filteredEntries = $derived(catalog.results.filter((candidate) =>
+  const filteredEntries = $derived(selectableEntries.filter((candidate) =>
     workloadFilter === 'all' || candidate.document.workload.kind === workloadFilter));
-  const entry = $derived(catalog.results.find((candidate) => candidate.path === selectedPath) ?? filteredEntries[0]);
+  const entry = $derived(selectableEntries.find((candidate) => candidate.path === selectedPath) ?? filteredEntries[0]);
   const document = $derived(entry?.document);
-  const measurements = $derived(document?.measurements ?? []);
+  const measurements = $derived(composeMeasurements(entry, resultsNewestFirst));
+  const frozenBaselineCount = $derived(measurements.filter((measurement) => measurement.comparison_origin).length);
   const selected = $derived(measurements[Math.min(selectedIndex, Math.max(0, measurements.length - 1))]);
   const analysisSelected = $derived(measurements[Math.max(0, analysisSelectedIndex)] ?? selected);
   const mixedFileCounts = $derived(measurements.some((measurement) => measurement.source.files !== measurements[0]?.source.files));
-  const latencyValues = $derived(measurements.map((measurement) => ({
-    name: measurementLabel(measurement, mixedFileCounts),
-    value: measurement.summary.wall_ms.median,
-    color: measurementColor(measurement),
-  })));
+  const latencyValues = $derived(measurements
+    .map((measurement) => ({
+      name: measurementLabel(measurement, mixedFileCounts),
+      value: measurement.summary.wall_ms.median,
+      color: measurementColor(measurement),
+    }))
+    .sort((left, right) => left.value - right.value || left.name.localeCompare(right.name)));
   const phaseAvailable = $derived(measurements.some(hasPhaseData));
   const memoryAvailable = $derived(measurements.some(hasMemoryData));
   const profileAvailable = $derived(measurements.some((measurement) => Boolean(measurement.profile)));
+  const nsightAvailable = $derived(measurements.some((measurement) => Boolean(measurement.profile?.nsight)));
   const analysisAvailable = $derived(phaseAvailable || memoryAvailable || profileAvailable);
   const runCapabilities = $derived([...new Set(measurements.flatMap(analysisCapabilities))]);
   const machineLabel = $derived((document?.machine.gpu || document?.machine.platform || 'Unknown machine').split(',')[0]);
@@ -46,12 +55,12 @@
   function selectRun(path: string): void {
     selectedPath = path;
     selectedIndex = 0;
-    analysisSelectedIndex = firstAnalysisIndex(catalog.results.find((candidate) => candidate.path === path)?.document);
+    analysisSelectedIndex = firstAnalysisIndex(selectableEntries.find((candidate) => candidate.path === path)?.document);
   }
 
   function setWorkloadFilter(filter: WorkloadFilter): void {
     workloadFilter = filter;
-    const candidates = catalog.results.filter((candidate) => filter === 'all' || candidate.document.workload.kind === filter);
+    const candidates = selectableEntries.filter((candidate) => filter === 'all' || candidate.document.workload.kind === filter);
     if (!candidates.some((candidate) => candidate.path === selectedPath)) selectRun(candidates[0]?.path ?? '');
   }
 
@@ -71,6 +80,11 @@
       }
     });
     return bestIndex;
+  }
+
+  function recordedAt(run: PerformanceRun): number {
+    const value = Date.parse(run.run.recorded_at);
+    return Number.isFinite(value) ? value : 0;
   }
 </script>
 
@@ -98,7 +112,7 @@
         <label for="run-select">Benchmark result</label>
         <select id="run-select" value={entry.path} onchange={(event) => selectRun(event.currentTarget.value)}>
           {#each filteredEntries as result}
-            <option value={result.path}>{resultLabel(result.document)}</option>
+            <option value={result.path}>{resultOptionLabel(result.document)}</option>
           {/each}
         </select>
       </div>
@@ -133,8 +147,11 @@
       <section class="panel span-12">
         <div class="section-heading">
           <div><h2>Compile latency</h2><p>Median wall time across every recorded compiler configuration.</p></div>
-          <span class="section-count">{measurements.length} configurations</span>
+          <span class="section-count">{measurements.length} configurations · {frozenBaselineCount ? `${frozenBaselineCount} frozen` : 'no external match'}</span>
         </div>
+        {#if !frozenBaselineCount}
+          <p class="comparison-note" aria-live="polite">No retained external benchmark has the same workload identity. This chart contains only Lanius results.</p>
+        {/if}
         <BarChart values={latencyValues} unit="ms" {logarithmic} valueFormatter={formatMs} accessibleName="Compile latency comparison" />
       </section>
       <section class="panel span-12">
@@ -154,7 +171,7 @@
 
       {#if analysisAvailable}
         <div class="section-break span-12">
-          <div><h2>Compiler analysis</h2><p>Request phases, GPU residency, and the captured execution trace.</p></div>
+          <div><h2>Compiler analysis</h2><p>Request phases, GPU residency, host instrumentation, and Nsight hardware telemetry.</p></div>
           <div class="control analysis-control">
             <label for="analysis-select">Analysis measurement</label>
             <select id="analysis-select" value={analysisSelectedIndex} onchange={(event) => analysisSelectedIndex = Number(event.currentTarget.value)}>
@@ -181,17 +198,25 @@
         {#if profileAvailable}
           <section class="panel span-12">
             <div class="section-heading">
-              <div><h2>Execution timeline</h2><p>Select a bar or ranked event to inspect the captured work.</p></div>
+              <div><h2>Host execution timeline</h2><p>Compiler instrumentation in the host job clock, including submitted GPU pass labels.</p></div>
               <span class="section-count">excluded from latency statistics</span>
             </div>
             <Timeline profile={analysisSelected.profile} />
           </section>
+          {#if nsightAvailable && analysisSelected.profile?.nsight}
+            <section class="panel span-12">
+              <div class="section-heading">
+                <div><h2>Nsight GPU trace</h2><p>Measured GPU action durations and NVIDIA hardware counters.</p></div>
+                <span class="section-count">separate instrumented capture</span>
+              </div>
+              <NsightGpuProfile profile={analysisSelected.profile.nsight} />
+            </section>
+          {/if}
           <details class="panel span-12 analysis-detail" bind:open={graphOpen}>
             <summary>
               <strong>Executed compiler graph</strong>
-              <small>{analysisSelected.profile?.execution_graph.nodes.length ?? 0} operations · {graphOpen ? 'collapse' : 'expand'} to inspect</small>
+              <small>{analysisSelected.profile?.execution_graph.nodes.filter((node) => node.kind === 'declared_operation').length ?? 0} graph operations · {analysisSelected.profile?.execution_graph.submissions.length ?? 0} submits · {graphOpen ? 'collapse' : 'expand'} to inspect</small>
             </summary>
-            <p class="profile-note">Consecutive traced operations are connected within each execution lane; repeated operations are collapsed.</p>
             <ExecutionGraph profile={analysisSelected.profile} />
           </details>
         {/if}

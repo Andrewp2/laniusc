@@ -34,6 +34,12 @@ You can control the diagnostics output using `--diagnostic-format=<json|lsp-json
 
 TODO
 
+## Performance viewer
+
+```bash
+python3 tools/lanius_perf.py serve
+```
+
 ## Future
 
 Lanius is looking to add formally verified semantics, capabilities, algebraic effects, graded modal types, tree borrows, mixin modules, row/rank polymorphism, first class property testing, compilation to ARM and RISC-V, polyhedral compilation, and more in the future.

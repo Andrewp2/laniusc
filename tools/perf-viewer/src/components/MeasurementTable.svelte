@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
-    analysisCapabilities, commandLines, formatMs, formatRate, measurementColor, measurementLabel,
+    analysisCapabilities, commandLines, formatMs, formatRate, formatRecordedAt,
+    measurementColor, measurementLabel,
   } from '../lib/format';
   import type { Measurement } from '../lib/types';
 
@@ -79,7 +80,14 @@
           aria-current={row.index === selectedIndex ? 'true' : undefined}
           style={`--series:${measurementColor(measurement)}`}
         >
-          <td><span class="language"><span class="swatch"></span>{measurementLabel(measurement, mixedFileCounts)}</span></td>
+          <td>
+            <span class="measurement-name">
+              <span class="language"><span class="swatch"></span>{measurementLabel(measurement, mixedFileCounts)}</span>
+              {#if measurement.comparison_origin}
+                <small title={`${measurement.comparison_origin.result_path} · ${measurement.comparison_origin.machine.gpu || measurement.comparison_origin.machine.platform}`}>Frozen · {formatRecordedAt(measurement.comparison_origin.recorded_at)}</small>
+              {/if}
+            </span>
+          </td>
           <td>{measurement.summary.wall_ms.samples}</td>
           <td>{formatMs(measurement.summary.wall_ms.median)}</td>
           <td>{formatMs(measurement.summary.wall_ms.mean)}</td>

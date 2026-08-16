@@ -36,13 +36,16 @@ use crate::{
     },
     gpu::{
         buffers::{buffer_creation_count, buffer_creation_counts_by_label},
+        compiler_graph::compiler_graph_diagnostics,
         device,
         passes_core::{
+            begin_compute_schedule_job,
             bind_group_creation_count,
             bind_group_creation_counts_by_label,
             bind_group_timing_counters,
             bind_group_timing_enabled,
             compute_pass_breakdown_enabled,
+            finish_compute_schedule_job,
             pipeline_creation_count,
             recorded_compute_pass_count,
             recorded_compute_pass_counts_by_label,
@@ -711,6 +714,7 @@ async fn run_session(
         // deadline before it can contend for the resident pipeline lock.
         reaper.disarm();
         let compute_passes_before = recorded_compute_pass_count();
+        let compute_schedule_job = begin_compute_schedule_job();
         let compute_pass_breakdown_before =
             compute_pass_breakdown_enabled().then(recorded_compute_pass_counts_by_label);
         let resources_before = job_resource_creation_counts();
@@ -740,6 +744,7 @@ async fn run_session(
         let resources_after = job_resource_creation_counts();
         let recorded_compute_passes_during_job =
             recorded_compute_pass_count().saturating_sub(compute_passes_before);
+        let compute_submission_schedule = finish_compute_schedule_job(compute_schedule_job);
         let compute_pass_breakdown_after = compute_pass_breakdown_before
             .as_ref()
             .map(|_| recorded_compute_pass_counts_by_label());
@@ -776,6 +781,16 @@ async fn run_session(
                     "recorded_compute_pass_breakdown".into(),
                     compute_pass_delta_rows(after, before),
                 );
+            }
+            if !compute_submission_schedule.is_empty() {
+                response.insert(
+                    "recorded_compute_submission_schedule".into(),
+                    json!(compute_submission_schedule),
+                );
+            }
+            let compiler_graphs = compiler_graph_diagnostics();
+            if !compiler_graphs.is_empty() {
+                response.insert("compiler_graphs".into(), json!(compiler_graphs));
             }
             if bind_group_timing_enabled() {
                 response.insert(

@@ -12,6 +12,7 @@ use std::{
 
 use anyhow::{Result, anyhow};
 use log::{info, warn};
+use serde::Serialize;
 use wgpu;
 
 use crate::{
@@ -32,11 +33,64 @@ static RECORDED_COMPUTE_PASS_COUNT: AtomicU64 = AtomicU64::new(0);
 static RECORDED_COMPUTE_PASSES_BY_LABEL: std::sync::LazyLock<
     std::sync::Mutex<HashMap<String, u64>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+static NEXT_COMPUTE_SCHEDULE_JOB: AtomicU64 = AtomicU64::new(1);
+static COMPUTE_SCHEDULE: std::sync::LazyLock<std::sync::Mutex<ComputeScheduleState>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(ComputeScheduleState::default()));
 static BIND_GROUP_RESOURCE_PLAN_NS: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_CACHE_NS: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_WGPU_CREATE_NS: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_CREATIONS_BY_LABEL: std::sync::LazyLock<std::sync::Mutex<HashMap<String, u64>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub(crate) struct RecordedComputeSubmission {
+    pub index: u32,
+    pub label: String,
+    pub passes: Vec<String>,
+}
+
+#[derive(Default)]
+struct ComputeScheduleState {
+    active_job: u64,
+    pending_passes: Vec<String>,
+    submissions: Vec<RecordedComputeSubmission>,
+}
+
+impl ComputeScheduleState {
+    fn begin(&mut self, job: u64) {
+        self.active_job = job;
+        self.pending_passes.clear();
+        self.submissions.clear();
+    }
+
+    fn record_pass(&mut self, label: &str) {
+        if self.active_job != 0 {
+            self.pending_passes.push(label.to_owned());
+        }
+    }
+
+    fn record_submission(&mut self, label: &str) {
+        if self.active_job == 0 {
+            return;
+        }
+        self.submissions.push(RecordedComputeSubmission {
+            index: self.submissions.len() as u32,
+            label: label.to_owned(),
+            passes: std::mem::take(&mut self.pending_passes),
+        });
+    }
+
+    fn finish(&mut self, job: u64) -> Vec<RecordedComputeSubmission> {
+        if self.active_job != job || job == 0 {
+            return Vec::new();
+        }
+        if !self.pending_passes.is_empty() {
+            self.record_submission("<untracked submission>");
+        }
+        self.active_job = 0;
+        std::mem::take(&mut self.submissions)
+    }
+}
 
 #[derive(Default)]
 struct ReflectedBindGroupCache {
@@ -206,6 +260,31 @@ pub(crate) fn compute_pass_breakdown_enabled() -> bool {
     })
 }
 
+fn compute_schedule_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED
+        .get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_COMPILER_GRAPH_BREAKDOWN", false))
+}
+
+pub(crate) fn begin_compute_schedule_job() -> u64 {
+    if !compute_schedule_enabled() {
+        return 0;
+    }
+    let job = NEXT_COMPUTE_SCHEDULE_JOB.fetch_add(1, Ordering::Relaxed);
+    COMPUTE_SCHEDULE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .begin(job);
+    job
+}
+
+pub(crate) fn finish_compute_schedule_job(job: u64) -> Vec<RecordedComputeSubmission> {
+    COMPUTE_SCHEDULE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .finish(job)
+}
+
 pub(crate) fn recorded_compute_pass_counts_by_label() -> HashMap<String, u64> {
     RECORDED_COMPUTE_PASSES_BY_LABEL
         .lock()
@@ -221,14 +300,64 @@ pub(crate) fn begin_counted_compute_pass<'encoder>(
     descriptor: &wgpu::ComputePassDescriptor<'_>,
 ) -> wgpu::ComputePass<'encoder> {
     RECORDED_COMPUTE_PASS_COUNT.fetch_add(1, Ordering::Relaxed);
+    let label = descriptor.label.unwrap_or("<unlabeled>");
     if compute_pass_breakdown_enabled() {
-        let label = descriptor.label.unwrap_or("<unlabeled>");
         let mut counts = RECORDED_COMPUTE_PASSES_BY_LABEL
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *counts.entry(label.to_owned()).or_default() += 1;
     }
+    if compute_schedule_enabled() {
+        COMPUTE_SCHEDULE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .record_pass(label);
+    }
     encoder.begin_compute_pass(descriptor)
+}
+
+#[cfg(test)]
+mod compute_schedule_tests {
+    use super::*;
+
+    #[test]
+    fn submission_boundaries_partition_recorded_passes_in_order() {
+        let mut state = ComputeScheduleState::default();
+        state.begin(7);
+        state.record_pass("a");
+        state.record_pass("b");
+        state.record_submission("frontend");
+        state.record_pass("c");
+        state.record_submission("backend");
+
+        assert_eq!(
+            state.finish(7),
+            [
+                RecordedComputeSubmission {
+                    index: 0,
+                    label: "frontend".into(),
+                    passes: vec!["a".into(), "b".into()],
+                },
+                RecordedComputeSubmission {
+                    index: 1,
+                    label: "backend".into(),
+                    passes: vec!["c".into()],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn unmarked_passes_are_reported_as_an_untracked_submission() {
+        let mut state = ComputeScheduleState::default();
+        state.begin(9);
+        state.record_pass("orphan");
+
+        let submissions = state.finish(9);
+        assert_eq!(submissions.len(), 1);
+        assert_eq!(submissions[0].label, "<untracked submission>");
+        assert_eq!(submissions[0].passes, ["orphan"]);
+    }
 }
 
 #[cfg(test)]
@@ -1172,6 +1301,12 @@ pub(crate) fn submit_with_progress(
     command_buffer: wgpu::CommandBuffer,
 ) -> SubmitTiming {
     trace_gpu_progress(&format!("submit.start :: {label}"));
+    if compute_schedule_enabled() {
+        COMPUTE_SCHEDULE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .record_submission(label);
+    }
     let start = Instant::now();
     queue.submit(Some(command_buffer));
     let end = Instant::now();

@@ -19,8 +19,8 @@
   }: Props = $props();
   let containerWidth = $state(500);
   const layout = $derived.by(() => {
-    const width = Math.max(500, containerWidth || 500);
-    const left = Math.min(280, Math.max(190, width * 0.3));
+    const width = Math.max(680, containerWidth || 680);
+    const left = Math.min(280, Math.max(250, width * 0.3));
     const right = 90;
     const plotWidth = width - left - right;
     const numeric = values.map(({ value }) => Number(value)).filter(Number.isFinite);
@@ -56,9 +56,8 @@
       {#each values as value, index}
         {@const y = 16 + index * 42}
         {@const barWidth = Math.max(2, layout.scale(value.value))}
-        {@const shortName = value.name.length > 36 ? `${value.name.slice(0, 35)}…` : value.name}
-        <text class="bar-label" x="0" y={y + 22}><title>{value.name}</title>{shortName}</text>
-        <rect x={layout.left} y={y + 6} width={barWidth} height="24" rx="3" fill={value.color} opacity=".82" />
+        <text class="bar-label" x="0" y={y + 22}>{value.name}</text>
+        <rect x={layout.left} y={y + 6} width={barWidth} height="24" rx="3" fill={value.color} opacity=".9"><title>{value.name}: {valueFormatter(value.value)}</title></rect>
         <text class="bar-label" x={Math.min(layout.width - layout.right + 8, layout.left + barWidth + 8)} y={y + 23}>
           {valueFormatter(value.value)}
         </text>

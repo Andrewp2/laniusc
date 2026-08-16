@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import http.server
 import json
 import os
@@ -27,6 +26,7 @@ from perf_model import (
     validate_document,
     write_document,
 )
+from summarize_nsight_gpu_trace import build_nsight_profile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,17 @@ VIEWER_OUTPUT = ROOT / "benchmark_artifacts" / "performance-viewer"
 VIEWER_DATA_START = "<!-- lanius-performance-data:start -->"
 VIEWER_DATA_END = "<!-- lanius-performance-data:end -->"
 LANIUS_MODES = ("process_cold", "daemon_cold_workspace", "daemon_warm_workspace")
+
+
+def single_file_comparison_group(target_bytes: int) -> str:
+    return (
+        "compiler-stress/comparative-single-file/"
+        f"mixed-function-sizes/{target_bytes}"
+    )
+
+
+def typical_project_comparison_group(file_count: int, seed: int) -> str:
+    return f"typical-project/v1/seed-{seed}/files-{file_count}"
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,12 +69,19 @@ def parse_args() -> argparse.Namespace:
     validate = subparsers.add_parser("validate", help="validate canonical result JSON")
     validate.add_argument("paths", nargs="+", type=Path)
 
-    legacy = subparsers.add_parser(
+    nsight = subparsers.add_parser(
+        "attach-nsight", help="attach an Nsight Graphics export to a canonical measurement"
+    )
+    nsight.add_argument("result", type=Path)
+    nsight.add_argument("--measurement", required=True, help="canonical measurement id")
+    nsight.add_argument("--export-dir", required=True, type=Path)
+
+    importer = subparsers.add_parser(
         "import-stress", help="normalize retained compiler-stress samples into the canonical schema"
     )
-    legacy.add_argument("directories", nargs="+", type=Path)
-    legacy.add_argument("--source-corpus", type=Path, required=True)
-    legacy.add_argument("--output", type=Path, required=True)
+    importer.add_argument("directories", nargs="+", type=Path)
+    importer.add_argument("--source-corpus", type=Path, required=True)
+    importer.add_argument("--output", type=Path, required=True)
 
     catalog = subparsers.add_parser("catalog", help="rebuild the viewer data catalog")
     catalog.add_argument("--result-root", type=Path, default=DEFAULT_RESULT_ROOT)
@@ -91,6 +109,9 @@ def main() -> int:
                 validate_document(document)
             print(resolve(path))
         return 0
+    if args.action == "attach-nsight":
+        attach_nsight(args)
+        return 0
     if args.action == "import-stress":
         import_stress(args)
         return 0
@@ -107,6 +128,27 @@ def main() -> int:
         serve_viewer(args.port)
         return 0
     raise AssertionError(args.action)
+
+
+def attach_nsight(args: argparse.Namespace) -> None:
+    result_path = resolve(args.result)
+    document = json.loads(result_path.read_text())
+    validate_document(document)
+    measurement = next(
+        (item for item in document["measurements"] if item.get("id") == args.measurement),
+        None,
+    )
+    if measurement is None:
+        raise ValueError(f"result has no measurement {args.measurement!r}")
+    profile = measurement.get("profile")
+    if not isinstance(profile, dict):
+        raise ValueError(
+            f"measurement {args.measurement!r} has no captured host profile to augment"
+        )
+    profile["nsight"] = build_nsight_profile(resolve(args.export_dir))
+    write_document(result_path, document)
+    catalog_results(DEFAULT_RESULT_ROOT)
+    print(result_path)
 
 
 def run_lanius(args: argparse.Namespace) -> int:
@@ -189,6 +231,7 @@ def prepare_workload(args: argparse.Namespace):
             "generator": "tools/generate_compiler_stress.py",
             "seed": args.seed,
             "target_source_bytes": args.size,
+            "comparison_group": single_file_comparison_group(args.size),
         }
         return run_id, workload, input_path, None, [input_path], command
 
@@ -215,6 +258,7 @@ def prepare_workload(args: argparse.Namespace):
         "generator": "tools/generate_typical_project.py",
         "seed": args.seed,
         "requested_source_files": args.files,
+        "comparison_group": typical_project_comparison_group(args.files, args.seed),
     }
     return run_id, workload, input_path, source_root, sources, command
 
@@ -232,7 +276,7 @@ def import_stress(args: argparse.Namespace) -> None:
     ]
     all_samples = [sample for _, document, _ in documents for sample in document["samples"]]
     if not all_samples:
-        raise ValueError("legacy compiler-stress inputs have no samples")
+        raise ValueError("imported compiler-stress inputs have no samples")
     corpus_config = corpus / "config.json"
     target_bytes = (
         int(json.loads(corpus_config.read_text())["size"])
@@ -248,7 +292,9 @@ def import_stress(args: argparse.Namespace) -> None:
             "kind": "single_file",
             "classification": "imported controlled cross-language compiler stress",
             "generator": "tools/generate_compiler_stress.py",
-            "legacy_import": True,
+            "imported": True,
+            "baseline_only": True,
+            "comparison_group": single_file_comparison_group(target_bytes),
         },
     )
     grouped: dict[tuple[str, str], list[dict]] = {}
@@ -271,8 +317,8 @@ def import_stress(args: argparse.Namespace) -> None:
         "zig": "zig",
         "pareas": "par",
     }
-    for (language, lane), legacy_samples in sorted(grouped.items()):
-        seed = legacy_samples[0].get("seed")
+    for (language, lane), imported_samples in sorted(grouped.items()):
+        seed = imported_samples[0].get("seed")
         source = next(
             iter((corpus / "sources" / f"seed-{seed}").rglob(f"*.{extension[language]}")),
             None,
@@ -281,7 +327,7 @@ def import_stress(args: argparse.Namespace) -> None:
             raise ValueError(f"source corpus has no {language} source for seed {seed}")
         facts = source_facts([source], ROOT)
         rows = []
-        for index, sample in enumerate(legacy_samples):
+        for index, sample in enumerate(imported_samples):
             sample_source = next(
                 iter(
                     (corpus / "sources" / f"seed-{sample.get('seed')}").rglob(
@@ -316,29 +362,30 @@ def import_stress(args: argparse.Namespace) -> None:
             if language != "lanius"
             else commands.get("lanius_daemon")
         )
+        if not isinstance(template, list) or not template:
+            raise ValueError(f"imported samples have no command template for {language}/{lane}")
+        configuration = (
+            "preallocated"
+            if language == "lanius" and lane == "hot_daemon_variable_project"
+            else lane
+        )
         result["measurements"].append(
             {
-                "id": f"{language}-{lane}",
-                "compiler": {"name": language, "version": "recorded in legacy provenance"},
+                "id": f"{language}-{configuration}",
+                "compiler": {"name": language, "version": "unavailable (imported measurement)"},
                 "target": "x86_64" if language != "pareas" else "riscv32",
-                "configuration": lane,
-                "configuration_display": (
-                    "preallocated (legacy variable-project run)"
-                    if language == "lanius" and lane == "hot_daemon_variable_project"
-                    else lane
-                ),
+                "configuration": configuration,
+                "configuration_display": configuration,
                 "source": facts,
-                "commands": {
-                    "legacy_template": template,
-                    "source": str(directory.relative_to(ROOT)),
-                },
+                "commands": {"command": command_record(template, ROOT)},
                 "measurement_semantics": {
                     "imported": True,
+                    "source_artifact": str(directory.relative_to(ROOT)),
                     "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
                 },
                 "samples": rows,
                 "summary": summarize(rows, facts),
-                "validation": {"legacy_artifacts_validated": True},
+                "validation": {"artifacts_validated": True},
             }
         )
     output = resolve(args.output)
@@ -503,6 +550,7 @@ def profile_warm_job(
             "LANIUS_PERFETTO_TRACE": str(trace_path),
             "LANIUS_GPU_COMPUTE_PASS_BREAKDOWN": "1",
             "LANIUS_GPU_BUFFER_BREAKDOWN": "1",
+            "LANIUS_COMPILER_GRAPH_BREAKDOWN": "1",
         }
     )
     daemon = Daemon(
@@ -520,13 +568,20 @@ def profile_warm_job(
         daemon.shutdown(job_timeout)
     trace = json.loads(trace_path.read_text())
     timeline = profile_timeline(trace, "daemon.job.profile")
+    compiler_graphs = response.pop("compiler_graphs", [])
+    compute_submissions = response.pop("recorded_compute_submission_schedule", [])
+    pass_breakdown = response.pop("recorded_compute_pass_breakdown", [])
     return {
         "excluded_from_timing_statistics": True,
         "reason": "named pass accounting and tracing add measurement overhead",
         "wall_ms": wall_ms,
         "response": response,
         "timeline": timeline,
-        "execution_graph": execution_graph(timeline),
+        "execution_graph": execution_graph(
+            compiler_graphs,
+            pass_breakdown,
+            compute_submissions,
+        ),
         "trace_path": str(trace_path.relative_to(ROOT)),
     }
 
@@ -596,38 +651,332 @@ def profile_timeline(trace: dict, boundary_name: str) -> list[dict]:
     return rows
 
 
-def execution_graph(timeline: list[dict]) -> dict:
-    nodes: dict[tuple[str, str], dict] = {}
-    by_lane: dict[str, list[dict]] = {}
-    for event in timeline:
-        by_lane.setdefault(event["lane"], []).append(event)
-        key = (event["lane"], event["name"])
-        node = nodes.setdefault(
-            key,
+def execution_graph(
+    compiler_graphs: list[dict],
+    pass_breakdown: list[dict],
+    compute_submissions: list[dict],
+) -> dict:
+    executed = {
+        row["label"]: int(row["passes"])
+        for row in pass_breakdown
+        if isinstance(row, dict)
+        and isinstance(row.get("label"), str)
+        and isinstance(row.get("passes"), int)
+        and row["passes"] > 0
+    }
+    definitions = []
+    definitions_by_name: dict[str, list[dict]] = {}
+    for graph in compiler_graphs:
+        label = graph["label"]
+        for node in graph.get("nodes", []):
+            if executed.get(node["name"], 0) == 0:
+                continue
+            definition = {"graph": label, **node}
+            definitions.append(definition)
+            definitions_by_name.setdefault(node["name"], []).append(definition)
+
+    raw_submissions = []
+    occurrence_counts: dict[tuple[str, int, int], int] = {}
+    first_positions: dict[tuple[str, int, int], int] = {}
+    for submission in compute_submissions:
+        if not isinstance(submission, dict) or not isinstance(submission.get("passes"), list):
+            continue
+        submit_index = len(raw_submissions)
+        pass_names = [name for name in submission["passes"] if isinstance(name, str)]
+        raw_submissions.append(
             {
-                "id": hashlib.sha256(f"{key[0]}\0{key[1]}".encode()).hexdigest()[:16],
-                "lane": key[0],
-                "name": key[1],
-                "invocations": 0,
-                "total_duration_ms": 0.0,
-            },
+                "index": submit_index,
+                "label": str(submission.get("label", f"submit {submit_index}")),
+                "passes": pass_names,
+            }
         )
-        node["invocations"] += 1
-        node["total_duration_ms"] += event["duration_ms"]
-    edges: dict[tuple[str, str], int] = {}
-    for events in by_lane.values():
-        for left, right in zip(events, events[1:]):
-            left_id = nodes[(left["lane"], left["name"])]["id"]
-            right_id = nodes[(right["lane"], right["name"])]["id"]
-            if left_id != right_id:
-                edges[(left_id, right_id)] = edges.get((left_id, right_id), 0) + 1
+        for position, pass_name in enumerate(pass_names):
+            for definition in definitions_by_name.get(pass_name, []):
+                key = (definition["graph"], definition["id"], submit_index)
+                occurrence_counts[key] = occurrence_counts.get(key, 0) + 1
+                first_positions.setdefault(key, position)
+
+    nodes = []
+    node_ids: dict[tuple[str, int, int | None], str] = {}
+    node_ids_by_submission_and_name: dict[tuple[int, str], list[str]] = {}
+    for definition in definitions:
+        scheduled = 0
+        for submission in raw_submissions:
+            submit_index = submission["index"]
+            key = (definition["graph"], definition["id"], submit_index)
+            execution_count = occurrence_counts.get(key, 0)
+            if execution_count == 0:
+                continue
+            scheduled += execution_count
+            node_id = f"{definition['graph']}:{definition['id']}@{submit_index}"
+            node_ids[(definition["graph"], definition["id"], submit_index)] = node_id
+            node_ids_by_submission_and_name.setdefault(
+                (submit_index, definition["name"]), []
+            ).append(node_id)
+            nodes.append(
+                {
+                    "id": node_id,
+                    "kind": "declared_operation",
+                    "graph": definition["graph"],
+                    "name": definition["name"],
+                    "phase": definition["phase"],
+                    "dispatch_domain": definition["dispatch_domain"],
+                    "declaration_index": definition["id"],
+                    "execution_count": execution_count,
+                    "submissions": [submit_index],
+                }
+            )
+        untracked = executed.get(definition["name"], 0) - scheduled
+        if untracked > 0:
+            node_id = f"{definition['graph']}:{definition['id']}@untracked"
+            node_ids[(definition["graph"], definition["id"], None)] = node_id
+            nodes.append(
+                {
+                    "id": node_id,
+                    "kind": "declared_operation",
+                    "graph": definition["graph"],
+                    "name": definition["name"],
+                    "phase": definition["phase"],
+                    "dispatch_domain": definition["dispatch_domain"],
+                    "declaration_index": definition["id"],
+                    "execution_count": untracked,
+                    "submissions": [],
+                }
+            )
+
+    edges = []
+    for graph in compiler_graphs:
+        label = graph["label"]
+        for edge in graph.get("edges", []):
+            for submission_index in [*range(len(raw_submissions)), None]:
+                source = node_ids.get((label, edge["source"], submission_index))
+                target = node_ids.get((label, edge["target"], submission_index))
+                if source is None or target is None:
+                    continue
+                edges.append(
+                    {
+                        "source": source,
+                        "target": target,
+                        "kind": "resource_dependency",
+                        "dependencies": edge.get("dependencies", []),
+                    }
+                )
+    node_by_id = {node["id"]: node for node in nodes}
+    normalized_submissions = []
+
+    def add_schedule_endpoint(
+        submit_index: int,
+        role: str,
+        pass_name: str,
+        submission_label: str,
+    ) -> str:
+        node_id = f"submission:{submit_index}:{role}"
+        nodes.append(
+            {
+                "id": node_id,
+                "kind": "empty_submission" if role == "empty" else "recorded_pass_endpoint",
+                "graph": "recorded_submission_schedule",
+                "name": pass_name,
+                "phase": "submission_schedule",
+                "dispatch_domain": (
+                    "command_submission" if role == "empty" else "recorded_compute_pass"
+                ),
+                "declaration_index": submit_index * 2 + (1 if role == "last" else 0),
+                "execution_count": 1,
+                "submissions": [submit_index],
+                "submission_label": submission_label,
+            }
+        )
+        node_by_id[node_id] = nodes[-1]
+        return node_id
+
+    for submission in raw_submissions:
+        submit_index = submission["index"]
+        submission_label = submission["label"]
+        pass_names = submission["passes"]
+        matched_passes = sum(
+            1 for pass_name in pass_names
+            if node_ids_by_submission_and_name.get((submit_index, pass_name))
+        )
+        if not pass_names:
+            first_node = last_node = add_schedule_endpoint(
+                submit_index,
+                "empty",
+                submission_label,
+                submission_label,
+            )
+        else:
+            first_matches = node_ids_by_submission_and_name.get(
+                (submit_index, pass_names[0]), []
+            )
+            last_matches = node_ids_by_submission_and_name.get(
+                (submit_index, pass_names[-1]), []
+            )
+            if first_matches:
+                first_node = first_matches[0]
+            else:
+                role = "endpoint" if len(pass_names) == 1 or pass_names[0] == pass_names[-1] else "first"
+                first_node = add_schedule_endpoint(
+                    submit_index, role, pass_names[0], submission_label
+                )
+            if last_matches:
+                last_node = last_matches[-1]
+            elif len(pass_names) == 1 or pass_names[0] == pass_names[-1]:
+                last_node = first_node
+            else:
+                last_node = add_schedule_endpoint(
+                    submit_index, "last", pass_names[-1], submission_label
+                )
+        normalized_submissions.append(
+            {
+                "index": submit_index,
+                "label": submission_label,
+                "recorded_passes": len(pass_names),
+                "matched_passes": matched_passes,
+                "first_node": first_node,
+                "last_node": last_node,
+            }
+        )
+
+    def add_order_edge(source: str, target: str, kind: str, submit_index: int) -> None:
+        if source == target or any(
+            edge["source"] == source and edge["target"] == target and edge["kind"] == kind
+            for edge in edges
+        ):
+            return
+        edges.append(
+            {
+                "source": source,
+                "target": target,
+                "kind": kind,
+                "dependencies": [],
+                "submission_index": submit_index,
+            }
+        )
+
+    for submission in normalized_submissions:
+        submit_index = submission["index"]
+        declared = [
+            node for node in nodes
+            if node["kind"] == "declared_operation" and node["submissions"] == [submit_index]
+        ]
+        declared_ids = {node["id"] for node in declared}
+        resource_edges = [
+            edge for edge in edges
+            if edge["kind"] == "resource_dependency"
+            and edge["source"] in declared_ids
+            and edge["target"] in declared_ids
+        ]
+        graph_order = sorted(
+            {node["graph"] for node in declared},
+            key=lambda graph_label: min(
+                first_positions[(node["graph"], node["declaration_index"], submit_index)]
+                for node in declared if node["graph"] == graph_label
+            ),
+        )
+        stage_boundary_ids = set()
+        for boundary_index, (previous_graph, following_graph) in enumerate(
+            zip(graph_order, graph_order[1:])
+        ):
+            previous_ids = {node["id"] for node in declared if node["graph"] == previous_graph}
+            following_ids = {node["id"] for node in declared if node["graph"] == following_graph}
+            previous_sinks = previous_ids - {
+                edge["source"] for edge in resource_edges if edge["source"] in previous_ids
+            }
+            following_roots = following_ids - {
+                edge["target"] for edge in resource_edges if edge["target"] in following_ids
+            }
+            boundary_id = (
+                f"stage_boundary:{submit_index}:{boundary_index}:"
+                f"{previous_graph}->{following_graph}"
+            )
+            nodes.append(
+                {
+                    "id": boundary_id,
+                    "kind": "stage_boundary",
+                    "graph": "compiler_stage_order",
+                    "name": f"{previous_graph} → {following_graph}",
+                    "phase": "stage_boundary",
+                    "dispatch_domain": "ordering_constraint",
+                    "declaration_index": boundary_index,
+                    "execution_count": 0,
+                    "submissions": [submit_index],
+                    "submission_label": submission["label"],
+                    "from_graph": previous_graph,
+                    "to_graph": following_graph,
+                }
+            )
+            node_by_id[boundary_id] = nodes[-1]
+            stage_boundary_ids.add(boundary_id)
+            for source in sorted(previous_sinks):
+                add_order_edge(source, boundary_id, "stage_order", submit_index)
+            for target in sorted(following_roots):
+                add_order_edge(boundary_id, target, "stage_order", submit_index)
+
+        submission_graph_ids = declared_ids | stage_boundary_ids
+        ordered_edges = [
+            edge for edge in edges
+            if edge["source"] in submission_graph_ids
+            and edge["target"] in submission_graph_ids
+        ]
+        roots = submission_graph_ids - {edge["target"] for edge in ordered_edges}
+        sinks = submission_graph_ids - {edge["source"] for edge in ordered_edges}
+        first_node = submission["first_node"]
+        last_node = submission["last_node"]
+        if declared:
+            for target in sorted(roots):
+                add_order_edge(first_node, target, "submit_span", submit_index)
+            for source in sorted(sinks):
+                add_order_edge(source, last_node, "submit_span", submit_index)
+        else:
+            add_order_edge(first_node, last_node, "submit_span", submit_index)
+
+    submit_edges: dict[tuple[str, str], list[dict]] = {}
+    for previous, following in zip(normalized_submissions, normalized_submissions[1:]):
+        source = previous["last_node"]
+        target = following["first_node"]
+        submit_edges.setdefault((source, target), []).append(
+            {
+                "from_index": previous["index"],
+                "from_label": previous["label"],
+                "to_index": following["index"],
+                "to_label": following["label"],
+            }
+        )
+    edges.extend(
+        {
+            "source": source,
+            "target": target,
+            "kind": "submit_order",
+            "dependencies": [],
+            "submission_boundaries": boundaries,
+        }
+        for (source, target), boundaries in submit_edges.items()
+    )
+    declared_names = {
+        node["name"] for graph in compiler_graphs for node in graph.get("nodes", [])
+    }
+    executed_names = set(executed)
     return {
-        "nodes": sorted(nodes.values(), key=lambda node: (node["lane"], node["name"])),
-        "edges": [
-            {"source": source, "target": target, "transitions": count}
-            for (source, target), count in sorted(edges.items())
-        ],
-        "semantics": "consecutive traced operations within each execution lane; repeated nodes and edges are collapsed",
+        "nodes": nodes,
+        "edges": edges,
+        "submissions": normalized_submissions,
+        "coverage": {
+            "declared_operations": sum(len(graph.get("nodes", [])) for graph in compiler_graphs),
+            "executed_labels": len(executed_names),
+            "matched_labels": len(declared_names & executed_names),
+            "unregistered_executed_labels": len(executed_names - declared_names),
+            "recorded_passes": sum(executed.values()),
+            "matched_recorded_passes": sum(
+                count for name, count in executed.items() if name in declared_names
+            ),
+        },
+        "semantics": (
+            "one node per declared compiler operation per GPU submission, plus scheduling-only "
+            "nodes for unregistered endpoints and explicit compiler-stage boundary junctions; "
+            "resource hazards, submission spans, and adjacent submission boundaries form one "
+            "topologically sorted DAG"
+        ),
     }
 
 

@@ -18,7 +18,6 @@ const CONFIGURATION_NAMES: Record<string, string> = {
   daemon_warm_workspace: 'daemon, preallocated workspace',
   o0: '-O0',
   cuda: 'CUDA',
-  'preallocated (legacy variable-project run)': 'preallocated (legacy)',
 };
 
 export function formatMs(value: number): string {
@@ -55,7 +54,7 @@ export function measurementColor(measurement: Measurement): string {
   if (compiler === 'lanius') {
     if (measurement.configuration === 'process_cold') return 'var(--blue)';
     if (measurement.configuration === 'daemon_cold_workspace') return 'var(--violet)';
-    if (measurement.configuration === 'daemon_warm_workspace') return 'var(--green)';
+    if (measurement.configuration === 'daemon_warm_workspace') return 'var(--cyan)';
     return 'var(--cyan)';
   }
   return ({
@@ -74,6 +73,10 @@ export function resultLabel(run: PerformanceRun): string {
   if (!source) return kind;
   const files = source.files === 1 ? '1 file' : `${source.files.toLocaleString()} files`;
   return `${kind} · ${files} · ${formatBytes(source.bytes)} · ${source.sloc.toLocaleString()} SLOC`;
+}
+
+export function resultOptionLabel(run: PerformanceRun): string {
+  return `${formatRecordedAt(run.run.recorded_at)} · ${resultLabel(run)}`;
 }
 
 export function formatRecordedAt(value: string): string {
@@ -99,6 +102,7 @@ export function analysisCapabilities(measurement: Measurement | undefined): stri
     hasPhaseData(measurement) ? 'phases' : null,
     hasMemoryData(measurement) ? 'memory' : null,
     measurement.profile ? 'profile' : null,
+    measurement.profile?.nsight ? 'Nsight GPU' : null,
   ].filter((value): value is string => value !== null);
 }
 

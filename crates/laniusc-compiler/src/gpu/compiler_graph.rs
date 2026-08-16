@@ -6,6 +6,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
+
 use super::{
     buffers::{LaniusBuffer, TrackedBufferView},
     kernels::KernelReflections,
@@ -94,6 +96,43 @@ impl AccessMode {
 
     pub const fn writes(self) -> bool {
         matches!(self, Self::Write | Self::ReadWrite)
+    }
+}
+
+impl CompilerPhase {
+    const fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Lex => "lex",
+            Self::Parse => "parse",
+            Self::Hir => "hir",
+            Self::TypeCheck => "type_check",
+            Self::SemanticLowering => "semantic_lowering",
+            Self::X86Lowering => "x86_lowering",
+            Self::WasmLowering => "wasm_lowering",
+            Self::Artifact => "artifact",
+        }
+    }
+}
+
+impl ResourceDomain {
+    const fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::Bytes => "bytes",
+            Self::SourceBytes => "source_bytes",
+            Self::Tokens => "tokens",
+            Self::RawNodes => "raw_nodes",
+            Self::HirNodes => "hir_nodes",
+            Self::Declarations => "declarations",
+            Self::Types => "types",
+            Self::Calls => "calls",
+            Self::CallArguments => "call_arguments",
+            Self::SemanticInstructions => "semantic_instructions",
+            Self::X86Instructions => "x86_instructions",
+            Self::WasmInstructions => "wasm_instructions",
+            Self::ArtifactBytes => "artifact_bytes",
+            Self::DispatchArguments => "dispatch_arguments",
+        }
     }
 }
 
@@ -221,6 +260,37 @@ pub struct PassDesc {
     pub phase: CompilerPhase,
     pub dispatch_domain: ResourceDomain,
     pub accesses: Vec<PassAccess>,
+}
+
+/// Read-only diagnostic form of a resident compiler graph. This is populated
+/// only when graph profiling is enabled, so normal compilation does not pay
+/// for cloning names or constructing dependency rows.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct CompilerGraphDiagnostic {
+    pub label: String,
+    pub nodes: Vec<CompilerGraphDiagnosticNode>,
+    pub edges: Vec<CompilerGraphDiagnosticEdge>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct CompilerGraphDiagnosticNode {
+    pub id: usize,
+    pub name: &'static str,
+    pub phase: &'static str,
+    pub dispatch_domain: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct CompilerGraphDiagnosticEdge {
+    pub source: usize,
+    pub target: usize,
+    pub dependencies: Vec<CompilerGraphDiagnosticDependency>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct CompilerGraphDiagnosticDependency {
+    pub resource: &'static str,
+    pub hazard: &'static str,
 }
 
 /// Maps one reflected storage binding to its logical graph resource.
@@ -923,10 +993,12 @@ impl CompilerGraphWorkspace {
             })?;
             slot_by_resource[resource.index()] = Some(assignment.slot);
         }
-        Ok(Self {
+        let workspace = Self {
             slots,
             slot_by_resource,
-        })
+        };
+        register_compiler_graph_diagnostic(label, graph);
+        Ok(workspace)
     }
 
     pub fn alias<T>(
@@ -1207,6 +1279,80 @@ impl CompilerGraph {
 
     pub fn passes(&self) -> &[PassDesc] {
         &self.passes
+    }
+
+    fn diagnostic(&self, label: &str) -> CompilerGraphDiagnostic {
+        let nodes = self
+            .passes
+            .iter()
+            .enumerate()
+            .map(|(id, pass)| CompilerGraphDiagnosticNode {
+                id,
+                name: pass.name,
+                phase: pass.phase.diagnostic_name(),
+                dispatch_domain: pass.dispatch_domain.diagnostic_name(),
+            })
+            .collect();
+
+        // Preserve every resource hazard required by the declared pass order.
+        // Read-after-write edges carry produced data; write-after-read and
+        // write-after-write edges carry storage ordering. Unlike the GPU trace,
+        // these edges do not imply that otherwise independent passes depend on
+        // one another merely because one happened to be recorded first.
+        let mut last_writer = vec![None; self.resources.len()];
+        let mut readers = vec![BTreeSet::<usize>::new(); self.resources.len()];
+        let mut dependencies =
+            BTreeMap::<(usize, usize), BTreeSet<(&'static str, &'static str)>>::new();
+        let mut add_dependency =
+            |source: usize, target: usize, resource: &'static str, hazard: &'static str| {
+                if source != target {
+                    dependencies
+                        .entry((source, target))
+                        .or_default()
+                        .insert((resource, hazard));
+                }
+            };
+        for (target, pass) in self.passes.iter().enumerate() {
+            for access in &pass.accesses {
+                let resource_index = access.resource.index();
+                let resource_name = self.resources[resource_index].name;
+                let reads_previous = access.mode.reads() && !access.initializes_before_read;
+                if reads_previous && let Some(source) = last_writer[resource_index] {
+                    add_dependency(source, target, resource_name, "read_after_write");
+                }
+                if access.mode.writes() {
+                    if let Some(source) = last_writer[resource_index] {
+                        add_dependency(source, target, resource_name, "write_after_write");
+                    }
+                    for &source in &readers[resource_index] {
+                        add_dependency(source, target, resource_name, "write_after_read");
+                    }
+                    readers[resource_index].clear();
+                    last_writer[resource_index] = Some(target);
+                } else if reads_previous {
+                    readers[resource_index].insert(target);
+                }
+            }
+        }
+        let edges = dependencies
+            .into_iter()
+            .map(|((source, target), rows)| CompilerGraphDiagnosticEdge {
+                source,
+                target,
+                dependencies: rows
+                    .into_iter()
+                    .map(|(resource, hazard)| CompilerGraphDiagnosticDependency {
+                        resource,
+                        hazard,
+                    })
+                    .collect(),
+            })
+            .collect();
+        CompilerGraphDiagnostic {
+            label: label.to_owned(),
+            nodes,
+            edges,
+        }
     }
 
     pub fn repeated_regions(&self) -> &[RepeatedPassRegion] {
@@ -1743,6 +1889,40 @@ impl CompilerGraph {
         }
         Ok(())
     }
+}
+
+fn compiler_graph_diagnostics_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED
+        .get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_COMPILER_GRAPH_BREAKDOWN", false))
+}
+
+static COMPILER_GRAPH_DIAGNOSTICS: std::sync::OnceLock<
+    std::sync::Mutex<BTreeMap<String, CompilerGraphDiagnostic>>,
+> = std::sync::OnceLock::new();
+
+fn register_compiler_graph_diagnostic(label: &str, graph: &CompilerGraph) {
+    if !compiler_graph_diagnostics_enabled() {
+        return;
+    }
+    COMPILER_GRAPH_DIAGNOSTICS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(label.to_owned(), graph.diagnostic(label));
+}
+
+pub(crate) fn compiler_graph_diagnostics() -> Vec<CompilerGraphDiagnostic> {
+    if !compiler_graph_diagnostics_enabled() {
+        return Vec::new();
+    }
+    COMPILER_GRAPH_DIAGNOSTICS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .values()
+        .cloned()
+        .collect()
 }
 
 fn reflected_parameters(reflection: &SlangReflection) -> Vec<&ParameterReflection> {
@@ -3963,6 +4143,57 @@ fn plan_graph_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnostic_dependencies_come_from_resource_hazards_not_pass_sequence() {
+        let mut builder = CompilerGraphBuilder::new();
+        let input = builder
+            .add_resource(ResourceDesc {
+                name: "input",
+                domain: ResourceDomain::Tokens,
+                class: ResourceClass::Input,
+                bytes: 16,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        let scratch = builder
+            .add_resource(ResourceDesc {
+                name: "scratch",
+                domain: ResourceDomain::Types,
+                class: ResourceClass::Workspace,
+                bytes: 16,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        for (name, accesses) in [
+            ("produce", vec![PassAccess::write("scratch", scratch)]),
+            ("independent", vec![PassAccess::read("input", input)]),
+            ("consume", vec![PassAccess::read("scratch", scratch)]),
+            ("reuse", vec![PassAccess::write("scratch", scratch)]),
+        ] {
+            builder
+                .add_pass(PassDesc {
+                    name,
+                    phase: CompilerPhase::TypeCheck,
+                    dispatch_domain: ResourceDomain::Types,
+                    accesses,
+                })
+                .unwrap();
+        }
+        let diagnostic = builder.build().unwrap().diagnostic("test");
+        let edges = diagnostic
+            .edges
+            .iter()
+            .map(|edge| (edge.source, edge.target))
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(edges, BTreeSet::from([(0, 2), (0, 3), (2, 3)]));
+        assert!(diagnostic.edges.iter().all(|edge| {
+            edge.dependencies
+                .iter()
+                .all(|dependency| dependency.resource == "scratch")
+        }));
+    }
 
     #[test]
     fn upstream_storage_recovers_one_whole_dead_physical_allocation() {

@@ -1,0 +1,2609 @@
+{
+  "machine": {
+    "gpu": "NVIDIA GeForce RTX 3090, 580.173.02, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "versions": {
+      "cargo": "cargo 1.99.0-nightly (3efb1f477 2026-07-17)",
+      "g++": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "ninja": "1.11.1",
+      "rustc": "rustc 1.99.0-nightly (87e5904f5 2026-07-20)",
+      "zig": "0.16.0"
+    }
+  },
+  "measurements": [
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "ninja",
+            "-f",
+            "build-o0.ninja"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c",
+          "display": "ninja -f build-o0.ninja",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "c",
+        "version": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+      },
+      "configuration": "o0",
+      "id": "c-o0",
+      "measurement_semantics": {
+        "cache": "clean build; cleanup occurs before the timed interval",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": null,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-100-1000-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 231.743655
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 235.780834
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 234.415754
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 216.477673
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 211.881334
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 205.937316
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 226.707502
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 217.202196
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 257.027472
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 232.325492
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 224.89852
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 213.777924
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 231.905259
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 236.480308
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 218.530557
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 208.740852
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 203.94876
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 208.0029
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 267.596139
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 225.798336
+        }
+      ],
+      "source": {
+        "bytes": 919373,
+        "file_records": [
+          {"bytes":3541,"lines":95,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_planner_15.c","sloc":83},
+          {"bytes":6799,"lines":209,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_planner_45.c","sloc":192},
+          {"bytes":4859,"lines":138,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_planner_75.c","sloc":128},
+          {"bytes":6326,"lines":199,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_policy_0.c","sloc":190},
+          {"bytes":4637,"lines":147,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_policy_30.c","sloc":141},
+          {"bytes":2809,"lines":85,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_policy_60.c","sloc":77},
+          {"bytes":3313,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_policy_90.c","sloc":69},
+          {"bytes":2536,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_processor_13.c","sloc":64},
+          {"bytes":5322,"lines":156,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_processor_43.c","sloc":141},
+          {"bytes":4554,"lines":133,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_processor_73.c","sloc":119},
+          {"bytes":8821,"lines":271,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_tracker_28.c","sloc":249},
+          {"bytes":5034,"lines":145,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_tracker_58.c","sloc":133},
+          {"bytes":2888,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_tracker_88.c","sloc":66},
+          {"bytes":18105,"lines":541,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_service_26.c","sloc":487},
+          {"bytes":31082,"lines":1002,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_service_56.c","sloc":934},
+          {"bytes":7349,"lines":209,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_service_86.c","sloc":193},
+          {"bytes":6813,"lines":219,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_summary_11.c","sloc":207},
+          {"bytes":8152,"lines":262,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_summary_41.c","sloc":248},
+          {"bytes":28703,"lines":935,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_summary_71.c","sloc":879},
+          {"bytes":2773,"lines":63,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_planner_39.c","sloc":52},
+          {"bytes":5286,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_planner_69.c","sloc":148},
+          {"bytes":19127,"lines":608,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_planner_9.c","sloc":565},
+          {"bytes":36471,"lines":1124,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_policy_24.c","sloc":1040},
+          {"bytes":5705,"lines":183,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_policy_54.c","sloc":172},
+          {"bytes":7757,"lines":238,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_policy_84.c","sloc":222},
+          {"bytes":6270,"lines":178,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_processor_37.c","sloc":165},
+          {"bytes":9371,"lines":283,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_processor_67.c","sloc":254},
+          {"bytes":6870,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_processor_7.c","sloc":191},
+          {"bytes":7069,"lines":217,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_processor_97.c","sloc":200},
+          {"bytes":2154,"lines":56,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_tracker_22.c","sloc":49},
+          {"bytes":5973,"lines":180,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_tracker_52.c","sloc":162},
+          {"bytes":19366,"lines":583,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_tracker_82.c","sloc":545},
+          {"bytes":8083,"lines":251,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_service_20.c","sloc":236},
+          {"bytes":8590,"lines":273,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_service_50.c","sloc":254},
+          {"bytes":14678,"lines":452,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_service_80.c","sloc":427},
+          {"bytes":3145,"lines":103,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_summary_35.c","sloc":97},
+          {"bytes":6133,"lines":186,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_summary_5.c","sloc":170},
+          {"bytes":4450,"lines":121,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_summary_65.c","sloc":110},
+          {"bytes":4985,"lines":140,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_summary_95.c","sloc":127},
+          {"bytes":24322,"lines":750,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/main.c","sloc":698},
+          {"bytes":5395,"lines":183,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_planner_3.c","sloc":173},
+          {"bytes":6311,"lines":196,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_planner_33.c","sloc":182},
+          {"bytes":2656,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_planner_63.c","sloc":71},
+          {"bytes":8946,"lines":255,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_planner_93.c","sloc":230},
+          {"bytes":63618,"lines":2053,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_policy_18.c","sloc":1920},
+          {"bytes":5592,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_policy_48.c","sloc":151},
+          {"bytes":5630,"lines":168,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_policy_78.c","sloc":150},
+          {"bytes":2949,"lines":94,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_processor_1.c","sloc":86},
+          {"bytes":2748,"lines":78,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_processor_31.c","sloc":69},
+          {"bytes":6782,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_processor_61.c","sloc":190},
+          {"bytes":38617,"lines":1212,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_processor_91.c","sloc":1126},
+          {"bytes":7547,"lines":234,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_tracker_16.c","sloc":215},
+          {"bytes":7231,"lines":219,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_tracker_46.c","sloc":201},
+          {"bytes":4049,"lines":99,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_tracker_76.c","sloc":86},
+          {"bytes":3944,"lines":119,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_service_14.c","sloc":108},
+          {"bytes":3927,"lines":111,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_service_44.c","sloc":99},
+          {"bytes":6855,"lines":191,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_service_74.c","sloc":175},
+          {"bytes":6563,"lines":204,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_summary_29.c","sloc":188},
+          {"bytes":6678,"lines":195,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_summary_59.c","sloc":176},
+          {"bytes":3412,"lines":82,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_summary_89.c","sloc":72},
+          {"bytes":10240,"lines":312,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_planner_27.c","sloc":289},
+          {"bytes":5632,"lines":173,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_planner_57.c","sloc":160},
+          {"bytes":6081,"lines":180,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_planner_87.c","sloc":163},
+          {"bytes":8165,"lines":260,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_policy_12.c","sloc":242},
+          {"bytes":8318,"lines":275,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_policy_42.c","sloc":262},
+          {"bytes":15160,"lines":472,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_policy_72.c","sloc":447},
+          {"bytes":6520,"lines":189,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_processor_25.c","sloc":174},
+          {"bytes":19981,"lines":619,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_processor_55.c","sloc":574},
+          {"bytes":4173,"lines":126,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_processor_85.c","sloc":120},
+          {"bytes":4222,"lines":137,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_tracker_10.c","sloc":131},
+          {"bytes":5669,"lines":161,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_tracker_40.c","sloc":147},
+          {"bytes":2530,"lines":64,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_tracker_70.c","sloc":57},
+          {"bytes":36104,"lines":1133,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_service_38.c","sloc":1060},
+          {"bytes":3460,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_service_68.c","sloc":89},
+          {"bytes":3803,"lines":120,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_service_8.c","sloc":109},
+          {"bytes":6216,"lines":189,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_service_98.c","sloc":176},
+          {"bytes":5676,"lines":157,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_summary_23.c","sloc":140},
+          {"bytes":6714,"lines":206,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_summary_53.c","sloc":189},
+          {"bytes":5470,"lines":156,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_summary_83.c","sloc":143},
+          {"bytes":13800,"lines":446,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_planner_21.c","sloc":418},
+          {"bytes":4842,"lines":144,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_planner_51.c","sloc":134},
+          {"bytes":4521,"lines":135,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_planner_81.c","sloc":121},
+          {"bytes":35726,"lines":1134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_policy_36.c","sloc":1062},
+          {"bytes":3500,"lines":101,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_policy_6.c","sloc":90},
+          {"bytes":6410,"lines":193,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_policy_66.c","sloc":178},
+          {"bytes":5499,"lines":170,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_policy_96.c","sloc":159},
+          {"bytes":3370,"lines":102,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_processor_19.c","sloc":93},
+          {"bytes":8699,"lines":263,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_processor_49.c","sloc":247},
+          {"bytes":6048,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_processor_79.c","sloc":148},
+          {"bytes":3024,"lines":75,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_tracker_34.c","sloc":63},
+          {"bytes":3480,"lines":104,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_tracker_4.c","sloc":93},
+          {"bytes":5250,"lines":169,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_tracker_64.c","sloc":158},
+          {"bytes":17182,"lines":511,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_tracker_94.c","sloc":462},
+          {"bytes":2769,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_service_2.c","sloc":61},
+          {"bytes":7481,"lines":236,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_service_32.c","sloc":219},
+          {"bytes":5746,"lines":161,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_service_62.c","sloc":144},
+          {"bytes":5213,"lines":164,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_service_92.c","sloc":153},
+          {"bytes":20358,"lines":654,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_summary_17.c","sloc":614},
+          {"bytes":19455,"lines":626,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_summary_47.c","sloc":588},
+          {"bytes":3195,"lines":87,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_summary_77.c","sloc":80}
+        ],
+        "files": 100,
+        "kilobytes": 919.373,
+        "largest_file_bytes": 63618,
+        "megabytes": 0.919373,
+        "physical_lines": 28210,
+        "sloc": 26109,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 4079800.6571602263,
+        "median_sloc_per_second": 115861.043730669,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              7,
+              5,
+              6,
+              0,
+              2
+            ],
+            "edges": [
+              203.94876,
+              216.67823579999998,
+              229.4077116,
+              242.1371874,
+              254.8666632,
+              267.596139
+            ],
+            "unit": "ms"
+          },
+          "mad": 9.749865999999983,
+          "maximum": 267.596139,
+          "mean": 225.45893915000002,
+          "median": 225.348428,
+          "minimum": 203.94876,
+          "p95": 257.55590535,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    },
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "ninja",
+            "-f",
+            "build-optimized.ninja"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c",
+          "display": "ninja -f build-optimized.ninja",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "c",
+        "version": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+      },
+      "configuration": "optimized",
+      "id": "c-optimized",
+      "measurement_semantics": {
+        "cache": "clean build; cleanup occurs before the timed interval",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": null,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-100-1000-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 411.557404
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 415.294665
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 441.573626
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 468.05117
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 455.238387
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 438.141335
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 440.451568
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 439.576561
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 427.416594
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 433.299066
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 424.828701
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 411.667501
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 446.708466
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 462.9752
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 466.115033
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 424.130537
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 471.806541
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 445.389625
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 393.093294
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "source_bytes": 919373,
+          "source_sloc": 26109,
+          "wall_ms": 455.426551
+        }
+      ],
+      "source": {
+        "bytes": 919373,
+        "file_records": [
+          {"bytes":3541,"lines":95,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_planner_15.c","sloc":83},
+          {"bytes":6799,"lines":209,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_planner_45.c","sloc":192},
+          {"bytes":4859,"lines":138,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_planner_75.c","sloc":128},
+          {"bytes":6326,"lines":199,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_policy_0.c","sloc":190},
+          {"bytes":4637,"lines":147,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_policy_30.c","sloc":141},
+          {"bytes":2809,"lines":85,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_policy_60.c","sloc":77},
+          {"bytes":3313,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/accounts_policy_90.c","sloc":69},
+          {"bytes":2536,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_processor_13.c","sloc":64},
+          {"bytes":5322,"lines":156,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_processor_43.c","sloc":141},
+          {"bytes":4554,"lines":133,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_processor_73.c","sloc":119},
+          {"bytes":8821,"lines":271,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_tracker_28.c","sloc":249},
+          {"bytes":5034,"lines":145,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_tracker_58.c","sloc":133},
+          {"bytes":2888,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/billing_tracker_88.c","sloc":66},
+          {"bytes":18105,"lines":541,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_service_26.c","sloc":487},
+          {"bytes":31082,"lines":1002,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_service_56.c","sloc":934},
+          {"bytes":7349,"lines":209,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_service_86.c","sloc":193},
+          {"bytes":6813,"lines":219,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_summary_11.c","sloc":207},
+          {"bytes":8152,"lines":262,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_summary_41.c","sloc":248},
+          {"bytes":28703,"lines":935,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/catalog_summary_71.c","sloc":879},
+          {"bytes":2773,"lines":63,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_planner_39.c","sloc":52},
+          {"bytes":5286,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_planner_69.c","sloc":148},
+          {"bytes":19127,"lines":608,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_planner_9.c","sloc":565},
+          {"bytes":36471,"lines":1124,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_policy_24.c","sloc":1040},
+          {"bytes":5705,"lines":183,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_policy_54.c","sloc":172},
+          {"bytes":7757,"lines":238,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/checkout_policy_84.c","sloc":222},
+          {"bytes":6270,"lines":178,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_processor_37.c","sloc":165},
+          {"bytes":9371,"lines":283,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_processor_67.c","sloc":254},
+          {"bytes":6870,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_processor_7.c","sloc":191},
+          {"bytes":7069,"lines":217,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_processor_97.c","sloc":200},
+          {"bytes":2154,"lines":56,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_tracker_22.c","sloc":49},
+          {"bytes":5973,"lines":180,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_tracker_52.c","sloc":162},
+          {"bytes":19366,"lines":583,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/delivery_tracker_82.c","sloc":545},
+          {"bytes":8083,"lines":251,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_service_20.c","sloc":236},
+          {"bytes":8590,"lines":273,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_service_50.c","sloc":254},
+          {"bytes":14678,"lines":452,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_service_80.c","sloc":427},
+          {"bytes":3145,"lines":103,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_summary_35.c","sloc":97},
+          {"bytes":6133,"lines":186,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_summary_5.c","sloc":170},
+          {"bytes":4450,"lines":121,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_summary_65.c","sloc":110},
+          {"bytes":4985,"lines":140,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/inventory_summary_95.c","sloc":127},
+          {"bytes":24322,"lines":750,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/main.c","sloc":698},
+          {"bytes":5395,"lines":183,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_planner_3.c","sloc":173},
+          {"bytes":6311,"lines":196,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_planner_33.c","sloc":182},
+          {"bytes":2656,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_planner_63.c","sloc":71},
+          {"bytes":8946,"lines":255,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_planner_93.c","sloc":230},
+          {"bytes":63618,"lines":2053,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_policy_18.c","sloc":1920},
+          {"bytes":5592,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_policy_48.c","sloc":151},
+          {"bytes":5630,"lines":168,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/metrics_policy_78.c","sloc":150},
+          {"bytes":2949,"lines":94,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_processor_1.c","sloc":86},
+          {"bytes":2748,"lines":78,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_processor_31.c","sloc":69},
+          {"bytes":6782,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_processor_61.c","sloc":190},
+          {"bytes":38617,"lines":1212,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_processor_91.c","sloc":1126},
+          {"bytes":7547,"lines":234,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_tracker_16.c","sloc":215},
+          {"bytes":7231,"lines":219,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_tracker_46.c","sloc":201},
+          {"bytes":4049,"lines":99,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/orders_tracker_76.c","sloc":86},
+          {"bytes":3944,"lines":119,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_service_14.c","sloc":108},
+          {"bytes":3927,"lines":111,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_service_44.c","sloc":99},
+          {"bytes":6855,"lines":191,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_service_74.c","sloc":175},
+          {"bytes":6563,"lines":204,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_summary_29.c","sloc":188},
+          {"bytes":6678,"lines":195,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_summary_59.c","sloc":176},
+          {"bytes":3412,"lines":82,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/pricing_summary_89.c","sloc":72},
+          {"bytes":10240,"lines":312,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_planner_27.c","sloc":289},
+          {"bytes":5632,"lines":173,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_planner_57.c","sloc":160},
+          {"bytes":6081,"lines":180,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_planner_87.c","sloc":163},
+          {"bytes":8165,"lines":260,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_policy_12.c","sloc":242},
+          {"bytes":8318,"lines":275,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_policy_42.c","sloc":262},
+          {"bytes":15160,"lines":472,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/routing_policy_72.c","sloc":447},
+          {"bytes":6520,"lines":189,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_processor_25.c","sloc":174},
+          {"bytes":19981,"lines":619,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_processor_55.c","sloc":574},
+          {"bytes":4173,"lines":126,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_processor_85.c","sloc":120},
+          {"bytes":4222,"lines":137,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_tracker_10.c","sloc":131},
+          {"bytes":5669,"lines":161,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_tracker_40.c","sloc":147},
+          {"bytes":2530,"lines":64,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/scheduling_tracker_70.c","sloc":57},
+          {"bytes":36104,"lines":1133,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_service_38.c","sloc":1060},
+          {"bytes":3460,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_service_68.c","sloc":89},
+          {"bytes":3803,"lines":120,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_service_8.c","sloc":109},
+          {"bytes":6216,"lines":189,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_service_98.c","sloc":176},
+          {"bytes":5676,"lines":157,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_summary_23.c","sloc":140},
+          {"bytes":6714,"lines":206,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_summary_53.c","sloc":189},
+          {"bytes":5470,"lines":156,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/sessions_summary_83.c","sloc":143},
+          {"bytes":13800,"lines":446,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_planner_21.c","sloc":418},
+          {"bytes":4842,"lines":144,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_planner_51.c","sloc":134},
+          {"bytes":4521,"lines":135,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_planner_81.c","sloc":121},
+          {"bytes":35726,"lines":1134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_policy_36.c","sloc":1062},
+          {"bytes":3500,"lines":101,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_policy_6.c","sloc":90},
+          {"bytes":6410,"lines":193,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_policy_66.c","sloc":178},
+          {"bytes":5499,"lines":170,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/storage_policy_96.c","sloc":159},
+          {"bytes":3370,"lines":102,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_processor_19.c","sloc":93},
+          {"bytes":8699,"lines":263,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_processor_49.c","sloc":247},
+          {"bytes":6048,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_processor_79.c","sloc":148},
+          {"bytes":3024,"lines":75,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_tracker_34.c","sloc":63},
+          {"bytes":3480,"lines":104,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_tracker_4.c","sloc":93},
+          {"bytes":5250,"lines":169,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_tracker_64.c","sloc":158},
+          {"bytes":17182,"lines":511,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/telemetry_tracker_94.c","sloc":462},
+          {"bytes":2769,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_service_2.c","sloc":61},
+          {"bytes":7481,"lines":236,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_service_32.c","sloc":219},
+          {"bytes":5746,"lines":161,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_service_62.c","sloc":144},
+          {"bytes":5213,"lines":164,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_service_92.c","sloc":153},
+          {"bytes":20358,"lines":654,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_summary_17.c","sloc":614},
+          {"bytes":19455,"lines":626,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_summary_47.c","sloc":588},
+          {"bytes":3195,"lines":87,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/c/src/validation_summary_77.c","sloc":80}
+        ],
+        "files": 100,
+        "kilobytes": 919.373,
+        "largest_file_bytes": 63618,
+        "megabytes": 0.919373,
+        "physical_lines": 28210,
+        "sloc": 26109,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 2089419.368804277,
+        "median_sloc_per_second": 59336.79833985865,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              4,
+              5,
+              6,
+              4
+            ],
+            "edges": [
+              393.093294,
+              408.8359434,
+              424.5785928,
+              440.32124220000003,
+              456.0638916,
+              471.806541
+            ],
+            "unit": "ms"
+          },
+          "mad": 15.318404499999986,
+          "maximum": 471.806541,
+          "mean": 438.63709125,
+          "median": 440.0140645,
+          "minimum": 393.093294,
+          "p95": 468.23893855,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    },
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "ninja",
+            "-f",
+            "build-o0.ninja"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp",
+          "display": "ninja -f build-o0.ninja",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "cpp",
+        "version": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+      },
+      "configuration": "o0",
+      "id": "cpp-o0",
+      "measurement_semantics": {
+        "cache": "clean build; cleanup occurs before the timed interval",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": null,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-100-1000-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 270.651186
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 238.987556
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 249.294122
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 258.625864
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 271.231045
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 258.972572
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 243.292186
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 253.699668
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 251.087655
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 270.211533
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 270.441174
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 273.855867
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 235.034133
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 233.931745
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 237.773021
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 235.260225
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 239.559985
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 245.332949
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 259.770282
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 253.590183
+        }
+      ],
+      "source": {
+        "bytes": 832733,
+        "file_records": [
+          {"bytes":2963,"lines":97,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_planner_15.cpp","sloc":85},
+          {"bytes":6191,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_planner_45.cpp","sloc":193},
+          {"bytes":4537,"lines":139,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_planner_75.cpp","sloc":129},
+          {"bytes":5920,"lines":201,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_policy_0.cpp","sloc":192},
+          {"bytes":4381,"lines":148,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_policy_30.cpp","sloc":142},
+          {"bytes":2556,"lines":86,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_policy_60.cpp","sloc":78},
+          {"bytes":2617,"lines":79,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_policy_90.cpp","sloc":68},
+          {"bytes":2249,"lines":75,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_processor_13.cpp","sloc":66},
+          {"bytes":4590,"lines":154,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_processor_43.cpp","sloc":141},
+          {"bytes":4043,"lines":134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_processor_73.cpp","sloc":120},
+          {"bytes":8026,"lines":272,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_tracker_28.cpp","sloc":251},
+          {"bytes":4561,"lines":144,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_tracker_58.cpp","sloc":132},
+          {"bytes":2756,"lines":74,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_tracker_88.cpp","sloc":67},
+          {"bytes":15733,"lines":535,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_service_26.cpp","sloc":483},
+          {"bytes":28391,"lines":1000,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_service_56.cpp","sloc":934},
+          {"bytes":6764,"lines":208,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_service_86.cpp","sloc":192},
+          {"bytes":6421,"lines":220,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_summary_11.cpp","sloc":209},
+          {"bytes":7713,"lines":264,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_summary_41.cpp","sloc":250},
+          {"bytes":26526,"lines":933,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_summary_71.cpp","sloc":879},
+          {"bytes":1918,"lines":61,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_planner_39.cpp","sloc":52},
+          {"bytes":4972,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_planner_69.cpp","sloc":148},
+          {"bytes":17282,"lines":609,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_planner_9.cpp","sloc":566},
+          {"bytes":33140,"lines":1129,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_policy_24.cpp","sloc":1045},
+          {"bytes":5261,"lines":184,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_policy_54.cpp","sloc":173},
+          {"bytes":7092,"lines":236,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_policy_84.cpp","sloc":222},
+          {"bytes":5589,"lines":178,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_processor_37.cpp","sloc":166},
+          {"bytes":8177,"lines":284,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_processor_67.cpp","sloc":255},
+          {"bytes":6177,"lines":212,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_processor_7.cpp","sloc":193},
+          {"bytes":6365,"lines":219,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_processor_97.cpp","sloc":202},
+          {"bytes":1776,"lines":58,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_tracker_22.cpp","sloc":51},
+          {"bytes":5142,"lines":178,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_tracker_52.cpp","sloc":162},
+          {"bytes":17934,"lines":584,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_tracker_82.cpp","sloc":546},
+          {"bytes":7265,"lines":249,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_service_20.cpp","sloc":235},
+          {"bytes":7686,"lines":275,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_service_50.cpp","sloc":256},
+          {"bytes":13695,"lines":454,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_service_80.cpp","sloc":429},
+          {"bytes":2990,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_summary_35.cpp","sloc":99},
+          {"bytes":5526,"lines":187,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_summary_5.cpp","sloc":172},
+          {"bytes":3761,"lines":122,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_summary_65.cpp","sloc":111},
+          {"bytes":4532,"lines":141,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_summary_95.cpp","sloc":128},
+          {"bytes":22228,"lines":748,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/main.cpp","sloc":698},
+          {"bytes":5117,"lines":183,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_planner_3.cpp","sloc":173},
+          {"bytes":5683,"lines":198,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_planner_33.cpp","sloc":184},
+          {"bytes":2401,"lines":82,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_planner_63.cpp","sloc":73},
+          {"bytes":7811,"lines":252,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_planner_93.cpp","sloc":229},
+          {"bytes":58940,"lines":2055,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_policy_18.cpp","sloc":1922},
+          {"bytes":5115,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_policy_48.cpp","sloc":148},
+          {"bytes":5041,"lines":169,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_policy_78.cpp","sloc":152},
+          {"bytes":2738,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_processor_1.cpp","sloc":88},
+          {"bytes":2502,"lines":78,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_processor_31.cpp","sloc":69},
+          {"bytes":6015,"lines":211,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_processor_61.cpp","sloc":192},
+          {"bytes":35330,"lines":1214,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_processor_91.cpp","sloc":1128},
+          {"bytes":6644,"lines":231,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_tracker_16.cpp","sloc":214},
+          {"bytes":6454,"lines":221,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_tracker_46.cpp","sloc":203},
+          {"bytes":3099,"lines":90,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_tracker_76.cpp","sloc":79},
+          {"bytes":3610,"lines":119,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_service_14.cpp","sloc":108},
+          {"bytes":3396,"lines":111,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_service_44.cpp","sloc":100},
+          {"bytes":6138,"lines":196,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_service_74.cpp","sloc":180},
+          {"bytes":5761,"lines":202,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_summary_29.cpp","sloc":188},
+          {"bytes":5886,"lines":197,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_summary_59.cpp","sloc":178},
+          {"bytes":2682,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_summary_89.cpp","sloc":72},
+          {"bytes":9284,"lines":314,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_planner_27.cpp","sloc":291},
+          {"bytes":5158,"lines":175,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_planner_57.cpp","sloc":162},
+          {"bytes":5519,"lines":181,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_planner_87.cpp","sloc":165},
+          {"bytes":7414,"lines":258,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_policy_12.cpp","sloc":242},
+          {"bytes":7972,"lines":275,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_policy_42.cpp","sloc":262},
+          {"bytes":14092,"lines":473,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_policy_72.cpp","sloc":448},
+          {"bytes":5832,"lines":190,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_processor_25.cpp","sloc":175},
+          {"bytes":17862,"lines":620,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_processor_55.cpp","sloc":576},
+          {"bytes":4038,"lines":128,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_processor_85.cpp","sloc":122},
+          {"bytes":4012,"lines":138,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_tracker_10.cpp","sloc":132},
+          {"bytes":4865,"lines":163,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_tracker_40.cpp","sloc":149},
+          {"bytes":2299,"lines":65,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_tracker_70.cpp","sloc":59},
+          {"bytes":33269,"lines":1134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_service_38.cpp","sloc":1061},
+          {"bytes":3334,"lines":98,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_service_68.cpp","sloc":91},
+          {"bytes":3469,"lines":120,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_service_8.cpp","sloc":109},
+          {"bytes":5589,"lines":186,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_service_98.cpp","sloc":173},
+          {"bytes":4916,"lines":157,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_summary_23.cpp","sloc":140},
+          {"bytes":6134,"lines":206,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_summary_53.cpp","sloc":189},
+          {"bytes":4876,"lines":158,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_summary_83.cpp","sloc":145},
+          {"bytes":12629,"lines":444,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_planner_21.cpp","sloc":418},
+          {"bytes":4482,"lines":145,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_planner_51.cpp","sloc":135},
+          {"bytes":4093,"lines":135,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_planner_81.cpp","sloc":121},
+          {"bytes":33216,"lines":1134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_policy_36.cpp","sloc":1062},
+          {"bytes":2829,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_policy_6.cpp","sloc":87},
+          {"bytes":5817,"lines":191,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_policy_66.cpp","sloc":178},
+          {"bytes":5004,"lines":172,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_policy_96.cpp","sloc":161},
+          {"bytes":3048,"lines":102,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_processor_19.cpp","sloc":93},
+          {"bytes":7811,"lines":261,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_processor_49.cpp","sloc":247},
+          {"bytes":5067,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_processor_79.cpp","sloc":147},
+          {"bytes":2187,"lines":70,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_tracker_34.cpp","sloc":60},
+          {"bytes":3001,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_tracker_4.cpp","sloc":94},
+          {"bytes":4876,"lines":169,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_tracker_64.cpp","sloc":158},
+          {"bytes":15184,"lines":512,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_tracker_94.cpp","sloc":464},
+          {"bytes":2150,"lines":71,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_service_2.cpp","sloc":61},
+          {"bytes":6783,"lines":237,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_service_32.cpp","sloc":220},
+          {"bytes":4666,"lines":156,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_service_62.cpp","sloc":141},
+          {"bytes":4887,"lines":164,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_service_92.cpp","sloc":153},
+          {"bytes":18567,"lines":655,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_summary_17.cpp","sloc":615},
+          {"bytes":17890,"lines":628,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_summary_47.cpp","sloc":590},
+          {"bytes":2803,"lines":89,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_summary_77.cpp","sloc":82}
+        ],
+        "files": 100,
+        "kilobytes": 832.733,
+        "largest_file_bytes": 58940,
+        "megabytes": 0.832733,
+        "physical_lines": 28223,
+        "sloc": 26178,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 3300138.874081701,
+        "median_sloc_per_second": 103743.97969782724,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              6,
+              3,
+              3,
+              3,
+              5
+            ],
+            "edges": [
+              233.931745,
+              241.91656940000001,
+              249.9013938,
+              257.8862182,
+              265.8710426,
+              273.855867
+            ],
+            "unit": "ms"
+          },
+          "mad": 13.065148499999992,
+          "maximum": 273.855867,
+          "mean": 252.53014754999998,
+          "median": 252.338919,
+          "minimum": 233.931745,
+          "p95": 271.3622861,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    },
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "ninja",
+            "-f",
+            "build-optimized.ninja"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp",
+          "display": "ninja -f build-optimized.ninja",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "cpp",
+        "version": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+      },
+      "configuration": "optimized",
+      "id": "cpp-optimized",
+      "measurement_semantics": {
+        "cache": "clean build; cleanup occurs before the timed interval",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": null,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-100-1000-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 433.875226
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 441.841768
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 520.129012
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 479.307553
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 476.691751
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 483.126791
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 467.387428
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 539.875807
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 458.47962
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 456.715845
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 443.606384
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 472.405661
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 454.807997
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 457.14539
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 497.661551
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 499.107927
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 461.215689
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 448.424785
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 470.512113
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "source_bytes": 832733,
+          "source_sloc": 26178,
+          "wall_ms": 508.336244
+        }
+      ],
+      "source": {
+        "bytes": 832733,
+        "file_records": [
+          {"bytes":2963,"lines":97,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_planner_15.cpp","sloc":85},
+          {"bytes":6191,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_planner_45.cpp","sloc":193},
+          {"bytes":4537,"lines":139,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_planner_75.cpp","sloc":129},
+          {"bytes":5920,"lines":201,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_policy_0.cpp","sloc":192},
+          {"bytes":4381,"lines":148,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_policy_30.cpp","sloc":142},
+          {"bytes":2556,"lines":86,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_policy_60.cpp","sloc":78},
+          {"bytes":2617,"lines":79,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/accounts_policy_90.cpp","sloc":68},
+          {"bytes":2249,"lines":75,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_processor_13.cpp","sloc":66},
+          {"bytes":4590,"lines":154,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_processor_43.cpp","sloc":141},
+          {"bytes":4043,"lines":134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_processor_73.cpp","sloc":120},
+          {"bytes":8026,"lines":272,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_tracker_28.cpp","sloc":251},
+          {"bytes":4561,"lines":144,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_tracker_58.cpp","sloc":132},
+          {"bytes":2756,"lines":74,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/billing_tracker_88.cpp","sloc":67},
+          {"bytes":15733,"lines":535,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_service_26.cpp","sloc":483},
+          {"bytes":28391,"lines":1000,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_service_56.cpp","sloc":934},
+          {"bytes":6764,"lines":208,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_service_86.cpp","sloc":192},
+          {"bytes":6421,"lines":220,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_summary_11.cpp","sloc":209},
+          {"bytes":7713,"lines":264,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_summary_41.cpp","sloc":250},
+          {"bytes":26526,"lines":933,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/catalog_summary_71.cpp","sloc":879},
+          {"bytes":1918,"lines":61,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_planner_39.cpp","sloc":52},
+          {"bytes":4972,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_planner_69.cpp","sloc":148},
+          {"bytes":17282,"lines":609,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_planner_9.cpp","sloc":566},
+          {"bytes":33140,"lines":1129,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_policy_24.cpp","sloc":1045},
+          {"bytes":5261,"lines":184,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_policy_54.cpp","sloc":173},
+          {"bytes":7092,"lines":236,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/checkout_policy_84.cpp","sloc":222},
+          {"bytes":5589,"lines":178,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_processor_37.cpp","sloc":166},
+          {"bytes":8177,"lines":284,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_processor_67.cpp","sloc":255},
+          {"bytes":6177,"lines":212,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_processor_7.cpp","sloc":193},
+          {"bytes":6365,"lines":219,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_processor_97.cpp","sloc":202},
+          {"bytes":1776,"lines":58,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_tracker_22.cpp","sloc":51},
+          {"bytes":5142,"lines":178,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_tracker_52.cpp","sloc":162},
+          {"bytes":17934,"lines":584,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/delivery_tracker_82.cpp","sloc":546},
+          {"bytes":7265,"lines":249,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_service_20.cpp","sloc":235},
+          {"bytes":7686,"lines":275,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_service_50.cpp","sloc":256},
+          {"bytes":13695,"lines":454,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_service_80.cpp","sloc":429},
+          {"bytes":2990,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_summary_35.cpp","sloc":99},
+          {"bytes":5526,"lines":187,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_summary_5.cpp","sloc":172},
+          {"bytes":3761,"lines":122,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_summary_65.cpp","sloc":111},
+          {"bytes":4532,"lines":141,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/inventory_summary_95.cpp","sloc":128},
+          {"bytes":22228,"lines":748,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/main.cpp","sloc":698},
+          {"bytes":5117,"lines":183,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_planner_3.cpp","sloc":173},
+          {"bytes":5683,"lines":198,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_planner_33.cpp","sloc":184},
+          {"bytes":2401,"lines":82,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_planner_63.cpp","sloc":73},
+          {"bytes":7811,"lines":252,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_planner_93.cpp","sloc":229},
+          {"bytes":58940,"lines":2055,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_policy_18.cpp","sloc":1922},
+          {"bytes":5115,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_policy_48.cpp","sloc":148},
+          {"bytes":5041,"lines":169,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/metrics_policy_78.cpp","sloc":152},
+          {"bytes":2738,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_processor_1.cpp","sloc":88},
+          {"bytes":2502,"lines":78,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_processor_31.cpp","sloc":69},
+          {"bytes":6015,"lines":211,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_processor_61.cpp","sloc":192},
+          {"bytes":35330,"lines":1214,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_processor_91.cpp","sloc":1128},
+          {"bytes":6644,"lines":231,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_tracker_16.cpp","sloc":214},
+          {"bytes":6454,"lines":221,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_tracker_46.cpp","sloc":203},
+          {"bytes":3099,"lines":90,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/orders_tracker_76.cpp","sloc":79},
+          {"bytes":3610,"lines":119,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_service_14.cpp","sloc":108},
+          {"bytes":3396,"lines":111,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_service_44.cpp","sloc":100},
+          {"bytes":6138,"lines":196,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_service_74.cpp","sloc":180},
+          {"bytes":5761,"lines":202,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_summary_29.cpp","sloc":188},
+          {"bytes":5886,"lines":197,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_summary_59.cpp","sloc":178},
+          {"bytes":2682,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/pricing_summary_89.cpp","sloc":72},
+          {"bytes":9284,"lines":314,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_planner_27.cpp","sloc":291},
+          {"bytes":5158,"lines":175,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_planner_57.cpp","sloc":162},
+          {"bytes":5519,"lines":181,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_planner_87.cpp","sloc":165},
+          {"bytes":7414,"lines":258,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_policy_12.cpp","sloc":242},
+          {"bytes":7972,"lines":275,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_policy_42.cpp","sloc":262},
+          {"bytes":14092,"lines":473,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/routing_policy_72.cpp","sloc":448},
+          {"bytes":5832,"lines":190,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_processor_25.cpp","sloc":175},
+          {"bytes":17862,"lines":620,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_processor_55.cpp","sloc":576},
+          {"bytes":4038,"lines":128,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_processor_85.cpp","sloc":122},
+          {"bytes":4012,"lines":138,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_tracker_10.cpp","sloc":132},
+          {"bytes":4865,"lines":163,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_tracker_40.cpp","sloc":149},
+          {"bytes":2299,"lines":65,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/scheduling_tracker_70.cpp","sloc":59},
+          {"bytes":33269,"lines":1134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_service_38.cpp","sloc":1061},
+          {"bytes":3334,"lines":98,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_service_68.cpp","sloc":91},
+          {"bytes":3469,"lines":120,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_service_8.cpp","sloc":109},
+          {"bytes":5589,"lines":186,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_service_98.cpp","sloc":173},
+          {"bytes":4916,"lines":157,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_summary_23.cpp","sloc":140},
+          {"bytes":6134,"lines":206,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_summary_53.cpp","sloc":189},
+          {"bytes":4876,"lines":158,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/sessions_summary_83.cpp","sloc":145},
+          {"bytes":12629,"lines":444,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_planner_21.cpp","sloc":418},
+          {"bytes":4482,"lines":145,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_planner_51.cpp","sloc":135},
+          {"bytes":4093,"lines":135,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_planner_81.cpp","sloc":121},
+          {"bytes":33216,"lines":1134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_policy_36.cpp","sloc":1062},
+          {"bytes":2829,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_policy_6.cpp","sloc":87},
+          {"bytes":5817,"lines":191,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_policy_66.cpp","sloc":178},
+          {"bytes":5004,"lines":172,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/storage_policy_96.cpp","sloc":161},
+          {"bytes":3048,"lines":102,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_processor_19.cpp","sloc":93},
+          {"bytes":7811,"lines":261,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_processor_49.cpp","sloc":247},
+          {"bytes":5067,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_processor_79.cpp","sloc":147},
+          {"bytes":2187,"lines":70,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_tracker_34.cpp","sloc":60},
+          {"bytes":3001,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_tracker_4.cpp","sloc":94},
+          {"bytes":4876,"lines":169,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_tracker_64.cpp","sloc":158},
+          {"bytes":15184,"lines":512,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/telemetry_tracker_94.cpp","sloc":464},
+          {"bytes":2150,"lines":71,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_service_2.cpp","sloc":61},
+          {"bytes":6783,"lines":237,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_service_32.cpp","sloc":220},
+          {"bytes":4666,"lines":156,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_service_62.cpp","sloc":141},
+          {"bytes":4887,"lines":164,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_service_92.cpp","sloc":153},
+          {"bytes":18567,"lines":655,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_summary_17.cpp","sloc":615},
+          {"bytes":17890,"lines":628,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_summary_47.cpp","sloc":590},
+          {"bytes":2803,"lines":89,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/cpp/src/validation_summary_77.cpp","sloc":82}
+        ],
+        "files": 100,
+        "kilobytes": 832.733,
+        "largest_file_bytes": 58940,
+        "megabytes": 0.832733,
+        "physical_lines": 28223,
+        "sloc": 26178,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 1775759.9967657886,
+        "median_sloc_per_second": 55823.22928878141,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              5,
+              7,
+              3,
+              3,
+              2
+            ],
+            "edges": [
+              433.875226,
+              455.0753422,
+              476.2754584,
+              497.4755746,
+              518.6756908,
+              539.875807
+            ],
+            "unit": "ms"
+          },
+          "mad": 14.159397000000013,
+          "maximum": 539.875807,
+          "mean": 473.5327271,
+          "median": 468.9497705,
+          "minimum": 433.875226,
+          "p95": 521.11635175,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    },
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "cargo",
+            "build",
+            "--quiet"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust",
+          "display": "cargo build --quiet",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "rust",
+        "version": "rustc 1.99.0-nightly (87e5904f5 2026-07-20)"
+      },
+      "configuration": "o0",
+      "id": "rust-o0",
+      "measurement_semantics": {
+        "cache": "clean build; cleanup occurs before the timed interval",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": 16,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-rust-parallel-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 730.40831
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 619.460263
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 623.475108
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 588.167737
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 625.331836
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 645.984757
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 621.292794
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 619.534872
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 567.74793
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 631.545137
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 646.370693
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 622.74332
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 724.178668
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 645.583935
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 729.003042
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 587.314405
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 591.085698
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 688.645828
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 632.630799
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 595.302156
+        }
+      ],
+      "source": {
+        "bytes": 801111,
+        "file_records": [
+          {"bytes":2683,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_planner_15.rs","sloc":84},
+          {"bytes":5946,"lines":208,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_planner_45.rs","sloc":191},
+          {"bytes":4186,"lines":143,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_planner_75.rs","sloc":133},
+          {"bytes":5620,"lines":200,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_policy_0.rs","sloc":191},
+          {"bytes":4167,"lines":148,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_policy_30.rs","sloc":142},
+          {"bytes":2409,"lines":84,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_policy_60.rs","sloc":76},
+          {"bytes":2296,"lines":78,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_policy_90.rs","sloc":67},
+          {"bytes":2097,"lines":77,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_processor_13.rs","sloc":68},
+          {"bytes":4249,"lines":158,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_processor_43.rs","sloc":143},
+          {"bytes":3785,"lines":134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_processor_73.rs","sloc":120},
+          {"bytes":8396,"lines":281,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_tracker_28.rs","sloc":258},
+          {"bytes":4202,"lines":147,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_tracker_58.rs","sloc":135},
+          {"bytes":2425,"lines":72,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_tracker_88.rs","sloc":65},
+          {"bytes":15321,"lines":540,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_service_26.rs","sloc":486},
+          {"bytes":27724,"lines":1003,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_service_56.rs","sloc":935},
+          {"bytes":6335,"lines":211,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_service_86.rs","sloc":195},
+          {"bytes":6071,"lines":218,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_summary_11.rs","sloc":205},
+          {"bytes":7522,"lines":264,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_summary_41.rs","sloc":250},
+          {"bytes":25804,"lines":935,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_summary_71.rs","sloc":879},
+          {"bytes":1811,"lines":63,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_planner_39.rs","sloc":52},
+          {"bytes":4680,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_planner_69.rs","sloc":151},
+          {"bytes":16619,"lines":608,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_planner_9.rs","sloc":565},
+          {"bytes":32262,"lines":1127,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_policy_24.rs","sloc":1043},
+          {"bytes":5041,"lines":184,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_policy_54.rs","sloc":173},
+          {"bytes":6837,"lines":239,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_policy_84.rs","sloc":223},
+          {"bytes":5249,"lines":177,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_processor_37.rs","sloc":163},
+          {"bytes":7833,"lines":282,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_processor_67.rs","sloc":253},
+          {"bytes":5957,"lines":212,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_processor_7.rs","sloc":193},
+          {"bytes":6086,"lines":219,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_processor_97.rs","sloc":202},
+          {"bytes":1526,"lines":57,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_tracker_22.rs","sloc":50},
+          {"bytes":4945,"lines":181,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_tracker_52.rs","sloc":163},
+          {"bytes":17440,"lines":582,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_tracker_82.rs","sloc":544},
+          {"bytes":6947,"lines":248,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_service_20.rs","sloc":232},
+          {"bytes":7310,"lines":274,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_service_50.rs","sloc":255},
+          {"bytes":13304,"lines":454,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_service_80.rs","sloc":429},
+          {"bytes":2875,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_summary_35.rs","sloc":99},
+          {"bytes":5261,"lines":186,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_summary_5.rs","sloc":169},
+          {"bytes":3374,"lines":121,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_summary_65.rs","sloc":110},
+          {"bytes":4309,"lines":139,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_summary_95.rs","sloc":126},
+          {"bytes":23445,"lines":830,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/main.rs","sloc":779},
+          {"bytes":4855,"lines":186,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_planner_3.rs","sloc":176},
+          {"bytes":5322,"lines":199,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_planner_33.rs","sloc":185},
+          {"bytes":2249,"lines":84,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_planner_63.rs","sloc":75},
+          {"bytes":7294,"lines":256,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_planner_93.rs","sloc":231},
+          {"bytes":57571,"lines":2054,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_policy_18.rs","sloc":1921},
+          {"bytes":4794,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_policy_48.rs","sloc":151},
+          {"bytes":4758,"lines":168,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_policy_78.rs","sloc":149},
+          {"bytes":2623,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_processor_1.rs","sloc":88},
+          {"bytes":2193,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_processor_31.rs","sloc":71},
+          {"bytes":5722,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_processor_61.rs","sloc":189},
+          {"bytes":34436,"lines":1213,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_processor_91.rs","sloc":1127},
+          {"bytes":6336,"lines":234,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_tracker_16.rs","sloc":215},
+          {"bytes":6112,"lines":222,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_tracker_46.rs","sloc":204},
+          {"bytes":2931,"lines":95,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_tracker_76.rs","sloc":82},
+          {"bytes":3372,"lines":122,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_service_14.rs","sloc":111},
+          {"bytes":3072,"lines":110,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_service_44.rs","sloc":97},
+          {"bytes":5790,"lines":194,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_service_74.rs","sloc":178},
+          {"bytes":5547,"lines":207,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_summary_29.rs","sloc":191},
+          {"bytes":5528,"lines":196,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_summary_59.rs","sloc":177},
+          {"bytes":2525,"lines":82,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_summary_89.rs","sloc":72},
+          {"bytes":8871,"lines":313,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_planner_27.rs","sloc":290},
+          {"bytes":4949,"lines":175,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_planner_57.rs","sloc":162},
+          {"bytes":5191,"lines":180,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_planner_87.rs","sloc":162},
+          {"bytes":7193,"lines":261,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_policy_12.rs","sloc":243},
+          {"bytes":7688,"lines":278,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_policy_42.rs","sloc":265},
+          {"bytes":13527,"lines":472,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_policy_72.rs","sloc":447},
+          {"bytes":5465,"lines":194,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_processor_25.rs","sloc":179},
+          {"bytes":17313,"lines":619,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_processor_55.rs","sloc":573},
+          {"bytes":3863,"lines":128,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_processor_85.rs","sloc":122},
+          {"bytes":3847,"lines":136,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_tracker_10.rs","sloc":130},
+          {"bytes":4493,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_tracker_40.rs","sloc":148},
+          {"bytes":2056,"lines":64,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_tracker_70.rs","sloc":56},
+          {"bytes":32394,"lines":1132,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_service_38.rs","sloc":1059},
+          {"bytes":3059,"lines":97,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_service_68.rs","sloc":90},
+          {"bytes":3225,"lines":123,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_service_8.rs","sloc":112},
+          {"bytes":5262,"lines":189,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_service_98.rs","sloc":176},
+          {"bytes":4592,"lines":157,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_summary_23.rs","sloc":140},
+          {"bytes":5783,"lines":211,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_summary_53.rs","sloc":194},
+          {"bytes":4505,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_summary_83.rs","sloc":146},
+          {"bytes":12304,"lines":447,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_planner_21.rs","sloc":419},
+          {"bytes":4152,"lines":144,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_planner_51.rs","sloc":134},
+          {"bytes":3817,"lines":138,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_planner_81.rs","sloc":124},
+          {"bytes":32420,"lines":1137,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_policy_36.rs","sloc":1065},
+          {"bytes":2655,"lines":99,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_policy_6.rs","sloc":88},
+          {"bytes":5582,"lines":194,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_policy_66.rs","sloc":179},
+          {"bytes":4670,"lines":173,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_policy_96.rs","sloc":162},
+          {"bytes":2812,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_processor_19.rs","sloc":96},
+          {"bytes":7624,"lines":267,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_processor_49.rs","sloc":251},
+          {"bytes":4759,"lines":164,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_processor_79.rs","sloc":150},
+          {"bytes":2013,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_tracker_34.rs","sloc":61},
+          {"bytes":2815,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_tracker_4.rs","sloc":94},
+          {"bytes":4612,"lines":172,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_tracker_64.rs","sloc":161},
+          {"bytes":14659,"lines":511,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_tracker_94.rs","sloc":461},
+          {"bytes":2009,"lines":74,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_service_2.rs","sloc":62},
+          {"bytes":6495,"lines":235,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_service_32.rs","sloc":218},
+          {"bytes":4432,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_service_62.rs","sloc":142},
+          {"bytes":4619,"lines":167,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_service_92.rs","sloc":156},
+          {"bytes":18044,"lines":653,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_summary_17.rs","sloc":613},
+          {"bytes":17454,"lines":628,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_summary_47.rs","sloc":590},
+          {"bytes":2509,"lines":88,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_summary_77.rs","sloc":81}
+        ],
+        "files": 100,
+        "kilobytes": 801.111,
+        "largest_file_bytes": 57571,
+        "megabytes": 0.801111,
+        "physical_lines": 28400,
+        "sloc": 26288,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 1283004.9909183662,
+        "median_sloc_per_second": 42101.076132099064,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              5,
+              8,
+              3,
+              1,
+              3
+            ],
+            "edges": [
+              567.74793,
+              600.280006,
+              632.812082,
+              665.344158,
+              697.8762340000001,
+              730.40831
+            ],
+            "unit": "ms"
+          },
+          "mad": 21.774252999999987,
+          "maximum": 730.40831,
+          "mean": 636.7903644,
+          "median": 624.403472,
+          "minimum": 567.74793,
+          "p95": 729.0733054,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    },
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "cargo",
+            "build",
+            "--quiet",
+            "--release"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust",
+          "display": "cargo build --quiet --release",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "rust",
+        "version": "rustc 1.99.0-nightly (87e5904f5 2026-07-20)"
+      },
+      "configuration": "optimized",
+      "id": "rust-optimized",
+      "measurement_semantics": {
+        "cache": "clean build; cleanup occurs before the timed interval",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": 16,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-rust-parallel-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 761.217266
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 715.796207
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 801.589982
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 786.591465
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 791.492725
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 811.966512
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 725.756664
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 720.652212
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 687.154731
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 688.383464
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 778.220093
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 710.605464
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 750.158221
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 722.87694
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 715.465967
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 742.214061
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 815.771432
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 729.479435
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 718.196633
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "source_bytes": 801111,
+          "source_sloc": 26288,
+          "wall_ms": 741.52491
+        }
+      ],
+      "source": {
+        "bytes": 801111,
+        "file_records": [
+          {"bytes":2683,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_planner_15.rs","sloc":84},
+          {"bytes":5946,"lines":208,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_planner_45.rs","sloc":191},
+          {"bytes":4186,"lines":143,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_planner_75.rs","sloc":133},
+          {"bytes":5620,"lines":200,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_policy_0.rs","sloc":191},
+          {"bytes":4167,"lines":148,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_policy_30.rs","sloc":142},
+          {"bytes":2409,"lines":84,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_policy_60.rs","sloc":76},
+          {"bytes":2296,"lines":78,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/accounts_policy_90.rs","sloc":67},
+          {"bytes":2097,"lines":77,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_processor_13.rs","sloc":68},
+          {"bytes":4249,"lines":158,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_processor_43.rs","sloc":143},
+          {"bytes":3785,"lines":134,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_processor_73.rs","sloc":120},
+          {"bytes":8396,"lines":281,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_tracker_28.rs","sloc":258},
+          {"bytes":4202,"lines":147,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_tracker_58.rs","sloc":135},
+          {"bytes":2425,"lines":72,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/billing_tracker_88.rs","sloc":65},
+          {"bytes":15321,"lines":540,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_service_26.rs","sloc":486},
+          {"bytes":27724,"lines":1003,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_service_56.rs","sloc":935},
+          {"bytes":6335,"lines":211,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_service_86.rs","sloc":195},
+          {"bytes":6071,"lines":218,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_summary_11.rs","sloc":205},
+          {"bytes":7522,"lines":264,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_summary_41.rs","sloc":250},
+          {"bytes":25804,"lines":935,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/catalog_summary_71.rs","sloc":879},
+          {"bytes":1811,"lines":63,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_planner_39.rs","sloc":52},
+          {"bytes":4680,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_planner_69.rs","sloc":151},
+          {"bytes":16619,"lines":608,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_planner_9.rs","sloc":565},
+          {"bytes":32262,"lines":1127,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_policy_24.rs","sloc":1043},
+          {"bytes":5041,"lines":184,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_policy_54.rs","sloc":173},
+          {"bytes":6837,"lines":239,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/checkout_policy_84.rs","sloc":223},
+          {"bytes":5249,"lines":177,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_processor_37.rs","sloc":163},
+          {"bytes":7833,"lines":282,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_processor_67.rs","sloc":253},
+          {"bytes":5957,"lines":212,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_processor_7.rs","sloc":193},
+          {"bytes":6086,"lines":219,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_processor_97.rs","sloc":202},
+          {"bytes":1526,"lines":57,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_tracker_22.rs","sloc":50},
+          {"bytes":4945,"lines":181,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_tracker_52.rs","sloc":163},
+          {"bytes":17440,"lines":582,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/delivery_tracker_82.rs","sloc":544},
+          {"bytes":6947,"lines":248,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_service_20.rs","sloc":232},
+          {"bytes":7310,"lines":274,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_service_50.rs","sloc":255},
+          {"bytes":13304,"lines":454,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_service_80.rs","sloc":429},
+          {"bytes":2875,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_summary_35.rs","sloc":99},
+          {"bytes":5261,"lines":186,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_summary_5.rs","sloc":169},
+          {"bytes":3374,"lines":121,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_summary_65.rs","sloc":110},
+          {"bytes":4309,"lines":139,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/inventory_summary_95.rs","sloc":126},
+          {"bytes":23445,"lines":830,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/main.rs","sloc":779},
+          {"bytes":4855,"lines":186,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_planner_3.rs","sloc":176},
+          {"bytes":5322,"lines":199,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_planner_33.rs","sloc":185},
+          {"bytes":2249,"lines":84,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_planner_63.rs","sloc":75},
+          {"bytes":7294,"lines":256,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_planner_93.rs","sloc":231},
+          {"bytes":57571,"lines":2054,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_policy_18.rs","sloc":1921},
+          {"bytes":4794,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_policy_48.rs","sloc":151},
+          {"bytes":4758,"lines":168,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/metrics_policy_78.rs","sloc":149},
+          {"bytes":2623,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_processor_1.rs","sloc":88},
+          {"bytes":2193,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_processor_31.rs","sloc":71},
+          {"bytes":5722,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_processor_61.rs","sloc":189},
+          {"bytes":34436,"lines":1213,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_processor_91.rs","sloc":1127},
+          {"bytes":6336,"lines":234,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_tracker_16.rs","sloc":215},
+          {"bytes":6112,"lines":222,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_tracker_46.rs","sloc":204},
+          {"bytes":2931,"lines":95,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/orders_tracker_76.rs","sloc":82},
+          {"bytes":3372,"lines":122,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_service_14.rs","sloc":111},
+          {"bytes":3072,"lines":110,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_service_44.rs","sloc":97},
+          {"bytes":5790,"lines":194,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_service_74.rs","sloc":178},
+          {"bytes":5547,"lines":207,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_summary_29.rs","sloc":191},
+          {"bytes":5528,"lines":196,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_summary_59.rs","sloc":177},
+          {"bytes":2525,"lines":82,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/pricing_summary_89.rs","sloc":72},
+          {"bytes":8871,"lines":313,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_planner_27.rs","sloc":290},
+          {"bytes":4949,"lines":175,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_planner_57.rs","sloc":162},
+          {"bytes":5191,"lines":180,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_planner_87.rs","sloc":162},
+          {"bytes":7193,"lines":261,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_policy_12.rs","sloc":243},
+          {"bytes":7688,"lines":278,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_policy_42.rs","sloc":265},
+          {"bytes":13527,"lines":472,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/routing_policy_72.rs","sloc":447},
+          {"bytes":5465,"lines":194,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_processor_25.rs","sloc":179},
+          {"bytes":17313,"lines":619,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_processor_55.rs","sloc":573},
+          {"bytes":3863,"lines":128,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_processor_85.rs","sloc":122},
+          {"bytes":3847,"lines":136,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_tracker_10.rs","sloc":130},
+          {"bytes":4493,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_tracker_40.rs","sloc":148},
+          {"bytes":2056,"lines":64,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/scheduling_tracker_70.rs","sloc":56},
+          {"bytes":32394,"lines":1132,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_service_38.rs","sloc":1059},
+          {"bytes":3059,"lines":97,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_service_68.rs","sloc":90},
+          {"bytes":3225,"lines":123,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_service_8.rs","sloc":112},
+          {"bytes":5262,"lines":189,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_service_98.rs","sloc":176},
+          {"bytes":4592,"lines":157,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_summary_23.rs","sloc":140},
+          {"bytes":5783,"lines":211,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_summary_53.rs","sloc":194},
+          {"bytes":4505,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/sessions_summary_83.rs","sloc":146},
+          {"bytes":12304,"lines":447,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_planner_21.rs","sloc":419},
+          {"bytes":4152,"lines":144,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_planner_51.rs","sloc":134},
+          {"bytes":3817,"lines":138,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_planner_81.rs","sloc":124},
+          {"bytes":32420,"lines":1137,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_policy_36.rs","sloc":1065},
+          {"bytes":2655,"lines":99,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_policy_6.rs","sloc":88},
+          {"bytes":5582,"lines":194,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_policy_66.rs","sloc":179},
+          {"bytes":4670,"lines":173,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/storage_policy_96.rs","sloc":162},
+          {"bytes":2812,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_processor_19.rs","sloc":96},
+          {"bytes":7624,"lines":267,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_processor_49.rs","sloc":251},
+          {"bytes":4759,"lines":164,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_processor_79.rs","sloc":150},
+          {"bytes":2013,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_tracker_34.rs","sloc":61},
+          {"bytes":2815,"lines":105,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_tracker_4.rs","sloc":94},
+          {"bytes":4612,"lines":172,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_tracker_64.rs","sloc":161},
+          {"bytes":14659,"lines":511,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/telemetry_tracker_94.rs","sloc":461},
+          {"bytes":2009,"lines":74,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_service_2.rs","sloc":62},
+          {"bytes":6495,"lines":235,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_service_32.rs","sloc":218},
+          {"bytes":4432,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_service_62.rs","sloc":142},
+          {"bytes":4619,"lines":167,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_service_92.rs","sloc":156},
+          {"bytes":18044,"lines":653,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_summary_17.rs","sloc":613},
+          {"bytes":17454,"lines":628,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_summary_47.rs","sloc":590},
+          {"bytes":2509,"lines":88,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/rust/src/validation_summary_77.rs","sloc":81}
+        ],
+        "files": 100,
+        "kilobytes": 801.111,
+        "largest_file_bytes": 57571,
+        "megabytes": 0.801111,
+        "physical_lines": 28400,
+        "sloc": 26288,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 1089275.8045699177,
+        "median_sloc_per_second": 35743.963508844594,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              3,
+              7,
+              4,
+              2,
+              4
+            ],
+            "edges": [
+              687.154731,
+              712.8780712,
+              738.6014114,
+              764.3247516,
+              790.0480918,
+              815.771432
+            ],
+            "unit": "ms"
+          },
+          "mad": 22.466456999999934,
+          "maximum": 815.771432,
+          "mean": 745.7557192,
+          "median": 735.5021724999999,
+          "minimum": 687.154731,
+          "p95": 812.1567580000001,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    },
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "zig",
+            "build-exe",
+            "-lc",
+            "-O",
+            "Debug",
+            "-fstrip",
+            "main.zig",
+            "--cache-dir",
+            "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-0",
+            "--global-cache-dir",
+            "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global",
+            "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig",
+          "display": "zig build-exe -lc -O Debug -fstrip main.zig --cache-dir /home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/local-0 --global-cache-dir /home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-o0/global -femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-o0",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "zig",
+        "version": "0.16.0"
+      },
+      "configuration": "o0",
+      "id": "zig-o0",
+      "measurement_semantics": {
+        "cache": "fresh local build cache per sample; persistent compiler-global cache; one unmeasured primer per lane",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": null,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-100-1000-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 524.316479
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 525.229365
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 544.755598
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 527.304968
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 525.220606
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 535.809712
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 550.130458
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 510.638269
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 539.366489
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 554.501376
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 549.496853
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 531.514383
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 559.891675
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 520.823171
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 514.903581
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 567.409327
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 552.363307
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 527.629868
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 494.336097
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 561.723329
+        }
+      ],
+      "source": {
+        "bytes": 805095,
+        "file_records": [
+          {"bytes":2633,"lines":94,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_planner_15.zig","sloc":82},
+          {"bytes":5936,"lines":207,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_planner_45.zig","sloc":190},
+          {"bytes":4491,"lines":142,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_planner_75.zig","sloc":132},
+          {"bytes":5633,"lines":198,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_policy_0.zig","sloc":189},
+          {"bytes":4276,"lines":148,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_policy_30.zig","sloc":142},
+          {"bytes":2379,"lines":83,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_policy_60.zig","sloc":75},
+          {"bytes":2440,"lines":77,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_policy_90.zig","sloc":66},
+          {"bytes":2084,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_processor_13.zig","sloc":64},
+          {"bytes":4466,"lines":152,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_processor_43.zig","sloc":139},
+          {"bytes":3871,"lines":132,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_processor_73.zig","sloc":118},
+          {"bytes":7662,"lines":270,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_tracker_28.zig","sloc":248},
+          {"bytes":4471,"lines":149,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_tracker_58.zig","sloc":137},
+          {"bytes":2775,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_tracker_88.zig","sloc":66},
+          {"bytes":15087,"lines":534,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_service_26.zig","sloc":482},
+          {"bytes":27547,"lines":997,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_service_56.zig","sloc":931},
+          {"bytes":6701,"lines":213,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_service_86.zig","sloc":197},
+          {"bytes":6175,"lines":217,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_summary_11.zig","sloc":205},
+          {"bytes":7466,"lines":261,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_summary_41.zig","sloc":247},
+          {"bytes":25858,"lines":929,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_summary_71.zig","sloc":875},
+          {"bytes":1864,"lines":58,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_planner_39.zig","sloc":49},
+          {"bytes":4897,"lines":161,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_planner_69.zig","sloc":150},
+          {"bytes":16589,"lines":609,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_planner_9.zig","sloc":566},
+          {"bytes":31916,"lines":1124,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_policy_24.zig","sloc":1040},
+          {"bytes":5057,"lines":181,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_policy_54.zig","sloc":170},
+          {"bytes":7033,"lines":233,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_policy_84.zig","sloc":219},
+          {"bytes":5405,"lines":179,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_processor_37.zig","sloc":166},
+          {"bytes":7786,"lines":282,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_processor_67.zig","sloc":253},
+          {"bytes":5887,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_processor_7.zig","sloc":191},
+          {"bytes":6106,"lines":216,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_processor_97.zig","sloc":199},
+          {"bytes":1511,"lines":55,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_tracker_22.zig","sloc":48},
+          {"bytes":4946,"lines":175,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_tracker_52.zig","sloc":159},
+          {"bytes":17434,"lines":581,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_tracker_82.zig","sloc":543},
+          {"bytes":7113,"lines":248,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_service_20.zig","sloc":233},
+          {"bytes":7263,"lines":272,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_service_50.zig","sloc":253},
+          {"bytes":13378,"lines":451,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_service_80.zig","sloc":426},
+          {"bytes":2843,"lines":102,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_summary_35.zig","sloc":96},
+          {"bytes":5269,"lines":185,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_summary_5.zig","sloc":169},
+          {"bytes":3499,"lines":122,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_summary_65.zig","sloc":111},
+          {"bytes":4368,"lines":138,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_summary_95.zig","sloc":125},
+          {"bytes":21818,"lines":741,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/main.zig","sloc":691},
+          {"bytes":4977,"lines":185,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_planner_3.zig","sloc":175},
+          {"bytes":5350,"lines":196,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_planner_33.zig","sloc":182},
+          {"bytes":2240,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_planner_63.zig","sloc":71},
+          {"bytes":7645,"lines":252,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_planner_93.zig","sloc":229},
+          {"bytes":57179,"lines":2053,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_policy_18.zig","sloc":1920},
+          {"bytes":5141,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_policy_48.zig","sloc":151},
+          {"bytes":4804,"lines":167,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_policy_78.zig","sloc":149},
+          {"bytes":2569,"lines":93,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_processor_1.zig","sloc":85},
+          {"bytes":2328,"lines":79,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_processor_31.zig","sloc":70},
+          {"bytes":5706,"lines":209,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_processor_61.zig","sloc":189},
+          {"bytes":34159,"lines":1210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_processor_91.zig","sloc":1124},
+          {"bytes":6477,"lines":231,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_tracker_16.zig","sloc":214},
+          {"bytes":6143,"lines":220,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_tracker_46.zig","sloc":202},
+          {"bytes":3139,"lines":90,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_tracker_76.zig","sloc":79},
+          {"bytes":3455,"lines":121,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_service_14.zig","sloc":110},
+          {"bytes":3250,"lines":112,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_service_44.zig","sloc":100},
+          {"bytes":5861,"lines":191,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_service_74.zig","sloc":175},
+          {"bytes":5586,"lines":199,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_summary_29.zig","sloc":185},
+          {"bytes":5511,"lines":194,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_summary_59.zig","sloc":175},
+          {"bytes":2749,"lines":77,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_summary_89.zig","sloc":69},
+          {"bytes":8839,"lines":312,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_planner_27.zig","sloc":289},
+          {"bytes":4897,"lines":172,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_planner_57.zig","sloc":159},
+          {"bytes":5362,"lines":180,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_planner_87.zig","sloc":163},
+          {"bytes":7222,"lines":255,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_policy_12.zig","sloc":239},
+          {"bytes":7826,"lines":278,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_policy_42.zig","sloc":265},
+          {"bytes":13700,"lines":473,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_policy_72.zig","sloc":448},
+          {"bytes":5648,"lines":193,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_processor_25.zig","sloc":178},
+          {"bytes":17264,"lines":618,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_processor_55.zig","sloc":573},
+          {"bytes":3996,"lines":125,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_processor_85.zig","sloc":119},
+          {"bytes":3855,"lines":135,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_tracker_10.zig","sloc":129},
+          {"bytes":4497,"lines":160,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_tracker_40.zig","sloc":146},
+          {"bytes":2256,"lines":63,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_tracker_70.zig","sloc":56},
+          {"bytes":32320,"lines":1133,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_service_38.zig","sloc":1060},
+          {"bytes":3288,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_service_68.zig","sloc":89},
+          {"bytes":3314,"lines":122,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_service_8.zig","sloc":111},
+          {"bytes":5544,"lines":189,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_service_98.zig","sloc":176},
+          {"bytes":4662,"lines":157,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_summary_23.zig","sloc":140},
+          {"bytes":5965,"lines":209,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_summary_53.zig","sloc":192},
+          {"bytes":4615,"lines":156,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_summary_83.zig","sloc":143},
+          {"bytes":12305,"lines":441,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_planner_21.zig","sloc":415},
+          {"bytes":4323,"lines":144,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_planner_51.zig","sloc":134},
+          {"bytes":3940,"lines":137,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_planner_81.zig","sloc":123},
+          {"bytes":32270,"lines":1136,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_policy_36.zig","sloc":1064},
+          {"bytes":2824,"lines":94,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_policy_6.zig","sloc":85},
+          {"bytes":5766,"lines":188,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_policy_66.zig","sloc":175},
+          {"bytes":4849,"lines":171,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_policy_96.zig","sloc":160},
+          {"bytes":2911,"lines":104,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_processor_19.zig","sloc":95},
+          {"bytes":7633,"lines":259,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_processor_49.zig","sloc":245},
+          {"bytes":5009,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_processor_79.zig","sloc":147},
+          {"bytes":2161,"lines":68,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_tracker_34.zig","sloc":58},
+          {"bytes":2776,"lines":102,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_tracker_4.zig","sloc":91},
+          {"bytes":4717,"lines":171,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_tracker_64.zig","sloc":160},
+          {"bytes":14561,"lines":510,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_tracker_94.zig","sloc":461},
+          {"bytes":2030,"lines":68,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_service_2.zig","sloc":58},
+          {"bytes":6464,"lines":234,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_service_32.zig","sloc":217},
+          {"bytes":4593,"lines":154,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_service_62.zig","sloc":139},
+          {"bytes":4801,"lines":167,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_service_92.zig","sloc":156},
+          {"bytes":17941,"lines":652,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_summary_17.zig","sloc":612},
+          {"bytes":17351,"lines":626,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_summary_47.zig","sloc":588},
+          {"bytes":2598,"lines":86,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_summary_77.zig","sloc":79}
+        ],
+        "files": 100,
+        "kilobytes": 805.095,
+        "largest_file_bytes": 57179,
+        "megabytes": 0.805095,
+        "physical_lines": 28090,
+        "sloc": 26033,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 1508647.7351638905,
+        "median_sloc_per_second": 48782.598934935086,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              3,
+              7,
+              5,
+              4
+            ],
+            "edges": [
+              494.336097,
+              508.950743,
+              523.565389,
+              538.180035,
+              552.794681,
+              567.409327
+            ],
+            "unit": "ms"
+          },
+          "mad": 14.336840999999993,
+          "maximum": 567.409327,
+          "mean": 535.86824555,
+          "median": 533.6620475,
+          "minimum": 494.336097,
+          "p95": 562.0076289,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    },
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "zig",
+            "build-exe",
+            "-lc",
+            "-O",
+            "ReleaseFast",
+            "-fstrip",
+            "main.zig",
+            "--cache-dir",
+            "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-0",
+            "--global-cache-dir",
+            "/home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global",
+            "-femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig",
+          "display": "zig build-exe -lc -O ReleaseFast -fstrip main.zig --cache-dir /home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/local-0 --global-cache-dir /home/andrew-peterson/code/laniusc/target/typical-project-100/.benchmark-cache/zig-optimized/global -femit-bin=/home/andrew-peterson/code/laniusc/target/typical-project-100/zig/typical-project-optimized",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "zig",
+        "version": "0.16.0"
+      },
+      "configuration": "optimized",
+      "id": "zig-optimized",
+      "measurement_semantics": {
+        "cache": "fresh local build cache per sample; persistent compiler-global cache; one unmeasured primer per lane",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "rust_frontend_threads": null,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-100-1000-final.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4290.231924
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4564.479574
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4420.53203
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4256.378247
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4249.081515
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4350.110174
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4316.26043
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4376.412839
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4520.250684
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4355.435074
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4332.724107
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4315.778934
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4446.561336
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4478.166647
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4262.020474
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4362.440436
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4353.445657
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4341.030985
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4715.936498
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "source_bytes": 805095,
+          "source_sloc": 26033,
+          "wall_ms": 4254.518957
+        }
+      ],
+      "source": {
+        "bytes": 805095,
+        "file_records": [
+          {"bytes":2633,"lines":94,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_planner_15.zig","sloc":82},
+          {"bytes":5936,"lines":207,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_planner_45.zig","sloc":190},
+          {"bytes":4491,"lines":142,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_planner_75.zig","sloc":132},
+          {"bytes":5633,"lines":198,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_policy_0.zig","sloc":189},
+          {"bytes":4276,"lines":148,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_policy_30.zig","sloc":142},
+          {"bytes":2379,"lines":83,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_policy_60.zig","sloc":75},
+          {"bytes":2440,"lines":77,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/accounts_policy_90.zig","sloc":66},
+          {"bytes":2084,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_processor_13.zig","sloc":64},
+          {"bytes":4466,"lines":152,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_processor_43.zig","sloc":139},
+          {"bytes":3871,"lines":132,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_processor_73.zig","sloc":118},
+          {"bytes":7662,"lines":270,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_tracker_28.zig","sloc":248},
+          {"bytes":4471,"lines":149,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_tracker_58.zig","sloc":137},
+          {"bytes":2775,"lines":73,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/billing_tracker_88.zig","sloc":66},
+          {"bytes":15087,"lines":534,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_service_26.zig","sloc":482},
+          {"bytes":27547,"lines":997,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_service_56.zig","sloc":931},
+          {"bytes":6701,"lines":213,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_service_86.zig","sloc":197},
+          {"bytes":6175,"lines":217,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_summary_11.zig","sloc":205},
+          {"bytes":7466,"lines":261,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_summary_41.zig","sloc":247},
+          {"bytes":25858,"lines":929,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/catalog_summary_71.zig","sloc":875},
+          {"bytes":1864,"lines":58,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_planner_39.zig","sloc":49},
+          {"bytes":4897,"lines":161,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_planner_69.zig","sloc":150},
+          {"bytes":16589,"lines":609,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_planner_9.zig","sloc":566},
+          {"bytes":31916,"lines":1124,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_policy_24.zig","sloc":1040},
+          {"bytes":5057,"lines":181,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_policy_54.zig","sloc":170},
+          {"bytes":7033,"lines":233,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/checkout_policy_84.zig","sloc":219},
+          {"bytes":5405,"lines":179,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_processor_37.zig","sloc":166},
+          {"bytes":7786,"lines":282,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_processor_67.zig","sloc":253},
+          {"bytes":5887,"lines":210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_processor_7.zig","sloc":191},
+          {"bytes":6106,"lines":216,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_processor_97.zig","sloc":199},
+          {"bytes":1511,"lines":55,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_tracker_22.zig","sloc":48},
+          {"bytes":4946,"lines":175,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_tracker_52.zig","sloc":159},
+          {"bytes":17434,"lines":581,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/delivery_tracker_82.zig","sloc":543},
+          {"bytes":7113,"lines":248,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_service_20.zig","sloc":233},
+          {"bytes":7263,"lines":272,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_service_50.zig","sloc":253},
+          {"bytes":13378,"lines":451,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_service_80.zig","sloc":426},
+          {"bytes":2843,"lines":102,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_summary_35.zig","sloc":96},
+          {"bytes":5269,"lines":185,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_summary_5.zig","sloc":169},
+          {"bytes":3499,"lines":122,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_summary_65.zig","sloc":111},
+          {"bytes":4368,"lines":138,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/inventory_summary_95.zig","sloc":125},
+          {"bytes":21818,"lines":741,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/main.zig","sloc":691},
+          {"bytes":4977,"lines":185,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_planner_3.zig","sloc":175},
+          {"bytes":5350,"lines":196,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_planner_33.zig","sloc":182},
+          {"bytes":2240,"lines":80,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_planner_63.zig","sloc":71},
+          {"bytes":7645,"lines":252,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_planner_93.zig","sloc":229},
+          {"bytes":57179,"lines":2053,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_policy_18.zig","sloc":1920},
+          {"bytes":5141,"lines":162,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_policy_48.zig","sloc":151},
+          {"bytes":4804,"lines":167,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/metrics_policy_78.zig","sloc":149},
+          {"bytes":2569,"lines":93,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_processor_1.zig","sloc":85},
+          {"bytes":2328,"lines":79,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_processor_31.zig","sloc":70},
+          {"bytes":5706,"lines":209,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_processor_61.zig","sloc":189},
+          {"bytes":34159,"lines":1210,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_processor_91.zig","sloc":1124},
+          {"bytes":6477,"lines":231,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_tracker_16.zig","sloc":214},
+          {"bytes":6143,"lines":220,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_tracker_46.zig","sloc":202},
+          {"bytes":3139,"lines":90,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/orders_tracker_76.zig","sloc":79},
+          {"bytes":3455,"lines":121,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_service_14.zig","sloc":110},
+          {"bytes":3250,"lines":112,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_service_44.zig","sloc":100},
+          {"bytes":5861,"lines":191,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_service_74.zig","sloc":175},
+          {"bytes":5586,"lines":199,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_summary_29.zig","sloc":185},
+          {"bytes":5511,"lines":194,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_summary_59.zig","sloc":175},
+          {"bytes":2749,"lines":77,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/pricing_summary_89.zig","sloc":69},
+          {"bytes":8839,"lines":312,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_planner_27.zig","sloc":289},
+          {"bytes":4897,"lines":172,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_planner_57.zig","sloc":159},
+          {"bytes":5362,"lines":180,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_planner_87.zig","sloc":163},
+          {"bytes":7222,"lines":255,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_policy_12.zig","sloc":239},
+          {"bytes":7826,"lines":278,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_policy_42.zig","sloc":265},
+          {"bytes":13700,"lines":473,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/routing_policy_72.zig","sloc":448},
+          {"bytes":5648,"lines":193,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_processor_25.zig","sloc":178},
+          {"bytes":17264,"lines":618,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_processor_55.zig","sloc":573},
+          {"bytes":3996,"lines":125,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_processor_85.zig","sloc":119},
+          {"bytes":3855,"lines":135,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_tracker_10.zig","sloc":129},
+          {"bytes":4497,"lines":160,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_tracker_40.zig","sloc":146},
+          {"bytes":2256,"lines":63,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/scheduling_tracker_70.zig","sloc":56},
+          {"bytes":32320,"lines":1133,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_service_38.zig","sloc":1060},
+          {"bytes":3288,"lines":96,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_service_68.zig","sloc":89},
+          {"bytes":3314,"lines":122,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_service_8.zig","sloc":111},
+          {"bytes":5544,"lines":189,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_service_98.zig","sloc":176},
+          {"bytes":4662,"lines":157,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_summary_23.zig","sloc":140},
+          {"bytes":5965,"lines":209,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_summary_53.zig","sloc":192},
+          {"bytes":4615,"lines":156,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/sessions_summary_83.zig","sloc":143},
+          {"bytes":12305,"lines":441,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_planner_21.zig","sloc":415},
+          {"bytes":4323,"lines":144,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_planner_51.zig","sloc":134},
+          {"bytes":3940,"lines":137,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_planner_81.zig","sloc":123},
+          {"bytes":32270,"lines":1136,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_policy_36.zig","sloc":1064},
+          {"bytes":2824,"lines":94,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_policy_6.zig","sloc":85},
+          {"bytes":5766,"lines":188,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_policy_66.zig","sloc":175},
+          {"bytes":4849,"lines":171,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/storage_policy_96.zig","sloc":160},
+          {"bytes":2911,"lines":104,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_processor_19.zig","sloc":95},
+          {"bytes":7633,"lines":259,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_processor_49.zig","sloc":245},
+          {"bytes":5009,"lines":159,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_processor_79.zig","sloc":147},
+          {"bytes":2161,"lines":68,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_tracker_34.zig","sloc":58},
+          {"bytes":2776,"lines":102,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_tracker_4.zig","sloc":91},
+          {"bytes":4717,"lines":171,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_tracker_64.zig","sloc":160},
+          {"bytes":14561,"lines":510,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/telemetry_tracker_94.zig","sloc":461},
+          {"bytes":2030,"lines":68,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_service_2.zig","sloc":58},
+          {"bytes":6464,"lines":234,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_service_32.zig","sloc":217},
+          {"bytes":4593,"lines":154,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_service_62.zig","sloc":139},
+          {"bytes":4801,"lines":167,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_service_92.zig","sloc":156},
+          {"bytes":17941,"lines":652,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_summary_17.zig","sloc":612},
+          {"bytes":17351,"lines":626,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_summary_47.zig","sloc":588},
+          {"bytes":2598,"lines":86,"path":"target/lanius-perf-workloads/typical-project-100-files-seed-20260808-x86_64/zig/validation_summary_77.zig","sloc":79}
+        ],
+        "files": 100,
+        "kilobytes": 805.095,
+        "largest_file_bytes": 57179,
+        "megabytes": 0.805095,
+        "physical_lines": 28090,
+        "sloc": 26033,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 185003.7235067287,
+        "median_sloc_per_second": 5982.1535769700085,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              9,
+              6,
+              3,
+              1,
+              1
+            ],
+            "edges": [
+              4249.081515,
+              4342.4525115999995,
+              4435.8235082,
+              4529.1945048,
+              4622.5655014,
+              4715.936498
+            ],
+            "unit": "ms"
+          },
+          "mad": 65.1500530000003,
+          "maximum": 4715.936498,
+          "mean": 4378.0898261,
+          "median": 4351.777915500001,
+          "minimum": 4249.081515,
+          "p95": 4572.0524202,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    }
+  ],
+  "run": {
+    "git_commit": "a79d9236b09907b2a62af02a2444b0e2b91cbde8",
+    "git_dirty": true,
+    "id": "frozen-typical-project-100-files-seed-20260808-x86_64",
+    "recorded_at": "2026-08-13T01:40:25-05:00"
+  },
+  "schema": "lanius.performance-run.v1",
+  "workload": {
+    "baseline_only": true,
+    "classification": "frozen external-compiler baseline for the corpus-calibrated typical project",
+    "comparison_group": "typical-project/v1/seed-20260808/files-100",
+    "generator": "tools/generate_typical_project.py",
+    "id": "frozen-typical-project-100-files-seed-20260808-x86_64",
+    "kind": "typical_project",
+    "requested_source_files": 100,
+    "seed": 20260808,
+    "source_artifacts": [
+      "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-100-1000-final.json",
+      "benchmark_artifacts/compile_performance_20260812/typical_projects/typical-rust-parallel-final.json"
+    ]
+  }
+}

@@ -69,6 +69,25 @@ REGIME_METRICS = {
 
 SUMMED_REGIME_METRICS = {"instructions_executed", "compute_warps_launched"}
 
+NSIGHT_PROFILE_SCHEMA = "lanius.nsight-gpu-profile.v1"
+REPRO_FIELDS = {
+    "Device Name": "device_name",
+    "Chip Name": "chip_name",
+    "Driver Version": "driver_version",
+    "Product Version": "nsight_version",
+    "Process File Name": "process_file_name",
+    "Command Line": "command_line",
+    "API": "api",
+    "Start After": "start_after",
+    "Max Duration ": "max_duration",
+    "Limited To": "limited_to",
+    "GPU Clocks": "gpu_clocks",
+    "Time Every Action": "time_every_action",
+    "Metric Set": "metric_set",
+    "Real-Time Shader Profiler": "real_time_shader_profiler",
+    "Multi-Pass Metrics": "multi_pass_metrics",
+}
+
 
 def read_events(path: pathlib.Path) -> list[tuple[str, float]]:
     if not path.exists():
@@ -376,6 +395,17 @@ def read_regimes(path: pathlib.Path) -> list[dict[str, str]]:
         return list(csv.DictReader(stream, delimiter="\t"))
 
 
+def read_repro_info(path: pathlib.Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    values = {}
+    with path.open(encoding="utf-8", errors="replace", newline="") as stream:
+        for row in csv.reader(stream, delimiter="\t"):
+            if len(row) >= 2 and row[0] in REPRO_FIELDS:
+                values[REPRO_FIELDS[row[0]]] = row[1].strip()
+    return values
+
+
 def correlate_regimes(
     events: list[tuple[str, float]], regimes: list[dict[str, str]]
 ) -> list[dict[str, object]]:
@@ -445,6 +475,91 @@ def summarize_pass_metrics(events: list[dict[str, object]]) -> list[dict[str, ob
                 )
         rows.append(row)
     return sorted(rows, key=lambda row: float(row["total_time_ms"]), reverse=True)
+
+
+def build_nsight_profile(export_dir: pathlib.Path) -> dict[str, object]:
+    """Build the compact, viewer-facing profile for one Nsight export.
+
+    Nsight's D3DPERF event table reports ordered action durations, but it does
+    not report timestamps in the host trace's clock.  The generated
+    ``gpu_start_ms`` values are therefore cumulative labeled GPU time.  This is
+    intentionally kept separate from the Perfetto host timeline.
+    """
+    export_dir = export_dir.resolve()
+    if not (export_dir / "D3DPERF_EVENTS.xls").is_file():
+        nested = export_dir / "BASE_UNLOCKED"
+        if (nested / "D3DPERF_EVENTS.xls").is_file():
+            export_dir = nested
+        else:
+            raise ValueError(f"Nsight export has no D3DPERF_EVENTS.xls: {export_dir}")
+
+    raw_events = read_events(export_dir / "D3DPERF_EVENTS.xls")
+    if not raw_events:
+        raise ValueError(f"Nsight export has no labeled GPU events: {export_dir}")
+    regimes = read_regimes(export_dir / "GPUTRACE_REGIMES.xls")
+    if regimes:
+        correlated = correlate_regimes(raw_events, regimes)
+    else:
+        occurrences: dict[str, int] = {}
+        correlated = []
+        for index, (name, milliseconds) in enumerate(raw_events):
+            occurrence = occurrences.get(name, 0)
+            occurrences[name] = occurrence + 1
+            correlated.append(
+                {
+                    "event_index": index,
+                    "pass_name": name,
+                    "occurrence": occurrence,
+                    "time_ms": milliseconds,
+                    **{alias: None for alias in REGIME_METRICS},
+                }
+            )
+
+    # Keep invocation timing separate from duration-weighted per-pass hardware
+    # metrics. Repeating every counter on every invocation more than doubles
+    # canonical result size without adding information to the viewer.
+    passes = summarize_pass_metrics(correlated)
+    gpu_start_ms = 0.0
+    events = []
+    for event in correlated:
+        pass_name = str(event["pass_name"])
+        milliseconds = float(event["time_ms"])
+        events.append(
+            {
+                "event_index": event["event_index"],
+                "pass_name": pass_name,
+                "occurrence": event["occurrence"],
+                "time_ms": milliseconds,
+                "gpu_start_ms": gpu_start_ms,
+                "phase": compiler_phase(pass_name),
+                "stage": compiler_stage(pass_name),
+            }
+        )
+        gpu_start_ms += milliseconds
+
+    frame = read_frame_metrics(export_dir / "GPUTRACE_FRAME.xls")
+    frame_metrics = {alias: frame.get(metric_name) for alias, metric_name in REGIME_METRICS.items()}
+    for row in passes:
+        row["phase"] = compiler_phase(str(row["pass_name"]))
+        row["stage"] = compiler_stage(str(row["pass_name"]))
+    return {
+        "schema": NSIGHT_PROFILE_SCHEMA,
+        "tool": "NVIDIA Nsight Graphics",
+        "capture": read_repro_info(export_dir / "REPRO_INFO.xls"),
+        "event_count": len(events),
+        "unique_pass_count": len(passes),
+        "labeled_gpu_time_ms": gpu_start_ms,
+        "time_axis": "cumulative_labeled_gpu_time",
+        "timeline_semantics": (
+            "ordered labeled GPU actions; horizontal position is cumulative action duration, "
+            "idle gaps are omitted, and the axis is not synchronized to the host trace"
+        ),
+        "frame_metrics": frame_metrics,
+        "events": events,
+        "passes": passes,
+        "phases": summarize_phases(raw_events),
+        "stages": summarize_stages(raw_events),
+    }
 
 
 def write_csv(path: pathlib.Path, rows: list[dict[str, object]]) -> None:

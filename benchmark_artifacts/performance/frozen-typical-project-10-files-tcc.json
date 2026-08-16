@@ -1,0 +1,217 @@
+{
+  "machine": {
+    "gpu": "NVIDIA GeForce RTX 3090, 580.173.02, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39"
+  },
+  "measurements": [
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc",
+            "-B/tmp/lanius-tcc.JrXWwY/root/usr/lib/x86_64-linux-gnu/tcc",
+            "-std=c11",
+            "-Iinclude",
+            "-o",
+            "/home/andrew-peterson/code/laniusc/target/typical-project-10/c/typical-project-tcc",
+            "src/accounts_policy_0.c",
+            "src/delivery_processor_7.c",
+            "src/inventory_summary_5.c",
+            "src/main.c",
+            "src/metrics_planner_3.c",
+            "src/orders_processor_1.c",
+            "src/sessions_service_8.c",
+            "src/storage_policy_6.c",
+            "src/telemetry_tracker_4.c",
+            "src/validation_service_2.c"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/typical-project-10/c",
+          "display": "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc -B/tmp/lanius-tcc.JrXWwY/root/usr/lib/x86_64-linux-gnu/tcc -std=c11 -Iinclude -o /home/andrew-peterson/code/laniusc/target/typical-project-10/c/typical-project-tcc src/accounts_policy_0.c src/delivery_processor_7.c src/inventory_summary_5.c src/main.c src/metrics_planner_3.c src/orders_processor_1.c src/sessions_service_8.c src/storage_policy_6.c src/telemetry_tracker_4.c src/validation_service_2.c",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "tcc",
+        "version": "tcc version 0.9.27 (x86_64 Linux)"
+      },
+      "configuration": "default",
+      "configuration_display": null,
+      "id": "tcc-default",
+      "measurement_semantics": {
+        "cache": "one TCC process compiles and links every generated C source",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/typical_projects/tcc-1-1000.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "wall_ms": 12.89245
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "wall_ms": 12.64163
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "wall_ms": 13.196359
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "wall_ms": 12.830382
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "wall_ms": 12.949468
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "wall_ms": 12.833202
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "wall_ms": 12.727746
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "wall_ms": 12.882541
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "wall_ms": 12.845992
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "wall_ms": 11.095708
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "wall_ms": 12.859621
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "wall_ms": 12.463697
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "wall_ms": 12.875341
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "wall_ms": 13.042924
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "wall_ms": 12.869921
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "wall_ms": 12.576082
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "wall_ms": 12.532763
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "wall_ms": 12.551753
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "wall_ms": 13.396911
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "wall_ms": 12.735777
+        }
+      ],
+      "source": {
+        "bytes": 84466,
+        "files": 10,
+        "kilobytes": 84.466,
+        "largest_file_bytes": 20789,
+        "megabytes": 0.084466,
+        "physical_lines": 2616,
+        "sloc": 2428,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 6578557.018081018,
+        "median_sloc_per_second": 189102.55534653837,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              1,
+              0,
+              1,
+              14,
+              4
+            ],
+            "edges": [
+              11.095708,
+              11.5559486,
+              12.0161892,
+              12.4764298,
+              12.936670399999999,
+              13.396911
+            ],
+            "unit": "ms"
+          },
+          "mad": 0.11086099999999988,
+          "maximum": 13.396911,
+          "mean": 12.740013399999999,
+          "median": 12.839597000000001,
+          "minimum": 11.095708,
+          "p95": 13.206386599999998,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    }
+  ],
+  "run": {
+    "git_commit": "a79d9236b09907b2a62af02a2444b0e2b91cbde8",
+    "git_dirty": true,
+    "id": "frozen-typical-project-10-files-tcc",
+    "recorded_at": "2026-08-13T22:27:17.941975+00:00"
+  },
+  "schema": "lanius.performance-run.v1",
+  "workload": {
+    "baseline_only": true,
+    "classification": "frozen external compiler baseline for the corpus-calibrated typical project",
+    "comparison_group": "typical-project/v1/seed-20260808/files-10",
+    "generator": "tools/generate_typical_project.py",
+    "id": "typical-project-10-files-seed-20260808",
+    "kind": "typical_project",
+    "requested_source_files": 10,
+    "seed": 20260808
+  }
+}
+

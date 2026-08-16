@@ -17,6 +17,16 @@ from typing import Iterable
 SCHEMA = "lanius.performance-run.v1"
 SLOC_POLICY = "nonblank physical lines excluding comment-only lines"
 SOURCE_SUFFIXES = {".lani", ".c", ".h", ".cc", ".cpp", ".hpp", ".rs", ".zig", ".par"}
+COMPACT_RECORD_ARRAYS = {
+    "edges",
+    "events",
+    "file_records",
+    "nodes",
+    "passes",
+    "phases",
+    "stages",
+    "submissions",
+}
 
 
 def command_record(argv: Iterable[str], cwd: Path, env: dict[str, str] | None = None) -> dict:
@@ -210,6 +220,9 @@ def command_output(argv: list[str], cwd: Path) -> str:
 
 
 def validate_document(document: dict) -> None:
+    legacy_keys = _keys_with_prefix(document, "legacy_")
+    if legacy_keys:
+        raise ValueError(f"canonical result contains obsolete metadata key {legacy_keys[0]!r}")
     if document.get("schema") != SCHEMA:
         raise ValueError(f"expected schema {SCHEMA!r}")
     if not isinstance(document.get("measurements"), list) or not document["measurements"]:
@@ -242,12 +255,225 @@ def validate_document(document: dict) -> None:
             summary["wall_ms"]["median"], expected["wall_ms"]["median"], rel_tol=1e-12
         ):
             raise ValueError(f"measurement {measurement_id} summary does not match samples")
+        profile = measurement.get("profile")
+        if isinstance(profile, dict):
+            validate_profile_storage(measurement_id, profile)
+            if profile.get("execution_graph") is not None:
+                validate_execution_graph(measurement_id, profile["execution_graph"])
+            if profile.get("nsight") is not None:
+                validate_nsight_profile(measurement_id, profile["nsight"])
+
+
+def _keys_with_prefix(value: object, prefix: str) -> list[str]:
+    matches = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if isinstance(key, str) and key.startswith(prefix):
+                matches.append(key)
+            matches.extend(_keys_with_prefix(child, prefix))
+    elif isinstance(value, list):
+        for child in value:
+            matches.extend(_keys_with_prefix(child, prefix))
+    return matches
+
+
+def validate_profile_storage(measurement_id: str, profile: dict) -> None:
+    response = profile.get("response")
+    if isinstance(response, dict) and "recorded_compute_pass_breakdown" in response:
+        raise ValueError(
+            f"measurement {measurement_id} duplicates raw pass breakdown after graph normalization"
+        )
+
+
+def validate_execution_graph(measurement_id: str, graph: object) -> None:
+    if not isinstance(graph, dict):
+        raise ValueError(f"measurement {measurement_id} has an invalid execution graph")
+    nodes = graph.get("nodes")
+    edges = graph.get("edges")
+    submissions = graph.get("submissions")
+    coverage = graph.get("coverage")
+    if (
+        not isinstance(nodes, list)
+        or not isinstance(edges, list)
+        or not isinstance(submissions, list)
+        or not isinstance(coverage, dict)
+    ):
+        raise ValueError(f"measurement {measurement_id} has an invalid execution graph")
+    coverage_fields = (
+        "declared_operations",
+        "executed_labels",
+        "matched_labels",
+        "unregistered_executed_labels",
+        "recorded_passes",
+        "matched_recorded_passes",
+    )
+    if any(
+        not isinstance(coverage.get(field), int) or coverage[field] < 0
+        for field in coverage_fields
+    ):
+        raise ValueError(f"measurement {measurement_id} has invalid execution graph coverage")
+    if coverage["matched_labels"] > len(nodes):
+        raise ValueError(f"measurement {measurement_id} has inconsistent execution graph coverage")
+    by_id = {node.get("id"): node for node in nodes if isinstance(node, dict)}
+    if len(by_id) != len(nodes) or None in by_id:
+        raise ValueError(f"measurement {measurement_id} has duplicate execution graph nodes")
+    for node in nodes:
+        node_kind = node.get("kind")
+        if (
+            node_kind
+            not in {
+                "declared_operation",
+                "recorded_pass_endpoint",
+                "empty_submission",
+                "stage_boundary",
+            }
+            or not isinstance(node.get("graph"), str)
+            or not isinstance(node.get("name"), str)
+            or not isinstance(node.get("phase"), str)
+            or not isinstance(node.get("dispatch_domain"), str)
+            or not isinstance(node.get("declaration_index"), int)
+            or not isinstance(node.get("execution_count"), int)
+            or (node_kind == "stage_boundary" and node["execution_count"] != 0)
+            or (node_kind != "stage_boundary" and node["execution_count"] <= 0)
+            or not isinstance(node.get("submissions"), list)
+            or any(not isinstance(index, int) or index < 0 for index in node["submissions"])
+            or (
+                node_kind == "stage_boundary"
+                and (
+                    not isinstance(node.get("from_graph"), str)
+                    or not isinstance(node.get("to_graph"), str)
+                    or len(node["submissions"]) != 1
+                )
+            )
+        ):
+            raise ValueError(f"measurement {measurement_id} has an invalid execution graph node")
+    for expected_index, submission in enumerate(submissions):
+        if (
+            not isinstance(submission, dict)
+            or submission.get("index") != expected_index
+            or not isinstance(submission.get("label"), str)
+            or not isinstance(submission.get("recorded_passes"), int)
+            or not isinstance(submission.get("matched_passes"), int)
+            or (
+                submission.get("first_node") is not None
+                and submission.get("first_node") not in by_id
+            )
+            or (
+                submission.get("last_node") is not None
+                and submission.get("last_node") not in by_id
+            )
+        ):
+            raise ValueError(f"measurement {measurement_id} has an invalid compute submission")
+    outgoing = {node_id: [] for node_id in by_id}
+    indegree = {node_id: 0 for node_id in by_id}
+    for edge in edges:
+        if not isinstance(edge, dict) or edge.get("source") not in by_id or edge.get("target") not in by_id:
+            raise ValueError(f"measurement {measurement_id} has an invalid execution graph edge")
+        dependencies = edge.get("dependencies")
+        if edge.get("kind") == "resource_dependency":
+            if not isinstance(dependencies, list) or not dependencies or any(
+                not isinstance(dependency, dict)
+                or not isinstance(dependency.get("resource"), str)
+                or dependency.get("hazard")
+                not in {"read_after_write", "write_after_read", "write_after_write"}
+                for dependency in dependencies
+            ):
+                raise ValueError(f"measurement {measurement_id} has an invalid graph dependency")
+        elif edge.get("kind") == "submit_order":
+            boundaries = edge.get("submission_boundaries")
+            if dependencies != [] or not isinstance(boundaries, list) or not boundaries or any(
+                not isinstance(boundary, dict)
+                or boundary.get("to_index") != boundary.get("from_index", -2) + 1
+                or not isinstance(boundary.get("from_label"), str)
+                or not isinstance(boundary.get("to_label"), str)
+                for boundary in boundaries
+            ):
+                raise ValueError(f"measurement {measurement_id} has an invalid submit edge")
+        elif edge.get("kind") in {"stage_order", "submit_span"}:
+            if (
+                dependencies != []
+                or not isinstance(edge.get("submission_index"), int)
+                or edge["submission_index"] < 0
+            ):
+                raise ValueError(f"measurement {measurement_id} has an invalid execution-order edge")
+        else:
+            raise ValueError(f"measurement {measurement_id} has an unknown graph edge kind")
+        outgoing[edge["source"]].append(edge["target"])
+        indegree[edge["target"]] += 1
+    ready = [node_id for node_id, count in indegree.items() if count == 0]
+    visited = 0
+    while ready:
+        source = ready.pop()
+        visited += 1
+        for target in outgoing[source]:
+            indegree[target] -= 1
+            if indegree[target] == 0:
+                ready.append(target)
+    if visited != len(nodes):
+        raise ValueError(f"measurement {measurement_id} execution graph contains a cycle")
+
+
+def validate_nsight_profile(measurement_id: str, profile: object) -> None:
+    if not isinstance(profile, dict) or profile.get("schema") != "lanius.nsight-gpu-profile.v1":
+        raise ValueError(f"measurement {measurement_id} has an invalid Nsight profile schema")
+    events = profile.get("events")
+    passes = profile.get("passes")
+    if not isinstance(events, list) or not events or not isinstance(passes, list) or not passes:
+        raise ValueError(f"measurement {measurement_id} has an empty Nsight profile")
+    if profile.get("event_count") != len(events) or profile.get("unique_pass_count") != len(passes):
+        raise ValueError(f"measurement {measurement_id} has inconsistent Nsight counts")
+    elapsed = 0.0
+    for index, event in enumerate(events):
+        if not isinstance(event, dict) or event.get("event_index") != index:
+            raise ValueError(f"measurement {measurement_id} has unordered Nsight events")
+        start = number(event, "gpu_start_ms")
+        duration = number(event, "time_ms")
+        if not math.isclose(start, elapsed, rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError(f"measurement {measurement_id} has a discontinuous Nsight time axis")
+        elapsed += duration
+    if not math.isclose(
+        number(profile, "labeled_gpu_time_ms"), elapsed, rel_tol=1e-12, abs_tol=1e-12
+    ):
+        raise ValueError(f"measurement {measurement_id} has inconsistent Nsight GPU time")
 
 
 def write_document(path: Path, document: dict) -> None:
     validate_document(document)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+    path.write_text(serialize_document(document))
+
+
+def serialize_document(document: dict) -> str:
+    """Keep canonical results reviewable without expanding every telemetry record."""
+    return _render_json(document, 0, ()) + "\n"
+
+
+def _render_json(value: object, level: int, path: tuple[str | int, ...]) -> str:
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        rows = []
+        for key in sorted(value):
+            encoded_key = json.dumps(key, ensure_ascii=False)
+            encoded_value = _render_json(value[key], level + 1, path + (key,))
+            rows.append(f"{'  ' * (level + 1)}{encoded_key}: {encoded_value}")
+        return "{\n" + ",\n".join(rows) + f"\n{'  ' * level}}}"
+    if isinstance(value, list):
+        if not value:
+            return "[]"
+        if path and path[-1] in COMPACT_RECORD_ARRAYS:
+            rows = [
+                f"{'  ' * (level + 1)}"
+                + json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                for item in value
+            ]
+        else:
+            rows = [
+                f"{'  ' * (level + 1)}{_render_json(item, level + 1, path + (index,))}"
+                for index, item in enumerate(value)
+            ]
+        return "[\n" + ",\n".join(rows) + f"\n{'  ' * level}]"
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
 def number(document: dict, key: str) -> float:

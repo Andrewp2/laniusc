@@ -8,26 +8,31 @@
   "measurements": [
     {
       "commands": {
-        "legacy_template": [
-          "gcc",
-          "-O0",
-          "-g0",
-          "{source}",
-          "-o",
-          "{output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "gcc",
+            "-O0",
+            "-g0",
+            "{source}",
+            "-o",
+            "{output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "gcc -O0 -g0 '{source}' -o '{output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "c",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "o0",
       "configuration_display": "o0",
       "id": "c-o0",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -214,12 +219,7 @@
       "source": {
         "bytes": 981771,
         "file_records": [
-          {
-            "bytes": 981771,
-            "lines": 31995,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-21/1000000/scaling.c",
-            "sloc": 30755
-          }
+          {"bytes":981771,"lines":31995,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-21/1000000/scaling.c","sloc":30755}
         ],
         "files": 1,
         "kilobytes": 981.771,
@@ -263,31 +263,36 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "gcc",
-          "-O2",
-          "-g0",
-          "{source}",
-          "-o",
-          "{output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "gcc",
+            "-O2",
+            "-g0",
+            "{source}",
+            "-o",
+            "{output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "gcc -O2 -g0 '{source}' -o '{output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "c",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "optimized",
       "configuration_display": "optimized",
       "id": "c-optimized",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -474,12 +479,7 @@
       "source": {
         "bytes": 982505,
         "file_records": [
-          {
-            "bytes": 982505,
-            "lines": 32128,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-33/1000000/scaling.c",
-            "sloc": 30876
-          }
+          {"bytes":982505,"lines":32128,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-33/1000000/scaling.c","sloc":30876}
         ],
         "files": 1,
         "kilobytes": 982.505,
@@ -523,31 +523,36 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "g++",
-          "-O0",
-          "-g0",
-          "{source}",
-          "-o",
-          "{output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "g++",
+            "-O0",
+            "-g0",
+            "{source}",
+            "-o",
+            "{output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "g++ -O0 -g0 '{source}' -o '{output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "cpp",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "o0",
       "configuration_display": "o0",
       "id": "cpp-o0",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -734,12 +739,7 @@
       "source": {
         "bytes": 980016,
         "file_records": [
-          {
-            "bytes": 980016,
-            "lines": 31882,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-27/1000000/scaling.cpp",
-            "sloc": 30758
-          }
+          {"bytes":980016,"lines":31882,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-27/1000000/scaling.cpp","sloc":30758}
         ],
         "files": 1,
         "kilobytes": 980.016,
@@ -783,31 +783,36 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "g++",
-          "-O2",
-          "-g0",
-          "{source}",
-          "-o",
-          "{output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "g++",
+            "-O2",
+            "-g0",
+            "{source}",
+            "-o",
+            "{output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "g++ -O2 -g0 '{source}' -o '{output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "cpp",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "optimized",
       "configuration_display": "optimized",
       "id": "cpp-optimized",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -994,12 +999,7 @@
       "source": {
         "bytes": 982758,
         "file_records": [
-          {
-            "bytes": 982758,
-            "lines": 32056,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-23/1000000/scaling.cpp",
-            "sloc": 30794
-          }
+          {"bytes":982758,"lines":32056,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-23/1000000/scaling.cpp","sloc":30794}
         ],
         "files": 1,
         "kilobytes": 982.758,
@@ -1043,32 +1043,37 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "target/release/laniusc",
-          "daemon",
-          "--stdio",
-          "--backend",
-          "x86_64",
-          "--stdlib-root",
-          "stdlib"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final"
+        "command": {
+          "argv": [
+            "target/release/laniusc",
+            "daemon",
+            "--stdio",
+            "--backend",
+            "x86_64",
+            "--stdlib-root",
+            "stdlib"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "target/release/laniusc daemon --stdio --backend x86_64 --stdlib-root stdlib",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "lanius",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
-      "configuration": "hot_daemon_variable_project",
-      "configuration_display": "preallocated (legacy variable-project run)",
-      "id": "lanius-hot_daemon_variable_project",
+      "configuration": "preallocated",
+      "configuration_display": "preallocated",
+      "id": "lanius-preallocated",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final"
       },
       "samples": [
         {
@@ -1335,12 +1340,7 @@
       "source": {
         "bytes": 1000000,
         "file_records": [
-          {
-            "bytes": 1000000,
-            "lines": 31936,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-39/1000000/scaling.lani",
-            "sloc": 30743
-          }
+          {"bytes":1000000,"lines":31936,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-39/1000000/scaling.lani","sloc":30743}
         ],
         "files": 1,
         "kilobytes": 1000.0,
@@ -1410,31 +1410,36 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "/home/andrew-peterson/code/pareas/build-laniusc-cuda-futhark025/pareas",
-          "-p",
-          "1",
-          "{source}",
-          "-o",
-          "{output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "/home/andrew-peterson/code/pareas/build-laniusc-cuda-futhark025/pareas",
+            "-p",
+            "1",
+            "{source}",
+            "-o",
+            "{output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "/home/andrew-peterson/code/pareas/build-laniusc-cuda-futhark025/pareas -p 1 '{source}' -o '{output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "pareas",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "cuda",
       "configuration_display": "cuda",
       "id": "pareas-cuda",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -1621,12 +1626,7 @@
       "source": {
         "bytes": 980339,
         "file_records": [
-          {
-            "bytes": 980339,
-            "lines": 32126,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-33/1000000/scaling.par",
-            "sloc": 30875
-          }
+          {"bytes":980339,"lines":32126,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-33/1000000/scaling.par","sloc":30875}
         ],
         "files": 1,
         "kilobytes": 980.339,
@@ -1696,37 +1696,42 @@
       },
       "target": "riscv32",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "rustc",
-          "-Awarnings",
-          "-Zthreads=16",
-          "-C",
-          "opt-level=0",
-          "-C",
-          "debuginfo=0",
-          "-C",
-          "strip=debuginfo",
-          "{source}",
-          "-o",
-          "{output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "rustc",
+            "-Awarnings",
+            "-Zthreads=16",
+            "-C",
+            "opt-level=0",
+            "-C",
+            "debuginfo=0",
+            "-C",
+            "strip=debuginfo",
+            "{source}",
+            "-o",
+            "{output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "rustc -Awarnings -Zthreads=16 -C opt-level=0 -C debuginfo=0 -C strip=debuginfo '{source}' -o '{output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "rust",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "o0",
       "configuration_display": "o0",
       "id": "rust-o0",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -1913,12 +1918,7 @@
       "source": {
         "bytes": 997636,
         "file_records": [
-          {
-            "bytes": 997636,
-            "lines": 31808,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-32/1000000/scaling.rs",
-            "sloc": 30664
-          }
+          {"bytes":997636,"lines":31808,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-32/1000000/scaling.rs","sloc":30664}
         ],
         "files": 1,
         "kilobytes": 997.636,
@@ -1962,37 +1962,42 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "rustc",
-          "-Awarnings",
-          "-Zthreads=16",
-          "-C",
-          "opt-level=3",
-          "-C",
-          "debuginfo=0",
-          "-C",
-          "strip=debuginfo",
-          "{source}",
-          "-o",
-          "{output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "rustc",
+            "-Awarnings",
+            "-Zthreads=16",
+            "-C",
+            "opt-level=3",
+            "-C",
+            "debuginfo=0",
+            "-C",
+            "strip=debuginfo",
+            "{source}",
+            "-o",
+            "{output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "rustc -Awarnings -Zthreads=16 -C opt-level=3 -C debuginfo=0 -C strip=debuginfo '{source}' -o '{output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "rust",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "optimized",
       "configuration_display": "optimized",
       "id": "rust-optimized",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -2179,12 +2184,7 @@
       "source": {
         "bytes": 1002342,
         "file_records": [
-          {
-            "bytes": 1002342,
-            "lines": 31995,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-21/1000000/scaling.rs",
-            "sloc": 30755
-          }
+          {"bytes":1002342,"lines":31995,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-21/1000000/scaling.rs","sloc":30755}
         ],
         "files": 1,
         "kilobytes": 1002.342,
@@ -2228,31 +2228,36 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc",
-          "-B/tmp/lanius-tcc.JrXWwY/root/usr/lib/x86_64-linux-gnu/tcc",
-          "-std=c11",
-          "{source}",
-          "-o",
-          "{output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc",
+            "-B/tmp/lanius-tcc.JrXWwY/root/usr/lib/x86_64-linux-gnu/tcc",
+            "-std=c11",
+            "{source}",
+            "-o",
+            "{output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "/tmp/lanius-tcc.JrXWwY/root/usr/bin/tcc -B/tmp/lanius-tcc.JrXWwY/root/usr/lib/x86_64-linux-gnu/tcc -std=c11 '{source}' -o '{output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "tcc",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "default",
       "configuration_display": "default",
       "id": "tcc-default",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -2439,12 +2444,7 @@
       "source": {
         "bytes": 983093,
         "file_records": [
-          {
-            "bytes": 983093,
-            "lines": 32160,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-34/1000000/scaling.c",
-            "sloc": 30928
-          }
+          {"bytes":983093,"lines":32160,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-34/1000000/scaling.c","sloc":30928}
         ],
         "files": 1,
         "kilobytes": 983.093,
@@ -2488,33 +2488,38 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "zig",
-          "build-exe",
-          "-lc",
-          "-O",
-          "Debug",
-          "-fstrip",
-          "{source}",
-          "-femit-bin={output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "zig",
+            "build-exe",
+            "-lc",
+            "-O",
+            "Debug",
+            "-fstrip",
+            "{source}",
+            "-femit-bin={output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "zig build-exe -lc -O Debug -fstrip '{source}' '-femit-bin={output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "zig",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "o0",
       "configuration_display": "o0",
       "id": "zig-o0",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -2701,12 +2706,7 @@
       "source": {
         "bytes": 1003245,
         "file_records": [
-          {
-            "bytes": 1003245,
-            "lines": 32192,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-36/1000000/scaling.zig",
-            "sloc": 30940
-          }
+          {"bytes":1003245,"lines":32192,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-36/1000000/scaling.zig","sloc":30940}
         ],
         "files": 1,
         "kilobytes": 1003.245,
@@ -2750,33 +2750,38 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     },
     {
       "commands": {
-        "legacy_template": [
-          "zig",
-          "build-exe",
-          "-lc",
-          "-O",
-          "ReleaseFast",
-          "-fstrip",
-          "{source}",
-          "-femit-bin={output}"
-        ],
-        "source": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
+        "command": {
+          "argv": [
+            "zig",
+            "build-exe",
+            "-lc",
+            "-O",
+            "ReleaseFast",
+            "-fstrip",
+            "{source}",
+            "-femit-bin={output}"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc",
+          "display": "zig build-exe -lc -O ReleaseFast -fstrip '{source}' '-femit-bin={output}'",
+          "environment_overrides": {}
+        }
       },
       "compiler": {
         "name": "zig",
-        "version": "recorded in legacy provenance"
+        "version": "unavailable (imported measurement)"
       },
       "configuration": "optimized",
       "configuration_display": "optimized",
       "id": "zig-optimized",
       "measurement_semantics": {
         "imported": true,
-        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample"
+        "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260813/pareas_common_subset_1mb"
       },
       "samples": [
         {
@@ -2963,12 +2968,7 @@
       "source": {
         "bytes": 1001223,
         "file_records": [
-          {
-            "bytes": 1001223,
-            "lines": 31880,
-            "path": "benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-38/1000000/scaling.zig",
-            "sloc": 30688
-          }
+          {"bytes":1001223,"lines":31880,"path":"benchmark_artifacts/compile_performance_20260815/lanius_single_file_1mb_final/sources/seed-38/1000000/scaling.zig","sloc":30688}
         ],
         "files": 1,
         "kilobytes": 1001.223,
@@ -3012,7 +3012,7 @@
       },
       "target": "x86_64",
       "validation": {
-        "legacy_artifacts_validated": true
+        "artifacts_validated": true
       }
     }
   ],
@@ -3024,10 +3024,12 @@
   },
   "schema": "lanius.performance-run.v1",
   "workload": {
+    "baseline_only": true,
     "classification": "imported controlled cross-language compiler stress",
+    "comparison_group": "compiler-stress/comparative-single-file/mixed-function-sizes/1000000",
     "generator": "tools/generate_compiler_stress.py",
     "id": "imported-single-file-1000000-comparison",
-    "kind": "single_file",
-    "legacy_import": true
+    "imported": true,
+    "kind": "single_file"
   }
 }

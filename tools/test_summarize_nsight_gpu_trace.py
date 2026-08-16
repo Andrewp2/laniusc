@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
 import unittest
+import tempfile
+from pathlib import Path
 
 from tools.summarize_nsight_gpu_trace import (
+    build_nsight_profile,
     compiler_phase,
     compiler_stage,
     parser_hir_stage,
@@ -65,6 +68,44 @@ class NsightCompilerStageTests(unittest.TestCase):
         self.assertEqual(rows["x86.machine_byte_emission"]["first_event_index"], 0)
         self.assertEqual(rows["x86.machine_byte_emission"]["last_event_index"], 1)
         self.assertEqual(sum(row["total_time_ms"] for row in rows.values()), 6.0)
+
+    def test_viewer_profile_preserves_order_metrics_and_capture_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            (directory / "D3DPERF_EVENTS.xls").write_text(
+                "event_text\ttime_ms\n"
+                "lexer.dfa-local.batch\t1.5\n"
+                "lir.x86.emit\t2.25\n"
+            )
+            (directory / "GPUTRACE_REGIMES.xls").write_text(
+                "flattened_event_name\tGPUTrace.sm__throughput.avg.pct_of_peak_sustained_elapsed\t"
+                "FBSP.TriageSCG.dramc__throughput.avg.pct_of_peak_sustained_elapsed\n"
+                "lexer.dfa-local.batch\t80\t10\n"
+                "lir.x86.emit\t25\t70\n"
+            )
+            (directory / "GPUTRACE_FRAME.xls").write_text(
+                "GPUTrace.sm__throughput.avg.pct_of_peak_sustained_elapsed\t40\n"
+                "FBSP.TriageSCG.dramc__throughput.avg.pct_of_peak_sustained_elapsed\t55\n"
+            )
+            (directory / "REPRO_INFO.xls").write_text(
+                "Device Name\tNVIDIA Test GPU\nDriver Version\t999.1\nAPI\tVulkan\n"
+            )
+
+            profile = build_nsight_profile(directory)
+
+        self.assertEqual(profile["schema"], "lanius.nsight-gpu-profile.v1")
+        self.assertEqual(profile["capture"]["device_name"], "NVIDIA Test GPU")
+        self.assertEqual(profile["event_count"], 2)
+        self.assertAlmostEqual(profile["labeled_gpu_time_ms"], 3.75)
+        first, second = profile["events"]
+        self.assertEqual(first["gpu_start_ms"], 0.0)
+        self.assertEqual(second["gpu_start_ms"], 1.5)
+        self.assertEqual(first["phase"], "lexer")
+        self.assertEqual(second["stage"], "x86.machine_byte_emission")
+        passes = {row["pass_name"]: row for row in profile["passes"]}
+        self.assertEqual(passes["lexer.dfa-local.batch"]["sm_throughput_pct"], 80.0)
+        self.assertEqual(passes["lir.x86.emit"]["dram_throughput_pct"], 70.0)
+        self.assertEqual(profile["frame_metrics"]["sm_throughput_pct"], 40.0)
 
 
 if __name__ == "__main__":
