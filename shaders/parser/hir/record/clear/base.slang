@@ -82,12 +82,15 @@ uint slot(uint node, uint field)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (node >= active_node_count())
+    uint tree_count = active_node_count();
+    uint source_token_count = token_count[0u];
+    if (node >= max(tree_count, source_token_count))
         return;
 
-    // Parameter temporaries are token-anchored rather than raw-tree-indexed.
-    // The raw-tree dispatch is always at least as wide as the token stream.
-    if (node < token_count[0u])
+    // These temporaries are token-anchored rather than raw-tree-indexed. A
+    // compact parse tree can contain fewer rows than the source token stream,
+    // so clear the complete token domain before reusing graph workspace.
+    if (node < source_token_count)
     {
         hir_item_name_token[node] = INVALID;
         hir_item_namespace[node] = HIR_ITEM_NAMESPACE_NONE;
@@ -103,20 +106,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_param_record[slot(node, 3u)] = INVALID;
     }
 
-    if (gClear.retain_debug_rows != 0u)
-    {
-        hir_type_alias_target_node[node] = INVALID;
-        hir_fn_return_type_node[node] = INVALID;
-    }
-    else if (node < token_count[0u])
+    if (gClear.retain_debug_rows == 0u && node < source_token_count)
     {
         // Production stores these owner facts by canonical HIR row, whose
         // checked upper bound is the token count.
         hir_type_alias_target_node[node] = INVALID;
         hir_fn_return_type_node[node] = INVALID;
     }
+
+    if (node >= tree_count)
+        return;
+
+    if (gClear.retain_debug_rows != 0u)
+    {
+        hir_type_alias_target_node[node] = INVALID;
+        hir_fn_return_type_node[node] = INVALID;
+    }
     hir_type_len_value[node] = INVALID;
-    if ((gClear.parser_feature_flags & PARSER_FEATURE_PREDICATES) != 0u)
+    if ((gClear.parser_feature_flags & PARSER_FEATURE_PREDICATES) != 0u ||
+        gClear.retain_debug_rows != 0u)
     {
         hir_method_owner_node[node] = INVALID;
         hir_method_impl_node[node] = INVALID;
@@ -129,8 +137,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     hir_expr_result_root_scratch_node[node] = INVALID;
-    if (node == 0u)
-
     hir_stmt_record[slot(node, 0u)] = STMT_RECORD_KIND_NONE;
     hir_stmt_record[slot(node, 1u)] = INVALID;
     hir_stmt_record[slot(node, 2u)] = INVALID;

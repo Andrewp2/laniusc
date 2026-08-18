@@ -69,15 +69,6 @@ pub enum ResourceClass {
     Artifact,
     /// Mutable scratch whose storage may be reused after its final access.
     Workspace,
-    /// Mutable graph-owned storage with a dedicated logical slot.
-    ///
-    /// Use this while a resource crosses a composition boundary whose full
-    /// pass schedule is not yet represented in this graph. It preserves
-    /// allocation ownership and binding validation without making an
-    /// unsound liveness claim. Its non-overlapping range may still live in a
-    /// shared physical arena. Once the complete schedule is registered, the
-    /// resource can become `Workspace` and participate in lifetime coloring.
-    Resident,
     /// Mutable graph result retained after the final pass.
     Output,
 }
@@ -182,8 +173,9 @@ pub struct PassAccess {
     pub resource: ResourceId,
     pub mode: AccessMode,
     pub reflected: bool,
-    /// The pass establishes this binding's contents before any invocation
-    /// reads them, so no earlier producer is required.
+    /// The first invocation either establishes this binding before reading it
+    /// or takes a control-flow path that does not read it. No earlier producer
+    /// is therefore required for the repeated region's first invocation.
     pub initializes_before_read: bool,
     /// Shader invocation within one recorded compute batch.
     pub invocation: u16,
@@ -318,8 +310,19 @@ pub struct ReflectedComputeSpec {
     pub dispatch_domain: ResourceDomain,
     pub modes: &'static [(&'static str, AccessMode)],
     pub aliases: &'static [ReflectedResourceAlias],
+    /// Writable bindings whose first invocation establishes the logical
+    /// contents before following its read path. This is narrower than an
+    /// initializer operation: other writable bindings may still consume
+    /// state produced by an earlier pass.
+    pub initializes: &'static [&'static str],
+    /// Graph resource consumed by `dispatch_workgroups_indirect`. This is a
+    /// command dependency rather than a Slang binding, so reflection cannot
+    /// discover it.
+    pub indirect_dispatch: Option<&'static str>,
     pub initializes_writable_bindings: bool,
 }
+
+pub(crate) const INDIRECT_DISPATCH_BINDING: &str = "$indirect_dispatch";
 
 impl ReflectedComputeSpec {
     pub const fn new(
@@ -335,12 +338,19 @@ impl ReflectedComputeSpec {
             dispatch_domain,
             modes: &[],
             aliases: &[],
+            initializes: &[],
+            indirect_dispatch: None,
             initializes_writable_bindings: false,
         }
     }
 
     pub const fn with_modes(mut self, modes: &'static [(&'static str, AccessMode)]) -> Self {
         self.modes = modes;
+        self
+    }
+
+    pub const fn with_name(mut self, name: &'static str) -> Self {
+        self.name = name;
         self
     }
 
@@ -351,6 +361,16 @@ impl ReflectedComputeSpec {
 
     pub const fn with_aliases(mut self, aliases: &'static [ReflectedResourceAlias]) -> Self {
         self.aliases = aliases;
+        self
+    }
+
+    pub const fn with_initializes(mut self, bindings: &'static [&'static str]) -> Self {
+        self.initializes = bindings;
+        self
+    }
+
+    pub const fn with_indirect_dispatch(mut self, resource: &'static str) -> Self {
+        self.indirect_dispatch = Some(resource);
         self
     }
 
@@ -416,7 +436,29 @@ impl ReflectedComputeSpec {
                 &overrides,
             )
         }?;
+        for &binding in self.initializes {
+            let access = graph.passes[pass.index()]
+                .accesses
+                .iter_mut()
+                .find(|access| access.binding == binding)
+                .ok_or_else(|| {
+                    format!(
+                        "reflected compute specification {} initializes unknown binding {binding}",
+                        self.name,
+                    )
+                })?;
+            if !access.mode.writes() {
+                return Err(format!(
+                    "reflected compute specification {} initializes read-only binding {binding}",
+                    self.name,
+                ));
+            }
+            access.initializes_before_read = true;
+        }
         graph.pass_kernels[pass.index()] = Some(self.kernel);
+        if let Some(resource_name) = self.indirect_dispatch {
+            graph.add_indirect_dispatch(self.name, resource_name)?;
+        }
         Ok(pass)
     }
 }
@@ -433,19 +475,6 @@ pub struct ResourceLifetime {
     pub first_pass: PassId,
     pub last_pass: PassId,
     pub producer: Option<PassId>,
-}
-
-/// Conservatively extends one resource across a known execution interval.
-///
-/// This is a migration boundary for compiler phases whose complete command
-/// schedule has not yet been imported into the graph. It prevents workspace
-/// coloring from aliasing storage across omitted passes without pretending
-/// those passes read or write bindings that they do not expose here.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ResourceLifetimeFence {
-    pub resource: ResourceId,
-    pub first_pass: &'static str,
-    pub last_pass: &'static str,
 }
 
 /// A contiguous graph body executed more than once. Liveness covers the
@@ -553,7 +582,7 @@ pub struct CompilerGraph {
     repeated_regions: Vec<RepeatedPassRegion>,
     paged_regions: Vec<PagedPassRegion>,
     paged_resources: Vec<Option<PagedResourceDesc>>,
-    lifetime_fences: Vec<ResourceLifetimeFence>,
+    zero_initialized_resources: BTreeSet<ResourceId>,
     workspace: WorkspacePlan,
 }
 
@@ -732,7 +761,9 @@ impl CompilerGraphWorkspace {
         graph: &CompilerGraph,
         upstream: &[TrackedBufferView<'_>],
     ) -> Result<Self, String> {
-        if std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some() {
+        if std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some()
+            || std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_UPSTREAM_REUSE").is_some()
+        {
             return Self::new(device, label, graph);
         }
         // A phase may expose several typed aliases of the same physical
@@ -1050,9 +1081,10 @@ impl CompilerGraphWorkspace {
         }
     }
 
-    /// Materializes one untyped view for each graph-owned logical resource.
-    /// Input and external resources are intentionally absent: their owning
-    /// phase registers them explicitly at the graph boundary.
+    /// Materializes one untyped view for each physically allocated graph
+    /// resource. Inputs, external resources, and feature-gated declarations
+    /// with no live pass are absent; their owning phase supplies true inputs,
+    /// while unused declarations require no binding or allocation.
     pub(crate) fn bindings(&self, graph: &CompilerGraph) -> Result<CompilerGraphBindings, String> {
         let buffers = graph
             .resources()
@@ -1062,7 +1094,13 @@ impl CompilerGraphWorkspace {
                 if matches!(
                     resource.class,
                     ResourceClass::Input | ResourceClass::External
-                ) {
+                ) || self
+                    .slot_by_resource
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .is_none()
+                {
                     return Ok(None);
                 }
                 let count = usize::try_from(resource.bytes).map_err(|_| {
@@ -1123,6 +1161,74 @@ impl MaterializedCompilerGraph {
             .map_err(anyhow::Error::msg)
     }
 
+    /// Validates the concrete storage bindings used by one reflected runtime
+    /// dispatch. Generated `Pass` wrappers use this graph boundary when their
+    /// operation needs dynamic inputs instead of a prebuilt `ComputeOperation`.
+    pub(crate) fn validate_reflected_runtime_bindings(
+        &self,
+        operation: &'static str,
+        resources: &std::collections::HashMap<String, wgpu::BindingResource<'_>>,
+        dispatch_args: Option<&crate::gpu::buffers::LaniusBuffer<u32>>,
+    ) -> anyhow::Result<()> {
+        let pass = self
+            .graph
+            .pass_id(operation)
+            .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{operation}`"))?;
+        let desc = self.graph.pass(pass).expect("pass id came from graph");
+        let bindings = desc
+            .accesses
+            .iter()
+            .map(|access| {
+                let binding = if access.binding == INDIRECT_DISPATCH_BINDING {
+                    let buffer = dispatch_args.ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "compiler graph pass `{operation}` requires indirect dispatch arguments"
+                        )
+                    })?;
+                    wgpu::BufferBinding {
+                        buffer: &buffer.buffer,
+                        offset: buffer.byte_offset,
+                        size: std::num::NonZeroU64::new(buffer.byte_size as u64),
+                    }
+                } else {
+                    match resources.get(access.binding) {
+                        Some(wgpu::BindingResource::Buffer(binding)) => binding.clone(),
+                        Some(_) => {
+                            return Err(anyhow::anyhow!(
+                                "compiler graph pass `{operation}` binds `{}` as a non-buffer resource",
+                                access.binding,
+                            ));
+                        }
+                        None => {
+                            return Err(anyhow::anyhow!(
+                                "compiler graph pass `{operation}` has no runtime binding `{}`",
+                                access.binding,
+                            ));
+                        }
+                    }
+                };
+                let byte_size = binding
+                    .size
+                    .map(std::num::NonZeroU64::get)
+                    .unwrap_or_else(|| binding.buffer.size().saturating_sub(binding.offset));
+                let allocation_id = crate::gpu::buffers::tracked_buffer_identity(binding.buffer)
+                    .map(|(id, _, _)| id);
+                self.graph
+                    .bind_registered_resource(
+                        access.binding,
+                        access.resource,
+                        allocation_id,
+                        binding.offset,
+                        byte_size,
+                    )
+                    .map_err(anyhow::Error::msg)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        self.allocations
+            .validate_pass_bindings(&self.graph, pass, &bindings)
+            .map_err(anyhow::Error::msg)
+    }
+
     /// Returns a full typed view of one named graph-owned resource.
     pub(crate) fn buffer<T>(&self, name: &str) -> anyhow::Result<LaniusBuffer<T>> {
         let resource = self
@@ -1154,6 +1260,16 @@ impl MaterializedCompilerGraph {
 }
 
 impl CompilerGraphAllocations {
+    /// Whether a physical allocation participates in this materialized graph.
+    /// Allocation-level reset operations use this without inventing logical
+    /// resource writes that would extend colored lifetimes.
+    pub(crate) fn owns_allocation(&self, allocation_id: u64) -> bool {
+        self.allocation_by_resource
+            .iter()
+            .flatten()
+            .any(|range| range.allocation_id == allocation_id)
+    }
+
     /// Rebinds a logical resource at an explicit stage boundary. The caller is
     /// declaring that an upstream stage owns `buffer` and this stage imports
     /// that allocation under the graph resource's identity.
@@ -1262,7 +1378,6 @@ impl CompilerGraphAllocations {
 }
 
 impl CompilerGraph {
-    #[cfg(test)]
     pub(crate) fn pass_kernel(&self, pass: PassId) -> Option<&'static str> {
         self.pass_kernels.get(pass.index()).copied().flatten()
     }
@@ -1279,6 +1394,53 @@ impl CompilerGraph {
 
     pub fn passes(&self) -> &[PassDesc] {
         &self.passes
+    }
+
+    /// Extends producer-owned resources across a composed graph boundary.
+    ///
+    /// A downstream `Input` or `External` with the same canonical name is a
+    /// borrow of this graph's storage. Promote only storage owned here; inputs
+    /// borrowed from an earlier graph remain that earlier owner's concern.
+    /// The workspace plan is rebuilt before materialization so no downstream
+    /// input can be colored over after its final in-graph use.
+    pub(crate) fn retain_resources_imported_by(
+        &mut self,
+        downstream: &CompilerGraph,
+    ) -> Result<(), String> {
+        let imported = downstream
+            .resources
+            .iter()
+            .filter(|resource| {
+                matches!(
+                    resource.class,
+                    ResourceClass::Input | ResourceClass::External
+                )
+            })
+            .filter_map(|resource| self.resource_id(resource.name))
+            .collect::<BTreeSet<_>>();
+        if imported.is_empty() {
+            return Ok(());
+        }
+        let graph_end = PassId(self.passes.len().saturating_sub(1));
+        for resource in imported {
+            let desc = &mut self.resources[resource.index()];
+            if !matches!(
+                desc.class,
+                ResourceClass::Workspace | ResourceClass::Artifact | ResourceClass::Output
+            ) {
+                continue;
+            }
+            desc.class = ResourceClass::Output;
+            let lifetime = self.lifetimes[resource.index()].as_mut().ok_or_else(|| {
+                format!(
+                    "downstream graph imports compiler resource {} without a producer lifetime",
+                    desc.name,
+                )
+            })?;
+            lifetime.last_pass = graph_end;
+        }
+        self.workspace = plan_graph_workspace(&self.resources, &self.lifetimes)?;
+        Ok(())
     }
 
     fn diagnostic(&self, label: &str) -> CompilerGraphDiagnostic {
@@ -1363,10 +1525,6 @@ impl CompilerGraph {
         &self.paged_regions
     }
 
-    pub fn lifetime_fences(&self) -> &[ResourceLifetimeFence] {
-        &self.lifetime_fences
-    }
-
     pub fn lifetime(&self, resource: ResourceId) -> Option<ResourceLifetime> {
         self.lifetimes.get(resource.index()).copied().flatten()
     }
@@ -1376,9 +1534,8 @@ impl CompilerGraph {
     }
 
     /// Projects the graph's lifetime-colored slots onto the physical arena ABI
-    /// supported by a particular device. Materialization is intentionally a
-    /// separate step so allocation consolidation can be inspected before any
-    /// shader interface is migrated.
+    /// supported by a particular device. Materialization remains separate so
+    /// allocation consolidation can be inspected before creating buffers.
     pub fn workspace_arena_layout(
         &self,
         limits: &wgpu::Limits,
@@ -1881,10 +2038,13 @@ impl CompilerGraph {
         kernels: &impl KernelReflections,
     ) -> Result<(), String> {
         for (index, kernel) in self.pass_kernels.iter().enumerate() {
-            if !self.reflection_complete[index] {
-                continue;
-            }
             let Some(kernel) = kernel else { continue };
+            if !self.reflection_complete[index] {
+                return Err(format!(
+                    "compiler pass {} assigns kernel `{kernel}` without declaring its complete reflected storage surface",
+                    self.passes[index].name,
+                ));
+            }
             self.validate_complete_pass_reflection(PassId(index), kernels.reflection(kernel)?)?;
         }
         Ok(())
@@ -2015,6 +2175,17 @@ pub struct RadixSortGraphResourceNames {
     pub bucket_prefix: &'static str,
     pub bucket_total: &'static str,
     pub bucket_base: &'static str,
+}
+
+/// Graph-owned arrays which exist independently of a radix sort's selected
+/// implementation. The order ping-pong pair can carry other phase-local
+/// relations before sorting; indirect dispatch and radix scratch only exist
+/// when the scalable implementation is selected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RadixSortStorageResources {
+    pub order: ResourceId,
+    pub temporary_order: ResourceId,
+    pub dispatch_args: Option<ResourceId>,
 }
 
 /// A stable least-significant-digit radix sort in the compiler graph.
@@ -2740,16 +2911,66 @@ pub struct CompilerGraphBuilder {
     reflection_complete: Vec<bool>,
     resource_names: BTreeSet<&'static str>,
     resource_aliases: BTreeMap<&'static str, ResourceId>,
-    reflected_binding_resources: BTreeMap<&'static str, BTreeSet<ResourceId>>,
     reflected_arena_conflicts: BTreeSet<(ResourceId, ResourceId)>,
     pass_names: BTreeSet<&'static str>,
     repeated_regions: Vec<RepeatedPassRegion>,
     paged_regions: Vec<PagedPassRegion>,
     paged_resources: Vec<Option<PagedResourceDesc>>,
-    lifetime_fences: Vec<ResourceLifetimeFence>,
+    zero_initialized_resources: BTreeSet<ResourceId>,
 }
 
 impl CompilerGraphBuilder {
+    /// Declares that the owning phase clears this logical graph relation
+    /// before the graph executes. Zero initialization satisfies an initial
+    /// read without extending the relation's colorable lifetime back to a
+    /// synthetic all-workspace clear pass.
+    pub(crate) fn mark_zero_initialized(&mut self, resource: ResourceId) -> Result<(), String> {
+        let desc = self.resources.get(resource.index()).ok_or_else(|| {
+            format!("cannot zero-initialize unknown compiler resource {resource:?}")
+        })?;
+        if !matches!(desc.class, ResourceClass::Workspace | ResourceClass::Output) {
+            return Err(format!(
+                "zero-initialized compiler resource {} must be workspace or output, not {:?}",
+                desc.name, desc.class,
+            ));
+        }
+        self.zero_initialized_resources.insert(resource);
+        Ok(())
+    }
+
+    /// Adds a scheduling-only resource access to an already reflected pass.
+    /// Indirect dispatch arguments are consumed by WGPU rather than exposed
+    /// as shader bindings, so reflection cannot discover this dependency.
+    pub(crate) fn add_pass_access(
+        &mut self,
+        pass_name: &str,
+        access: PassAccess,
+    ) -> Result<(), String> {
+        if self.resources.get(access.resource.index()).is_none() {
+            return Err(format!(
+                "compiler pass `{pass_name}` references unknown resource {}",
+                access.resource.index(),
+            ));
+        }
+        let pass = self
+            .passes
+            .iter_mut()
+            .find(|pass| pass.name == pass_name)
+            .ok_or_else(|| format!("cannot add an access to unknown pass `{pass_name}`"))?;
+        if pass
+            .accesses
+            .iter()
+            .any(|existing| existing.binding == access.binding)
+        {
+            return Err(format!(
+                "compiler pass `{pass_name}` already has binding `{}`",
+                access.binding,
+            ));
+        }
+        pass.accesses.push(access);
+        Ok(())
+    }
+
     /// Associates a semantic graph pass with the generated shader that
     /// implements it. High-level operations use this after expanding their
     /// internal schedule so pipeline selection remains part of the graph.
@@ -2777,7 +2998,7 @@ impl CompilerGraphBuilder {
         }
     }
 
-    /// Marks a manually assembled pass as having the complete storage surface
+    /// Marks a custom pass declaration as having the complete storage surface
     /// of its assigned kernel. Such passes join the graph-wide reflection
     /// validation performed before workspace materialization.
     pub(crate) fn require_complete_reflection(&mut self, pass_name: &str) -> Result<(), String> {
@@ -2793,6 +3014,75 @@ impl CompilerGraphBuilder {
             ));
         }
         self.reflection_complete[pass.index()] = true;
+        Ok(())
+    }
+
+    /// Declares that the first invocation of a reflected pass establishes
+    /// these read/write bindings before a repeated region can read them.
+    ///
+    /// Hierarchical scans are the canonical example: level zero writes the
+    /// hierarchy, while later invocations of the same recorded pass consume
+    /// the rows produced by the previous level. Reflection correctly reports
+    /// read/write access for the pass as a whole, but the graph also needs the
+    /// initialization edge to avoid requiring a producer before level zero.
+    pub fn mark_pass_bindings_initialize(
+        &mut self,
+        pass_name: &str,
+        bindings: &[&str],
+    ) -> Result<(), String> {
+        let pass = self
+            .passes
+            .iter_mut()
+            .find(|pass| pass.name == pass_name)
+            .ok_or_else(|| format!("unknown compiler pass `{pass_name}`"))?;
+        for &binding in bindings {
+            let access = pass
+                .accesses
+                .iter_mut()
+                .find(|access| access.binding == binding)
+                .ok_or_else(|| {
+                    format!(
+                        "compiler pass `{pass_name}` cannot initialize unknown binding `{binding}`",
+                    )
+                })?;
+            if !access.mode.writes() {
+                return Err(format!(
+                    "compiler pass `{pass_name}` cannot initialize read-only binding `{binding}`",
+                ));
+            }
+            access.initializes_before_read = true;
+        }
+        Ok(())
+    }
+
+    /// Declares reflected read bindings that the first invocation of a
+    /// repeated pass does not actually read. Later invocations may read rows
+    /// produced by the paired pass in the same repeated region.
+    pub fn mark_pass_bindings_first_invocation_skips_read(
+        &mut self,
+        pass_name: &str,
+        bindings: &[&str],
+    ) -> Result<(), String> {
+        let pass = self
+            .passes
+            .iter_mut()
+            .find(|pass| pass.name == pass_name)
+            .ok_or_else(|| format!("unknown compiler pass `{pass_name}`"))?;
+        for &binding in bindings {
+            let access = pass
+                .accesses
+                .iter_mut()
+                .find(|access| access.binding == binding)
+                .ok_or_else(|| {
+                    format!("compiler pass `{pass_name}` cannot skip unknown binding `{binding}`",)
+                })?;
+            if !access.mode.reads() {
+                return Err(format!(
+                    "compiler pass `{pass_name}` cannot skip non-readable binding `{binding}`",
+                ));
+            }
+            access.initializes_before_read = true;
+        }
         Ok(())
     }
 
@@ -2845,134 +3135,6 @@ impl CompilerGraphBuilder {
                 }
             }
         }
-        Ok(())
-    }
-
-    /// Gives graph-owned workspace a stable, non-colored allocation for a
-    /// relation whose complete physical schedule is not represented yet.
-    pub fn dedicate_workspace(&mut self, resource: ResourceId) -> Result<(), String> {
-        let desc = self.resources.get_mut(resource.index()).ok_or_else(|| {
-            format!(
-                "cannot dedicate unknown compiler resource {}",
-                resource.index()
-            )
-        })?;
-        if desc.class != ResourceClass::Workspace {
-            return Err(format!(
-                "compiler resource `{}` has ownership class {:?}; only workspace can be dedicated",
-                desc.name, desc.class,
-            ));
-        }
-        desc.class = ResourceClass::Resident;
-        Ok(())
-    }
-
-    /// Gives every graph-owned workspace relation a distinct physical identity.
-    ///
-    /// This is the conservative boundary for a phase whose handwritten
-    /// recorder is not yet represented by the graph in exact execution order.
-    /// Such a phase may still use the graph for reflected bindings and resource
-    /// ownership, but it must not infer aliasing from an incomplete schedule.
-    pub fn dedicate_all_workspace(&mut self) {
-        for resource in &mut self.resources {
-            if resource.class == ResourceClass::Workspace {
-                resource.class = ResourceClass::Resident;
-            }
-        }
-    }
-
-    /// Adds physical-allocation conflicts for every prepared compute kernel.
-    ///
-    /// Some compiler phases still have a handwritten command recorder whose
-    /// exact pass order is not yet represented by this graph. Their logical
-    /// resources therefore remain `Resident`, but physical arenas may still
-    /// pack disjoint ranges together when no shader ever binds them in the
-    /// same dispatch. Slang reflection supplies that conservative co-binding
-    /// relation without duplicating shader interfaces in Rust.
-    pub(crate) fn add_reflected_arena_conflicts(
-        &mut self,
-        kernels: &impl KernelReflections,
-    ) -> Result<(), String> {
-        let mut reflected_conflicts = BTreeSet::new();
-        let mapped_resources = |binding: &str| {
-            if let Some(resources) = self.reflected_binding_resources.get(binding) {
-                return resources.clone();
-            }
-            if let Some(resource) = self.resource_id(binding) {
-                return BTreeSet::from([resource]);
-            }
-            let resources = self
-                .passes
-                .iter()
-                .flat_map(|pass| pass.accesses.iter())
-                .filter(|access| access.reflected && access.binding == binding)
-                .map(|access| access.resource)
-                .collect::<BTreeSet<_>>();
-            if resources.len() == 1 {
-                resources
-            } else {
-                BTreeSet::new()
-            }
-        };
-
-        for key in kernels.reflection_keys() {
-            let mut bound_resources = reflected_parameters(kernels.reflection(key)?)
-                .into_iter()
-                .filter(|parameter| {
-                    slang_category_and_type_to_wgpu(parameter, &parameter.ty).is_some_and(|ty| {
-                        matches!(
-                            ty,
-                            wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { .. },
-                                ..
-                            }
-                        )
-                    })
-                })
-                .flat_map(|parameter| mapped_resources(&parameter.name))
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>();
-            bound_resources.sort_unstable();
-            for (index, &left) in bound_resources.iter().enumerate() {
-                for &right in &bound_resources[index + 1..] {
-                    reflected_conflicts.insert((left, right));
-                }
-            }
-        }
-        self.reflected_arena_conflicts.extend(reflected_conflicts);
-        Ok(())
-    }
-
-    /// Declares the graph resources which a shader-facing binding may name.
-    ///
-    /// Handwritten recorders sometimes bind one of several ping-pong resources
-    /// under the same reflected parameter name. Arena conflict generation must
-    /// protect every possible physical resource rather than inventing a
-    /// same-named placeholder resource or assuming one fixed alias.
-    pub fn add_reflected_binding_resources(
-        &mut self,
-        binding: &'static str,
-        resources: impl IntoIterator<Item = ResourceId>,
-    ) -> Result<(), String> {
-        let resources = resources.into_iter().collect::<BTreeSet<_>>();
-        if resources.is_empty() {
-            return Err(format!(
-                "reflected binding `{binding}` must name at least one graph resource"
-            ));
-        }
-        for resource in &resources {
-            if self.resources.get(resource.index()).is_none() {
-                return Err(format!(
-                    "reflected binding `{binding}` targets unknown resource {}",
-                    resource.index(),
-                ));
-            }
-        }
-        self.reflected_binding_resources
-            .entry(binding)
-            .or_default()
-            .extend(resources);
         Ok(())
     }
 
@@ -3174,6 +3336,71 @@ impl CompilerGraphBuilder {
         })
     }
 
+    /// Reserves only the storage used by the selected radix-sort strategy.
+    ///
+    /// Small cooperative sorts need the order relation but do not execute the
+    /// histogram pipeline. Omitting the unused dispatch and bucket arrays keeps
+    /// the graph truthful: every graph-owned workspace resource has a producer
+    /// in the schedule that was actually selected for this capacity.
+    pub fn add_selected_radix_sort_storage(
+        &mut self,
+        domain: ResourceDomain,
+        capacity: u64,
+        rows_per_block: u64,
+        bucket_count: u64,
+        scalable: bool,
+        names: RadixSortGraphResourceNames,
+    ) -> Result<RadixSortStorageResources, String> {
+        if rows_per_block == 0 || bucket_count == 0 {
+            return Err("radix sort requires nonzero rows per block and bucket count".into());
+        }
+        let capacity = capacity.max(1);
+        let row_bytes = capacity
+            .checked_mul(4)
+            .ok_or_else(|| "radix sort order storage size overflows".to_owned())?;
+        let order = self.add_storage(names.order, domain, ResourceClass::Workspace, row_bytes)?;
+        let temporary_order = self.add_storage(
+            names.temporary_order,
+            domain,
+            ResourceClass::Workspace,
+            row_bytes,
+        )?;
+        if !scalable {
+            return Ok(RadixSortStorageResources {
+                order,
+                temporary_order,
+                dispatch_args: None,
+            });
+        }
+        let histogram_bytes = capacity
+            .div_ceil(rows_per_block)
+            .checked_mul(bucket_count)
+            .and_then(|rows| rows.checked_mul(4))
+            .ok_or_else(|| "radix sort histogram storage size overflows".to_owned())?;
+        let bucket_bytes = bucket_count
+            .checked_mul(4)
+            .ok_or_else(|| "radix sort bucket storage size overflows".to_owned())?;
+        let dispatch_args = self.add_indirect_storage(
+            names.dispatch_args,
+            ResourceDomain::DispatchArguments,
+            ResourceClass::Workspace,
+            12,
+        )?;
+        for (name, bytes) in [
+            (names.histogram, histogram_bytes),
+            (names.bucket_prefix, histogram_bytes),
+            (names.bucket_total, bucket_bytes),
+            (names.bucket_base, bucket_bytes),
+        ] {
+            self.add_storage(name, domain, ResourceClass::Workspace, bytes)?;
+        }
+        Ok(RadixSortStorageResources {
+            order,
+            temporary_order,
+            dispatch_args: Some(dispatch_args),
+        })
+    }
+
     /// Reserves the output and temporary storage for a counted prefix scan.
     pub fn add_prefix_scan_resources(
         &mut self,
@@ -3260,59 +3487,6 @@ impl CompilerGraphBuilder {
         })
     }
 
-    /// Keeps `resource` live from the named first pass through the named last
-    /// pass. Both endpoints must exist and be ordered when the graph is built.
-    pub fn fence_resource_lifetime(
-        &mut self,
-        resource: ResourceId,
-        first_pass: &'static str,
-        last_pass: &'static str,
-    ) -> Result<(), String> {
-        if self.resources.get(resource.index()).is_none() {
-            return Err(format!(
-                "cannot fence unknown compiler resource {}",
-                resource.index()
-            ));
-        }
-        self.lifetime_fences.push(ResourceLifetimeFence {
-            resource,
-            first_pass,
-            last_pass,
-        });
-        Ok(())
-    }
-
-    /// Keeps every resource accessed by the selected passes live across an
-    /// execution interval that is not yet represented as graph nodes.
-    ///
-    /// This is intended for incremental migration of an existing recorder:
-    /// the selected passes describe the complete resource surface of an
-    /// operation, while `first_pass` and `last_pass` bound the real interval
-    /// over which that operation is invoked. Once every invocation is a graph
-    /// node, the ordinary pass schedule makes this fence unnecessary.
-    pub fn fence_resources_accessed_by_passes(
-        &mut self,
-        pass_names: &[&str],
-        first_pass: &'static str,
-        last_pass: &'static str,
-    ) -> Result<(), String> {
-        let mut resources = BTreeSet::new();
-        for pass_name in pass_names {
-            let pass = self
-                .passes
-                .iter()
-                .find(|pass| pass.name == *pass_name)
-                .ok_or_else(|| {
-                    format!("cannot fence resources for unknown compiler pass {pass_name}")
-                })?;
-            resources.extend(pass.accesses.iter().map(|access| access.resource));
-        }
-        for resource in resources {
-            self.fence_resource_lifetime(resource, first_pass, last_pass)?;
-        }
-        Ok(())
-    }
-
     /// Marks a resource as a bounded resident window over a larger logical
     /// stream. This changes allocation policy, not pass ordering or ownership.
     pub fn page_resource(
@@ -3378,6 +3552,9 @@ impl CompilerGraphBuilder {
                 ));
             }
             if let Some((mode, invocation)) = resources.get(&access.resource) {
+                if *mode == AccessMode::Read && access.mode == AccessMode::Read {
+                    continue;
+                }
                 let reason = if *invocation == access.invocation {
                     "more than once in one invocation"
                 } else if mode.writes() || access.mode.writes() {
@@ -3400,29 +3577,180 @@ impl CompilerGraphBuilder {
         Ok(id)
     }
 
-    /// Models the command-encoder clear that initializes dedicated resident
-    /// resources at the start of a reusable compiler job.
-    ///
-    /// Ordinary workspace resources are deliberately excluded: they must
-    /// still name their real algorithmic producer so coloring cannot conceal
-    /// an incomplete lifetime. `Resident` is the migration boundary for
-    /// graph-owned storage whose full middle schedule is not yet represented.
-    pub fn add_resident_clear_pass(
+    /// Declares the command-processor read performed by
+    /// `dispatch_workgroups_indirect`. Shader reflection cannot see this
+    /// dependency because the argument buffer is not a shader binding.
+    pub fn add_indirect_dispatch(
+        &mut self,
+        pass_name: &'static str,
+        resource_name: &'static str,
+    ) -> Result<(), String> {
+        let resource = self.resource_id(resource_name).ok_or_else(|| {
+            format!(
+                "compiler pass {pass_name} uses unknown indirect dispatch resource {resource_name}",
+            )
+        })?;
+        self.add_pass_access(
+            pass_name,
+            PassAccess::indirect(INDIRECT_DISPATCH_BINDING, resource),
+        )
+    }
+
+    /// Prevents resources co-bound by a reflected pass from sharing one
+    /// physical arena. The pass access lists already contain the complete
+    /// reflected storage surface, so phases do not need a second walk over a
+    /// kernel registry merely to recover the same co-binding relation.
+    pub fn add_registered_pass_arena_conflicts(&mut self) {
+        for pass in &self.passes {
+            let resources = pass
+                .accesses
+                .iter()
+                .filter(|access| access.reflected)
+                .map(|access| access.resource)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            for (index, &left) in resources.iter().enumerate() {
+                for &right in &resources[index + 1..] {
+                    self.reflected_arena_conflicts
+                        .insert((left.min(right), left.max(right)));
+                }
+            }
+        }
+    }
+
+    /// Adds an allocation-level reset at a reusable job boundary. It carries
+    /// no logical resource accesses because one physical allocation can hold
+    /// several colored resources with disjoint phase lifetimes.
+    pub(crate) fn add_physical_reset_pass(
         &mut self,
         name: &'static str,
         phase: CompilerPhase,
     ) -> Result<PassId, String> {
-        let accesses = self
-            .resources
-            .iter()
-            .enumerate()
-            .filter(|(_, resource)| resource.class == ResourceClass::Resident)
-            .map(|(index, resource)| PassAccess::write(resource.name, ResourceId(index)))
-            .collect();
         self.add_pass(PassDesc {
             name,
             phase,
             dispatch_domain: ResourceDomain::Bytes,
+            accesses: Vec::new(),
+        })
+    }
+
+    /// Adds one non-shader operation that clears exactly one logical buffer.
+    /// Keeping clears as ordinary graph passes makes initialization and
+    /// lifetime edges visible without inventing a whole-workspace fence.
+    pub(crate) fn add_buffer_clear_pass(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        binding: &'static str,
+        resource: ResourceId,
+    ) -> Result<PassId, String> {
+        self.add_buffers_clear_pass(name, phase, &[(binding, resource)])
+    }
+
+    /// Adds one non-shader operation that clears several logical buffers at
+    /// the same schedule point.
+    pub(crate) fn add_buffers_clear_pass(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        bindings: &[(&'static str, ResourceId)],
+    ) -> Result<PassId, String> {
+        if bindings.is_empty() {
+            return Err(format!(
+                "compiler clear pass {name} must name at least one resource"
+            ));
+        }
+        let resource = bindings[0].1;
+        let domain = self
+            .resources
+            .get(resource.index())
+            .ok_or_else(|| format!("cannot clear unknown compiler resource {resource:?}"))?
+            .domain;
+        for &(_, resource) in bindings {
+            if self.resources.get(resource.index()).is_none() {
+                return Err(format!(
+                    "cannot clear unknown compiler resource {resource:?}"
+                ));
+            }
+        }
+        self.add_pass(PassDesc {
+            name,
+            phase,
+            dispatch_domain: domain,
+            accesses: bindings
+                .iter()
+                .map(|&(binding, resource)| PassAccess::write(binding, resource))
+                .collect(),
+        })
+    }
+
+    /// Adds one non-shader buffer-to-buffer copy to the compiler schedule.
+    pub(crate) fn add_buffer_copy_pass(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        source_binding: &'static str,
+        source: ResourceId,
+        destination_binding: &'static str,
+        destination: ResourceId,
+    ) -> Result<PassId, String> {
+        let domain = self
+            .resources
+            .get(source.index())
+            .ok_or_else(|| format!("cannot copy unknown compiler resource {source:?}"))?
+            .domain;
+        if self.resources.get(destination.index()).is_none() {
+            return Err(format!(
+                "cannot copy to unknown compiler resource {destination:?}"
+            ));
+        }
+        self.add_pass(PassDesc {
+            name,
+            phase,
+            dispatch_domain: domain,
+            accesses: vec![
+                PassAccess::read(source_binding, source),
+                PassAccess::write(destination_binding, destination),
+            ],
+        })
+    }
+
+    /// Adds one non-shader operation that copies several sources into one
+    /// destination artifact. The destination is one logical graph binding even
+    /// when the physical command stream writes several disjoint byte ranges.
+    pub(crate) fn add_buffers_copy_pass(
+        &mut self,
+        name: &'static str,
+        phase: CompilerPhase,
+        sources: &[(&'static str, ResourceId)],
+        destination_binding: &'static str,
+        destination: ResourceId,
+    ) -> Result<PassId, String> {
+        if sources.is_empty() {
+            return Err(format!(
+                "compiler copy pass {name} must name at least one source"
+            ));
+        }
+        let domain = self
+            .resources
+            .get(sources[0].1.index())
+            .ok_or_else(|| format!("cannot copy unknown compiler resource {:?}", sources[0].1))?
+            .domain;
+        if self.resources.get(destination.index()).is_none() {
+            return Err(format!(
+                "cannot copy to unknown compiler resource {destination:?}"
+            ));
+        }
+        let mut accesses = sources
+            .iter()
+            .map(|&(binding, resource)| PassAccess::read(binding, resource))
+            .collect::<Vec<_>>();
+        accesses.push(PassAccess::write(destination_binding, destination));
+        self.add_pass(PassDesc {
+            name,
+            phase,
+            dispatch_domain: domain,
             accesses,
         })
     }
@@ -3608,6 +3936,112 @@ impl CompilerGraphBuilder {
         Ok(pass)
     }
 
+    /// Imports the storage surface used by downstream kernels from an
+    /// upstream compiler graph. Read-only rows become immutable inputs;
+    /// writable rows become tracked external resources owned by the upstream
+    /// stage. Resources already declared or aliased by this graph are left
+    /// unchanged.
+    pub(crate) fn import_reflected_resources_from(
+        &mut self,
+        upstream: &CompilerGraph,
+        kernels: &impl KernelReflections,
+        kernel_names: &[&str],
+    ) -> Result<(), String> {
+        for &kernel in kernel_names {
+            for parameter in reflected_parameters(kernels.reflection(kernel)?) {
+                let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
+                else {
+                    continue;
+                };
+                if !matches!(
+                    binding_type,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { .. },
+                        ..
+                    }
+                ) || self.resource_id(&parameter.name).is_some()
+                {
+                    continue;
+                }
+                let upstream_resource = upstream.resource_id(&parameter.name).ok_or_else(|| {
+                    format!(
+                        "downstream kernel `{kernel}` requires storage binding `{}`, which is owned by neither graph",
+                        parameter.name,
+                    )
+                })?;
+                let upstream_desc = upstream
+                    .resource(upstream_resource)
+                    .expect("upstream resource id came from graph");
+                let name = upstream
+                    .resources
+                    .iter()
+                    .find(|resource| resource.name == parameter.name)
+                    .map(|resource| resource.name)
+                    .or_else(|| {
+                        upstream
+                            .resource_aliases
+                            .get_key_value(parameter.name.as_str())
+                            .map(|(&alias, _)| alias)
+                    })
+                    .expect("upstream resource lookup preserved its static name");
+                let writable = parameter
+                    .ty
+                    .access
+                    .as_deref()
+                    .is_some_and(|access| access.eq_ignore_ascii_case("readWrite"));
+                self.add_resource(ResourceDesc {
+                    name,
+                    domain: upstream_desc.domain,
+                    class: if writable {
+                        ResourceClass::External
+                    } else {
+                        ResourceClass::Input
+                    },
+                    bytes: upstream_desc.bytes,
+                    usage: upstream_desc.usage,
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Imports one upstream resource under the binding name used by a
+    /// downstream stage. This is the explicit graph-composition equivalent of
+    /// a reflected bind-group alias; no allocation or buffer identity is
+    /// recreated at the boundary.
+    pub(crate) fn import_resource_alias_from(
+        &mut self,
+        upstream: &CompilerGraph,
+        binding: &'static str,
+        upstream_name: &str,
+        mode: AccessMode,
+    ) -> Result<ResourceId, String> {
+        let upstream_resource = upstream
+            .resource_id(upstream_name)
+            .ok_or_else(|| format!("upstream compiler graph has no resource `{upstream_name}`"))?;
+        let upstream_desc = upstream
+            .resource(upstream_resource)
+            .expect("upstream resource id came from graph");
+        let local = match self.resource_id(upstream_desc.name) {
+            Some(resource) => resource,
+            None => self.add_resource(ResourceDesc {
+                name: upstream_desc.name,
+                domain: upstream_desc.domain,
+                class: if mode.writes() {
+                    ResourceClass::External
+                } else {
+                    ResourceClass::Input
+                },
+                bytes: upstream_desc.bytes,
+                usage: upstream_desc.usage,
+            })?,
+        };
+        if binding != upstream_desc.name && self.resource_id(binding).is_none() {
+            self.add_resource_alias(binding, local)?;
+        }
+        Ok(local)
+    }
+
     /// Adds a same-named reflected pass while refining the access mode of a
     /// small number of bindings. This is the common case for Slang
     /// `RWStructuredBuffer` outputs that a shader only initializes. Resource
@@ -3784,6 +4218,21 @@ impl CompilerGraphBuilder {
     }
 
     pub fn build(self) -> Result<CompilerGraph, String> {
+        if let Some((index, kernel)) =
+            self.pass_kernels
+                .iter()
+                .enumerate()
+                .find_map(|(index, kernel)| {
+                    kernel
+                        .filter(|_| !self.reflection_complete[index])
+                        .map(|kernel| (index, kernel))
+                })
+        {
+            return Err(format!(
+                "compiler pass {} assigns kernel `{kernel}` without requiring complete reflection",
+                self.passes[index].name,
+            ));
+        }
         let mut paged_pass_membership = vec![false; self.passes.len()];
         for region in &self.paged_regions {
             let end = region
@@ -3815,11 +4264,12 @@ impl CompilerGraphBuilder {
         let mut initialized = self
             .resources
             .iter()
-            .map(|resource| {
+            .enumerate()
+            .map(|(index, resource)| {
                 matches!(
                     resource.class,
                     ResourceClass::Input | ResourceClass::External
-                )
+                ) || self.zero_initialized_resources.contains(&ResourceId(index))
             })
             .collect::<Vec<_>>();
         let mut producers = vec![None; self.resources.len()];
@@ -3861,7 +4311,7 @@ impl CompilerGraphBuilder {
                         ));
                     }
                     ResourceClass::Artifact => producers[resource_index] = Some(pass_id),
-                    ResourceClass::Workspace | ResourceClass::Resident | ResourceClass::Output => {
+                    ResourceClass::Workspace | ResourceClass::Output => {
                         producers[resource_index].get_or_insert(pass_id);
                     }
                 }
@@ -3872,7 +4322,9 @@ impl CompilerGraphBuilder {
         for (index, resource) in self.resources.iter().enumerate() {
             match resource.class {
                 ResourceClass::Input | ResourceClass::External => {}
-                _ if producers[index].is_none() => {
+                _ if producers[index].is_none()
+                    && !self.zero_initialized_resources.contains(&ResourceId(index)) =>
+                {
                     return Err(format!(
                         "compiler resource {} has no producing pass",
                         resource.name,
@@ -3923,51 +4375,6 @@ impl CompilerGraphBuilder {
             }
         }
 
-        for fence in &self.lifetime_fences {
-            let first = self
-                .passes
-                .iter()
-                .position(|pass| pass.name == fence.first_pass)
-                .map(PassId)
-                .ok_or_else(|| {
-                    format!(
-                        "compiler resource lifetime fence for {} starts at unknown pass {}",
-                        self.resources[fence.resource.index()].name,
-                        fence.first_pass,
-                    )
-                })?;
-            let last = self
-                .passes
-                .iter()
-                .position(|pass| pass.name == fence.last_pass)
-                .map(PassId)
-                .ok_or_else(|| {
-                    format!(
-                        "compiler resource lifetime fence for {} ends at unknown pass {}",
-                        self.resources[fence.resource.index()].name,
-                        fence.last_pass,
-                    )
-                })?;
-            if first > last {
-                return Err(format!(
-                    "compiler resource lifetime fence for {} is reversed: {} follows {}",
-                    self.resources[fence.resource.index()].name,
-                    fence.first_pass,
-                    fence.last_pass,
-                ));
-            }
-            let index = fence.resource.index();
-            let Some(resource_first) = first_pass[index] else {
-                return Err(format!(
-                    "compiler resource lifetime fence for {} has no graph access",
-                    self.resources[index].name,
-                ));
-            };
-            let resource_last = last_pass[index].expect("accessed resource has a last pass");
-            first_pass[index] = Some(resource_first.min(first));
-            last_pass[index] = Some(resource_last.max(last));
-        }
-
         let graph_end = PassId(self.passes.len().saturating_sub(1));
         let lifetimes = (0..self.resources.len())
             .map(|index| {
@@ -3994,7 +4401,7 @@ impl CompilerGraphBuilder {
             repeated_regions: self.repeated_regions,
             paged_regions: self.paged_regions,
             paged_resources: self.paged_resources,
-            lifetime_fences: self.lifetime_fences,
+            zero_initialized_resources: self.zero_initialized_resources,
             workspace,
         })
     }
@@ -4006,16 +4413,9 @@ fn plan_graph_workspace(
 ) -> Result<WorkspacePlan, String> {
     struct SlotState {
         plan: WorkspaceSlotPlan,
-        dedicated: bool,
         lifetimes: Vec<ResourceLifetime>,
     }
 
-    // `Resident` is a per-resource incomplete-composition boundary. Keep that
-    // allocation dedicated, but do not let one partially tracked family
-    // suppress coloring for unrelated `Workspace` resources whose complete
-    // pass lifetimes are already represented by this graph. This makes graph
-    // migration compositional: a resource becomes colorable only when its own
-    // class changes from `Resident` to `Workspace`.
     let mut order = resources
         .iter()
         .enumerate()
@@ -4034,6 +4434,14 @@ fn plan_graph_workspace(
     // across several allocations and increase total memory.
     order.sort_unstable_by_key(|(_, resource, lifetime)| {
         (
+            match resource.class {
+                // Establish retained tail intervals first. Earlier workspace
+                // may then join the same slot, while the output's graph-end
+                // lifetime prevents any later workspace from doing so.
+                ResourceClass::Output => 0u8,
+                ResourceClass::Workspace | ResourceClass::Artifact => 1,
+                ResourceClass::Input | ResourceClass::External => unreachable!(),
+            },
             std::cmp::Reverse(resource.bytes),
             lifetime.first_pass,
             resource.name,
@@ -4049,24 +4457,17 @@ fn plan_graph_workspace(
     let mut slots = Vec::<SlotState>::new();
     let mut assignment_by_resource = BTreeMap::<usize, u32>::new();
     for (resource_index, resource, lifetime) in order {
-        // Retained outputs cross the graph boundary and may be consumed by a
-        // recorder stage that is intentionally outside this graph. Until a
-        // caller imports that downstream schedule explicitly, treating an
-        // output like phase-local scratch would let it reuse storage based on
-        // an incomplete lifetime. Resident state and retained outputs therefore
-        // both receive stable physical identities; Workspace remains colorable.
-        let dedicated = matches!(
-            resource.class,
-            ResourceClass::Resident | ResourceClass::Output
-        );
-        let reusable = (!disable_coloring && !dedicated)
+        // Outputs are processed before workspace; their graph-end lifetime
+        // admits only scratch that dies before publication. The materializer
+        // separately makes every output slot an exclusive physical arena,
+        // preserving its identity after the graph.
+        let reusable = (!disable_coloring)
             .then(|| {
                 slots
                     .iter()
                     .enumerate()
                     .filter(|(_, slot)| {
-                        !slot.dedicated
-                            && slot.plan.usage == resource.usage
+                        slot.plan.usage == resource.usage
                             && slot.lifetimes.iter().all(|other| {
                                 lifetime.last_pass < other.first_pass
                                     || other.last_pass < lifetime.first_pass
@@ -4090,7 +4491,6 @@ fn plan_graph_workspace(
                     bytes: resource.bytes,
                     usage: resource.usage,
                 },
-                dedicated,
                 lifetimes: Vec::new(),
             });
             index
@@ -4143,6 +4543,50 @@ fn plan_graph_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bindings_skip_feature_gated_resources_without_live_passes() {
+        let mut builder = CompilerGraphBuilder::new();
+        let unused = builder
+            .add_resource(ResourceDesc {
+                name: "unused_feature_output",
+                domain: ResourceDomain::HirNodes,
+                class: ResourceClass::Output,
+                bytes: 4,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        builder.mark_zero_initialized(unused).unwrap();
+        let graph = builder.build().unwrap();
+        assert!(graph.lifetime(unused).is_none());
+        assert!(graph.workspace_plan().assignments.is_empty());
+
+        let workspace = CompilerGraphWorkspace {
+            slots: Vec::new(),
+            slot_by_resource: vec![None],
+        };
+        let bindings = workspace.bindings(&graph).unwrap();
+        assert!(bindings.buffer(unused).is_none());
+    }
+
+    #[test]
+    fn assigned_kernel_requires_complete_reflection_before_build() {
+        let mut builder = CompilerGraphBuilder::new();
+        builder
+            .add_pass(PassDesc {
+                name: "custom_compute",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: Vec::new(),
+            })
+            .unwrap();
+        builder
+            .assign_kernel("custom_compute", "type_checker/custom")
+            .unwrap();
+
+        let error = builder.build().unwrap_err();
+        assert!(error.contains("without requiring complete reflection"));
+    }
 
     #[test]
     fn diagnostic_dependencies_come_from_resource_hazards_not_pass_sequence() {
@@ -4326,11 +4770,11 @@ mod tests {
     }
 
     #[test]
-    fn retained_output_slots_do_not_share_an_arena_with_phase_scratch() {
+    fn retained_output_reuses_only_workspace_that_dies_before_publication() {
         let mut builder = CompilerGraphBuilder::new();
-        let scratch = builder
+        let early_scratch = builder
             .add_storage(
-                "scratch",
+                "early_scratch",
                 ResourceDomain::HirNodes,
                 ResourceClass::Workspace,
                 128,
@@ -4344,12 +4788,20 @@ mod tests {
                 128,
             )
             .unwrap();
+        let late_scratch = builder
+            .add_storage(
+                "late_scratch",
+                ResourceDomain::HirNodes,
+                ResourceClass::Workspace,
+                128,
+            )
+            .unwrap();
         builder
             .add_pass(PassDesc {
-                name: "produce.scratch",
+                name: "produce.early_scratch",
                 phase: CompilerPhase::TypeCheck,
                 dispatch_domain: ResourceDomain::HirNodes,
-                accesses: vec![PassAccess::write("scratch", scratch)],
+                accesses: vec![PassAccess::write("early_scratch", early_scratch)],
             })
             .unwrap();
         builder
@@ -4360,12 +4812,23 @@ mod tests {
                 accesses: vec![PassAccess::write("output", output)],
             })
             .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "produce.late_scratch",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::HirNodes,
+                accesses: vec![
+                    PassAccess::read("output", output),
+                    PassAccess::write("late_scratch", late_scratch),
+                ],
+            })
+            .unwrap();
         let graph = builder.build().unwrap();
-        let scratch_slot = graph
+        let early_scratch_slot = graph
             .workspace_plan()
             .assignments
             .iter()
-            .find(|assignment| assignment.name == "scratch")
+            .find(|assignment| assignment.name == "early_scratch")
             .unwrap()
             .slot;
         let output_slot = graph
@@ -4375,13 +4838,23 @@ mod tests {
             .find(|assignment| assignment.name == "output")
             .unwrap()
             .slot;
+        let late_scratch_slot = graph
+            .workspace_plan()
+            .assignments
+            .iter()
+            .find(|assignment| assignment.name == "late_scratch")
+            .unwrap()
+            .slot;
+        assert_eq!(early_scratch_slot, output_slot);
+        assert_ne!(late_scratch_slot, output_slot);
         let conflicts = graph.workspace_arena_conflicts();
-        assert!(
-            conflicts.contains(&(scratch_slot.min(output_slot), scratch_slot.max(output_slot),))
-        );
+        assert!(conflicts.contains(&(
+            late_scratch_slot.min(output_slot),
+            late_scratch_slot.max(output_slot),
+        )));
 
         let placements = pack_slots_into_upstream_storage(
-            &[scratch_slot, output_slot],
+            &[output_slot, late_scratch_slot],
             &[128, 128],
             &[512, 512],
             64,
@@ -4597,6 +5070,71 @@ mod tests {
     }
 
     #[test]
+    fn downstream_input_promotes_producer_workspace_to_output() {
+        let mut producer = CompilerGraphBuilder::new();
+        let exported = producer
+            .add_resource(workspace("stage.exported", ResourceDomain::Types, 64))
+            .unwrap();
+        let late_scratch = producer
+            .add_resource(workspace("stage.late_scratch", ResourceDomain::Types, 64))
+            .unwrap();
+        producer
+            .add_pass(PassDesc {
+                name: "stage.export",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("exported", exported)],
+            })
+            .unwrap();
+        producer
+            .add_pass(PassDesc {
+                name: "stage.late",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("late_scratch", late_scratch)],
+            })
+            .unwrap();
+        let mut producer = producer.build().unwrap();
+        let slot = |graph: &CompilerGraph, resource| {
+            graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == graph.resource(resource).unwrap().name)
+                .unwrap()
+                .slot
+        };
+        assert_eq!(slot(&producer, exported), slot(&producer, late_scratch));
+
+        let mut consumer = CompilerGraphBuilder::new();
+        let imported = consumer
+            .add_resource(ResourceDesc {
+                name: "stage.exported",
+                domain: ResourceDomain::Types,
+                class: ResourceClass::Input,
+                bytes: 64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        consumer
+            .add_pass(PassDesc {
+                name: "consume.exported",
+                phase: CompilerPhase::SemanticLowering,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::read("exported", imported)],
+            })
+            .unwrap();
+        let consumer = consumer.build().unwrap();
+
+        producer.retain_resources_imported_by(&consumer).unwrap();
+        assert_eq!(
+            producer.resource(exported).unwrap().class,
+            ResourceClass::Output,
+        );
+        assert_ne!(slot(&producer, exported), slot(&producer, late_scratch));
+    }
+
+    #[test]
     fn retained_outputs_use_disjoint_ranges_of_one_physical_arena() {
         let mut builder = CompilerGraphBuilder::new();
         let left = builder
@@ -4681,189 +5219,6 @@ mod tests {
     }
 
     #[test]
-    fn lifetime_fence_prevents_aliasing_across_omitted_execution_passes() {
-        let mut builder = CompilerGraphBuilder::new();
-        let carried = builder
-            .add_resource(workspace("carried", ResourceDomain::Types, 64))
-            .unwrap();
-        let late = builder
-            .add_resource(workspace("late", ResourceDomain::Types, 64))
-            .unwrap();
-        let begin = builder
-            .add_pass(PassDesc {
-                name: "schedule.begin",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![PassAccess::write("carried", carried)],
-            })
-            .unwrap();
-        builder
-            .add_pass(PassDesc {
-                name: "schedule.middle",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![],
-            })
-            .unwrap();
-        let end = builder
-            .add_pass(PassDesc {
-                name: "schedule.end",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![PassAccess::write("late", late)],
-            })
-            .unwrap();
-        builder
-            .fence_resource_lifetime(carried, "schedule.begin", "schedule.end")
-            .unwrap();
-        let graph = builder.build().unwrap();
-
-        assert_eq!(graph.lifetime(carried).unwrap().first_pass, begin);
-        assert_eq!(graph.lifetime(carried).unwrap().last_pass, end);
-        assert_eq!(graph.workspace_plan().slots.len(), 2);
-        assert_eq!(graph.lifetime_fences().len(), 1);
-    }
-
-    #[test]
-    fn lifetime_fence_rejects_reversed_execution_interval() {
-        let mut builder = CompilerGraphBuilder::new();
-        let carried = builder
-            .add_resource(workspace("carried", ResourceDomain::Types, 64))
-            .unwrap();
-        builder
-            .add_pass(PassDesc {
-                name: "first",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![PassAccess::write("carried", carried)],
-            })
-            .unwrap();
-        builder
-            .add_pass(PassDesc {
-                name: "last",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![],
-            })
-            .unwrap();
-        builder
-            .fence_resource_lifetime(carried, "last", "first")
-            .unwrap();
-
-        let error = builder.build().unwrap_err();
-        assert!(error.contains("is reversed"), "{error}");
-    }
-
-    #[test]
-    fn operation_resource_fence_extends_every_selected_pass_resource() {
-        let mut builder = CompilerGraphBuilder::new();
-        let first = builder
-            .add_resource(workspace("first_resource", ResourceDomain::Types, 64))
-            .unwrap();
-        let second = builder
-            .add_resource(workspace("second_resource", ResourceDomain::Types, 64))
-            .unwrap();
-        let begin = builder
-            .add_pass(PassDesc {
-                name: "operation.begin",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![PassAccess::write("first_resource", first)],
-            })
-            .unwrap();
-        builder
-            .add_pass(PassDesc {
-                name: "operation.consume",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![
-                    PassAccess::read("first_resource", first),
-                    PassAccess::write("second_resource", second),
-                ],
-            })
-            .unwrap();
-        let end = builder
-            .add_pass(PassDesc {
-                name: "operation.interval_end",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![],
-            })
-            .unwrap();
-        builder
-            .fence_resources_accessed_by_passes(
-                &["operation.begin", "operation.consume"],
-                "operation.begin",
-                "operation.interval_end",
-            )
-            .unwrap();
-
-        let graph = builder.build().unwrap();
-        assert_eq!(graph.lifetime(first).unwrap().first_pass, begin);
-        assert_eq!(graph.lifetime(first).unwrap().last_pass, end);
-        assert_eq!(graph.lifetime(second).unwrap().first_pass, begin);
-        assert_eq!(graph.lifetime(second).unwrap().last_pass, end);
-        assert_eq!(graph.workspace_plan().slots.len(), 2);
-    }
-
-    #[test]
-    fn resident_resource_is_dedicated_without_suppressing_complete_workspace_coloring() {
-        let mut builder = CompilerGraphBuilder::new();
-        let early = builder
-            .add_resource(workspace("early", ResourceDomain::Types, 64))
-            .unwrap();
-        let resident = builder
-            .add_resource(ResourceDesc {
-                name: "resident",
-                domain: ResourceDomain::Types,
-                class: ResourceClass::Resident,
-                bytes: 32,
-                usage: WorkspaceUsageClass::Storage,
-            })
-            .unwrap();
-        let late = builder
-            .add_resource(workspace("late", ResourceDomain::Types, 16))
-            .unwrap();
-        builder
-            .add_pass(PassDesc {
-                name: "early.write",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![PassAccess::write("early", early)],
-            })
-            .unwrap();
-        builder
-            .add_pass(PassDesc {
-                name: "resident.write",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![PassAccess::write("resident", resident)],
-            })
-            .unwrap();
-        builder
-            .add_pass(PassDesc {
-                name: "late.write",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![PassAccess::write("late", late)],
-            })
-            .unwrap();
-        let graph = builder.build().unwrap();
-        let slot = |name| {
-            graph
-                .workspace_plan()
-                .assignments
-                .iter()
-                .find(|assignment| assignment.name == name)
-                .unwrap()
-                .slot
-        };
-        assert_ne!(slot("early"), slot("resident"));
-        assert_ne!(slot("resident"), slot("late"));
-        assert_eq!(slot("early"), slot("late"));
-    }
-
-    #[test]
     fn indirect_slots_never_share_a_physical_arena_with_storage() {
         let mut builder = CompilerGraphBuilder::new();
         let dispatch = builder
@@ -4909,40 +5264,6 @@ mod tests {
             slot("dispatch").max(slot("storage")),
         );
         assert!(graph.workspace_arena_conflicts().contains(&pair));
-    }
-
-    #[test]
-    fn resident_clear_is_a_physical_job_boundary_not_a_workspace_producer() {
-        let mut builder = CompilerGraphBuilder::new();
-        let resident = builder
-            .add_resource(ResourceDesc {
-                name: "resident",
-                domain: ResourceDomain::Types,
-                class: ResourceClass::Resident,
-                bytes: 32,
-                usage: WorkspaceUsageClass::Storage,
-            })
-            .unwrap();
-        builder
-            .add_resident_clear_pass("job.clear", CompilerPhase::TypeCheck)
-            .unwrap();
-        let graph = builder.build().unwrap();
-        assert_eq!(
-            graph.lifetime(resident).unwrap().producer,
-            graph.pass_id("job.clear")
-        );
-
-        let mut incomplete = CompilerGraphBuilder::new();
-        incomplete
-            .add_resource(workspace("temporary", ResourceDomain::Types, 32))
-            .unwrap();
-        incomplete
-            .add_resident_clear_pass("job.clear", CompilerPhase::TypeCheck)
-            .unwrap();
-        assert_eq!(
-            incomplete.build().unwrap_err(),
-            "compiler resource temporary has no producing pass",
-        );
     }
 
     #[test]
@@ -5541,6 +5862,37 @@ mod tests {
     }
 
     #[test]
+    fn zero_initialized_workspace_remains_colorable() {
+        let mut builder = CompilerGraphBuilder::new();
+        let first = builder
+            .add_resource(workspace("zero.first", ResourceDomain::Types, 64))
+            .unwrap();
+        let second = builder
+            .add_resource(workspace("zero.second", ResourceDomain::Types, 64))
+            .unwrap();
+        builder.mark_zero_initialized(first).unwrap();
+        builder.mark_zero_initialized(second).unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "zero.read.first",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::read("value", first)],
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "zero.read.second",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::read("value", second)],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+        assert_eq!(graph.workspace_plan().slots.len(), 1);
+    }
+
+    #[test]
     fn graph_accepts_a_pass_that_initializes_before_reading() {
         let mut builder = CompilerGraphBuilder::new();
         let value = builder
@@ -5684,6 +6036,46 @@ mod tests {
                 .unwrap_err()
                 .contains("omits reflected storage binding semantic_out")
         );
+    }
+
+    #[test]
+    fn reflected_indirect_operation_keeps_dispatch_arguments_live_through_the_consumer() {
+        let mut builder = CompilerGraphBuilder::new();
+        let dispatch_args = builder
+            .add_resource(ResourceDesc {
+                name: "dispatch_args",
+                domain: ResourceDomain::DispatchArguments,
+                class: ResourceClass::Workspace,
+                bytes: 12,
+                usage: WorkspaceUsageClass::StorageIndirect,
+            })
+            .unwrap();
+        let producer = builder
+            .add_pass(PassDesc {
+                name: "dispatch.prepare",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::DispatchArguments,
+                accesses: vec![PassAccess::write("dispatch_args", dispatch_args)],
+            })
+            .unwrap();
+        let consumer = ReflectedComputeSpec::new(
+            "semantic.indirect",
+            "unused/test/kernel",
+            CompilerPhase::TypeCheck,
+            ResourceDomain::HirNodes,
+        )
+        .with_indirect_dispatch("dispatch_args")
+        .register_reflection(&mut builder, &SlangReflection::default())
+        .unwrap();
+
+        let graph = builder.build().unwrap();
+        let lifetime = graph.lifetime(dispatch_args).unwrap();
+        assert_eq!(lifetime.first_pass, producer);
+        assert_eq!(lifetime.last_pass, consumer);
+        let access = graph.pass(consumer).unwrap().accesses.last().unwrap();
+        assert_eq!(access.binding, INDIRECT_DISPATCH_BINDING);
+        assert_eq!(access.mode, AccessMode::Read);
+        assert!(!access.reflected);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use anyhow::Result;
 use encase::ShaderType;
 
 use crate::{
-    gpu::passes_core::{PassData, bind_group},
+    gpu::passes_core::{BindGroupCache, PassData},
     parser::buffers::ParserBuffers,
 };
 
@@ -23,6 +23,10 @@ pub struct HirStringDecodePass {
 }
 crate::gpu::passes_core::impl_static_shader_pass!(HirStringDecodePass,label:"hir_string_decode",shader:"parser/hir/string/decode");
 impl HirStringDecodePass {
+    pub(in crate::parser) fn graph_pass(&self) -> &PassData {
+        &self.data
+    }
+
     pub fn record_with_source(
         &self,
         device: &wgpu::Device,
@@ -31,6 +35,7 @@ impl HirStringDecodePass {
         b: &ParserBuffers,
         source_len: u32,
         source: &wgpu::Buffer,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         crate::parser::buffers::write_uniform(
             queue,
@@ -80,20 +85,25 @@ impl HirStringDecodePass {
                 b.hir_string_data_words.as_entire_binding(),
             ),
         ]);
-        let group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("parser_hir_string_decode"),
-            &self.data.bind_group_layouts[0],
-            &self.data.reflection,
-            0,
-            &resources,
-        )?;
+        let group = cache
+            .reflected_for_graph_external_invocation(
+                device,
+                "parser_hir_string_decode",
+                &self.data,
+                b,
+                &resources,
+                Some(&b.hir_list_rank_dispatch_args),
+                &[source],
+            )?
+            .into_iter()
+            .next()
+            .expect("string-decode pass must have one reflected bind group");
         crate::gpu::passes_core::record_or_defer_compute_indirect(
             encoder,
             &self.data,
-            &group,
+            group.as_ref(),
             "parser_hir_string_decode",
-            &b.hir_list_rank_dispatch_args.buffer,
+            &b.hir_list_rank_dispatch_args,
         );
         Ok(())
     }

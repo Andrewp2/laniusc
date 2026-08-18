@@ -51,11 +51,7 @@ pub(super) fn read_status_words(bytes: &[u8]) -> Result<[u32; 4]> {
 
 /// Hashes buffer identities that affect resident bind-group reuse.
 pub(super) fn buffer_fingerprint(buffers: &[&wgpu::Buffer]) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    for buffer in buffers {
-        buffer.hash(&mut hasher);
-    }
-    hasher.finish()
+    crate::gpu::passes_core::buffer_fingerprint(buffers)
 }
 
 /// Allocates a writable typed `u32` storage buffer with at least one element.
@@ -83,53 +79,6 @@ pub(super) fn typed_storage_u32_rw(
     buffer
 }
 
-pub(super) trait ReusableStorageBuffer: Copy {
-    fn allocation_id(self) -> Option<u64>;
-    fn alias_u32(self, count: usize) -> LaniusBuffer<u32>;
-}
-
-impl ReusableStorageBuffer for &wgpu::Buffer {
-    fn allocation_id(self) -> Option<u64> {
-        None
-    }
-
-    fn alias_u32(self, count: usize) -> LaniusBuffer<u32> {
-        LaniusBuffer::untracked_alias((self.clone(), self.size()), count)
-    }
-}
-
-impl ReusableStorageBuffer for crate::gpu::buffers::TrackedBufferView<'_> {
-    fn allocation_id(self) -> Option<u64> {
-        self.allocation_id()
-    }
-
-    fn alias_u32(self, count: usize) -> LaniusBuffer<u32> {
-        self.alias(count)
-    }
-}
-
-impl<T> ReusableStorageBuffer for &LaniusBuffer<T> {
-    fn allocation_id(self) -> Option<u64> {
-        self.allocation_id()
-    }
-
-    fn alias_u32(self, count: usize) -> LaniusBuffer<u32> {
-        self.alias(count)
-    }
-}
-
-/// Wraps existing storage as typed `u32` rows without allocating. Tracked
-/// phase-boundary views retain their compiler allocation identity.
-pub(super) fn typed_alias_storage_u32<B: ReusableStorageBuffer>(
-    source: B,
-    count: usize,
-) -> LaniusBuffer<u32> {
-    let expected = source.allocation_id();
-    let alias = source.alias_u32(count);
-    debug_assert_eq!(alias.allocation_id(), expected);
-    alias
-}
-
 /// Allocates a writable typed `u32` storage buffer initialized to one repeated value.
 pub(super) fn typed_storage_u32_fill_rw(
     device: &wgpu::Device,
@@ -155,11 +104,14 @@ pub(super) fn typed_storage_u32_fill_rw(
 }
 
 /// Allocates a host-readable `u32` readback buffer sized for `count` words.
-pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
+pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> LaniusBuffer<u32> {
+    let count = count.max(1);
+    let byte_size = count * std::mem::size_of::<u32>();
+    let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
-        size: (count.max(1) * 4) as u64,
+        size: byte_size as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
-    })
+    });
+    LaniusBuffer::new_labeled((raw, byte_size as u64), count, label)
 }

@@ -12,7 +12,7 @@ pub(in crate::type_checker) fn record_dependency_pages(
     state: &ModulePathState,
 ) -> Result<()> {
     record_each_dependency_page(device, queue, encoder, pages, |encoder| {
-        record_dependency_page(passes, encoder, state)
+        record_dependency_page(passes, encoder, state, DEPENDENCY_PAGE_MODULE_PATHS)
     })
 }
 
@@ -53,6 +53,18 @@ fn submit_dependency_page_boundary(
     );
 }
 
+fn record_graph_invocation(
+    operation: &ComputeOperation,
+    invocation: Option<&ComputeInvocation>,
+    encoder: &mut wgpu::CommandEncoder,
+) -> Result<()> {
+    if let Some(invocation) = invocation {
+        operation.record_invocation(encoder, invocation)
+    } else {
+        operation.record(encoder)
+    }
+}
+
 /// Records the complete page-local dependency lookup and projection region.
 /// Local module/path discovery must precede this operation; consumers of the
 /// projected stable identities must follow it. The operation contains no
@@ -62,6 +74,7 @@ pub(in crate::type_checker) fn record_dependency_page(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
+    names: DependencyPagePassNames,
 ) -> Result<()> {
     let Some(visibility) = &state.dependency_visibility else {
         return Ok(());
@@ -70,137 +83,123 @@ pub(in crate::type_checker) fn record_dependency_page(
         .dependency_interfaces
         .as_ref()
         .expect("dependency visibility requires dependency interfaces");
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/dependencies/00a_clear_module_lookup"),
-        state
-            .bind_groups
-            .clear_dependency_module_lookup
-            .as_ref()
-            .expect("dependency interfaces require module lookup clear"),
-        "type_check.dependencies.clear_module_lookup",
-        dependencies.module_lookup_capacity.max(1),
-    )?;
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/dependencies/00_build_module_lookup"),
-        state
-            .bind_groups
-            .build_dependency_module_lookup
-            .as_ref()
-            .expect("dependency interfaces require module lookup build"),
-        "type_check.dependencies.build_module_lookup",
-        dependencies.module_count.max(1),
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/dependencies/01_resolve_imports"),
-        state
-            .bind_groups
-            .resolve_dependency_imports
-            .as_ref()
-            .expect("dependency interfaces require import resolution"),
-        "type_check.dependencies.resolve_imports",
-        &state.import_dispatch_args,
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/dependencies/02_count_import_visibility"),
+    let _ = dependencies;
+    let clear_module_lookup = state
+        .bind_groups
+        .clear_dependency_module_lookup
+        .as_ref()
+        .expect("dependency interfaces require module lookup clear");
+    let build_module_lookup = state
+        .bind_groups
+        .build_dependency_module_lookup
+        .as_ref()
+        .expect("dependency interfaces require module lookup build");
+    let resolve_imports = state
+        .bind_groups
+        .resolve_dependency_imports
+        .as_ref()
+        .expect("dependency interfaces require import resolution");
+    match names.stage {
+        DependencyPageStage::ModulePaths => {
+            clear_module_lookup.record(encoder)?;
+            build_module_lookup.record(encoder)?;
+            resolve_imports.record(encoder)?;
+        }
+        DependencyPageStage::CallCollection => {
+            clear_module_lookup.record_invocation(
+                encoder,
+                state
+                    .bind_groups
+                    .clear_dependency_module_lookup_call_collection
+                    .as_ref()
+                    .expect("dependency call collection requires module lookup clear"),
+            )?;
+            build_module_lookup.record_invocation(
+                encoder,
+                state
+                    .bind_groups
+                    .build_dependency_module_lookup_call_collection
+                    .as_ref()
+                    .expect("dependency call collection requires module lookup build"),
+            )?;
+            resolve_imports.record_invocation(
+                encoder,
+                state
+                    .bind_groups
+                    .resolve_dependency_imports_call_collection
+                    .as_ref()
+                    .expect("dependency call collection requires import resolution"),
+            )?;
+        }
+    }
+    let call_collection = match names.stage {
+        DependencyPageStage::ModulePaths => None,
+        DependencyPageStage::CallCollection => Some(visibility),
+    };
+    record_graph_invocation(
         &visibility.count_group,
-        "type_check.dependencies.count_import_visibility",
-        &state.import_dispatch_args,
-    )?;
-    visibility.scan.record(encoder)?;
-    record_compute(
+        call_collection.map(|state| &state.count_call_collection),
         encoder,
-        &passes.kernel("type_checker/dependencies/03_scatter_import_visibility"),
+    )?;
+    visibility
+        .scan
+        .record_with_graph_passes(encoder, names.visible_scan)?;
+    record_graph_invocation(
         &visibility.scatter_group,
-        "type_check.dependencies.scatter_import_visibility",
-        visibility.visible_capacity,
-    )?;
-    record_compute(
+        call_collection.map(|state| &state.scatter_call_collection),
         encoder,
-        &passes.kernel("type_checker/dependencies/04_clear_visible_lookup"),
+    )?;
+    record_graph_invocation(
         &visibility.clear_lookup_group,
-        "type_check.dependencies.clear_visible_lookup",
-        visibility.lookup_capacity,
-    )?;
-    record_compute(
+        call_collection.map(|state| &state.clear_lookup_call_collection),
         encoder,
-        &passes.kernel("type_checker/dependencies/05_build_visible_lookup"),
+    )?;
+    record_graph_invocation(
         &visibility.build_lookup_group,
-        "type_check.dependencies.build_visible_lookup",
-        visibility.visible_capacity,
-    )?;
-    record_compute_indirect(
+        call_collection.map(|state| &state.build_lookup_call_collection),
         encoder,
-        &passes.kernel("type_checker/dependencies/06_resolve_paths"),
+    )?;
+    record_graph_invocation(
         &visibility.resolve_type_group,
-        "type_check.dependencies.resolve_type_paths",
-        &state.path_dispatch_args,
-    )?;
-    record_compute_indirect(
+        call_collection.map(|state| &state.resolve_type_call_collection),
         encoder,
-        &passes.kernel("type_checker/dependencies/06_resolve_paths"),
+    )?;
+    record_graph_invocation(
         &visibility.resolve_value_group,
-        "type_check.dependencies.resolve_value_paths",
-        &state.path_dispatch_args,
-    )?;
-    record_dependency_type_index(passes, encoder, state)?;
-    record_compute_indirect(
+        call_collection.map(|state| &state.resolve_value_call_collection),
         encoder,
-        &passes.kernel("type_checker/dependencies/11_project_types"),
+    )?;
+    record_dependency_type_index(passes, encoder, state, names.type_index)?;
+    record_graph_invocation(
         &visibility.project_types_group,
-        "type_check.dependencies.project_types",
-        &state.path_dispatch_args,
+        call_collection.map(|state| &state.project_types_call_collection),
+        encoder,
     )
 }
 
 /// Rebuilds the canonical type roots, subtree bounds, and declaration arity
 /// for whichever page currently occupies the reusable dependency slot.
 pub(in crate::type_checker) fn record_dependency_type_index(
-    passes: &TypeCheckPasses,
+    _passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
+    names: DependencyTypeIndexPassNames,
 ) -> Result<()> {
     let Some(visibility) = &state.dependency_visibility else {
         return Ok(());
     };
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/dependencies/09_init_canonical_type_roots"),
-        &visibility.init_canonical_type_index_group,
-        "type_check.dependencies.init_canonical_type_index",
-        visibility.canonical_type_count.max(1),
-    )?;
-    for round in 0..visibility.canonical_type_jump_rounds {
-        let group = if round % 2 == 0 {
-            &visibility.jump_canonical_type_index_a_to_b_group
-        } else {
-            &visibility.jump_canonical_type_index_b_to_a_group
-        };
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/dependencies/10_jump_canonical_type_roots"),
-            group,
-            "type_check.dependencies.jump_canonical_type_index",
-            visibility.canonical_type_count.max(1),
-        )?;
-    }
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/dependencies/12_clear_declaration_generic_arity"),
-        &visibility.clear_declaration_generic_arity_group,
-        "type_check.dependencies.clear_declaration_generic_arity",
-        visibility.canonical_declaration_count.max(1),
-    )?;
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/dependencies/13_count_declaration_generic_arity"),
-        &visibility.count_declaration_generic_arity_group,
-        "type_check.dependencies.count_declaration_generic_arity",
-        visibility.canonical_member_count.max(1),
-    )
+    let invocations = match names.stage {
+        DependencyTypeIndexStage::ModulePaths => &visibility.type_index_module_paths,
+        DependencyTypeIndexStage::CallCollection => &visibility.type_index_call_collection,
+        DependencyTypeIndexStage::AfterTypeClear => &visibility.type_index_after_type_clear,
+        DependencyTypeIndexStage::TypeInstanceProjection => {
+            &visibility.type_index_type_instance_projection
+        }
+        DependencyTypeIndexStage::CallParamScatter => &visibility.type_index_call_param_scatter,
+        DependencyTypeIndexStage::MethodProjection => &visibility.type_index_method_projection,
+        DependencyTypeIndexStage::CallValidation => &visibility.type_index_call_validation,
+    };
+    visibility.type_index.record(encoder, invocations)
 }
 
 /// Projects direct member calls against the dependency page currently loaded
@@ -208,21 +207,15 @@ pub(in crate::type_checker) fn record_dependency_type_index(
 /// resolution so imported methods are treated as resolved call targets rather
 /// than being rejected by the local method table.
 pub(in crate::type_checker) fn record_dependency_methods(
-    passes: &TypeCheckPasses,
+    _passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
-    hir_active_dispatch_args: &LaniusBuffer<u32>,
+    _hir_active_dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<()> {
     let Some(visibility) = &state.dependency_visibility else {
         return Ok(());
     };
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/dependencies/15_project_methods"),
-        &visibility.project_methods_group,
-        "type_check.dependencies.project_methods",
-        hir_active_dispatch_args,
-    )
+    visibility.project_methods_group.record(encoder)
 }
 
 /// Validates calls whose stable declaration identities belong to the active
@@ -232,50 +225,27 @@ pub(in crate::type_checker) fn record_dependency_call_validation(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
-    hir_active_dispatch_args: &LaniusBuffer<u32>,
+    _hir_active_dispatch_args: &LaniusBuffer<u32>,
     rebuild_type_index: bool,
 ) -> Result<()> {
     let Some(visibility) = &state.dependency_visibility else {
         return Ok(());
     };
     if rebuild_type_index {
-        record_dependency_type_index(passes, encoder, state)?;
+        record_dependency_type_index(
+            passes,
+            encoder,
+            state,
+            DEPENDENCY_TYPE_INDEX_CALL_VALIDATION,
+        )?;
     }
     visibility.call_compare_scan_input.clear(encoder, 0, None);
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/dependencies/08_validate_call_args"),
-        &visibility.validate_call_args_group,
-        "type_check.dependencies.validate_call_args",
-        hir_active_dispatch_args,
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/dependencies/08a_validate_call_results"),
-        &visibility.validate_call_results_group,
-        "type_check.dependencies.validate_call_results.substitute",
-        hir_active_dispatch_args,
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/dependencies/08a_validate_call_results"),
-        &visibility.validate_call_results_group,
-        "type_check.dependencies.validate_call_results.validate",
-        hir_active_dispatch_args,
-    )?;
+    visibility.validate_call_args_group.record(encoder)?;
+    visibility.validate_call_results_group.record(encoder)?;
+    visibility
+        .validate_call_results_group
+        .record_invocation(encoder, &visibility.validate_call_results_validate)?;
     visibility.call_compare_scan.record(encoder)?;
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/count/dispatch_args"),
-        &visibility.call_compare_dispatch_group,
-        "type_check.dependencies.call_compare_dispatch_args",
-        1,
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/dependencies/08b_validate_call_type_args"),
-        &visibility.validate_call_type_args_group,
-        "type_check.dependencies.validate_call_type_args",
-        &visibility.call_compare_dispatch_args,
-    )
+    visibility.call_compare_dispatch_group.record(encoder)?;
+    visibility.validate_call_type_args_group.record(encoder)
 }

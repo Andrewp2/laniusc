@@ -6,6 +6,13 @@ use wgpu;
 /// Default minimum span duration printed by timing helpers.
 pub const MINIMUM_TIME_TO_NOT_ELIDE_MS: f64 = 0.2;
 
+/// Returns whether compile GPU timestamps are needed for console output or tracing.
+pub(crate) fn compile_timing_requested() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+        || crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false)
+        || crate::gpu::trace::enabled()
+}
+
 /// A timer for measuring GPU execution time.
 pub struct GpuTimer {
     period_in_nanoseconds: f32,

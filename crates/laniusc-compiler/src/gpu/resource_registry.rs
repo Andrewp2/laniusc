@@ -89,6 +89,20 @@ impl<'a> ResourceBinding<'a> for TrackedBufferView<'a> {
     }
 }
 
+impl<'a, 'b> ResourceBinding<'a> for &'b TrackedBufferView<'a> {
+    fn binding(self) -> wgpu::BindingResource<'a> {
+        (*self).as_entire_binding()
+    }
+
+    fn graph_identity(self) -> (Option<u64>, u64, u64) {
+        (self.allocation_id(), self.byte_offset, self.byte_size)
+    }
+
+    fn logical_byte_size(self) -> u64 {
+        self.byte_size
+    }
+}
+
 impl<'a, 'b, T> ResourceBinding<'a> for &'b &'a LaniusBuffer<T> {
     fn binding(self) -> wgpu::BindingResource<'a> {
         (*self).as_entire_binding()
@@ -139,6 +153,26 @@ impl<'a> ResourceMap<'a> {
         }
     }
 
+    fn add_named(&mut self, name: String, resource: wgpu::BindingResource<'a>) {
+        if let wgpu::BindingResource::Buffer(binding) = &resource {
+            let byte_size = binding
+                .size
+                .map(std::num::NonZeroU64::get)
+                .unwrap_or_else(|| binding.buffer.size().saturating_sub(binding.offset));
+            self.graph_identities.insert(
+                name.clone(),
+                GraphResourceIdentity {
+                    allocation_id: super::buffers::tracked_buffer_identity(binding.buffer)
+                        .map(|(id, _, _)| id),
+                    byte_offset: binding.offset,
+                    byte_size,
+                    logical_byte_size: byte_size,
+                },
+            );
+        }
+        self.resources.insert(name, resource);
+    }
+
     /// Associates this registry with the graph that owns its logical buffers.
     /// Cloned operation-local registries retain this contract automatically.
     pub(crate) fn attach_graph(
@@ -147,12 +181,6 @@ impl<'a> ResourceMap<'a> {
         allocations: &'a CompilerGraphAllocations,
     ) {
         self.graph_context = Some(GraphContext { graph, allocations });
-    }
-
-    /// Clones the lightweight binding views for an operation that needs a
-    /// small set of local aliases or uniform overrides.
-    pub(crate) fn to_binding_map(&self) -> HashMap<String, wgpu::BindingResource<'a>> {
-        self.resources.clone()
     }
 
     /// Returns the exact logical range registered for a reflected buffer.
@@ -176,26 +204,7 @@ impl<'a> ResourceMap<'a> {
 
     /// Inserts a prebuilt binding resource under the shader resource name.
     pub(crate) fn add(&mut self, name: &'static str, resource: wgpu::BindingResource<'a>) {
-        // Raw upstream buffers are valid immutable graph inputs even when
-        // they are not wrapped in `LaniusBuffer`. Preserve their extent here;
-        // writable graph resources still fail validation without an owned
-        // allocation identity.
-        if let wgpu::BindingResource::Buffer(binding) = &resource {
-            let byte_size = binding
-                .size
-                .map(std::num::NonZeroU64::get)
-                .unwrap_or_else(|| binding.buffer.size().saturating_sub(binding.offset));
-            self.graph_identities.insert(
-                name.to_owned(),
-                GraphResourceIdentity {
-                    allocation_id: None,
-                    byte_offset: binding.offset,
-                    byte_size,
-                    logical_byte_size: byte_size,
-                },
-            );
-        }
-        self.resources.insert(name.to_owned(), resource);
+        self.add_named(name.to_owned(), resource);
     }
 
     /// Inserts a buffer-like value under the shader resource name.
@@ -285,6 +294,34 @@ impl<'a> ResourceMap<'a> {
         }
     }
 
+    /// Registers only the graph-owned resources used by one operation.
+    /// Operation caches should prefer this over importing the whole graph:
+    /// construction cost then scales with the shader interface rather than
+    /// with every resource declared by a large compiler phase.
+    pub(crate) fn register_pass_bindings(
+        &mut self,
+        graph: &CompilerGraph,
+        bindings: &'a CompilerGraphBindings,
+        pass_name: &str,
+    ) -> Result<()> {
+        let pass = graph
+            .pass_id(pass_name)
+            .and_then(|pass| graph.pass(pass))
+            .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{pass_name}`"))?;
+        for access in &pass.accesses {
+            let Some(buffer) = bindings.buffer(access.resource) else {
+                continue;
+            };
+            let canonical = graph
+                .resource(access.resource)
+                .expect("pass access resource came from graph")
+                .name;
+            self.buffer(canonical, buffer);
+            self.buffer(access.binding, buffer);
+        }
+        Ok(())
+    }
+
     /// Rebinds one logical graph resource and every reflected name that refers
     /// to it. Phase imports use this after registering the resident workspace,
     /// so bind-group construction and ownership validation see the same view.
@@ -327,23 +364,6 @@ impl<'a> ResourceMap<'a> {
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("type-check resource `{name}` is not registered"))?;
         Ok((identity.logical_byte_size / 4).min(u64::from(u32::MAX)) as u32)
-    }
-
-    /// Builds one reflected bind group from the shared resource registry,
-    /// replacing only the bindings which are local to this invocation.
-    ///
-    /// Most compiler passes bind resources by their Slang names.  Algorithms
-    /// such as radix sort additionally have a per-step uniform and ping-pong
-    /// input/output aliases.  Keeping those few aliases here lets reflection
-    /// remain the source of truth for the rest of the shader interface.
-    pub(crate) fn reflected_bind_group_with_overrides(
-        &self,
-        device: &wgpu::Device,
-        label: &str,
-        pass: &PassData,
-        overrides: &[(&str, wgpu::BindingResource<'a>)],
-    ) -> Result<wgpu::BindGroup> {
-        reflected_bind_group_with_overrides(device, label, pass, &self.resources, overrides)
     }
 
     /// Resolves one graph pass's concrete storage bindings from the same

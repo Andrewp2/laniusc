@@ -1,5 +1,3 @@
-use super::super::*;
-
 /// Capacity and workgroup layout for module/path resident storage.
 ///
 /// These derived sizes keep the allocation policy in one place while the
@@ -17,7 +15,6 @@ pub(in crate::type_checker) struct Layout {
     pub(in crate::type_checker) import_record_capacity_u32: u32,
     pub(in crate::type_checker) import_visible_capacity: usize,
     pub(in crate::type_checker) import_visible_capacity_u32: u32,
-    pub(in crate::type_checker) key_radix_histogram_len: usize,
 }
 
 impl Layout {
@@ -50,9 +47,6 @@ impl Layout {
             token_capacity.max(1) as usize
         };
         let import_visible_capacity_u32 = import_visible_capacity as u32;
-        let key_radix_histogram_len =
-            module_n_blocks.max(record_n_blocks).max(1) as usize * RADIX_U8_BUCKET_COUNT as usize;
-
         Self {
             n_blocks,
             record_capacity,
@@ -65,7 +59,6 @@ impl Layout {
             import_record_capacity_u32,
             import_visible_capacity,
             import_visible_capacity_u32,
-            key_radix_histogram_len,
         }
     }
 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::{
-    gpu::passes_core::{PassData, bind_group, make_pass_data_from_shader_key},
+    gpu::passes_core::{BindGroupCache, PassData, make_pass_data_from_shader_key},
     parser::{
         buffers::ParserBuffers,
         passes::hir::{bounded_walk_step_capacity, nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN},
@@ -16,6 +16,40 @@ pub struct TreeRelationOperation {
     pair_data: PassData,
     triple_data: PassData,
 }
+
+#[derive(Clone, Copy)]
+pub(in crate::parser) struct TreeRelationInvocation {
+    pub a_to_b: &'static str,
+    pub b_to_a: &'static str,
+    pub a_to_b_final: &'static str,
+    pub finalize: &'static str,
+}
+
+pub(in crate::parser) const FN_SIGNATURE_OWNER: TreeRelationInvocation = TreeRelationInvocation {
+    a_to_b: "hir_fn_signature_owner_step.a_to_b",
+    b_to_a: "hir_fn_signature_owner_step.b_to_a",
+    a_to_b_final: "hir_fn_signature_owner_step.a_to_b_final",
+    finalize: "hir_fn_signature_owner_step.finalize",
+};
+pub(in crate::parser) const MATCH_ARM_OWNER: TreeRelationInvocation = TreeRelationInvocation {
+    a_to_b: "hir_match_arm_owner_step.a_to_b",
+    b_to_a: "hir_match_arm_owner_step.b_to_a",
+    a_to_b_final: "hir_match_arm_owner_step.a_to_b_final",
+    finalize: "hir_match_arm_owner_step.finalize",
+};
+pub(in crate::parser) const CANONICAL_VARIANT_PAYLOAD_OWNER: TreeRelationInvocation =
+    TreeRelationInvocation {
+        a_to_b: "hir_canonical_variant_payload_owner_step.a_to_b",
+        b_to_a: "hir_canonical_variant_payload_owner_step.b_to_a",
+        a_to_b_final: "hir_canonical_variant_payload_owner_step.a_to_b_final",
+        finalize: "hir_canonical_variant_payload_owner_step.finalize",
+    };
+pub(in crate::parser) const CANONICAL_RELATIONS: TreeRelationInvocation = TreeRelationInvocation {
+    a_to_b: "hir_canonical_relations_step.a_to_b",
+    b_to_a: "hir_canonical_relations_step.b_to_a",
+    a_to_b_final: "hir_canonical_relations_step.a_to_b_final",
+    finalize: "hir_canonical_relations_step.finalize",
+};
 
 impl TreeRelationOperation {
     pub fn new(device: &wgpu::Device) -> Result<Self> {
@@ -41,28 +75,9 @@ impl TreeRelationOperation {
         })
     }
 
-    /// Records all semantic parent propagation steps using the raw-depth schedule.
-    pub fn record_steps(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-    ) -> Result<()> {
-        self.record_steps_for_buffers(
-            device,
-            encoder,
-            buffers,
-            &buffers.hir_semantic_parent_link_a,
-            &buffers.hir_semantic_parent_value_a,
-            &buffers.hir_semantic_parent_link_b,
-            &buffers.hir_semantic_parent_value_b,
-            "hir_semantic_parent_step",
-        )
-    }
-
     /// Propagates one nearest-ancestor relation through caller-selected
     /// phase-local link/value slots.
-    pub fn record_steps_for_buffers(
+    pub(in crate::parser) fn record_steps_for_buffers(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
@@ -71,7 +86,8 @@ impl TreeRelationOperation {
         value_a: &crate::gpu::buffers::LaniusBuffer<u32>,
         link_b: &crate::gpu::buffers::LaniusBuffer<u32>,
         value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
-        label: &'static str,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         self.record_steps_for_buffers_after_local_span(
             device,
@@ -82,17 +98,19 @@ impl TreeRelationOperation {
             link_b,
             value_b,
             SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
-            label,
+            invocation,
+            cache,
         )
     }
 
     /// Propagates a canonical-family relation through the shared tree slots.
-    pub fn record_canonical_steps(
+    pub(in crate::parser) fn record_canonical_steps(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        label: &'static str,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         self.record_steps_for_buffers_after_local_span(
             device,
@@ -103,7 +121,8 @@ impl TreeRelationOperation {
             &buffers.hir_semantic_parent_link_b,
             &buffers.hir_semantic_parent_value_b,
             crate::parser::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
-            label,
+            invocation,
+            cache,
         )
     }
 
@@ -118,7 +137,8 @@ impl TreeRelationOperation {
         link_b: &crate::gpu::buffers::LaniusBuffer<u32>,
         value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
         local_span: u32,
-        label: &'static str,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         self.record_schedule(
             device,
@@ -128,19 +148,21 @@ impl TreeRelationOperation {
             SINGLE_NAMES,
             TreeRelationBuffers::new(link_a, link_b, [value_a], [value_b]),
             bounded_walk_steps_after_local_span(buffers.tree_capacity, local_span),
-            &buffers.tree_active_dispatch_args.buffer,
-            label,
+            &buffers.tree_active_dispatch_args,
+            invocation,
+            cache,
         )
     }
 
     /// Propagates three canonical ancestor payloads over one shared link.
-    pub fn record_canonical_steps_for_three_values(
+    pub(in crate::parser) fn record_canonical_steps_for_three_values(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         relation: TreeRelationBuffers<'_, 3>,
-        label: &'static str,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         self.record_schedule(
             device,
@@ -153,20 +175,22 @@ impl TreeRelationOperation {
                 buffers.tree_capacity,
                 crate::parser::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
             ),
-            &buffers.tree_active_dispatch_args.buffer,
-            label,
+            &buffers.tree_active_dispatch_args,
+            invocation,
+            cache,
         )
     }
 
     /// Propagates two payload columns over links seeded directly by the caller.
-    pub fn record_two_values(
+    pub(in crate::parser) fn record_two_values(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         relation: TreeRelationBuffers<'_, 2>,
-        dispatch_args: &wgpu::Buffer,
-        label: &'static str,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         self.record_schedule(
             device,
@@ -177,7 +201,8 @@ impl TreeRelationOperation {
             relation,
             bounded_walk_step_capacity(buffers.tree_capacity),
             dispatch_args,
-            label,
+            invocation,
+            cache,
         )
     }
 
@@ -190,8 +215,9 @@ impl TreeRelationOperation {
         names: RelationNames<N>,
         relation: TreeRelationBuffers<'_, N>,
         steps: u32,
-        dispatch_args: &wgpu::Buffer,
-        label: &'static str,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         for step in 0..steps {
             let mut resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
@@ -221,35 +247,54 @@ impl TreeRelationOperation {
                     values_out[index].as_entire_binding(),
                 );
             }
-            let bind_group = bind_group::create_bind_group_from_reflection(
-                device,
-                Some(label),
-                &data.bind_group_layouts[0],
-                &data.reflection,
-                0,
-                &resources,
-            )?;
+            let final_unpaired_step = step + 1 == steps && steps % 2 == 1;
+            let label = if final_unpaired_step {
+                invocation.a_to_b_final
+            } else if step % 2 == 0 {
+                invocation.a_to_b
+            } else {
+                invocation.b_to_a
+            };
+            let cache_identity = format!("{label}.{step}");
+            let bind_group = cache
+                .reflected_for_graph_invocation(
+                    device,
+                    &cache_identity,
+                    label,
+                    data,
+                    buffers,
+                    &resources,
+                    Some(dispatch_args),
+                )?
+                .into_iter()
+                .next()
+                .expect("tree-relation operation must have one reflected bind group");
             crate::gpu::passes_core::record_or_defer_compute_indirect(
                 encoder,
                 data,
-                &bind_group,
+                bind_group.as_ref(),
                 label,
                 dispatch_args,
             );
         }
 
         if steps % 2 == 1 {
-            crate::gpu::passes_core::flush_deferred_compute(encoder);
-            let bytes = u64::from(buffers.tree_capacity) * 4;
-            relation
-                .link_b
-                .copy_to(encoder, 0, relation.link_a, 0, bytes);
-            for index in 0..N {
-                relation.values_b[index].copy_to(encoder, 0, relation.values_a[index], 0, bytes);
-            }
+            buffers.record_finalizer(invocation.finalize, encoder)?;
         }
 
         Ok(())
+    }
+
+    pub(in crate::parser) fn graph_pair_pass(&self) -> &PassData {
+        &self.pair_data
+    }
+
+    pub(in crate::parser) fn graph_single_pass(&self) -> &PassData {
+        &self.data
+    }
+
+    pub(in crate::parser) fn graph_triple_pass(&self) -> &PassData {
+        &self.triple_data
     }
 }
 
@@ -326,8 +371,15 @@ pub(crate) fn pointer_jump_steps_after_local_span(items: u32) -> u32 {
     )
 }
 
-fn bounded_walk_steps_after_local_span(items: u32, local_span: u32) -> u32 {
+pub(in crate::parser) fn bounded_walk_steps_after_local_span(items: u32, local_span: u32) -> u32 {
     bounded_walk_step_capacity(items.max(1).div_ceil(local_span.max(1)))
+}
+
+pub(in crate::parser) fn canonical_relation_step_capacity(items: u32) -> u32 {
+    bounded_walk_steps_after_local_span(
+        items,
+        crate::parser::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
+    )
 }
 
 #[cfg(test)]

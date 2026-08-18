@@ -87,10 +87,16 @@ impl GpuParser {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &count_readback, 0, 4);
+        encoder.copy_buffer_to_buffer(
+            &bufs.token_count,
+            bufs.token_count.byte_offset,
+            &count_readback,
+            0,
+            4,
+        );
         encoder.copy_buffer_to_buffer(
             &bufs.semantic_token_kinds,
-            0,
+            bufs.semantic_token_kinds.byte_offset,
             &kinds_readback,
             0,
             bufs.semantic_token_kinds.byte_size as u64,
@@ -169,10 +175,16 @@ impl GpuParser {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &count_readback, 0, 4);
+        encoder.copy_buffer_to_buffer(
+            &bufs.token_count,
+            bufs.token_count.byte_offset,
+            &count_readback,
+            0,
+            4,
+        );
         encoder.copy_buffer_to_buffer(
             &bufs.semantic_token_kinds,
-            0,
+            bufs.semantic_token_kinds.byte_offset,
             &kinds_readback,
             0,
             bufs.semantic_token_kinds.byte_size as u64,
@@ -245,7 +257,13 @@ impl GpuParser {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(&bufs.token_feature_flags, 0, &flags_readback, 0, 4);
+        encoder.copy_buffer_to_buffer(
+            &bufs.token_feature_flags,
+            bufs.token_feature_flags.byte_offset,
+            &flags_readback,
+            0,
+            4,
+        );
 
         crate::gpu::passes_core::submit_with_progress(
             &self.queue,

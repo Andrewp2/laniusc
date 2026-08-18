@@ -48,24 +48,14 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             reserved1: 0,
         },
     );
-    let required_generic_dispatch = resources.reflected_bind_group_with_overrides(
+    let required_generic_dispatch = ComputeOperation::direct_with_uniform(
         device,
-        "type_check.calls.required_generic_dispatch",
+        graph,
+        resources,
+        compiler_graph::REQUIRED_GENERIC_DISPATCH_PASS,
         &passes.kernel("type_checker/count/dispatch_args"),
-        &[
-            (
-                "gParams",
-                required_generic_dispatch_params.as_entire_binding(),
-            ),
-            (
-                "count_in",
-                resources["call_required_generic_count_out"].clone(),
-            ),
-            (
-                "dispatch_args",
-                call_required_generic_dispatch_args.as_entire_binding(),
-            ),
-        ],
+        &required_generic_dispatch_params,
+        1,
     )?;
     let generic_claim_index = CallClaimIndexOperation::new(
         device,
@@ -96,7 +86,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     );
     let generic_claim_validation =
         CallGenericClaimValidationOperation::new(CallGenericClaimValidationBuild {
-            required_dispatch_pass: passes.kernel("type_checker/count/dispatch_args").clone(),
             claim_scan: prefix_scan_spec(compiler_graph::GENERIC_CLAIM_SCAN)?,
             emit_claims: direct(CALLS_GENERIC_CLAIM_EMIT, claim_capacity.saturating_add(1))?,
             validate_generic: ComputeOperation::indirect_spec(
@@ -162,20 +151,26 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         contextual_result_requests: indirect(CALLS_CONTEXTUAL_RESULT_REQUESTS)?,
         clear_generic_claim_type_args: indirect(CALLS_GENERIC_CLAIM_CLEAR)?,
         apply_row_args: indirect(CALLS_APPLY_ARGUMENTS)?,
-        infer_array_generics: reflected_bind_group_from_resources(
+        infer_array_generics: ComputeOperation::direct_spec(
             device,
-            "type_check_resident_calls_infer_array_generics",
-            &passes.kernel("type_checker/calls/03b_infer_array_generics"),
+            graph,
             resources,
+            passes,
+            CALLS_INFER_ARRAY_GENERICS,
+            semantic_work,
         )?,
         validate_array_results: direct(CALLS_ARRAY_STATE_CONSUME, hir_capacity)?,
         mark_array_args: indirect(CALLS_ARRAY_STATE_PUBLISH)?,
         project_result_instances: indirect(CALLS_RESULT_INSTANCE_PROJECT)?,
-        erase_generic_params: reflected_bind_group_from_resources(
+        erase_generic_params: ComputeOperation::direct_spec(
             device,
-            "type_check_resident_calls_erase_generic_params",
-            &passes.kernel("type_checker/calls/04_erase_generic_params"),
+            graph,
             resources,
+            passes,
+            CALLS_GENERIC_PARAMS_ERASE,
+            token_capacity
+                .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
+                .max(1),
         )?,
     })
 }

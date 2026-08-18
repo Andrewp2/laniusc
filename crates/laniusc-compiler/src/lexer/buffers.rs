@@ -1,14 +1,18 @@
-use super::LexParams;
+use super::{LexParams, compiler_graph::LexerCompilerGraph, passes::LexerPasses};
 use crate::{
-    gpu::buffers::{
-        DynamicUniformBuffer,
-        LaniusBuffer,
-        dynamic_uniforms_from_vals_with_queue,
-        readback_bytes,
-        storage_ro_from_u32s_with_queue,
-        storage_rw_for_array,
-        storage_rw_uninit_bytes,
-        uniform_from_val_with_queue,
+    gpu::{
+        buffers::{
+            DynamicUniformBuffer,
+            LaniusBuffer,
+            TrackedBufferView,
+            dynamic_uniforms_from_vals_with_queue,
+            readback_bytes,
+            storage_ro_from_u32s_with_queue,
+            storage_rw_for_array,
+            storage_rw_uninit_bytes,
+            uniform_from_val_with_queue,
+        },
+        operations::{ClearBuffersOperation, CopyBufferOperation},
     },
     lexer::tables::dfa::N_STATES,
 };
@@ -18,6 +22,11 @@ use crate::{
 /// These buffers are reused across lexing calls when capacity permits. The
 /// driver updates runtime sizes and input metadata before recording passes.
 pub struct GpuBuffers {
+    /// Owns the phase-colored storage aliased by the scratch and output views
+    /// below. Buffer identity and lifetime come from this graph.
+    pub(in crate::lexer) compiler_graph: LexerCompilerGraph,
+    job_initialize: ClearBuffersOperation,
+    count_readback: [CopyBufferOperation; 2],
     /// Current byte length, not including word-alignment padding.
     pub n: u32,
     /// Number of 256-byte DFA blocks for the current input.
@@ -86,6 +95,53 @@ pub struct GpuBuffers {
 }
 
 impl GpuBuffers {
+    /// Returns lexer storage whose logical contents are dead after token
+    /// materialization and whose physical allocation contains no retained
+    /// token artifact.
+    ///
+    /// Lifetime coloring may place an early scratch row and a final output in
+    /// the same allocation. Phase consumers must therefore filter by physical
+    /// allocation identity rather than assuming a scratch field remains
+    /// reusable merely because its logical lexer lifetime ended.
+    pub(crate) fn post_lex_workspace(&self) -> Vec<TrackedBufferView<'_>> {
+        let retained_allocations = [
+            self.tokens_out.allocation_id(),
+            self.token_count.allocation_id(),
+            self.parser_feature_flags.allocation_id(),
+            self.token_file_id.allocation_id(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<std::collections::HashSet<_>>();
+        let candidates: [TrackedBufferView<'_>; 7] = [
+            (&self.tok_types).into(),
+            (&self.flags_packed).into(),
+            (&self.s_all_final).into(),
+            (&self.s_keep_final).into(),
+            (&self.end_positions).into(),
+            (&self.types_compact).into(),
+            (&self.all_index_compact).into(),
+        ];
+        candidates
+            .into_iter()
+            .filter(|buffer| {
+                buffer
+                    .allocation_id()
+                    .is_none_or(|allocation| !retained_allocations.contains(&allocation))
+            })
+            .collect()
+    }
+
+    pub(in crate::lexer) fn record_job_initialize(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.job_initialize.record(encoder);
+    }
+
+    pub(in crate::lexer) fn record_count_readback(&self, encoder: &mut wgpu::CommandEncoder) {
+        for copy in &self.count_readback {
+            copy.record(encoder);
+        }
+    }
+
     /// Allocates lexer buffers for a byte capacity and source-file capacity.
     ///
     /// The returned buffers are sized for capacity. The driver sets `n`,
@@ -102,7 +158,8 @@ impl GpuBuffers {
         next_u8_packed: &[u32],
         token_map: &[u32],
         skip_kinds: [u32; 4],
-    ) -> Self {
+        passes: &LexerPasses,
+    ) -> anyhow::Result<Self> {
         const BLOCK_WIDTH_DFA: u32 = 256;
         const BLOCK_WIDTH_SUM: u32 = 256;
         const DFA_CHUNK_COUNT: usize = 3;
@@ -121,6 +178,16 @@ impl GpuBuffers {
         );
         debug_assert!(!token_map.is_empty(), "token_map must not be empty");
 
+        let compiler_graph = LexerCompilerGraph::new(
+            device,
+            n,
+            source_file_capacity,
+            next_emit_packed.len(),
+            next_u8_packed.len(),
+            token_map.len(),
+            passes,
+        )?;
+
         // Allocate input buffer with capacity n; contents are filled by driver via queue.write_buffer
         let in_bytes: LaniusBuffer<u8> =
             storage_rw_uninit_bytes(device, "in_bytes", n as usize, n as usize);
@@ -135,15 +202,12 @@ impl GpuBuffers {
             storage_ro_from_u32s_with_queue(device, queue, "next_u8", next_u8_packed);
 
         let per_block_count = N_STATES * (nb_dfa as usize);
-        let dfa_02_ping: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "block_ping", per_block_count);
-        let dfa_02_pong: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "block_pong", per_block_count);
-        let dfa_chunk_summaries: LaniusBuffer<u32> = storage_rw_for_array::<u32>(
-            device,
-            "dfa_chunk_summaries",
-            per_block_count * DFA_CHUNK_COUNT,
-        );
+        let dfa_02_ping: LaniusBuffer<u32> = compiler_graph.buffer("dfa_ping")?;
+        let dfa_02_pong: LaniusBuffer<u32> = compiler_graph.buffer("dfa_pong")?;
+        let dfa_chunk_summaries: LaniusBuffer<u32> =
+            compiler_graph.buffer("dfa_chunk_summaries")?;
+        debug_assert_eq!(dfa_02_ping.count, per_block_count);
+        debug_assert_eq!(dfa_chunk_summaries.count, per_block_count * DFA_CHUNK_COUNT);
         let dfa_scan_values = (0..super::util::compute_rounds(nb_dfa))
             .map(|round| super::passes::ScanParams {
                 stride: 1u32 << round,
@@ -174,43 +238,49 @@ impl GpuBuffers {
             )
         });
 
-        let tok_types: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "tok_types", n as usize);
+        let tok_types: LaniusBuffer<u32> = compiler_graph.buffer("tok_types")?;
 
-        let flags_packed: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "flags_packed", n as usize);
+        let flags_packed: LaniusBuffer<u32> = compiler_graph.buffer("flags_packed")?;
 
         // end_excl_by_i eliminated (computed inline); pair scan reuses dfa_02 ping/pong
 
-        let s_all_final: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "s_all_final", n as usize);
-        let s_keep_final: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "s_keep_final", n as usize);
+        let s_all_final: LaniusBuffer<u32> = compiler_graph.buffer("s_all_final")?;
+        let s_keep_final: LaniusBuffer<u32> = compiler_graph.buffer("s_keep_final")?;
 
-        let end_positions: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "end_positions", n as usize);
-        let types_compact: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "types_compact", n as usize);
-        let all_index_compact: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "all_index_compact", n as usize);
+        let end_positions: LaniusBuffer<u32> = compiler_graph.buffer("end_positions")?;
+        let types_compact: LaniusBuffer<u32> = compiler_graph.buffer("types_compact")?;
+        let all_index_compact: LaniusBuffer<u32> = compiler_graph.buffer("all_index_compact")?;
 
-        let token_count: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "token_count", 1);
-        let parser_feature_flags =
-            storage_rw_for_array::<u32>(device, "lexer.parser_feature_flags", 1);
+        let token_count: LaniusBuffer<u32> = compiler_graph.buffer("token_count")?;
+        let parser_feature_flags: LaniusBuffer<u32> =
+            compiler_graph.buffer("parser_feature_flags")?;
         let token_count_readback = readback_bytes(device, "rb.lex.resident.token_count", 8, 8);
 
-        let tokens_out = storage_rw_for_array::<super::GpuToken>(device, "tokens_out", n as usize);
+        let tokens_out: LaniusBuffer<super::GpuToken> = compiler_graph.buffer("tokens_out")?;
         let source_file_count = storage_rw_for_array::<u32>(device, "source_file_count", 1);
         let source_file_capacity = source_file_capacity.max(1) as usize;
         let source_file_start =
             storage_rw_for_array::<u32>(device, "source_file_start", source_file_capacity);
         let source_file_len =
             storage_rw_for_array::<u32>(device, "source_file_len", source_file_capacity);
-        let source_file_start_flags =
-            storage_rw_for_array::<u32>(device, "source_file_start_flags", n as usize + 1);
-        let source_file_end_flags =
-            storage_rw_for_array::<u32>(device, "source_file_end_flags", n as usize + 1);
-        let token_file_id = storage_rw_for_array::<u32>(device, "token_file_id", n as usize);
+        let source_file_start_flags: LaniusBuffer<u32> =
+            compiler_graph.buffer("source_file_start_flags")?;
+        let source_file_end_flags: LaniusBuffer<u32> =
+            compiler_graph.buffer("source_file_end_flags")?;
+        let token_file_id: LaniusBuffer<u32> = compiler_graph.buffer("token_file_id")?;
+
+        let job_initialize = compiler_graph.job_initialize_operation(
+            &flags_packed,
+            &source_file_start_flags,
+            &source_file_end_flags,
+            &token_count,
+            &parser_feature_flags,
+        )?;
+        let count_readback = compiler_graph.count_readback_operations(
+            &token_count,
+            &parser_feature_flags,
+            &token_count_readback,
+        )?;
 
         let params_val = LexParams {
             n,
@@ -223,7 +293,10 @@ impl GpuBuffers {
         };
         let params = uniform_from_val_with_queue(device, queue, "LexParams", &params_val);
 
-        Self {
+        Ok(Self {
+            compiler_graph,
+            job_initialize,
+            count_readback,
             n,
             nb_dfa,
             nb_sum,
@@ -260,7 +333,19 @@ impl GpuBuffers {
             source_file_start_flags,
             source_file_end_flags,
             token_file_id,
-        }
+        })
+    }
+}
+
+impl crate::gpu::passes_core::CompilerGraphBuffers for GpuBuffers {
+    fn validate_compiler_pass(
+        &self,
+        operation: &'static str,
+        resources: &std::collections::HashMap<String, wgpu::BindingResource<'_>>,
+        dispatch_args: Option<&crate::gpu::buffers::LaniusBuffer<u32>>,
+    ) -> anyhow::Result<()> {
+        self.compiler_graph
+            .validate_reflected_runtime_bindings(operation, resources, dispatch_args)
     }
 }
 

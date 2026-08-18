@@ -1,52 +1,36 @@
 use super::*;
-use crate::{gpu::buffers::TrackedBufferView, type_checker::GpuTypeCheckHirItemBuffers};
+use crate::type_checker::GpuTypeCheckHirItemBuffers;
 
-/// Builds the borrowed workspace view used by type-check recording.
+/// Borrows the complete compiler-graph input at the parser/type-check boundary.
 ///
-/// The array is deliberately supplied by the caller. Its buffers are parser
-/// phase storage whose contents are dead after compact HIR materialization;
-/// keeping the array outside the HIR view makes that lifetime explicit and
-/// lets the compiler graph recolor the slots without retaining parser state.
-pub(super) fn typecheck_workspace<'a>(
-    phase_workspace: &[TrackedBufferView<'a>],
-    lexer: &'a LexerBuffers,
-) -> Vec<TrackedBufferView<'a>> {
-    let mut workspace = Vec::with_capacity(phase_workspace.len() + 7);
-    workspace.extend_from_slice(phase_workspace);
-    let lexer_workspace: [TrackedBufferView<'a>; 7] = [
-        (&lexer.tok_types).into(),
-        (&lexer.flags_packed).into(),
-        (&lexer.s_all_final).into(),
-        (&lexer.s_keep_final).into(),
-        (&lexer.end_positions).into(),
-        (&lexer.types_compact).into(),
-        (&lexer.all_index_compact).into(),
-    ];
-    workspace.extend(lexer_workspace);
-    workspace
-}
-
-/// Assembles the type-check input without cloning parser buffers. The HIR
-/// handle is the persistent semantic input; upstream storage is phase-local
-/// workspace only.
-pub(super) fn typecheck_hir_item_buffers<'a>(
+/// The compact HIR is the persistent semantic input. Parser and lexer storage
+/// whose contents are dead after HIR materialization is exposed only for the
+/// duration of `consume`, allowing the type-check graph to recolor those slots
+/// without accidentally retaining frontend scratch as semantic state.
+pub(super) fn with_typecheck_hir_items<'a, R>(
+    parser: &'a crate::parser::buffers::ParserBuffers,
     hir: &'a crate::parser::buffers::GpuHirView,
-    upstream_workspace: &'a [TrackedBufferView<'a>],
+    lexer: &'a LexerBuffers,
     parser_feature_flags: u32,
     module_record_capacity: u32,
     call_param_row_capacity: u32,
     call_arg_row_capacity: u32,
     semantic_interface_required: bool,
-) -> GpuTypeCheckHirItemBuffers<'a> {
-    GpuTypeCheckHirItemBuffers {
+    consume: impl FnOnce(GpuTypeCheckHirItemBuffers<'_>) -> R,
+) -> R {
+    let phase_workspace = parser.post_hir_workspace(hir);
+    let mut upstream_workspace = Vec::with_capacity(phase_workspace.len() + 7);
+    upstream_workspace.extend_from_slice(&phase_workspace);
+    upstream_workspace.extend(lexer.post_lex_workspace());
+    consume(GpuTypeCheckHirItemBuffers {
         parser_feature_flags,
         module_record_capacity,
         call_param_row_capacity,
         call_arg_row_capacity,
         semantic_interface_required,
         hir,
-        upstream_workspace,
-    }
+        upstream_workspace: &upstream_workspace,
+    })
 }
 
 /// Builds the compact HIR view consumed by semantic-interface export.

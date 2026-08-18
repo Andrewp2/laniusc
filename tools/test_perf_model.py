@@ -103,11 +103,13 @@ class PerfModelTests(unittest.TestCase):
         graph = {
             "coverage": {
                 "declared_operations": 2,
-                "executed_labels": 2,
-                "matched_labels": 2,
-                "unregistered_executed_labels": 0,
-                "recorded_passes": 2,
-                "matched_recorded_passes": 2,
+                "executed_operation_labels": 2,
+                "matched_operation_labels": 2,
+                "unregistered_operation_labels": 0,
+                "recorded_operations": 2,
+                "matched_recorded_operations": 2,
+                "recorded_compute_passes": 1,
+                "submissions_without_operations": 0,
             },
             "submissions": [],
             "nodes": [

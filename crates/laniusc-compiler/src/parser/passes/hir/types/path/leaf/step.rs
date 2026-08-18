@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::{
-    gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
+    gpu::passes_core::{BindGroupCache, PassData},
     parser::{buffers::ParserBuffers, passes::hir::bounded_walk_step_capacity},
 };
 
@@ -19,14 +19,8 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirTypePathLeafStepPass {
-    /// Records all type-path leaf propagation steps with direct dispatch sizing.
-    pub fn record_steps(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-    ) -> Result<()> {
-        self.record_steps_inner(device, encoder, buffers, None)
+    pub(in crate::parser) fn graph_pass(&self) -> &PassData {
+        &self.data
     }
 
     /// Records all type-path leaf propagation steps with indirect dispatch sizing.
@@ -35,38 +29,27 @@ impl HirTypePathLeafStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_args: &wgpu::Buffer,
-    ) -> Result<()> {
-        self.record_steps_inner(device, encoder, buffers, Some(dispatch_args))
-    }
-
-    fn record_steps_inner(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-        dispatch_args: Option<&wgpu::Buffer>,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         let steps = bounded_walk_step_capacity(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
+            self.record_step(
+                device,
+                encoder,
+                buffers,
+                step,
+                step % 2 == 0,
+                dispatch_args,
+                cache,
+            )?;
         }
 
         if steps % 2 == 1 {
-            crate::gpu::passes_core::flush_deferred_compute(encoder);
-            let bytes = u64::from(buffers.tree_capacity) * 4;
-            for (src, dst) in [
-                (
-                    &buffers.hir_type_path_leaf_link_b,
-                    &buffers.hir_type_path_leaf_link_a,
-                ),
-                (
-                    &buffers.hir_type_path_leaf_value_b,
-                    &buffers.hir_type_path_leaf_value_a,
-                ),
-            ] {
-                src.copy_to(encoder, 0, dst, 0, bytes);
-            }
+            buffers.record_finalizer(
+                crate::parser::compiler_graph::HIR_TYPE_PATH_LEAF_FINALIZE,
+                encoder,
+            )?;
         }
 
         Ok(())
@@ -77,8 +60,10 @@ impl HirTypePathLeafStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
+        step: u32,
         read_from_a: bool,
-        dispatch_args: Option<&wgpu::Buffer>,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         let (link_in, value_in, link_out, value_out) = if read_from_a {
             (
@@ -127,38 +112,29 @@ impl HirTypePathLeafStepPass {
             ),
         ]);
 
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("hir_type_path_leaf_step"),
-            &self.data.bind_group_layouts[0],
-            &self.data.reflection,
-            0,
-            &resources,
-        )?;
-
-        if let Some(dispatch_args) = dispatch_args {
-            crate::gpu::passes_core::record_or_defer_compute_indirect(
-                encoder,
+        let operation = crate::parser::compiler_graph::HIR_TYPE_PATH_LEAF_STEPS
+            .get(step as usize)
+            .copied()
+            .expect("type-path leaf walk exceeds registered graph step capacity");
+        let bind_group = cache
+            .reflected_for_graph_pass_data(
+                device,
+                operation,
                 &self.data,
-                &bind_group,
-                "hir_type_path_leaf_step",
-                dispatch_args,
-            );
-        } else {
-            let [tgsx, tgsy, _] = self.data.thread_group_size;
-            let groups = plan_workgroups(
-                DispatchDim::D1,
-                InputElements::Elements1D(buffers.tree_capacity),
-                [tgsx, tgsy, 1],
-            )?;
-            crate::gpu::passes_core::record_or_defer_compute_direct(
-                encoder,
-                &self.data,
-                &bind_group,
-                "hir_type_path_leaf_step",
-                groups,
-            );
-        }
+                buffers,
+                &resources,
+                Some(dispatch_args),
+            )?
+            .into_iter()
+            .next()
+            .expect("type-path leaf step must have one reflected bind group");
+        crate::gpu::passes_core::record_or_defer_compute_indirect(
+            encoder,
+            &self.data,
+            bind_group.as_ref(),
+            operation,
+            dispatch_args,
+        );
         Ok(())
     }
 }

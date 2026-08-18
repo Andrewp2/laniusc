@@ -88,7 +88,7 @@ impl GpuLexer {
             .lock()
             .expect("GpuLexer.buffers mutex poisoned");
 
-        let recreate = |cap_n: u32| -> buffers::GpuBuffers {
+        let recreate = |cap_n: u32| -> Result<buffers::GpuBuffers> {
             GpuBuffers::new(
                 &self.device,
                 &self.queue,
@@ -99,6 +99,7 @@ impl GpuLexer {
                 &self.next_u8_packed,
                 &self.token_map,
                 skip_kinds,
+                &self.passes,
             )
         };
 
@@ -106,7 +107,7 @@ impl GpuLexer {
             *guard = Some(recreate(capacity_bucket(
                 aligned_len,
                 SOURCE_BYTE_CAPACITY_GRANULARITY,
-            )));
+            ))?);
         }
 
         {
@@ -126,7 +127,7 @@ impl GpuLexer {
                 let mut new_bufs = recreate(capacity_bucket(
                     desired_cap,
                     SOURCE_BYTE_CAPACITY_GRANULARITY,
-                ));
+                ))?;
                 self.write_current_lex_inputs(
                     &mut new_bufs,
                     input_bytes,
@@ -172,7 +173,7 @@ impl GpuLexer {
             .lock()
             .expect("GpuLexer.buffers mutex poisoned");
 
-        let recreate = |cap_n: u32, cap_files: u32| -> buffers::GpuBuffers {
+        let recreate = |cap_n: u32, cap_files: u32| -> Result<buffers::GpuBuffers> {
             GpuBuffers::new(
                 &self.device,
                 &self.queue,
@@ -183,6 +184,7 @@ impl GpuLexer {
                 &self.next_u8_packed,
                 &self.token_map,
                 skip_kinds,
+                &self.passes,
             )
         };
 
@@ -190,7 +192,7 @@ impl GpuLexer {
             *guard = Some(recreate(
                 capacity_bucket(aligned_len, SOURCE_BYTE_CAPACITY_GRANULARITY),
                 capacity_bucket(source_file_capacity, SOURCE_FILE_CAPACITY_GRANULARITY),
-            ));
+            )?);
         }
 
         {
@@ -214,7 +216,7 @@ impl GpuLexer {
                 let mut new_bufs = recreate(
                     capacity_bucket(desired_cap, SOURCE_BYTE_CAPACITY_GRANULARITY),
                     capacity_bucket(source_file_capacity, SOURCE_FILE_CAPACITY_GRANULARITY),
-                );
+                )?;
                 self.write_source_pack_lex_inputs(
                     &mut new_bufs,
                     &input_bytes,

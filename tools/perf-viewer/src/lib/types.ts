@@ -38,6 +38,8 @@ export interface TimelineEvent {
   name: string;
   category: string;
   lane: string;
+  phase: string;
+  execution_domain: string;
   start_ms: number;
   duration_ms: number;
 }
@@ -140,8 +142,9 @@ export interface GraphEdge {
 export interface ComputeSubmission {
   index: number;
   label: string;
-  recorded_passes: number;
-  matched_passes: number;
+  recorded_compute_passes: number;
+  recorded_operations: number;
+  matched_operations: number;
   first_node: string | null;
   last_node: string | null;
 }
@@ -152,11 +155,15 @@ export interface ExecutionGraph {
   submissions: ComputeSubmission[];
   coverage: {
     declared_operations: number;
-    executed_labels: number;
-    matched_labels: number;
-    unregistered_executed_labels: number;
-    recorded_passes: number;
-    matched_recorded_passes: number;
+    executed_operation_labels: number;
+    matched_operation_labels: number;
+    unregistered_operation_labels: number;
+    unregistered_operations?: string[];
+    declared_but_unexecuted_operations?: string[];
+    recorded_operations: number;
+    matched_recorded_operations: number;
+    recorded_compute_passes: number;
+    submissions_without_operations: number;
   };
   semantics: string;
 }

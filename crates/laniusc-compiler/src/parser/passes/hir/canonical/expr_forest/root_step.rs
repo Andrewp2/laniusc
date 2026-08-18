@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::{
     gpu::{
         buffers::LaniusBuffer,
-        passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
+        passes_core::{BindGroupCache, DispatchDim, InputElements, PassData, plan_workgroups},
     },
     parser::buffers::ParserBuffers,
 };
@@ -14,6 +14,11 @@ use crate::{
 pub struct HirCanonicalExprForestRootStepPass {
     data: PassData,
 }
+
+pub(in crate::parser) const A_TO_B: &str = "hir_canonical_expr_forest_root_step.a_to_b";
+pub(in crate::parser) const B_TO_A: &str = "hir_canonical_expr_forest_root_step.b_to_a";
+pub(in crate::parser) const A_TO_B_FINAL: &str = "hir_canonical_expr_forest_root_step.a_to_b_final";
+pub(in crate::parser) const FINALIZE: &str = "hir_canonical_expr_forest_root_step.finalize";
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirCanonicalExprForestRootStepPass,
@@ -27,6 +32,7 @@ impl HirCanonicalExprForestRootStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         let steps = bounded_parent_walk_steps(buffers.hir_canonical_capacity);
         for step in 0..steps {
@@ -41,18 +47,21 @@ impl HirCanonicalExprForestRootStepPass {
                     &buffers.hir_canonical_expr_root,
                 )
             };
-            self.record_step(device, encoder, buffers, input, output)?;
+            self.record_step(
+                device,
+                encoder,
+                buffers,
+                step,
+                input,
+                output,
+                step % 2 == 0,
+                step + 1 == steps && steps % 2 == 1,
+                cache,
+            )?;
         }
 
         if steps % 2 == 1 {
-            crate::gpu::passes_core::flush_deferred_compute(encoder);
-            buffers.hir_canonical_expr_root_scratch.copy_to(
-                encoder,
-                0,
-                &buffers.hir_canonical_expr_root,
-                0,
-                u64::from(buffers.hir_canonical_capacity) * 4,
-            );
+            buffers.record_finalizer(FINALIZE, encoder)?;
         }
         Ok(())
     }
@@ -62,8 +71,12 @@ impl HirCanonicalExprForestRootStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
+        step: u32,
         input: &LaniusBuffer<u32>,
         output: &LaniusBuffer<u32>,
+        read_from_a: bool,
+        final_unpaired_step: bool,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         let resources = HashMap::from([
             (
@@ -77,14 +90,27 @@ impl HirCanonicalExprForestRootStepPass {
             ("expr_root_in".into(), input.as_entire_binding()),
             ("expr_root_out".into(), output.as_entire_binding()),
         ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("hir_canonical_expr_forest_root_step"),
-            &self.data.bind_group_layouts[0],
-            &self.data.reflection,
-            0,
-            &resources,
-        )?;
+        let label = if final_unpaired_step {
+            A_TO_B_FINAL
+        } else if read_from_a {
+            A_TO_B
+        } else {
+            B_TO_A
+        };
+        let invocation = format!("{label}.{step}");
+        let bind_group = cache
+            .reflected_for_graph_invocation(
+                device,
+                &invocation,
+                label,
+                &self.data,
+                buffers,
+                &resources,
+                None,
+            )?
+            .into_iter()
+            .next()
+            .expect("canonical expression-root step must have one reflected bind group");
         let [x, y, _] = self.data.thread_group_size;
         let groups = plan_workgroups(
             DispatchDim::D1,
@@ -94,15 +120,19 @@ impl HirCanonicalExprForestRootStepPass {
         crate::gpu::passes_core::record_or_defer_compute_direct(
             encoder,
             &self.data,
-            &bind_group,
-            "hir_canonical_expr_forest_root_step",
+            bind_group.as_ref(),
+            label,
             groups,
         );
         Ok(())
     }
+
+    pub(in crate::parser) fn graph_pass(&self) -> &PassData {
+        &self.data
+    }
 }
 
-fn bounded_parent_walk_steps(items: u32) -> u32 {
+pub(in crate::parser) fn bounded_parent_walk_steps(items: u32) -> u32 {
     let mut span = 1u32;
     let mut steps = 0u32;
     while span < items.max(1) {

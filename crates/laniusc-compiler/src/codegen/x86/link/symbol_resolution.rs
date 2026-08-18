@@ -6,12 +6,210 @@ use super::{
     GpuX86LinkSymbolRecord,
     symbol_partitions::{GpuX86SymbolPartition, GpuX86SymbolPartitionPlan},
 };
-use crate::codegen::x86::{
-    GpuX86Linker,
-    support::{dispatch_compute_pass, reflected_bind_group, u32_words_bytes, workgroup_grid_1d},
+use crate::{
+    codegen::x86::{GpuX86Linker, support::u32_words_bytes},
+    gpu::{
+        compiler_graph::{
+            AccessMode,
+            CompilerGraphBuilder,
+            CompilerPhase,
+            MaterializedCompilerGraph,
+            ReflectedResourceBinding,
+            ResourceClass,
+            ResourceDesc,
+            ResourceDomain,
+        },
+        operations::{ComputeOperation, CopyBufferOperation},
+        resource_registry::ResourceMap,
+        workspace::WorkspaceUsageClass,
+    },
 };
 
 const SYMBOL_PARTITION_BYTES_PER_COLUMN: usize = 4 * 1024 * 1024;
+
+pub(crate) struct X86SymbolPartitionGraph {
+    definition_capacity: usize,
+    query_capacity: usize,
+    hash_capacity: usize,
+    materialized: MaterializedCompilerGraph,
+}
+
+impl X86SymbolPartitionGraph {
+    fn covers(&self, definitions: usize, queries: usize, hash: usize) -> bool {
+        self.definition_capacity >= definitions
+            && self.query_capacity >= queries
+            && self.hash_capacity >= hash
+    }
+
+    fn new(
+        generator: &GpuX86Linker,
+        device: &wgpu::Device,
+        definition_capacity: usize,
+        query_capacity: usize,
+        hash_capacity: usize,
+    ) -> Result<Self> {
+        let definition_capacity = definition_capacity.max(1);
+        let query_capacity = query_capacity.max(1);
+        let hash_capacity = hash_capacity.max(1);
+        let mut graph = CompilerGraphBuilder::new();
+        let mut add = |name: &'static str, class: ResourceClass, bytes: usize| -> Result<()> {
+            graph
+                .add_resource(ResourceDesc {
+                    name,
+                    domain: ResourceDomain::Declarations,
+                    class,
+                    bytes: bytes.max(4) as u64,
+                    usage: WorkspaceUsageClass::Storage,
+                })
+                .map(|_| ())
+                .map_err(anyhow::Error::msg)
+        };
+        add(
+            "link_partition_definition",
+            ResourceClass::Input,
+            definition_capacity * 16,
+        )?;
+        add(
+            "link_partition_query",
+            ResourceClass::External,
+            query_capacity * 16,
+        )?;
+        add(
+            "link_partition_hash_table",
+            ResourceClass::Workspace,
+            hash_capacity * 4,
+        )?;
+        add(
+            "link_partition_definition_value",
+            ResourceClass::Workspace,
+            definition_capacity * 4,
+        )?;
+        add(
+            "link_partition_resolved_value",
+            ResourceClass::Workspace,
+            query_capacity * 4,
+        )?;
+        add("link_partition_status", ResourceClass::Workspace, 16)?;
+        add(
+            "link_partition_resolved_readback",
+            ResourceClass::External,
+            query_capacity * 4,
+        )?;
+        add(
+            "link_partition_status_readback",
+            ResourceClass::External,
+            16,
+        )?;
+        drop(add);
+
+        let hash_table_resource = graph
+            .resource_id("link_partition_hash_table")
+            .expect("x86 symbol hash resource");
+        let definition_value_resource = graph
+            .resource_id("link_partition_definition_value")
+            .expect("x86 symbol definition-value resource");
+        let resolved_value_resource = graph
+            .resource_id("link_partition_resolved_value")
+            .expect("x86 symbol resolved-value resource");
+        let status_resource = graph
+            .resource_id("link_partition_status")
+            .expect("x86 symbol status resource");
+        let resolved_readback_resource = graph
+            .resource_id("link_partition_resolved_readback")
+            .expect("x86 symbol resolved readback resource");
+        let status_readback_resource = graph
+            .resource_id("link_partition_status_readback")
+            .expect("x86 symbol status readback resource");
+        graph
+            .add_reflected_compute_pass_by_name(
+                "codegen.x86.link.symbol_partition.clear",
+                CompilerPhase::Artifact,
+                ResourceDomain::Declarations,
+                &generator.link_symbol_partition_clear_pass.reflection,
+                &[
+                    ReflectedResourceBinding {
+                        binding: "link_partition_hash_table",
+                        resource: hash_table_resource,
+                        mode: Some(AccessMode::Write),
+                    },
+                    ReflectedResourceBinding {
+                        binding: "link_partition_definition_value",
+                        resource: definition_value_resource,
+                        mode: Some(AccessMode::Write),
+                    },
+                    ReflectedResourceBinding {
+                        binding: "link_partition_resolved_value",
+                        resource: resolved_value_resource,
+                        mode: Some(AccessMode::Write),
+                    },
+                    ReflectedResourceBinding {
+                        binding: "link_partition_status",
+                        resource: status_resource,
+                        mode: Some(AccessMode::Write),
+                    },
+                ],
+            )
+            .map_err(anyhow::Error::msg)?;
+        for (name, pass) in [
+            (
+                "codegen.x86.link.symbol_partition.insert",
+                &generator.link_symbol_partition_insert_pass,
+            ),
+            (
+                "codegen.x86.link.symbol_partition.define",
+                &generator.link_symbol_partition_define_pass,
+            ),
+            (
+                "codegen.x86.link.symbol_partition.resolve",
+                &generator.link_symbol_partition_resolve_pass,
+            ),
+        ] {
+            graph
+                .add_reflected_compute_pass_by_name(
+                    name,
+                    CompilerPhase::Artifact,
+                    ResourceDomain::Declarations,
+                    &pass.reflection,
+                    &[],
+                )
+                .map_err(anyhow::Error::msg)?;
+        }
+        graph
+            .add_buffer_copy_pass(
+                "codegen.x86.link.symbol_partition.resolved_values.readback",
+                CompilerPhase::Artifact,
+                "link_partition_resolved_value",
+                resolved_value_resource,
+                "link_partition_resolved_readback",
+                resolved_readback_resource,
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_buffer_copy_pass(
+                "codegen.x86.link.symbol_partition.status.readback",
+                CompilerPhase::Artifact,
+                "link_partition_status",
+                status_resource,
+                "link_partition_status_readback",
+                status_readback_resource,
+            )
+            .map_err(anyhow::Error::msg)?;
+        let graph = graph.build().map_err(anyhow::Error::msg)?;
+        let materialized = MaterializedCompilerGraph::new_with_upstream_storage(
+            device,
+            "x86_link_symbol_partition",
+            graph,
+            &[],
+        )
+        .map_err(anyhow::Error::msg)?;
+        Ok(Self {
+            definition_capacity,
+            query_capacity,
+            hash_capacity,
+            materialized,
+        })
+    }
+}
 
 impl GpuX86Linker {
     pub(super) fn resolve_symbol_relocations(
@@ -104,30 +302,6 @@ fn resolve_partition(
         query_capacity * 4,
         wgpu::BufferUsages::COPY_DST,
     );
-    let hash_table = generator.reusable_storage_u32(
-        device,
-        "codegen.x86.link.symbol_partition.hash_table",
-        hash_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let definition_values = generator.reusable_storage_u32(
-        device,
-        "codegen.x86.link.symbol_partition.definition_values",
-        definition_count.max(1),
-        wgpu::BufferUsages::empty(),
-    );
-    let resolved_values = generator.reusable_storage_u32(
-        device,
-        "codegen.x86.link.symbol_partition.resolved_values",
-        query_capacity,
-        wgpu::BufferUsages::COPY_SRC,
-    );
-    let status = generator.reusable_storage_u32(
-        device,
-        "codegen.x86.link.symbol_partition.status",
-        4,
-        wgpu::BufferUsages::COPY_SRC,
-    );
     let status_readback =
         generator.reusable_readback(device, "rb.codegen.x86.link.symbol_partition.status", 16);
     let values_readback = generator.reusable_readback(
@@ -135,102 +309,79 @@ fn resolve_partition(
         "rb.codegen.x86.link.symbol_partition.values",
         query_capacity * 4,
     );
-
-    let clear_group = reflected_bind_group(
+    let mut graph_guard = generator
+        .symbol_partition_graph
+        .lock()
+        .expect("x86 symbol-partition graph cache poisoned");
+    if !graph_guard
+        .as_ref()
+        .is_some_and(|graph| graph.covers(definition_count, query_capacity, hash_capacity))
+    {
+        *graph_guard = Some(X86SymbolPartitionGraph::new(
+            generator,
+            device,
+            definition_count,
+            query_capacity,
+            hash_capacity,
+        )?);
+    }
+    let graph = &graph_guard
+        .as_ref()
+        .expect("symbol graph installed")
+        .materialized;
+    let resolved_values = graph.buffer::<u32>("link_partition_resolved_value")?;
+    let status = graph.buffer::<u32>("link_partition_status")?;
+    let graph_bindings = graph.bindings()?;
+    let mut resources = ResourceMap::new();
+    resources.attach_graph(graph.graph(), graph.allocations());
+    resources.register_graph_bindings(graph.graph(), &graph_bindings);
+    resources.buffer("gSymbolPartition", &params);
+    resources.buffer("link_partition_definition", &definitions);
+    resources.buffer("link_partition_query", &queries);
+    resources.buffer("link_partition_resolved_readback", &values_readback);
+    resources.buffer("link_partition_status_readback", &status_readback);
+    let clear = ComputeOperation::direct(
         device,
-        Some("codegen.x86.link.symbol_partition.clear.bind_group"),
+        graph,
+        &resources,
+        "codegen.x86.link.symbol_partition.clear",
         &generator.link_symbol_partition_clear_pass,
-        0,
-        &[
-            ("gSymbolPartition", params.buffer.as_entire_binding()),
-            ("link_partition_definition", definitions.as_entire_binding()),
-            ("link_partition_query", queries.buffer.as_entire_binding()),
-            (
-                "link_partition_hash_table",
-                hash_table.buffer.as_entire_binding(),
-            ),
-            (
-                "link_partition_definition_value",
-                definition_values.buffer.as_entire_binding(),
-            ),
-            (
-                "link_partition_resolved_value",
-                resolved_values.buffer.as_entire_binding(),
-            ),
-            ("link_partition_status", status.buffer.as_entire_binding()),
-        ],
+        hash_capacity.max(definition_count).max(query_capacity) as u32,
     )?;
-    let insert_group = reflected_bind_group(
+    let insert = ComputeOperation::direct(
         device,
-        Some("codegen.x86.link.symbol_partition.insert.bind_group"),
+        graph,
+        &resources,
+        "codegen.x86.link.symbol_partition.insert",
         &generator.link_symbol_partition_insert_pass,
-        0,
-        &[
-            ("gSymbolPartition", params.buffer.as_entire_binding()),
-            ("link_partition_definition", definitions.as_entire_binding()),
-            ("link_partition_query", queries.buffer.as_entire_binding()),
-            (
-                "link_partition_hash_table",
-                hash_table.buffer.as_entire_binding(),
-            ),
-            (
-                "link_partition_definition_value",
-                definition_values.buffer.as_entire_binding(),
-            ),
-            (
-                "link_partition_resolved_value",
-                resolved_values.buffer.as_entire_binding(),
-            ),
-            ("link_partition_status", status.buffer.as_entire_binding()),
-        ],
+        definition_count.max(1) as u32,
     )?;
-    let define_group = reflected_bind_group(
+    let define = ComputeOperation::direct(
         device,
-        Some("codegen.x86.link.symbol_partition.define.bind_group"),
+        graph,
+        &resources,
+        "codegen.x86.link.symbol_partition.define",
         &generator.link_symbol_partition_define_pass,
-        0,
-        &[
-            ("gSymbolPartition", params.buffer.as_entire_binding()),
-            ("link_partition_definition", definitions.as_entire_binding()),
-            ("link_partition_query", queries.buffer.as_entire_binding()),
-            (
-                "link_partition_hash_table",
-                hash_table.buffer.as_entire_binding(),
-            ),
-            (
-                "link_partition_definition_value",
-                definition_values.buffer.as_entire_binding(),
-            ),
-            (
-                "link_partition_resolved_value",
-                resolved_values.buffer.as_entire_binding(),
-            ),
-            ("link_partition_status", status.buffer.as_entire_binding()),
-        ],
+        definition_count.max(1) as u32,
     )?;
-    let resolve_group = reflected_bind_group(
+    let resolve = ComputeOperation::direct(
         device,
-        Some("codegen.x86.link.symbol_partition.resolve.bind_group"),
+        graph,
+        &resources,
+        "codegen.x86.link.symbol_partition.resolve",
         &generator.link_symbol_partition_resolve_pass,
+        query_capacity as u32,
+    )?;
+    let status_copy = CopyBufferOperation::new(
+        graph,
+        "codegen.x86.link.symbol_partition.status.readback",
+        "link_partition_status",
+        &status,
         0,
-        &[
-            ("gSymbolPartition", params.buffer.as_entire_binding()),
-            ("link_partition_definition", definitions.as_entire_binding()),
-            ("link_partition_query", queries.buffer.as_entire_binding()),
-            (
-                "link_partition_hash_table",
-                hash_table.buffer.as_entire_binding(),
-            ),
-            (
-                "link_partition_definition_value",
-                definition_values.buffer.as_entire_binding(),
-            ),
-            (
-                "link_partition_resolved_value",
-                resolved_values.buffer.as_entire_binding(),
-            ),
-            ("link_partition_status", status.buffer.as_entire_binding()),
-        ],
+        "link_partition_status_readback",
+        &status_readback,
+        0,
+        16,
     )?;
 
     let batches = partition
@@ -257,56 +408,31 @@ fn resolve_partition(
             label: Some("codegen.x86.link.symbol_partition.encoder"),
         });
         if batch_index == 0 {
-            dispatch_compute_pass(
+            clear.record_elements(
                 &mut encoder,
-                "link.symbol_partition.clear",
-                "codegen.x86.link.symbol_partition.clear",
-                &generator.link_symbol_partition_clear_pass,
-                &clear_group,
-                workgroup_grid_1d(
-                    hash_capacity
-                        .max(definition_count)
-                        .max(batch.len())
-                        .div_ceil(256) as u32,
-                ),
-            );
+                hash_capacity.max(definition_count).max(batch.len()) as u32,
+            )?;
             if definition_count != 0 {
-                dispatch_compute_pass(
-                    &mut encoder,
-                    "link.symbol_partition.insert",
-                    "codegen.x86.link.symbol_partition.insert",
-                    &generator.link_symbol_partition_insert_pass,
-                    &insert_group,
-                    workgroup_grid_1d((definition_count as u32).div_ceil(256)),
-                );
-                dispatch_compute_pass(
-                    &mut encoder,
-                    "link.symbol_partition.define",
-                    "codegen.x86.link.symbol_partition.define",
-                    &generator.link_symbol_partition_define_pass,
-                    &define_group,
-                    workgroup_grid_1d((definition_count as u32).div_ceil(256)),
-                );
+                insert.record_elements(&mut encoder, definition_count as u32)?;
+                define.record_elements(&mut encoder, definition_count as u32)?;
             }
         }
         if !batch.is_empty() {
-            dispatch_compute_pass(
-                &mut encoder,
-                "link.symbol_partition.resolve",
-                "codegen.x86.link.symbol_partition.resolve",
-                &generator.link_symbol_partition_resolve_pass,
-                &resolve_group,
-                workgroup_grid_1d((batch.len() as u32).div_ceil(256)),
-            );
-            encoder.copy_buffer_to_buffer(
-                &resolved_values.buffer,
+            resolve.record_elements(&mut encoder, batch.len() as u32)?;
+            CopyBufferOperation::new(
+                graph,
+                "codegen.x86.link.symbol_partition.resolved_values.readback",
+                "link_partition_resolved_value",
+                &resolved_values,
                 0,
-                &values_readback.buffer,
+                "link_partition_resolved_readback",
+                &values_readback,
                 0,
                 (batch.len() * 4) as u64,
-            );
+            )?
+            .record(&mut encoder);
         }
-        encoder.copy_buffer_to_buffer(&status.buffer, 0, &status_readback.buffer, 0, 16);
+        status_copy.record(&mut encoder);
         crate::gpu::passes_core::submit_with_progress(
             queue,
             "codegen.x86.link.symbol_partition",

@@ -8,9 +8,12 @@ use crate::gpu::{
     compiler_graph::{
         CompilerGraphBuilder,
         CompilerPhase,
+        PassAccess,
+        PassDesc,
         RadixSortGraph,
         RadixSortGraphPasses,
         RadixSortGraphResources,
+        RadixSortGraphStepPasses,
         ResourceDomain,
     },
     kernels::KernelRegistry,
@@ -117,6 +120,7 @@ pub(super) fn resolve_radix_sort_graph_resources(
 pub(crate) struct RadixSortDefinition {
     pub phase: CompilerPhase,
     pub dispatch_domain: ResourceDomain,
+    pub small_pass: &'static str,
     pub passes: RadixSortGraphPasses,
     pub kernels: RadixSortKernels,
     pub resources: RadixSortResources,
@@ -124,10 +128,6 @@ pub(crate) struct RadixSortDefinition {
 }
 
 impl RadixSortDefinition {
-    pub(crate) const fn label(self) -> &'static str {
-        self.passes.order_to_temporary.histogram
-    }
-
     pub(crate) fn plan<'a>(
         self,
         capacity: u32,
@@ -136,11 +136,13 @@ impl RadixSortDefinition {
         dispatch: RadixSortDispatch<'a>,
     ) -> RadixSortPlan<'a> {
         RadixSortPlan {
-            label: self.label(),
+            label: self.small_pass,
             capacity,
             small_capacity,
             steps,
             kernels: self.kernels,
+            small_pass: self.small_pass,
+            graph_passes: self.passes,
             dispatch,
             resources: self.resources,
         }
@@ -216,6 +218,39 @@ impl RadixSortDefinition {
         count_binding: &'static str,
         keys: &[(&'static str, &'static str)],
     ) -> Result<(), String> {
+        if small_capacity > 0 && capacity <= small_capacity {
+            let small_kernel = self.kernels.small.ok_or_else(|| {
+                format!(
+                    "radix sort {} selects a small strategy without a small kernel",
+                    self.small_pass
+                )
+            })?;
+            let resource = |name: &str| {
+                graph
+                    .resource_id(name)
+                    .ok_or_else(|| format!("radix sort resource `{name}` is not registered"))
+            };
+            let mut accesses = keys
+                .iter()
+                .map(|&(binding, name)| resource(name).map(|id| PassAccess::read(binding, id)))
+                .collect::<Result<Vec<_>, _>>()?;
+            accesses.extend([
+                PassAccess::read(count_binding, resource(self.resources.count)?),
+                PassAccess::initialize_read_write("radix_order", resource(self.resources.order)?),
+            ]);
+            if let Some(dispatch_args) = graph.resource_id(self.dispatch_args) {
+                accesses.push(PassAccess::indirect(self.dispatch_args, dispatch_args));
+            }
+            graph.add_pass(PassDesc {
+                name: self.small_pass,
+                phase: self.phase,
+                dispatch_domain: self.dispatch_domain,
+                accesses,
+            })?;
+            graph.assign_kernel(self.small_pass, small_kernel)?;
+            graph.require_complete_reflection(self.small_pass)?;
+            return Ok(());
+        }
         let resources = self.graph_resources(graph, count_binding, keys)?;
         graph.add_fragment(RadixSortGraph {
             phase: self.phase,
@@ -294,6 +329,8 @@ pub(crate) struct RadixSortPlan<'a> {
     pub small_capacity: u32,
     pub steps: u32,
     pub kernels: RadixSortKernels,
+    pub small_pass: &'static str,
+    pub graph_passes: RadixSortGraphPasses,
     pub dispatch: RadixSortDispatch<'a>,
     pub resources: RadixSortResources,
 }
@@ -444,21 +481,15 @@ struct StandardRadixSortOperation<P> {
 }
 
 struct RadixSortStageLabels {
-    small: String,
-    histogram: String,
-    bucket_prefix: String,
-    bucket_bases: String,
-    scatter: String,
+    small: &'static str,
+    directions: [RadixSortGraphStepPasses; 2],
 }
 
 impl RadixSortStageLabels {
-    fn new(label: &str) -> Self {
+    fn new(small: &'static str, passes: RadixSortGraphPasses) -> Self {
         Self {
-            small: format!("{label}.small"),
-            histogram: format!("{label}.histogram"),
-            bucket_prefix: format!("{label}.bucket_prefix"),
-            bucket_bases: format!("{label}.bucket_bases"),
-            scatter: format!("{label}.scatter"),
+            small,
+            directions: [passes.order_to_temporary, passes.temporary_to_order],
         }
     }
 }
@@ -506,7 +537,7 @@ where
                 ],
             )?;
             return Ok(Self {
-                labels: RadixSortStageLabels::new(plan.label),
+                labels: RadixSortStageLabels::new(plan.small_pass, plan.graph_passes),
                 passes: passes.into(),
                 dispatch: plan.dispatch.into(),
                 _small_params: Some(params),
@@ -598,7 +629,7 @@ where
         )?;
 
         Ok(Self {
-            labels: RadixSortStageLabels::new(plan.label),
+            labels: RadixSortStageLabels::new(plan.small_pass, plan.graph_passes),
             passes: passes.into(),
             dispatch: plan.dispatch.into(),
             _small_params: None,
@@ -636,11 +667,12 @@ where
         for step in 0..self.steps {
             let dynamic_offsets = [params.dynamic_offset(step)];
             let direction = (step + self.initial_direction) % 2;
+            let labels = self.labels.directions[direction];
             record_dispatch(
                 encoder,
                 &passes.histogram,
                 &self.histogram[direction],
-                &self.labels.histogram,
+                labels.histogram,
                 &dispatch.rows,
                 &dynamic_offsets,
             )?;
@@ -650,7 +682,7 @@ where
                 self.bucket_prefix
                     .as_ref()
                     .expect("non-small radix sort must bind bucket prefix"),
-                &self.labels.bucket_prefix,
+                labels.bucket_prefix,
                 &dispatch.bucket_prefix,
                 &dynamic_offsets,
             )?;
@@ -660,7 +692,7 @@ where
                 self.bucket_bases
                     .as_ref()
                     .expect("non-small radix sort must bind bucket bases"),
-                &self.labels.bucket_bases,
+                labels.bucket_bases,
                 &dispatch.bucket_bases,
                 &dynamic_offsets,
             )?;
@@ -668,7 +700,7 @@ where
                 encoder,
                 &passes.scatter,
                 &self.scatter[direction],
-                &self.labels.scatter,
+                labels.scatter,
                 &dispatch.rows,
                 &dynamic_offsets,
             )?;

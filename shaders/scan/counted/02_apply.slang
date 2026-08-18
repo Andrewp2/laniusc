@@ -6,7 +6,7 @@ struct Params
 {
     uint n_items;
     uint n_blocks;
-    uint scan_step;
+    uint min_items;
 };
 
 ConstantBuffer<Params> gScan;
@@ -27,7 +27,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_items()
 {
-    return min(scan_count[0], gScan.n_items);
+    return min(max(scan_count[0], gScan.min_items), gScan.n_items);
 }
 
 uint active_blocks()

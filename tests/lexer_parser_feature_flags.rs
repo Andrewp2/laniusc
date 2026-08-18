@@ -11,6 +11,7 @@ use laniusc_compiler::{
             PARSER_FEATURE_MEMBERS,
             PARSER_FEATURE_PREDICATES,
             PARSER_FEATURE_STRING_EXPRS,
+            PARSER_FEATURE_STRUCTS,
             PARSER_FEATURE_TYPE_ALIASES,
             PARSER_FEATURE_TYPE_ARGS,
         },
@@ -61,7 +62,7 @@ fn gpu_lexer_publishes_conservative_parser_family_flags() {
             ),
             (
                 "struct Point { x: i32 } fn main(p: Point) -> i32 { return p.x; }",
-                PARSER_FEATURE_MEMBERS,
+                PARSER_FEATURE_STRUCTS | PARSER_FEATURE_MEMBERS,
             ),
             (
                 "trait Value { fn get(self) -> i32; } impl Value for i32 { fn get(self) -> i32 { return self; } }",

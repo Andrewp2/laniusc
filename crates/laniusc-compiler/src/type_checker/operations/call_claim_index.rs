@@ -24,6 +24,13 @@ impl CallClaimKind {
             Self::Const => (CALLS_CONST_CLAIM_INDEX_CLEAR, CALLS_CONST_CLAIM_INDEX_BUILD),
         }
     }
+
+    fn prepare_pass(self) -> &'static str {
+        match self {
+            Self::Generic => compiler_graph::GENERIC_CLAIM_INDEX_PREPARE_PASS,
+            Self::Const => compiler_graph::CONST_CLAIM_INDEX_PREPARE_PASS,
+        }
+    }
 }
 
 pub(in crate::type_checker) struct CallClaimIndexBuild<'a> {
@@ -39,9 +46,8 @@ pub(in crate::type_checker) struct CallClaimIndexBuild<'a> {
 /// The active count prepares one indirect domain shared by clearing, building,
 /// validation, and every downstream lookup consumer. No ordering is created.
 pub(in crate::type_checker) struct CallClaimIndexOperation {
-    dispatch_pass: PassData,
     _dispatch_params: LaniusBuffer<CountDispatchParams>,
-    dispatch: wgpu::BindGroup,
+    dispatch: ComputeOperation,
     dispatch_args: LaniusBuffer<u32>,
     index: ExactLookupOperation,
 }
@@ -90,17 +96,14 @@ impl CallClaimIndexOperation {
             },
         );
         resources.buffer("gParams", &dispatch_params);
-        let dispatch_pass = passes.kernel("type_checker/count/dispatch_args").clone();
-        let dispatch = reflected_bind_group_with_overrides(
+        let dispatch = ComputeOperation::direct_with_uniform(
             device,
-            &format!("{}.dispatch", input.kind.label()),
-            &dispatch_pass,
+            input.graph,
             &resources,
-            &[
-                ("gParams", dispatch_params.as_entire_binding()),
-                ("count_in", resources[count].clone()),
-                ("dispatch_args", input.dispatch_args.as_entire_binding()),
-            ],
+            input.kind.prepare_pass(),
+            &passes.kernel("type_checker/count/dispatch_args"),
+            &dispatch_params,
+            1,
         )?;
         let (clear, build) = input.kind.specs();
         let index = ExactLookupOperation::new_with_indirect_clear(
@@ -115,7 +118,6 @@ impl CallClaimIndexOperation {
         )?;
 
         Ok(Self {
-            dispatch_pass,
             _dispatch_params: dispatch_params,
             dispatch,
             dispatch_args: input.dispatch_args.clone(),
@@ -124,13 +126,7 @@ impl CallClaimIndexOperation {
     }
 
     pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_compute(
-            encoder,
-            &self.dispatch_pass,
-            &self.dispatch,
-            "type_check.calls.claim_index.dispatch_args",
-            1,
-        )?;
+        self.dispatch.record(encoder)?;
         self.index.record(encoder)
     }
 

@@ -4,45 +4,41 @@ use super::*;
 
 /// Records scalar, named, aggregate-reference, and aggregate-detail type collection.
 pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passes(
-    passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ResidentTypeCheckWorkspace,
-    hir_active_dispatch_args: &LaniusBuffer<u32>,
+    parser_feature_flags: u32,
     labels: &TypeInstanceCollectionTimerLabels,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/type/instances/01_collect"),
-        &state.type_instances.collect,
-        "type_check.resident.type_instances_collect.pass",
-        hir_active_dispatch_args,
-    )?;
+    let collection = &state.type_instances.collection;
+    match labels.stage {
+        TypeInstanceCollectionStage::Initial => collection.scalar.record(encoder)?,
+        TypeInstanceCollectionStage::Projected => collection
+            .scalar
+            .record_invocation(encoder, &collection.projected_scalar)?,
+    }
     stamp_typecheck_timer(&mut timer, encoder, labels.scalar);
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/type/instances/01b_collect_named_instances"),
-        &state.type_instances.collect_named,
-        "type_check.resident.type_instances_collect_named.pass",
-        hir_active_dispatch_args,
-    )?;
+    match labels.stage {
+        TypeInstanceCollectionStage::Initial => collection.named.record(encoder)?,
+        TypeInstanceCollectionStage::Projected => collection
+            .named
+            .record_invocation(encoder, &collection.projected_named)?,
+    }
     stamp_typecheck_timer(&mut timer, encoder, labels.named);
-    if aggregate_passes_required(state.cache_key.parser_feature_flags) {
-        record_compute_indirect(
-            encoder,
-            &passes.kernel("type_checker/type/instances/01c_collect_aggregate_refs"),
-            &state.type_instances.collect_aggregate_refs,
-            "type_check.resident.type_instances_collect_aggregate_refs.pass",
-            hir_active_dispatch_args,
-        )?;
+    if aggregate_passes_required(parser_feature_flags) {
+        match labels.stage {
+            TypeInstanceCollectionStage::Initial => collection.aggregate_refs.record(encoder)?,
+            TypeInstanceCollectionStage::Projected => collection
+                .aggregate_refs
+                .record_invocation(encoder, &collection.projected_aggregate_refs)?,
+        }
         stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_refs);
-        record_compute_indirect(
-            encoder,
-            &passes.kernel("type_checker/type/instances/01d_collect_aggregate_details"),
-            &state.type_instances.collect_aggregate_details,
-            "type_check.resident.type_instances_collect_aggregate_details.pass",
-            hir_active_dispatch_args,
-        )?;
+        match labels.stage {
+            TypeInstanceCollectionStage::Initial => collection.aggregate_details.record(encoder)?,
+            TypeInstanceCollectionStage::Projected => collection
+                .aggregate_details
+                .record_invocation(encoder, &collection.projected_aggregate_details)?,
+        }
         stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_details);
     }
 
@@ -51,70 +47,13 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
 
 /// Records predicate-owner propagation, compact generic ingestion, and key sorts.
 pub(in crate::type_checker) fn record_generic_param_record_passes_with_passes(
-    passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     type_instances: &TypeInstanceBindGroups,
-    hir_active_dispatch_args: &LaniusBuffer<u32>,
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/type/instances/00a_mark_generic_param_records"),
-        &type_instances.mark_generic_param_records,
-        "type_check.resident.type_instances.mark_generic_param_records.pass",
-        hir_active_dispatch_args,
-    )?;
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.generic_params.mark.done",
-    );
-
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.generic_params.owner.done",
-    );
-
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/type/instances/00b_decl_generic_params"),
-        &type_instances.decl_generic_params,
-        "type_check.resident.type_instances.decl_generic_params.pass",
-        hir_active_dispatch_args,
-    )?;
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.decl_generic_params.done",
-    );
-
-    type_instances.generic_parameter_index.record(encoder)?;
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.generic_params.index.done",
-    );
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.generic_param_slots.compact.done",
-    );
-
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/type/instances/00e_generic_param_use_slots"),
-        &type_instances.generic_param_use_slots,
-        "type_check.resident.type_instances_generic_param_use_slots.pass",
-        hir_active_dispatch_args,
-    )?;
-    stamp_typecheck_timer(
-        &mut timer,
-        encoder,
-        "typecheck.type_instances.generic_param_use_slots.done",
-    );
-
-    Ok(())
+    type_instances
+        .generic_parameters
+        .record(encoder, timer.take())
 }
 
 /// Builds the exact compact struct-field lookup.

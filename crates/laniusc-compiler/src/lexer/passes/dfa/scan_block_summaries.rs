@@ -8,6 +8,7 @@ use crate::{
         InputElements,
         PassData,
         compute_pass_batching_enabled,
+        record_compiler_operation,
         validation_scopes_enabled,
     },
     lexer::{buffers::GpuBuffers, debug::DebugOutput, util::compute_rounds},
@@ -97,6 +98,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
             }
             return Ok(());
         }
+        record_compiler_operation(Self::NAME);
         let scan_params = b
             .dfa_scan_params
             .as_ref()
@@ -112,21 +114,27 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
         ]);
         let bg = if let Some(cache) = ctx.bg_cache.as_deref_mut() {
             cache
-                .reflected_for_pass_data(device, "func_blocks_bg", pd, &res)?
+                .reflected_for_graph_pass_data(device, Self::NAME, pd, b, &res, None)?
                 .into_iter()
                 .next()
                 .expect("DFA scan pass must have one reflected bind group")
         } else {
+            crate::gpu::passes_core::CompilerGraphBuffers::validate_compiler_pass(
+                b,
+                Self::NAME,
+                &res,
+                None,
+            )?;
             std::sync::Arc::new(
                 crate::gpu::passes_core::bind_group::create_bind_group_from_reflection(
                     device,
-                    Some("func_blocks_bg"),
+                    Some(Self::NAME),
                     layout0,
                     reflection,
                     0,
                     &res,
                 )
-                .expect("func_blocks_bg reflection"),
+                .expect("DFA scan graph binding reflection"),
             )
         };
         let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(

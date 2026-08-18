@@ -227,9 +227,7 @@ impl GpuLexer {
 
         let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
 
-        let timers_on = self.timers_supported
-            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false)
-                || crate::gpu::trace::enabled());
+        let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
 
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 128))
@@ -701,9 +699,7 @@ impl GpuLexer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("lex-source-pack-resident-recorded-enc"),
             });
-        let timers_on = self.timers_supported
-            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
-                || crate::gpu::trace::enabled());
+        let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {
@@ -817,6 +813,12 @@ impl GpuLexer {
 
         let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
         let mut host_timer = HostCompileTimer::new();
+        let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
+        let mut lex_timer = if timers_on {
+            Some(GpuTimer::new(&self.device, &self.queue, 128))
+        } else {
+            None
+        };
 
         #[cfg(feature = "gpu-debug")]
         let mut debug_output = crate::lexer::debug::DebugOutput::default();
@@ -830,9 +832,12 @@ impl GpuLexer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("lex-source-pack-resident-count-boundary-enc"),
             });
+        if let Some(timer) = lex_timer.as_mut() {
+            timer.stamp(&mut lex_encoder, "lexer.source_pack.start");
+        }
 
         {
-            let mut timer_ref: Option<&mut GpuTimer> = None;
+            let mut timer_ref = lex_timer.as_mut();
             let mut dbg_ref = maybe_dbg;
             let mut cache_guard = self
                 .bg_cache
@@ -850,16 +855,13 @@ impl GpuLexer {
         }
 
         let token_count_readback = &bufs.token_count_readback.buffer;
-        lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
-        lex_encoder.copy_buffer_to_buffer(
-            &bufs.parser_feature_flags,
-            0,
-            &token_count_readback,
-            4,
-            4,
-        );
+        bufs.record_count_readback(&mut lex_encoder);
+        if let Some(timer) = lex_timer.as_mut() {
+            timer.stamp(&mut lex_encoder, "lexer.source_pack.count_readback.done");
+            timer.resolve(&mut lex_encoder);
+        }
 
-        crate::gpu::passes_core::submit_with_optional_validation(
+        let lex_submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
             &self.queue,
             "lex.source-pack.resident-count-boundary",
@@ -883,6 +885,16 @@ impl GpuLexer {
         bufs.parser_feature_flags_value = u32_from_first_4(&count_bytes[4..]);
         drop(count_bytes);
         token_count_readback.unmap();
+        if let Some(stamps) = lex_timer
+            .as_ref()
+            .and_then(|timer| timer.try_read(&self.device))
+        {
+            print_timer_trace(
+                &stamps,
+                lex_timer.as_ref().expect("timer exists").period_ns(),
+                lex_submit_timing.gpu_anchor,
+            );
+        }
         if token_count > bufs.n {
             anyhow::bail!(
                 "source-pack lexer token count unexpectedly exceeds byte capacity: count={}, capacity={}",
@@ -897,9 +909,6 @@ impl GpuLexer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("compile-source-pack-after-token-count-enc"),
                 });
-        let timers_on = self.timers_supported
-            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
-                || crate::gpu::trace::enabled());
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {
@@ -1011,9 +1020,7 @@ impl GpuLexer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("lex-resident-recorded-enc"),
             });
-        let timers_on = self.timers_supported
-            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
-                || crate::gpu::trace::enabled());
+        let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {
@@ -1159,14 +1166,7 @@ impl GpuLexer {
         }
 
         let token_count_readback = &bufs.token_count_readback.buffer;
-        lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
-        lex_encoder.copy_buffer_to_buffer(
-            &bufs.parser_feature_flags,
-            0,
-            &token_count_readback,
-            4,
-            4,
-        );
+        bufs.record_count_readback(&mut lex_encoder);
 
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
@@ -1203,9 +1203,7 @@ impl GpuLexer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("compile-after-token-count-enc"),
                 });
-        let timers_on = self.timers_supported
-            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
-                || crate::gpu::trace::enabled());
+        let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {
@@ -1339,14 +1337,7 @@ impl GpuLexer {
         }
 
         let token_count_readback = &bufs.token_count_readback.buffer;
-        lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
-        lex_encoder.copy_buffer_to_buffer(
-            &bufs.parser_feature_flags,
-            0,
-            &token_count_readback,
-            4,
-            4,
-        );
+        bufs.record_count_readback(&mut lex_encoder);
 
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
@@ -1394,9 +1385,7 @@ impl GpuLexer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("compile-after-token-count-enc"),
                 });
-        let timers_on = self.timers_supported
-            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
-                || crate::gpu::trace::enabled());
+        let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {
@@ -1525,14 +1514,7 @@ impl GpuLexer {
         }
 
         let token_count_readback = &bufs.token_count_readback.buffer;
-        lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
-        lex_encoder.copy_buffer_to_buffer(
-            &bufs.parser_feature_flags,
-            0,
-            &token_count_readback,
-            4,
-            4,
-        );
+        bufs.record_count_readback(&mut lex_encoder);
 
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
@@ -1569,9 +1551,7 @@ impl GpuLexer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("compile-after-token-count-enc"),
                 });
-        let timers_on = self.timers_supported
-            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
-                || crate::gpu::trace::enabled());
+        let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {

@@ -4,10 +4,214 @@ use super::{
     GpuWasmLinkInput,
     GpuWasmLinkRelocationRecord,
     GpuWasmRelocationTargetKind,
-    executable::{bytemuck_words, dispatch, input_u32, link_params_words, rw_u32},
+    executable::{bytemuck_words, input_u32, link_params_words, rw_u32},
     symbol_partitions::GpuWasmSymbolPartitionPlan,
 };
-use crate::codegen::wasm::{GpuWasmLinker, create_wasm_bind_group};
+use crate::{
+    codegen::wasm::GpuWasmLinker,
+    gpu::{
+        compiler_graph::{
+            AccessMode,
+            CompilerGraphBuilder,
+            CompilerPhase,
+            MaterializedCompilerGraph,
+            ReflectedResourceBinding,
+            ResourceClass,
+            ResourceDesc,
+            ResourceDomain,
+        },
+        operations::{ComputeOperation, CopyBufferOperation},
+        resource_registry::ResourceMap,
+        workspace::WorkspaceUsageClass,
+    },
+};
+
+pub(crate) struct WasmSymbolPartitionGraph {
+    definition_capacity: usize,
+    relocation_capacity: usize,
+    hash_capacity: usize,
+    batch_capacity: usize,
+    materialized: MaterializedCompilerGraph,
+}
+
+impl WasmSymbolPartitionGraph {
+    fn covers(&self, definitions: usize, relocations: usize, hash: usize, batches: usize) -> bool {
+        self.definition_capacity >= definitions
+            && self.relocation_capacity >= relocations
+            && self.hash_capacity >= hash
+            && self.batch_capacity >= batches
+    }
+
+    fn new(
+        generator: &GpuWasmLinker,
+        device: &wgpu::Device,
+        definition_capacity: usize,
+        relocation_capacity: usize,
+        hash_capacity: usize,
+        batch_capacity: usize,
+    ) -> Result<Self> {
+        let definition_capacity = definition_capacity.max(1);
+        let relocation_capacity = relocation_capacity.max(1);
+        let hash_capacity = hash_capacity.max(1);
+        let batch_capacity = batch_capacity.max(1);
+        let mut graph = CompilerGraphBuilder::new();
+        let mut add = |name: &'static str, class: ResourceClass, bytes: usize| -> Result<()> {
+            graph
+                .add_resource(ResourceDesc {
+                    name,
+                    domain: ResourceDomain::Declarations,
+                    class,
+                    bytes: bytes.max(4) as u64,
+                    usage: WorkspaceUsageClass::Storage,
+                })
+                .map(|_| ())
+                .map_err(anyhow::Error::msg)
+        };
+        add(
+            "link_symbol",
+            ResourceClass::Input,
+            definition_capacity * 16,
+        )?;
+        add(
+            "link_hash_table",
+            ResourceClass::Workspace,
+            hash_capacity * 4,
+        )?;
+        add(
+            "link_symbol_definition",
+            ResourceClass::Workspace,
+            definition_capacity * 4,
+        )?;
+        add("link_status", ResourceClass::Workspace, 16)?;
+        add(
+            "link_relocation",
+            ResourceClass::External,
+            relocation_capacity * 32,
+        )?;
+        add(
+            "link_resolved_target",
+            ResourceClass::Workspace,
+            relocation_capacity * 4,
+        )?;
+        add(
+            "link_resolved_target_readback",
+            ResourceClass::External,
+            relocation_capacity * 4,
+        )?;
+        add("link_status_readback", ResourceClass::External, 16)?;
+        drop(add);
+
+        let resource = |name: &str| {
+            graph
+                .resource_id(name)
+                .unwrap_or_else(|| panic!("Wasm symbol graph resource `{name}`"))
+        };
+        let hash_table = resource("link_hash_table");
+        let definitions = resource("link_symbol_definition");
+        let status = resource("link_status");
+        let resolved_target = resource("link_resolved_target");
+        let target_readback = resource("link_resolved_target_readback");
+        let status_readback = resource("link_status_readback");
+        graph
+            .add_reflected_compute_pass_by_name(
+                "codegen.wasm.link.resolve.clear",
+                CompilerPhase::Artifact,
+                ResourceDomain::Declarations,
+                &generator.link_symbol_clear_pass.reflection,
+                &[
+                    ReflectedResourceBinding {
+                        binding: "link_hash_table",
+                        resource: hash_table,
+                        mode: Some(AccessMode::Write),
+                    },
+                    ReflectedResourceBinding {
+                        binding: "link_symbol_definition",
+                        resource: definitions,
+                        mode: Some(AccessMode::Write),
+                    },
+                    ReflectedResourceBinding {
+                        binding: "link_status",
+                        resource: status,
+                        mode: Some(AccessMode::Write),
+                    },
+                ],
+            )
+            .map_err(anyhow::Error::msg)?;
+        for (name, pass, overrides) in [
+            (
+                "codegen.wasm.link.resolve.insert",
+                &generator.link_symbol_insert_pass,
+                Vec::new(),
+            ),
+            (
+                "codegen.wasm.link.resolve.define",
+                &generator.link_symbol_define_pass,
+                Vec::new(),
+            ),
+            (
+                "codegen.wasm.link.resolve",
+                &generator.link_resolve_pass,
+                vec![ReflectedResourceBinding {
+                    binding: "link_resolved_target",
+                    resource: resolved_target,
+                    mode: Some(AccessMode::Write),
+                }],
+            ),
+        ] {
+            graph
+                .add_reflected_compute_pass_by_name(
+                    name,
+                    CompilerPhase::Artifact,
+                    ResourceDomain::Declarations,
+                    &pass.reflection,
+                    &overrides,
+                )
+                .map_err(anyhow::Error::msg)?;
+        }
+        graph
+            .repeat_pass_range(
+                batch_capacity as u32,
+                "codegen.wasm.link.resolve",
+                "codegen.wasm.link.resolve",
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_buffer_copy_pass(
+                "codegen.wasm.link.resolve.targets.readback",
+                CompilerPhase::Artifact,
+                "link_resolved_target",
+                resolved_target,
+                "link_resolved_target_readback",
+                target_readback,
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_buffer_copy_pass(
+                "codegen.wasm.link.resolve.status.readback",
+                CompilerPhase::Artifact,
+                "link_status",
+                status,
+                "link_status_readback",
+                status_readback,
+            )
+            .map_err(anyhow::Error::msg)?;
+        let graph = graph.build().map_err(anyhow::Error::msg)?;
+        let materialized = MaterializedCompilerGraph::new_with_upstream_storage(
+            device,
+            "wasm_link_symbol_partition",
+            graph,
+            &[],
+        )
+        .map_err(anyhow::Error::msg)?;
+        Ok(Self {
+            definition_capacity,
+            relocation_capacity,
+            hash_capacity,
+            batch_capacity,
+            materialized,
+        })
+    }
+}
 
 impl GpuWasmLinker {
     pub(super) fn resolve_symbol_relocations(
@@ -114,41 +318,45 @@ fn resolve_partition(
         &symbol_words,
         wgpu::BufferUsages::STORAGE,
     );
-    let hash_table = rw_u32(
-        generator,
-        device,
-        "codegen.wasm.link.resolve.hash_table",
-        hash_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let definitions = rw_u32(
-        generator,
-        device,
-        "codegen.wasm.link.resolve.definitions",
-        definition_count,
-        wgpu::BufferUsages::empty(),
-    );
-    let status = rw_u32(
-        generator,
-        device,
-        "codegen.wasm.link.resolve.status",
-        4,
-        wgpu::BufferUsages::COPY_SRC,
-    );
     let relocation_capacity = first_batch_len.max(1);
+    let batches = partition
+        .relocation_indices
+        .chunks(max_relocations)
+        .collect::<Vec<_>>();
+    let submission_count = batches.len().max(1);
+    let mut graph_guard = generator
+        .symbol_partition_graph
+        .lock()
+        .expect("Wasm symbol-partition graph cache poisoned");
+    if !graph_guard.as_ref().is_some_and(|graph| {
+        graph.covers(
+            definition_count,
+            relocation_capacity,
+            hash_capacity,
+            submission_count,
+        )
+    }) {
+        *graph_guard = Some(WasmSymbolPartitionGraph::new(
+            generator,
+            device,
+            definition_count,
+            relocation_capacity,
+            hash_capacity,
+            submission_count,
+        )?);
+    }
+    let graph_state = graph_guard
+        .as_ref()
+        .expect("Wasm symbol-partition graph installed");
+    let graph = &graph_state.materialized;
+    let status = graph.buffer::<u32>("link_status")?;
+    let resolved_targets = graph.buffer::<u32>("link_resolved_target")?;
     let relocations = rw_u32(
         generator,
         device,
         "codegen.wasm.link.resolve.relocations",
-        relocation_capacity * 8,
+        graph_state.relocation_capacity * 8,
         wgpu::BufferUsages::empty(),
-    );
-    let resolved_targets = rw_u32(
-        generator,
-        device,
-        "codegen.wasm.link.resolve.targets",
-        relocation_capacity,
-        wgpu::BufferUsages::COPY_SRC,
     );
     let status_readback = generator.job_buffers.binding_capacity::<u8>(
         device,
@@ -159,65 +367,69 @@ fn resolve_partition(
     let targets_readback = generator.job_buffers.binding_capacity::<u8>(
         device,
         "rb.codegen.wasm.link.resolve.targets",
-        relocation_capacity * 4,
+        graph_state.relocation_capacity * 4,
         wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
     );
-    let common = |pass: &crate::codegen::wasm::LazyWasmPass, label| {
-        create_wasm_bind_group(
-            device,
-            Some(label),
-            pass,
-            0,
-            &[
-                ("gLink", params.as_entire_binding()),
-                ("link_symbol", symbols.as_entire_binding()),
-                ("link_hash_table", hash_table.as_entire_binding()),
-                ("link_symbol_definition", definitions.as_entire_binding()),
-                ("link_status", status.as_entire_binding()),
-            ],
-        )
-    };
-    let clear_group = create_wasm_bind_group(
+    let graph_bindings = graph.bindings()?;
+    let mut resources = ResourceMap::new();
+    resources.attach_graph(graph.graph(), graph.allocations());
+    resources.register_graph_bindings(graph.graph(), &graph_bindings);
+    resources.buffer("gLink", &params);
+    resources.buffer("link_symbol", &symbols);
+    resources.buffer("link_relocation", &relocations);
+    resources.buffer("link_resolved_target_readback", &targets_readback);
+    resources.buffer("link_status_readback", &status_readback);
+    let clear = ComputeOperation::direct(
         device,
-        Some("codegen.wasm.link.resolve.clear.bind_group"),
+        graph,
+        &resources,
+        "codegen.wasm.link.resolve.clear",
         &generator.link_symbol_clear_pass,
-        0,
-        &[
-            ("gLink", params.as_entire_binding()),
-            ("link_hash_table", hash_table.as_entire_binding()),
-            ("link_symbol_definition", definitions.as_entire_binding()),
-            ("link_status", status.as_entire_binding()),
-        ],
+        u32::try_from(
+            graph_state
+                .hash_capacity
+                .max(graph_state.definition_capacity),
+        )
+        .map_err(|_| anyhow!("Wasm symbol clear capacity exceeds u32"))?,
     )?;
-    let insert_group = common(
-        &generator.link_symbol_insert_pass,
-        "codegen.wasm.link.resolve.insert.bind_group",
-    )?;
-    let define_group = common(
-        &generator.link_symbol_define_pass,
-        "codegen.wasm.link.resolve.define.bind_group",
-    )?;
-    let resolve_group = create_wasm_bind_group(
+    let insert = ComputeOperation::direct(
         device,
-        Some("codegen.wasm.link.resolve.bind_group"),
-        &generator.link_resolve_pass,
-        0,
-        &[
-            ("gLink", params.as_entire_binding()),
-            ("link_symbol", symbols.as_entire_binding()),
-            ("link_hash_table", hash_table.as_entire_binding()),
-            ("link_symbol_definition", definitions.as_entire_binding()),
-            ("link_status", status.as_entire_binding()),
-            ("link_relocation", relocations.as_entire_binding()),
-            ("link_resolved_target", resolved_targets.as_entire_binding()),
-        ],
+        graph,
+        &resources,
+        "codegen.wasm.link.resolve.insert",
+        &generator.link_symbol_insert_pass,
+        u32::try_from(graph_state.definition_capacity)
+            .map_err(|_| anyhow!("Wasm symbol capacity exceeds u32"))?,
     )?;
-
-    let batches = partition
-        .relocation_indices
-        .chunks(max_relocations)
-        .collect::<Vec<_>>();
-    let submission_count = batches.len().max(1);
+    let define = ComputeOperation::direct(
+        device,
+        graph,
+        &resources,
+        "codegen.wasm.link.resolve.define",
+        &generator.link_symbol_define_pass,
+        u32::try_from(graph_state.definition_capacity)
+            .map_err(|_| anyhow!("Wasm symbol capacity exceeds u32"))?,
+    )?;
+    let resolve = ComputeOperation::direct(
+        device,
+        graph,
+        &resources,
+        "codegen.wasm.link.resolve",
+        &generator.link_resolve_pass,
+        u32::try_from(graph_state.relocation_capacity)
+            .map_err(|_| anyhow!("Wasm relocation capacity exceeds u32"))?,
+    )?;
+    let status_copy = CopyBufferOperation::new(
+        graph,
+        "codegen.wasm.link.resolve.status.readback",
+        "link_status",
+        &status,
+        0,
+        "link_status_readback",
+        &status_readback,
+        0,
+        16,
+    )?;
     for batch_index in 0..submission_count {
         let batch = batches.get(batch_index).copied().unwrap_or(&[]);
         if !batch.is_empty() {
@@ -241,47 +453,28 @@ fn resolve_partition(
             label: Some("codegen.wasm.link.resolve.encoder"),
         });
         if batch_index == 0 {
-            dispatch(
-                &mut encoder,
-                "codegen.wasm.link.resolve.clear",
-                &generator.link_symbol_clear_pass,
-                &clear_group,
-                hash_capacity.max(definition_count).div_ceil(256) as u32,
-            )?;
+            clear.record_elements(&mut encoder, hash_capacity.max(definition_count) as u32)?;
             if definition_count != 0 {
-                dispatch(
-                    &mut encoder,
-                    "codegen.wasm.link.resolve.insert",
-                    &generator.link_symbol_insert_pass,
-                    &insert_group,
-                    definition_count.div_ceil(256) as u32,
-                )?;
-                dispatch(
-                    &mut encoder,
-                    "codegen.wasm.link.resolve.define",
-                    &generator.link_symbol_define_pass,
-                    &define_group,
-                    definition_count.div_ceil(256) as u32,
-                )?;
+                insert.record_elements(&mut encoder, definition_count as u32)?;
+                define.record_elements(&mut encoder, definition_count as u32)?;
             }
         }
         if !batch.is_empty() {
-            dispatch(
-                &mut encoder,
-                "codegen.wasm.link.resolve",
-                &generator.link_resolve_pass,
-                &resolve_group,
-                batch.len().div_ceil(256) as u32,
-            )?;
-            encoder.copy_buffer_to_buffer(
+            resolve.record_elements(&mut encoder, batch.len() as u32)?;
+            CopyBufferOperation::new(
+                graph,
+                "codegen.wasm.link.resolve.targets.readback",
+                "link_resolved_target",
                 &resolved_targets,
                 0,
+                "link_resolved_target_readback",
                 &targets_readback,
                 0,
                 (batch.len() * 4) as u64,
-            );
+            )?
+            .record(&mut encoder);
         }
-        encoder.copy_buffer_to_buffer(&status, 0, &status_readback, 0, 16);
+        status_copy.record(&mut encoder);
         crate::gpu::passes_core::submit_with_progress(
             queue,
             "codegen.wasm.link.resolve",

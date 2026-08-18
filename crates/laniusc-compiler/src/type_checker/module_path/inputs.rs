@@ -38,9 +38,5 @@ pub(in crate::type_checker) struct CreateInputs<'a> {
     pub(in crate::type_checker) import_visible_value_prefix: &'a LaniusBuffer<u32>,
     pub(in crate::type_checker) import_visible_type_count_out: &'a LaniusBuffer<u32>,
     pub(in crate::type_checker) import_visible_value_count_out: &'a LaniusBuffer<u32>,
-    pub(in crate::type_checker) module_path_key_radix_block_histogram: &'a LaniusBuffer<u32>,
-    pub(in crate::type_checker) module_path_key_radix_block_bucket_prefix: &'a LaniusBuffer<u32>,
-    pub(in crate::type_checker) module_path_key_radix_bucket_total: &'a LaniusBuffer<u32>,
-    pub(in crate::type_checker) module_path_key_radix_bucket_base: &'a LaniusBuffer<u32>,
     pub(in crate::type_checker) dependency_interfaces: Option<&'a GpuDependencyInterfaceState>,
 }

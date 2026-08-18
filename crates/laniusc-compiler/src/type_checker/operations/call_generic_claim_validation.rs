@@ -1,14 +1,13 @@
 use super::super::*;
 
 pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
-    pub required_dispatch_pass: PassData,
     pub claim_scan: PrefixScanOperation,
     pub emit_claims: ComputeOperation,
     pub generic_index: CallClaimIndexOperation,
     pub validate_generic: ComputeOperation,
     pub mark_required: ComputeOperation,
     pub required_scan: PrefixScanOperation,
-    pub required_dispatch: wgpu::BindGroup,
+    pub required_dispatch: ComputeOperation,
     pub required_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub validate_required: ComputeOperation,
     pub const_index: CallClaimIndexOperation,
@@ -22,14 +21,13 @@ pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
 /// private implementation steps. A caller provides only the active HIR
 /// dispatch domain and cannot record an incomplete validation sequence.
 pub(in crate::type_checker) struct CallGenericClaimValidationOperation {
-    required_dispatch_pass: PassData,
     claim_scan: PrefixScanOperation,
     emit_claims: ComputeOperation,
     generic_index: CallClaimIndexOperation,
     validate_generic: ComputeOperation,
     mark_required: ComputeOperation,
     required_scan: PrefixScanOperation,
-    required_dispatch: wgpu::BindGroup,
+    required_dispatch: ComputeOperation,
     _required_dispatch_params: LaniusBuffer<CountDispatchParams>,
     validate_required: ComputeOperation,
     const_index: CallClaimIndexOperation,
@@ -39,7 +37,6 @@ pub(in crate::type_checker) struct CallGenericClaimValidationOperation {
 impl CallGenericClaimValidationOperation {
     pub(in crate::type_checker) fn new(build: CallGenericClaimValidationBuild) -> Self {
         Self {
-            required_dispatch_pass: build.required_dispatch_pass,
             claim_scan: build.claim_scan,
             emit_claims: build.emit_claims,
             generic_index: build.generic_index,
@@ -64,13 +61,7 @@ impl CallGenericClaimValidationOperation {
         self.validate_generic.record(encoder)?;
         self.mark_required.record(encoder)?;
         self.required_scan.record(encoder)?;
-        record_compute(
-            encoder,
-            &self.required_dispatch_pass,
-            &self.required_dispatch,
-            "type_check.calls.generic_claim_validation.required_dispatch",
-            1,
-        )?;
+        self.required_dispatch.record(encoder)?;
         self.const_index.record(encoder)?;
         self.validate_const.record(encoder)
     }

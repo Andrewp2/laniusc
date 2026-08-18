@@ -4,7 +4,7 @@ use anyhow::Result;
 use encase::ShaderType;
 
 use crate::{
-    gpu::passes_core::{PassData, bind_group},
+    gpu::passes_core::{BindGroupCache, PassData},
     parser::buffers::ParserBuffers,
 };
 
@@ -14,6 +14,7 @@ use crate::{
 pub struct Params {
     pub n_pairs: u32,
     pub emit_capacity: u32,
+    pub read_from_a: u32,
 }
 
 /// Pass that writes parser pack-total status words.
@@ -28,30 +29,18 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl PackTotalsStatusPass {
+    pub(in crate::parser) fn data(&self) -> &PassData {
+        &self.data
+    }
+
     /// Records the final packed-total status pass.
     pub fn record_pass(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
-        let read_from_a = buffers
-            .pack_total_reduce_steps
-            .iter()
-            .take_while(|step| step.item_count > 1)
-            .last()
-            .map(|step| step.write_to_a)
-            .unwrap_or(true);
-        let sc_total = if read_from_a {
-            &buffers.pack_sc_prefix_a
-        } else {
-            &buffers.pack_sc_prefix_b
-        };
-        let emit_total = if read_from_a {
-            &buffers.pack_emit_prefix_a
-        } else {
-            &buffers.pack_emit_prefix_b
-        };
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
                 "gParams".into(),
@@ -61,26 +50,44 @@ impl PackTotalsStatusPass {
                 "token_count".into(),
                 buffers.token_count.as_entire_binding(),
             ),
-            ("sc_total".into(), sc_total.as_entire_binding()),
-            ("emit_total".into(), emit_total.as_entire_binding()),
+            (
+                "sc_total_a".into(),
+                buffers.pack_sc_prefix_a.as_entire_binding(),
+            ),
+            (
+                "sc_total_b".into(),
+                buffers.pack_sc_prefix_b.as_entire_binding(),
+            ),
+            (
+                "emit_total_a".into(),
+                buffers.pack_emit_prefix_a.as_entire_binding(),
+            ),
+            (
+                "emit_total_b".into(),
+                buffers.pack_emit_prefix_b.as_entire_binding(),
+            ),
             (
                 "partial_parse_status".into(),
                 buffers.partial_parse_status.as_entire_binding(),
             ),
         ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("pack_totals_status"),
-            &self.data.bind_group_layouts[0],
-            &self.data.reflection,
-            0,
-            &resources,
-        )?;
+        let bind_group = cache
+            .reflected_for_graph_pass_data(
+                device,
+                crate::parser::compiler_graph::PACK_TOTALS_STATUS,
+                &self.data,
+                buffers,
+                &resources,
+                None,
+            )?
+            .into_iter()
+            .next()
+            .expect("pack totals status pass must have one reflected bind group");
         crate::gpu::passes_core::record_or_defer_compute_direct(
             encoder,
             &self.data,
-            &bind_group,
-            "pack_totals_status",
+            bind_group.as_ref(),
+            crate::parser::compiler_graph::PACK_TOTALS_STATUS,
             (1, 1, 1),
         );
         Ok(())

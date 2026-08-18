@@ -609,61 +609,6 @@ impl<'a> From<&'a wgpu::Buffer> for TrackedBufferView<'a> {
     }
 }
 
-impl TrackedBufferView<'_> {
-    pub(crate) fn absolute_offset(&self, relative_offset: u64) -> u64 {
-        assert!(
-            relative_offset <= self.byte_size,
-            "GPU buffer relative offset exceeds its logical view"
-        );
-        self.byte_offset
-            .checked_add(relative_offset)
-            .expect("GPU buffer absolute offset overflow")
-    }
-
-    pub(crate) fn clear(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        relative_offset: u64,
-        size: Option<u64>,
-    ) {
-        let size = size.unwrap_or(self.byte_size - relative_offset);
-        assert!(
-            relative_offset.saturating_add(size) <= self.byte_size,
-            "GPU buffer clear exceeds its logical view"
-        );
-        encoder.clear_buffer(
-            self.buffer,
-            self.absolute_offset(relative_offset),
-            Some(size),
-        );
-    }
-
-    pub(crate) fn copy_to(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        source_offset: u64,
-        destination: TrackedBufferView<'_>,
-        destination_offset: u64,
-        size: u64,
-    ) {
-        assert!(
-            source_offset.saturating_add(size) <= self.byte_size,
-            "GPU buffer copy exceeds its source view"
-        );
-        assert!(
-            destination_offset.saturating_add(size) <= destination.byte_size,
-            "GPU buffer copy exceeds its destination view"
-        );
-        encoder.copy_buffer_to_buffer(
-            self.buffer,
-            self.absolute_offset(source_offset),
-            destination.buffer,
-            destination.absolute_offset(destination_offset),
-            size,
-        );
-    }
-}
-
 impl<T> LaniusBuffer<T> {
     /// Stable identity of the physical GPU allocation shared by all aliases.
     /// Buffers wrapped through `untracked_alias` have no compiler-owned id.

@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import platform
+import shlex
 import shutil
 import statistics
 import subprocess
@@ -16,6 +17,7 @@ import time
 from pathlib import Path
 
 from generate_typical_project import generate
+from perf_model import command_record, new_document, source_facts, summarize, write_document
 from run_typical_lanius_matrix import parse_counts
 
 
@@ -53,6 +55,123 @@ def lanes_for(language: str) -> tuple[str, ...]:
     # TCC deliberately omits an optimizer, so separate optimization lanes would
     # measure the same compiler configuration under misleading names.
     return ("default",) if language == "tcc" else LANES
+
+
+def parse_tcc_parallel_shards(value: str) -> tuple[int, ...]:
+    if not value.strip():
+        return ()
+    try:
+        shards = tuple(int(part.strip()) for part in value.split(",") if part.strip())
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "TCC parallel shard counts must be comma-separated positive integers"
+        ) from error
+    if not shards or any(shard <= 0 for shard in shards) or len(set(shards)) != len(shards):
+        raise argparse.ArgumentTypeError(
+            "TCC parallel shard counts must be distinct positive integers"
+        )
+    return shards
+
+
+def tcc_lanes(
+    parallel_shards: tuple[int, ...], include_serial: bool = True
+) -> tuple[str, ...]:
+    serial = ("default",) if include_serial else ()
+    return (*serial, *(f"parallel-{shards}" for shards in parallel_shards))
+
+
+def tcc_parallel_shard_count(lane: str) -> int | None:
+    prefix = "parallel-"
+    if not lane.startswith(prefix):
+        return None
+    try:
+        shards = int(lane.removeprefix(prefix))
+    except ValueError as error:
+        raise ValueError(f"invalid TCC parallel lane {lane!r}") from error
+    if shards <= 0:
+        raise ValueError(f"invalid TCC parallel lane {lane!r}")
+    return shards
+
+
+def partition_tcc_sources(sources: list[Path], shard_count: int) -> list[list[Path]]:
+    """Split sorted translation units into contiguous, approximately byte-balanced shards."""
+    if shard_count <= 0 or shard_count > len(sources):
+        raise ValueError(
+            f"TCC shard count must be between 1 and {len(sources)}, got {shard_count}"
+        )
+    weights = [source.stat().st_size for source in sources]
+    shards: list[list[Path]] = []
+    cursor = 0
+    remaining_weight = sum(weights)
+    for shard_index in range(shard_count):
+        remaining_shards = shard_count - shard_index
+        if remaining_shards == 1:
+            end = len(sources)
+        else:
+            target = (remaining_weight + remaining_shards - 1) // remaining_shards
+            end = cursor
+            shard_weight = 0
+            maximum_end = len(sources) - (remaining_shards - 1)
+            while end < maximum_end and (end == cursor or shard_weight < target):
+                shard_weight += weights[end]
+                end += 1
+        shard = sources[cursor:end]
+        shards.append(shard)
+        consumed = sum(weights[cursor:end])
+        remaining_weight -= consumed
+        cursor = end
+    assert cursor == len(sources)
+    assert all(shards)
+    return shards
+
+
+def ninja_command(command: list[str]) -> str:
+    return " ".join(
+        token if token in {"$in", "$out"} else shlex.quote(token).replace("$", "$$")
+        for token in command
+    )
+
+
+def write_tcc_parallel_ninja(
+    root: Path,
+    sources: list[Path],
+    shard_count: int,
+    tcc: str,
+    tcc_runtime_path: Path | None,
+) -> tuple[Path, Path]:
+    build_file = root / f"build-tcc-parallel-{shard_count}.ninja"
+    build_root = root / ".benchmark-cache" / f"tcc-parallel-{shard_count}"
+    build_root.mkdir(parents=True, exist_ok=True)
+    output = root / f"typical-project-tcc-parallel-{shard_count}"
+    base = [tcc]
+    if tcc_runtime_path is not None:
+        base.append(f"-B{tcc_runtime_path}")
+    shard_command = ninja_command(
+        [*base, "-std=c11", "-Iinclude", "-r", "-o", "$out", "$in"]
+    )
+    link_command = ninja_command([*base, "-o", "$out", "$in"])
+    lines = [
+        "rule tcc_shard",
+        f"  command = {shard_command}",
+        "  description = TCC-R $out",
+        "rule tcc_link",
+        f"  command = {link_command}",
+        "  description = TCC-LINK $out",
+    ]
+    objects = []
+    for index, shard in enumerate(partition_tcc_sources(sources, shard_count)):
+        object_path = build_root / f"shard-{index:03}.o"
+        object_relative = object_path.relative_to(root)
+        source_relative = [source.relative_to(root) for source in shard]
+        objects.append(object_relative)
+        lines.append(
+            f"build {object_relative}: tcc_shard "
+            + " ".join(map(str, source_relative))
+        )
+    lines.append(f"build {output.name}: tcc_link " + " ".join(map(str, objects)))
+    lines.append(f"default {output.name}")
+    build_file.write_text("\n".join(lines) + "\n")
+    return build_file, output
 
 
 def write_variant(path: Path, original: str, lane: str, sample: int) -> None:
@@ -97,13 +216,28 @@ def command_for(
     env = os.environ.copy()
     if language == "tcc":
         root = project / "c"
-        output = root / "typical-project-tcc"
-        output.unlink(missing_ok=True)
-        sources = sorted(
-            str(path.relative_to(root)) for path in (root / "src").glob("*.c")
-        )
+        source_paths = sorted((root / "src").glob("*.c"))
+        sources = [str(path.relative_to(root)) for path in source_paths]
         if not sources:
             raise RuntimeError(f"TCC project has no C sources: {root}")
+        parallel_shards = tcc_parallel_shard_count(lane)
+        if parallel_shards is not None:
+            build_file, output = write_tcc_parallel_ninja(
+                root,
+                source_paths,
+                parallel_shards,
+                tcc,
+                tcc_runtime_path,
+            )
+            run_checked(["ninja", "-f", build_file.name, "-t", "clean"], root)
+            return (
+                ["ninja", "-f", build_file.name, "-j", str(parallel_shards)],
+                root,
+                output,
+                env,
+            )
+        output = root / "typical-project-tcc"
+        output.unlink(missing_ok=True)
         command = [tcc]
         if tcc_runtime_path is not None:
             command.append(f"-B{tcc_runtime_path}")
@@ -178,12 +312,143 @@ def tool_version(command: list[str]) -> str:
     return (result.stdout or result.stderr).splitlines()[0]
 
 
+def write_canonical_tcc_results(
+    repo: Path,
+    result_root: Path,
+    raw_output: Path,
+    counts: list[int],
+    seed: int,
+    samples: list[dict[str, object]],
+    machine: dict[str, object],
+) -> list[Path]:
+    """Write compact viewer-ready TCC baselines from retained raw samples."""
+    written = []
+    for count in counts:
+        project = repo / f"target/typical-project-{count}"
+        source_paths = sorted((project / "c/src").glob("*.c"))
+        facts = source_facts(source_paths, repo)
+        # Per-file facts make a 10,000-file result needlessly large. The aggregate
+        # facts retain every value displayed by the performance viewer.
+        facts.pop("file_records", None)
+        retained = [
+            sample
+            for sample in samples
+            if sample["file_count"] == count
+            and sample["language"] == "tcc"
+        ]
+        if not retained:
+            raise ValueError(f"no retained TCC samples for {count} files")
+        run_id = f"frozen-typical-project-{count}-files-tcc"
+        document = new_document(
+            repo,
+            run_id,
+            {
+                "id": f"typical-project-{count}-files-seed-{seed}",
+                "kind": "typical_project",
+                "classification": "frozen external compiler baseline for the corpus-calibrated typical project",
+                "generator": "tools/generate_typical_project.py",
+                "seed": seed,
+                "requested_source_files": count,
+                "baseline_only": True,
+                "comparison_group": f"typical-project/v1/seed-{seed}/files-{count}",
+            },
+            {
+                "platform": machine["platform"],
+                "logical_cpus": machine["logical_cpus"],
+                "gpu": machine["gpu"],
+            },
+        )
+        try:
+            source_artifact = str(raw_output.relative_to(repo))
+        except ValueError:
+            source_artifact = str(raw_output)
+        retained_lanes = sorted({str(sample["lane"]) for sample in retained})
+        path = result_root / f"{run_id}.json"
+        if path.is_file():
+            previous = json.loads(path.read_text())
+            if (
+                previous.get("workload", {}).get("comparison_group")
+                != document["workload"]["comparison_group"]
+            ):
+                raise ValueError(
+                    f"existing TCC result has a different workload identity: {path}"
+                )
+            document["measurements"].extend(
+                measurement
+                for measurement in previous.get("measurements", [])
+                if measurement.get("compiler", {}).get("name") == "tcc"
+                and measurement.get("configuration") not in retained_lanes
+            )
+        for lane in retained_lanes:
+            lane_samples = [sample for sample in retained if sample["lane"] == lane]
+            measurement_samples = [
+                {
+                    "index": index,
+                    "wall_ms": float(sample["wall_ms"]),
+                    "compiler_ms": None,
+                }
+                for index, sample in enumerate(lane_samples)
+            ]
+            command = [str(part) for part in lane_samples[0]["command"]]
+            parallel_shards = tcc_parallel_shard_count(lane)
+            configuration_display = (
+                f"parallel, {parallel_shards} shards"
+                if parallel_shards is not None
+                else None
+            )
+            document["measurements"].append(
+                {
+                    "id": f"tcc-{lane}",
+                    "compiler": {
+                        "name": "tcc",
+                        "version": machine["versions"]["tcc"],
+                    },
+                    "target": "x86_64",
+                    "configuration": lane,
+                    "configuration_display": configuration_display,
+                    "source": facts,
+                    "commands": {
+                        "command": command_record(command, project / "c"),
+                    },
+                    "measurement_semantics": {
+                        "build": (
+                            f"Ninja runs {parallel_shards} byte-balanced TCC partial-link "
+                            "shards in parallel, followed by one TCC link"
+                            if parallel_shards is not None
+                            else "one TCC process compiles and links every generated C source"
+                        ),
+                        "debug_info": "disabled",
+                        "frozen_baseline": True,
+                        "samples": "exact retained wall-time samples",
+                        "source_artifact": source_artifact,
+                    },
+                    "samples": measurement_samples,
+                    "summary": summarize(measurement_samples, facts),
+                    "validation": {
+                        "artifacts_validated": True,
+                        "expected_output_validated": True,
+                    },
+                }
+            )
+        document["measurements"].sort(
+            key=lambda measurement: measurement["configuration"]
+        )
+        write_document(path, document)
+        written.append(path)
+    return written
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--file-counts", default="1,10,100,1000,10000")
     parser.add_argument("--samples", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20260808)
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--canonical-result-dir",
+        type=Path,
+        help="also write one canonical TCC performance-viewer result per workload",
+    )
     parser.add_argument("--languages", type=parse_languages, default=LANGUAGES)
     parser.add_argument("--rust-frontend-threads", type=int, default=16)
     parser.add_argument("--tcc", default="tcc", help="TCC executable")
@@ -192,6 +457,17 @@ def main() -> int:
         type=Path,
         help="optional TCC runtime directory for an extracted installation",
     )
+    parser.add_argument(
+        "--tcc-parallel-shards",
+        type=parse_tcc_parallel_shards,
+        default=(),
+        help="comma-separated TCC partial-link shard counts to benchmark",
+    )
+    parser.add_argument(
+        "--skip-tcc-serial",
+        action="store_true",
+        help="benchmark only the requested parallel TCC configurations",
+    )
     parser.add_argument("--skip-generation", action="store_true")
     parser.add_argument("--skip-lanius", action="store_true")
     args = parser.parse_args()
@@ -199,8 +475,14 @@ def main() -> int:
         parser.error("--samples must be positive")
     if args.rust_frontend_threads <= 0:
         parser.error("--rust-frontend-threads must be positive")
+    if args.skip_tcc_serial and not args.tcc_parallel_shards:
+        parser.error("--skip-tcc-serial requires --tcc-parallel-shards")
 
     repo = Path(__file__).resolve().parents[1]
+    if Path(args.tcc).parent != Path("."):
+        args.tcc = str((repo / args.tcc).resolve())
+    if args.tcc_runtime_path is not None:
+        args.tcc_runtime_path = (repo / args.tcc_runtime_path).resolve()
     counts = parse_counts(args.file_counts)
     output = (repo / args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -236,7 +518,12 @@ def main() -> int:
         manifest = json.loads((project / "manifest.json").read_text())
         expected = manifest["expected_stdout"]
         for language in args.languages:
-            for lane in lanes_for(language):
+            language_lanes = (
+                tcc_lanes(args.tcc_parallel_shards, not args.skip_tcc_serial)
+                if language == "tcc"
+                else lanes_for(language)
+            )
+            for lane in language_lanes:
                 elapsed = []
                 artifact_hashes = []
                 source = entry_source(project, language)
@@ -327,7 +614,7 @@ def main() -> int:
         "measurement_policy": {
             "native": "clean build; cleanup occurs before timed interval; default compiler parallelism",
             "native_source_variation": "a semantics-neutral entry-source marker changes for every sample",
-            "tcc": "one TCC process compiles and links every generated C source; TCC has one default, non-optimizing lane",
+            "tcc": "serial TCC or byte-balanced parallel TCC partial-link shards followed by one TCC link; debug info disabled",
             "zig_cache": "fresh local build cache per sample; persistent compiler-global cache; one unmeasured primer per lane",
             "lanius": "warm daemon edit job including request, source load, compile, and artifact write",
             "debug_info": "disabled",
@@ -354,6 +641,12 @@ def main() -> int:
         ),
     }
     output.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+    if args.canonical_result_dir is not None and "tcc" in args.languages:
+        result_root = (repo / args.canonical_result_dir).resolve()
+        for path in write_canonical_tcc_results(
+            repo, result_root, output, counts, args.seed, samples, document["machine"]
+        ):
+            print(path, flush=True)
     return 0
 
 

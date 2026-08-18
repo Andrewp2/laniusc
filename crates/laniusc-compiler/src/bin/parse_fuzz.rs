@@ -535,7 +535,7 @@ async fn run_source(
                 label,
                 resident.ll1.error_pos,
                 resident.ll1.error_code,
-                resident.ll1.detail
+                resident.ll1.detail,
             );
         }
     }

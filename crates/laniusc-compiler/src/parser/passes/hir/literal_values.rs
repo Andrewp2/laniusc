@@ -4,7 +4,7 @@ use anyhow::Result;
 use encase::ShaderType;
 
 use crate::{
-    gpu::passes_core::{PassData, bind_group},
+    gpu::passes_core::{BindGroupCache, PassData},
     parser::buffers::ParserBuffers,
 };
 
@@ -31,6 +31,10 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirLiteralValuesPass {
+    pub(in crate::parser) fn graph_pass(&self) -> &PassData {
+        &self.data
+    }
+
     /// Records literal value extraction using the original source buffer.
     pub fn record_with_source(
         &self,
@@ -38,10 +42,11 @@ impl HirLiteralValuesPass {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         source_len: u32,
         token_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         crate::parser::buffers::write_uniform(
             queue,
@@ -102,18 +107,23 @@ impl HirLiteralValuesPass {
                 buffers.hir_type_len_value.as_entire_binding(),
             ),
         ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("parser_hir_literal_values"),
-            &self.data.bind_group_layouts[0],
-            &self.data.reflection,
-            0,
-            &resources,
-        )?;
+        let bind_group = cache
+            .reflected_for_graph_external_invocation(
+                device,
+                "parser_hir_literal_values",
+                &self.data,
+                buffers,
+                &resources,
+                Some(dispatch_args),
+                &[token_buf, source_buf],
+            )?
+            .into_iter()
+            .next()
+            .expect("literal-values pass must have one reflected bind group");
         crate::gpu::passes_core::record_or_defer_compute_indirect(
             encoder,
             &self.data,
-            &bind_group,
+            bind_group.as_ref(),
             "parser_hir_literal_values",
             dispatch_args,
         );

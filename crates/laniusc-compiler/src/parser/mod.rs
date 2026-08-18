@@ -8,6 +8,8 @@
 /// Parser buffer models and GPU buffer allocation helpers.
 pub mod buffers;
 
+mod compiler_graph;
+
 /// Debug buffer snapshots and parser debug output containers.
 pub mod debug;
 

@@ -1,10 +1,4 @@
-use super::{
-    super::*,
-    bind_helpers::create_count_dispatch,
-    buffers::Buffers,
-    inputs::CreateInputs,
-    layout::Layout,
-};
+use super::{super::*, buffers::Buffers, inputs::CreateInputs, layout::Layout};
 
 /// Bind groups for module identity, import resolution, and import-cycle checks.
 ///
@@ -12,14 +6,20 @@ use super::{
 /// validates the import graph before declaration lookup consumes it.
 pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) scatter_module_records: ComputeOperation,
-    pub(in crate::type_checker) clear_module_lookup: wgpu::BindGroup,
-    pub(in crate::type_checker) build_module_keys: wgpu::BindGroup,
+    pub(in crate::type_checker) clear_module_lookup: ComputeOperation,
+    pub(in crate::type_checker) build_module_keys: ComputeOperation,
     pub(in crate::type_checker) module_dispatch_params: LaniusBuffer<CountDispatchParams>,
-    pub(in crate::type_checker) module_dispatch: wgpu::BindGroup,
-    pub(in crate::type_checker) validate_modules: wgpu::BindGroup,
-    pub(in crate::type_checker) clear_dependency_module_lookup: Option<wgpu::BindGroup>,
-    pub(in crate::type_checker) build_dependency_module_lookup: Option<wgpu::BindGroup>,
-    pub(in crate::type_checker) resolve_dependency_imports: Option<wgpu::BindGroup>,
+    pub(in crate::type_checker) module_dispatch: ComputeOperation,
+    pub(in crate::type_checker) validate_modules: ComputeOperation,
+    pub(in crate::type_checker) clear_dependency_module_lookup: Option<ComputeOperation>,
+    pub(in crate::type_checker) build_dependency_module_lookup: Option<ComputeOperation>,
+    pub(in crate::type_checker) resolve_dependency_imports: Option<ComputeOperation>,
+    pub(in crate::type_checker) clear_dependency_module_lookup_call_collection:
+        Option<ComputeInvocation>,
+    pub(in crate::type_checker) build_dependency_module_lookup_call_collection:
+        Option<ComputeInvocation>,
+    pub(in crate::type_checker) resolve_dependency_imports_call_collection:
+        Option<ComputeInvocation>,
     pub(in crate::type_checker) scatter_import_records: ComputeOperation,
     pub(in crate::type_checker) resolve_imports: ComputeOperation,
     pub(in crate::type_checker) clear_import_edge_set: ComputeOperation,
@@ -74,107 +74,55 @@ pub(in crate::type_checker) fn create_module_index(
             reserved: 0,
         },
     );
-    let clear_module_lookup = resources.reflected_bind_group_with_overrides(
+    let mut module_lookup_resources = resources.clone();
+    module_lookup_resources.buffer("gParams", &module_lookup_params);
+    let clear_module_lookup = ComputeOperation::direct_spec(
         device,
-        "type_check_modules_02d_clear_module_lookup",
-        &passes.kernel("type_checker/modules/02d_clear_module_lookup"),
-        &[
-            ("gParams", module_lookup_params.as_entire_binding()),
-            (
-                "module_by_canonical_id",
-                buffers.module_by_canonical_id.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &module_lookup_resources,
+        passes,
+        MODULE_LOOKUP_CLEAR,
+        inputs.token_capacity.saturating_mul(2).max(1),
     )?;
-    let build_module_keys = resources.reflected_bind_group_with_overrides(
+    let build_module_keys = ComputeOperation::direct_spec(
         device,
-        "type_check_modules_02e_build_module_keys",
-        &passes.kernel("type_checker/modules/02e_build_module_keys"),
-        &[
-            ("gParams", module_lookup_params.as_entire_binding()),
-            (
-                "module_count_out",
-                buffers.module_count_out.as_entire_binding(),
-            ),
-            ("module_path_id", buffers.module_path_id.as_entire_binding()),
-            (
-                "module_owner_hir",
-                buffers.module_owner_hir.as_entire_binding(),
-            ),
-            (
-                "path_segment_count",
-                buffers.path_segment_count.as_entire_binding(),
-            ),
-            (
-                "path_segment_base",
-                buffers.path_segment_base.as_entire_binding(),
-            ),
-            (
-                "path_prefix_id",
-                buffers.path_prefix_id_a.as_entire_binding(),
-            ),
-            (
-                "path_owner_token",
-                buffers.path_owner_token.as_entire_binding(),
-            ),
-            ("module_status", buffers.module_status.as_entire_binding()),
-            (
-                "module_key_canonical_id",
-                buffers.module_key_canonical_id.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_count",
-                buffers.module_key_segment_count.as_entire_binding(),
-            ),
-            (
-                "module_key_segment_base",
-                buffers.module_key_segment_base.as_entire_binding(),
-            ),
-            (
-                "module_by_canonical_id",
-                buffers.module_by_canonical_id.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &module_lookup_resources,
+        passes,
+        MODULE_KEYS_BUILD,
+        layout.module_n_blocks.saturating_mul(256).max(1),
     )?;
 
-    let (module_dispatch_params, module_dispatch) = create_count_dispatch(
+    let module_dispatch_params = uniform_from_val(
         device,
-        &passes.kernel("type_checker/count/dispatch_args"),
         "type_check.modules.module_dispatch.params",
-        "type_check.modules.module_dispatch",
-        layout.module_capacity_u32,
+        &CountDispatchParams {
+            capacity: layout.module_capacity_u32,
+            multiplier: 1,
+            reserved0: 0,
+            reserved1: 0,
+        },
+    );
+    let mut module_dispatch_resources = resources.clone();
+    module_dispatch_resources.buffer("gParams", &module_dispatch_params);
+    let module_dispatch = ComputeOperation::direct_spec(
+        device,
+        graph,
+        &module_dispatch_resources,
+        passes,
+        MODULE_DISPATCH,
         1,
-        &buffers.module_count_out,
-        &buffers.module_dispatch_args,
     )?;
 
     let mut retained_params = Vec::with_capacity(5);
 
-    let validate_modules = resources.reflected_bind_group_with_overrides(
+    let validate_modules = ComputeOperation::indirect_spec(
         device,
-        "type_check_modules_04_validate_modules",
-        &passes.kernel("type_checker/modules/04_validate_modules"),
-        &[
-            ("gParams", module_lookup_params.as_entire_binding()),
-            (
-                "module_count_out",
-                buffers.module_count_out.as_entire_binding(),
-            ),
-            (
-                "module_by_canonical_id",
-                buffers.module_by_canonical_id.as_entire_binding(),
-            ),
-            (
-                "module_key_canonical_id",
-                buffers.module_key_canonical_id.as_entire_binding(),
-            ),
-            ("module_path_id", buffers.module_path_id.as_entire_binding()),
-            (
-                "path_owner_token",
-                buffers.path_owner_token.as_entire_binding(),
-            ),
-            ("module_status", buffers.module_status.as_entire_binding()),
-        ],
+        graph,
+        &module_lookup_resources,
+        passes,
+        MODULES_VALIDATE,
+        &buffers.module_dispatch_args,
     )?;
 
     let scatter_import_records = ComputeOperation::indirect_spec(
@@ -224,89 +172,72 @@ pub(in crate::type_checker) fn create_module_index(
             },
         )
     });
+    let dependency_operation_resources = dependency_module_params.as_ref().map(|params| {
+        let mut resources = resources.clone();
+        resources.buffer("gParams", params);
+        resources
+    });
     let build_dependency_module_lookup = match (
         inputs.dependency_interfaces,
-        dependency_module_params.as_ref(),
+        dependency_operation_resources.as_ref(),
     ) {
-        (Some(dependencies), Some(params)) => Some(resources.reflected_bind_group_with_overrides(
+        (Some(dependencies), Some(resources)) => Some(ComputeOperation::direct_spec(
             device,
-            "type_check.dependencies.build_module_lookup",
-            &passes.kernel("type_checker/dependencies/00_build_module_lookup"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "dependency_module_lookup",
-                    dependencies.module_lookup.as_entire_binding(),
-                ),
-            ],
+            graph,
+            resources,
+            passes,
+            DEPENDENCY_MODULE_LOOKUP_BUILD,
+            dependencies.module_count.max(1),
         )?),
         _ => None,
     };
     let clear_dependency_module_lookup = match (
         inputs.dependency_interfaces,
-        dependency_module_params.as_ref(),
+        dependency_operation_resources.as_ref(),
     ) {
-        (Some(dependencies), Some(params)) => Some(resources.reflected_bind_group_with_overrides(
+        (Some(dependencies), Some(resources)) => Some(ComputeOperation::direct_spec(
             device,
-            "type_check.dependencies.clear_module_lookup",
-            &passes.kernel("type_checker/dependencies/00a_clear_module_lookup"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "dependency_module_lookup",
-                    dependencies.module_lookup.as_entire_binding(),
-                ),
-            ],
+            graph,
+            resources,
+            passes,
+            DEPENDENCY_MODULE_LOOKUP_CLEAR,
+            dependencies.module_lookup_capacity.max(1),
         )?),
         _ => None,
     };
     let resolve_dependency_imports = match (
         inputs.dependency_interfaces,
-        dependency_module_params.as_ref(),
+        dependency_operation_resources.as_ref(),
         buffers.import_target_dependency_module_id.as_ref(),
     ) {
-        (Some(dependencies), Some(params), Some(target_dependency_module)) => {
-            Some(resources.reflected_bind_group_with_overrides(
-                device,
-                "type_check.dependencies.resolve_imports",
-                &passes.kernel("type_checker/dependencies/01_resolve_imports"),
-                &[
-                    ("gParams", params.as_entire_binding()),
-                    (
-                        "import_count_out",
-                        buffers.import_count_out.as_entire_binding(),
-                    ),
-                    ("import_path_id", buffers.import_path_id.as_entire_binding()),
-                    (
-                        "path_segment_count",
-                        buffers.path_segment_count.as_entire_binding(),
-                    ),
-                    (
-                        "path_segment_base",
-                        buffers.path_segment_base.as_entire_binding(),
-                    ),
-                    (
-                        "path_segment_name_id",
-                        buffers.path_segment_name_id.as_entire_binding(),
-                    ),
-                    (
-                        "path_owner_token",
-                        buffers.path_owner_token.as_entire_binding(),
-                    ),
-                    (
-                        "dependency_module_lookup",
-                        dependencies.module_lookup.as_entire_binding(),
-                    ),
-                    (
-                        "import_target_dependency_module_id",
-                        target_dependency_module.as_entire_binding(),
-                    ),
-                    ("import_status", buffers.import_status.as_entire_binding()),
-                ],
-            )?)
-        }
+        (Some(_), Some(resources), Some(_)) => Some(ComputeOperation::indirect_spec(
+            device,
+            graph,
+            resources,
+            passes,
+            DEPENDENCY_IMPORTS_RESOLVE,
+            &buffers.import_dispatch_args,
+        )?),
         _ => None,
     };
+    let clear_dependency_module_lookup_call_collection = clear_dependency_module_lookup
+        .as_ref()
+        .map(|operation| {
+            operation.invocation(graph, DEPENDENCY_PAGE_CALL_COLLECTION.clear_module_lookup)
+        })
+        .transpose()?;
+    let build_dependency_module_lookup_call_collection = build_dependency_module_lookup
+        .as_ref()
+        .map(|operation| {
+            operation.invocation(graph, DEPENDENCY_PAGE_CALL_COLLECTION.build_module_lookup)
+        })
+        .transpose()?;
+    let resolve_dependency_imports_call_collection = resolve_dependency_imports
+        .as_ref()
+        .map(|operation| {
+            operation.invocation(graph, DEPENDENCY_PAGE_CALL_COLLECTION.resolve_imports)
+        })
+        .transpose()?;
 
     let mut import_edge_resources = resources.clone();
     import_edge_resources.buffer("gParams", &resolve_import_params);
@@ -347,6 +278,9 @@ pub(in crate::type_checker) fn create_module_index(
         clear_dependency_module_lookup,
         build_dependency_module_lookup,
         resolve_dependency_imports,
+        clear_dependency_module_lookup_call_collection,
+        build_dependency_module_lookup_call_collection,
+        resolve_dependency_imports_call_collection,
         scatter_import_records,
         resolve_imports,
         clear_import_edge_set,

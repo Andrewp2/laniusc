@@ -1,133 +1,37 @@
 // src/type_checker/record/control_flow.rs
 
 use super::*;
-
 /// Records the resident enclosing-`if` depth passes from cached type-check state.
 pub(in crate::type_checker) fn record_if_depth_passes_with_passes(
-    passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ResidentTypeCheckWorkspace,
 ) -> Result<()> {
-    record_if_depth_bind_groups_with_passes(
-        passes,
-        encoder,
-        state.cache_key.token_capacity,
-        &state.hir_active_dispatch_args,
-        state.if_depth_n_blocks,
-        &state.if_depth_bind_groups,
-    )
+    let groups = &state.if_depth_bind_groups;
+    groups.clear.record(encoder)?;
+    groups.mark.record(encoder)?;
+    groups.local.record(encoder)?;
+    for step in &groups.hierarchy_up {
+        step.operation.record(encoder)?;
+    }
+    for step in &groups.hierarchy_down {
+        step.operation.record(encoder)?;
+    }
+    groups.apply.record(encoder)
 }
 
 /// Records enclosing-function context clear, mark, scan, and apply passes.
 pub(in crate::type_checker) fn record_fn_context_bind_groups_with_passes(
-    passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
-    token_capacity: u32,
-    hir_active_dispatch_args: &LaniusBuffer<u32>,
-    n_blocks: u32,
     groups: &FnContextBindGroups,
 ) -> Result<()> {
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/fn/context/01_clear"),
-        &groups.clear,
-        "type_check.fn_context.clear",
-        token_capacity.max(n_blocks).max(1),
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/fn/context/02_mark"),
-        &groups.mark,
-        "type_check.fn_context.mark",
-        hir_active_dispatch_args,
-    )?;
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/fn/context/03_local"),
-        &groups.local,
-        "type_check.fn_context.local",
-        token_capacity.max(1),
-    )?;
+    groups.clear.record(encoder)?;
+    groups.mark.record(encoder)?;
+    groups.local.record(encoder)?;
     for step in &groups.hierarchy_up {
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/fn/context/04_hierarchy_up"),
-            &step.bind_group,
-            "type_check.fn_context.hierarchy_up",
-            step.work_items,
-        )?;
+        step.operation.record(encoder)?;
     }
     for step in &groups.hierarchy_down {
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/fn/context/04_hierarchy_down"),
-            &step.bind_group,
-            "type_check.fn_context.hierarchy_down",
-            step.work_items,
-        )?;
+        step.operation.record(encoder)?;
     }
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/fn/context/05_apply"),
-        &groups.apply,
-        "type_check.fn_context.apply",
-        token_capacity.max(1),
-    )
-}
-
-/// Records enclosing-`if` depth clear, mark, scan, and apply passes.
-pub(in crate::type_checker) fn record_if_depth_bind_groups_with_passes(
-    passes: &TypeCheckPasses,
-    encoder: &mut wgpu::CommandEncoder,
-    token_capacity: u32,
-    hir_active_dispatch_args: &LaniusBuffer<u32>,
-    n_blocks: u32,
-    groups: &IfDepthBindGroups,
-) -> Result<()> {
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/loop/depth/01_clear"),
-        &groups.clear,
-        "type_check.if_depth.clear",
-        token_capacity.saturating_add(1),
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.kernel("type_checker/loop/depth/02_mark"),
-        &groups.mark,
-        "type_check.if_depth.mark",
-        hir_active_dispatch_args,
-    )?;
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/loop/depth/03_local"),
-        &groups.local,
-        "type_check.if_depth.local",
-        n_blocks.saturating_mul(256),
-    )?;
-    for step in &groups.hierarchy_up {
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/loop/depth/04_hierarchy_up"),
-            &step.bind_group,
-            "type_check.if_depth.hierarchy_up",
-            step.work_items,
-        )?;
-    }
-    for step in &groups.hierarchy_down {
-        record_compute(
-            encoder,
-            &passes.kernel("type_checker/loop/depth/04_hierarchy_down"),
-            &step.bind_group,
-            "type_check.if_depth.hierarchy_down",
-            step.work_items,
-        )?;
-    }
-    record_compute(
-        encoder,
-        &passes.kernel("type_checker/loop/depth/05_apply"),
-        &groups.apply,
-        "type_check.if_depth.apply",
-        token_capacity.max(1),
-    )
+    groups.apply.record(encoder)
 }

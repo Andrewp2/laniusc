@@ -21,61 +21,8 @@ impl GpuParser {
         timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<RecordedHirSemanticCount> {
         stamp_timer(timer_ref, encoder, "parser.hir_semantic_count_readback");
-        const WORDS: u64 = 30;
-        let count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.parser.hir_counts"),
-            size: WORDS * 4,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        encoder.copy_buffer_to_buffer(&bufs.hir_semantic_count, 0, &count_readback, 0, 4);
-        encoder.copy_buffer_to_buffer(&bufs.hir_canonical_count, 0, &count_readback, 4, 4);
-        encoder.copy_buffer_to_buffer(&bufs.hir_canonical_status, 0, &count_readback, 8, 52);
-        encoder.copy_buffer_to_buffer(&bufs.hir_call_arg_table_count, 0, &count_readback, 60, 4);
-        encoder.copy_buffer_to_buffer(&bufs.hir_param_table_count, 0, &count_readback, 64, 4);
-        encoder.copy_buffer_to_buffer(&bufs.hir_type_arg_table_count, 0, &count_readback, 68, 4);
-        encoder.copy_buffer_to_buffer(
-            &bufs.hir_generic_param_table_count,
-            0,
-            &count_readback,
-            72,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(&bufs.hir_path_table_count, 0, &count_readback, 76, 4);
-        encoder.copy_buffer_to_buffer(
-            &bufs.hir_path_segment_table_count,
-            0,
-            &count_readback,
-            80,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(&bufs.hir_field_table_count, 0, &count_readback, 84, 4);
-        encoder.copy_buffer_to_buffer(&bufs.hir_variant_table_count, 0, &count_readback, 88, 4);
-        encoder.copy_buffer_to_buffer(
-            &bufs.hir_variant_payload_table_count,
-            0,
-            &count_readback,
-            92,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(&bufs.hir_match_arm_table_count, 0, &count_readback, 96, 4);
-        encoder.copy_buffer_to_buffer(
-            &bufs.hir_match_payload_table_count,
-            0,
-            &count_readback,
-            100,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.hir_array_element_table_count,
-            0,
-            &count_readback,
-            104,
-            4,
-        );
-        encoder.copy_buffer_to_buffer(&bufs.hir_string_count, 0, &count_readback, 108, 4);
-        encoder.copy_buffer_to_buffer(&bufs.hir_method_table_count, 0, &count_readback, 112, 4);
-        encoder.copy_buffer_to_buffer(&bufs.hir_predicate_table_count, 0, &count_readback, 116, 4);
+        bufs.record_graph_copy(crate::parser::compiler_graph::HIR_COUNTS_READBACK, encoder)?;
+        let count_readback = bufs.hir_count_readback.buffer.clone();
 
         Ok(RecordedHirSemanticCount { count_readback })
     }
@@ -194,13 +141,8 @@ impl GpuParser {
         let mut timer_ref: Option<&mut GpuTimer> = None;
         self.record_ll1_resident_passes(&mut encoder, &bufs, true, true, None, &mut timer_ref)?;
 
-        let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.parser.recorded_ll1_hir.status"),
-            size: 24,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        encoder.copy_buffer_to_buffer(&bufs.ll1_status, 0, &status_readback, 0, 24);
+        let status_readback = bufs.ll1_status_readback.buffer.clone();
+        bufs.status_readback_operations.record_full(&mut encoder);
 
         let recorded_parser = RecordedResidentLl1HirCheck { status_readback };
         let recorded_more = match record_more(bufs, &mut encoder) {

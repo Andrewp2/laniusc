@@ -3,22 +3,17 @@ use super::super::*;
 // Graph-driven control operations. The compiler graph owns every scan row;
 // these names describe only the four generic aliases used by the shared
 // hierarchy shaders.
-#[derive(Clone, Copy)]
-struct ControlScanResources {
-    block_sum: &'static str,
-    prefix: &'static str,
-    hierarchy: &'static str,
-    block_prefix: &'static str,
-}
-
 fn create_control_hierarchy(
     device: &wgpu::Device,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     label: &'static str,
+    up_first_name: &'static str,
+    up_rest_name: &'static str,
+    down_name: &'static str,
     up_pass: &PassData,
     down_pass: &PassData,
     n_blocks: u32,
     resources: &ResourceMap<'_>,
-    names: ControlScanResources,
 ) -> Result<(Vec<ScanHierarchyStep>, Vec<ScanHierarchyStep>)> {
     let levels = crate::gpu::scan::hierarchical_scan_levels(n_blocks);
     let bind = |suffix: &str,
@@ -38,23 +33,26 @@ fn create_control_hierarchy(
                 parent_offset: parent.map_or(0, |value| value.offset),
             },
         );
-        let group = reflected_bind_group_with_overrides(
+        let mut operation_resources = resources.clone();
+        operation_resources.buffer("gHierarchy", &params);
+        let operation_name = if suffix == "up" {
+            if index == 0 {
+                up_first_name
+            } else {
+                up_rest_name
+            }
+        } else {
+            down_name
+        };
+        let operation = ComputeOperation::direct(
             device,
-            &format!("{label}.{suffix}"),
+            graph,
+            &operation_resources,
+            operation_name,
             pass,
-            resources,
-            &[
-                ("gHierarchy", params.as_entire_binding()),
-                ("block_sum", resources[names.block_sum].clone()),
-                ("scan_prefix", resources[names.prefix].clone()),
-                ("scan_hierarchy", resources[names.hierarchy].clone()),
-                ("block_prefix", resources[names.block_prefix].clone()),
-            ],
+            level.count,
         )?;
-        Ok(ScanHierarchyStep {
-            bind_group: group,
-            work_items: level.count,
-        })
+        Ok(ScanHierarchyStep { operation })
     };
     let up = levels
         .iter()
@@ -79,61 +77,59 @@ fn create_control_hierarchy(
 
 pub(in crate::type_checker) fn create_fn_context_bind_groups(
     passes: &TypeCheckPasses,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     device: &wgpu::Device,
     resources: &ResourceMap<'_>,
     params: &LaniusBuffer<FnContextParams>,
+    token_capacity: u32,
     n_blocks: u32,
 ) -> Result<FnContextBindGroups> {
-    let names = ControlScanResources {
-        block_sum: "fn_block_sum",
-        prefix: "fn_prefix_a",
-        hierarchy: "fn_prefix_b",
-        block_prefix: "fn_block_prefix",
-    };
-    let bind = |label, kernel, aliases: &[(&str, wgpu::BindingResource<'_>)]| {
-        let mut overrides = vec![("gParams", params.as_entire_binding())];
-        overrides.extend_from_slice(aliases);
-        reflected_bind_group_with_overrides(
-            device,
-            label,
-            &passes.kernel(kernel),
-            resources,
-            &overrides,
-        )
-    };
-    let block_sum = resources[names.block_sum].clone();
-    let block_prefix = resources[names.block_prefix].clone();
-    let clear = bind(
-        "type_check_fn_context_01_clear",
-        "type_checker/fn/context/01_clear",
-        &[
-            ("block_sum", block_sum.clone()),
-            ("block_prefix", block_prefix.clone()),
-        ],
+    let mut operation_resources = resources.clone();
+    operation_resources.buffer("gParams", params);
+    let hir_active_dispatch_args = graph.u32_buffer("hir_active_dispatch_args")?;
+    let clear = ComputeOperation::direct(
+        device,
+        graph,
+        &operation_resources,
+        compiler_graph::FN_CONTEXT_CLEAR_PASS,
+        &passes.kernel("type_checker/fn/context/01_clear"),
+        token_capacity.max(n_blocks).max(1),
     )?;
-    let mark = bind(
-        "type_check_fn_context_02_mark",
-        "type_checker/fn/context/02_mark",
-        &[],
+    let mark = ComputeOperation::indirect(
+        device,
+        graph,
+        &operation_resources,
+        compiler_graph::FN_CONTEXT_MARK_PASS,
+        &passes.kernel("type_checker/fn/context/02_mark"),
+        &hir_active_dispatch_args,
     )?;
-    let local = bind(
-        "type_check_fn_context_03_local",
-        "type_checker/fn/context/03_local",
-        &[("block_sum", block_sum)],
+    let local = ComputeOperation::direct(
+        device,
+        graph,
+        &operation_resources,
+        compiler_graph::FN_CONTEXT_LOCAL_PASS,
+        &passes.kernel("type_checker/fn/context/03_local"),
+        token_capacity.max(1),
     )?;
     let (hierarchy_up, hierarchy_down) = create_control_hierarchy(
         device,
+        graph,
         "type_check.fn_context",
+        compiler_graph::FN_CONTEXT_SCAN_UP_FIRST_PASS,
+        compiler_graph::FN_CONTEXT_SCAN_UP_REST_PASS,
+        compiler_graph::FN_CONTEXT_SCAN_DOWN_PASS,
         &passes.kernel("type_checker/fn/context/04_hierarchy_up"),
         &passes.kernel("type_checker/fn/context/04_hierarchy_down"),
         n_blocks,
         resources,
-        names,
     )?;
-    let apply = bind(
-        "type_check_fn_context_05_apply",
-        "type_checker/fn/context/05_apply",
-        &[("block_prefix", block_prefix)],
+    let apply = ComputeOperation::direct(
+        device,
+        graph,
+        &operation_resources,
+        compiler_graph::FN_CONTEXT_APPLY_PASS,
+        &passes.kernel("type_checker/fn/context/05_apply"),
+        token_capacity.max(1),
     )?;
     Ok(FnContextBindGroups {
         clear,
@@ -147,58 +143,59 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups(
 
 pub(in crate::type_checker) fn create_if_depth_bind_groups(
     passes: &TypeCheckPasses,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     device: &wgpu::Device,
     resources: &ResourceMap<'_>,
     params: &LaniusBuffer<IfDepthParams>,
+    token_capacity: u32,
     n_blocks: u32,
 ) -> Result<IfDepthBindGroups> {
-    let names = ControlScanResources {
-        block_sum: "if_block_sum",
-        prefix: "if_prefix_a",
-        hierarchy: "if_prefix_b",
-        block_prefix: "if_block_prefix",
-    };
-    let bind = |label, kernel, aliases: &[(&str, wgpu::BindingResource<'_>)]| {
-        let mut overrides = vec![("gParams", params.as_entire_binding())];
-        overrides.extend_from_slice(aliases);
-        reflected_bind_group_with_overrides(
-            device,
-            label,
-            &passes.kernel(kernel),
-            resources,
-            &overrides,
-        )
-    };
-    let block_sum = resources[names.block_sum].clone();
-    let block_prefix = resources[names.block_prefix].clone();
-    let clear = bind(
-        "type_check_if_depth_01_clear",
-        "type_checker/loop/depth/01_clear",
-        &[],
+    let mut operation_resources = resources.clone();
+    operation_resources.buffer("gParams", params);
+    let hir_active_dispatch_args = graph.u32_buffer("hir_active_dispatch_args")?;
+    let clear = ComputeOperation::direct(
+        device,
+        graph,
+        &operation_resources,
+        compiler_graph::IF_DEPTH_CLEAR_PASS,
+        &passes.kernel("type_checker/loop/depth/01_clear"),
+        token_capacity.saturating_add(1),
     )?;
-    let mark = bind(
-        "type_check_if_depth_02_mark",
-        "type_checker/loop/depth/02_mark",
-        &[],
+    let mark = ComputeOperation::indirect(
+        device,
+        graph,
+        &operation_resources,
+        compiler_graph::IF_DEPTH_MARK_PASS,
+        &passes.kernel("type_checker/loop/depth/02_mark"),
+        &hir_active_dispatch_args,
     )?;
-    let local = bind(
-        "type_check_if_depth_03_local",
-        "type_checker/loop/depth/03_local",
-        &[("block_sum", block_sum)],
+    let local = ComputeOperation::direct(
+        device,
+        graph,
+        &operation_resources,
+        compiler_graph::IF_DEPTH_LOCAL_PASS,
+        &passes.kernel("type_checker/loop/depth/03_local"),
+        n_blocks.saturating_mul(256),
     )?;
     let (hierarchy_up, hierarchy_down) = create_control_hierarchy(
         device,
+        graph,
         "type_check.if_depth",
+        compiler_graph::IF_DEPTH_SCAN_UP_FIRST_PASS,
+        compiler_graph::IF_DEPTH_SCAN_UP_REST_PASS,
+        compiler_graph::IF_DEPTH_SCAN_DOWN_PASS,
         &passes.kernel("type_checker/loop/depth/04_hierarchy_up"),
         &passes.kernel("type_checker/loop/depth/04_hierarchy_down"),
         n_blocks,
         resources,
-        names,
     )?;
-    let apply = bind(
-        "type_check_if_depth_05_apply",
-        "type_checker/loop/depth/05_apply",
-        &[("block_prefix", block_prefix)],
+    let apply = ComputeOperation::direct(
+        device,
+        graph,
+        &operation_resources,
+        compiler_graph::IF_DEPTH_APPLY_PASS,
+        &passes.kernel("type_checker/loop/depth/05_apply"),
+        token_capacity.max(1),
     )?;
     Ok(IfDepthBindGroups {
         clear,

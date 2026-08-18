@@ -2,17 +2,14 @@
 
 use anyhow::{Context, Result};
 
-use super::lowering::{ScanHierarchyParams, ScanParams, bound, make_group, record_direct};
+use super::lowering::{ScanHierarchyParams, ScanParams};
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
-    compiler_graph::{
-        BoundGraphResource,
-        CompilerGraph,
-        CompilerGraphAllocations,
-        CompilerGraphWorkspace,
-    },
-    passes_core::{PassData, make_pass_data_from_shader_key},
-    scan::{HierarchicalScanLevel, hierarchical_scan_levels},
+    compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
+    kernels::KernelRegistry,
+    operations::ComputeOperation,
+    resource_registry::ResourceMap,
+    scan::hierarchical_scan_levels,
 };
 
 #[derive(Clone, Copy)]
@@ -31,23 +28,14 @@ pub(crate) struct GraphScanContract {
     pub total: &'static str,
 }
 
-struct ScanPasses {
-    local: PassData,
-    up: PassData,
-    down: PassData,
-    apply: PassData,
-}
-
-/// All resources and bindings are fixed at construction. Recording is a pure
-/// sequence of dispatches over the GPU-produced active count.
+/// A complete counted exclusive scan expressed as compiler-graph operations.
+/// All pipelines, uniforms, bind groups, and allocation checks are materialized
+/// once; recording only emits the already-bound operation sequence.
 pub(crate) struct GpuResidentExclusiveScan {
-    capacity: u32,
-    passes: ScanPasses,
-    levels: Vec<HierarchicalScanLevel>,
-    local_group: wgpu::BindGroup,
-    up_groups: Vec<wgpu::BindGroup>,
-    down_groups: Vec<wgpu::BindGroup>,
-    apply_group: wgpu::BindGroup,
+    local: ComputeOperation,
+    hierarchy_up: Vec<ComputeOperation>,
+    hierarchy_down: Vec<ComputeOperation>,
+    apply: ComputeOperation,
     _params: LaniusBuffer<ScanParams>,
     _hierarchy_params: Vec<LaniusBuffer<ScanHierarchyParams>>,
     _local: LaniusBuffer<u32>,
@@ -60,6 +48,7 @@ impl GpuResidentExclusiveScan {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         device: &wgpu::Device,
+        kernels: &KernelRegistry,
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
@@ -70,7 +59,8 @@ impl GpuResidentExclusiveScan {
         output: &LaniusBuffer<u32>,
         total: &LaniusBuffer<u32>,
     ) -> Result<Self> {
-        let blocks = capacity.max(1).div_ceil(256);
+        let capacity = capacity.max(1);
+        let blocks = capacity.div_ceil(256);
         let alias = |name: &str, rows: u32| -> Result<LaniusBuffer<u32>> {
             workspace
                 .alias(
@@ -86,17 +76,11 @@ impl GpuResidentExclusiveScan {
         let block_sum = alias(contract.block_sum, blocks)?;
         let block_prefix = alias(contract.block_prefix, blocks)?;
         let hierarchy = alias(contract.hierarchy, blocks)?;
-        let passes = ScanPasses {
-            local: load(device, contract.local_pass, "scan/counted/00_local")?,
-            up: load(device, contract.up_pass, "scan/counted/01_hierarchy_up")?,
-            down: load(device, contract.down_pass, "scan/counted/02_hierarchy_down")?,
-            apply: load(device, contract.apply_pass, "scan/counted/02_apply")?,
-        };
         let params = uniform_from_val(
             device,
             "lir.scan.params",
             &ScanParams {
-                n_items: capacity.max(1),
+                n_items: capacity,
                 n_blocks: blocks,
                 scan_step: 0,
             },
@@ -111,7 +95,7 @@ impl GpuResidentExclusiveScan {
                     device,
                     &format!("lir.scan.hierarchy.{index}"),
                     &ScanHierarchyParams {
-                        n_items: capacity.max(1),
+                        n_items: capacity,
                         n_blocks: blocks,
                         level_divisor: level.divisor,
                         level_offset: level.offset,
@@ -121,85 +105,74 @@ impl GpuResidentExclusiveScan {
                 )
             })
             .collect::<Vec<_>>();
-        let local_group = make_group(
+
+        let mut resources = ResourceMap::new();
+        resources.graph_buffer(graph, contract.count, count)?;
+        resources.graph_buffer(graph, contract.input, input)?;
+        resources.graph_buffer(graph, contract.local, &local)?;
+        resources.graph_buffer(graph, contract.block_sum, &block_sum)?;
+        resources.graph_buffer(graph, contract.block_prefix, &block_prefix)?;
+        resources.graph_buffer(graph, contract.hierarchy, &hierarchy)?;
+        resources.graph_buffer(graph, contract.output, output)?;
+        resources.graph_buffer(graph, contract.total, total)?;
+        resources.buffer("gScan", &params);
+
+        let context = (graph, allocations);
+        let local_operation = ComputeOperation::direct(
             device,
-            &passes.local,
+            &context,
+            &resources,
             contract.local_pass,
-            &[
-                ("gScan", params.as_entire_binding()),
-                ("scan_count", count.as_entire_binding()),
-                ("scan_input", input.as_entire_binding()),
-                ("scan_local_prefix", local.as_entire_binding()),
-                ("scan_block_sum", block_sum.as_entire_binding()),
-            ],
-        )?;
-        let up_groups = hierarchy_params
-            .iter()
-            .map(|hierarchy_params| {
-                make_group(
-                    device,
-                    &passes.up,
-                    contract.up_pass,
-                    &[
-                        ("gHierarchy", hierarchy_params.as_entire_binding()),
-                        ("scan_count", count.as_entire_binding()),
-                        ("scan_block_sum", block_sum.as_entire_binding()),
-                        ("scan_block_prefix", block_prefix.as_entire_binding()),
-                        ("scan_hierarchy", hierarchy.as_entire_binding()),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let down_groups = hierarchy_params
-            .iter()
-            .map(|hierarchy_params| {
-                make_group(
-                    device,
-                    &passes.down,
-                    contract.down_pass,
-                    &[
-                        ("gHierarchy", hierarchy_params.as_entire_binding()),
-                        ("scan_count", count.as_entire_binding()),
-                        ("scan_block_prefix", block_prefix.as_entire_binding()),
-                        ("scan_hierarchy", hierarchy.as_entire_binding()),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let apply_group = make_group(
-            device,
-            &passes.apply,
-            contract.apply_pass,
-            &[
-                ("gScan", params.as_entire_binding()),
-                ("scan_count", count.as_entire_binding()),
-                ("scan_local_prefix", local.as_entire_binding()),
-                ("scan_block_prefix", block_prefix.as_entire_binding()),
-                ("scan_output_prefix", output.as_entire_binding()),
-                ("scan_total", total.as_entire_binding()),
-            ],
-        )?;
-        validate(
-            graph,
-            allocations,
-            contract,
-            count,
-            input,
-            output,
-            total,
-            &local,
-            &block_sum,
-            &block_prefix,
-            &hierarchy,
-        )?;
-        Ok(Self {
+            kernels.kernel("scan/counted/00_local"),
             capacity,
-            passes,
-            levels,
-            local_group,
-            up_groups,
-            down_groups,
-            apply_group,
+        )?;
+        let hierarchy_up = hierarchy_params
+            .iter()
+            .zip(&levels)
+            .map(|(params, level)| {
+                let mut resources = resources.clone();
+                resources.buffer("gHierarchy", params);
+                ComputeOperation::direct(
+                    device,
+                    &context,
+                    &resources,
+                    contract.up_pass,
+                    kernels.kernel("scan/counted/01_hierarchy_up"),
+                    level.count,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let hierarchy_down = hierarchy_params
+            .iter()
+            .zip(&levels)
+            .take(levels.len().saturating_sub(1))
+            .map(|(params, level)| {
+                let mut resources = resources.clone();
+                resources.buffer("gHierarchy", params);
+                ComputeOperation::direct(
+                    device,
+                    &context,
+                    &resources,
+                    contract.down_pass,
+                    kernels.kernel("scan/counted/02_hierarchy_down"),
+                    level.count,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let apply_operation = ComputeOperation::direct(
+            device,
+            &context,
+            &resources,
+            contract.apply_pass,
+            kernels.kernel("scan/counted/02_apply"),
+            capacity,
+        )?;
+
+        Ok(Self {
+            local: local_operation,
+            hierarchy_up,
+            hierarchy_down,
+            apply: apply_operation,
             _params: params,
             _hierarchy_params: hierarchy_params,
             _local: local,
@@ -210,107 +183,13 @@ impl GpuResidentExclusiveScan {
     }
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_direct(
-            encoder,
-            &self.passes.local,
-            &self.local_group,
-            self.capacity,
-        )?;
-        for (index, level) in self.levels.iter().enumerate() {
-            record_direct(
-                encoder,
-                &self.passes.up,
-                &self.up_groups[index],
-                level.count,
-            )?;
+        self.local.record(encoder)?;
+        for operation in &self.hierarchy_up {
+            operation.record(encoder)?;
         }
-        for child in (0..self.levels.len().saturating_sub(1)).rev() {
-            record_direct(
-                encoder,
-                &self.passes.down,
-                &self.down_groups[child],
-                self.levels[child].count,
-            )?;
+        for operation in self.hierarchy_down.iter().rev() {
+            operation.record(encoder)?;
         }
-        record_direct(
-            encoder,
-            &self.passes.apply,
-            &self.apply_group,
-            self.capacity,
-        )
+        self.apply.record(encoder)
     }
-}
-
-fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
-    make_pass_data_from_shader_key(device, label, "main", shader)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn validate(
-    graph: &CompilerGraph,
-    allocations: &CompilerGraphAllocations,
-    contract: GraphScanContract,
-    count: &LaniusBuffer<u32>,
-    input: &LaniusBuffer<u32>,
-    output: &LaniusBuffer<u32>,
-    total: &LaniusBuffer<u32>,
-    local: &LaniusBuffer<u32>,
-    block_sum: &LaniusBuffer<u32>,
-    block_prefix: &LaniusBuffer<u32>,
-    hierarchy: &LaniusBuffer<u32>,
-) -> Result<()> {
-    let resource = |name: &str| graph.resource_id(name).unwrap();
-    let run = |pass: &str, bindings: Vec<BoundGraphResource>| {
-        allocations
-            .validate_pass_bindings(graph, graph.pass_id(pass).unwrap(), &bindings)
-            .map_err(anyhow::Error::msg)
-    };
-    run(
-        contract.local_pass,
-        vec![
-            bound("scan_count", resource(contract.count), count)?,
-            bound("scan_input", resource(contract.input), input)?,
-            bound("scan_local_prefix", resource(contract.local), local)?,
-            bound("scan_block_sum", resource(contract.block_sum), block_sum)?,
-        ],
-    )?;
-    run(
-        contract.up_pass,
-        vec![
-            bound("scan_count", resource(contract.count), count)?,
-            bound("scan_block_sum", resource(contract.block_sum), block_sum)?,
-            bound(
-                "scan_block_prefix",
-                resource(contract.block_prefix),
-                block_prefix,
-            )?,
-            bound("scan_hierarchy", resource(contract.hierarchy), hierarchy)?,
-        ],
-    )?;
-    run(
-        contract.down_pass,
-        vec![
-            bound("scan_count", resource(contract.count), count)?,
-            bound(
-                "scan_block_prefix",
-                resource(contract.block_prefix),
-                block_prefix,
-            )?,
-            bound("scan_hierarchy", resource(contract.hierarchy), hierarchy)?,
-        ],
-    )?;
-    run(
-        contract.apply_pass,
-        vec![
-            bound("scan_count", resource(contract.count), count)?,
-            bound("scan_local_prefix", resource(contract.local), local)?,
-            bound(
-                "scan_block_prefix",
-                resource(contract.block_prefix),
-                block_prefix,
-            )?,
-            bound("scan_output_prefix", resource(contract.output), output)?,
-            bound("scan_total", resource(contract.total), total)?,
-        ],
-    )
 }

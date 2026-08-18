@@ -3026,7 +3026,7 @@
   "workload": {
     "baseline_only": true,
     "classification": "imported controlled cross-language compiler stress",
-    "comparison_group": "compiler-stress/comparative-single-file/mixed-function-sizes/1000000",
+    "comparison_group": "compiler-stress/comparative-single-file/pareas-common-subset/1000000/seeds-20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39",
     "generator": "tools/generate_compiler_stress.py",
     "id": "imported-single-file-1000000-comparison",
     "imported": true,

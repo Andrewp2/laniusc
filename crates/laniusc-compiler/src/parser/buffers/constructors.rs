@@ -9,6 +9,7 @@ impl ParserBuffers {
         n_kinds: u32,
         action_table_bytes: &[u8],
         tables: &crate::parser::tables::PrecomputedParseTables,
+        passes: &crate::parser::passes::ParserPasses,
     ) -> Self {
         Self::new_with_sizing(
             device,
@@ -22,6 +23,7 @@ impl ParserBuffers {
             true,
             None,
             CONSERVATIVE_PARSER_FEATURES,
+            passes,
         )
     }
 
@@ -32,6 +34,7 @@ impl ParserBuffers {
         n_kinds: u32,
         action_table_bytes: &[u8],
         tables: &crate::parser::tables::PrecomputedParseTables,
+        passes: &crate::parser::passes::ParserPasses,
     ) -> Self {
         Self::new_resident_capacity_with_tree_capacity(
             device,
@@ -40,6 +43,7 @@ impl ParserBuffers {
             action_table_bytes,
             tables,
             None,
+            passes,
         )
     }
 
@@ -51,6 +55,7 @@ impl ParserBuffers {
         action_table_bytes: &[u8],
         tables: &crate::parser::tables::PrecomputedParseTables,
         tree_capacity_override: Option<u32>,
+        passes: &crate::parser::passes::ParserPasses,
     ) -> Self {
         Self::new_resident_capacity_with_tree_capacity_and_debug(
             device,
@@ -60,6 +65,7 @@ impl ParserBuffers {
             tables,
             tree_capacity_override,
             false,
+            passes,
         )
     }
 
@@ -72,6 +78,7 @@ impl ParserBuffers {
         tables: &crate::parser::tables::PrecomputedParseTables,
         tree_capacity_override: Option<u32>,
         retain_debug_hir_buffers: bool,
+        passes: &crate::parser::passes::ParserPasses,
     ) -> Self {
         Self::new_resident_capacity_with_tree_capacity_debug_and_features(
             device,
@@ -82,6 +89,7 @@ impl ParserBuffers {
             tree_capacity_override,
             retain_debug_hir_buffers,
             CONSERVATIVE_PARSER_FEATURES,
+            passes,
         )
     }
 
@@ -97,6 +105,7 @@ impl ParserBuffers {
         tree_capacity_override: Option<u32>,
         retain_debug_hir_buffers: bool,
         parser_feature_flags: u32,
+        passes: &crate::parser::passes::ParserPasses,
     ) -> Self {
         let n_tokens = token_capacity.saturating_add(2);
         Self::new_with_sizing(
@@ -111,6 +120,7 @@ impl ParserBuffers {
             retain_debug_hir_buffers,
             tree_capacity_override,
             parser_feature_flags,
+            passes,
         )
     }
 
@@ -125,6 +135,7 @@ impl ParserBuffers {
         tree_capacity_override: Option<u32>,
         retain_debug_hir_buffers: bool,
         parser_feature_flags: u32,
+        passes: &crate::parser::passes::ParserPasses,
     ) -> Self {
         let n_tokens = token_capacity.saturating_add(2);
         Self::new_with_sizing(
@@ -139,6 +150,7 @@ impl ParserBuffers {
             retain_debug_hir_buffers,
             tree_capacity_override,
             parser_feature_flags,
+            passes,
         )
     }
 }

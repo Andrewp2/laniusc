@@ -23,11 +23,6 @@ use crate::reflection::parse_reflection_from_bytes;
 /// and pipelines exist.
 pub(crate) trait KernelReflections {
     fn reflection(&self, key: &str) -> Result<&SlangReflection, String>;
-
-    /// Stable inventory used by compiler-graph ownership validation. Graphs
-    /// can derive physical arena conflicts from kernels that are prepared but
-    /// not yet represented in the exact command schedule.
-    fn reflection_keys(&self) -> Vec<&str>;
 }
 
 /// Reflection-only generated kernel catalog.
@@ -62,16 +57,6 @@ impl KernelReflections for KernelCatalog {
             .get(key)
             .map(AsRef::as_ref)
             .ok_or_else(|| format!("GPU kernel `{key}` has no generated reflection"))
-    }
-
-    fn reflection_keys(&self) -> Vec<&str> {
-        let mut keys = self
-            .reflections
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        keys.sort_unstable();
-        keys
     }
 }
 
@@ -168,12 +153,6 @@ impl KernelReflections for KernelRegistry {
             .get(key)
             .map(|kernel| kernel.reflection.as_ref())
             .ok_or_else(|| format!("GPU kernel `{key}` was not prepared before compilation"))
-    }
-
-    fn reflection_keys(&self) -> Vec<&str> {
-        let mut keys = self.kernels.keys().map(String::as_str).collect::<Vec<_>>();
-        keys.sort_unstable();
-        keys
     }
 }
 

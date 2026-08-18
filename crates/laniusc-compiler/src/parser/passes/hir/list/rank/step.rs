@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::{
     gpu::{
         buffers::LaniusBuffer,
-        passes_core::{PassData, bind_group, make_pass_data_from_shader_key},
+        passes_core::{BindGroupCache, PassData, make_pass_data_from_shader_key},
     },
     parser::{buffers::ParserBuffers, passes::hir::bounded_walk_step_capacity},
 };
@@ -34,11 +34,14 @@ impl HirListRankStepOperation {
         buffers: &ParserBuffers,
         params: &LaniusBuffer<P>,
         relation: ListRankBuffers<'_>,
-        dispatch_args: &wgpu::Buffer,
-        label: &'static str,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        cache: &mut BindGroupCache,
+        invocation: super::ListRankInvocation,
     ) -> Result<()> {
         let steps = list_rank_step_capacity(buffers.tree_capacity);
+        let labels = invocation.step_labels();
         for step in 0..steps {
+            let label = if step % 2 == 0 { labels.0 } else { labels.1 };
             let (owner_in, link_in, rank_in, owner_out, link_out, rank_out) =
                 relation.for_step(step);
             let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
@@ -66,18 +69,24 @@ impl HirListRankStepOperation {
                 ("list_link_out".into(), link_out.as_entire_binding()),
                 ("list_rank_out".into(), rank_out.as_entire_binding()),
             ]);
-            let bind_group = bind_group::create_bind_group_from_reflection(
-                device,
-                Some(label),
-                &self.data.bind_group_layouts[0],
-                &self.data.reflection,
-                0,
-                &resources,
-            )?;
+            let cache_identity = format!("{label}.{step}");
+            let bind_group = cache
+                .reflected_for_graph_invocation(
+                    device,
+                    &cache_identity,
+                    label,
+                    &self.data,
+                    buffers,
+                    &resources,
+                    Some(dispatch_args),
+                )?
+                .into_iter()
+                .next()
+                .expect("list-rank step pass must have one reflected bind group");
             crate::gpu::passes_core::record_or_defer_compute_indirect(
                 encoder,
                 &self.data,
-                &bind_group,
+                bind_group.as_ref(),
                 label,
                 dispatch_args,
             );
@@ -87,10 +96,16 @@ impl HirListRankStepOperation {
     }
 }
 
-fn list_rank_step_capacity(items: u32) -> u32 {
+pub(in crate::parser) fn list_rank_step_capacity(items: u32) -> u32 {
     let steps = bounded_walk_step_capacity(items);
     // Finish in the A buffers without copying three tree-capacity arrays.
     steps + steps % 2
+}
+
+impl HirListRankStepOperation {
+    pub(in crate::parser) fn graph_pass(&self) -> &PassData {
+        &self.data
+    }
 }
 
 #[derive(Clone, Copy)]

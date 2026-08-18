@@ -15,6 +15,16 @@ use crate::gpu::{
     scan::{ScanFinalize, hierarchical_scan_levels, ping_pong_scan_steps},
 };
 
+pub(in crate::parser) fn pack_total_reduce_step_count(n_pairs: u32) -> u32 {
+    let mut steps = 0;
+    let mut item_count = n_pairs.div_ceil(256).max(1);
+    while item_count > 1 {
+        steps += 1;
+        item_count = item_count.div_ceil(256).max(1);
+    }
+    steps
+}
+
 /// Creates the paired hierarchical scan for variable-length parser pack offsets.
 pub(super) fn make_pack_offset_scan_plan(
     device: &wgpu::Device,
@@ -66,7 +76,7 @@ pub(super) fn make_pack_total_reduce_steps(
     device: &wgpu::Device,
     n_pairs: u32,
 ) -> Vec<PackTotalReduceStep> {
-    let mut steps = Vec::new();
+    let mut steps = Vec::with_capacity(pack_total_reduce_step_count(n_pairs) as usize);
     let mut item_count = n_pairs.div_ceil(256).max(1);
     let mut read_from_a = true;
     let mut write_to_a = false;

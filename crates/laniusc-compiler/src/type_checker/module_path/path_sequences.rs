@@ -2,23 +2,24 @@ use super::{super::*, buffers::Buffers, inputs::CreateInputs};
 
 /// Bind groups for exact, arbitrary-depth path-prefix canonicalization.
 pub(in crate::type_checker) struct PathSequences {
-    pub(in crate::type_checker) clear_state: wgpu::BindGroup,
+    pub(in crate::type_checker) clear_state: ComputeOperation,
     pub(in crate::type_checker) dispatch_params: LaniusBuffer<PathPrefixDispatchParams>,
-    pub(in crate::type_checker) dispatch_args: wgpu::BindGroup,
-    pub(in crate::type_checker) initial_table_clear: wgpu::BindGroup,
+    pub(in crate::type_checker) dispatch_args: ComputeOperation,
+    pub(in crate::type_checker) initial_table_clear: ComputeOperation,
     pub(in crate::type_checker) rounds: Vec<PathPrefixRound>,
-    pub(in crate::type_checker) finalize: wgpu::BindGroup,
+    pub(in crate::type_checker) finalize: ComputeOperation,
 }
 
 /// One pre-bound prefix-doubling round. Every round reuses the insert and
 /// lookup pipelines; only immutable uniforms and ping/pong buffer roles differ.
 pub(in crate::type_checker) struct PathPrefixRound {
     pub(in crate::type_checker) _params: LaniusBuffer<PathPrefixRoundParams>,
-    pub(in crate::type_checker) intern: wgpu::BindGroup,
+    pub(in crate::type_checker) intern: ComputeOperation,
 }
 
 pub(in crate::type_checker) fn create_path_sequences(
     passes: &TypeCheckPasses,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
     device: &wgpu::Device,
     inputs: &CreateInputs<'_>,
     buffers: &Buffers,
@@ -41,64 +42,36 @@ pub(in crate::type_checker) fn create_path_sequences(
         },
     );
 
-    let clear_state = resources.reflected_bind_group_with_overrides(
+    let hir_work = inputs
+        .hir_node_capacity
+        .div_ceil(256)
+        .saturating_mul(256)
+        .max(1);
+    let clear_state = ComputeOperation::direct_spec(
         device,
-        "type_check_modules_01a_clear_path_state",
-        &passes.kernel("type_checker/modules/01a_clear_path_state"),
-        &[
-            (
-                "path_id_by_owner_hir",
-                buffers.path_id_by_owner_hir.as_entire_binding(),
-            ),
-            (
-                "path_id_by_owner_token",
-                buffers.path_id_by_owner_token.as_entire_binding(),
-            ),
-            (
-                "path_max_segment_count",
-                buffers.path_max_segment_count.as_entire_binding(),
-            ),
-        ],
+        graph,
+        resources,
+        passes,
+        PATH_STATE_CLEAR,
+        hir_work.max(segment_capacity),
     )?;
-    let dispatch_args = resources.reflected_bind_group_with_overrides(
+    let mut dispatch_resources = resources.clone();
+    dispatch_resources.buffer("gParams", &dispatch_params);
+    let dispatch_args = ComputeOperation::direct_spec(
         device,
-        "type_check_modules_01c_path_prefix_dispatch_args",
-        &passes.kernel("type_checker/modules/01c_path_prefix_dispatch_args"),
-        &[
-            ("gParams", dispatch_params.as_entire_binding()),
-            (
-                "path_segment_count_out",
-                buffers.path_segment_count_out.as_entire_binding(),
-            ),
-            (
-                "path_max_segment_count",
-                buffers.path_max_segment_count.as_entire_binding(),
-            ),
-            (
-                "path_prefix_row_dispatch_args",
-                buffers.path_prefix_row_dispatch_args.as_entire_binding(),
-            ),
-            (
-                "path_prefix_round_dispatch_args",
-                buffers.path_prefix_round_dispatch_args.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &dispatch_resources,
+        passes,
+        PATH_PREFIX_DISPATCH,
+        32,
     )?;
-    let initial_table_clear = resources.reflected_bind_group_with_overrides(
+    let initial_table_clear = ComputeOperation::indirect_spec(
         device,
-        "type_check_modules_01c_path_prefix_table_clear",
-        &passes.kernel("type_checker/modules/01c_path_prefix_table_clear"),
-        &[
-            ("gParams", dispatch_params.as_entire_binding()),
-            (
-                "path_segment_count_out",
-                buffers.path_segment_count_out.as_entire_binding(),
-            ),
-            (
-                "path_prefix_table_state",
-                buffers.path_prefix_table_state.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &dispatch_resources,
+        passes,
+        PATH_PREFIX_TABLE_CLEAR,
+        &buffers.path_prefix_row_dispatch_args,
     )?;
 
     let mut rounds = Vec::with_capacity(round_count as usize);
@@ -113,32 +86,22 @@ pub(in crate::type_checker) fn create_path_sequences(
                 reserved1: 0,
             },
         );
-        let (read_ids, write_ids) = if round_i & 1 == 0 {
-            (&buffers.path_prefix_id_a, &buffers.path_prefix_id_b)
+        let spec = if round_i & 1 == 0 {
+            PATH_PREFIX_INTERN_A_TO_B
         } else {
-            (&buffers.path_prefix_id_b, &buffers.path_prefix_id_a)
+            PATH_PREFIX_INTERN_B_TO_A
         };
-        let intern = resources.reflected_bind_group_with_overrides(
+        let mut round_resources = resources.clone();
+        round_resources.buffer("gParams", &params);
+        let offset = u64::from(round_i) * 3 * std::mem::size_of::<u32>() as u64;
+        let intern = ComputeOperation::indirect_spec_at(
             device,
-            "type_check_modules_01c_path_prefix_table_intern",
-            &passes.kernel("type_checker/modules/01c_path_prefix_table_insert"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "path_segment_count_out",
-                    buffers.path_segment_count_out.as_entire_binding(),
-                ),
-                (
-                    "path_prefix_base",
-                    buffers.path_prefix_base.as_entire_binding(),
-                ),
-                ("path_prefix_id_in", read_ids.as_entire_binding()),
-                (
-                    "path_prefix_table_state",
-                    buffers.path_prefix_table_state.as_entire_binding(),
-                ),
-                ("path_prefix_id_out", write_ids.as_entire_binding()),
-            ],
+            graph,
+            &round_resources,
+            passes,
+            spec,
+            &buffers.path_prefix_round_dispatch_args,
+            offset,
         )?;
         rounds.push(PathPrefixRound {
             _params: params,
@@ -146,29 +109,13 @@ pub(in crate::type_checker) fn create_path_sequences(
         });
     }
 
-    let finalize = resources.reflected_bind_group_with_overrides(
+    let finalize = ComputeOperation::indirect_spec(
         device,
-        "type_check_modules_01c_path_prefix_finalize",
-        &passes.kernel("type_checker/modules/01c_path_prefix_finalize"),
-        &[
-            ("gParams", dispatch_params.as_entire_binding()),
-            (
-                "path_segment_count_out",
-                buffers.path_segment_count_out.as_entire_binding(),
-            ),
-            (
-                "path_max_segment_count",
-                buffers.path_max_segment_count.as_entire_binding(),
-            ),
-            (
-                "path_prefix_id_b",
-                buffers.path_prefix_id_b.as_entire_binding(),
-            ),
-            (
-                "path_prefix_id_a",
-                buffers.path_prefix_id_a.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &dispatch_resources,
+        passes,
+        PATH_PREFIX_FINALIZE,
+        &buffers.path_prefix_row_dispatch_args,
     )?;
 
     Ok(PathSequences {

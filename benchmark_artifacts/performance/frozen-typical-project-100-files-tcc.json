@@ -1,0 +1,306 @@
+{
+  "machine": {
+    "gpu": "NVIDIA GeForce RTX 3090, 580.173.02, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39"
+  },
+  "measurements": [
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "/home/andrew-peterson/code/laniusc/target/tcc-noble-0.9.27/root/usr/bin/tcc",
+            "-B/home/andrew-peterson/code/laniusc/target/tcc-noble-0.9.27/root/usr/lib/x86_64-linux-gnu/tcc",
+            "-std=c11",
+            "-Iinclude",
+            "-o",
+            "/home/andrew-peterson/code/laniusc/target/typical-project-100/c/typical-project-tcc",
+            "src/accounts_planner_15.c",
+            "src/accounts_planner_45.c",
+            "src/accounts_planner_75.c",
+            "src/accounts_policy_0.c",
+            "src/accounts_policy_30.c",
+            "src/accounts_policy_60.c",
+            "src/accounts_policy_90.c",
+            "src/billing_processor_13.c",
+            "src/billing_processor_43.c",
+            "src/billing_processor_73.c",
+            "src/billing_tracker_28.c",
+            "src/billing_tracker_58.c",
+            "src/billing_tracker_88.c",
+            "src/catalog_service_26.c",
+            "src/catalog_service_56.c",
+            "src/catalog_service_86.c",
+            "src/catalog_summary_11.c",
+            "src/catalog_summary_41.c",
+            "src/catalog_summary_71.c",
+            "src/checkout_planner_39.c",
+            "src/checkout_planner_69.c",
+            "src/checkout_planner_9.c",
+            "src/checkout_policy_24.c",
+            "src/checkout_policy_54.c",
+            "src/checkout_policy_84.c",
+            "src/delivery_processor_37.c",
+            "src/delivery_processor_67.c",
+            "src/delivery_processor_7.c",
+            "src/delivery_processor_97.c",
+            "src/delivery_tracker_22.c",
+            "src/delivery_tracker_52.c",
+            "src/delivery_tracker_82.c",
+            "src/inventory_service_20.c",
+            "src/inventory_service_50.c",
+            "src/inventory_service_80.c",
+            "src/inventory_summary_35.c",
+            "src/inventory_summary_5.c",
+            "src/inventory_summary_65.c",
+            "src/inventory_summary_95.c",
+            "src/main.c",
+            "src/metrics_planner_3.c",
+            "src/metrics_planner_33.c",
+            "src/metrics_planner_63.c",
+            "src/metrics_planner_93.c",
+            "src/metrics_policy_18.c",
+            "src/metrics_policy_48.c",
+            "src/metrics_policy_78.c",
+            "src/orders_processor_1.c",
+            "src/orders_processor_31.c",
+            "src/orders_processor_61.c",
+            "src/orders_processor_91.c",
+            "src/orders_tracker_16.c",
+            "src/orders_tracker_46.c",
+            "src/orders_tracker_76.c",
+            "src/pricing_service_14.c",
+            "src/pricing_service_44.c",
+            "src/pricing_service_74.c",
+            "src/pricing_summary_29.c",
+            "src/pricing_summary_59.c",
+            "src/pricing_summary_89.c",
+            "src/routing_planner_27.c",
+            "src/routing_planner_57.c",
+            "src/routing_planner_87.c",
+            "src/routing_policy_12.c",
+            "src/routing_policy_42.c",
+            "src/routing_policy_72.c",
+            "src/scheduling_processor_25.c",
+            "src/scheduling_processor_55.c",
+            "src/scheduling_processor_85.c",
+            "src/scheduling_tracker_10.c",
+            "src/scheduling_tracker_40.c",
+            "src/scheduling_tracker_70.c",
+            "src/sessions_service_38.c",
+            "src/sessions_service_68.c",
+            "src/sessions_service_8.c",
+            "src/sessions_service_98.c",
+            "src/sessions_summary_23.c",
+            "src/sessions_summary_53.c",
+            "src/sessions_summary_83.c",
+            "src/storage_planner_21.c",
+            "src/storage_planner_51.c",
+            "src/storage_planner_81.c",
+            "src/storage_policy_36.c",
+            "src/storage_policy_6.c",
+            "src/storage_policy_66.c",
+            "src/storage_policy_96.c",
+            "src/telemetry_processor_19.c",
+            "src/telemetry_processor_49.c",
+            "src/telemetry_processor_79.c",
+            "src/telemetry_tracker_34.c",
+            "src/telemetry_tracker_4.c",
+            "src/telemetry_tracker_64.c",
+            "src/telemetry_tracker_94.c",
+            "src/validation_service_2.c",
+            "src/validation_service_32.c",
+            "src/validation_service_62.c",
+            "src/validation_service_92.c",
+            "src/validation_summary_17.c",
+            "src/validation_summary_47.c",
+            "src/validation_summary_77.c"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/typical-project-100/c",
+          "display": "/home/andrew-peterson/code/laniusc/target/tcc-noble-0.9.27/root/usr/bin/tcc -B/home/andrew-peterson/code/laniusc/target/tcc-noble-0.9.27/root/usr/lib/x86_64-linux-gnu/tcc -std=c11 -Iinclude -o /home/andrew-peterson/code/laniusc/target/typical-project-100/c/typical-project-tcc src/accounts_planner_15.c src/accounts_planner_45.c src/accounts_planner_75.c src/accounts_policy_0.c src/accounts_policy_30.c src/accounts_policy_60.c src/accounts_policy_90.c src/billing_processor_13.c src/billing_processor_43.c src/billing_processor_73.c src/billing_tracker_28.c src/billing_tracker_58.c src/billing_tracker_88.c src/catalog_service_26.c src/catalog_service_56.c src/catalog_service_86.c src/catalog_summary_11.c src/catalog_summary_41.c src/catalog_summary_71.c src/checkout_planner_39.c src/checkout_planner_69.c src/checkout_planner_9.c src/checkout_policy_24.c src/checkout_policy_54.c src/checkout_policy_84.c src/delivery_processor_37.c src/delivery_processor_67.c src/delivery_processor_7.c src/delivery_processor_97.c src/delivery_tracker_22.c src/delivery_tracker_52.c src/delivery_tracker_82.c src/inventory_service_20.c src/inventory_service_50.c src/inventory_service_80.c src/inventory_summary_35.c src/inventory_summary_5.c src/inventory_summary_65.c src/inventory_summary_95.c src/main.c src/metrics_planner_3.c src/metrics_planner_33.c src/metrics_planner_63.c src/metrics_planner_93.c src/metrics_policy_18.c src/metrics_policy_48.c src/metrics_policy_78.c src/orders_processor_1.c src/orders_processor_31.c src/orders_processor_61.c src/orders_processor_91.c src/orders_tracker_16.c src/orders_tracker_46.c src/orders_tracker_76.c src/pricing_service_14.c src/pricing_service_44.c src/pricing_service_74.c src/pricing_summary_29.c src/pricing_summary_59.c src/pricing_summary_89.c src/routing_planner_27.c src/routing_planner_57.c src/routing_planner_87.c src/routing_policy_12.c src/routing_policy_42.c src/routing_policy_72.c src/scheduling_processor_25.c src/scheduling_processor_55.c src/scheduling_processor_85.c src/scheduling_tracker_10.c src/scheduling_tracker_40.c src/scheduling_tracker_70.c src/sessions_service_38.c src/sessions_service_68.c src/sessions_service_8.c src/sessions_service_98.c src/sessions_summary_23.c src/sessions_summary_53.c src/sessions_summary_83.c src/storage_planner_21.c src/storage_planner_51.c src/storage_planner_81.c src/storage_policy_36.c src/storage_policy_6.c src/storage_policy_66.c src/storage_policy_96.c src/telemetry_processor_19.c src/telemetry_processor_49.c src/telemetry_processor_79.c src/telemetry_tracker_34.c src/telemetry_tracker_4.c src/telemetry_tracker_64.c src/telemetry_tracker_94.c src/validation_service_2.c src/validation_service_32.c src/validation_service_62.c src/validation_service_92.c src/validation_summary_17.c src/validation_summary_47.c src/validation_summary_77.c",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "tcc",
+        "version": "tcc version 0.9.27 (x86_64 Linux)"
+      },
+      "configuration": "default",
+      "configuration_display": null,
+      "id": "tcc-default",
+      "measurement_semantics": {
+        "cache": "one TCC process compiles and links every generated C source",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "target/performance-runs/tcc-typical-100-1000-10000.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "wall_ms": 99.208862
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "wall_ms": 67.723473
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "wall_ms": 73.643885
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "wall_ms": 87.168322
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "wall_ms": 90.357041
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "wall_ms": 86.778916
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "wall_ms": 88.553325
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "wall_ms": 87.175893
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "wall_ms": 86.787756
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "wall_ms": 87.636336
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "wall_ms": 87.620807
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "wall_ms": 87.432064
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "wall_ms": 87.709414
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "wall_ms": 89.422984
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "wall_ms": 89.374575
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "wall_ms": 91.066557
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "wall_ms": 90.012933
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "wall_ms": 89.567689
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "wall_ms": 89.922406
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "wall_ms": 88.96718
+        }
+      ],
+      "source": {
+        "bytes": 919373,
+        "files": 100,
+        "kilobytes": 919.373,
+        "largest_file_bytes": 63618,
+        "megabytes": 0.919373,
+        "physical_lines": 28210,
+        "sloc": 26109,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 10432086.560390972,
+        "median_sloc_per_second": 296257.7191251514,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              2,
+              0,
+              0,
+              17,
+              1
+            ],
+            "edges": [
+              67.723473,
+              74.0205508,
+              80.31762859999999,
+              86.61470639999999,
+              92.9117842,
+              99.208862
+            ],
+            "unit": "ms"
+          },
+          "mad": 1.317613999999999,
+          "maximum": 99.208862,
+          "mean": 87.3065209,
+          "median": 88.1313695,
+          "minimum": 67.723473,
+          "p95": 91.47367225000002,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
+    }
+  ],
+  "run": {
+    "git_commit": "8caa2105f5b27ebadb072a11e1e2455a78feb7d8",
+    "git_dirty": true,
+    "id": "frozen-typical-project-100-files-tcc",
+    "recorded_at": "2026-08-18T04:23:51.980361+00:00"
+  },
+  "schema": "lanius.performance-run.v1",
+  "workload": {
+    "baseline_only": true,
+    "classification": "frozen external compiler baseline for the corpus-calibrated typical project",
+    "comparison_group": "typical-project/v1/seed-20260808/files-100",
+    "generator": "tools/generate_typical_project.py",
+    "id": "typical-project-100-files-seed-20260808",
+    "kind": "typical_project",
+    "requested_source_files": 100,
+    "seed": 20260808
+  }
+}

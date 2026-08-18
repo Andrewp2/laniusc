@@ -18,7 +18,8 @@ impl MethodBindGroups {
         &self,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()> {
-        self.mark_call_keys.record(encoder)?;
+        self.mark_call_keys
+            .record_as(encoder, METHODS_MARK_CALL_KEYS_LOOKUP.name)?;
         for _ in 0..METHOD_CALL_RESULT_RECEIVER_PASSES {
             self.mark_call_return_keys.record(encoder)?;
             self.resolve_table.record(encoder)?;

@@ -1,6 +1,6 @@
 use super::{
     super::*,
-    bind_helpers::{create_pair_max_dispatch, create_radix_dispatch},
+    bind_helpers::create_pair_max_dispatch,
     buffers::Buffers,
     dependency_visibility,
     inputs::CreateInputs,
@@ -47,7 +47,7 @@ pub(in crate::type_checker) fn create_with_passes(
         initial_table_clear: path_prefix_initial_table_clear,
         rounds: path_prefix_rounds,
         finalize: path_prefix_finalize,
-    } = create_path_sequences(passes, device, &inputs, &buffers, &module_resources)?;
+    } = create_path_sequences(passes, graph, device, &inputs, &buffers, &module_resources)?;
     let dependency_visibility = dependency_visibility::create(
         passes,
         device,
@@ -94,6 +94,9 @@ pub(in crate::type_checker) fn create_with_passes(
         clear_dependency_module_lookup,
         build_dependency_module_lookup,
         resolve_dependency_imports,
+        clear_dependency_module_lookup_call_collection,
+        build_dependency_module_lookup_call_collection,
+        resolve_dependency_imports_call_collection,
         scatter_import_records,
         resolve_imports,
         clear_import_edge_set,
@@ -114,13 +117,20 @@ pub(in crate::type_checker) fn create_with_passes(
     let ProjectionBindGroups {
         clear_type_path_types,
         project_type_paths,
+        project_type_paths_after_aliases,
+        project_type_paths_after_projected_aliases,
+        project_type_paths_after_alias_equivalence,
         validate_type_paths,
         type_aliases,
         project_type_instances,
         mark_value_call_paths,
         project_value_paths,
         consume_value_calls,
+        consume_value_calls_after_methods,
         mirror_value_call_leaf,
+        mirror_value_call_leaf_after_row_args,
+        mirror_value_call_leaf_after_methods,
+        mirror_value_call_leaf_after_method_row_args,
         consume_value_consts,
         consume_value_enum_units,
         consume_value_enum_calls,
@@ -138,14 +148,7 @@ pub(in crate::type_checker) fn create_with_passes(
         import_count_out,
         decl_count_out,
         module_dispatch_args,
-        decl_module_id,
-        decl_key_to_decl_id,
-        decl_key_order_tmp,
         decl_key_radix_dispatch_args,
-        decl_key_radix_block_histogram,
-        decl_key_radix_block_bucket_prefix,
-        decl_key_radix_bucket_total,
-        decl_key_radix_bucket_base,
         decl_status,
         decl_duplicate_of,
         decl_type_key_flag,
@@ -179,6 +182,7 @@ pub(in crate::type_checker) fn create_with_passes(
         resolved_type_status,
         resolved_value_status,
         path_prefix_id_a,
+        path_dispatch_args,
         import_dispatch_args,
         ..
     } = resource_buffers.clone();
@@ -264,80 +268,29 @@ pub(in crate::type_checker) fn create_with_passes(
             key_step: 0,
         },
     );
-    let decl_key_radix_dispatch = create_radix_dispatch(
+    let mut decl_key_dispatch_resources = module_resources.clone();
+    decl_key_dispatch_resources.buffer("gParams", &decl_key_radix_dispatch_params);
+    let decl_key_radix_dispatch = ComputeOperation::direct_spec(
         device,
-        &passes.kernel("radix/dispatch_args"),
-        "type_check.modules.decl_key_radix_dispatch",
-        &decl_key_radix_dispatch_params,
-        &decl_count_out,
-        &decl_key_radix_dispatch_args,
+        graph,
+        &decl_key_dispatch_resources,
+        passes,
+        DECL_KEY_RADIX_DISPATCH,
+        1,
     )?;
 
-    let decl_key_resources = HashMap::from([
-        (
-            "decl_count_out".to_owned(),
-            decl_count_out.as_entire_binding(),
-        ),
-        (
-            "decl_module_id".to_owned(),
-            decl_module_id.as_entire_binding(),
-        ),
-        (
-            "decl_key_order".to_owned(),
-            decl_key_to_decl_id.as_entire_binding(),
-        ),
-        (
-            "decl_key_order_tmp".to_owned(),
-            decl_key_order_tmp.as_entire_binding(),
-        ),
-        (
-            "decl_key_radix_block_histogram".to_owned(),
-            decl_key_radix_block_histogram.as_entire_binding(),
-        ),
-        (
-            "decl_key_radix_block_bucket_prefix".to_owned(),
-            decl_key_radix_block_bucket_prefix.as_entire_binding(),
-        ),
-        (
-            "decl_key_radix_bucket_total".to_owned(),
-            decl_key_radix_bucket_total.as_entire_binding(),
-        ),
-        (
-            "decl_key_radix_bucket_base".to_owned(),
-            decl_key_radix_bucket_base.as_entire_binding(),
-        ),
-    ]);
-    let sort_decl_keys = RadixSortOperation::new(
+    let sort_decl_keys = compiler_graph::MODULE_DECL_KEY_RADIX_SORT.operation(
         device,
         passes,
-        &decl_key_resources,
-        RadixSortPlan {
-            label: "type_check.modules.decl_keys",
-            capacity: record_capacity_u32,
-            small_capacity: MODULE_RELATION_SMALL_SORT_CAPACITY,
-            steps: decl_key_radix_steps,
-            kernels: RadixSortKernels::new(
-                "type_checker/modules/06_sort_decl_keys",
-                "type_checker/modules/06b_sort_decl_keys_scatter",
-            )
-            .with_small("type_checker/modules/06a2_sort_decl_keys_small"),
-            dispatch: RadixSortDispatch {
-                small: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
-                rows: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
-                bucket_prefix: RadixDispatchDomain::Direct(
-                    RADIX_U8_BUCKET_COUNT.saturating_mul(256),
-                ),
-                bucket_bases: RadixDispatchDomain::Direct(256),
-            },
-            resources: RadixSortResources {
-                count: "decl_count_out",
-                order: "decl_key_order",
-                temporary_order: "decl_key_order_tmp",
-                histogram: "decl_key_radix_block_histogram",
-                bucket_prefix: "decl_key_radix_block_bucket_prefix",
-                bucket_total: "decl_key_radix_bucket_total",
-                bucket_base: "decl_key_radix_bucket_base",
-            },
+        &module_resources,
+        record_capacity_u32,
+        MODULE_RELATION_SMALL_SORT_CAPACITY,
+        decl_key_radix_steps,
+        RadixSortDispatch {
+            small: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
+            rows: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
+            bucket_prefix: RadixDispatchDomain::Direct(RADIX_U8_BUCKET_COUNT.saturating_mul(256)),
+            bucket_bases: RadixDispatchDomain::Direct(256),
         },
         |key_step| ModuleKeyRadixParams {
             module_capacity: record_capacity_u32,
@@ -357,11 +310,15 @@ pub(in crate::type_checker) fn create_with_passes(
             key_step: 0,
         },
     );
-    let validate_decls = module_resources.reflected_bind_group_with_overrides(
+    let mut validate_decl_resources = module_resources.clone();
+    validate_decl_resources.buffer("gParams", &validate_decl_params);
+    let validate_decls = ComputeOperation::indirect_spec(
         device,
-        "type_check_modules_07_validate_decls",
-        &passes.kernel("type_checker/modules/07_validate_decls"),
-        &[("gParams", validate_decl_params.as_entire_binding())],
+        graph,
+        &validate_decl_resources,
+        passes,
+        DECLS_VALIDATE,
+        &decl_key_radix_dispatch_args,
     )?;
 
     let mut namespace_resources = module_resources.clone();
@@ -518,17 +475,25 @@ pub(in crate::type_checker) fn create_with_passes(
         &scan_resources,
         compiler_graph::DECL_PUBLIC_SCAN,
     )?;
-    let clear_interface_public_decls = public_resources.reflected_bind_group_with_overrides(
+    let mut interface_public_resources = public_resources.clone();
+    interface_public_resources.buffer("gParams", &validate_decl_params);
+    let interface_decl_capacity =
+        u32::try_from(resource_buffers.interface_public_decl_local_id.count).unwrap_or(u32::MAX);
+    let clear_interface_public_decls = ComputeOperation::direct_spec(
         device,
-        "type_check_interface_public_decls_00_clear",
-        &passes.kernel("type_checker/interface/public_decls/00_clear"),
-        &[("gParams", validate_decl_params.as_entire_binding())],
+        graph,
+        &interface_public_resources,
+        passes,
+        INTERFACE_PUBLIC_DECLS_CLEAR,
+        interface_decl_capacity,
     )?;
-    let map_interface_public_decls = public_resources.reflected_bind_group_with_overrides(
+    let map_interface_public_decls = ComputeOperation::indirect_spec(
         device,
-        "type_check_interface_public_decls_01_map",
-        &passes.kernel("type_checker/interface/public_decls/01_map"),
-        &[("gParams", validate_decl_params.as_entire_binding())],
+        graph,
+        &interface_public_resources,
+        passes,
+        INTERFACE_PUBLIC_DECLS_MAP,
+        &decl_key_radix_dispatch_args,
     )?;
 
     let import_visibility_params = uniform_from_val(
@@ -585,13 +550,15 @@ pub(in crate::type_checker) fn create_with_passes(
         "import_visible_lookup_state",
         &import_visible_type_lookup_state,
     );
-    let scatter_import_visible_type = import_visible_type_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_09b_scatter_import_visibility.type",
-            &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
-            &[("gParams", import_visibility_params.as_entire_binding())],
-        )?;
+    import_visible_type_resources.buffer("gParams", &import_visibility_params);
+    let scatter_import_visible_type = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &import_visible_type_resources,
+        passes,
+        IMPORT_VISIBLE_TYPE_SCATTER,
+        &import_visible_validate_dispatch_args,
+    )?;
 
     let mut import_visible_value_resources = public_resources.clone();
     import_visible_value_resources.buffer("import_visible_count", &import_visible_value_count);
@@ -618,56 +585,62 @@ pub(in crate::type_checker) fn create_with_passes(
         "import_visible_lookup_state",
         &import_visible_value_lookup_state,
     );
-    let scatter_import_visible_value = import_visible_value_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_09b_scatter_import_visibility.value",
-            &passes.kernel("type_checker/modules/09b_scatter_import_visibility"),
-            &[("gParams", import_visibility_params.as_entire_binding())],
-        )?;
+    import_visible_value_resources.buffer("gParams", &import_visibility_params);
+    let scatter_import_visible_value = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &import_visible_value_resources,
+        passes,
+        IMPORT_VISIBLE_VALUE_SCATTER,
+        &import_visible_validate_dispatch_args,
+    )?;
 
-    let clear_import_visible_type_lookup = import_visible_type_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_09c_clear_import_visible_lookup.type",
-            &passes.kernel("type_checker/modules/09c_clear_import_visible_lookup"),
-            &[("gParams", import_visibility_params.as_entire_binding())],
-        )?;
-    let clear_import_visible_value_lookup = import_visible_value_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_09c_clear_import_visible_lookup.value",
-            &passes.kernel("type_checker/modules/09c_clear_import_visible_lookup"),
-            &[("gParams", import_visibility_params.as_entire_binding())],
-        )?;
+    let import_lookup_capacity = import_visible_capacity_u32.saturating_mul(2);
+    let clear_import_visible_type_lookup = ComputeOperation::direct_spec(
+        device,
+        graph,
+        &import_visible_type_resources,
+        passes,
+        IMPORT_VISIBLE_TYPE_LOOKUP_CLEAR,
+        import_lookup_capacity,
+    )?;
+    let clear_import_visible_value_lookup = ComputeOperation::direct_spec(
+        device,
+        graph,
+        &import_visible_value_resources,
+        passes,
+        IMPORT_VISIBLE_VALUE_LOOKUP_CLEAR,
+        import_lookup_capacity,
+    )?;
 
-    let build_import_visible_type_key_table = import_visible_type_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_09e_build_import_visible_key_tables.type",
-            &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
-            &[("gParams", import_visibility_params.as_entire_binding())],
-        )?;
+    let build_import_visible_type_key_table = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &import_visible_type_resources,
+        passes,
+        IMPORT_VISIBLE_TYPE_LOOKUP_BUILD,
+        &import_visible_validate_dispatch_args,
+    )?;
 
-    let build_import_visible_value_key_table = import_visible_value_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_09e_build_import_visible_key_tables.value",
-            &passes.kernel("type_checker/modules/09e_build_import_visible_key_tables"),
-            &[("gParams", import_visibility_params.as_entire_binding())],
-        )?;
+    let build_import_visible_value_key_table = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &import_visible_value_resources,
+        passes,
+        IMPORT_VISIBLE_VALUE_LOOKUP_BUILD,
+        &import_visible_validate_dispatch_args,
+    )?;
 
     let (import_visible_validate_dispatch_params, import_visible_validate_dispatch_args_group) =
         create_pair_max_dispatch(
             device,
-            &passes.kernel("type_checker/count/pair_max_dispatch_args"),
+            graph,
+            passes,
+            &module_resources,
+            IMPORT_VISIBLE_DISPATCH,
             "type_check.modules.import_visible_validate_dispatch.params",
-            "type_check.modules.import_visible_validate_dispatch_args",
             import_visible_capacity_u32,
             import_visible_capacity_u32,
-            &import_visible_type_count_out,
-            &import_visible_value_count_out,
-            &import_visible_validate_dispatch_args,
         )?;
 
     let import_visibility_mark_params = uniform_from_val(
@@ -680,22 +653,23 @@ pub(in crate::type_checker) fn create_with_passes(
             key_step: 1,
         },
     );
-    let make_import_visible_validation_bind_group =
-        |label: &str, params: &LaniusBuffer<ModuleKeyRadixParams>| {
-            module_resources.reflected_bind_group_with_overrides(
-                device,
-                label,
-                &passes.kernel("type_checker/modules/09f_validate_import_visible_keys"),
-                &[("gParams", params.as_entire_binding())],
-            )
-        };
-    let initialize_import_visible_keys = make_import_visible_validation_bind_group(
-        "type_check_modules_09f_validate_import_visible_keys.init",
-        &import_visibility_params,
+    let initialize_import_visible_keys = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &import_visibility_resources,
+        passes,
+        IMPORT_VISIBLE_STATUS_INITIALIZE,
+        &import_visible_validate_dispatch_args,
     )?;
-    let validate_import_visible_keys = make_import_visible_validation_bind_group(
-        "type_check_modules_09f_validate_import_visible_keys.mark",
-        &import_visibility_mark_params,
+    let mut import_visibility_mark_resources = module_resources.clone();
+    import_visibility_mark_resources.buffer("gParams", &import_visibility_mark_params);
+    let validate_import_visible_keys = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &import_visibility_mark_resources,
+        passes,
+        IMPORT_VISIBLE_AMBIGUITY_VALIDATE,
+        &import_visible_validate_dispatch_args,
     )?;
 
     import_visible_type_resources.buffer("decl_key_count_out", &decl_type_key_count_out);
@@ -719,37 +693,43 @@ pub(in crate::type_checker) fn create_with_passes(
         &resource_buffers.module_by_canonical_id,
     );
 
-    let resolve_local_type_paths = import_visible_type_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_10_resolve_local_paths.type",
-            &passes.kernel("type_checker/modules/10_resolve_local_paths"),
-            &[("gParams", import_visibility_params.as_entire_binding())],
-        )?;
+    let resolve_local_type_paths = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &import_visible_type_resources,
+        passes,
+        RESOLVE_LOCAL_TYPE_PATHS,
+        &path_dispatch_args,
+    )?;
 
-    let resolve_local_value_paths = import_visible_value_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_10_resolve_local_paths.value",
-            &passes.kernel("type_checker/modules/10_resolve_local_paths"),
-            &[("gParams", import_visibility_mark_params.as_entire_binding())],
-        )?;
+    let mut resolve_local_value_resources = import_visible_value_resources.clone();
+    resolve_local_value_resources.buffer("gParams", &import_visibility_mark_params);
+    let resolve_local_value_paths = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &resolve_local_value_resources,
+        passes,
+        RESOLVE_LOCAL_VALUE_PATHS,
+        &path_dispatch_args,
+    )?;
 
-    let resolve_imported_type_paths = import_visible_type_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_10b_resolve_imported_paths.type",
-            &passes.kernel("type_checker/modules/10b_resolve_imported_paths"),
-            &[("gParams", import_visibility_params.as_entire_binding())],
-        )?;
+    let resolve_imported_type_paths = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &import_visible_type_resources,
+        passes,
+        RESOLVE_IMPORTED_TYPE_PATHS,
+        &path_dispatch_args,
+    )?;
 
-    let resolve_imported_value_paths = import_visible_value_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_10b_resolve_imported_paths.value",
-            &passes.kernel("type_checker/modules/10b_resolve_imported_paths"),
-            &[("gParams", import_visibility_params.as_entire_binding())],
-        )?;
+    let resolve_imported_value_paths = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &import_visible_value_resources,
+        passes,
+        RESOLVE_IMPORTED_VALUE_PATHS,
+        &path_dispatch_args,
+    )?;
 
     let resolve_qualified_path_params = uniform_from_val(
         device,
@@ -771,24 +751,27 @@ pub(in crate::type_checker) fn create_with_passes(
             reserved: 1,
         },
     );
-    let resolve_qualified_type_paths = import_visible_type_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_10c_resolve_qualified_paths.type",
-            &passes.kernel("type_checker/modules/10c_resolve_qualified_paths"),
-            &[("gParams", resolve_qualified_path_params.as_entire_binding())],
-        )?;
+    let mut resolve_qualified_type_resources = import_visible_type_resources.clone();
+    resolve_qualified_type_resources.buffer("gParams", &resolve_qualified_path_params);
+    let resolve_qualified_type_paths = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &resolve_qualified_type_resources,
+        passes,
+        RESOLVE_QUALIFIED_TYPE_PATHS,
+        &path_dispatch_args,
+    )?;
 
-    let resolve_qualified_value_paths = import_visible_value_resources
-        .reflected_bind_group_with_overrides(
-            device,
-            "type_check_modules_10c_resolve_qualified_paths.value",
-            &passes.kernel("type_checker/modules/10c_resolve_qualified_paths"),
-            &[(
-                "gParams",
-                resolve_qualified_value_path_params.as_entire_binding(),
-            )],
-        )?;
+    let mut resolve_qualified_value_resources = import_visible_value_resources.clone();
+    resolve_qualified_value_resources.buffer("gParams", &resolve_qualified_value_path_params);
+    let resolve_qualified_value_paths = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &resolve_qualified_value_resources,
+        passes,
+        RESOLVE_QUALIFIED_VALUE_PATHS,
+        &path_dispatch_args,
+    )?;
 
     let mut decl_core_resources = module_resources.clone();
     decl_core_resources.buffer("gParams", params);
@@ -801,32 +784,40 @@ pub(in crate::type_checker) fn create_with_passes(
         inputs.hir_active_dispatch_args,
     )?;
 
-    let append_variant_decl_count = module_resources.reflected_bind_group_with_overrides(
+    let append_variant_decl_count = ComputeOperation::direct_spec(
         device,
-        "type_check_modules_02c1_append_variant_decl_count",
-        &passes.kernel("type_checker/modules/02c1_append_variant_decl_count"),
-        &[("gParams", params.as_entire_binding())],
+        graph,
+        &decl_core_resources,
+        passes,
+        VARIANT_DECL_COUNT_APPEND,
+        1,
     )?;
 
-    let clear_decl_lookup = module_resources.reflected_bind_group_with_overrides(
+    let clear_decl_lookup = ComputeOperation::direct_spec(
         device,
-        "type_check_modules_02d_clear_decl_lookup",
-        &passes.kernel("type_checker/modules/02d/clear_decl_lookup"),
-        &[("gParams", params.as_entire_binding())],
+        graph,
+        &decl_core_resources,
+        passes,
+        DECL_RECORD_LOOKUP_CLEAR,
+        token_capacity.saturating_mul(2).max(1),
     )?;
 
-    let scatter_decl_span_records = module_resources.reflected_bind_group_with_overrides(
+    let scatter_decl_span_records = ComputeOperation::indirect_spec(
         device,
-        "type_check_modules_02d_scatter_decl_span_records",
-        &passes.kernel("type_checker/modules/02d/scatter_decl_span_records"),
-        &[("gParams", params.as_entire_binding())],
+        graph,
+        &decl_core_resources,
+        passes,
+        DECL_SPAN_RECORDS_SCATTER,
+        inputs.hir_active_dispatch_args,
     )?;
 
-    let scatter_variant_decl_records = module_resources.reflected_bind_group_with_overrides(
+    let scatter_variant_decl_records = ComputeOperation::direct_spec(
         device,
-        "type_check_modules_02c2_scatter_variant_decl_records",
-        &passes.kernel("type_checker/modules/02c2_scatter_variant_decl_records"),
-        &[("gParams", params.as_entire_binding())],
+        graph,
+        &decl_core_resources,
+        passes,
+        VARIANT_DECL_RECORDS_SCATTER,
+        n_blocks.saturating_mul(256).max(1),
     )?;
     retained_params.push(decl_module_params);
     retained_params.push(attach_record_modules_params);
@@ -836,10 +827,6 @@ pub(in crate::type_checker) fn create_with_passes(
     retained_params.push(import_visibility_params);
     retained_params.push(import_visibility_mark_params);
     Ok(State {
-        n_blocks,
-        module_n_blocks,
-        token_capacity,
-        import_visible_capacity: import_visible_capacity_u32,
         resources: buffers,
         dependency_interfaces: inputs.dependency_interfaces.cloned(),
         dependency_visibility,
@@ -895,6 +882,9 @@ pub(in crate::type_checker) fn create_with_passes(
             clear_dependency_module_lookup,
             build_dependency_module_lookup,
             resolve_dependency_imports,
+            clear_dependency_module_lookup_call_collection,
+            build_dependency_module_lookup_call_collection,
+            resolve_dependency_imports_call_collection,
             resolve_imports,
             clear_import_edge_set,
             build_import_edge_set,
@@ -938,13 +928,20 @@ pub(in crate::type_checker) fn create_with_passes(
             resolve_qualified_value_paths,
             clear_type_path_types,
             project_type_paths,
+            project_type_paths_after_aliases,
+            project_type_paths_after_projected_aliases,
+            project_type_paths_after_alias_equivalence,
             validate_type_paths,
             type_aliases,
             project_type_instances,
             mark_value_call_paths,
             project_value_paths,
             consume_value_calls,
+            consume_value_calls_after_methods,
             mirror_value_call_leaf,
+            mirror_value_call_leaf_after_row_args,
+            mirror_value_call_leaf_after_methods,
+            mirror_value_call_leaf_after_method_row_args,
             consume_value_consts,
             consume_value_enum_units,
             consume_value_enum_calls,

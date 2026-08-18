@@ -4,19 +4,16 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    lowering::{GpuSemanticLirView, bound, make_group, record_direct},
+    lowering::GpuSemanticLirView,
     lowering_ir::{LoweringCapacities, WasmLirFunction, WasmModuleLayout},
     scan::{GpuResidentExclusiveScan, GraphScanContract},
 };
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
-    compiler_graph::{
-        BoundGraphResource,
-        CompilerGraph,
-        CompilerGraphAllocations,
-        CompilerGraphWorkspace,
-    },
-    passes_core::{PassData, make_pass_data_from_shader_key},
+    compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
+    kernels::KernelRegistry,
+    operations::ComputeOperation,
+    resource_registry::ResourceMap,
 };
 
 #[repr(C)]
@@ -41,18 +38,11 @@ pub(crate) struct GpuWasmModuleObjectView<'a> {
 }
 
 pub(crate) struct GpuWasmModuleStage {
-    function_capacity: u32,
-    artifact_capacity: u32,
-    clear_pass: PassData,
-    lengths_pass: PassData,
-    layout_pass: PassData,
-    headers_pass: PassData,
-    functions_pass: PassData,
-    clear_group: wgpu::BindGroup,
-    lengths_group: wgpu::BindGroup,
-    layout_group: wgpu::BindGroup,
-    headers_group: wgpu::BindGroup,
-    functions_group: wgpu::BindGroup,
+    clear: ComputeOperation,
+    lengths: ComputeOperation,
+    layout: ComputeOperation,
+    headers: ComputeOperation,
+    functions: ComputeOperation,
     type_scan: GpuResidentExclusiveScan,
     code_scan: GpuResidentExclusiveScan,
     _params: LaniusBuffer<WasmModuleParams>,
@@ -72,6 +62,7 @@ impl GpuWasmModuleStage {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         device: &wgpu::Device,
+        kernels: &KernelRegistry,
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
@@ -114,61 +105,41 @@ impl GpuWasmModuleStage {
                 reserved1: 0,
             },
         );
-        let clear_pass = load(
+        let mut resources = ResourceMap::new();
+        semantic.register(graph, &mut resources)?;
+        resources.graph_buffer(graph, "lir.wasm.functions", functions)?;
+        resources.graph_buffer(graph, "lir.wasm.body_bytes", body_words)?;
+        resources.graph_buffer(graph, "lir.wasm.module.type_lengths", &type_lengths)?;
+        resources.graph_buffer(graph, "lir.wasm.module.type_offsets", &type_offsets)?;
+        resources.graph_buffer(graph, "lir.wasm.module.type_total", &type_total)?;
+        resources.graph_buffer(graph, "lir.wasm.module.code_lengths", &code_lengths)?;
+        resources.graph_buffer(graph, "lir.wasm.module.code_offsets", &code_offsets)?;
+        resources.graph_buffer(graph, "lir.wasm.module.code_total", &code_total)?;
+        resources.graph_buffer(graph, "lir.wasm.module.entrypoint_state", &entrypoint_state)?;
+        resources.graph_buffer(graph, "lir.wasm.module.layout", &layout)?;
+        resources.graph_buffer(graph, "artifact.wasm.length", &length)?;
+        resources.graph_buffer(graph, "artifact.wasm.bytes", &words)?;
+        let context = (graph, allocations);
+        let clear = ComputeOperation::direct(
             device,
+            &context,
+            &resources,
             "lir.wasm.module.state_clear",
-            "codegen/lir/wasm/module_state_clear",
+            kernels.kernel("codegen/lir/wasm/module_state_clear"),
+            1,
         )?;
-        let lengths_pass = load(
+        let lengths = ComputeOperation::direct_with_uniform(
             device,
+            &context,
+            &resources,
             "lir.wasm.module.lengths",
-            "codegen/lir/wasm/module_lengths",
-        )?;
-        let layout_pass = load(
-            device,
-            "lir.wasm.module.layout",
-            "codegen/lir/wasm/module_layout",
-        )?;
-        let headers_pass = load(
-            device,
-            "lir.wasm.module.emit_headers",
-            "codegen/lir/wasm/module_emit_headers",
-        )?;
-        let functions_pass = load(
-            device,
-            "lir.wasm.module.emit_functions",
-            "codegen/lir/wasm/module_emit_functions",
-        )?;
-        let clear_group = make_group(
-            device,
-            &clear_pass,
-            "lir.wasm.module.state_clear.bind_group",
-            &[(
-                "wasm_module_entrypoint_state",
-                entrypoint_state.as_entire_binding(),
-            )],
-        )?;
-        let lengths_group = make_group(
-            device,
-            &lengths_pass,
-            "lir.wasm.module.lengths.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "wasm_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                ("wasm_lir_functions", functions.as_entire_binding()),
-                ("wasm_type_entry_length", type_lengths.as_entire_binding()),
-                ("wasm_code_entry_length", code_lengths.as_entire_binding()),
-                (
-                    "wasm_module_entrypoint_state",
-                    entrypoint_state.as_entire_binding(),
-                ),
-            ],
+            kernels.kernel("codegen/lir/wasm/module_lengths"),
+            &params,
+            function_capacity,
         )?;
         let type_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -194,6 +165,7 @@ impl GpuWasmModuleStage {
         )?;
         let code_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -217,102 +189,40 @@ impl GpuWasmModuleStage {
             &code_offsets,
             &code_total,
         )?;
-        let layout_group = make_group(
+        let layout_operation = ComputeOperation::direct_with_uniform(
             device,
-            &layout_pass,
-            "lir.wasm.module.layout.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "wasm_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                ("wasm_type_entries_length", type_total.as_entire_binding()),
-                ("wasm_code_entries_length", code_total.as_entire_binding()),
-                (
-                    "wasm_module_entrypoint_state",
-                    entrypoint_state.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_string_pool_len",
-                    semantic.string_pool_len.as_entire_binding(),
-                ),
-                ("wasm_module_layout", layout.as_entire_binding()),
-                ("wasm_module_length", length.as_entire_binding()),
-                ("lowering_status", semantic.status.as_entire_binding()),
-            ],
+            &context,
+            &resources,
+            "lir.wasm.module.layout",
+            kernels.kernel("codegen/lir/wasm/module_layout"),
+            &params,
+            1,
         )?;
-        let headers_group = make_group(
+        let headers = ComputeOperation::direct_with_uniform(
             device,
-            &headers_pass,
-            "lir.wasm.module.emit_headers.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("wasm_module_layout", layout.as_entire_binding()),
-                (
-                    "semantic_lir_string_pool_len",
-                    semantic.string_pool_len.as_entire_binding(),
-                ),
-                (
-                    "semantic_lir_string_data",
-                    semantic.string_data_words.as_entire_binding(),
-                ),
-                ("wasm_module_bytes", words.as_entire_binding()),
-            ],
+            &context,
+            &resources,
+            "lir.wasm.module.emit_headers",
+            kernels.kernel("codegen/lir/wasm/module_emit_headers"),
+            &params,
+            artifact_capacity,
         )?;
-        let functions_group = make_group(
+        let function_emission = ComputeOperation::direct_with_uniform(
             device,
-            &functions_pass,
-            "lir.wasm.module.emit_functions.bind_group",
-            &[
-                ("gParams", params.as_entire_binding()),
-                (
-                    "wasm_lir_function_total",
-                    semantic.function_count.as_entire_binding(),
-                ),
-                ("wasm_lir_functions", functions.as_entire_binding()),
-                ("semantic_lir_params", semantic.params.as_entire_binding()),
-                ("semantic_lir_locals", semantic.locals.as_entire_binding()),
-                ("wasm_type_entry_offset", type_offsets.as_entire_binding()),
-                ("wasm_code_entry_offset", code_offsets.as_entire_binding()),
-                ("wasm_body_bytes", body_words.as_entire_binding()),
-                ("wasm_module_layout", layout.as_entire_binding()),
-                ("wasm_module_bytes", words.as_entire_binding()),
-            ],
-        )?;
-
-        validate(
-            graph,
-            allocations,
-            semantic,
-            functions,
-            body_words,
-            &type_lengths,
-            &type_offsets,
-            &type_total,
-            &code_lengths,
-            &code_offsets,
-            &code_total,
-            &entrypoint_state,
-            &layout,
-            &length,
-            &words,
-            semantic.status,
+            &context,
+            &resources,
+            "lir.wasm.module.emit_functions",
+            kernels.kernel("codegen/lir/wasm/module_emit_functions"),
+            &params,
+            function_capacity,
         )?;
 
         Ok(Self {
-            function_capacity,
-            artifact_capacity,
-            clear_pass,
-            lengths_pass,
-            layout_pass,
-            headers_pass,
-            functions_pass,
-            clear_group,
-            lengths_group,
-            layout_group,
-            headers_group,
-            functions_group,
+            clear,
+            lengths,
+            layout: layout_operation,
+            headers,
+            functions: function_emission,
             type_scan,
             code_scan,
             _params: params,
@@ -345,204 +255,12 @@ impl GpuWasmModuleStage {
     }
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_direct(encoder, &self.clear_pass, &self.clear_group, 1)?;
-        record_direct(
-            encoder,
-            &self.lengths_pass,
-            &self.lengths_group,
-            self.function_capacity,
-        )?;
+        self.clear.record(encoder)?;
+        self.lengths.record(encoder)?;
         self.type_scan.record(encoder)?;
         self.code_scan.record(encoder)?;
-        record_direct(encoder, &self.layout_pass, &self.layout_group, 1)?;
-        record_direct(
-            encoder,
-            &self.headers_pass,
-            &self.headers_group,
-            self.artifact_capacity,
-        )?;
-        record_direct(
-            encoder,
-            &self.functions_pass,
-            &self.functions_group,
-            self.function_capacity,
-        )
+        self.layout.record(encoder)?;
+        self.headers.record(encoder)?;
+        self.functions.record(encoder)
     }
-}
-
-fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
-    make_pass_data_from_shader_key(device, label, "main", shader)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn validate(
-    graph: &CompilerGraph,
-    allocations: &CompilerGraphAllocations,
-    semantic: GpuSemanticLirView<'_>,
-    functions: &LaniusBuffer<WasmLirFunction>,
-    body_words: &LaniusBuffer<u32>,
-    type_lengths: &LaniusBuffer<u32>,
-    type_offsets: &LaniusBuffer<u32>,
-    type_total: &LaniusBuffer<u32>,
-    code_lengths: &LaniusBuffer<u32>,
-    code_offsets: &LaniusBuffer<u32>,
-    code_total: &LaniusBuffer<u32>,
-    entrypoint_state: &LaniusBuffer<u32>,
-    layout: &LaniusBuffer<WasmModuleLayout>,
-    length: &LaniusBuffer<u32>,
-    words: &LaniusBuffer<u32>,
-    status: &LaniusBuffer<super::lowering_ir::LoweringStatus>,
-) -> Result<()> {
-    let resource = |name: &str| graph.resource_id(name).unwrap();
-    let run = |pass: &str, bindings: Vec<BoundGraphResource>| {
-        allocations
-            .validate_pass_bindings(graph, graph.pass_id(pass).unwrap(), &bindings)
-            .map_err(anyhow::Error::msg)
-    };
-    run(
-        "lir.wasm.module.state_clear",
-        vec![bound(
-            "wasm_module_entrypoint_state",
-            resource("lir.wasm.module.entrypoint_state"),
-            entrypoint_state,
-        )?],
-    )?;
-    run(
-        "lir.wasm.module.lengths",
-        vec![
-            bound(
-                "wasm_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "wasm_lir_functions",
-                resource("lir.wasm.functions"),
-                functions,
-            )?,
-            bound(
-                "wasm_type_entry_length",
-                resource("lir.wasm.module.type_lengths"),
-                type_lengths,
-            )?,
-            bound(
-                "wasm_code_entry_length",
-                resource("lir.wasm.module.code_lengths"),
-                code_lengths,
-            )?,
-            bound(
-                "wasm_module_entrypoint_state",
-                resource("lir.wasm.module.entrypoint_state"),
-                entrypoint_state,
-            )?,
-        ],
-    )?;
-    run(
-        "lir.wasm.module.layout",
-        vec![
-            bound(
-                "wasm_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "wasm_type_entries_length",
-                resource("lir.wasm.module.type_total"),
-                type_total,
-            )?,
-            bound(
-                "wasm_code_entries_length",
-                resource("lir.wasm.module.code_total"),
-                code_total,
-            )?,
-            bound(
-                "wasm_module_entrypoint_state",
-                resource("lir.wasm.module.entrypoint_state"),
-                entrypoint_state,
-            )?,
-            bound(
-                "semantic_lir_string_pool_len",
-                resource("lir.semantic.string_pool_len"),
-                semantic.string_pool_len,
-            )?,
-            bound(
-                "wasm_module_layout",
-                resource("lir.wasm.module.layout"),
-                layout,
-            )?,
-            bound(
-                "wasm_module_length",
-                resource("artifact.wasm.length"),
-                length,
-            )?,
-            bound("lowering_status", resource("lowering.status"), status)?,
-        ],
-    )?;
-    run(
-        "lir.wasm.module.emit_headers",
-        vec![
-            bound(
-                "wasm_module_layout",
-                resource("lir.wasm.module.layout"),
-                layout,
-            )?,
-            bound(
-                "semantic_lir_string_pool_len",
-                resource("lir.semantic.string_pool_len"),
-                semantic.string_pool_len,
-            )?,
-            bound(
-                "semantic_lir_string_data",
-                resource("lir.semantic.string_data"),
-                semantic.string_data_words,
-            )?,
-            bound("wasm_module_bytes", resource("artifact.wasm.bytes"), words)?,
-        ],
-    )?;
-    run(
-        "lir.wasm.module.emit_functions",
-        vec![
-            bound(
-                "wasm_lir_function_total",
-                resource("lir.semantic.function_total"),
-                semantic.function_count,
-            )?,
-            bound(
-                "wasm_lir_functions",
-                resource("lir.wasm.functions"),
-                functions,
-            )?,
-            bound(
-                "semantic_lir_params",
-                resource("lir.semantic.params"),
-                semantic.params,
-            )?,
-            bound(
-                "semantic_lir_locals",
-                resource("lir.semantic.locals"),
-                semantic.locals,
-            )?,
-            bound(
-                "wasm_type_entry_offset",
-                resource("lir.wasm.module.type_offsets"),
-                type_offsets,
-            )?,
-            bound(
-                "wasm_code_entry_offset",
-                resource("lir.wasm.module.code_offsets"),
-                code_offsets,
-            )?,
-            bound(
-                "wasm_body_bytes",
-                resource("lir.wasm.body_bytes"),
-                body_words,
-            )?,
-            bound(
-                "wasm_module_layout",
-                resource("lir.wasm.module.layout"),
-                layout,
-            )?,
-            bound("wasm_module_bytes", resource("artifact.wasm.bytes"), words)?,
-        ],
-    )
 }

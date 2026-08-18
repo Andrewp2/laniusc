@@ -13,6 +13,7 @@ import socketserver
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from generate_typical_project import generate as generate_typical_project
@@ -36,12 +37,125 @@ VIEWER_OUTPUT = ROOT / "benchmark_artifacts" / "performance-viewer"
 VIEWER_DATA_START = "<!-- lanius-performance-data:start -->"
 VIEWER_DATA_END = "<!-- lanius-performance-data:end -->"
 LANIUS_MODES = ("process_cold", "daemon_cold_workspace", "daemon_warm_workspace")
+DEFAULT_BENCHMARK_SEED = 20260808
+DEFAULT_SAMPLE_COUNT = 20
+CANONICAL_SINGLE_FILE_PRESET = "single-file-1mb"
 
 
-def single_file_comparison_group(target_bytes: int) -> str:
+@dataclass(frozen=True)
+class WorkloadSpec:
+    kind: str
+    seeds: tuple[int, ...]
+    sample_count: int
+    preset: str | None = None
+    target_bytes: int | None = None
+    file_count: int | None = None
+    profile: str | None = None
+    primer_seed: int | None = None
+
+
+@dataclass(frozen=True)
+class WorkloadCase:
+    seed: int
+    input_path: Path
+    source_root: Path | None
+    facts: dict
+
+
+CANONICAL_WORKLOAD_PRESETS = {
+    CANONICAL_SINGLE_FILE_PRESET: WorkloadSpec(
+        kind="single_file",
+        seeds=tuple(range(20, 40)),
+        sample_count=20,
+        preset=CANONICAL_SINGLE_FILE_PRESET,
+        target_bytes=1_000_000,
+        profile="pareas-common-subset",
+        primer_seed=19,
+    ),
+}
+
+
+def timeline_execution_domain(category: str, lane: str) -> str:
+    """Classify a trace event by the kind of execution it represents."""
+    if category == "gpu":
+        return "gpu_execution"
+    if lane == "host.submit":
+        return "queue_submission"
+    if lane == "host.readback":
+        return "host_readback_wait"
+    return "host_orchestration"
+
+
+def timeline_compiler_phase(name: str) -> str:
+    """Classify a trace label into a stable compiler phase for the viewer."""
+    label = name.lower().replace("-", "_")
+
+    if (
+        label.startswith(
+            (
+                "lex.",
+                "lexer.",
+                "dfa_",
+                "pair_",
+                "compact_boundaries",
+                "source_file_boundaries",
+                "tokens_build",
+            )
+        )
+        or ".lexer" in label
+    ):
+        return "lexing"
+    if label.startswith(("typecheck.", "type_check.")) or any(
+        marker in label for marker in (".typecheck", "_typecheck", ".type_check", "_type_check")
+    ):
+        return "type_checking"
+    if label.startswith(("parser.", "parse.", "hir.")) or any(
+        marker in label for marker in (".parser", "_parser", ".hir", "_hir")
+    ):
+        return "parsing_hir"
+    if "semantic_interface" in label:
+        return "semantic_interface"
+    if (
+        label.startswith(("codegen.x86", "x86."))
+        or "x86_object" in label
+        or name.lower().startswith("x86 object")
+    ):
+        return "x86_emission"
+    if label.startswith(("codegen.wasm", "wasm.")) or "wasm_object" in label:
+        return "wasm_emission"
+    if "lowering" in label or label.startswith("lower."):
+        return "lowering"
+    if label.startswith("codegen.") or "artifact" in label or ".link." in label:
+        return "artifact_emission"
+    return "orchestration"
+
+
+def annotate_timeline_event(event: dict) -> None:
+    """Add viewer-facing semantics while retaining the original trace lane."""
+    event["phase"] = timeline_compiler_phase(str(event.get("name", "")))
+    event["execution_domain"] = timeline_execution_domain(
+        str(event.get("category", "")), str(event.get("lane", ""))
+    )
+
+
+def annotate_document_timeline(document: dict) -> None:
+    """Normalize historical profiles when constructing the generated catalog."""
+    for measurement in document.get("measurements", []):
+        profile = measurement.get("profile")
+        if not isinstance(profile, dict):
+            continue
+        for event in profile.get("timeline", []):
+            if isinstance(event, dict):
+                annotate_timeline_event(event)
+
+
+def single_file_comparison_group(
+    target_bytes: int, profile: str, seeds: tuple[int, ...]
+) -> str:
+    seed_identity = ",".join(str(seed) for seed in seeds)
     return (
         "compiler-stress/comparative-single-file/"
-        f"mixed-function-sizes/{target_bytes}"
+        f"{profile}/{target_bytes}/seeds-{seed_identity}"
     )
 
 
@@ -49,16 +163,115 @@ def typical_project_comparison_group(file_count: int, seed: int) -> str:
     return f"typical-project/v1/seed-{seed}/files-{file_count}"
 
 
+def resolve_workload_spec(args: argparse.Namespace) -> WorkloadSpec:
+    if args.preset:
+        conflicting = [
+            name
+            for name, value in (
+                ("--custom-size", args.custom_size),
+                ("--files", args.files),
+                ("--seed", args.seed),
+                ("--samples", args.samples),
+            )
+            if value is not None
+        ]
+        if conflicting:
+            raise ValueError(
+                f"--preset {args.preset} fixes its workload; remove {', '.join(conflicting)}"
+            )
+        return CANONICAL_WORKLOAD_PRESETS[args.preset]
+
+    seed = args.seed if args.seed is not None else DEFAULT_BENCHMARK_SEED
+    sample_count = args.samples if args.samples is not None else DEFAULT_SAMPLE_COUNT
+    if sample_count <= 0:
+        raise ValueError("--samples must be positive")
+
+    if args.workload == "single-file":
+        if args.custom_size is None:
+            raise ValueError(
+                "custom single-file workloads require --custom-size; "
+                f"use --preset {CANONICAL_SINGLE_FILE_PRESET} for the comparable 1 MB corpus"
+            )
+        if args.custom_size <= 0:
+            raise ValueError("--custom-size must be positive")
+        if args.files is not None:
+            raise ValueError("--files only applies to typical-project workloads")
+        return WorkloadSpec(
+            kind="single_file",
+            seeds=(seed,),
+            sample_count=sample_count,
+            target_bytes=args.custom_size,
+            profile="mixed-function-sizes",
+        )
+
+    if args.custom_size is not None:
+        raise ValueError("--custom-size only applies to single-file workloads")
+    file_count = args.files if args.files is not None else 100
+    if file_count <= 0:
+        raise ValueError("--files must be positive")
+    return WorkloadSpec(
+        kind="typical_project",
+        seeds=(seed,),
+        sample_count=sample_count,
+        file_count=file_count,
+    )
+
+
+def custom_workload_warning(spec: WorkloadSpec) -> str | None:
+    if spec.kind != "single_file" or spec.preset is not None:
+        return None
+    canonical = CANONICAL_WORKLOAD_PRESETS[CANONICAL_SINGLE_FILE_PRESET]
+    assert spec.target_bytes is not None and canonical.target_bytes is not None
+    if abs(spec.target_bytes - canonical.target_bytes) > canonical.target_bytes // 10:
+        return None
+    return (
+        f"custom single-file workload is {spec.target_bytes:,} bytes and will not use the "
+        f"frozen comparison corpus; use --preset {CANONICAL_SINGLE_FILE_PRESET} "
+        f"for its {canonical.target_bytes:,}-byte, seeds 20-39 workload"
+    )
+
+
+def workload_run_id(spec: WorkloadSpec, target: str) -> str:
+    if spec.kind == "single_file":
+        assert spec.target_bytes is not None
+        identity = spec.preset or (
+            f"single-file-custom-{spec.target_bytes}-seed-{spec.seeds[0]}"
+        )
+        return f"{identity}-{target}"
+    assert spec.file_count is not None
+    return (
+        f"typical-project-{spec.file_count}-files-seed-{spec.seeds[0]}-{target}"
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="action", required=True)
 
-    run = subparsers.add_parser("run-lanius", help="run a canonical Lanius benchmark")
-    run.add_argument("--workload", choices=("single-file", "typical-project"), required=True)
-    run.add_argument("--size", type=int, default=1_000_000, help="single-file target bytes")
-    run.add_argument("--files", type=int, default=100, help="typical-project source-file count")
-    run.add_argument("--seed", type=int, default=20260808)
-    run.add_argument("--samples", type=int, default=20)
+    run = subparsers.add_parser("run-lanius", help="run a retained Lanius benchmark")
+    workload = run.add_mutually_exclusive_group(required=True)
+    workload.add_argument(
+        "--preset",
+        choices=tuple(CANONICAL_WORKLOAD_PRESETS),
+        help="immutable workload identity matching retained comparison baselines",
+    )
+    workload.add_argument("--workload", choices=("single-file", "typical-project"))
+    run.add_argument(
+        "--custom-size",
+        type=int,
+        help="exact bytes for a non-comparable custom single-file workload",
+    )
+    run.add_argument("--files", type=int, help="typical-project source-file count (default: 100)")
+    run.add_argument(
+        "--seed",
+        type=int,
+        help=f"custom workload seed (default: {DEFAULT_BENCHMARK_SEED})",
+    )
+    run.add_argument(
+        "--samples",
+        type=int,
+        help=f"custom workload sample count (default: {DEFAULT_SAMPLE_COUNT})",
+    )
     run.add_argument("--target", choices=("x86_64", "wasm"), default="x86_64")
     run.add_argument("--modes", default=",".join(LANIUS_MODES))
     run.add_argument("--output", type=Path)
@@ -152,8 +365,10 @@ def attach_nsight(args: argparse.Namespace) -> None:
 
 
 def run_lanius(args: argparse.Namespace) -> int:
-    if args.samples <= 0 or args.size <= 0 or args.files <= 0:
-        raise ValueError("--samples, --size, and --files must be positive")
+    spec = resolve_workload_spec(args)
+    warning = custom_workload_warning(spec)
+    if warning:
+        print(f"lanius_perf: warning: {warning}", file=sys.stderr, flush=True)
     modes = tuple(part.strip() for part in args.modes.split(",") if part.strip())
     unknown = set(modes) - set(LANIUS_MODES)
     if not modes or unknown:
@@ -162,9 +377,17 @@ def run_lanius(args: argparse.Namespace) -> int:
     if not laniusc.is_file():
         raise ValueError(f"release compiler is missing: {laniusc}; build it before benchmarking")
 
-    run_id, workload, input_path, source_root, sources, generation_command = prepare_workload(args)
-    facts = source_facts(sources, ROOT)
-    workload["generation_command"] = command_record(generation_command, ROOT)
+    run_id, workload, cases, primer_case, generation_commands = prepare_workload(
+        spec, args.target
+    )
+    sample_cases = cases if spec.preset else [cases[0]] * spec.sample_count
+    representative_case = sorted(
+        cases, key=lambda case: (case.facts["sloc"], case.seed)
+    )[len(cases) // 2]
+    facts = representative_case.facts
+    workload["generation_commands"] = [
+        command_record(command, ROOT) for command in generation_commands
+    ]
     output = resolve(args.output) if args.output else DEFAULT_RESULT_ROOT / f"{run_id}.json"
     document = new_document(ROOT, run_id, workload)
     version = command_output([str(laniusc), "--version"], ROOT)
@@ -172,25 +395,27 @@ def run_lanius(args: argparse.Namespace) -> int:
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     for mode in modes:
-        print(f"lanius_perf: {run_id} {mode} ({args.samples} samples)", flush=True)
+        print(f"lanius_perf: {run_id} {mode} ({len(sample_cases)} samples)", flush=True)
         measurement = measure_mode(
             mode,
             laniusc,
             version,
-            input_path,
-            source_root,
+            sample_cases,
+            cases,
+            primer_case,
             args.target,
-            args.samples,
             artifact_dir,
             facts,
             args.startup_timeout,
             args.job_timeout,
         )
         if not args.skip_profile and mode == "daemon_warm_workspace":
+            profile_case = representative_case
             measurement["profile"] = profile_warm_job(
                 laniusc,
-                input_path,
-                source_root,
+                cases,
+                primer_case,
+                profile_case,
                 args.target,
                 artifact_dir,
                 args.startup_timeout,
@@ -204,63 +429,86 @@ def run_lanius(args: argparse.Namespace) -> int:
     return 0
 
 
-def prepare_workload(args: argparse.Namespace):
-    if args.workload == "single-file":
-        run_id = f"single-file-{args.size}-seed-{args.seed}-{args.target}"
+def prepare_workload(spec: WorkloadSpec, target: str):
+    if spec.kind == "single_file":
+        assert spec.target_bytes is not None and spec.profile is not None
+        run_id = workload_run_id(spec, target)
         root = ROOT / "target" / "lanius-perf-workloads" / run_id
-        command = [
-            sys.executable,
-            "tools/generate_compiler_stress.py",
-            "--out",
-            str(root),
-            "--layout",
-            "comparative-single-file",
-            "--sizes",
-            str(args.size),
-            "--seed",
-            str(args.seed),
-            "--profile",
-            "mixed-function-sizes",
-        ]
-        checked(command, ROOT)
-        input_path = root / str(args.size) / "scaling.lani"
+        generation_commands = []
+        cases = []
+        all_seeds = [*spec.seeds]
+        if spec.primer_seed is not None:
+            all_seeds.append(spec.primer_seed)
+        for seed in all_seeds:
+            seed_root = root / f"seed-{seed}"
+            command = [
+                sys.executable,
+                "tools/generate_compiler_stress.py",
+                "--out",
+                str(seed_root),
+                "--layout",
+                "comparative-single-file",
+                "--sizes",
+                str(spec.target_bytes),
+                "--seed",
+                str(seed),
+                "--profile",
+                spec.profile,
+            ]
+            checked(command, ROOT)
+            generation_commands.append(command)
+            input_path = seed_root / str(spec.target_bytes) / "scaling.lani"
+            cases.append(
+                WorkloadCase(seed, input_path, None, source_facts([input_path], ROOT))
+            )
+        primer_case = None
+        if spec.primer_seed is not None:
+            primer_case = cases.pop()
         workload = {
             "id": run_id,
             "kind": "single_file",
             "classification": "synthetic compiler stress with a realistic function-size distribution",
             "generator": "tools/generate_compiler_stress.py",
-            "seed": args.seed,
-            "target_source_bytes": args.size,
-            "comparison_group": single_file_comparison_group(args.size),
+            "preset": spec.preset,
+            "profile": spec.profile,
+            "measured_seeds": list(spec.seeds),
+            "primer_seed": spec.primer_seed,
+            "target_source_bytes": spec.target_bytes,
+            "comparison_group": single_file_comparison_group(
+                spec.target_bytes, spec.profile, spec.seeds
+            ),
         }
-        return run_id, workload, input_path, None, [input_path], command
+        return run_id, workload, cases, primer_case, generation_commands
 
-    run_id = f"typical-project-{args.files}-files-seed-{args.seed}-{args.target}"
+    assert spec.file_count is not None
+    seed = spec.seeds[0]
+    run_id = workload_run_id(spec, target)
     root = ROOT / "target" / "lanius-perf-workloads" / run_id
-    generate_typical_project(root, args.files, args.seed)
+    generate_typical_project(root, spec.file_count, seed)
     command = [
         sys.executable,
         "tools/generate_typical_project.py",
         "--out",
         str(root),
         "--files",
-        str(args.files),
+        str(spec.file_count),
         "--seed",
-        str(args.seed),
+        str(seed),
     ]
     input_path = root / "lanius" / "main.lani"
     source_root = root / "lanius" / "src"
     sources = [input_path, *source_root.rglob("*.lani")]
+    case = WorkloadCase(seed, input_path, source_root, source_facts(sources, ROOT))
     workload = {
         "id": run_id,
         "kind": "typical_project",
         "classification": "corpus-calibrated typical project",
         "generator": "tools/generate_typical_project.py",
-        "seed": args.seed,
-        "requested_source_files": args.files,
-        "comparison_group": typical_project_comparison_group(args.files, args.seed),
+        "seed": seed,
+        "requested_source_files": spec.file_count,
+        "comparison_group": typical_project_comparison_group(spec.file_count, seed),
     }
-    return run_id, workload, input_path, source_root, sources, command
+    return run_id, workload, [case], None, [command]
 
 
 def import_stress(args: argparse.Namespace) -> None:
@@ -278,11 +526,12 @@ def import_stress(args: argparse.Namespace) -> None:
     if not all_samples:
         raise ValueError("imported compiler-stress inputs have no samples")
     corpus_config = corpus / "config.json"
-    target_bytes = (
-        int(json.loads(corpus_config.read_text())["size"])
-        if corpus_config.is_file()
-        else int(all_samples[0]["source_bytes"])
-    )
+    corpus_settings = json.loads(corpus_config.read_text()) if corpus_config.is_file() else {}
+    target_bytes = int(corpus_settings.get("size", all_samples[0]["source_bytes"]))
+    profile = str(corpus_settings.get("workload_profile", "unknown-profile"))
+    seeds = tuple(int(seed) for seed in corpus_settings.get("seeds", []))
+    if not seeds:
+        seeds = tuple(sorted({int(sample["seed"]) for sample in all_samples}))
     run_id = f"imported-single-file-{target_bytes}-comparison"
     result = new_document(
         ROOT,
@@ -294,7 +543,9 @@ def import_stress(args: argparse.Namespace) -> None:
             "generator": "tools/generate_compiler_stress.py",
             "imported": True,
             "baseline_only": True,
-            "comparison_group": single_file_comparison_group(target_bytes),
+            "comparison_group": single_file_comparison_group(
+                target_bytes, profile, seeds
+            ),
         },
     )
     grouped: dict[tuple[str, str], list[dict]] = {}
@@ -398,29 +649,42 @@ def measure_mode(
     mode: str,
     laniusc: Path,
     version: str,
-    input_path: Path,
-    source_root: Path | None,
+    sample_cases: list[WorkloadCase],
+    capacity_cases: list[WorkloadCase],
+    primer_case: WorkloadCase | None,
     target: str,
-    samples: int,
     artifact_dir: Path,
     facts: dict,
     startup_timeout: float,
     job_timeout: float,
 ) -> dict:
-    output = artifact_dir / f"{mode}.{'wasm' if target == 'wasm' else 'bin'}"
-    direct = direct_command(laniusc, input_path, source_root, target, output)
     daemon_argv = daemon_command(laniusc, target)
-    request = compile_request("measure-N", input_path, source_root, target, output)
     raw_samples: list[dict] = []
     ready_samples = []
+    sample_commands = []
+    suffix = "wasm" if target == "wasm" else "bin"
+    last_output = artifact_dir / f"{mode}-0.{suffix}"
 
     if mode == "process_cold":
-        for index in range(samples):
+        for index, case in enumerate(sample_cases):
+            output = artifact_dir / f"{mode}-{index}.{suffix}"
+            direct = direct_command(
+                laniusc, case.input_path, case.source_root, target, output
+            )
             started = time.perf_counter_ns()
             checked(direct, ROOT)
             wall_ms = (time.perf_counter_ns() - started) / 1_000_000.0
-            raw_samples.append({"index": index, "wall_ms": wall_ms, "compiler_ms": None})
-        commands = {"compile": command_record(direct, ROOT)}
+            raw_samples.append(
+                {
+                    "index": index,
+                    "wall_ms": wall_ms,
+                    "compiler_ms": None,
+                    **sample_case_fields(case),
+                }
+            )
+            sample_commands.append(command_record(direct, ROOT))
+            last_output = output
+        commands = {"sample_compile_commands": sample_commands}
         semantics = {
             "process": "new compiler process for every measured sample",
             "daemon_started_before_timer": False,
@@ -429,20 +693,26 @@ def measure_mode(
             "driver_shader_cache": "ambient machine state",
         }
     elif mode == "daemon_cold_workspace":
-        for index in range(samples):
+        sample_requests = []
+        for index, case in enumerate(sample_cases):
+            output = artifact_dir / f"{mode}-{index}.{suffix}"
             daemon = Daemon(daemon_argv, ROOT, {}, startup_timeout, artifact_dir / f"{mode}-{index}.stderr")
             ready_samples.append(daemon.ready)
+            request = compile_request(
+                f"measure-{index}", case.input_path, case.source_root, target, output
+            )
             try:
-                wall_ms, response = daemon.request(
-                    compile_request(f"measure-{index}", input_path, source_root, target, output),
-                    job_timeout,
+                wall_ms, response = daemon.request(request, job_timeout)
+                raw_samples.append(
+                    sample_from_response(index, wall_ms, response, case)
                 )
-                raw_samples.append(sample_from_response(index, wall_ms, response))
             finally:
                 daemon.shutdown(job_timeout)
+            sample_requests.append(request)
+            last_output = output
         commands = {
             "daemon_start": command_record(daemon_argv, ROOT),
-            "compile_request": request,
+            "sample_compile_requests": sample_requests,
         }
         semantics = {
             "process": "fresh ready daemon for every measured sample",
@@ -454,39 +724,52 @@ def measure_mode(
     else:
         daemon = Daemon(daemon_argv, ROOT, {}, startup_timeout, artifact_dir / f"{mode}.stderr")
         ready_samples.append(daemon.ready)
+        primer_counts = {}
         try:
-            primer_count = prime_workspace_until_stable(
-                daemon, input_path, source_root, target, output, job_timeout
-            )
-            for index in range(samples):
+            for case in [*capacity_cases, *([primer_case] if primer_case else [])]:
+                primer_output = artifact_dir / f"{mode}-primer-{case.seed}.{suffix}"
+                primer_counts[str(case.seed)] = prime_workspace_until_stable(
+                    daemon,
+                    case.input_path,
+                    case.source_root,
+                    target,
+                    primer_output,
+                    job_timeout,
+                    f"workspace-primer-{case.seed}",
+                )
+            sample_requests = []
+            for index, case in enumerate(sample_cases):
+                output = artifact_dir / f"{mode}-{index}.{suffix}"
                 _, cleared = daemon.request(
                     {"id": f"clear-{index}", "command": "clear-compiled-unit-cache"}, job_timeout
                 )
                 if cleared.get("event") != "compiled-unit-cache-cleared":
                     raise RuntimeError(f"cache clear failed: {cleared}")
-                wall_ms, response = daemon.request(
-                    compile_request(f"measure-{index}", input_path, source_root, target, output),
-                    job_timeout,
+                request = compile_request(
+                    f"measure-{index}", case.input_path, case.source_root, target, output
                 )
+                wall_ms, response = daemon.request(request, job_timeout)
                 cache = response.get("compiled_unit_cache", {})
                 if cache.get("hits_during_job", 0) != 0:
                     raise RuntimeError(f"warm full-build sample reused compiled units: {response}")
                 created = response.get("resources_created_during_job", {})
                 if any(created.get(kind, 0) for kind in ("buffers", "bind_groups", "compute_pipelines")):
                     raise RuntimeError(
-                        f"warm workspace sample created GPU job resources after {primer_count} primers: {response}"
+                        "warm workspace sample created GPU job resources after capacity "
+                        f"priming {primer_counts}: {response}"
                     )
-                raw_samples.append(sample_from_response(index, wall_ms, response))
+                raw_samples.append(
+                    sample_from_response(index, wall_ms, response, case)
+                )
+                sample_requests.append(request)
+                last_output = output
         finally:
             daemon.shutdown(job_timeout)
         commands = {
             "daemon_start": command_record(daemon_argv, ROOT),
-            "workspace_primer_request": compile_request(
-                "workspace-primer", input_path, source_root, target, output
-            ),
-            "workspace_primer_repeated_until_stable": primer_count,
+            "capacity_primer_counts_by_seed": primer_counts,
             "before_each_sample": {"command": "clear-compiled-unit-cache"},
-            "compile_request": request,
+            "sample_compile_requests": sample_requests,
         }
         semantics = {
             "process": "one daemon for primer and every measured sample",
@@ -496,6 +779,12 @@ def measure_mode(
             "source_manifest_metadata_may_be_resident": True,
             "driver_shader_cache": "ambient machine state",
         }
+
+    semantics["sample_programs"] = (
+        "one distinct generated program per sample"
+        if len({case.input_path for case in sample_cases}) > 1
+        else "one generated program compiled repeatedly"
+    )
 
     return {
         "id": f"lanius-{target}-{mode}",
@@ -508,11 +797,24 @@ def measure_mode(
         "samples": raw_samples,
         "summary": summarize(raw_samples, facts),
         "daemon_ready_samples": ready_samples,
-        "validation": {"compile_exit_status": 0, "artifact_bytes": output.stat().st_size},
+        "validation": {
+            "compile_exit_status": 0,
+            "artifact_bytes": last_output.stat().st_size,
+        },
     }
 
 
-def sample_from_response(index: int, wall_ms: float, response: dict) -> dict:
+def sample_case_fields(case: WorkloadCase) -> dict:
+    return {
+        "seed": case.seed,
+        "source_bytes": case.facts["bytes"],
+        "source_sloc": case.facts["sloc"],
+    }
+
+
+def sample_from_response(
+    index: int, wall_ms: float, response: dict, case: WorkloadCase
+) -> dict:
     if response.get("ok") is not True:
         raise RuntimeError(f"daemon compile failed: {response}")
     return {
@@ -530,13 +832,15 @@ def sample_from_response(index: int, wall_ms: float, response: dict) -> dict:
         "workspace_request_kind": response.get("workspace_request_kind"),
         "recorded_compute_passes": response.get("recorded_compute_passes_during_job"),
         "compiled_unit_cache": response.get("compiled_unit_cache"),
+        **sample_case_fields(case),
     }
 
 
 def profile_warm_job(
     laniusc: Path,
-    input_path: Path,
-    source_root: Path | None,
+    capacity_cases: list[WorkloadCase],
+    primer_case: WorkloadCase | None,
+    profile_case: WorkloadCase,
     target: str,
     artifact_dir: Path,
     startup_timeout: float,
@@ -557,12 +861,26 @@ def profile_warm_job(
         daemon_command(laniusc, target), ROOT, env, startup_timeout, artifact_dir / "profile.stderr"
     )
     try:
-        prime_workspace_until_stable(
-            daemon, input_path, source_root, target, output, job_timeout, "profile-primer"
-        )
+        for case in [*capacity_cases, *([primer_case] if primer_case else [])]:
+            prime_workspace_until_stable(
+                daemon,
+                case.input_path,
+                case.source_root,
+                target,
+                output,
+                job_timeout,
+                f"profile-primer-{case.seed}",
+            )
         daemon.request({"id": "profile-clear", "command": "clear-compiled-unit-cache"}, job_timeout)
         wall_ms, response = daemon.request(
-            compile_request("profile", input_path, source_root, target, output), job_timeout
+            compile_request(
+                "profile",
+                profile_case.input_path,
+                profile_case.source_root,
+                target,
+                output,
+            ),
+            job_timeout,
         )
     finally:
         daemon.shutdown(job_timeout)
@@ -570,18 +888,17 @@ def profile_warm_job(
     timeline = profile_timeline(trace, "daemon.job.profile")
     compiler_graphs = response.pop("compiler_graphs", [])
     compute_submissions = response.pop("recorded_compute_submission_schedule", [])
-    pass_breakdown = response.pop("recorded_compute_pass_breakdown", [])
+    response.pop("recorded_compute_pass_breakdown", None)
+    graph = execution_graph(compiler_graphs, compute_submissions)
+    require_complete_execution_graph(graph)
     return {
         "excluded_from_timing_statistics": True,
         "reason": "named pass accounting and tracing add measurement overhead",
         "wall_ms": wall_ms,
         "response": response,
+        "sample": sample_case_fields(profile_case),
         "timeline": timeline,
-        "execution_graph": execution_graph(
-            compiler_graphs,
-            pass_breakdown,
-            compute_submissions,
-        ),
+        "execution_graph": graph,
         "trace_path": str(trace_path.relative_to(ROOT)),
     }
 
@@ -638,32 +955,30 @@ def profile_timeline(trace: dict, boundary_name: str) -> list[dict]:
         event_duration = float(event.get("dur", 0.0))
         if event_start < start or event_start + event_duration > end:
             continue
-        rows.append(
-            {
-                "name": event.get("name", "<unnamed>"),
-                "category": event.get("cat", ""),
-                "lane": lane_by_tid.get(event.get("tid"), str(event.get("tid"))),
-                "start_ms": (event_start - start) / 1000.0,
-                "duration_ms": event_duration / 1000.0,
-            }
-        )
+        row = {
+            "name": event.get("name", "<unnamed>"),
+            "category": event.get("cat", ""),
+            "lane": lane_by_tid.get(event.get("tid"), str(event.get("tid"))),
+            "start_ms": (event_start - start) / 1000.0,
+            "duration_ms": event_duration / 1000.0,
+        }
+        annotate_timeline_event(row)
+        rows.append(row)
     rows.sort(key=lambda row: (row["start_ms"], row["lane"], row["name"]))
     return rows
 
 
 def execution_graph(
     compiler_graphs: list[dict],
-    pass_breakdown: list[dict],
     compute_submissions: list[dict],
 ) -> dict:
-    executed = {
-        row["label"]: int(row["passes"])
-        for row in pass_breakdown
-        if isinstance(row, dict)
-        and isinstance(row.get("label"), str)
-        and isinstance(row.get("passes"), int)
-        and row["passes"] > 0
-    }
+    executed: dict[str, int] = {}
+    for submission in compute_submissions:
+        if not isinstance(submission, dict):
+            continue
+        for operation in submission.get("operations", []):
+            if isinstance(operation, str):
+                executed[operation] = executed.get(operation, 0) + 1
     definitions = []
     definitions_by_name: dict[str, list[dict]] = {}
     for graph in compiler_graphs:
@@ -683,15 +998,19 @@ def execution_graph(
             continue
         submit_index = len(raw_submissions)
         pass_names = [name for name in submission["passes"] if isinstance(name, str)]
+        operation_names = [
+            name for name in submission.get("operations", []) if isinstance(name, str)
+        ]
         raw_submissions.append(
             {
                 "index": submit_index,
                 "label": str(submission.get("label", f"submit {submit_index}")),
                 "passes": pass_names,
+                "operations": operation_names,
             }
         )
-        for position, pass_name in enumerate(pass_names):
-            for definition in definitions_by_name.get(pass_name, []):
+        for position, operation_name in enumerate(operation_names):
+            for definition in definitions_by_name.get(operation_name, []):
                 key = (definition["graph"], definition["id"], submit_index)
                 occurrence_counts[key] = occurrence_counts.get(key, 0) + 1
                 first_positions.setdefault(key, position)
@@ -726,29 +1045,16 @@ def execution_graph(
                     "submissions": [submit_index],
                 }
             )
-        untracked = executed.get(definition["name"], 0) - scheduled
-        if untracked > 0:
-            node_id = f"{definition['graph']}:{definition['id']}@untracked"
-            node_ids[(definition["graph"], definition["id"], None)] = node_id
-            nodes.append(
-                {
-                    "id": node_id,
-                    "kind": "declared_operation",
-                    "graph": definition["graph"],
-                    "name": definition["name"],
-                    "phase": definition["phase"],
-                    "dispatch_domain": definition["dispatch_domain"],
-                    "declaration_index": definition["id"],
-                    "execution_count": untracked,
-                    "submissions": [],
-                }
+        if scheduled != executed.get(definition["name"], 0):
+            raise ValueError(
+                f"compiler operation {definition['name']!r} has executions outside a submission"
             )
 
     edges = []
     for graph in compiler_graphs:
         label = graph["label"]
         for edge in graph.get("edges", []):
-            for submission_index in [*range(len(raw_submissions)), None]:
+            for submission_index in range(len(raw_submissions)):
                 source = node_ids.get((label, edge["source"], submission_index))
                 target = node_ids.get((label, edge["target"], submission_index))
                 if source is None or target is None:
@@ -793,12 +1099,12 @@ def execution_graph(
     for submission in raw_submissions:
         submit_index = submission["index"]
         submission_label = submission["label"]
-        pass_names = submission["passes"]
-        matched_passes = sum(
-            1 for pass_name in pass_names
-            if node_ids_by_submission_and_name.get((submit_index, pass_name))
+        operation_names = submission["operations"]
+        matched_operations = sum(
+            1 for operation_name in operation_names
+            if node_ids_by_submission_and_name.get((submit_index, operation_name))
         )
-        if not pass_names:
+        if not operation_names:
             first_node = last_node = add_schedule_endpoint(
                 submit_index,
                 "empty",
@@ -807,32 +1113,33 @@ def execution_graph(
             )
         else:
             first_matches = node_ids_by_submission_and_name.get(
-                (submit_index, pass_names[0]), []
+                (submit_index, operation_names[0]), []
             )
             last_matches = node_ids_by_submission_and_name.get(
-                (submit_index, pass_names[-1]), []
+                (submit_index, operation_names[-1]), []
             )
             if first_matches:
                 first_node = first_matches[0]
             else:
-                role = "endpoint" if len(pass_names) == 1 or pass_names[0] == pass_names[-1] else "first"
+                role = "endpoint" if len(operation_names) == 1 or operation_names[0] == operation_names[-1] else "first"
                 first_node = add_schedule_endpoint(
-                    submit_index, role, pass_names[0], submission_label
+                    submit_index, role, operation_names[0], submission_label
                 )
             if last_matches:
                 last_node = last_matches[-1]
-            elif len(pass_names) == 1 or pass_names[0] == pass_names[-1]:
+            elif len(operation_names) == 1 or operation_names[0] == operation_names[-1]:
                 last_node = first_node
             else:
                 last_node = add_schedule_endpoint(
-                    submit_index, "last", pass_names[-1], submission_label
+                    submit_index, "last", operation_names[-1], submission_label
                 )
         normalized_submissions.append(
             {
                 "index": submit_index,
                 "label": submission_label,
-                "recorded_passes": len(pass_names),
-                "matched_passes": matched_passes,
+                "recorded_compute_passes": len(submission["passes"]),
+                "recorded_operations": len(operation_names),
+                "matched_operations": matched_operations,
                 "first_node": first_node,
                 "last_node": last_node,
             }
@@ -963,21 +1270,52 @@ def execution_graph(
         "submissions": normalized_submissions,
         "coverage": {
             "declared_operations": sum(len(graph.get("nodes", [])) for graph in compiler_graphs),
-            "executed_labels": len(executed_names),
-            "matched_labels": len(declared_names & executed_names),
-            "unregistered_executed_labels": len(executed_names - declared_names),
-            "recorded_passes": sum(executed.values()),
-            "matched_recorded_passes": sum(
+            "executed_operation_labels": len(executed_names),
+            "matched_operation_labels": len(declared_names & executed_names),
+            "unregistered_operation_labels": len(executed_names - declared_names),
+            "unregistered_operations": sorted(executed_names - declared_names),
+            "declared_but_unexecuted_operations": sorted(declared_names - executed_names),
+            "recorded_operations": sum(executed.values()),
+            "matched_recorded_operations": sum(
                 count for name, count in executed.items() if name in declared_names
+            ),
+            "recorded_compute_passes": sum(
+                len(submission["passes"]) for submission in raw_submissions
+            ),
+            "submissions_without_operations": sum(
+                not submission["operations"] for submission in raw_submissions
             ),
         },
         "semantics": (
-            "one node per declared compiler operation per GPU submission, plus scheduling-only "
-            "nodes for unregistered endpoints and explicit compiler-stage boundary junctions; "
+            "one node per executed compiler operation per GPU submission, plus scheduling-only "
+            "nodes for unregistered operation endpoints and explicit compiler-stage boundary junctions; "
             "resource hazards, submission spans, and adjacent submission boundaries form one "
-            "topologically sorted DAG"
+            "topologically sorted DAG; physical WGPU compute-pass counts remain separate because "
+            "one pass may batch multiple compiler operations"
         ),
     }
+
+
+def require_complete_execution_graph(graph: dict) -> None:
+    """Reject a production profile whose recorded work escapes the graph."""
+    coverage = graph.get("coverage", {})
+    recorded = coverage.get("recorded_operations")
+    matched = coverage.get("matched_recorded_operations")
+    unknown = coverage.get("unregistered_operations", [])
+    empty_submissions = coverage.get("submissions_without_operations")
+    issues = []
+    if not isinstance(recorded, int) or not isinstance(matched, int):
+        issues.append("operation coverage counters are missing")
+    elif matched != recorded:
+        issues.append(f"only {matched} of {recorded} recorded operations are graph-declared")
+    if unknown:
+        issues.append("unregistered operations: " + ", ".join(map(str, unknown)))
+    if not isinstance(empty_submissions, int):
+        issues.append("submission coverage counter is missing")
+    elif empty_submissions:
+        issues.append(f"{empty_submissions} GPU submissions contain no declared operations")
+    if issues:
+        raise RuntimeError("incomplete compiler-graph profile: " + "; ".join(issues))
 
 
 def direct_command(
@@ -1095,6 +1433,7 @@ def catalog_results(result_root: Path) -> Path:
         try:
             document = json.loads(path.read_text())
             validate_document(document)
+            annotate_document_timeline(document)
             documents.append({"path": str(path.relative_to(ROOT)), "document": document})
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
             invalid.append({"path": str(path.relative_to(ROOT)), "error": str(error)})

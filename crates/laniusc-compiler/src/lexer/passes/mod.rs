@@ -84,13 +84,10 @@ pub fn record_all_passes(
     p: &LexerPasses,
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1;
-    // Ensure flags_packed is zeroed so dfa_03 can write flags only at boundaries
-    // and leave non-boundaries as 0 without per-byte stores.
-    ctx.encoder.clear_buffer(&ctx.buffers.flags_packed, 0, None);
-    ctx.encoder
-        .clear_buffer(&ctx.buffers.source_file_start_flags, 0, None);
-    ctx.encoder
-        .clear_buffer(&ctx.buffers.source_file_end_flags, 0, None);
+    // Reset values that are either accumulated atomically or only written at
+    // token boundaries. These are logical graph resources even when workspace
+    // coloring places them inside larger shared allocations.
+    ctx.buffers.record_job_initialize(ctx.encoder);
     let source_file_capacity = ctx.buffers.source_file_start.count as u32;
 
     let can_batch = ctx.maybe_timer.is_none()

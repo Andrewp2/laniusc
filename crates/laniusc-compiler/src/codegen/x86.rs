@@ -49,6 +49,9 @@ pub struct GpuX86Linker {
     link_relocate_pass: PassData,
     elf_write_pass: PassData,
     job_buffers: CapacityBufferCache,
+    executable_page_graph: Mutex<Option<link::X86ExecutablePageGraph>>,
+    layout_chunk_graph: Mutex<Option<link::X86LayoutChunkGraph>>,
+    symbol_partition_graph: Mutex<Option<link::X86SymbolPartitionGraph>>,
     input_shadows: Mutex<HashMap<String, X86InputShadow>>,
 }
 
@@ -124,6 +127,9 @@ impl GpuX86Linker {
                 "codegen/x86/elf/write.reflect.json"
             ),
             job_buffers: CapacityBufferCache::default(),
+            executable_page_graph: Mutex::new(None),
+            layout_chunk_graph: Mutex::new(None),
+            symbol_partition_graph: Mutex::new(None),
             input_shadows: Mutex::new(HashMap::new()),
         };
         gpu.persist_pipeline_cache();

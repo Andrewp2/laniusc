@@ -195,9 +195,13 @@ impl GpuParser {
                 .expect("parser.bg_cache poisoned")
                 .clear();
             *self
-                .resident_token_kind_bind_groups
+                .resident_token_kind_operations
                 .lock()
-                .expect("parser.resident_token_kind_bind_groups poisoned") = None;
+                .expect("parser.resident_token_kind_operations poisoned") = None;
+            self.token_compute_operations
+                .lock()
+                .expect("parser.token_compute_operations poisoned")
+                .clear();
             let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
 
             let action_table_bytes = tables.to_action_header_grid_bytes();
@@ -216,11 +220,13 @@ impl GpuParser {
                             Some(allocation.tree_capacity),
                             retain_debug_hir_buffers,
                             allocation.parser_feature_flags,
+                            &self.passes,
                         )
                     })
                 },
             );
             buffers.resettable_buffers = resettable_buffers;
+            buffers.install_job_storage_reset();
             *slot = Some(ResidentParserBufferCache {
                 token_capacity: allocation.token_capacity,
                 table_fingerprint: fingerprint,

@@ -10,8 +10,9 @@ use super::{
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
+    kernels::KernelRegistry,
     operations::ComputeOperation,
-    passes_core::{PassData, make_pass_data_from_shader_key},
+    passes_core::PassData,
     resource_registry::ResourceMap,
 };
 
@@ -55,6 +56,7 @@ impl GpuTargetFunctionTable {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         device: &wgpu::Device,
+        kernels: &KernelRegistry,
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
@@ -108,7 +110,7 @@ impl GpuTargetFunctionTable {
             resources,
             "lir.target.functions.mark",
             &load(
-                device,
+                kernels,
                 "lir.target.functions.mark",
                 "codegen/lir/functions/mark",
             )?,
@@ -117,6 +119,7 @@ impl GpuTargetFunctionTable {
         )?;
         let scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -146,7 +149,7 @@ impl GpuTargetFunctionTable {
             resources,
             "lir.target.functions.scatter_starts",
             &load(
-                device,
+                kernels,
                 "lir.target.functions.scatter_starts",
                 "codegen/lir/functions/scatter_starts",
             )?,
@@ -159,7 +162,7 @@ impl GpuTargetFunctionTable {
             resources,
             "lir.target.functions.finalize",
             &load(
-                device,
+                kernels,
                 "lir.target.functions.finalize",
                 "codegen/lir/functions/finalize",
             )?,
@@ -199,6 +202,6 @@ impl GpuTargetFunctionTable {
     }
 }
 
-fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
-    make_pass_data_from_shader_key(device, label, "main", shader)
+fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData> {
+    Ok(kernels.kernel(shader).clone())
 }

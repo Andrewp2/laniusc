@@ -21,13 +21,13 @@ pub(in crate::type_checker) struct RecordDiscovery {
     pub(in crate::type_checker) extract_decl_record_flag_params:
         LaniusBuffer<RecordFamilyFlagParams>,
     pub(in crate::type_checker) extract_decl_record_flag: ComputeOperation,
-    pub(in crate::type_checker) scatter_paths: wgpu::BindGroup,
+    pub(in crate::type_checker) scatter_paths: ComputeOperation,
     pub(in crate::type_checker) path_dispatch_params: LaniusBuffer<CountDispatchParams>,
-    pub(in crate::type_checker) path_dispatch_args: wgpu::BindGroup,
+    pub(in crate::type_checker) path_dispatch_args: ComputeOperation,
     pub(in crate::type_checker) import_dispatch_params: LaniusBuffer<CountDispatchParams>,
-    pub(in crate::type_checker) import_dispatch_args: wgpu::BindGroup,
-    pub(in crate::type_checker) count_path_segments: wgpu::BindGroup,
-    pub(in crate::type_checker) scatter_path_segments: wgpu::BindGroup,
+    pub(in crate::type_checker) import_dispatch_args: ComputeOperation,
+    pub(in crate::type_checker) count_path_segments: ComputeOperation,
+    pub(in crate::type_checker) scatter_path_segments: ComputeOperation,
     pub(in crate::type_checker) module_scan: PrefixScanOperation,
     pub(in crate::type_checker) import_scan: PrefixScanOperation,
     pub(in crate::type_checker) decl_scan: PrefixScanOperation,
@@ -91,95 +91,44 @@ pub(in crate::type_checker) fn create_record_discovery(
         inputs.hir_active_dispatch_args,
     )?;
 
-    let scatter_paths = resources.reflected_bind_group_with_overrides(
-        device,
-        "type_check_modules_01_scatter_paths",
-        &passes.kernel("type_checker/modules/01_scatter_paths"),
-        &[
-            ("path_owner_hir", buffers.path_owner_hir.as_entire_binding()),
-            ("path_len", buffers.path_len.as_entire_binding()),
-            ("path_call_hir", buffers.path_call_hir.as_entire_binding()),
-            (
-                "path_owner_token",
-                buffers.path_owner_token.as_entire_binding(),
-            ),
-            (
-                "path_id_by_owner_hir",
-                buffers.path_id_by_owner_hir.as_entire_binding(),
-            ),
-            (
-                "path_id_by_owner_token",
-                buffers.path_id_by_owner_token.as_entire_binding(),
-            ),
-            ("path_kind", buffers.path_kind.as_entire_binding()),
-            ("path_count_out", buffers.path_count_out.as_entire_binding()),
-        ],
-    )?;
+    let hir_work = layout.n_blocks.saturating_mul(256).max(1);
+    let scatter_paths =
+        ComputeOperation::direct_spec(device, graph, resources, passes, PATHS_SCATTER, hir_work)?;
     let (path_dispatch_params, path_dispatch_args) = create_count_dispatch(
         device,
-        &passes.kernel("type_checker/count/dispatch_args"),
+        graph,
+        passes,
+        resources,
+        PATH_DISPATCH,
         "type_check.modules.path_dispatch.params",
-        "type_check_modules_path_dispatch_args",
         layout.record_capacity_u32,
         1,
-        &buffers.path_count_out,
-        &buffers.path_dispatch_args,
     )?;
     let (import_dispatch_params, import_dispatch_args) = create_count_dispatch(
         device,
-        &passes.kernel("type_checker/count/dispatch_args"),
+        graph,
+        passes,
+        resources,
+        IMPORT_DISPATCH,
         "type_check.modules.import_dispatch.params",
-        "type_check_modules_import_dispatch_args",
         layout.record_capacity_u32,
         1,
-        &buffers.import_count_out,
-        &buffers.import_dispatch_args,
     )?;
-    let count_path_segments = resources.reflected_bind_group_with_overrides(
+    let count_path_segments = ComputeOperation::indirect_spec(
         device,
-        "type_check_modules_01b_count_path_segments",
-        &passes.kernel("type_checker/modules/01b/count_path_segments"),
-        &[
-            (
-                "path_segment_base",
-                buffers.path_segment_base.as_entire_binding(),
-            ),
-            (
-                "path_segment_count",
-                buffers.path_segment_count.as_entire_binding(),
-            ),
-            (
-                "path_max_segment_count",
-                buffers.path_max_segment_count.as_entire_binding(),
-            ),
-            (
-                "path_segment_count_out",
-                buffers.path_segment_count_out.as_entire_binding(),
-            ),
-        ],
+        graph,
+        resources,
+        passes,
+        PATH_SEGMENTS_COUNT,
+        &buffers.path_dispatch_args,
     )?;
-    let scatter_path_segments = resources.reflected_bind_group_with_overrides(
+    let scatter_path_segments = ComputeOperation::direct_spec(
         device,
-        "type_check_modules_01b_scatter_path_segments",
-        &passes.kernel("type_checker/modules/01b/scatter_path_segments"),
-        &[
-            (
-                "path_segment_name_id",
-                buffers.path_segment_name_id.as_entire_binding(),
-            ),
-            (
-                "path_segment_token",
-                buffers.path_segment_token.as_entire_binding(),
-            ),
-            (
-                "path_prefix_base",
-                buffers.path_prefix_base.as_entire_binding(),
-            ),
-            (
-                "path_prefix_id_a",
-                buffers.path_prefix_id_a.as_entire_binding(),
-            ),
-        ],
+        graph,
+        resources,
+        passes,
+        PATH_SEGMENTS_SCATTER,
+        hir_work,
     )?;
     let mut scan_resources = resources.clone();
     scan_resources.buffers([

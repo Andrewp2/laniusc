@@ -1,4 +1,8 @@
 //! Standalone GPU syntax checks over lexer token buffers.
+//!
+//! This utility is independent of the production parser/compiler graph. The
+//! compiler performs syntax validation as part of its ordinary parse graph;
+//! callers use this API only when they explicitly want a token-only check.
 
 use std::{
     collections::HashMap,
@@ -1731,29 +1735,6 @@ fn finish_recorded_check_mapped(bytes: &[u8]) -> Result<(), GpuSyntaxError> {
             detail: ((idx as u32) << 16) | (value as u32 & 0xffff),
         });
     }
-    Ok(())
-}
-
-/// Materializes every pipeline used by the syntax-check recording path.
-///
-/// Compiler construction calls this before a daemon can report readiness so
-/// the first compilation job never inherits shader or pipeline creation work.
-pub(super) fn prewarm_passes(device: &wgpu::Device) -> Result<()> {
-    syntax_delimiters_01_pass(device)?;
-    syntax_delimiters_02_pass(device)?;
-    syntax_statement_context_01_pass(device)?;
-    syntax_statement_context_02_pass(device)?;
-    syntax_statement_context_03_pass(device)?;
-    syntax_impl_context_01_pass(device)?;
-    syntax_impl_context_02_pass(device)?;
-    syntax_impl_context_03_pass(device)?;
-    syntax_trait_context_01_pass(device)?;
-    syntax_trait_context_02_pass(device)?;
-    syntax_trait_context_03_pass(device)?;
-    syntax_paren_match_01_pass(device)?;
-    syntax_angle_match_01_pass(device)?;
-    syntax_match_min_tree_pass(device)?;
-    syntax_tokens_pass(device)?;
     Ok(())
 }
 

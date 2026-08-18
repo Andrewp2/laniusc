@@ -4,7 +4,7 @@ use anyhow::Result;
 use encase::ShaderType;
 
 use crate::{
-    gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
+    gpu::passes_core::{BindGroupCache, PassData},
     parser::buffers::ParserBuffers,
 };
 
@@ -28,15 +28,8 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl PackOffsetsStatusPass {
-    /// Records direct status validation for packed stream offsets.
-    pub fn record_pass(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-    ) -> Result<()> {
-        self.record_pass_inner(device, queue, encoder, buffers, None)
+    pub(in crate::parser) fn data(&self) -> &PassData {
+        &self.data
     }
 
     /// Records indirect status validation for packed stream offsets.
@@ -46,18 +39,8 @@ impl PackOffsetsStatusPass {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_args: &wgpu::Buffer,
-    ) -> Result<()> {
-        self.record_pass_inner(device, queue, encoder, buffers, Some(dispatch_args))
-    }
-
-    fn record_pass_inner(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-        dispatch_args: Option<&wgpu::Buffer>,
+        cache: &mut BindGroupCache,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
     ) -> Result<()> {
         let n_pairs = buffers.n_tokens.saturating_sub(1);
         crate::parser::buffers::write_uniform(
@@ -91,37 +74,26 @@ impl PackOffsetsStatusPass {
                 buffers.partial_parse_status.as_entire_binding(),
             ),
         ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("pack_offsets_status"),
-            &self.data.bind_group_layouts[0],
-            &self.data.reflection,
-            0,
-            &resources,
-        )?;
-        let [tgsx, tgsy, _] = self.data.thread_group_size;
-        if let Some(dispatch_args) = dispatch_args {
-            crate::gpu::passes_core::record_or_defer_compute_indirect(
-                encoder,
+        let operation = crate::parser::compiler_graph::PACK_OFFSETS_STATUS;
+        let bind_group = cache
+            .reflected_for_graph_pass_data(
+                device,
+                operation,
                 &self.data,
-                &bind_group,
-                "pack_offsets_status",
-                dispatch_args,
-            );
-        } else {
-            let groups = plan_workgroups(
-                DispatchDim::D1,
-                InputElements::Elements1D(n_pairs.max(1)),
-                [tgsx, tgsy, 1],
-            )?;
-            crate::gpu::passes_core::record_or_defer_compute_direct(
-                encoder,
-                &self.data,
-                &bind_group,
-                "pack_offsets_status",
-                groups,
-            );
-        }
+                buffers,
+                &resources,
+                Some(dispatch_args),
+            )?
+            .into_iter()
+            .next()
+            .expect("pack offset status pass must have one reflected bind group");
+        crate::gpu::passes_core::record_or_defer_compute_indirect(
+            encoder,
+            &self.data,
+            bind_group.as_ref(),
+            operation,
+            dispatch_args,
+        );
         Ok(())
     }
 }

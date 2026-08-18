@@ -4,9 +4,181 @@ use anyhow::{Result, anyhow};
 
 use super::{GpuWasmLinkInput, paged::GpuWasmPagedExecutablePlan};
 use crate::{
-    codegen::wasm::{GpuWasmLinker, create_wasm_bind_group, workgroup_grid_1d},
-    gpu::buffers::LaniusBuffer,
+    codegen::wasm::GpuWasmLinker,
+    gpu::{
+        buffers::LaniusBuffer,
+        compiler_graph::{
+            AccessMode,
+            CompilerGraphBuilder,
+            CompilerPhase,
+            MaterializedCompilerGraph,
+            ReflectedResourceBinding,
+            ResourceClass,
+            ResourceDesc,
+            ResourceDomain,
+        },
+        operations::{ComputeOperation, CopyBufferOperation},
+        resource_registry::ResourceMap,
+        workspace::WorkspaceUsageClass,
+    },
 };
+
+pub(crate) struct WasmExecutablePageGraph {
+    output_capacity: usize,
+    type_capacity: usize,
+    body_capacity: usize,
+    data_capacity: usize,
+    relocation_capacity: usize,
+    batch_capacity: usize,
+    materialized: MaterializedCompilerGraph,
+}
+
+impl WasmExecutablePageGraph {
+    fn covers(
+        &self,
+        output: usize,
+        types: usize,
+        bodies: usize,
+        data: usize,
+        relocations: usize,
+        batches: usize,
+    ) -> bool {
+        self.output_capacity >= output
+            && self.type_capacity >= types
+            && self.body_capacity >= bodies
+            && self.data_capacity >= data
+            && self.relocation_capacity >= relocations
+            && self.batch_capacity >= batches
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        generator: &GpuWasmLinker,
+        device: &wgpu::Device,
+        output_capacity: usize,
+        type_capacity: usize,
+        body_capacity: usize,
+        data_capacity: usize,
+        relocation_capacity: usize,
+        batch_capacity: usize,
+    ) -> Result<Self> {
+        let output_capacity = output_capacity.max(4).next_multiple_of(4);
+        let type_capacity = type_capacity.max(4).next_multiple_of(4);
+        let body_capacity = body_capacity.max(4).next_multiple_of(4);
+        let data_capacity = data_capacity.max(4).next_multiple_of(4);
+        let relocation_capacity = relocation_capacity.max(1);
+        let batch_capacity = batch_capacity.max(1);
+        let mut graph = CompilerGraphBuilder::new();
+        let mut add = |name: &'static str, class: ResourceClass, bytes: usize| -> Result<()> {
+            graph
+                .add_resource(ResourceDesc {
+                    name,
+                    domain: ResourceDomain::ArtifactBytes,
+                    class,
+                    bytes: bytes.max(4) as u64,
+                    usage: WorkspaceUsageClass::Storage,
+                })
+                .map(|_| ())
+                .map_err(anyhow::Error::msg)
+        };
+        add("link_type_bytes", ResourceClass::Input, type_capacity)?;
+        add("link_body_bytes", ResourceClass::Input, body_capacity)?;
+        add("link_data_bytes", ResourceClass::Input, data_capacity)?;
+        add("link_symbol", ResourceClass::Input, 4)?;
+        add("link_hash_table", ResourceClass::External, 4)?;
+        add("link_symbol_definition", ResourceClass::External, 4)?;
+        add("link_status", ResourceClass::External, 16)?;
+        add(
+            "link_relocation",
+            ResourceClass::External,
+            relocation_capacity * 32,
+        )?;
+        add("out_words", ResourceClass::Workspace, output_capacity)?;
+        add(
+            "link_output_readback",
+            ResourceClass::External,
+            output_capacity,
+        )?;
+        add("link_status_readback", ResourceClass::External, 16)?;
+        drop(add);
+
+        let resource = |name: &str| {
+            graph
+                .resource_id(name)
+                .unwrap_or_else(|| panic!("Wasm executable graph resource `{name}`"))
+        };
+        let output = resource("out_words");
+        let output_readback = resource("link_output_readback");
+        let status = resource("link_status");
+        let status_readback = resource("link_status_readback");
+        graph
+            .add_reflected_compute_pass_by_name(
+                "codegen.wasm.link.page.module",
+                CompilerPhase::Artifact,
+                ResourceDomain::ArtifactBytes,
+                &generator.link_module_pass.reflection,
+                &[ReflectedResourceBinding {
+                    binding: "out_words",
+                    resource: output,
+                    mode: Some(AccessMode::Write),
+                }],
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_reflected_compute_pass_by_name(
+                "codegen.wasm.link.page.relocate",
+                CompilerPhase::Artifact,
+                ResourceDomain::ArtifactBytes,
+                &generator.link_relocate_pass.reflection,
+                &[],
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .repeat_pass_range(
+                batch_capacity as u32,
+                "codegen.wasm.link.page.relocate",
+                "codegen.wasm.link.page.relocate",
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_buffer_copy_pass(
+                "codegen.wasm.link.page.output.readback",
+                CompilerPhase::Artifact,
+                "out_words",
+                output,
+                "link_output_readback",
+                output_readback,
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_buffer_copy_pass(
+                "codegen.wasm.link.page.status.readback",
+                CompilerPhase::Artifact,
+                "link_status",
+                status,
+                "link_status_readback",
+                status_readback,
+            )
+            .map_err(anyhow::Error::msg)?;
+        let graph = graph.build().map_err(anyhow::Error::msg)?;
+        let materialized = MaterializedCompilerGraph::new_with_upstream_storage(
+            device,
+            "wasm_link_executable_page",
+            graph,
+            &[],
+        )
+        .map_err(anyhow::Error::msg)?;
+        Ok(Self {
+            output_capacity,
+            type_capacity,
+            body_capacity,
+            data_capacity,
+            relocation_capacity,
+            batch_capacity,
+            materialized,
+        })
+    }
+}
 
 impl GpuWasmLinker {
     /// Emits and relocates a complete multi-unit Wasm module on the GPU.
@@ -172,60 +344,105 @@ impl GpuWasmLinker {
                 wgpu::BufferUsages::empty(),
             );
             let output_words = (page.output_len as usize).div_ceil(4);
-            let output = rw_u32(
-                self,
-                device,
-                "codegen.wasm.link.page.output",
-                output_words,
-                wgpu::BufferUsages::COPY_SRC,
-            );
-            let module_group = create_wasm_bind_group(
-                device,
-                Some("codegen.wasm.link.page.module.bind_group"),
-                &self.link_module_pass,
-                0,
-                &[
-                    ("gLink", params.as_entire_binding()),
-                    ("link_type_bytes", types.as_entire_binding()),
-                    ("link_body_bytes", bodies.as_entire_binding()),
-                    ("link_data_bytes", data.as_entire_binding()),
-                    ("out_words", output.as_entire_binding()),
-                ],
-            )?;
-            let relocate_group = create_wasm_bind_group(
-                device,
-                Some("codegen.wasm.link.page.relocate.bind_group"),
-                &self.link_relocate_pass,
-                0,
-                &[
-                    ("gLink", params.as_entire_binding()),
-                    ("link_symbol", symbols.as_entire_binding()),
-                    ("link_hash_table", hash_table.as_entire_binding()),
-                    ("link_symbol_definition", definitions.as_entire_binding()),
-                    ("link_status", status.as_entire_binding()),
-                    ("link_relocation", relocations.as_entire_binding()),
-                    ("out_words", output.as_entire_binding()),
-                ],
-            )?;
+            let output_bytes = output_words * 4;
+            let batch_count = relocation_batches.len().max(1);
+            let mut graph_guard = self
+                .executable_page_graph
+                .lock()
+                .expect("Wasm executable-page graph cache poisoned");
+            if !graph_guard.as_ref().is_some_and(|graph| {
+                graph.covers(
+                    output_bytes,
+                    type_page.len(),
+                    body_page.len(),
+                    data_page.len(),
+                    relocation_buffer_records,
+                    batch_count,
+                )
+            }) {
+                *graph_guard = Some(WasmExecutablePageGraph::new(
+                    self,
+                    device,
+                    output_bytes,
+                    type_page.len(),
+                    body_page.len(),
+                    data_page.len(),
+                    relocation_buffer_records,
+                    batch_count,
+                )?);
+            }
+            let graph_state = graph_guard
+                .as_ref()
+                .expect("Wasm executable-page graph installed");
+            let graph = &graph_state.materialized;
+            let output = graph.buffer::<u32>("out_words")?;
             let output_readback = self.job_buffers.binding_capacity::<u8>(
                 device,
                 "rb.codegen.wasm.link.page.output",
-                output_words * 4,
+                graph_state.output_capacity,
                 wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             );
-            let batch_count = relocation_batches.len().max(1);
+            let graph_bindings = graph.bindings()?;
+            let mut resources = ResourceMap::new();
+            resources.attach_graph(graph.graph(), graph.allocations());
+            resources.register_graph_bindings(graph.graph(), &graph_bindings);
+            resources.buffer("gLink", &params);
+            resources.buffer("link_type_bytes", &types);
+            resources.buffer("link_body_bytes", &bodies);
+            resources.buffer("link_data_bytes", &data);
+            resources.buffer("link_symbol", &symbols);
+            resources.buffer("link_hash_table", &hash_table);
+            resources.buffer("link_symbol_definition", &definitions);
+            resources.buffer("link_status", &status);
+            resources.buffer("link_relocation", &relocations);
+            resources.buffer("link_output_readback", &output_readback);
+            resources.buffer("link_status_readback", &status_readback);
+            let module = ComputeOperation::direct(
+                device,
+                graph,
+                &resources,
+                "codegen.wasm.link.page.module",
+                &self.link_module_pass,
+                u32::try_from(graph_state.output_capacity / 4)
+                    .map_err(|_| anyhow!("Wasm output page capacity exceeds u32"))?,
+            )?;
+            let relocate = ComputeOperation::direct(
+                device,
+                graph,
+                &resources,
+                "codegen.wasm.link.page.relocate",
+                &self.link_relocate_pass,
+                u32::try_from(graph_state.relocation_capacity)
+                    .map_err(|_| anyhow!("Wasm relocation capacity exceeds u32"))?,
+            )?;
+            let output_copy = CopyBufferOperation::new(
+                graph,
+                "codegen.wasm.link.page.output.readback",
+                "out_words",
+                &output,
+                0,
+                "link_output_readback",
+                &output_readback,
+                0,
+                output_bytes as u64,
+            )?;
+            let status_copy = CopyBufferOperation::new(
+                graph,
+                "codegen.wasm.link.page.status.readback",
+                "link_status",
+                &status,
+                0,
+                "link_status_readback",
+                &status_readback,
+                0,
+                16,
+            )?;
             for batch_index in 0..batch_count {
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("codegen.wasm.link.page.encoder"),
                 });
                 if batch_index == 0 {
-                    dispatch(
-                        &mut encoder,
-                        "codegen.wasm.link.page.module",
-                        &self.link_module_pass,
-                        &module_group,
-                        output_words.div_ceil(256) as u32,
-                    )?;
+                    module.record_elements(&mut encoder, output_words as u32)?;
                 }
                 if let Some(batch) = relocation_batches.get(batch_index) {
                     let batch_params = link_params_words(
@@ -242,23 +459,11 @@ impl GpuWasmLinker {
                     let relocation_words = page_relocation_words(&resolved_relocations, batch);
                     queue.write_buffer(&params, 0, bytemuck_words(&batch_params));
                     queue.write_buffer(&relocations, 0, bytemuck_words(&relocation_words));
-                    dispatch(
-                        &mut encoder,
-                        "codegen.wasm.link.page.relocate",
-                        &self.link_relocate_pass,
-                        &relocate_group,
-                        batch.len().div_ceil(256) as u32,
-                    )?;
+                    relocate.record_elements(&mut encoder, batch.len() as u32)?;
                 }
                 if batch_index + 1 == batch_count {
-                    encoder.copy_buffer_to_buffer(
-                        &output,
-                        0,
-                        &output_readback,
-                        0,
-                        (output_words * 4) as u64,
-                    );
-                    encoder.copy_buffer_to_buffer(&status, 0, &status_readback, 0, 16);
+                    output_copy.record(&mut encoder);
+                    status_copy.record(&mut encoder);
                 }
                 crate::gpu::passes_core::submit_with_progress(
                     queue,
@@ -353,28 +558,6 @@ fn page_relocation_words(
         ]);
     }
     words
-}
-
-pub(super) fn dispatch(
-    encoder: &mut wgpu::CommandEncoder,
-    label: &str,
-    pass: &crate::codegen::wasm::LazyWasmPass,
-    group: &wgpu::BindGroup,
-    groups: u32,
-) -> Result<()> {
-    let pipeline = pass.pipeline()?;
-    let grid = workgroup_grid_1d(groups);
-    let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
-        encoder,
-        &wgpu::ComputePassDescriptor {
-            label: Some(label),
-            timestamp_writes: None,
-        },
-    );
-    compute.set_pipeline(&pipeline);
-    compute.set_bind_group(0, group, &[]);
-    compute.dispatch_workgroups(grid.0, grid.1, 1);
-    Ok(())
 }
 
 pub(super) fn input_u32(

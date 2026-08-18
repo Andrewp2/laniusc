@@ -35,6 +35,7 @@ pub use model::{
     TokenDelimiterParams,
 };
 pub use scan_steps::*;
+pub(in crate::parser) use scans::pack_total_reduce_step_count;
 use scans::*;
 pub(crate) use sizing::resident_partial_parse_tree_capacity_for_tables;
 use sizing::{
@@ -42,18 +43,8 @@ use sizing::{
     resident_partial_parse_tree_capacity,
     resident_virtual_pair_width,
 };
+use storage::alias_storage_buffer;
 pub(crate) use storage::pointer_jump_step_capacity;
-use storage::{
-    PhaseArenaCursor,
-    PostHirWorkspaceArenas,
-    alias_storage_buffer,
-    dispatch_args_buffer,
-    dispatch_args_schedule_buffer,
-    phase_arena_bytes,
-    reuse_or_allocate_u32_workspace,
-    u32_workspace_subrange,
-    workspace_subrange,
-};
 
 use crate::gpu::buffers::{
     JobResetPolicy,
@@ -65,7 +56,6 @@ use crate::gpu::buffers::{
     storage_ro_from_bytes,
     storage_ro_from_u32s,
     storage_rw_for_array,
-    storage_rw_for_array_with_reset_policy,
     uniform_from_val,
 };
 
@@ -85,6 +75,30 @@ where
 }
 
 impl ParserBuffers {
+    pub(in crate::parser) fn clear_operations(
+        &self,
+    ) -> &crate::parser::compiler_graph::ParserClearOperations {
+        self.clear_operations
+            .get()
+            .expect("parser clear operations were not initialized")
+    }
+
+    pub(in crate::parser) fn record_finalizer(
+        &self,
+        name: &'static str,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> anyhow::Result<()> {
+        self.copy_operations.record(name, encoder)
+    }
+
+    pub(in crate::parser) fn record_graph_copy(
+        &self,
+        name: &'static str,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> anyhow::Result<()> {
+        self.copy_operations.record(name, encoder)
+    }
+
     fn clear_overwritten_allocations() -> bool {
         crate::gpu::env::env_bool_strict("LANIUS_GPU_CLEAR_OVERWRITTEN", false)
     }
@@ -117,6 +131,7 @@ impl ParserBuffers {
             &super::passes::pack::totals::status::Params {
                 n_pairs,
                 emit_capacity: self.tree_capacity,
+                read_from_a: u32::from(pack_total_reduce_step_count(n_pairs) % 2 == 0),
             },
         );
         let mut total_items = n_pairs.div_ceil(256).max(1);
@@ -244,25 +259,30 @@ impl ParserBuffers {
     /// arena allocations are cleared in full; explicitly declared token-,
     /// packed-stream-, and tree-indexed allocations clear only their active
     /// logical prefix.
+    pub(crate) fn install_job_storage_reset(&mut self) {
+        self.job_storage_reset = Some(
+            self.compiler_graph
+                .job_storage_reset_operation(&self.resettable_buffers)
+                .expect("parser job reset must match the compiler graph"),
+        );
+    }
+
     pub(crate) fn clear_job_storage(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         active_tree_capacity: u32,
     ) -> u64 {
-        let mut cleared_bytes = 0u64;
-        for buffer in &self.resettable_buffers {
-            if !Self::clears_before_job(buffer) {
-                continue;
-            }
-            let byte_size = self.active_reset_bytes(buffer, active_tree_capacity);
-            if byte_size == 0 {
-                continue;
-            }
-            debug_assert_eq!(byte_size % wgpu::COPY_BUFFER_ALIGNMENT, 0);
-            encoder.clear_buffer(&buffer.buffer, 0, Some(byte_size));
-            cleared_bytes = cleared_bytes.saturating_add(byte_size);
-        }
-        cleared_bytes
+        self.job_storage_reset
+            .as_ref()
+            .expect("parser job reset was not installed")
+            .record_ranges(
+                encoder,
+                self.resettable_buffers.iter().map(|buffer| {
+                    Self::clears_before_job(buffer)
+                        .then(|| self.active_reset_bytes(buffer, active_tree_capacity))
+                        .unwrap_or(0)
+                }),
+            )
     }
 
     pub(crate) fn resettable_storage_totals(&self) -> (usize, u64) {
@@ -374,6 +394,18 @@ impl ParserBuffers {
     }
 }
 
+impl crate::gpu::passes_core::CompilerGraphBuffers for ParserBuffers {
+    fn validate_compiler_pass(
+        &self,
+        operation: &'static str,
+        resources: &std::collections::HashMap<String, wgpu::BindingResource<'_>>,
+        dispatch_args: Option<&crate::gpu::buffers::LaniusBuffer<u32>>,
+    ) -> anyhow::Result<()> {
+        self.compiler_graph
+            .validate_reflected_runtime_bindings(operation, resources, dispatch_args)
+    }
+}
+
 impl ParserBuffers {
     fn new_with_sizing(
         device: &wgpu::Device,
@@ -387,6 +419,7 @@ impl ParserBuffers {
         retain_debug_hir_buffers: bool,
         tree_capacity_override: Option<u32>,
         parser_feature_flags: u32,
+        passes: &crate::parser::passes::ParserPasses,
     ) -> Self {
         let n_pairs = n_tokens.saturating_sub(1) as usize;
         let token_input_capacity = n_tokens.saturating_sub(2).max(1);
@@ -394,339 +427,7 @@ impl ParserBuffers {
         let pair_capacity = n_pairs.max(1);
         let _token_reset_rows =
             ResettableRowDomainGuard::enter(RESET_TOKEN_ROWS, n_tokens as usize);
-        let ll1_status = storage_rw_for_array::<u32>(device, "parser.ll1_status", 6);
-        let ll1_status_readback =
-            readback_bytes(device, "rb.parser.recorded_ll1_hir.status", 32, 32);
-
-        let stream_has_soi = token_kinds_u32
-            .map(|kinds| kinds.first().copied() == Some(0))
-            .unwrap_or(true);
-        let first_input = if n_tokens > 1 && stream_has_soi { 1 } else { 0 };
-        // Match the canonical LL(1) stream: the last token is the EOF sentinel and is not
-        // consumed as ordinary input.
-        let input_end = n_tokens.saturating_sub(1);
-        let n_input_tokens = input_end.saturating_sub(first_input);
-        let token_count = storage_ro_from_u32s(device, "parser.token_count", &[n_input_tokens]);
-        let active_pair_thread_dispatch_args =
-            dispatch_args_buffer(device, "parser.active_pair_thread_dispatch_args");
-        let active_pair_group_dispatch_args =
-            dispatch_args_buffer(device, "parser.active_pair_group_dispatch_args");
-        // ---------- Pair-to-header ----------
-        let semantic_token_kinds = if let Some(kinds) = token_kinds_u32 {
-            // Test/debug one-shot parsing receives already-classified parser
-            // token kinds. Resident compilation fills this buffer on the GPU
-            // with `tokens_to_kinds` instead.
-            storage_ro_from_u32s(device, "parser.semantic_token_kinds.input", kinds)
-        } else {
-            storage_rw_for_array::<u32>(device, "parser.semantic_token_kinds", n_tokens as usize)
-        };
-        let token_delimiter_params = uniform_from_val(
-            device,
-            "parser.token_delimiters.params",
-            &TokenDelimiterParams {
-                n_tokens: token_input_capacity,
-                n_blocks: token_delimiter_n_blocks,
-                scan_step: 0,
-            },
-        );
-        let token_block_scan_plan =
-            make_token_block_scan_plan(device, "parser.token_block_scan", token_delimiter_n_blocks);
-        let token_depth_paren_inblock = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_depth_paren_inblock",
-            token_input_capacity as usize,
-        );
-        let token_depth_brace_inblock = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_depth_brace_inblock",
-            token_input_capacity as usize,
-        );
-        let token_depth_bracket_inblock = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_depth_bracket_inblock",
-            n_tokens.max(1) as usize,
-        );
-        let token_depth_angle_inblock = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_depth_angle_inblock",
-            token_input_capacity as usize,
-        );
-        let token_block_sum_paren = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_block_sum_paren",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_block_sum_brace = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_block_sum_brace",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_block_sum_bracket = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_block_sum_bracket",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_block_sum_angle = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_block_sum_angle",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_prefix_paren_a = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_prefix_paren_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_block_prefix_paren = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_block_prefix_paren",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_prefix_brace_a = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_prefix_brace_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_block_prefix_brace = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_block_prefix_brace",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_prefix_bracket_a = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_prefix_bracket_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_block_prefix_bracket = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_block_prefix_bracket",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_prefix_angle_a = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_prefix_angle_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_block_prefix_angle = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_block_prefix_angle",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_top_brace_owner_block = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_top_brace_owner_block",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_top_brace_owner_prefix_a = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_top_brace_owner_prefix_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_top_brace_owner_block_prefix = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_top_brace_owner_block_prefix",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_statement_event_block = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_statement_event_block",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_statement_event_prefix_a = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_statement_event_prefix_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_statement_event_block_prefix = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_statement_event_block_prefix",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_brace_semantic_kind = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_brace_semantic_kind",
-            n_tokens.max(1) as usize,
-        );
-        let token_braced_rhs_statement_kind = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_braced_rhs_statement_kind",
-            token_input_capacity as usize,
-        );
-        let token_bracket_semantic_kind = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_bracket_semantic_kind",
-            token_input_capacity as usize,
-        );
-        let token_statement_context_kind = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_statement_context_kind",
-            token_input_capacity as usize,
-        );
-        let token_impl_header_kind = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_impl_header_kind",
-            token_input_capacity as usize,
-        );
-        let token_impl_context_event = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_impl_context_event",
-            token_input_capacity as usize,
-        );
-        let token_type_path_context_kind = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_type_path_context_kind",
-            token_input_capacity as usize,
-        );
-        let token_where_context_event = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_where_context_event",
-            token_input_capacity as usize,
-        );
-        let token_match_pattern_context_event = storage_rw_for_array::<u32>(
-            device,
-            "parser.token_match_pattern_context_event",
-            token_input_capacity as usize,
-        );
-        let token_generic_shr_block_sum = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_generic_shr.block_sum",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_generic_shr_block_min = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_generic_shr.block_min",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_generic_shr_prefix_sum_a = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_generic_shr.prefix_sum_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_generic_shr_prefix_min_a = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_generic_shr.prefix_min_a",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_generic_shr_block_prefix_sum = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_generic_shr.block_prefix_sum",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_generic_shr_block_prefix_min = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_generic_shr.block_prefix_min",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_brace_match_params = uniform_from_val(
-            device,
-            "parser.token_brace_match.params",
-            &TokenBraceMatchParams {
-                n_tokens: token_input_capacity,
-            },
-        );
-        let token_brace_match_depth = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_brace_match_depth",
-            token_input_capacity as usize,
-        );
-        let token_brace_match_block_min = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_brace_match_block_min",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_brace_match_min_tree_base =
-            next_power_of_two_u32(token_delimiter_n_blocks).max(1);
-        let token_brace_match_min_tree = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_brace_match_min_tree",
-            token_brace_match_min_tree_base.saturating_mul(2) as usize,
-        );
-        let token_brace_match_min_tree_steps = make_tree_prefix_max_build_steps(
-            device,
-            token_delimiter_n_blocks,
-            token_brace_match_min_tree_base,
-        );
-        let token_bracket_match_depth = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_bracket_match_depth",
-            token_input_capacity as usize,
-        );
-        let token_bracket_match_block_min = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_bracket_match_block_min",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_bracket_match_min_tree = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_bracket_match_min_tree",
-            token_brace_match_min_tree_base.saturating_mul(2) as usize,
-        );
-        let token_paren_match_depth = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_paren_match_depth",
-            token_input_capacity as usize,
-        );
-        let token_paren_match_block_min = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_paren_match_block_min",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_paren_match_min_tree = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_paren_match_min_tree",
-            token_brace_match_min_tree_base.saturating_mul(2) as usize,
-        );
-        let token_angle_match_depth = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_angle_match_depth",
-            token_input_capacity as usize,
-        );
-        let token_angle_match_block_min = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_angle_match_block_min",
-            token_delimiter_n_blocks as usize,
-        );
-        let token_angle_match_min_tree = storage_rw_for_array::<i32>(
-            device,
-            "parser.token_angle_match_min_tree",
-            token_brace_match_min_tree_base.saturating_mul(2) as usize,
-        );
-        let token_feature_flags = if token_kinds_u32.is_some() {
-            storage_ro_from_u32s(
-                device,
-                "parser.token_feature_flags.conservative",
-                &[u32::MAX],
-            )
-        } else {
-            storage_ro_from_u32s(device, "parser.token_feature_flags", &[0])
-        };
-
-        let params_llp = uniform_from_val(
-            device,
-            "parser.params_llp",
-            &super::passes::llp_pairs::LLPParams { n_tokens, n_kinds },
-        );
-
-        let action_table = if action_table_bytes.is_empty() {
-            let one = vec![0u8; core::mem::size_of::<ActionHeader>()];
-            storage_ro_from_bytes::<u8>(device, "parser.action_table", &one, one.len())
-        } else {
-            storage_ro_from_bytes::<u8>(
-                device,
-                "parser.action_table",
-                action_table_bytes,
-                action_table_bytes.len(),
-            )
-        };
-
-        let out_headers: LaniusBuffer<ActionHeader> = storage_rw_for_array::<ActionHeader>(
-            device,
-            "parser.out_headers",
-            pair_capacity.saturating_add(1),
-        );
-
-        // ---------- Pack varlen ----------
         let (mut acc_sc, mut acc_emit) = (0u32, 0u32);
-
         if resident_partial_parse_capacity {
             let max_sc_len = resident_virtual_pair_width(&tables.sc_len, n_kinds);
             let max_emit_len = resident_virtual_pair_width(&tables.pp_len, n_kinds);
@@ -735,12 +436,27 @@ impl ParserBuffers {
         } else {
             let token_kinds_u32 =
                 token_kinds_u32.expect("non-resident parser sizing requires explicit token kinds");
-            for i in 0..n_pairs {
-                let prev = token_kinds_u32[i];
-                let thisk = token_kinds_u32[i + 1];
+            let add_pair = |prev: u32, thisk: u32, acc_sc: &mut u32, acc_emit: &mut u32| {
                 let idx2d = (prev as usize) * (n_kinds as usize) + (thisk as usize);
-                acc_sc += tables.sc_len[idx2d];
-                acc_emit += tables.pp_len[idx2d];
+                *acc_sc += tables.sc_len[idx2d];
+                *acc_emit += tables.pp_len[idx2d];
+            };
+            for i in 0..n_pairs {
+                let encoded_prev = token_kinds_u32[i];
+                let thisk = token_kinds_u32[i + 1];
+                let prev = if encoded_prev & 0x8000_0000 != 0 {
+                    (encoded_prev >> 15) & 0x7fff
+                } else {
+                    encoded_prev
+                };
+                if thisk & 0x8000_0000 != 0 {
+                    let inner = thisk & 0x7fff;
+                    let outer = (thisk >> 15) & 0x7fff;
+                    add_pair(prev, inner, &mut acc_sc, &mut acc_emit);
+                    add_pair(inner, outer, &mut acc_sc, &mut acc_emit);
+                } else {
+                    add_pair(prev, thisk, &mut acc_sc, &mut acc_emit);
+                }
             }
         }
         let total_sc = acc_sc;
@@ -770,12 +486,245 @@ impl ParserBuffers {
         } else {
             total_emit.max(1)
         };
-        // Route parser-only rows through the phase workspace boundary. Its
-        // current independent allocations remain correct until the parser pass
-        // schedule supplies the access conflicts needed for graph coloring.
-        let mut post_hir_workspace =
-            PostHirWorkspaceArenas::new(device, "parser.post_hir_workspace", 64 * 1024 * 1024);
+        let table_blob_words = u32::try_from(
+            tables.sc_superseq.len()
+                + tables.sc_off.len()
+                + tables.sc_len.len()
+                + tables.pp_superseq.len()
+                + tables.pp_off.len()
+                + tables.pp_len.len(),
+        )
+        .expect("parser table blob exceeds the GPU u32 address domain");
+        const WG: u32 = 256;
+        let n_blocks = total_sc.div_ceil(WG).max(1);
+        let emit_stack_matches = retain_debug_hir_buffers || !resident_partial_parse_capacity;
+        let family_capacities = ParserFamilyCapacities::new(tree_capacity, parser_feature_flags);
+        let tree_n_node_blocks = tree_capacity.div_ceil(WG).max(1);
+        let tree_n_prefix_blocks = tree_capacity.saturating_add(1).div_ceil(WG).max(1);
+        let compiler_graph = crate::parser::compiler_graph::ParserCompilerGraph::new(
+            device,
+            crate::parser::compiler_graph::ParserGraphCapacity {
+                source_capacity,
+                n_tokens,
+                token_capacity: token_input_capacity,
+                pair_capacity: pair_capacity as u32,
+                total_sc,
+                tree_capacity,
+                bracket_blocks: n_blocks,
+                tree_node_blocks: tree_n_node_blocks,
+                tree_prefix_blocks: tree_n_prefix_blocks,
+                action_table_bytes: action_table_bytes.len() as u64,
+                table_blob_words,
+                production_count: tables.prod_arity.len() as u32,
+                parser_feature_flags,
+                emit_stack_matches,
+                retain_debug_hir_buffers,
+                preclassified_token_kinds: token_kinds_u32.is_some(),
+            },
+            passes,
+        )
+        .expect("parser compiler graph must match the reflected parser passes");
+        macro_rules! graph_buffer {
+            ($type:ty, $name:literal) => {
+                compiler_graph
+                    .buffer::<$type>($name)
+                    .unwrap_or_else(|error| panic!("parser graph must own {}: {error}", $name))
+            };
+        }
+        macro_rules! optional_graph_buffer {
+            ($type:ty, $name:literal, $enabled:expr) => {
+                if $enabled {
+                    graph_buffer!($type, $name)
+                } else {
+                    storage_rw_for_array::<$type>(device, concat!("parser.", $name, ".disabled"), 1)
+                }
+            };
+        }
+        let ll1_status = graph_buffer!(u32, "ll1_status");
+        let ll1_status_readback =
+            readback_bytes(device, "rb.parser.recorded_ll1_hir.status", 32, 32);
+        let hir_count_readback = readback_bytes(device, "rb.parser.hir_counts", 120, 120);
 
+        let stream_has_soi = token_kinds_u32
+            .map(|kinds| kinds.first().copied() == Some(0))
+            .unwrap_or(true);
+        let first_input = if n_tokens > 1 && stream_has_soi { 1 } else { 0 };
+        // Match the canonical LL(1) stream: the last token is the EOF sentinel and is not
+        // consumed as ordinary input.
+        let input_end = n_tokens.saturating_sub(1);
+        let n_input_tokens = input_end.saturating_sub(first_input);
+        let token_frontend_required = token_kinds_u32.is_none();
+        let token_count = if token_kinds_u32.is_some() {
+            storage_ro_from_u32s(device, "parser.token_count", &[n_input_tokens])
+        } else {
+            graph_buffer!(u32, "token_count")
+        };
+        let active_pair_thread_dispatch_args =
+            graph_buffer!(u32, "active_pair_thread_dispatch_args");
+        let active_pair_group_dispatch_args = graph_buffer!(u32, "active_pair_group_dispatch_args");
+        // ---------- Pair-to-header ----------
+        let semantic_token_kinds = if let Some(kinds) = token_kinds_u32 {
+            // Test/debug one-shot parsing receives already-classified parser
+            // token kinds. Resident compilation fills this buffer on the GPU
+            // with `tokens_to_kinds` instead.
+            storage_ro_from_u32s(device, "parser.semantic_token_kinds.input", kinds)
+        } else {
+            graph_buffer!(u32, "token_kinds")
+        };
+        let token_delimiter_params = uniform_from_val(
+            device,
+            "parser.token_delimiters.params",
+            &TokenDelimiterParams {
+                n_tokens: token_input_capacity,
+                n_blocks: token_delimiter_n_blocks,
+                scan_step: 0,
+            },
+        );
+        let token_block_scan_plan =
+            make_token_block_scan_plan(device, "parser.token_block_scan", token_delimiter_n_blocks);
+        let token_depth_paren_inblock =
+            optional_graph_buffer!(i32, "depth_paren_inblock", token_frontend_required);
+        let token_depth_brace_inblock =
+            optional_graph_buffer!(i32, "depth_brace_inblock", token_frontend_required);
+        let token_depth_bracket_inblock =
+            optional_graph_buffer!(i32, "depth_bracket_inblock", token_frontend_required);
+        let token_depth_angle_inblock =
+            optional_graph_buffer!(i32, "depth_angle_inblock", token_frontend_required);
+        let token_block_sum_paren =
+            optional_graph_buffer!(i32, "block_sum_paren", token_frontend_required);
+        let token_block_sum_brace =
+            optional_graph_buffer!(i32, "block_sum_brace", token_frontend_required);
+        let token_block_sum_bracket =
+            optional_graph_buffer!(i32, "block_sum_bracket", token_frontend_required);
+        let token_block_sum_angle =
+            optional_graph_buffer!(i32, "block_sum_angle", token_frontend_required);
+        let token_prefix_paren_a =
+            optional_graph_buffer!(i32, "hierarchy_paren", token_frontend_required);
+        let token_block_prefix_paren =
+            optional_graph_buffer!(i32, "block_prefix_paren", token_frontend_required);
+        let token_prefix_brace_a =
+            optional_graph_buffer!(i32, "hierarchy_brace", token_frontend_required);
+        let token_block_prefix_brace =
+            optional_graph_buffer!(i32, "block_prefix_brace", token_frontend_required);
+        let token_prefix_bracket_a =
+            optional_graph_buffer!(i32, "hierarchy_bracket", token_frontend_required);
+        let token_block_prefix_bracket =
+            optional_graph_buffer!(i32, "block_prefix_bracket", token_frontend_required);
+        let token_prefix_angle_a =
+            optional_graph_buffer!(i32, "hierarchy_angle", token_frontend_required);
+        let token_block_prefix_angle =
+            optional_graph_buffer!(i32, "block_prefix_angle", token_frontend_required);
+        let token_top_brace_owner_block =
+            optional_graph_buffer!(u32, "top_brace_owner_block", token_frontend_required);
+        let token_top_brace_owner_prefix_a =
+            optional_graph_buffer!(u32, "hierarchy_owner", token_frontend_required);
+        let token_top_brace_owner_block_prefix =
+            optional_graph_buffer!(u32, "top_brace_owner_block_prefix", token_frontend_required);
+        let token_statement_event_block =
+            optional_graph_buffer!(u32, "statement_event_block", token_frontend_required);
+        let token_statement_event_prefix_a =
+            optional_graph_buffer!(u32, "statement_event_hierarchy", token_frontend_required);
+        let token_statement_event_block_prefix =
+            optional_graph_buffer!(u32, "statement_event_block_prefix", token_frontend_required);
+        let token_brace_semantic_kind =
+            optional_graph_buffer!(u32, "brace_semantic_kind", token_frontend_required);
+        let token_braced_rhs_statement_kind =
+            optional_graph_buffer!(u32, "braced_rhs_statement_kind", token_frontend_required);
+        let token_bracket_semantic_kind =
+            optional_graph_buffer!(u32, "bracket_semantic_kind", token_frontend_required);
+        let token_statement_context_kind =
+            optional_graph_buffer!(u32, "statement_context_kind", token_frontend_required);
+        let token_impl_header_kind =
+            optional_graph_buffer!(u32, "token_impl_header_kind", token_frontend_required);
+        let token_impl_context_event =
+            optional_graph_buffer!(u32, "token_impl_context_event", token_frontend_required);
+        let token_type_path_context_kind =
+            optional_graph_buffer!(u32, "token_type_path_context_kind", token_frontend_required);
+        let token_where_context_event =
+            optional_graph_buffer!(u32, "token_where_context_event", token_frontend_required);
+        let token_match_pattern_context_event = optional_graph_buffer!(
+            u32,
+            "token_match_pattern_context_event",
+            token_frontend_required
+        );
+        let token_generic_shr_block_sum =
+            optional_graph_buffer!(i32, "generic_shr_block_sum", token_frontend_required);
+        let token_generic_shr_block_min =
+            optional_graph_buffer!(i32, "generic_shr_block_min", token_frontend_required);
+        let token_generic_shr_prefix_sum_a =
+            optional_graph_buffer!(i32, "generic_shr_hierarchy_sum", token_frontend_required);
+        let token_generic_shr_prefix_min_a =
+            optional_graph_buffer!(i32, "generic_shr_hierarchy_min", token_frontend_required);
+        let token_generic_shr_block_prefix_sum =
+            optional_graph_buffer!(i32, "generic_shr_block_prefix_sum", token_frontend_required);
+        let token_generic_shr_block_prefix_min =
+            optional_graph_buffer!(i32, "generic_shr_block_prefix_min", token_frontend_required);
+        let token_brace_match_params = uniform_from_val(
+            device,
+            "parser.token_brace_match.params",
+            &TokenBraceMatchParams {
+                n_tokens: token_input_capacity,
+            },
+        );
+        let token_brace_match_depth = graph_buffer!(i32, "brace_match_depth");
+        let token_brace_match_block_min = graph_buffer!(i32, "brace_match_block_min");
+        let token_brace_match_min_tree_base =
+            next_power_of_two_u32(token_delimiter_n_blocks).max(1);
+        let token_brace_match_min_tree = graph_buffer!(i32, "brace_match_min_tree");
+        let token_brace_match_min_tree_steps = make_tree_prefix_max_build_steps(
+            device,
+            token_delimiter_n_blocks,
+            token_brace_match_min_tree_base,
+        );
+        let token_bracket_match_depth =
+            optional_graph_buffer!(i32, "bracket_match_depth", token_frontend_required);
+        let token_bracket_match_block_min =
+            optional_graph_buffer!(i32, "bracket_match_block_min", token_frontend_required);
+        let token_bracket_match_min_tree =
+            optional_graph_buffer!(i32, "bracket_match_min_tree", token_frontend_required);
+        let token_paren_match_depth =
+            optional_graph_buffer!(i32, "paren_match_depth", token_frontend_required);
+        let token_paren_match_block_min =
+            optional_graph_buffer!(i32, "paren_match_block_min", token_frontend_required);
+        let token_paren_match_min_tree =
+            optional_graph_buffer!(i32, "paren_match_min_tree", token_frontend_required);
+        let token_angle_match_depth =
+            optional_graph_buffer!(i32, "angle_match_depth", token_frontend_required);
+        let token_angle_match_block_min =
+            optional_graph_buffer!(i32, "angle_match_block_min", token_frontend_required);
+        let token_angle_match_min_tree =
+            optional_graph_buffer!(i32, "angle_match_min_tree", token_frontend_required);
+        let token_feature_flags = if token_kinds_u32.is_some() {
+            storage_ro_from_u32s(
+                device,
+                "parser.token_feature_flags.conservative",
+                &[u32::MAX],
+            )
+        } else {
+            graph_buffer!(u32, "token_feature_flags")
+        };
+
+        let params_llp = uniform_from_val(
+            device,
+            "parser.params_llp",
+            &super::passes::llp_pairs::LLPParams { n_tokens, n_kinds },
+        );
+
+        let action_table = if action_table_bytes.is_empty() {
+            let one = vec![0u8; core::mem::size_of::<ActionHeader>()];
+            storage_ro_from_bytes::<u8>(device, "parser.action_table", &one, one.len())
+        } else {
+            storage_ro_from_bytes::<u8>(
+                device,
+                "parser.action_table",
+                action_table_bytes,
+                action_table_bytes.len(),
+            )
+        };
+
+        let out_headers: LaniusBuffer<ActionHeader> = graph_buffer!(ActionHeader, "out_headers");
+
+        // ---------- Pack varlen ----------
         let mut blob: Vec<u32> = Vec::with_capacity(
             tables.sc_superseq.len()
                 + tables.sc_off.len()
@@ -830,17 +779,12 @@ impl ParserBuffers {
             },
         );
 
-        let n_pack_pairs = pair_capacity;
-        let sc_offsets = storage_rw_for_array::<u32>(device, "pack.sc_offsets", n_pack_pairs);
-        let emit_offsets = storage_rw_for_array::<u32>(device, "pack.emit_offsets", n_pack_pairs);
-        let pack_sc_prefix_a =
-            storage_rw_for_array::<u32>(device, "pack.sc_prefix_a", n_pack_pairs);
-        let pack_sc_prefix_b =
-            storage_rw_for_array::<u32>(device, "pack.sc_prefix_b", n_pack_pairs);
-        let pack_emit_prefix_a =
-            storage_rw_for_array::<u32>(device, "pack.emit_prefix_a", n_pack_pairs);
-        let pack_emit_prefix_b =
-            storage_rw_for_array::<u32>(device, "pack.emit_prefix_b", n_pack_pairs);
+        let sc_offsets = graph_buffer!(u32, "sc_offsets");
+        let emit_offsets = graph_buffer!(u32, "emit_offsets");
+        let pack_sc_prefix_a = graph_buffer!(u32, "pack_sc_prefix_a");
+        let pack_sc_prefix_b = graph_buffer!(u32, "pack_sc_prefix_b");
+        let pack_emit_prefix_a = graph_buffer!(u32, "pack_emit_prefix_a");
+        let pack_emit_prefix_b = graph_buffer!(u32, "pack_emit_prefix_b");
         let pack_offset_scan_plan = make_pack_offset_scan_plan(device, n_tokens.saturating_sub(1));
         let pack_totals_blocks_params = uniform_from_val(
             device,
@@ -857,46 +801,29 @@ impl ParserBuffers {
             &super::passes::pack::totals::status::Params {
                 n_pairs: n_tokens.saturating_sub(1),
                 emit_capacity,
+                read_from_a: u32::from(
+                    pack_total_reduce_step_count(n_tokens.saturating_sub(1)) % 2 == 0,
+                ),
             },
         );
-        let partial_parse_status =
-            storage_rw_for_array::<u32>(device, "pack.partial_parse_status", 6);
+        let partial_parse_status = graph_buffer!(u32, "partial_parse_status");
+        debug_assert_eq!(blob.len(), table_blob_words as usize);
         let tables_blob = storage_ro_from_u32s(device, "pack.tables_blob", &blob);
+
         let _packed_stream_reset_rows =
             ResettableRowDomainGuard::enter(RESET_PACKED_STREAM_ROWS, total_sc.max(1) as usize);
         // The pair-offset scan partitions `[0, total_sc)` into disjoint ranges,
         // and `pack_varlen` writes every element of every range before bracket
         // matching reads the stream.
-        let out_sc = storage_rw_for_array_with_reset_policy::<u32>(
-            device,
-            "pack.out_sc",
-            total_sc.max(1) as usize,
-            JobResetPolicy::OverwriteBeforeRead,
-        );
+        let out_sc = graph_buffer!(u32, "out_sc");
         // The same partition covers the production and source-position
         // streams. Later type metadata aliases are fully initialized by
         // `hir_type_fields` before those views are consumed.
-        let out_emit = storage_rw_for_array_with_reset_policy::<u32>(
-            device,
-            "pack.out_emit",
-            emit_capacity as usize,
-            JobResetPolicy::OverwriteBeforeRead,
-        );
-        let out_emit_pos = storage_rw_for_array_with_reset_policy::<u32>(
-            device,
-            "pack.out_emit_pos",
-            emit_capacity as usize,
-            JobResetPolicy::OverwriteBeforeRead,
-        );
+        let out_emit = graph_buffer!(u32, "out_emit");
+        let out_emit_pos = graph_buffer!(u32, "out_emit_pos");
 
         // ---------- Brackets (parallel) ----------
         //
-        // Resident parsing validates stack effects before publishing acceptance,
-        // so bracket scratch is sized to the conservative stack capacity.
-        const WG: u32 = 256;
-        let bracket_capacity = total_sc.max(1);
-        let n_blocks = total_sc.div_ceil(WG).max(1);
-
         let b01_params = uniform_from_val(
             device,
             "brackets.b01.params",
@@ -923,7 +850,6 @@ impl ParserBuffers {
             },
         );
 
-        let emit_stack_matches = retain_debug_hir_buffers || !resident_partial_parse_capacity;
         let b07_params = uniform_from_val(
             device,
             "brackets.b07.params",
@@ -941,53 +867,41 @@ impl ParserBuffers {
             &super::passes::brackets::clear_matches::Params { n_sc: total_sc },
         );
         let b_min_tree_base = next_power_of_two_u32(n_blocks).max(1);
-        let b_min_tree = post_hir_workspace.row::<i32>(
-            "brackets.min_tree",
-            b_min_tree_base.saturating_mul(2) as usize,
-        );
+        let b_min_tree = graph_buffer!(i32, "bracket_min_tree");
         let b_min_tree_steps = make_tree_prefix_max_build_steps(device, n_blocks, b_min_tree_base);
 
-        let b_exscan_inblock =
-            post_hir_workspace.row::<i32>("brackets.exscan_inblock", bracket_capacity as usize);
-        let b_block_sum = post_hir_workspace.row::<i32>("brackets.block_sum", n_blocks as usize);
-        let b_block_minpref =
-            post_hir_workspace.row::<i32>("brackets.block_minpref", n_blocks as usize);
-        let b_block_row_min =
-            post_hir_workspace.row::<i32>("brackets.block_row_min", n_blocks as usize);
-        let b_block_maxdepth =
-            post_hir_workspace.row::<i32>("brackets.block_maxdepth", n_blocks as usize);
-        let b_block_prefix =
-            post_hir_workspace.row::<i32>("brackets.block_prefix", n_blocks as usize);
-        let b_block_prefix_sum_a =
-            post_hir_workspace.row::<i32>("brackets.block_prefix_sum_a", n_blocks as usize);
-        let b_block_prefix_sum_b =
-            post_hir_workspace.row::<i32>("brackets.block_prefix_sum_b", n_blocks as usize);
-        let b_block_prefix_min_a =
-            post_hir_workspace.row::<i32>("brackets.block_prefix_min_a", n_blocks as usize);
-        let b_block_prefix_min_b =
-            post_hir_workspace.row::<i32>("brackets.block_prefix_min_b", n_blocks as usize);
+        let b_exscan_inblock = graph_buffer!(i32, "bracket_exscan_inblock");
+        let b_block_sum = compiler_graph
+            .buffer::<i32>("bracket_block_sum")
+            .expect("parser graph must own bracket block sums");
+        let b_block_minpref = compiler_graph
+            .buffer::<i32>("bracket_block_minpref")
+            .expect("parser graph must own bracket block minimum prefixes");
+        let b_block_row_min = compiler_graph
+            .buffer::<i32>("bracket_block_row_min")
+            .expect("parser graph must own bracket block row minima");
+        let b_block_maxdepth = compiler_graph
+            .buffer::<i32>("bracket_block_maxdepth")
+            .expect("parser graph must own bracket block maximum depths");
+        let b_block_prefix = compiler_graph
+            .buffer::<i32>("bracket_block_prefix")
+            .expect("parser graph must own bracket block prefixes");
+        let b_block_prefix_sum_a = graph_buffer!(i32, "bracket_prefix_sum");
+        let b_block_prefix_sum_b = graph_buffer!(i32, "bracket_hierarchy_sum");
+        let b_block_prefix_min_a = graph_buffer!(i32, "bracket_prefix_min");
+        let b_block_prefix_min_b = graph_buffer!(i32, "bracket_hierarchy_min");
 
-        let depths_out = post_hir_workspace.row::<i32>("brackets.depths_out", 3);
-        let valid_out = post_hir_workspace.row::<u32>("brackets.valid_out", 1);
+        let depths_out = graph_buffer!(i32, "bracket_depths");
+        let valid_out = compiler_graph
+            .buffer::<u32>("bracket_valid")
+            .expect("parser graph must own bracket validity output");
 
-        let b_layer = post_hir_workspace.row::<u32>("brackets.layer", bracket_capacity as usize);
-        // Production validation only writes the match table when a later raw
-        // tree consumer or a debug readback needs it. Otherwise its allocation
-        // is phase-colored HIR scratch and only needs dense tree capacity.
-        let match_capacity = if emit_stack_matches {
-            bracket_capacity
-        } else {
-            tree_capacity
-        };
-        let match_for_index =
-            post_hir_workspace.row::<u32>("brackets.match_for_index", match_capacity as usize);
+        let b_layer = graph_buffer!(u32, "bracket_layer");
+        let match_for_index = graph_buffer!(u32, "match_for_index");
 
         // ---------- Tree parent recovery ----------
         let _tree_reset_rows =
             ResettableRowDomainGuard::enter(RESET_TREE_ROWS, tree_capacity as usize);
-        let family_capacities = ParserFamilyCapacities::new(tree_capacity, parser_feature_flags);
-        let tree_n_node_blocks = tree_capacity.div_ceil(WG).max(1);
-        let tree_n_prefix_blocks = tree_capacity.saturating_add(1).div_ceil(WG).max(1);
         let tree_prefix_params_base = super::passes::tree::prefix::local::Params {
             n: tree_capacity,
             uses_status_count: u32::from(tree_count_uses_status),
@@ -1000,51 +914,39 @@ impl ParserBuffers {
             "parser.tree_prefix.params",
             &tree_prefix_params_base,
         );
-        let tree_active_dispatch_args =
-            dispatch_args_buffer(device, "parser.tree_active_dispatch_args");
-        let tree_enum_dispatch_args =
-            dispatch_args_buffer(device, "parser.tree_enum_dispatch_args");
-        let tree_match_dispatch_args =
-            dispatch_args_buffer(device, "parser.tree_match_dispatch_args");
-        let tree_struct_dispatch_args =
-            dispatch_args_buffer(device, "parser.tree_struct_dispatch_args");
-        let tree_depth_status = storage_rw_for_array::<u32>(device, "parser.tree_depth_status", 1);
+        let tree_active_dispatch_args = graph_buffer!(u32, "tree_active_dispatch_args");
+        let tree_enum_dispatch_args = graph_buffer!(u32, "tree_enum_dispatch_args");
+        let tree_match_dispatch_args = graph_buffer!(u32, "tree_match_dispatch_args");
+        let tree_struct_dispatch_args = graph_buffer!(u32, "tree_struct_dispatch_args");
+        let tree_depth_status = graph_buffer!(u32, "tree_depth_status");
         let canonical_parent_step_capacity =
             super::passes::hir::semantic::parent::step::pointer_jump_steps_after_local_span(
                 tree_capacity,
             );
-        let hir_canonical_parent_dispatch_args = dispatch_args_schedule_buffer(
-            device,
-            "parser.hir_canonical_parent_dispatch_args",
-            canonical_parent_step_capacity as usize,
+        let hir_canonical_parent_dispatch_args =
+            graph_buffer!(u32, "hir_canonical_parent_dispatch_args");
+        debug_assert_eq!(
+            hir_canonical_parent_dispatch_args.count,
+            canonical_parent_step_capacity.max(1) as usize * 3,
+            "the graph retains one bindable indirect row when no pointer-jump step is scheduled",
         );
-        let hir_semantic_dispatch_args =
-            dispatch_args_buffer(device, "parser.hir_semantic_dispatch_args");
-        let tree_depth_block_max = post_hir_workspace
-            .row::<u32>("parser.tree_depth_block_max", tree_n_node_blocks as usize);
+        let hir_semantic_dispatch_args = graph_buffer!(u32, "hir_semantic_dispatch_args");
+        let tree_depth_block_max = graph_buffer!(u32, "tree_depth_block_max");
         let tree_prefix_scan_steps =
             make_tree_prefix_scan_steps(device, tree_prefix_params_base, tree_n_node_blocks);
-        let tree_prefix_inblock =
-            post_hir_workspace.row::<i32>("parser.tree_prefix_inblock", tree_capacity as usize);
-        let tree_block_sum =
-            post_hir_workspace.row::<i32>("parser.tree_block_sum", tree_n_node_blocks as usize);
-        let tree_block_prefix_a = post_hir_workspace
-            .row::<i32>("parser.tree_block_prefix_a", tree_n_node_blocks as usize);
-        let tree_block_prefix_b = post_hir_workspace
-            .row::<i32>("parser.tree_block_prefix_b", tree_n_node_blocks as usize);
-        let tree_block_prefix =
-            post_hir_workspace.row::<i32>("parser.tree_block_prefix", tree_n_node_blocks as usize);
-        let tree_prefix =
-            post_hir_workspace.row::<i32>("parser.tree_prefix", tree_capacity as usize + 1);
-        let tree_prefix_block_max = post_hir_workspace.row::<i32>(
-            "parser.tree_prefix_block_max",
-            tree_n_prefix_blocks as usize,
-        );
+        let tree_prefix_inblock = graph_buffer!(i32, "tree_prefix_inblock");
+        let tree_block_sum = compiler_graph
+            .buffer::<i32>("tree_block_sum")
+            .expect("parser graph must own tree block sums");
+        let tree_block_prefix_a = graph_buffer!(i32, "tree_block_prefix_a");
+        let tree_block_prefix_b = graph_buffer!(i32, "tree_block_prefix_b");
+        let tree_block_prefix = graph_buffer!(i32, "tree_block_prefix");
+        let tree_prefix = graph_buffer!(i32, "tree_prefix");
+        let tree_prefix_block_max = compiler_graph
+            .buffer::<i32>("tree_prefix_block_max")
+            .expect("parser graph must own tree-prefix block maxima");
         let tree_prefix_block_max_tree_base = next_power_of_two_u32(tree_n_prefix_blocks).max(1);
-        let tree_prefix_block_max_tree = post_hir_workspace.row::<i32>(
-            "parser.tree_prefix_block_max_tree",
-            tree_prefix_block_max_tree_base.saturating_mul(2) as usize,
-        );
+        let tree_prefix_block_max_tree = graph_buffer!(i32, "tree_prefix_block_max_tree");
         let tree_prefix_max_build_steps = make_tree_prefix_max_build_steps(
             device,
             tree_n_prefix_blocks,
@@ -1055,8 +957,12 @@ impl ParserBuffers {
         // every active row; previous-sibling scatter has its own required
         // per-phase clear before both of its sparse scatter uses.
         let prod_arity = storage_ro_from_u32s(device, "parser.prod_arity", &tables.prod_arity);
-        let node_kind = post_hir_workspace.row::<u32>("parser.node_kind", tree_capacity as usize);
-        let parent = post_hir_workspace.row::<u32>("parser.parent", tree_capacity as usize);
+        let node_kind = compiler_graph
+            .buffer::<u32>("node_kind")
+            .expect("parser graph must own raw node kinds");
+        let parent = compiler_graph
+            .buffer::<u32>("parent")
+            .expect("parser graph must own raw parent relations");
         let tree_params = uniform_from_val(
             device,
             "parser.tree_parent.params",
@@ -1085,14 +991,16 @@ impl ParserBuffers {
                 uses_status_count: u32::from(tree_count_uses_status),
             },
         );
-        let first_child =
-            post_hir_workspace.row::<u32>("parser.first_child", tree_capacity as usize);
-        let next_sibling =
-            post_hir_workspace.row::<u32>("parser.next_sibling", tree_capacity as usize);
-        let prev_sibling =
-            post_hir_workspace.row::<u32>("parser.prev_sibling", tree_capacity as usize);
-        let subtree_end =
-            post_hir_workspace.row::<u32>("parser.subtree_end", tree_capacity as usize);
+        let first_child = compiler_graph
+            .buffer::<u32>("first_child")
+            .expect("parser graph must own raw first-child relations");
+        let next_sibling = compiler_graph
+            .buffer::<u32>("next_sibling")
+            .expect("parser graph must own raw next-sibling relations");
+        let prev_sibling = graph_buffer!(u32, "prev_sibling");
+        let subtree_end = compiler_graph
+            .buffer::<u32>("subtree_end")
+            .expect("parser graph must own raw subtree ends");
         let hir_params = uniform_from_val(
             device,
             "parser.hir_nodes.params",
@@ -1217,1011 +1125,308 @@ impl ParserBuffers {
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
             },
         );
-        let hir_kind = post_hir_workspace.row::<u32>("parser.hir_kind", tree_capacity as usize);
-        let hir_semantic_block_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_semantic_block_count",
-            tree_n_node_blocks as usize,
-        );
+        let hir_kind = compiler_graph
+            .buffer::<u32>("hir_kind")
+            .expect("parser graph must own raw HIR classifications");
+        let hir_semantic_block_count = graph_buffer!(u32, "hir_semantic_block_sum");
         let hir_semantic_prefix_scan = make_hir_prefix_scan_plan(device, tree_n_node_blocks);
-        // Raw type records still alias the parser prefix arrays in resident
-        // compilation, and remain live through type checking during the HIR
-        // migration. Keep canonical-family scan storage distinct until every
-        // consumer reads compact type metadata instead of those raw columns.
-        let hir_semantic_flag =
-            post_hir_workspace.row::<u32>("parser.hir_semantic_flag", tree_capacity as usize);
-        let hir_semantic_local_prefix = post_hir_workspace
-            .row::<u32>("parser.hir_semantic_local_prefix", tree_capacity as usize);
-        let hir_semantic_block_prefix_a =
-            alias_storage_buffer::<i32, u32>(&tree_block_prefix_a, tree_n_node_blocks as usize);
-        let hir_semantic_block_prefix_b =
-            alias_storage_buffer::<i32, u32>(&tree_block_prefix_b, tree_n_node_blocks as usize);
-        let hir_node_dense_id =
-            post_hir_workspace.row::<u32>("parser.hir_node_dense_id", tree_capacity as usize);
-        let hir_semantic_prefix_before_node = post_hir_workspace.row::<u32>(
-            "parser.hir_semantic_prefix_before_node",
-            tree_capacity as usize,
-        );
-        let reuse_semantic_debug_buffers =
-            resident_partial_parse_capacity && !retain_debug_hir_buffers;
-        // This intermediate navigation still retains context-carrying grammar
-        // wrappers, so it is not yet covered by the canonical token-anchor
-        // bound. It becomes token-sized only when those relations move to the
-        // canonical HIR graph.
-        let semantic_dense_capacity = tree_capacity;
-        let hir_semantic_dense_node = post_hir_workspace.row::<u32>(
-            "parser.hir_semantic_dense_node",
-            semantic_dense_capacity as usize,
-        );
-        let hir_semantic_subtree_end = post_hir_workspace
-            .row::<u32>("parser.hir_semantic_subtree_end", tree_capacity as usize);
-        let hir_semantic_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_semantic_count", 1);
-        let hir_semantic_parent = if reuse_semantic_debug_buffers {
-            // `hir_semantic_prefix_before_node` is only live until
-            // `hir_semantic_subtree_end` projects dense ranges. Production
-            // resident compilation does not read it back, so the durable dense
-            // parent records can reuse that tree-sized allocation.
-            alias_storage_buffer::<u32, u32>(
-                &hir_semantic_prefix_before_node,
-                tree_capacity as usize,
-            )
-        } else {
-            post_hir_workspace.row::<u32>("parser.hir_semantic_parent", tree_capacity as usize)
-        };
-        let hir_semantic_first_child = post_hir_workspace.row::<u32>(
-            "parser.hir_semantic_first_child",
-            semantic_dense_capacity as usize,
-        );
-        let hir_semantic_next_sibling = post_hir_workspace.row::<u32>(
-            "parser.hir_semantic_next_sibling",
-            semantic_dense_capacity as usize,
-        );
-        let hir_semantic_depth =
-            post_hir_workspace.row::<u32>("parser.hir_semantic_depth", tree_capacity as usize);
-        let hir_semantic_child_index = post_hir_workspace
-            .row::<u32>("parser.hir_semantic_child_index", tree_capacity as usize);
-        // Shared scratch for Pareas-style linked-list pointer jumping. The
-        // durable HIR outputs remain in their own buffers; these workspaces are
-        // overwritten by each list-family link/rank/scatter sequence. In the
-        // resident non-debug path, stack validation has finished before any of
-        // these workspaces are used, so reuse its twelve dead allocations. A
-        // size check preserves correctness when a grammar's tree capacity is
-        // larger than its stack-effect stream capacity.
-        let out_sc_slot0 = reuse_semantic_debug_buffers
-            .then(|| u32_workspace_subrange(device, &out_sc, 0, tree_capacity as usize))
-            .flatten();
-        let out_sc_slot1 = reuse_semantic_debug_buffers
-            .then(|| u32_workspace_subrange(device, &out_sc, 1, tree_capacity as usize))
-            .flatten();
-        let bracket_scan_slot0 = reuse_semantic_debug_buffers
-            .then(|| u32_workspace_subrange(device, &b_exscan_inblock, 0, tree_capacity as usize))
-            .flatten();
-        let bracket_scan_slot1 = reuse_semantic_debug_buffers
-            .then(|| u32_workspace_subrange(device, &b_exscan_inblock, 1, tree_capacity as usize))
-            .flatten();
-        let bracket_layer_slot0 = reuse_semantic_debug_buffers
-            .then(|| u32_workspace_subrange(device, &b_layer, 0, tree_capacity as usize))
-            .flatten();
-        let bracket_layer_slot1 = reuse_semantic_debug_buffers
-            .then(|| u32_workspace_subrange(device, &b_layer, 1, tree_capacity as usize))
-            .flatten();
-        let hir_list0_owner_a = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list0_owner_a",
-            tree_capacity as usize,
-            out_sc_slot0.as_ref(),
-        );
-        let hir_list0_owner_b = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list0_owner_b",
-            tree_capacity as usize,
-            // Dense first-child navigation has the same lifetime boundary as
-            // next-sibling navigation above: child-index traversal is its
-            // final consumer, before any list-family owner-B pass.
-            reuse_semantic_debug_buffers.then_some(&hir_semantic_first_child),
-        );
-        let hir_list0_link_a = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list0_link_a",
-            tree_capacity as usize,
-            out_sc_slot1.as_ref(),
-        );
-        let hir_list0_link_b = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list0_link_b",
-            tree_capacity as usize,
-            None,
-        );
-        let hir_list0_rank_a = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list0_rank_a",
-            tree_capacity as usize,
-            bracket_scan_slot0.as_ref(),
-        );
-        let hir_list0_rank_b = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list0_rank_b",
-            tree_capacity as usize,
-            None,
-        );
-        let hir_list1_owner_a = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list1_owner_a",
-            tree_capacity as usize,
-            bracket_scan_slot1.as_ref(),
-        );
-        let hir_list1_owner_b = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list1_owner_b",
-            tree_capacity as usize,
-            // Semantic sibling navigation is consumed by
-            // `hir_semantic_child_index_traverse` before any list-family
-            // owner-B pass begins. Reuse that complete tree row instead of
-            // retaining another raw-tree-sized allocation for the rest of
-            // HIR construction.
-            reuse_semantic_debug_buffers.then_some(&hir_semantic_next_sibling),
-        );
-        let hir_list1_link_a = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list1_link_a",
-            tree_capacity as usize,
-            bracket_layer_slot0.as_ref(),
-        );
-        let hir_list1_link_b = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list1_link_b",
-            tree_capacity as usize,
-            None,
-        );
-        let hir_list1_rank_a = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list1_rank_a",
-            tree_capacity as usize,
-            bracket_layer_slot1.as_ref(),
-        );
-        let hir_list1_rank_b = reuse_or_allocate_u32_workspace(
-            device,
-            "parser.hir_list1_rank_b",
-            tree_capacity as usize,
-            reuse_semantic_debug_buffers.then_some(&match_for_index),
-        );
-        let hir_semantic_parent_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_semantic_parent_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_semantic_parent_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_semantic_parent_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let tree_depth =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
+        // Semantic identity and canonical-family scans overlap in time, so
+        // their prefix storage remains physically distinct.
+        let hir_semantic_flag = compiler_graph
+            .buffer::<u32>("hir_semantic_flag")
+            .expect("parser graph must own semantic-node flags");
+        let hir_semantic_local_prefix = compiler_graph
+            .buffer::<u32>("hir_semantic_local_prefix")
+            .expect("parser graph must own semantic local prefixes");
+        let hir_semantic_block_prefix_a = graph_buffer!(u32, "hir_semantic_block_prefix_a");
+        let hir_semantic_block_prefix_b = graph_buffer!(u32, "hir_semantic_block_prefix_b");
+        let hir_node_dense_id = compiler_graph
+            .buffer::<u32>("hir_node_dense_id")
+            .expect("parser graph must own raw-to-semantic dense ids");
+        let hir_semantic_prefix_before_node = graph_buffer!(u32, "hir_semantic_prefix_before_node");
+        let hir_semantic_dense_node = compiler_graph
+            .buffer::<u32>("hir_semantic_dense_node")
+            .expect("parser graph must own semantic-to-raw dense ids");
+        let hir_semantic_subtree_end = graph_buffer!(u32, "hir_semantic_subtree_end");
+        let hir_semantic_count = graph_buffer!(u32, "hir_semantic_count");
+        let hir_semantic_parent = graph_buffer!(u32, "hir_semantic_parent");
+        let hir_semantic_first_child = graph_buffer!(u32, "hir_semantic_first_child");
+        let hir_semantic_next_sibling = graph_buffer!(u32, "hir_semantic_next_sibling");
+        let hir_semantic_depth = graph_buffer!(u32, "hir_semantic_depth");
+        let hir_semantic_child_index = graph_buffer!(u32, "hir_semantic_child_index");
+        let hir_semantic_parent_link_a = graph_buffer!(u32, "hir_semantic_parent_link_a");
+        let hir_semantic_parent_link_b = graph_buffer!(u32, "hir_semantic_parent_link_b");
+        let hir_semantic_parent_value_a = graph_buffer!(u32, "hir_semantic_parent_value_a");
+        let hir_semantic_parent_value_b = graph_buffer!(u32, "hir_semantic_parent_value_b");
+        let tree_depth = graph_buffer!(u32, "tree_depth");
         // File identity is fundamentally token-indexed. Production HIR
         // projection resolves it through each raw node's token anchor instead
         // of retaining a duplicate raw-tree-sized column. Debug parsing keeps
         // the historical raw row for detailed parser readback.
-        let default_token_file_id = storage_rw_for_array::<u32>(
-            device,
-            "parser.default_token_file_id",
-            n_tokens.max(1) as usize,
-        );
-        let hir_token_pos =
-            storage_rw_for_array::<u32>(device, "parser.hir_token_pos", tree_capacity as usize);
-        let hir_token_end =
-            storage_rw_for_array::<u32>(device, "parser.hir_token_end", tree_capacity as usize);
-        let hir_token_file_id = if retain_debug_hir_buffers {
-            storage_rw_for_array::<u32>(device, "parser.hir_token_file_id", tree_capacity as usize)
-        } else {
-            // `hir_nodes` reflects this legacy debug output as writable while
-            // also reading `default_token_file_id`. WGPU forbids binding the
-            // same allocation through both access modes even when production
-            // dynamically skips every write.
-            storage_rw_for_array::<u32>(device, "parser.hir_token_file_id.disabled", 1)
-        };
-        let (hir_type_form, hir_type_value_node, hir_type_len_token, hir_type_len_value) =
-            if resident_partial_parse_capacity {
-                // Resident compilation does not expose packed productions as
-                // parser debug artifacts. After `hir_nodes`, the production
-                // streams and tree-prefix scratch are dead, so reuse them for
-                // tree-sized type metadata.
-                (
-                    alias_storage_buffer::<u32, u32>(&out_emit, tree_capacity as usize),
-                    alias_storage_buffer::<u32, u32>(&out_emit_pos, tree_capacity as usize),
-                    alias_storage_buffer::<i32, u32>(&tree_prefix_inblock, tree_capacity as usize),
-                    alias_storage_buffer::<i32, u32>(&tree_prefix, tree_capacity as usize),
-                )
-            } else {
-                (
-                    storage_rw_for_array::<u32>(
-                        device,
-                        "parser.hir_type_form",
-                        tree_capacity as usize,
-                    ),
-                    storage_rw_for_array::<u32>(
-                        device,
-                        "parser.hir_type_value_node",
-                        tree_capacity as usize,
-                    ),
-                    storage_rw_for_array::<u32>(
-                        device,
-                        "parser.hir_type_len_token",
-                        tree_capacity as usize,
-                    ),
-                    storage_rw_for_array::<u32>(
-                        device,
-                        "parser.hir_type_len_value",
-                        tree_capacity as usize,
-                    ),
-                )
-            };
+        let default_token_file_id = graph_buffer!(u32, "token_file_id");
+        let hir_token_pos = graph_buffer!(u32, "hir_token_pos");
+        let hir_token_end = graph_buffer!(u32, "hir_token_end");
+        let hir_token_file_id = graph_buffer!(u32, "hir_token_file_id");
+        let hir_type_form = graph_buffer!(u32, "hir_type_form");
+        let hir_type_value_node = graph_buffer!(u32, "hir_type_value_node");
+        let hir_type_len_token = graph_buffer!(u32, "hir_type_len_token");
+        let hir_type_len_value = graph_buffer!(u32, "hir_type_len_value");
         let hir_type_file_id = if retain_debug_hir_buffers {
             alias_storage_buffer::<u32, u32>(&hir_token_file_id, tree_capacity as usize)
         } else {
             alias_storage_buffer::<u32, u32>(&default_token_file_id, token_input_capacity as usize)
         };
-        // Right-recursive list families use a previous-node record only from
-        // their link pass through the immediately following scatter pass.
-        // Reuse one scratch buffer across those phases; durable next/start/count
-        // records remain separately allocated below.
-        let compact_four_word_capacity = tree_capacity.max(token_input_capacity.saturating_mul(4));
-        let hir_previous_scratch = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_previous_scratch",
-            compact_four_word_capacity as usize,
-        );
-
         // Dense subtree bounds remain live through type checking, where they
         // define flattened recursive type comparisons. Keep the later durable
         // type-leaf relation in distinct storage even in production mode.
-        let hir_type_path_leaf_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_type_path_leaf_node",
-            tree_capacity as usize,
-        );
+        let hir_type_path_leaf_node = graph_buffer!(u32, "hir_type_path_leaf_node");
         // A bound-path leaf is an identifier with a distinct source-token
         // anchor. Production compilation therefore keys the reverse owner
         // relation by that token instead of retaining one row for every raw
         // grammar node. Debug parsing keeps the raw-node domain expected by
         // its detailed readbacks.
-        let hir_bound_path_owner_by_leaf = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_bound_path_owner_by_leaf",
-            if retain_debug_hir_buffers {
-                tree_capacity
-            } else {
-                token_input_capacity
-            } as usize,
-        );
-        let hir_path_root_owner =
-            alias_storage_buffer::<u32, u32>(&hir_list1_owner_a, tree_capacity as usize);
-        let hir_path_segment_owner_a = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_path_segment_owner",
-            tree_capacity as usize,
-        );
-        let hir_path_segment_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let hir_path_segment_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_path_segment_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_path_segment_rank_a = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_path_segment_rank",
-            tree_capacity as usize,
-        );
-        let hir_path_segment_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        // The pointer-jump owner/rank rows above are indexed by raw grammar
-        // nodes. The durable count is not: production consumers address it by
-        // the semantic owner's distinct token anchor, while parser debug
-        // readback preserves the historical raw-node view.
-        let path_segment_count_capacity = if retain_debug_hir_buffers {
-            tree_capacity
-        } else {
-            token_input_capacity
-        };
-        let hir_path_segment_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_path_segment_count",
-            path_segment_count_capacity as usize,
-        );
-        let hir_type_path_leaf_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_type_path_leaf_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_type_path_leaf_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_type_path_leaf_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
+        let hir_bound_path_owner_by_leaf = graph_buffer!(u32, "hir_bound_path_owner_by_leaf");
+        let hir_path_root_owner = graph_buffer!(u32, "hir_path_root_owner");
+        let hir_path_segment_owner_a = graph_buffer!(u32, "hir_path_segment_owner_a");
+        let hir_path_segment_owner_b = graph_buffer!(u32, "hir_path_segment_owner_b");
+        let hir_path_segment_link_a = graph_buffer!(u32, "hir_path_segment_link_a");
+        let hir_path_segment_link_b = graph_buffer!(u32, "hir_path_segment_link_b");
+        let hir_path_segment_rank_a = graph_buffer!(u32, "hir_path_segment_rank_a");
+        let hir_path_segment_rank_b = graph_buffer!(u32, "hir_path_segment_rank_b");
+        let hir_path_segment_count = graph_buffer!(u32, "hir_path_segment_count");
+        let hir_type_path_leaf_link_a = graph_buffer!(u32, "hir_type_path_leaf_link_a");
+        let hir_type_path_leaf_link_b = graph_buffer!(u32, "hir_type_path_leaf_link_b");
+        let hir_type_path_leaf_value_a = graph_buffer!(u32, "hir_type_path_leaf_value_a");
+        let hir_type_path_leaf_value_b = graph_buffer!(u32, "hir_type_path_leaf_value_b");
         // Production canonical HIR compaction consumes the pointer-jumped
-        // owner/rank relation directly. These three raw linked-list summaries
-        // are retained solely for parser debug readback.
-        let type_arg_debug_capacity = if retain_debug_hir_buffers {
-            tree_capacity
-        } else {
-            1
-        };
-        let hir_type_arg_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_type_arg_start",
-            type_arg_debug_capacity as usize,
-        );
-        let hir_type_arg_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_type_arg_count",
-            type_arg_debug_capacity as usize,
-        );
-        let hir_type_arg_next = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_type_arg_next",
-            type_arg_debug_capacity as usize,
-        );
-        let hir_type_alias_target_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_type_alias_target_node",
-            if retain_debug_hir_buffers {
-                tree_capacity
-            } else {
-                token_input_capacity
-            } as usize,
-        );
-        let hir_fn_return_type_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_fn_return_type_node",
-            if retain_debug_hir_buffers {
-                tree_capacity
-            } else {
-                token_input_capacity
-            } as usize,
-        );
-        // Function-signature ownership is a transient pointer-jump family. It
-        // starts after type-alias ownership has been consumed. The function
-        // owner row remains live through parameter-link seeding, so keep it on
-        // the second scratch family while parameter ranks reuse list0.
-        let hir_fn_signature_owner_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_fn_signature_owner_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_fn_signature_return_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_fn_signature_return_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
+        // owner/rank relation directly. These raw linked-list summaries remain
+        // graph workspace in production and become retained outputs only for
+        // parser debug readback.
+        let hir_type_arg_start = graph_buffer!(u32, "hir_type_arg_start");
+        let hir_type_arg_count = graph_buffer!(u32, "hir_type_arg_count");
+        let hir_type_arg_next = graph_buffer!(u32, "hir_type_arg_next");
+        let hir_type_alias_target_node = graph_buffer!(u32, "hir_type_alias_target_node");
+        let hir_fn_return_type_node = graph_buffer!(u32, "hir_fn_return_type_node");
+        let hir_fn_signature_owner_link_a = graph_buffer!(u32, "hir_fn_signature_owner_link_a");
+        let hir_fn_signature_owner_link_b = graph_buffer!(u32, "hir_fn_signature_owner_link_b");
+        let hir_fn_signature_return_owner_a = graph_buffer!(u32, "hir_fn_signature_return_owner_a");
+        let hir_fn_signature_return_owner_b = graph_buffer!(u32, "hir_fn_signature_return_owner_b");
         let hir_fn_signature_function_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_a, tree_capacity as usize);
+            graph_buffer!(u32, "hir_fn_signature_function_owner_a");
         let hir_fn_signature_function_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_b, tree_capacity as usize);
-        let hir_type_arg_owner_a = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_type_arg_owner_a",
-            tree_capacity as usize,
-        );
-        let hir_type_arg_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let hir_type_arg_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_type_arg_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_type_arg_rank_a = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_type_arg_rank_a",
-            tree_capacity as usize,
-        );
-        let hir_type_arg_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let hir_type_arg_previous =
-            alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
-        let hir_type_root_owner = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_type_root_owner",
-            tree_capacity as usize,
-        );
-        let hir_type_alias_owner_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_type_alias_owner_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_type_alias_owner_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_type_alias_owner_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let hir_item_kind = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_item_kind",
-            if retain_debug_hir_buffers {
-                tree_capacity
-            } else {
-                token_input_capacity
-            } as usize,
-        );
-        let hir_item_name_token = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_item_name_token",
-            token_input_capacity as usize,
-        );
-        let hir_item_namespace = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_item_namespace",
-            token_input_capacity as usize,
-        );
-        let hir_item_visibility = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_item_visibility",
-            token_input_capacity as usize,
-        );
-        let hir_item_path_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_item_path_start",
-            token_input_capacity as usize,
-        );
-        let hir_item_path_end = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_item_path_end",
-            token_input_capacity as usize,
-        );
-        let hir_item_path_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_item_path_node",
-            token_input_capacity as usize,
-        );
+            graph_buffer!(u32, "hir_fn_signature_function_owner_b");
+        let hir_type_arg_owner_a = graph_buffer!(u32, "hir_type_arg_owner_a");
+        let hir_type_arg_owner_b = graph_buffer!(u32, "hir_type_arg_owner_b");
+        let hir_type_arg_link_a = graph_buffer!(u32, "hir_type_arg_link_a");
+        let hir_type_arg_link_b = graph_buffer!(u32, "hir_type_arg_link_b");
+        let hir_type_arg_rank_a = graph_buffer!(u32, "hir_type_arg_rank_a");
+        let hir_type_arg_rank_b = graph_buffer!(u32, "hir_type_arg_rank_b");
+        let hir_type_arg_previous = graph_buffer!(u32, "hir_type_arg_previous");
+        let hir_type_root_owner = graph_buffer!(u32, "hir_type_root_owner");
+        let hir_type_alias_owner_link_a = graph_buffer!(u32, "hir_type_alias_owner_link_a");
+        let hir_type_alias_owner_link_b = graph_buffer!(u32, "hir_type_alias_owner_link_b");
+        let hir_type_alias_owner_value_a = graph_buffer!(u32, "hir_type_alias_owner_value_a");
+        let hir_type_alias_owner_value_b = graph_buffer!(u32, "hir_type_alias_owner_value_b");
+        let hir_item_kind = graph_buffer!(u32, "hir_item_kind");
+        let hir_item_name_token = graph_buffer!(u32, "hir_item_name_token");
+        let hir_item_namespace = graph_buffer!(u32, "hir_item_namespace");
+        let hir_item_visibility = graph_buffer!(u32, "hir_item_visibility");
+        let hir_item_path_start = graph_buffer!(u32, "hir_item_path_start");
+        let hir_item_path_end = graph_buffer!(u32, "hir_item_path_end");
+        let hir_item_path_node = graph_buffer!(u32, "hir_item_path_node");
         let hir_item_file_id = if retain_debug_hir_buffers {
             alias_storage_buffer::<u32, u32>(&hir_token_file_id, tree_capacity as usize)
         } else {
             alias_storage_buffer::<u32, u32>(&default_token_file_id, token_input_capacity as usize)
         };
-        let hir_item_import_target_kind = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_item_import_target_kind",
-            token_input_capacity as usize,
-        );
-        let hir_param_record = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_param_record",
-            token_input_capacity.saturating_mul(4) as usize,
-        );
-        let hir_param_type_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_param_type_node",
-            token_input_capacity as usize,
-        );
-        let enum_required =
-            parser_feature_flags & crate::lexer::features::PARSER_FEATURE_ENUMS != 0;
+        let hir_item_import_target_kind = graph_buffer!(u32, "hir_item_import_target_kind");
+        let hir_param_record = graph_buffer!(u32, "hir_param_record");
+        let hir_param_type_node = graph_buffer!(u32, "hir_param_type_node");
         let match_required =
             parser_feature_flags & crate::lexer::features::PARSER_FEATURE_MATCHES != 0;
-        let method_required =
-            parser_feature_flags & crate::lexer::features::PARSER_FEATURE_PREDICATES != 0;
-        let member_required =
-            parser_feature_flags & crate::lexer::features::PARSER_FEATURE_MEMBERS != 0;
-        let string_expr_required =
-            parser_feature_flags & crate::lexer::features::PARSER_FEATURE_STRING_EXPRS != 0;
-        // Method passes bind and write every method field together, so present
-        // families require distinct ranges. When trait/impl syntax is proven
-        // absent, the passes and generic-owner readers never address these
-        // bindings and one binding-safe sentinel row is sufficient.
-        let method_capacity = if method_required || retain_debug_hir_buffers {
-            tree_capacity
-        } else {
-            1
-        };
-        let method_row =
-            |label| storage_rw_for_array::<u32>(device, label, method_capacity as usize);
-        let hir_method_owner_node = method_row("parser.hir_method_owner_node");
-        let hir_method_impl_node = method_row("parser.hir_method_impl_node");
-        let hir_method_name_token = method_row("parser.hir_method_name_token");
-        let hir_method_first_param_token = method_row("parser.hir_method_first_param_token");
-        let hir_method_receiver_mode = method_row("parser.hir_method_receiver_mode");
-        let hir_method_visibility = method_row("parser.hir_method_visibility");
-        let hir_method_signature_flags = method_row("parser.hir_method_signature_flags");
+        // Method passes bind and write every method field together. The graph
+        // keeps these ranges distinct while assigning a one-row sentinel when
+        // predicate syntax is absent from a production job.
+        let hir_method_owner_node = graph_buffer!(u32, "hir_method_owner_node");
+        let hir_method_impl_node = graph_buffer!(u32, "hir_method_impl_node");
+        let hir_method_name_token = graph_buffer!(u32, "hir_method_name_token");
+        let hir_method_first_param_token = graph_buffer!(u32, "hir_method_first_param_token");
+        let hir_method_receiver_mode = graph_buffer!(u32, "hir_method_receiver_mode");
+        let hir_method_visibility = graph_buffer!(u32, "hir_method_visibility");
+        let hir_method_signature_flags = graph_buffer!(u32, "hir_method_signature_flags");
         let hir_method_impl_receiver_type_node =
-            method_row("parser.hir_method_impl_receiver_type_node");
-        let hir_param_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_param_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_param_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
-        let hir_param_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let stmt_record_words = tree_capacity.saturating_mul(4) as usize;
-        let stmt_slot_bytes = tree_capacity as u64 * core::mem::size_of::<u32>() as u64;
-        let storage_alignment =
-            u64::from(device.limits().min_storage_buffer_offset_alignment.max(1));
-        let stmt_slot_stride = stmt_slot_bytes.div_ceil(storage_alignment) * storage_alignment;
-        // Canonical core is the final reader of the raw statement/call rows.
-        // After that pass, one compact-output phase reuses the same allocation
-        // for the six side tables below. Their views coexist and are therefore
-        // packed into aligned, non-overlapping ranges rather than aliased.
-        let compact_count = token_input_capacity as usize;
-        let post_core_output_bytes = phase_arena_bytes(
-            device,
-            [
-                (compact_count, core::mem::size_of::<HirRange>()),
-                (compact_count, core::mem::size_of::<HirPathSegment>()),
-                (compact_count, core::mem::size_of::<HirString>()),
-                (compact_count, core::mem::size_of::<HirMethodCore>()),
-                (compact_count, core::mem::size_of::<HirMethodSignature>()),
-                (compact_count, core::mem::size_of::<HirPredicate>()),
-            ],
-        );
-        let stmt_arena_bytes = stmt_slot_stride
-            .saturating_mul(4)
-            .max(post_core_output_bytes);
-        let stmt_arena_words = stmt_arena_bytes.div_ceil(4) as usize;
-        let hir_stmt_record_arena =
-            storage_rw_for_array::<u32>(device, "parser.hir_stmt_record", stmt_arena_words);
-        let hir_stmt_record = hir_stmt_record_arena
-            .subrange(0, stmt_record_words as u64 * 4, stmt_record_words)
-            .expect("statement record view must fit its phase arena");
-        // Once canonical identity gathers the compact statement record, these
-        // four aligned ranges become call/array/match/struct raw-family rows.
-        let call_phase_row = |label: &str, slot: usize| {
-            if retain_debug_hir_buffers {
-                storage_rw_for_array::<u32>(device, label, tree_capacity as usize)
-            } else {
-                u32_workspace_subrange(device, &hir_stmt_record_arena, slot, tree_capacity as usize)
-                    .expect("statement arena must contain four call-family slots")
-            }
-        };
-        let hir_call_arg_end = call_phase_row("parser.hir_call_arg_end", 0);
-        let hir_call_arg_count = call_phase_row("parser.hir_call_arg_count", 1);
-        let hir_call_arg_parent_call = call_phase_row("parser.hir_call_arg_parent_call", 2);
-        let hir_call_arg_ordinal = call_phase_row("parser.hir_call_arg_ordinal", 3);
-        // Enum rows are source-node-addressed only while enum syntax is
-        // present. The resident pass schedule skips their writers otherwise.
-        let enum_phase_row = |label: &str| {
-            storage_rw_for_array::<u32>(device, label, family_capacities.enum_match as usize)
-        };
-        let hir_variant_parent_enum = enum_phase_row("parser.hir_variant_parent_enum");
-        let hir_variant_ordinal = enum_phase_row("parser.hir_variant_ordinal");
-        let enum_debug_capacity = if enum_required && retain_debug_hir_buffers {
-            tree_capacity as usize
-        } else {
-            1
-        };
-        let hir_variant_payload_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_variant_payload_start",
-            enum_debug_capacity,
-        );
-        let hir_variant_payload_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_variant_payload_count",
-            enum_debug_capacity,
-        );
-        let hir_variant_payload_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_variant_payload_node",
-            if enum_required && retain_debug_hir_buffers {
-                tree_capacity.saturating_mul(4) as usize
-            } else {
-                1
-            },
-        );
-        let hir_variant_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_variant_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let hir_variant_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_variant_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_variant_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
-        let hir_variant_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let hir_variant_payload_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_owner_a, tree_capacity as usize);
-        let hir_variant_payload_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_owner_b, tree_capacity as usize);
-        let hir_variant_payload_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_link_a, tree_capacity as usize);
-        let hir_variant_payload_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_link_b, tree_capacity as usize);
-        let hir_variant_payload_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_a, tree_capacity as usize);
-        let hir_variant_payload_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_b, tree_capacity as usize);
-        let hir_rank_flag = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_rank_flag",
-            compact_four_word_capacity as usize,
-        );
-        let hir_rank_local_prefix = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_rank_local_prefix",
-            compact_four_word_capacity as usize,
-        );
-        let hir_rank_block_sum = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_rank_block_sum",
-            tree_n_node_blocks as usize,
-        );
-        let hir_rank_block_prefix_a = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_rank_block_prefix_a",
-            tree_n_node_blocks as usize,
-        );
-        let hir_rank_block_prefix_b = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_rank_block_prefix_b",
-            tree_n_node_blocks as usize,
-        );
-        let hir_rank_node =
-            storage_rw_for_array::<u32>(device, "parser.hir_rank_node", tree_capacity as usize);
-        let hir_rank_count = storage_rw_for_array::<u32>(device, "parser.hir_rank_count", 1);
-        let hir_rank_dispatch_args = dispatch_args_buffer(device, "parser.hir_rank_dispatch_args");
-        let hir_list_rank_flag =
-            alias_storage_buffer::<u32, u32>(&hir_rank_flag, tree_capacity as usize);
-        let hir_list_rank_local_prefix =
-            alias_storage_buffer::<u32, u32>(&hir_rank_local_prefix, tree_capacity as usize);
-        let hir_list_rank_block_sum =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_sum, tree_n_node_blocks as usize);
-        let hir_list_rank_block_prefix_a =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_prefix_a, tree_n_node_blocks as usize);
-        let hir_list_rank_block_prefix_b =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_prefix_b, tree_n_node_blocks as usize);
-        let hir_list_rank_node =
-            alias_storage_buffer::<u32, u32>(&hir_rank_node, tree_capacity as usize);
-        let hir_list_rank_count = alias_storage_buffer::<u32, u32>(&hir_rank_count, 1);
-        let hir_list_rank_dispatch_args =
-            alias_storage_buffer::<u32, u32>(&hir_rank_dispatch_args, 3);
-        let hir_enum_rank_flag =
-            alias_storage_buffer::<u32, u32>(&hir_rank_flag, tree_capacity as usize);
-        let hir_enum_rank_local_prefix =
-            alias_storage_buffer::<u32, u32>(&hir_rank_local_prefix, tree_capacity as usize);
-        let hir_enum_rank_block_sum =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_sum, tree_n_node_blocks as usize);
-        let hir_enum_rank_block_prefix_a =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_prefix_a, tree_n_node_blocks as usize);
-        let hir_enum_rank_block_prefix_b =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_prefix_b, tree_n_node_blocks as usize);
-        let hir_enum_rank_node =
-            alias_storage_buffer::<u32, u32>(&hir_rank_node, tree_capacity as usize);
-        let hir_enum_rank_count = alias_storage_buffer::<u32, u32>(&hir_rank_count, 1);
-        let hir_enum_rank_dispatch_args =
-            alias_storage_buffer::<u32, u32>(&hir_rank_dispatch_args, 3);
-        let hir_match_scrutinee_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_scrutinee_node",
-            if match_required { tree_capacity } else { 1 } as usize,
-        );
-        let match_debug_capacity = if match_required && retain_debug_hir_buffers {
-            tree_capacity as usize
-        } else {
-            1
-        };
+            graph_buffer!(u32, "hir_method_impl_receiver_type_node");
+        let hir_param_owner_a = graph_buffer!(u32, "hir_param_owner_a");
+        let hir_param_link_a = graph_buffer!(u32, "hir_param_link_a");
+        let hir_param_rank_a = graph_buffer!(u32, "hir_param_rank_a");
+        let hir_param_rank_b = graph_buffer!(u32, "hir_param_rank_b");
+        let hir_stmt_record = graph_buffer!(u32, "hir_stmt_record");
+        let hir_call_arg_end = graph_buffer!(u32, "hir_call_arg_end");
+        let hir_call_arg_count = graph_buffer!(u32, "hir_call_arg_count");
+        let hir_call_arg_parent_call = graph_buffer!(u32, "hir_call_arg_parent_call");
+        let hir_call_arg_ordinal = graph_buffer!(u32, "hir_call_arg_ordinal");
+        let hir_variant_parent_enum = graph_buffer!(u32, "hir_variant_parent_enum");
+        let hir_variant_ordinal = graph_buffer!(u32, "hir_variant_ordinal");
+        let hir_variant_payload_start = graph_buffer!(u32, "hir_variant_payload_start");
+        let hir_variant_payload_count = graph_buffer!(u32, "hir_variant_payload_count");
+        let hir_variant_payload_node = graph_buffer!(u32, "hir_variant_payload_node");
+        let hir_variant_owner_a = graph_buffer!(u32, "hir_variant_owner_a");
+        let hir_variant_owner_b = graph_buffer!(u32, "hir_variant_owner_b");
+        let hir_variant_link_a = graph_buffer!(u32, "hir_variant_link_a");
+        let hir_variant_link_b = graph_buffer!(u32, "hir_variant_link_b");
+        let hir_variant_rank_a = graph_buffer!(u32, "hir_variant_rank_a");
+        let hir_variant_rank_b = graph_buffer!(u32, "hir_variant_rank_b");
+        let hir_variant_payload_owner_a = graph_buffer!(u32, "hir_variant_payload_owner_a");
+        let hir_variant_payload_owner_b = graph_buffer!(u32, "hir_variant_payload_owner_b");
+        let hir_variant_payload_link_a = graph_buffer!(u32, "hir_variant_payload_link_a");
+        let hir_variant_payload_link_b = graph_buffer!(u32, "hir_variant_payload_link_b");
+        let hir_variant_payload_rank_a = graph_buffer!(u32, "hir_variant_payload_rank_a");
+        let hir_variant_payload_rank_b = graph_buffer!(u32, "hir_variant_payload_rank_b");
+        let hir_list_rank_flag = graph_buffer!(u32, "hir_list_rank_flag");
+        let hir_list_rank_local_prefix = graph_buffer!(u32, "hir_list_rank_local_prefix");
+        let hir_list_rank_block_sum = graph_buffer!(u32, "hir_list_rank_block_sum");
+        let hir_list_rank_block_prefix_a = graph_buffer!(u32, "hir_list_rank_block_prefix_a");
+        let hir_list_rank_block_prefix_b = graph_buffer!(u32, "hir_list_rank_block_prefix_b");
+        let hir_list_rank_node = graph_buffer!(u32, "hir_list_rank_node");
+        let hir_list_rank_count = graph_buffer!(u32, "hir_list_rank_count");
+        let hir_list_rank_dispatch_args = graph_buffer!(u32, "hir_list_rank_dispatch_args");
+        let hir_enum_rank_flag = graph_buffer!(u32, "hir_enum_rank_flag");
+        let hir_enum_rank_local_prefix = graph_buffer!(u32, "hir_enum_rank_local_prefix");
+        let hir_enum_rank_block_sum = graph_buffer!(u32, "hir_enum_rank_block_sum");
+        let hir_enum_rank_block_prefix_a = graph_buffer!(u32, "hir_enum_rank_block_prefix_a");
+        let hir_enum_rank_block_prefix_b = graph_buffer!(u32, "hir_enum_rank_block_prefix_b");
+        let hir_enum_rank_node = graph_buffer!(u32, "hir_enum_rank_node");
+        let hir_enum_rank_count = graph_buffer!(u32, "hir_enum_rank_count");
+        let hir_enum_rank_dispatch_args = graph_buffer!(u32, "hir_enum_rank_dispatch_args");
+        let hir_match_scrutinee_node = graph_buffer!(u32, "hir_match_scrutinee_node");
         let hir_match_arm_start =
-            storage_rw_for_array::<u32>(device, "parser.hir_match_arm_start", match_debug_capacity);
+            optional_graph_buffer!(u32, "hir_match_arm_start", match_required);
         let hir_match_arm_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_match_arm_count", match_debug_capacity);
-        let hir_match_arm_next =
-            storage_rw_for_array::<u32>(device, "parser.hir_match_arm_next", match_debug_capacity);
-        let match_phase_row = |label: &str, reuse: &LaniusBuffer<u32>| {
-            if !match_required {
-                storage_rw_for_array::<u32>(device, label, 1)
-            } else if retain_debug_hir_buffers {
-                storage_rw_for_array::<u32>(device, label, tree_capacity as usize)
-            } else {
-                alias_storage_buffer::<u32, u32>(reuse, tree_capacity as usize)
-            }
-        };
-        let hir_match_arm_pattern_node = match_phase_row(
-            "parser.hir_match_arm_pattern_node",
-            &hir_call_arg_parent_call,
-        );
-        let hir_match_pattern_owner_arm = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_pattern_owner_arm",
-            if match_required {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_match_arm_payload_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_arm_payload_start",
-            match_debug_capacity,
-        );
-        let hir_match_arm_payload_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_arm_payload_count",
-            match_debug_capacity,
-        );
+            optional_graph_buffer!(u32, "hir_match_arm_count", match_required);
+        let hir_match_arm_next = optional_graph_buffer!(u32, "hir_match_arm_next", match_required);
+        let hir_match_arm_pattern_node =
+            optional_graph_buffer!(u32, "hir_match_arm_pattern_node", match_required);
+        let hir_match_pattern_owner_arm =
+            optional_graph_buffer!(u32, "hir_match_pattern_owner_arm", match_required);
+        let hir_match_arm_payload_start =
+            optional_graph_buffer!(u32, "hir_match_arm_payload_start", match_required);
+        let hir_match_arm_payload_count =
+            optional_graph_buffer!(u32, "hir_match_arm_payload_count", match_required);
         let hir_match_arm_result_node =
-            match_phase_row("parser.hir_match_arm_result_node", &hir_call_arg_end);
-        // Enum-link reconstruction binds arm patterns and payload owners in
-        // one writable pass. Disjoint logical production rows do not make an
-        // overlapping WebGPU storage range safe.
-        let hir_match_payload_owner_arm = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_payload_owner_arm",
-            if match_required { tree_capacity } else { 1 } as usize,
-        );
+            optional_graph_buffer!(u32, "hir_match_arm_result_node", match_required);
+        let hir_match_payload_owner_arm =
+            optional_graph_buffer!(u32, "hir_match_payload_owner_arm", match_required);
         let hir_match_payload_match_node =
-            match_phase_row("parser.hir_match_payload_match_node", &hir_call_arg_count);
+            optional_graph_buffer!(u32, "hir_match_payload_match_node", match_required);
         let hir_match_payload_ordinal =
-            match_phase_row("parser.hir_match_payload_ordinal", &hir_call_arg_ordinal);
+            optional_graph_buffer!(u32, "hir_match_payload_ordinal", match_required);
         let hir_match_arm_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_arm_owner_a", match_required);
         let hir_match_arm_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_arm_owner_b", match_required);
         let hir_match_arm_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_arm_link_a", match_required);
         let hir_match_arm_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_arm_link_b", match_required);
         let hir_match_arm_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_arm_rank_a", match_required);
         let hir_match_arm_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_arm_rank_b", match_required);
         let hir_match_arm_previous =
-            alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_arm_previous", match_required);
         let hir_match_payload_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_owner_a, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_payload_owner_a", match_required);
         let hir_match_payload_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_owner_b, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_payload_owner_b", match_required);
         let hir_match_payload_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_link_a, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_payload_link_a", match_required);
         let hir_match_payload_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_link_b, tree_capacity as usize);
-        let hir_match_pattern_parent = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_pattern_parent",
-            if match_required {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_match_pattern_parent_b = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_pattern_parent_b",
-            if match_required {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
+            optional_graph_buffer!(u32, "hir_match_payload_link_b", match_required);
+        let hir_match_pattern_parent =
+            optional_graph_buffer!(u32, "hir_match_pattern_parent", match_required);
+        let hir_match_pattern_parent_b =
+            optional_graph_buffer!(u32, "hir_match_pattern_parent_b", match_required);
         let hir_match_payload_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_a, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_payload_rank_a", match_required);
         let hir_match_payload_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_b, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_payload_rank_b", match_required);
         let hir_match_rank_flag =
-            alias_storage_buffer::<u32, u32>(&hir_rank_flag, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_rank_flag", match_required);
         let hir_match_rank_local_prefix =
-            alias_storage_buffer::<u32, u32>(&hir_rank_local_prefix, tree_capacity as usize);
+            optional_graph_buffer!(u32, "hir_match_rank_local_prefix", match_required);
         let hir_match_rank_block_sum =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_sum, tree_n_node_blocks as usize);
+            optional_graph_buffer!(u32, "hir_match_rank_block_sum", match_required);
         let hir_match_rank_block_prefix_a =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_prefix_a, tree_n_node_blocks as usize);
+            optional_graph_buffer!(u32, "hir_match_rank_block_prefix_a", match_required);
         let hir_match_rank_block_prefix_b =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_prefix_b, tree_n_node_blocks as usize);
+            optional_graph_buffer!(u32, "hir_match_rank_block_prefix_b", match_required);
         let hir_match_rank_node =
-            alias_storage_buffer::<u32, u32>(&hir_rank_node, tree_capacity as usize);
-        let hir_match_rank_count = alias_storage_buffer::<u32, u32>(&hir_rank_count, 1);
-        let hir_match_rank_dispatch_args =
-            alias_storage_buffer::<u32, u32>(&hir_rank_dispatch_args, 3);
-        let hir_call_callee_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_call_callee_node",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                token_input_capacity as usize
-            },
-        );
-        let hir_call_callee_path_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_call_callee_path_node",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_call_parent_by_callee = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_call_parent_by_callee",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_call_context_stmt_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_call_context_stmt_node",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_call_arg_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_call_arg_start",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_call_arg_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_call_arg_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let hir_call_arg_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_call_arg_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_call_arg_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
-        let hir_call_arg_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let hir_array_lit_first_element = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_array_lit_first_element",
-            if retain_debug_hir_buffers {
-                family_capacities.arrays as usize
-            } else {
-                1
-            },
-        );
-        let hir_array_lit_element_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_array_lit_element_count",
-            if retain_debug_hir_buffers {
-                family_capacities.arrays as usize
-            } else {
-                1
-            },
-        );
-        let hir_array_lit_context_stmt_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_array_lit_context_stmt_node",
-            if retain_debug_hir_buffers {
-                family_capacities.arrays as usize
-            } else {
-                1
-            },
-        );
-        let hir_array_element_parent_lit = if retain_debug_hir_buffers {
-            storage_rw_for_array::<u32>(
-                device,
-                "parser.hir_array_element_parent_lit",
-                family_capacities.arrays as usize,
-            )
+            optional_graph_buffer!(u32, "hir_match_rank_node", match_required);
+        let hir_match_rank_count =
+            optional_graph_buffer!(u32, "hir_match_rank_count", match_required);
+        let hir_match_rank_dispatch_args = if match_required {
+            graph_buffer!(u32, "hir_match_rank_dispatch_args")
         } else {
+            storage_rw_for_array::<u32>(device, "parser.hir_match_rank_dispatch_args.disabled", 3)
+        };
+        let hir_call_callee_node = graph_buffer!(u32, "hir_call_callee_node");
+        let hir_call_callee_path_node = graph_buffer!(u32, "hir_call_callee_path_node");
+        let hir_call_parent_by_callee = graph_buffer!(u32, "hir_call_parent_by_callee");
+        let hir_call_context_stmt_node = graph_buffer!(u32, "hir_call_context_stmt_node");
+        let hir_call_arg_start = graph_buffer!(u32, "hir_call_arg_start");
+        let hir_call_arg_owner_a = graph_buffer!(u32, "hir_call_arg_owner_a");
+        let hir_call_arg_owner_b = graph_buffer!(u32, "hir_call_arg_owner_b");
+        let hir_call_arg_link_a = graph_buffer!(u32, "hir_call_arg_link_a");
+        let hir_call_arg_link_b = graph_buffer!(u32, "hir_call_arg_link_b");
+        let hir_call_arg_rank_a = graph_buffer!(u32, "hir_call_arg_rank_a");
+        let hir_call_arg_rank_b = graph_buffer!(u32, "hir_call_arg_rank_b");
+        let hir_array_lit_first_element = graph_buffer!(u32, "hir_array_lit_first_element");
+        let hir_array_lit_element_count = graph_buffer!(u32, "hir_array_lit_element_count");
+        let hir_array_lit_context_stmt_node = graph_buffer!(u32, "hir_array_lit_context_stmt_node");
+        let hir_array_element_parent_lit = graph_buffer!(u32, "hir_array_element_parent_lit");
+        let hir_array_element_ordinal = graph_buffer!(u32, "hir_array_element_ordinal");
+        let hir_array_element_next = graph_buffer!(u32, "hir_array_element_next");
+        let hir_array_element_owner_a = graph_buffer!(u32, "hir_array_element_owner_a");
+        let hir_array_element_owner_b = graph_buffer!(u32, "hir_array_element_owner_b");
+        let hir_array_element_link_a = graph_buffer!(u32, "hir_array_element_link_a");
+        let hir_array_element_link_b = graph_buffer!(u32, "hir_array_element_link_b");
+        let hir_array_element_rank_a = graph_buffer!(u32, "hir_array_element_rank_a");
+        let hir_array_element_rank_b = graph_buffer!(u32, "hir_array_element_rank_b");
+        let hir_array_element_previous = graph_buffer!(u32, "hir_array_element_previous");
+        let hir_expr_record = graph_buffer!(u32, "hir_expr_record");
+        let hir_expr_name_role = graph_buffer!(u32, "hir_expr_name_role");
+        let hir_expr_result_root_node = graph_buffer!(u32, "hir_expr_result_root_node");
+        let hir_expr_result_root_scratch_node =
+            graph_buffer!(u32, "hir_expr_result_root_scratch_node");
+        let hir_binary_span_link_a = graph_buffer!(u32, "hir_binary_span_link_a");
+        let hir_binary_span_start_a = graph_buffer!(u32, "hir_binary_span_start_a");
+        let binary_span_steps =
+            super::passes::hir::binary::span::step::pointer_jump_steps_for_items(tree_capacity);
+        // Trees covered entirely by the shader's local 32-node walk schedule
+        // no ping-pong pass. In that graph specialization the B resources have
+        // no lifetime (and therefore no physical slot); preserve the uniform
+        // buffer model with aliases that can never be bound alongside A.
+        let hir_binary_span_link_b = if binary_span_steps == 0 {
+            alias_storage_buffer::<u32, u32>(&hir_binary_span_link_a, hir_binary_span_link_a.count)
+        } else {
+            graph_buffer!(u32, "hir_binary_span_link_b")
+        };
+        let hir_binary_span_start_b = if binary_span_steps == 0 {
             alias_storage_buffer::<u32, u32>(
-                &hir_call_arg_parent_call,
-                family_capacities.arrays as usize,
-            )
-        };
-        let hir_array_element_ordinal = if retain_debug_hir_buffers {
-            storage_rw_for_array::<u32>(
-                device,
-                "parser.hir_array_element_ordinal",
-                family_capacities.arrays as usize,
+                &hir_binary_span_start_a,
+                hir_binary_span_start_a.count,
             )
         } else {
-            alias_storage_buffer::<u32, u32>(
-                &hir_call_arg_ordinal,
-                family_capacities.arrays as usize,
-            )
+            graph_buffer!(u32, "hir_binary_span_start_b")
         };
-        let hir_array_element_next = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_array_element_next",
-            if retain_debug_hir_buffers {
-                family_capacities.arrays as usize
-            } else {
-                1
-            },
-        );
-        let hir_array_element_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_array_element_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let hir_array_element_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_array_element_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_array_element_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
-        let hir_array_element_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let hir_array_element_previous =
-            alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
-        let expr_record_words = tree_capacity.saturating_mul(4) as usize;
-        let compact_slot_bytes = u64::from(token_input_capacity)
-            .saturating_mul(4)
-            .saturating_mul(core::mem::size_of::<u32>() as u64);
-        let compact_slot_stride = compact_slot_bytes
-            .div_ceil(storage_alignment)
-            .saturating_mul(storage_alignment);
-        let expr_arena_words = if retain_debug_hir_buffers {
-            expr_record_words
-        } else {
-            // The raw four-word expression record owns this arena until
-            // canonical identity has gathered it. Afterwards, six compact
-            // four-word side tables occupy aligned, disjoint ranges. Fields
-            // use durable storage because their final compaction is later than
-            // the other expression-arena consumers. Size for
-            // both lifetimes explicitly: token and raw-tree capacities are
-            // related by grammar expansion, but neither is guaranteed larger.
-            let raw_expr_bytes = (expr_record_words as u64).saturating_mul(4);
-            raw_expr_bytes
-                .max(compact_slot_stride.saturating_mul(6))
-                .div_ceil(4) as usize
-        };
-        let hir_expr_record_arena =
-            storage_rw_for_array::<u32>(device, "parser.hir_expr_record", expr_arena_words);
-        let hir_expr_record = hir_expr_record_arena
-            .subrange(0, expr_record_words as u64 * 4, expr_record_words)
-            .expect("expression record view must fit its phase arena");
-        let hir_expr_name_role = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_expr_name_role",
-            if retain_debug_hir_buffers {
-                tree_capacity
-            } else {
-                token_input_capacity
-            } as usize,
-        );
-        let hir_expr_result_root_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_expr_result_root_node",
-            tree_capacity as usize,
-        );
-        let hir_expr_result_root_scratch_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_expr_result_root_scratch_node",
-            tree_capacity as usize,
-        );
-        let hir_binary_span_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_binary_span_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_binary_span_start_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
-        let hir_binary_span_start_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let hir_expr_int_value = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_expr_int_value",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                token_input_capacity as usize
-            },
-        );
-        let hir_expr_float_bits = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_expr_float_bits",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                token_input_capacity as usize
-            },
-        );
-        let literal_row_capacity = if retain_debug_hir_buffers {
-            tree_capacity
-        } else {
-            token_input_capacity
-        };
+        let hir_expr_int_value = graph_buffer!(u32, "hir_expr_int_value");
+        let hir_expr_float_bits = graph_buffer!(u32, "hir_expr_float_bits");
         // Literal rows are token-anchored in production. Integer and float
         // literals still initialize these columns, so an absent string family
         // uses token capacity rather than a one-row sentinel, but never raw
         // grammar-tree capacity.
-        let hir_expr_string_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_expr_string_start",
-            literal_row_capacity as usize,
-        );
-        let hir_expr_string_len = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_expr_string_len",
-            literal_row_capacity as usize,
-        );
+        let hir_expr_string_start = graph_buffer!(u32, "hir_expr_string_start");
+        let hir_expr_string_len = graph_buffer!(u32, "hir_expr_string_len");
         let hir_literal_values_params = uniform_from_val(
             device,
             "parser.hir_literal_values.params",
@@ -2245,306 +1450,82 @@ impl ParserBuffers {
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
             },
         );
-        let hir_string_data_offset = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_string_data_offset",
-            if string_expr_required {
-                literal_row_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_string_decoded_len = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_string_decoded_len",
-            if string_expr_required {
-                literal_row_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_string_data_words = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_string_data_words",
-            if string_expr_required {
-                source_capacity.max(1).div_ceil(4) as usize
-            } else {
-                1
-            },
-        );
-        let hir_string_pool_len =
-            storage_rw_for_array::<u32>(device, "parser.hir_string_pool_len", 1);
-        let hir_string_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_string_node",
-            if string_expr_required {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_string_count = storage_rw_for_array::<u32>(device, "parser.hir_string_count", 1);
-        let hir_member_receiver_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_member_receiver_node",
-            if member_required || retain_debug_hir_buffers {
-                tree_capacity
-            } else {
-                1
-            } as usize,
-        );
-        let hir_member_receiver_token = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_member_receiver_token",
-            if member_required || retain_debug_hir_buffers {
-                tree_capacity
-            } else {
-                1
-            } as usize,
-        );
-        let hir_member_name_token = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_member_name_token",
-            if member_required || retain_debug_hir_buffers {
-                tree_capacity
-            } else {
-                1
-            } as usize,
-        );
-        let hir_stmt_scope_end = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_stmt_scope_end",
-            if retain_debug_hir_buffers {
-                tree_capacity
-            } else {
-                token_input_capacity
-            } as usize,
-        );
-        let hir_nearest_stmt_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_nearest_stmt_node",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_nearest_block_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_nearest_block_node",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_nearest_enclosing_control_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_nearest_enclosing_control_node",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_nearest_loop_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_nearest_loop_node",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_nearest_fn_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_nearest_fn_node",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let hir_nearest_array_element_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_nearest_array_element_node",
-            if retain_debug_hir_buffers {
-                tree_capacity as usize
-            } else {
-                1
-            },
-        );
-        let struct_phase_row = |label: &str, reuse: &LaniusBuffer<u32>| {
-            if retain_debug_hir_buffers {
-                storage_rw_for_array::<u32>(device, label, family_capacities.structs as usize)
-            } else {
-                alias_storage_buffer::<u32, u32>(reuse, family_capacities.structs as usize)
-            }
-        };
-        // Calls, arrays, and matches have all been compacted before struct
-        // reconstruction starts. Reuse those four raw columns for the four
-        // simultaneously-live struct facts.
-        let hir_struct_field_parent_struct = struct_phase_row(
-            "parser.hir_struct_field_parent_struct",
-            &hir_call_arg_parent_call,
-        );
-        let hir_struct_field_ordinal =
-            struct_phase_row("parser.hir_struct_field_ordinal", &hir_call_arg_ordinal);
-        let hir_struct_field_type_node =
-            struct_phase_row("parser.hir_struct_field_type_node", &hir_call_arg_end);
-        let hir_struct_decl_field_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_struct_decl_field_start",
-            if retain_debug_hir_buffers {
-                family_capacities.structs as usize
-            } else {
-                1
-            },
-        );
-        let hir_struct_decl_field_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_struct_decl_field_count",
-            if retain_debug_hir_buffers {
-                family_capacities.structs as usize
-            } else {
-                1
-            },
-        );
-        let hir_struct_lit_head_node =
-            struct_phase_row("parser.hir_struct_lit_head_node", &hir_call_arg_count);
-        let hir_struct_lit_context_stmt_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_struct_lit_context_stmt_node",
-            if retain_debug_hir_buffers {
-                family_capacities.structs as usize
-            } else {
-                1
-            },
-        );
-        let hir_struct_lit_field_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_struct_lit_field_start",
-            if retain_debug_hir_buffers {
-                family_capacities.structs as usize
-            } else {
-                1
-            },
-        );
-        let hir_struct_lit_field_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_struct_lit_field_count",
-            if retain_debug_hir_buffers {
-                family_capacities.structs as usize
-            } else {
-                1
-            },
-        );
-        // These facts are written through distinct shader bindings in the
-        // same struct passes. Even though declaration and literal field rows
-        // are disjoint grammar productions, overlapping writable bindings do
-        // not establish a valid GPU ownership contract. Keep the physical
-        // ranges distinct until declaration fields have been compacted.
-        let hir_struct_lit_field_parent_lit = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_struct_lit_field_parent_lit",
-            if retain_debug_hir_buffers {
-                family_capacities.structs
-            } else {
-                token_input_capacity
-            } as usize,
-        );
-        let hir_struct_lit_field_value_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_struct_lit_field_value_node",
-            if retain_debug_hir_buffers {
-                family_capacities.structs
-            } else {
-                token_input_capacity
-            } as usize,
-        );
+        let hir_string_data_offset = graph_buffer!(u32, "hir_string_data_offset");
+        let hir_string_decoded_len = graph_buffer!(u32, "hir_string_decoded_len");
+        let hir_string_data_words = graph_buffer!(u32, "hir_string_data_words");
+        let hir_string_pool_len = graph_buffer!(u32, "hir_string_pool_len");
+        let hir_string_node = graph_buffer!(u32, "hir_string_node");
+        let hir_string_count = graph_buffer!(u32, "hir_string_count");
+        let hir_member_receiver_node = graph_buffer!(u32, "hir_member_receiver_node");
+        let hir_member_receiver_token = graph_buffer!(u32, "hir_member_receiver_token");
+        let hir_member_name_token = graph_buffer!(u32, "hir_member_name_token");
+        let hir_stmt_scope_end = graph_buffer!(u32, "hir_stmt_scope_end");
+        let hir_nearest_stmt_node = graph_buffer!(u32, "hir_nearest_stmt_node");
+        let hir_nearest_block_node = graph_buffer!(u32, "hir_nearest_block_node");
+        let hir_nearest_enclosing_control_node =
+            graph_buffer!(u32, "hir_nearest_enclosing_control_node");
+        let hir_nearest_loop_node = graph_buffer!(u32, "hir_nearest_loop_node");
+        let hir_nearest_fn_node = graph_buffer!(u32, "hir_nearest_fn_node");
+        let hir_nearest_array_element_node = graph_buffer!(u32, "hir_nearest_array_element_node");
+        let hir_struct_field_parent_struct = graph_buffer!(u32, "hir_struct_field_parent_struct");
+        let hir_struct_field_ordinal = graph_buffer!(u32, "hir_struct_field_ordinal");
+        let hir_struct_field_type_node = graph_buffer!(u32, "hir_struct_field_type_node");
+        let hir_struct_decl_field_start = graph_buffer!(u32, "hir_struct_decl_field_start");
+        let hir_struct_decl_field_count = graph_buffer!(u32, "hir_struct_decl_field_count");
+        let hir_struct_lit_head_node = graph_buffer!(u32, "hir_struct_lit_head_node");
+        let hir_struct_lit_context_stmt_node =
+            graph_buffer!(u32, "hir_struct_lit_context_stmt_node");
+        let hir_struct_lit_field_start = graph_buffer!(u32, "hir_struct_lit_field_start");
+        let hir_struct_lit_field_count = graph_buffer!(u32, "hir_struct_lit_field_count");
+        let hir_struct_lit_field_parent_lit = graph_buffer!(u32, "hir_struct_lit_field_parent_lit");
+        let hir_struct_lit_field_value_node = graph_buffer!(u32, "hir_struct_lit_field_value_node");
         // `prev_sibling` is consumed for the last time by
         // `hir_struct_field_links`. The following rank/scatter passes do not
         // read it, so the final struct-literal next-link output can reuse that
         // tree-sized buffer instead of retaining one more parser allocation.
         let hir_struct_lit_field_next =
             alias_storage_buffer::<u32, u32>(&prev_sibling, tree_capacity as usize);
-        let hir_struct_field_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_struct_field_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let hir_struct_field_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_struct_field_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_struct_field_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
-        let hir_struct_field_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let hir_struct_lit_field_owner_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_owner_a, tree_capacity as usize);
-        let hir_struct_lit_field_owner_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_owner_b, tree_capacity as usize);
-        let hir_struct_lit_field_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_link_a, tree_capacity as usize);
-        let hir_struct_lit_field_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_link_b, tree_capacity as usize);
-        let hir_struct_lit_field_rank_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_a, tree_capacity as usize);
-        let hir_struct_lit_field_rank_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_b, tree_capacity as usize);
-        let hir_struct_lit_field_previous =
-            alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
-        let hir_stmt_context_link_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
-        let hir_stmt_context_link_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
-        let hir_contextual_stmt_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
-        let hir_contextual_stmt_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
-        let hir_nearest_stmt_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_owner_a, tree_capacity as usize);
-        let hir_nearest_stmt_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_owner_b, tree_capacity as usize);
-        let hir_nearest_block_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_link_a, tree_capacity as usize);
-        let hir_nearest_block_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_link_b, tree_capacity as usize);
+        let hir_struct_field_owner_a = graph_buffer!(u32, "hir_struct_field_owner_a");
+        let hir_struct_field_owner_b = graph_buffer!(u32, "hir_struct_field_owner_b");
+        let hir_struct_field_link_a = graph_buffer!(u32, "hir_struct_field_link_a");
+        let hir_struct_field_link_b = graph_buffer!(u32, "hir_struct_field_link_b");
+        let hir_struct_field_rank_a = graph_buffer!(u32, "hir_struct_field_rank_a");
+        let hir_struct_field_rank_b = graph_buffer!(u32, "hir_struct_field_rank_b");
+        let hir_struct_lit_field_owner_a = graph_buffer!(u32, "hir_struct_lit_field_owner_a");
+        let hir_struct_lit_field_owner_b = graph_buffer!(u32, "hir_struct_lit_field_owner_b");
+        let hir_struct_lit_field_link_a = graph_buffer!(u32, "hir_struct_lit_field_link_a");
+        let hir_struct_lit_field_link_b = graph_buffer!(u32, "hir_struct_lit_field_link_b");
+        let hir_struct_lit_field_rank_a = graph_buffer!(u32, "hir_struct_lit_field_rank_a");
+        let hir_struct_lit_field_rank_b = graph_buffer!(u32, "hir_struct_lit_field_rank_b");
+        let hir_struct_lit_field_previous = graph_buffer!(u32, "hir_struct_lit_field_previous");
+        let hir_stmt_context_link_a = graph_buffer!(u32, "hir_stmt_context_link_a");
+        let hir_stmt_context_link_b = graph_buffer!(u32, "hir_stmt_context_link_b");
+        let hir_contextual_stmt_value_a = graph_buffer!(u32, "hir_contextual_stmt_value_a");
+        let hir_contextual_stmt_value_b = graph_buffer!(u32, "hir_contextual_stmt_value_b");
+        let hir_nearest_stmt_value_a = graph_buffer!(u32, "hir_nearest_stmt_value_a");
+        let hir_nearest_stmt_value_b = graph_buffer!(u32, "hir_nearest_stmt_value_b");
+        let hir_nearest_block_value_a = graph_buffer!(u32, "hir_nearest_block_value_a");
+        let hir_nearest_block_value_b = graph_buffer!(u32, "hir_nearest_block_value_b");
         let hir_nearest_enclosing_control_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
+            graph_buffer!(u32, "hir_nearest_enclosing_control_value_a");
         let hir_nearest_enclosing_control_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
-        let hir_nearest_loop_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_rank_flag, tree_capacity as usize);
-        let hir_nearest_loop_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_rank_node, tree_capacity as usize);
-        let hir_nearest_fn_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_a, tree_capacity as usize);
-        let hir_nearest_fn_value_b =
-            alias_storage_buffer::<u32, u32>(&hir_list1_rank_b, tree_capacity as usize);
-        // These scratch rows are dead after expression-root and array-element
-        // records are finalized, immediately before context propagation starts.
+            graph_buffer!(u32, "hir_nearest_enclosing_control_value_b");
+        let hir_nearest_loop_value_a = graph_buffer!(u32, "hir_nearest_loop_value_a");
+        let hir_nearest_loop_value_b = graph_buffer!(u32, "hir_nearest_loop_value_b");
+        let hir_nearest_fn_value_a = graph_buffer!(u32, "hir_nearest_fn_value_a");
+        let hir_nearest_fn_value_b = graph_buffer!(u32, "hir_nearest_fn_value_b");
         let hir_nearest_array_element_value_a =
-            alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
-        let hir_nearest_array_element_value_b = alias_storage_buffer::<u32, u32>(
-            &hir_expr_result_root_scratch_node,
-            tree_capacity as usize,
-        );
-        let hir_struct_rank_flag =
-            alias_storage_buffer::<u32, u32>(&hir_rank_flag, tree_capacity as usize);
-        let hir_struct_rank_local_prefix =
-            alias_storage_buffer::<u32, u32>(&hir_rank_local_prefix, tree_capacity as usize);
-        let hir_struct_rank_block_sum =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_sum, tree_n_node_blocks as usize);
-        let hir_struct_rank_block_prefix_a =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_prefix_a, tree_n_node_blocks as usize);
-        let hir_struct_rank_block_prefix_b =
-            alias_storage_buffer::<u32, u32>(&hir_rank_block_prefix_b, tree_n_node_blocks as usize);
-        let hir_struct_rank_node =
-            alias_storage_buffer::<u32, u32>(&hir_rank_node, tree_capacity as usize);
-        let hir_struct_rank_count = alias_storage_buffer::<u32, u32>(&hir_rank_count, 1);
-        let hir_struct_rank_dispatch_args =
-            alias_storage_buffer::<u32, u32>(&hir_rank_dispatch_args, 3);
+            graph_buffer!(u32, "hir_nearest_array_element_value_a");
+        let hir_nearest_array_element_value_b =
+            graph_buffer!(u32, "hir_nearest_array_element_value_b");
+        let hir_struct_rank_flag = graph_buffer!(u32, "hir_struct_rank_flag");
+        let hir_struct_rank_local_prefix = graph_buffer!(u32, "hir_struct_rank_local_prefix");
+        let hir_struct_rank_block_sum = graph_buffer!(u32, "hir_struct_rank_block_sum");
+        let hir_struct_rank_block_prefix_a = graph_buffer!(u32, "hir_struct_rank_block_prefix_a");
+        let hir_struct_rank_block_prefix_b = graph_buffer!(u32, "hir_struct_rank_block_prefix_b");
+        let hir_struct_rank_node = graph_buffer!(u32, "hir_struct_rank_node");
+        let hir_struct_rank_count = graph_buffer!(u32, "hir_struct_rank_count");
+        let hir_struct_rank_dispatch_args = graph_buffer!(u32, "hir_struct_rank_dispatch_args");
         let source_file_token_end_params = uniform_from_val(
             device,
             "parser.source_file_token_end.params",
@@ -2552,11 +1533,7 @@ impl ParserBuffers {
                 token_capacity: token_input_capacity,
             },
         );
-        let source_file_token_end = storage_rw_for_array::<u32>(
-            device,
-            "parser.source_file_token_end",
-            token_input_capacity as usize,
-        );
+        let source_file_token_end = graph_buffer!(u32, "source_file_token_end");
 
         // Canonical HIR is the durable parser phase output. Candidate rows are
         // deduplicated by source-token anchor, so the token capacity is a hard
@@ -2586,565 +1563,357 @@ impl ParserBuffers {
         );
         let hir_canonical_prefix_scan =
             make_hir_prefix_scan_plan(device, hir_canonical_capacity.div_ceil(WG).max(1));
-        let hir_canonical_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_canonical_count", 1);
-        let hir_canonical_status =
-            storage_rw_for_array::<u32>(device, "parser.hir_canonical_status", 13);
+        let hir_canonical_count = graph_buffer!(u32, "hir_canonical_count");
+        let hir_canonical_status = graph_buffer!(u32, "hir_canonical_status");
         // Family compaction resolves structural wrappers through the elected
         // source-anchor winner. Once every compact family has materialized,
         // the declaration-index passes repurpose this storage as the compact
         // type-declaration-name-token -> dense-HIR map retained by GpuHirView.
-        let hir_canonical_anchor_owner = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_anchor_owner",
-            hir_canonical_capacity as usize,
-        );
-        // Semantic navigation/depth construction finishes before canonical
-        // identity starts. Production mode can therefore hand three dead
-        // semantic-tree rows to the canonical raw/dense maps. Debug mode keeps
-        // the original rows intact for parser readback.
-        let hir_canonical_prefix_before_raw = if reuse_semantic_debug_buffers {
-            alias_storage_buffer::<u32, u32>(&hir_semantic_child_index, tree_capacity as usize)
-        } else {
-            storage_rw_for_array::<u32>(
-                device,
-                "parser.hir_canonical_prefix_before_raw",
-                tree_capacity as usize,
-            )
-        };
-        let hir_canonical_dense_to_raw = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_dense_to_raw",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_alias_to_dense = if reuse_semantic_debug_buffers {
-            alias_storage_buffer::<u32, u32>(&hir_semantic_subtree_end, tree_capacity as usize)
-        } else {
-            storage_rw_for_array::<u32>(
-                device,
-                "parser.hir_canonical_alias_to_dense",
-                tree_capacity as usize,
-            )
-        };
-        let hir_canonical_raw_to_dense = if reuse_semantic_debug_buffers {
-            alias_storage_buffer::<u32, u32>(&hir_semantic_depth, tree_capacity as usize)
-        } else {
-            storage_rw_for_array::<u32>(
-                device,
-                "parser.hir_canonical_raw_to_dense",
-                tree_capacity as usize,
-            )
-        };
+        let hir_canonical_anchor_owner = graph_buffer!(u32, "hir_canonical_anchor_owner");
+        // The graph owns the phase aliasing between dead semantic-navigation
+        // rows and canonical identity maps. Debug capacities retain separate
+        // outputs; production capacities reuse the earlier graph resources.
+        let hir_canonical_prefix_before_raw = graph_buffer!(u32, "hir_canonical_prefix_before_raw");
+        let hir_canonical_dense_to_raw = graph_buffer!(u32, "hir_canonical_dense_to_raw");
+        let hir_canonical_alias_to_dense = graph_buffer!(u32, "hir_canonical_alias_to_dense");
+        let hir_canonical_raw_to_dense = graph_buffer!(u32, "hir_canonical_raw_to_dense");
         // Canonical statement and expression records are both read by the
-        // compact-core pass. Keep them physically distinct from the rank
-        // workspaces that other bindings in that pass still reference.
-        let hir_canonical_stmt_record = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_stmt_record",
-            hir_canonical_capacity.saturating_mul(4) as usize,
-        );
-        let hir_canonical_expr_record = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_expr_record",
-            hir_canonical_capacity.saturating_mul(4) as usize,
-        );
-        let compact_core_arena_bytes = phase_arena_bytes(
-            device,
-            [
-                (
-                    hir_canonical_capacity as usize,
-                    core::mem::size_of::<HirCore>(),
-                ),
-                (
-                    hir_canonical_capacity as usize,
-                    core::mem::size_of::<HirPayload>(),
-                ),
-            ],
-        );
-        let (hir_core, hir_payload) = if retain_debug_hir_buffers
-            || (first_child.byte_size as u64) < compact_core_arena_bytes
-        {
-            (
-                storage_rw_for_array::<HirCore>(
-                    device,
-                    "parser.hir_core",
-                    hir_canonical_capacity as usize,
-                ),
-                storage_rw_for_array::<HirPayload>(
-                    device,
-                    "parser.hir_payload",
-                    hir_canonical_capacity as usize,
-                ),
-            )
-        } else {
-            // Raw first-child navigation is consumed before canonical core.
-            // Core and payload are written together, so give them disjoint
-            // aligned ranges in that now-dead tree allocation.
-            let mut arena = PhaseArenaCursor::new(device, &first_child);
-            (
-                arena.row::<HirCore>("parser.hir_core", hir_canonical_capacity as usize),
-                arena.row::<HirPayload>("parser.hir_payload", hir_canonical_capacity as usize),
-            )
-        };
-        let hir_links = if retain_debug_hir_buffers {
-            storage_rw_for_array::<HirLinks>(
-                device,
-                "parser.hir_links",
-                hir_canonical_capacity as usize,
-            )
-        } else {
-            alias_storage_buffer::<u32, HirLinks>(
-                &hir_previous_scratch,
-                hir_canonical_capacity as usize,
-            )
-        };
-        let semantic_facts_bytes =
-            hir_canonical_capacity as u64 * core::mem::size_of::<HirSemanticFacts>() as u64;
+        // compact-core pass. Their simultaneous access keeps them in distinct
+        // graph slots without retaining either temporary beyond that pass.
+        let hir_canonical_stmt_record = graph_buffer!(u32, "hir_canonical_stmt_record");
+        let hir_canonical_expr_record = graph_buffer!(u32, "hir_canonical_expr_record");
+        let hir_core = graph_buffer!(HirCore, "hir_core");
+        let hir_payload = graph_buffer!(HirPayload, "hir_payload");
+        let hir_links = graph_buffer!(HirLinks, "hir_links");
         let hir_canonical_semantic_facts =
-            if retain_debug_hir_buffers || (prev_sibling.byte_size as u64) < semantic_facts_bytes {
-                storage_rw_for_array::<HirSemanticFacts>(
-                    device,
-                    "parser.hir_canonical_semantic_facts",
-                    hir_canonical_capacity as usize,
-                )
-            } else {
-                // Previous-sibling navigation is last consumed by raw struct-field
-                // linking. Semantic facts begin at canonical core, after compact
-                // field materialization has made that relation dead.
-                prev_sibling
-                    .subrange::<HirSemanticFacts>(
-                        0,
-                        semantic_facts_bytes,
-                        hir_canonical_capacity as usize,
-                    )
-                    .expect("previous-sibling storage must fit compact semantic facts")
-            };
-        let hir_canonical_semantic_dense_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_semantic_dense_node",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_scope_end = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_scope_end",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_nearest_loop = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_nearest_loop",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_nearest_block = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_nearest_block",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_nearest_control = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_nearest_control",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_nearest_fn = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_nearest_fn",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_context_stmt = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_context_stmt",
-            hir_canonical_capacity as usize,
-        );
-        let compact_core_u32 = |label: &str| {
-            storage_rw_for_array::<u32>(device, label, hir_canonical_capacity as usize)
-        };
-        let hir_canonical_fn_return_type = compact_core_u32("parser.hir_canonical_fn_return_type");
-        let hir_canonical_type_root_owner =
-            compact_core_u32("parser.hir_canonical_type_root_owner");
-        let hir_canonical_type_alias_target =
-            compact_core_u32("parser.hir_canonical_type_alias_target");
-        let hir_canonical_const_type = compact_core_u32("parser.hir_canonical_const_type");
-        let hir_canonical_const_value = compact_core_u32("parser.hir_canonical_const_value");
+            graph_buffer!(HirSemanticFacts, "hir_canonical_semantic_facts");
+        let hir_canonical_semantic_dense_node =
+            graph_buffer!(u32, "hir_canonical_semantic_dense_node");
+        let hir_canonical_scope_end = graph_buffer!(u32, "hir_canonical_scope_end");
+        let hir_canonical_nearest_loop = graph_buffer!(u32, "hir_canonical_nearest_loop");
+        let hir_canonical_nearest_block = graph_buffer!(u32, "hir_canonical_nearest_block");
+        let hir_canonical_nearest_control = graph_buffer!(u32, "hir_canonical_nearest_control");
+        let hir_canonical_nearest_fn = graph_buffer!(u32, "hir_canonical_nearest_fn");
+        let hir_canonical_context_stmt = graph_buffer!(u32, "hir_canonical_context_stmt");
+        let hir_canonical_fn_return_type = graph_buffer!(u32, "hir_canonical_fn_return_type");
+        let hir_canonical_type_root_owner = graph_buffer!(u32, "hir_canonical_type_root_owner");
+        let hir_canonical_type_alias_target = graph_buffer!(u32, "hir_canonical_type_alias_target");
+        let hir_canonical_const_type = graph_buffer!(u32, "hir_canonical_const_type");
+        let hir_canonical_const_value = graph_buffer!(u32, "hir_canonical_const_value");
         // Parent publication uses owner-plus-one so the buffer can be reset
         // with a native zero clear. Once root initialization has decoded it,
         // the same physical slot becomes the pointer-jump scratch buffer.
-        let hir_canonical_expr_parent_encoded = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_expr_parent_encoded",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_expr_parent = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_expr_parent",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_expr_root = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_canonical_expr_root",
-            hir_canonical_capacity as usize,
-        );
-        let hir_canonical_expr_root_scratch = alias_storage_buffer::<u32, u32>(
-            &hir_canonical_expr_parent_encoded,
-            hir_canonical_capacity as usize,
-        );
+        let hir_canonical_expr_parent_encoded =
+            graph_buffer!(u32, "hir_canonical_expr_parent_encoded");
+        let hir_canonical_expr_parent = graph_buffer!(u32, "hir_canonical_expr_parent");
+        let hir_canonical_expr_root = graph_buffer!(u32, "hir_canonical_expr_root");
+        let hir_canonical_expr_root_scratch = graph_buffer!(u32, "hir_canonical_expr_root_scratch");
         let hir_canonical_expr_forest_status =
-            storage_rw_for_array::<u32>(device, "parser.hir_canonical_expr_forest_status", 1);
-        let hir_call_arg_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_call_arg_table_count", 1);
-        let hir_call_arg_family_flag = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_call_arg_family_flag",
-            hir_canonical_capacity as usize,
-        );
-        let hir_call_args = if retain_debug_hir_buffers {
-            storage_rw_for_array::<HirCallArg>(
-                device,
-                "parser.hir_call_args",
-                hir_canonical_capacity as usize,
-            )
-        } else {
-            workspace_subrange::<_, HirCallArg>(
-                device,
-                &hir_expr_record_arena,
-                0,
-                hir_canonical_capacity as usize,
-            )
-            .expect("expression arena must fit compact call arguments")
-        };
-        let hir_call_arg_ranges = storage_rw_for_array::<HirRange>(
-            device,
-            "parser.hir_call_arg_ranges",
-            hir_canonical_capacity as usize,
-        );
-        let hir_param_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_param_table_count", 1);
-        // Call arguments are captured early, then consumed before parameter
-        // and type-argument compaction begins. All three family marks therefore
-        // occupy one serial HIR-family workspace slot.
-        let hir_param_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_param_rows = storage_rw_for_array::<HirParam>(
-            device,
-            "parser.hir_params",
-            hir_canonical_capacity as usize,
-        );
-        let hir_param_ranges = storage_rw_for_array::<HirRange>(
-            device,
-            "parser.hir_param_ranges",
-            hir_canonical_capacity as usize,
-        );
-        let hir_type_arg_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_type_arg_table_count", 1);
-        let hir_type_arg_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_type_arg_rows = storage_rw_for_array::<HirTypeArg>(
-            device,
-            "parser.hir_type_args",
-            hir_canonical_capacity as usize,
-        );
-        let hir_type_arg_ranges = storage_rw_for_array::<HirRange>(
-            device,
-            "parser.hir_type_arg_ranges",
-            hir_canonical_capacity as usize,
-        );
-        let hir_generic_param_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_generic_param_table_count", 1);
-        let hir_generic_param_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_generic_param_rows = if retain_debug_hir_buffers {
-            storage_rw_for_array::<HirGenericParam>(
-                device,
-                "parser.hir_generic_params",
-                hir_canonical_capacity as usize,
-            )
-        } else {
-            // The compact core pass is the final reader of the canonical
-            // statement record previously stored in this rank workspace.
-            alias_storage_buffer::<u32, HirGenericParam>(
-                &hir_rank_flag,
-                hir_canonical_capacity as usize,
-            )
-        };
-        let (
-            hir_generic_param_ranges,
-            hir_path_segment_rows,
-            hir_canonical_string_rows,
-            hir_method_core_rows,
-            hir_method_signature_rows,
-            hir_predicate_rows,
-        ) = if retain_debug_hir_buffers {
-            (
-                storage_rw_for_array::<HirRange>(
-                    device,
-                    "parser.hir_generic_param_ranges",
-                    hir_canonical_capacity as usize,
-                ),
-                storage_rw_for_array::<HirPathSegment>(
-                    device,
-                    "parser.hir_path_segments",
-                    hir_canonical_capacity as usize,
-                ),
-                storage_rw_for_array::<HirString>(
-                    device,
-                    "parser.hir_canonical_strings",
-                    hir_canonical_capacity as usize,
-                ),
-                storage_rw_for_array::<HirMethodCore>(
-                    device,
-                    "parser.hir_method_cores",
-                    hir_canonical_capacity as usize,
-                ),
-                storage_rw_for_array::<HirMethodSignature>(
-                    device,
-                    "parser.hir_method_signatures",
-                    hir_canonical_capacity as usize,
-                ),
-                storage_rw_for_array::<HirPredicate>(
-                    device,
-                    "parser.hir_predicates",
-                    hir_canonical_capacity as usize,
-                ),
-            )
-        } else {
-            let mut arena = PhaseArenaCursor::new(device, &hir_stmt_record_arena);
-            (
-                arena.row::<HirRange>(
-                    "parser.hir_generic_param_ranges",
-                    hir_canonical_capacity as usize,
-                ),
-                arena.row::<HirPathSegment>(
-                    "parser.hir_path_segments",
-                    hir_canonical_capacity as usize,
-                ),
-                arena.row::<HirString>(
-                    "parser.hir_canonical_strings",
-                    hir_canonical_capacity as usize,
-                ),
-                arena.row::<HirMethodCore>(
-                    "parser.hir_method_cores",
-                    hir_canonical_capacity as usize,
-                ),
-                arena.row::<HirMethodSignature>(
-                    "parser.hir_method_signatures",
-                    hir_canonical_capacity as usize,
-                ),
-                arena.row::<HirPredicate>("parser.hir_predicates", hir_canonical_capacity as usize),
-            )
-        };
-        let hir_path_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_path_table_count", 1);
-        let hir_path_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_path_rows = if retain_debug_hir_buffers {
-            storage_rw_for_array::<HirPath>(
-                device,
-                "parser.hir_paths",
-                hir_canonical_capacity as usize,
-            )
-        } else {
-            // Path compaction starts after compact core has consumed the
-            // canonical statement record in this workspace.
-            alias_storage_buffer::<u32, HirPath>(
-                &hir_rank_local_prefix,
-                hir_canonical_capacity as usize,
-            )
-        };
-        let hir_path_segment_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_path_segment_table_count", 1);
-        let hir_path_segment_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_field_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_field_table_count", 1);
-        let hir_field_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_field_rows = storage_rw_for_array::<HirField>(
-            device,
-            "parser.hir_fields",
-            hir_canonical_capacity as usize,
-        );
-        let hir_variant_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_variant_table_count", 1);
-        let hir_variant_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_variant_rows = if retain_debug_hir_buffers {
-            storage_rw_for_array::<HirVariant>(
-                device,
-                "parser.hir_variants",
-                hir_canonical_capacity as usize,
-            )
-        } else {
-            workspace_subrange::<_, HirVariant>(
-                device,
-                &hir_expr_record_arena,
-                1,
-                hir_canonical_capacity as usize,
-            )
-            .expect("expression arena must fit compact variants")
-        };
+            graph_buffer!(u32, "hir_canonical_expr_forest_status");
+        let hir_call_arg_table_count = graph_buffer!(u32, "hir_call_arg_table_count");
+        let hir_call_arg_family_flag = graph_buffer!(u32, "hir_call_arg_family_flag");
+        let hir_call_args = graph_buffer!(HirCallArg, "hir_call_args");
+        let hir_call_arg_ranges = graph_buffer!(HirRange, "hir_call_arg_ranges");
+        let hir_param_table_count = graph_buffer!(u32, "hir_param_table_count");
+        let hir_param_family_flag = graph_buffer!(u32, "hir_param_family_flag");
+        let hir_param_rows = graph_buffer!(HirParam, "hir_param_rows");
+        let hir_param_ranges = graph_buffer!(HirRange, "hir_param_ranges");
+        let hir_type_arg_table_count = graph_buffer!(u32, "hir_type_arg_table_count");
+        let hir_type_arg_family_flag = graph_buffer!(u32, "hir_type_arg_family_flag");
+        let hir_type_arg_rows = graph_buffer!(HirTypeArg, "hir_type_arg_rows");
+        let hir_type_arg_ranges = graph_buffer!(HirRange, "hir_type_arg_ranges");
+        let hir_generic_param_table_count = graph_buffer!(u32, "hir_generic_param_table_count");
+        let hir_generic_param_family_flag = graph_buffer!(u32, "hir_generic_param_family_flag");
+        let hir_generic_param_rows = graph_buffer!(HirGenericParam, "hir_generic_param_rows");
+        let hir_generic_param_ranges = graph_buffer!(HirRange, "hir_generic_param_ranges");
+        let hir_path_segment_rows = graph_buffer!(HirPathSegment, "hir_path_segment_rows");
+        let hir_canonical_string_rows = graph_buffer!(HirString, "hir_canonical_string_rows");
+        let hir_method_core_rows = graph_buffer!(HirMethodCore, "hir_method_core_rows");
+        let hir_method_signature_rows =
+            graph_buffer!(HirMethodSignature, "hir_method_signature_rows");
+        let hir_predicate_rows = graph_buffer!(HirPredicate, "hir_predicate_rows");
+        let hir_path_table_count = graph_buffer!(u32, "hir_path_table_count");
+        let hir_path_family_flag = graph_buffer!(u32, "hir_path_family_flag");
+        let hir_path_rows = graph_buffer!(HirPath, "hir_path_rows");
+        let hir_path_segment_table_count = graph_buffer!(u32, "hir_path_segment_table_count");
+        let hir_field_table_count = graph_buffer!(u32, "hir_field_table_count");
+        let hir_field_family_flag = graph_buffer!(u32, "hir_field_family_flag");
+        let hir_field_rows = graph_buffer!(HirField, "hir_field_rows");
+        let hir_variant_table_count = graph_buffer!(u32, "hir_variant_table_count");
+        let hir_variant_family_flag = graph_buffer!(u32, "hir_variant_family_flag");
+        let hir_variant_rows = graph_buffer!(HirVariant, "hir_variant_rows");
         // Variant and match-arm owners are meaningful HIR constructs with
         // distinct source-token anchors. Their temporary compact-row lookup
         // therefore uses the token domain rather than raw grammar-node ids.
-        let hir_variant_raw_to_row = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_variant_raw_to_row",
-            hir_canonical_capacity as usize,
-        );
-        let hir_variant_compact_payload_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_variant_compact_payload_start",
-            hir_canonical_capacity as usize,
-        );
-        let hir_variant_compact_payload_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_variant_compact_payload_count",
-            hir_canonical_capacity as usize,
-        );
-        let hir_variant_payload_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_variant_payload_table_count", 1);
-        let hir_variant_payload_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_variant_payload_rows = if retain_debug_hir_buffers {
-            storage_rw_for_array::<HirVariantPayload>(
-                device,
-                "parser.hir_variant_payloads",
-                hir_canonical_capacity as usize,
-            )
+        let hir_variant_raw_to_row = graph_buffer!(u32, "hir_variant_raw_to_row");
+        let hir_variant_compact_payload_start =
+            graph_buffer!(u32, "hir_variant_compact_payload_start");
+        let hir_variant_compact_payload_count =
+            graph_buffer!(u32, "hir_variant_compact_payload_count");
+        let hir_variant_payload_table_count = graph_buffer!(u32, "hir_variant_payload_table_count");
+        let hir_variant_payload_family_flag = graph_buffer!(u32, "hir_variant_payload_family_flag");
+        let hir_variant_payload_rows = graph_buffer!(HirVariantPayload, "hir_variant_payload_rows");
+        let hir_match_arm_table_count = graph_buffer!(u32, "hir_match_arm_table_count");
+        let hir_match_arm_family_flag = if match_required {
+            graph_buffer!(u32, "hir_match_arm_family_flag")
         } else {
-            workspace_subrange::<_, HirVariantPayload>(
-                device,
-                &hir_expr_record_arena,
-                2,
-                hir_canonical_capacity as usize,
-            )
-            .expect("expression arena must fit compact variant payloads")
+            storage_rw_for_array::<u32>(device, "parser.hir_match_arm_family_flag.disabled", 1)
         };
-        let hir_match_arm_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_match_arm_table_count", 1);
-        let hir_match_arm_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_match_arm_raw_to_row = alias_storage_buffer::<u32, u32>(
-            &hir_variant_raw_to_row,
-            hir_canonical_capacity as usize,
-        );
-        let hir_match_arm_rows = if retain_debug_hir_buffers {
-            storage_rw_for_array::<HirMatchArm>(
-                device,
-                "parser.hir_match_arms",
-                hir_canonical_capacity as usize,
-            )
+        let hir_match_arm_raw_to_row =
+            optional_graph_buffer!(u32, "hir_match_arm_raw_to_row", match_required);
+        let hir_match_arm_rows = graph_buffer!(HirMatchArm, "hir_match_arm_rows");
+        let hir_match_arm_ranges = graph_buffer!(HirRange, "hir_match_arm_ranges");
+        let hir_match_pattern_to_arm = graph_buffer!(u32, "hir_match_pattern_to_arm");
+        let hir_match_compact_payload_start = graph_buffer!(u32, "hir_match_compact_payload_start");
+        let hir_match_compact_payload_count = graph_buffer!(u32, "hir_match_compact_payload_count");
+        let hir_match_pattern_payload_count = graph_buffer!(u32, "hir_match_pattern_payload_count");
+        let hir_match_payload_table_count = graph_buffer!(u32, "hir_match_payload_table_count");
+        let hir_match_payload_family_flag = if match_required {
+            graph_buffer!(u32, "hir_match_payload_family_flag")
         } else {
-            workspace_subrange::<_, HirMatchArm>(
-                device,
-                &hir_expr_record_arena,
-                3,
-                hir_canonical_capacity as usize,
-            )
-            .expect("expression arena must fit compact match arms")
+            storage_rw_for_array::<u32>(device, "parser.hir_match_payload_family_flag.disabled", 1)
         };
-        let hir_match_arm_ranges = storage_rw_for_array::<HirRange>(
-            device,
-            "parser.hir_match_arm_ranges",
-            hir_canonical_capacity as usize,
-        );
-        let hir_match_pattern_to_arm = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_pattern_to_arm",
-            hir_canonical_capacity as usize,
-        );
-        let hir_match_compact_payload_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_compact_payload_start",
-            hir_canonical_capacity as usize,
-        );
-        let hir_match_compact_payload_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_compact_payload_count",
-            hir_canonical_capacity as usize,
-        );
-        let hir_match_pattern_payload_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_match_pattern_payload_count",
-            hir_canonical_capacity as usize,
-        );
-        let hir_match_payload_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_match_payload_table_count", 1);
-        let hir_match_payload_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_match_payload_rows = if retain_debug_hir_buffers {
-            storage_rw_for_array::<HirMatchPayload>(
-                device,
-                "parser.hir_match_payloads",
-                hir_canonical_capacity as usize,
+        let hir_match_payload_rows = graph_buffer!(HirMatchPayload, "hir_match_payload_rows");
+        let hir_array_compact_element_start = graph_buffer!(u32, "hir_array_compact_element_start");
+        let hir_array_compact_element_count = graph_buffer!(u32, "hir_array_compact_element_count");
+        let hir_array_element_table_count = graph_buffer!(u32, "hir_array_element_table_count");
+        let hir_array_element_family_flag = graph_buffer!(u32, "hir_array_element_family_flag");
+        let hir_array_element_rows = graph_buffer!(HirArrayElement, "hir_array_element_rows");
+        let hir_method_table_count = graph_buffer!(u32, "hir_method_table_count");
+        let hir_method_family_flag = graph_buffer!(u32, "hir_method_family_flag");
+        let hir_predicate_table_count = graph_buffer!(u32, "hir_predicate_table_count");
+        let status_readback_operations = compiler_graph
+            .status_readback_operations(
+                &ll1_status,
+                &partial_parse_status,
+                &token_feature_flags,
+                &tree_depth_status,
+                &ll1_status_readback,
             )
-        } else {
-            workspace_subrange::<_, HirMatchPayload>(
+            .expect("parser status readbacks must match the compiler graph");
+        let dispatch_operations = compiler_graph
+            .dispatch_operations(
                 device,
-                &hir_expr_record_arena,
-                4,
-                hir_canonical_capacity as usize,
+                passes,
+                &params_llp,
+                &token_count,
+                &active_pair_thread_dispatch_args,
+                &active_pair_group_dispatch_args,
+                &tree_prefix_params,
+                &ll1_status,
+                &token_feature_flags,
+                &tree_enum_dispatch_args,
+                &tree_match_dispatch_args,
+                &tree_struct_dispatch_args,
             )
-            .expect("expression arena must fit compact match payloads")
-        };
-        let hir_array_compact_element_start = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_array_compact_element_start",
-            hir_canonical_capacity as usize,
-        );
-        let hir_array_compact_element_count = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_array_compact_element_count",
-            hir_canonical_capacity as usize,
-        );
-        let hir_array_element_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_array_element_table_count", 1);
-        let hir_array_element_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_array_element_rows = if retain_debug_hir_buffers {
-            storage_rw_for_array::<HirArrayElement>(
-                device,
-                "parser.hir_array_elements",
-                hir_canonical_capacity as usize,
-            )
-        } else {
-            workspace_subrange::<_, HirArrayElement>(
-                device,
-                &hir_expr_record_arena,
-                5,
-                hir_canonical_capacity as usize,
-            )
-            .expect("expression arena must fit compact array elements")
-        };
-        let hir_method_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_method_table_count", 1);
-        let hir_method_family_flag = alias_storage_buffer::<u32, u32>(
-            &hir_call_arg_family_flag,
-            hir_canonical_capacity as usize,
-        );
-        let hir_predicate_table_count =
-            storage_rw_for_array::<u32>(device, "parser.hir_predicate_table_count", 1);
+            .expect("parser dispatch operations must match the compiler graph");
+        let tree_bytes = u64::from(tree_capacity) * 4;
+        let canonical_bytes = u64::from(hir_canonical_capacity) * 4;
+        macro_rules! finalizer {
+            ($name:expr, $bytes:expr; $($source:ident => $destination:ident),+ $(,)?) => {
+                (
+                    $name,
+                    vec![$((
+                        stringify!($source),
+                        (&$source).into(),
+                        stringify!($destination),
+                        (&$destination).into(),
+                        $bytes,
+                    )),+],
+                )
+            };
+        }
+        macro_rules! count_copy {
+            ($source_binding:literal, $source:expr, $destination_offset:expr, $byte_size:expr $(,)?) => {
+                (
+                    $source_binding,
+                    $source.into(),
+                    "hir_count_readback",
+                    crate::gpu::buffers::TrackedBufferView::from(&hir_count_readback)
+                        .subrange($destination_offset, $byte_size)
+                        .expect("HIR count readback slice"),
+                    $byte_size,
+                )
+            };
+        }
+        let copy_operations = crate::parser::compiler_graph::ParserCopyOperations::new(
+            &compiler_graph,
+            [
+                (
+                    crate::parser::compiler_graph::HIR_COUNTS_READBACK,
+                    vec![
+                        count_copy!("hir_semantic_count", &hir_semantic_count, 0, 4),
+                        count_copy!("hir_canonical_count", &hir_canonical_count, 4, 4),
+                        count_copy!("hir_canonical_status", &hir_canonical_status, 8, 52),
+                        count_copy!("hir_call_arg_table_count", &hir_call_arg_table_count, 60, 4),
+                        count_copy!("hir_param_table_count", &hir_param_table_count, 64, 4),
+                        count_copy!("hir_type_arg_table_count", &hir_type_arg_table_count, 68, 4),
+                        count_copy!(
+                            "hir_generic_param_table_count",
+                            &hir_generic_param_table_count,
+                            72,
+                            4,
+                        ),
+                        count_copy!("hir_path_table_count", &hir_path_table_count, 76, 4),
+                        count_copy!(
+                            "hir_path_segment_table_count",
+                            &hir_path_segment_table_count,
+                            80,
+                            4,
+                        ),
+                        count_copy!("hir_field_table_count", &hir_field_table_count, 84, 4),
+                        count_copy!("hir_variant_table_count", &hir_variant_table_count, 88, 4),
+                        count_copy!(
+                            "hir_variant_payload_table_count",
+                            &hir_variant_payload_table_count,
+                            92,
+                            4,
+                        ),
+                        count_copy!("hir_match_arm_table_count", &hir_match_arm_table_count, 96, 4),
+                        count_copy!(
+                            "hir_match_payload_table_count",
+                            &hir_match_payload_table_count,
+                            100,
+                            4,
+                        ),
+                        count_copy!(
+                            "hir_array_element_table_count",
+                            &hir_array_element_table_count,
+                            104,
+                            4,
+                        ),
+                        count_copy!("hir_string_count", &hir_string_count, 108, 4),
+                        count_copy!("hir_method_table_count", &hir_method_table_count, 112, 4),
+                        count_copy!(
+                            "hir_predicate_table_count",
+                            &hir_predicate_table_count,
+                            116,
+                            4,
+                        ),
+                    ],
+                ),
+                finalizer!(
+                    crate::parser::compiler_graph::PACK_STATUS_PROMOTE,
+                    24;
+                    partial_parse_status => ll1_status,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::types::root::step::FINALIZE,
+                    tree_bytes;
+                    hir_type_arg_link_b => hir_type_arg_link_a,
+                    hir_type_arg_owner_b => hir_type_root_owner,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::types::alias::owner::step::FINALIZE,
+                    tree_bytes;
+                    hir_type_alias_owner_link_b => hir_type_alias_owner_link_a,
+                    hir_type_alias_owner_value_b => hir_type_alias_owner_value_a,
+                ),
+                finalizer!(
+                    crate::parser::compiler_graph::HIR_TYPE_PATH_LEAF_FINALIZE,
+                    tree_bytes;
+                    hir_type_path_leaf_link_b => hir_type_path_leaf_link_a,
+                    hir_type_path_leaf_value_b => hir_type_path_leaf_value_a,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::path::segment::step::FINALIZE,
+                    tree_bytes;
+                    hir_path_segment_owner_b => hir_path_segment_owner_a,
+                    hir_path_segment_link_b => hir_path_segment_link_a,
+                    hir_path_segment_rank_b => hir_path_segment_rank_a,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::expr::result_root_step::FINALIZE,
+                    tree_bytes;
+                    hir_expr_result_root_scratch_node => hir_expr_result_root_node,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::binary::span::step::FINALIZE,
+                    tree_bytes;
+                    hir_binary_span_link_b => hir_binary_span_link_a,
+                    hir_binary_span_start_b => hir_binary_span_start_a,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::canonical::expr_forest::root_step::FINALIZE,
+                    canonical_bytes;
+                    hir_canonical_expr_root_scratch => hir_canonical_expr_root,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::context::relations::step::FINALIZE,
+                    tree_bytes;
+                    hir_stmt_context_link_b => hir_stmt_context_link_a,
+                    hir_contextual_stmt_value_b => hir_contextual_stmt_value_a,
+                    hir_nearest_stmt_value_b => hir_nearest_stmt_value_a,
+                    hir_nearest_block_value_b => hir_nearest_block_value_a,
+                    hir_nearest_enclosing_control_value_b => hir_nearest_enclosing_control_value_a,
+                    hir_nearest_loop_value_b => hir_nearest_loop_value_a,
+                    hir_nearest_fn_value_b => hir_nearest_fn_value_a,
+                    hir_nearest_array_element_value_b => hir_nearest_array_element_value_a,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::enums::variant::rank_step::FINALIZE,
+                    tree_bytes;
+                    hir_variant_owner_b => hir_variant_owner_a,
+                    hir_variant_link_b => hir_variant_link_a,
+                    hir_variant_rank_b => hir_variant_rank_a,
+                    hir_variant_payload_owner_b => hir_variant_payload_owner_a,
+                    hir_variant_payload_link_b => hir_variant_payload_link_a,
+                    hir_variant_payload_rank_b => hir_variant_payload_rank_a,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::matches::arm::rank_step::FINALIZE,
+                    tree_bytes;
+                    hir_match_arm_owner_b => hir_match_arm_owner_a,
+                    hir_match_arm_link_b => hir_match_arm_link_a,
+                    hir_match_arm_rank_b => hir_match_arm_rank_a,
+                    hir_match_payload_owner_b => hir_match_payload_owner_a,
+                    hir_match_payload_link_b => hir_match_payload_link_a,
+                    hir_match_payload_rank_b => hir_match_payload_rank_a,
+                    hir_match_pattern_parent_b => hir_match_pattern_parent,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::structs::field::rank_step::FINALIZE,
+                    tree_bytes;
+                    hir_struct_field_owner_b => hir_struct_field_owner_a,
+                    hir_struct_field_link_b => hir_struct_field_link_a,
+                    hir_struct_field_rank_b => hir_struct_field_rank_a,
+                    hir_struct_lit_field_owner_b => hir_struct_lit_field_owner_a,
+                    hir_struct_lit_field_link_b => hir_struct_lit_field_link_a,
+                    hir_struct_lit_field_rank_b => hir_struct_lit_field_rank_a,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::semantic::parent::step::FN_SIGNATURE_OWNER.finalize,
+                    tree_bytes;
+                    hir_fn_signature_owner_link_b => hir_fn_signature_owner_link_a,
+                    hir_fn_signature_return_owner_b => hir_fn_signature_return_owner_a,
+                    hir_fn_signature_function_owner_b => hir_fn_signature_function_owner_a,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::semantic::parent::step::MATCH_ARM_OWNER.finalize,
+                    tree_bytes;
+                    hir_semantic_parent_link_b => hir_semantic_parent_link_a,
+                    hir_semantic_parent_value_b => hir_match_pattern_owner_arm,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER.finalize,
+                    tree_bytes;
+                    hir_semantic_parent_link_b => hir_semantic_parent_link_a,
+                    hir_semantic_parent_value_b => hir_semantic_parent_value_a,
+                ),
+                finalizer!(
+                    crate::parser::passes::hir::semantic::parent::step::CANONICAL_RELATIONS.finalize,
+                    tree_bytes;
+                    hir_semantic_parent_link_b => hir_semantic_parent_link_a,
+                    hir_semantic_parent_value_b => hir_semantic_parent_value_a,
+                    hir_type_arg_rank_b => hir_type_arg_rank_a,
+                    hir_variant_payload_rank_b => hir_variant_payload_rank_a,
+                ),
+            ],
+        )
+        .expect("parser finalizers must match the compiler graph");
 
-        Self {
+        let buffers = Self {
+            compiler_graph,
             resettable_buffers: Vec::new(),
             source_capacity: source_capacity.max(1),
             n_tokens,
@@ -3164,6 +1933,12 @@ impl ParserBuffers {
 
             ll1_status,
             ll1_status_readback,
+            hir_count_readback,
+            status_readback_operations,
+            dispatch_operations,
+            copy_operations,
+            clear_operations: std::sync::OnceLock::new(),
+            job_storage_reset: None,
             params_llp,
             semantic_token_kinds,
             token_delimiter_params,
@@ -3327,7 +2102,6 @@ impl ParserBuffers {
             hir_path_family_flag,
             hir_path_rows,
             hir_path_segment_table_count,
-            hir_path_segment_family_flag,
             hir_path_segment_rows,
             hir_field_table_count,
             hir_field_family_flag,
@@ -3683,6 +2457,15 @@ impl ParserBuffers {
             hir_struct_rank_node,
             hir_struct_rank_count,
             hir_struct_rank_dispatch_args,
-        }
+        };
+        let clear_operations = buffers
+            .compiler_graph
+            .clear_operations(&buffers)
+            .expect("parser clear operations must match the compiler graph");
+        assert!(
+            buffers.clear_operations.set(clear_operations).is_ok(),
+            "parser clear operations initialized twice"
+        );
+        buffers
     }
 }

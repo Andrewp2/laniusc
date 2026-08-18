@@ -29,9 +29,9 @@ fn graph_prefix_scan(
     workspace: PrefixScanWorkspace<&LaniusBuffer<u32>>,
 ) -> Result<PrefixScanOperation> {
     let mut resources = ResourceMap::new();
-    resources.add("scan_count", count.as_entire_binding());
-    resources.add("scan_input", input.as_entire_binding());
-    resources.add("scan_dispatch_args", dispatch_args.as_entire_binding());
+    resources.buffer("scan_count", count);
+    resources.buffer("scan_input", input);
+    resources.buffer("scan_dispatch_args", dispatch_args);
     resources.buffers([
         ("scan_output_prefix", output_prefix),
         ("scan_total", total),
@@ -41,12 +41,14 @@ fn graph_prefix_scan(
         ("scan_hierarchy", workspace.hierarchy),
     ]);
     graph.validate_semantic_interface_scan(scan, &resources)?;
+    let graph_passes = graph.semantic_interface_scan_passes(scan)?;
     PrefixScanOperation::with_reusable_workspace(
         device,
         queue,
         buffer_cache,
         kernels,
         label,
+        graph_passes,
         params,
         count,
         dispatch_args.into(),
@@ -396,7 +398,7 @@ impl GpuTypeChecker {
             PrefixScanParams {
                 n_items: name_ref_count,
                 n_blocks: scan_n_blocks,
-                scan_step: 0,
+                min_items: 0,
             },
             typecheck_graph,
             compiler_graph::SemanticInterfaceScan::Names,
@@ -431,7 +433,9 @@ impl GpuTypeChecker {
             PrefixScanParams {
                 n_items: module_capacity,
                 n_blocks: module_scan_n_blocks,
-                scan_step: 0,
+                // The interface always serializes an implicit root module,
+                // even when no explicit module declaration was counted.
+                min_items: u32::from(module_capacity != 0),
             },
             typecheck_graph,
             compiler_graph::SemanticInterfaceScan::Modules,
@@ -481,7 +485,8 @@ impl GpuTypeChecker {
             typecheck_graph,
         )?;
         let mut identity_resources = ResourceMap::new();
-        identity_resources.buffer("name_count_out", inputs.name_count_out);
+        typecheck_graph.register_semantic_interface_bindings(&mut identity_resources)?;
+        identity_resources.buffer("name_scan_total", inputs.name_count_out);
         identity_resources.buffer("name_spans", inputs.name_spans);
         identity_resources.buffer("name_hash_lo", inputs.name_hash_lo);
         identity_resources.buffer("name_hash_hi", inputs.name_hash_hi);
@@ -494,10 +499,13 @@ impl GpuTypeChecker {
         );
         identity_resources.buffer("module_segment_prefix", &module_segment_prefix);
         identity_resources.buffer("module_segment_total", &module_segment_total);
-        identity_resources.buffer("public_decl_count", inputs.public_decl_count);
-        identity_resources.buffer("public_decl_local_id", inputs.public_decl_local_id);
+        identity_resources.buffer("interface_public_decl_count", inputs.public_decl_count);
         identity_resources.buffer(
-            "public_decl_index_by_local",
+            "interface_public_decl_local_id",
+            inputs.public_decl_local_id,
+        );
+        identity_resources.buffer(
+            "interface_public_decl_index_by_local",
             inputs.public_decl_index_by_local,
         );
         identity_resources.buffer("decl_module_id", inputs.decl_module_id);
@@ -554,13 +562,17 @@ impl GpuTypeChecker {
                 member_capacity,
             },
         );
-        let size_bind_group = identity_resources.reflected_bind_group_with_overrides(
+        let interface_graph = typecheck_graph.semantic_interface_graph()?;
+        let size_operation = crate::gpu::operations::ComputeOperation::direct_with_uniform(
             device,
+            interface_graph,
+            &identity_resources,
             "type_check.interface.identity_sizes",
             &self
                 .passes
                 .kernel("type_checker/interface/00_identity_sizes"),
-            &[("gParams", size_params.as_entire_binding())],
+            &size_params,
+            identity_work_capacity,
         )?;
 
         let record_params = self.semantic_interface_buffers.uniform(
@@ -579,13 +591,16 @@ impl GpuTypeChecker {
                 hir_capacity: semantic_hir_capacity,
             },
         );
-        let record_bind_group = identity_resources.reflected_bind_group_with_overrides(
+        let record_operation = crate::gpu::operations::ComputeOperation::direct_with_uniform(
             device,
+            interface_graph,
+            &identity_resources,
             "type_check.interface.identity_records",
             &self
                 .passes
                 .kernel("type_checker/interface/01_identity_records"),
-            &[("gParams", record_params.as_entire_binding())],
+            &record_params,
+            identity_work_capacity,
         )?;
 
         let byte_params = self.semantic_interface_buffers.uniform(
@@ -602,47 +617,44 @@ impl GpuTypeChecker {
                 member_capacity,
             },
         );
-        let byte_bind_group = identity_resources.reflected_bind_group_with_overrides(
+        let byte_operation = crate::gpu::operations::ComputeOperation::direct_with_uniform(
             device,
+            interface_graph,
+            &identity_resources,
             "type_check.interface.identity_bytes",
             &self
                 .passes
                 .kernel("type_checker/interface/02_identity_bytes"),
-            &[("gParams", byte_params.as_entire_binding())],
-        )?;
-
-        record_typecheck_clear_buffer(encoder, &name_ref_len, 0, None);
-        record_typecheck_clear_buffer(encoder, &name_byte_words, 0, None);
-        record_typecheck_clear_buffer(encoder, &counts, 0, None);
-        module_scan.record(encoder)?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/00_identity_sizes"),
-            &size_bind_group,
-            "type_check.interface.identity_sizes",
-            identity_work_capacity,
-        )?;
-        scan.record(encoder)?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/01_identity_records"),
-            &record_bind_group,
-            "type_check.interface.identity_records",
-            identity_work_capacity,
-        )?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/02_identity_bytes"),
-            &byte_bind_group,
-            "type_check.interface.identity_bytes",
+            &byte_params,
             name_ref_count,
         )?;
+
+        let clear_name_ref = crate::gpu::operations::ClearBufferOperation::entire(
+            interface_graph,
+            compiler_graph::SEMANTIC_INTERFACE_NAME_REF_CLEAR_PASS,
+            "interface_name_ref_len",
+            &name_ref_len,
+        )?;
+        let clear_name_bytes = crate::gpu::operations::ClearBufferOperation::entire(
+            interface_graph,
+            compiler_graph::SEMANTIC_INTERFACE_NAME_BYTES_CLEAR_PASS,
+            "interface_name_byte_words",
+            &name_byte_words,
+        )?;
+        let clear_counts = crate::gpu::operations::ClearBufferOperation::entire(
+            interface_graph,
+            compiler_graph::SEMANTIC_INTERFACE_COUNTS_CLEAR_PASS,
+            "interface_counts",
+            &counts,
+        )?;
+        clear_name_ref.record(encoder);
+        clear_name_bytes.record(encoder);
+        clear_counts.record(encoder);
+        module_scan.record(encoder)?;
+        size_operation.record(encoder)?;
+        scan.record(encoder)?;
+        record_operation.record(encoder)?;
+        byte_operation.record(encoder)?;
 
         let artifact_capacity = semantic_interface_artifact_capacity(
             module_capacity,
@@ -710,6 +722,7 @@ impl GpuTypeChecker {
             },
         );
         let mut artifact_resources = ResourceMap::new();
+        typecheck_graph.register_semantic_interface_bindings(&mut artifact_resources)?;
         artifact_resources.buffers([
             ("interface_counts", &counts),
             (
@@ -737,12 +750,6 @@ impl GpuTypeChecker {
         let artifact_kernel = self
             .passes
             .kernel("type_checker/interface/artifact/materialize");
-        let artifact_bind_group = artifact_resources.reflected_bind_group_with_overrides(
-            device,
-            "type_check.interface.artifact",
-            artifact_kernel,
-            &[("gParams", artifact_params.as_entire_binding())],
-        )?;
         let artifact_work_capacity = module_capacity
             .max(module_segment_capacity)
             .max(declaration_capacity)
@@ -751,29 +758,40 @@ impl GpuTypeChecker {
             .max(type_topology.member_capacity as u32)
             .max(name_byte_capacity.div_ceil(4))
             .max(1);
-        record_compute(
-            encoder,
-            artifact_kernel,
-            &artifact_bind_group,
+        let artifact_operation = crate::gpu::operations::ComputeOperation::direct_with_uniform(
+            device,
+            interface_graph,
+            &artifact_resources,
             "type_check.interface.artifact",
+            artifact_kernel,
+            &artifact_params,
             artifact_work_capacity,
         )?;
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
+        let artifact_length_readback = crate::gpu::operations::CopyBufferOperation::new(
+            interface_graph,
+            compiler_graph::SEMANTIC_INTERFACE_ARTIFACT_LENGTH_READBACK_PASS,
+            "interface_artifact_length",
             &artifact_length,
             0,
-            &metadata_readback.buffer,
+            "interface_artifact_metadata_readback",
+            &metadata_readback,
             0,
             4,
-        );
-        record_typecheck_copy_buffer_to_buffer(
-            encoder,
+        )?;
+        let status_readback = crate::gpu::operations::CopyBufferOperation::new(
+            interface_graph,
+            compiler_graph::SEMANTIC_INTERFACE_STATUS_READBACK_PASS,
+            "interface_status",
             &status,
             0,
-            &metadata_readback.buffer,
+            "interface_artifact_metadata_readback",
+            &metadata_readback,
             4,
             16,
-        );
+        )?;
+        artifact_operation.record(encoder)?;
+        artifact_length_readback.record(encoder);
+        status_readback.record(encoder);
         Ok(RecordedSemanticInterface {
             expected_library_id: library_id,
             expected_unit_id: unit_id,
@@ -810,7 +828,7 @@ impl GpuTypeChecker {
         token_capacity: u32,
         hir: GpuSemanticInterfaceHirBuffers<'_>,
         inputs: &GpuSemanticInterfaceIdentityBuffers<'_>,
-        status: &wgpu::Buffer,
+        status: &LaniusBuffer<u32>,
         scan_scratch: PrefixScanWorkspace<&LaniusBuffer<u32>>,
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
     ) -> Result<RecordedSemanticInterfaceTypeTopology> {
@@ -915,7 +933,7 @@ impl GpuTypeChecker {
         let signature_scan_params = PrefixScanParams {
             n_items: signature_capacity,
             n_blocks: signature_n_blocks,
-            scan_step: 0,
+            min_items: 0,
         };
         let (signature_dispatch_x, signature_dispatch_y, signature_dispatch_z) = plan_workgroups(
             DispatchDim::D1,
@@ -1010,7 +1028,7 @@ impl GpuTypeChecker {
         let scan_params = PrefixScanParams {
             n_items: capacity,
             n_blocks,
-            scan_step: 0,
+            min_items: 0,
         };
         let scan = graph_prefix_scan(
             device,
@@ -1045,12 +1063,12 @@ impl GpuTypeChecker {
             scan_scratch,
         )?;
 
-        let mut root_steps = 0u32;
-        let mut covered_depth = 1u64;
-        while covered_depth < u64::from(capacity) {
-            covered_depth = covered_depth.saturating_mul(16);
-            root_steps += 1;
-        }
+        // The graph is materialized at daemon workspace capacity, while this
+        // job can dispatch fewer active rows. Use the graph's complete
+        // ping-pong schedule so downstream bindings select the buffer that was
+        // actually written; deriving parity from the active row count can
+        // leave the result in A while the graph correctly reads B.
+        let root_steps = typecheck_graph.semantic_interface_root_step_count()?;
         let final_root_owner = if root_steps & 1 == 0 {
             &root_owner_a
         } else {
@@ -1058,9 +1076,10 @@ impl GpuTypeChecker {
         };
 
         let mut topology_resources = ResourceMap::new();
+        typecheck_graph.register_semantic_interface_bindings(&mut topology_resources)?;
         macro_rules! register_resources {
             ($($name:literal => $buffer:expr),* $(,)?) => {
-                $(topology_resources.add($name, $buffer.as_entire_binding());)*
+                $(topology_resources.buffer($name, &$buffer);)*
             };
         }
         register_resources!(
@@ -1115,10 +1134,10 @@ impl GpuTypeChecker {
             "name_id_by_token" => inputs.name_id_by_token,
             "path_id_by_owner_hir" => inputs.path_id_by_owner_hir,
             "path_id_by_owner_token" => inputs.path_id_by_owner_token,
-            "public_decl_count" => inputs.public_decl_count,
-            "public_decl_index_by_hir" => inputs.public_decl_index_by_hir,
-            "public_decl_index_by_local" => inputs.public_decl_index_by_local,
-            "public_decl_local_id" => inputs.public_decl_local_id,
+            "interface_public_decl_count" => inputs.public_decl_count,
+            "interface_public_decl_index_by_hir" => inputs.public_decl_index_by_hir,
+            "interface_public_decl_index_by_local" => inputs.public_decl_index_by_local,
+            "interface_public_decl_local_id" => inputs.public_decl_local_id,
             "resolved_dependency_library_id" => inputs.resolved_dependency_library_id,
             "resolved_dependency_unit_id" => inputs.resolved_dependency_unit_id,
             "resolved_dependency_local_index" => inputs.resolved_dependency_local_index,
@@ -1170,21 +1189,26 @@ impl GpuTypeChecker {
             "interface_types" => types,
             "interface_variant_count_by_hir" => variant_count_by_hir,
         );
+        let interface_graph = typecheck_graph.semantic_interface_graph()?;
         macro_rules! bind_topology {
             ($label:literal, $kernel:literal) => {
-                topology_resources.reflected_bind_group_with_overrides(
+                crate::gpu::operations::ComputeOperation::direct(
                     device,
+                    interface_graph,
+                    &topology_resources,
                     $label,
                     &self.passes.kernel($kernel),
-                    &[],
+                    capacity,
                 )
             };
-            ($label:literal, $kernel:literal, $overrides:expr) => {
-                topology_resources.reflected_bind_group_with_overrides(
+            ($label:literal, $kernel:literal, $work:expr) => {
+                crate::gpu::operations::ComputeOperation::direct(
                     device,
+                    interface_graph,
+                    &topology_resources,
                     $label,
                     &self.passes.kernel($kernel),
-                    $overrides,
+                    $work,
                 )
             };
         }
@@ -1215,56 +1239,24 @@ impl GpuTypeChecker {
         )?;
         let root_init = bind_topology!(
             "type_check.interface.type_topology.root_init",
-            "type_checker/interface/type_topology/03_root_init",
-            &[(
-                "interface_type_root_owner",
-                root_owner_a.as_entire_binding()
-            )]
+            "type_checker/interface/type_topology/03_root_init"
         )?;
-        let root_step_ab = bind_topology!(
-            "type_check.interface.type_topology.root_step_ab",
-            "type_checker/interface/type_topology/04_root_step",
-            &[
-                (
-                    "interface_type_root_link_in",
-                    root_link_a.as_entire_binding()
-                ),
-                (
-                    "interface_type_root_owner_in",
-                    root_owner_a.as_entire_binding()
-                ),
-                (
-                    "interface_type_root_link_out",
-                    root_link_b.as_entire_binding()
-                ),
-                (
-                    "interface_type_root_owner_out",
-                    root_owner_b.as_entire_binding()
-                ),
-            ]
-        )?;
-        let root_step_ba = bind_topology!(
-            "type_check.interface.type_topology.root_step_ba",
-            "type_checker/interface/type_topology/04_root_step",
-            &[
-                (
-                    "interface_type_root_link_in",
-                    root_link_b.as_entire_binding()
-                ),
-                (
-                    "interface_type_root_owner_in",
-                    root_owner_b.as_entire_binding()
-                ),
-                (
-                    "interface_type_root_link_out",
-                    root_link_a.as_entire_binding()
-                ),
-                (
-                    "interface_type_root_owner_out",
-                    root_owner_a.as_entire_binding()
-                ),
-            ]
-        )?;
+        let root_step_operations = compiler_graph::SEMANTIC_INTERFACE_ROOT_STEP_PASSES
+            .iter()
+            .take(root_steps)
+            .map(|&name| {
+                crate::gpu::operations::ComputeOperation::direct(
+                    device,
+                    interface_graph,
+                    &topology_resources,
+                    name,
+                    &self
+                        .passes
+                        .kernel("type_checker/interface/type_topology/04_root_step"),
+                    capacity,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
         let mark_reverse = bind_topology!(
             "type_check.interface.type_topology.mark_reverse",
             "type_checker/interface/type_topology/05_mark_reverse"
@@ -1299,19 +1291,23 @@ impl GpuTypeChecker {
         )?;
         let signature_flags = bind_topology!(
             "type_check.interface.signature.flags",
-            "type_checker/interface/signature/00_flags"
+            "type_checker/interface/signature/00_flags",
+            signature_capacity
         )?;
         let signature_totals = bind_topology!(
             "type_check.interface.signature.totals",
-            "type_checker/interface/signature/01_totals"
+            "type_checker/interface/signature/01_totals",
+            1
         )?;
         let signature_direct_types = bind_topology!(
             "type_check.interface.signature.direct_types",
-            "type_checker/interface/signature/01b_direct_types"
+            "type_checker/interface/signature/01b_direct_types",
+            signature_capacity
         )?;
         let signature_synthetic_types = bind_topology!(
             "type_check.interface.signature.synthetic_types",
-            "type_checker/interface/signature/01c_synthetic_types"
+            "type_checker/interface/signature/01c_synthetic_types",
+            signature_capacity
         )?;
         let signature_param_edges = bind_topology!(
             "type_check.interface.signature.param_edges",
@@ -1319,7 +1315,8 @@ impl GpuTypeChecker {
         )?;
         let signature_return_edges = bind_topology!(
             "type_check.interface.signature.return_edges",
-            "type_checker/interface/signature/03_return_edges"
+            "type_checker/interface/signature/03_return_edges",
+            signature_capacity
         )?;
         let signature_variant_payload_edges = bind_topology!(
             "type_check.interface.signature.variant_payload_edges",
@@ -1331,11 +1328,13 @@ impl GpuTypeChecker {
         )?;
         let members_generic_counts = bind_topology!(
             "type_check.interface.members.generic_counts",
-            "type_checker/interface/members/00b_generic_counts"
+            "type_checker/interface/members/00b_generic_counts",
+            token_capacity.max(1)
         )?;
         let members_counts = bind_topology!(
             "type_check.interface.members.counts",
-            "type_checker/interface/members/01_counts"
+            "type_checker/interface/members/01_counts",
+            signature_capacity
         )?;
         let members_method_counts = bind_topology!(
             "type_check.interface.members.method_counts",
@@ -1347,7 +1346,8 @@ impl GpuTypeChecker {
         )?;
         let members_scatter_generic = bind_topology!(
             "type_check.interface.members.scatter_generic",
-            "type_checker/interface/members/03_scatter_generic"
+            "type_checker/interface/members/03_scatter_generic",
+            token_capacity.max(1)
         )?;
         let members_normalize_types = bind_topology!(
             "type_check.interface.members.normalize_types",
@@ -1358,294 +1358,101 @@ impl GpuTypeChecker {
             "type_checker/interface/type_topology/07_validate"
         )?;
 
-        record_typecheck_clear_buffer(encoder, &edge_written, 0, None);
-        record_typecheck_clear_buffer(encoder, &field_count_by_hir, 0, None);
-        record_typecheck_clear_buffer(encoder, &variant_count_by_hir, 0, None);
-        record_typecheck_clear_buffer(encoder, &generic_type_count_by_decl, 0, None);
-        record_typecheck_clear_buffer(encoder, &generic_const_count_by_decl, 0, None);
-        record_typecheck_clear_buffer(encoder, &member_written, 0, None);
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/00_init"),
+        let clears = [
+            crate::gpu::operations::ClearBufferOperation::entire(
+                interface_graph,
+                compiler_graph::SEMANTIC_INTERFACE_EDGE_WRITTEN_CLEAR_PASS,
+                "interface_type_edge_written",
+                &edge_written,
+            )?,
+            crate::gpu::operations::ClearBufferOperation::entire(
+                interface_graph,
+                compiler_graph::SEMANTIC_INTERFACE_FIELD_COUNT_CLEAR_PASS,
+                "interface_field_count_by_hir",
+                &field_count_by_hir,
+            )?,
+            crate::gpu::operations::ClearBufferOperation::entire(
+                interface_graph,
+                compiler_graph::SEMANTIC_INTERFACE_VARIANT_COUNT_CLEAR_PASS,
+                "interface_variant_count_by_hir",
+                &variant_count_by_hir,
+            )?,
+            crate::gpu::operations::ClearBufferOperation::entire(
+                interface_graph,
+                compiler_graph::SEMANTIC_INTERFACE_GENERIC_TYPE_COUNT_CLEAR_PASS,
+                "interface_generic_type_count_by_decl",
+                &generic_type_count_by_decl,
+            )?,
+            crate::gpu::operations::ClearBufferOperation::entire(
+                interface_graph,
+                compiler_graph::SEMANTIC_INTERFACE_GENERIC_CONST_COUNT_CLEAR_PASS,
+                "interface_generic_const_count_by_decl",
+                &generic_const_count_by_decl,
+            )?,
+            crate::gpu::operations::ClearBufferOperation::entire(
+                interface_graph,
+                compiler_graph::SEMANTIC_INTERFACE_MEMBER_WRITTEN_CLEAR_PASS,
+                "interface_member_written",
+                &member_written,
+            )?,
+        ];
+        for clear in &clears {
+            clear.record(encoder);
+        }
+        for operation in [
             &init,
-            "type_check.interface.type_topology.init",
-            capacity,
-        )?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/01_attach_unary"),
             &attach_unary,
-            "type_check.interface.type_topology.attach_unary",
-            capacity,
-        )?;
-        for (pass, group, label) in [
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/type_topology/02_seed_declarations"),
-                &seed_declarations,
-                "type_check.interface.type_topology.seed_declarations",
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/type_topology/02b_seed_params"),
-                &seed_params,
-                "type_check.interface.type_topology.seed_params",
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/type_topology/02c_seed_fields"),
-                &seed_fields,
-                "type_check.interface.type_topology.seed_fields",
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/type_topology/02d_seed_variants"),
-                &seed_variants,
-                "type_check.interface.type_topology.seed_variants",
-            ),
-        ] {
-            record_compute(encoder, pass, group, label, capacity)?;
-        }
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/03_root_init"),
+            &seed_declarations,
+            &seed_params,
+            &seed_fields,
+            &seed_variants,
             &root_init,
-            "type_check.interface.type_topology.root_init",
-            capacity,
-        )?;
-        for step in 0..root_steps {
-            let group = if step & 1 == 0 {
-                &root_step_ab
-            } else {
-                &root_step_ba
-            };
-            record_compute(
-                encoder,
-                &self
-                    .passes
-                    .kernel("type_checker/interface/type_topology/04_root_step"),
-                group,
-                "type_check.interface.type_topology.root_step",
-                capacity,
-            )?;
-        }
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/05_mark_reverse"),
-            &mark_reverse,
-            "type_check.interface.type_topology.mark_reverse",
-            capacity,
-        )?;
-        scan.record(encoder)?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/06_scatter"),
-            &scatter,
-            "type_check.interface.type_topology.scatter",
-            capacity,
-        )?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/08_edge_counts"),
-            &edge_counts,
-            "type_check.interface.type_topology.edge_counts",
-            capacity,
-        )?;
-        edge_scan.record(encoder)?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/09_edge_scatter"),
-            &edge_scatter,
-            "type_check.interface.type_topology.edge_scatter",
-            capacity,
-        )?;
-        for (pass, group, label) in [
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/type_topology/10_resolve_local_decl"),
-                &resolve_local_decl,
-                "type_check.interface.type_topology.resolve_local_decl",
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/type_topology/11_classify_path"),
-                &classify_path,
-                "type_check.interface.type_topology.classify_path",
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/type_topology/12_type_records"),
-                &type_records,
-                "type_check.interface.type_topology.type_records",
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/type_topology/13_array_lengths"),
-                &array_lengths,
-                "type_check.interface.type_topology.array_lengths",
-            ),
         ] {
-            record_compute(encoder, pass, group, label, capacity)?;
+            operation.record(encoder)?;
         }
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/type_topology/07_validate"),
+        for operation in &root_step_operations {
+            operation.record(encoder)?;
+        }
+        mark_reverse.record(encoder)?;
+        scan.record(encoder)?;
+        scatter.record(encoder)?;
+        edge_counts.record(encoder)?;
+        edge_scan.record(encoder)?;
+        for operation in [
+            &edge_scatter,
+            &resolve_local_decl,
+            &classify_path,
+            &type_records,
+            &array_lengths,
             &validate,
-            "type_check.interface.type_topology.validate",
-            capacity,
-        )?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/signature/00_flags"),
             &signature_flags,
-            "type_check.interface.signature.flags",
-            signature_capacity,
-        )?;
+        ] {
+            operation.record(encoder)?;
+        }
         signature_type_scan.record(encoder)?;
         signature_edge_scan.record(encoder)?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/signature/01_totals"),
+        for operation in [
             &signature_totals,
-            "type_check.interface.signature.totals",
-            1,
-        )?;
-        for (pass, group, label, work) in [
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/signature/01b_direct_types"),
-                &signature_direct_types,
-                "type_check.interface.signature.direct_types",
-                signature_capacity,
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/signature/01c_synthetic_types"),
-                &signature_synthetic_types,
-                "type_check.interface.signature.synthetic_types",
-                signature_capacity,
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/signature/02_param_edges"),
-                &signature_param_edges,
-                "type_check.interface.signature.param_edges",
-                capacity,
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/signature/02b_variant_payload_edges"),
-                &signature_variant_payload_edges,
-                "type_check.interface.signature.variant_payload_edges",
-                capacity,
-            ),
-            (
-                &self
-                    .passes
-                    .kernel("type_checker/interface/signature/03_return_edges"),
-                &signature_return_edges,
-                "type_check.interface.signature.return_edges",
-                signature_capacity,
-            ),
-        ] {
-            record_compute(encoder, pass, group, label, work)?;
-        }
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/members/00_variant_counts"),
+            &signature_direct_types,
+            &signature_synthetic_types,
+            &signature_param_edges,
+            &signature_variant_payload_edges,
+            &signature_return_edges,
             &members_variant_counts,
-            "type_check.interface.members.variant_counts",
-            capacity,
-        )?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/members/00b_generic_counts"),
             &members_generic_counts,
-            "type_check.interface.members.generic_counts",
-            token_capacity.max(1),
-        )?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/members/01_counts"),
             &members_counts,
-            "type_check.interface.members.counts",
-            signature_capacity,
-        )?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/members/00c_method_counts"),
             &members_method_counts,
-            "type_check.interface.members.method_counts",
-            capacity,
-        )?;
+        ] {
+            operation.record(encoder)?;
+        }
         member_scan.record(encoder)?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/members/02_scatter_hir"),
+        for operation in [
             &members_scatter_hir,
-            "type_check.interface.members.scatter_hir",
-            capacity,
-        )?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/members/03_scatter_generic"),
             &members_scatter_generic,
-            "type_check.interface.members.scatter_generic",
-            token_capacity.max(1),
-        )?;
-        record_compute(
-            encoder,
-            &self
-                .passes
-                .kernel("type_checker/interface/members/04_normalize_types"),
             &members_normalize_types,
-            "type_check.interface.members.normalize_types",
-            capacity,
-        )?;
+        ] {
+            operation.record(encoder)?;
+        }
 
         Ok(RecordedSemanticInterfaceTypeTopology {
             type_capacity: type_capacity as usize,

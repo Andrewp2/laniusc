@@ -1954,10 +1954,11 @@ fn typechecker_graph_uses_compact_hir_control_and_hir_scope_validation() {
     let graph = include_str!("../crates/laniusc-compiler/src/type_checker/compiler_graph.rs");
 
     assert!(
-        resident.contains("bind_groups.conditions_compact_expr")
-            && resident.contains("kernel(\"type_checker/scope/hir\")")
+        resident.contains(".compact_expr\n                .record(encoder)?")
+            && resident.contains("bind_groups.scope_hir.record(encoder)?")
             && graph.contains("type_check.conditions.compact_expr")
-            && graph.contains("type_check.scope.hir"),
+            && graph.contains("type_check.scope.hir")
+            && graph.contains("type_checker/scope/hir"),
         "control validation should consume compact HIR while scope publication remains HIR-based"
     );
     assert!(

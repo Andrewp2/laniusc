@@ -1,10 +1,9 @@
 use anyhow::Result;
 use encase::ShaderType;
 
-use super::record_direct;
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
-    passes_core::{PassData, bind_group, make_pass_data_from_shader_key},
+    passes_core::{BindGroupCache, CompilerGraphBuffers, PassData, make_pass_data_from_shader_key},
     scan::{HierarchicalScanLevel, hierarchical_scan_levels},
 };
 
@@ -97,20 +96,91 @@ impl InclusiveBlockScanKernels {
         })
     }
 
-    pub(crate) fn record(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_graph(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        label: &'static str,
+        cache: &mut BindGroupCache,
+        graph_buffers: &impl CompilerGraphBuffers,
+        up_label: &'static str,
+        down_label: &'static str,
         plan: &InclusiveBlockScanPlan,
         block_sum: &LaniusBuffer<u32>,
         block_prefix: &LaniusBuffer<u32>,
         hierarchy: &LaniusBuffer<u32>,
     ) -> Result<()> {
+        for (index, step) in plan.up.iter().enumerate() {
+            let resources = std::collections::HashMap::from([
+                ("gBlockScan".into(), step.params.as_entire_binding()),
+                ("block_sum".into(), block_sum.as_entire_binding()),
+                ("block_prefix".into(), block_prefix.as_entire_binding()),
+                ("block_hierarchy".into(), hierarchy.as_entire_binding()),
+            ]);
+            let invocation = format!("{up_label}.{index}");
+            let group = cache
+                .reflected_for_graph_invocation(
+                    device,
+                    &invocation,
+                    up_label,
+                    &self.up,
+                    graph_buffers,
+                    &resources,
+                    None,
+                )?
+                .into_iter()
+                .next()
+                .expect("inclusive block-scan up pass must have one bind group");
+            super::record_direct(encoder, &self.up, group.as_ref(), up_label, step.work_items)?;
+        }
+        for (index, step) in plan.down.iter().enumerate() {
+            let resources = std::collections::HashMap::from([
+                ("gBlockScan".into(), step.params.as_entire_binding()),
+                ("block_prefix".into(), block_prefix.as_entire_binding()),
+                ("block_hierarchy".into(), hierarchy.as_entire_binding()),
+            ]);
+            let invocation = format!("{down_label}.{index}");
+            let group = cache
+                .reflected_for_graph_invocation(
+                    device,
+                    &invocation,
+                    down_label,
+                    &self.down,
+                    graph_buffers,
+                    &resources,
+                    None,
+                )?
+                .into_iter()
+                .next()
+                .expect("inclusive block-scan down pass must have one bind group");
+            super::record_direct(
+                encoder,
+                &self.down,
+                group.as_ref(),
+                down_label,
+                step.work_items,
+            )?;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn record_for_test(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        up_label: &'static str,
+        down_label: &'static str,
+        plan: &InclusiveBlockScanPlan,
+        block_sum: &LaniusBuffer<u32>,
+        block_prefix: &LaniusBuffer<u32>,
+        hierarchy: &LaniusBuffer<u32>,
+    ) -> Result<()> {
+        use crate::gpu::passes_core::bind_group;
         for step in &plan.up {
             let group = bind_group::create_bind_group_from_bindings(
                 device,
-                Some(label),
+                Some(up_label),
                 &self.up,
                 0,
                 &[
@@ -120,12 +190,12 @@ impl InclusiveBlockScanKernels {
                     ("block_hierarchy", hierarchy.as_entire_binding()),
                 ],
             )?;
-            record_direct(encoder, &self.up, &group, label, step.work_items)?;
+            super::record_direct(encoder, &self.up, &group, up_label, step.work_items)?;
         }
         for step in &plan.down {
             let group = bind_group::create_bind_group_from_bindings(
                 device,
-                Some(label),
+                Some(down_label),
                 &self.down,
                 0,
                 &[
@@ -134,9 +204,13 @@ impl InclusiveBlockScanKernels {
                     ("block_hierarchy", hierarchy.as_entire_binding()),
                 ],
             )?;
-            record_direct(encoder, &self.down, &group, label, step.work_items)?;
+            super::record_direct(encoder, &self.down, &group, down_label, step.work_items)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn graph_passes(&self) -> (&PassData, &PassData) {
+        (&self.up, &self.down)
     }
 }
 
@@ -189,10 +263,11 @@ mod tests {
                 label: Some("test.block_scan.encoder"),
             });
         kernels
-            .record(
+            .record_for_test(
                 &gpu.device,
                 &mut encoder,
-                "test.block_scan",
+                "test.block_scan.up",
+                "test.block_scan.down",
                 &plan,
                 &block_sum,
                 &block_prefix,

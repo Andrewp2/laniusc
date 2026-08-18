@@ -147,7 +147,6 @@
       <section class="panel span-12">
         <div class="section-heading">
           <div><h2>Compile latency</h2><p>Median wall time across every recorded compiler configuration.</p></div>
-          <span class="section-count">{measurements.length} configurations · {frozenBaselineCount ? `${frozenBaselineCount} frozen` : 'no external match'}</span>
         </div>
         {#if !frozenBaselineCount}
           <p class="comparison-note" aria-live="polite">No retained external benchmark has the same workload identity. This chart contains only Lanius results.</p>
@@ -157,14 +156,13 @@
       <section class="panel span-12">
         <div class="section-heading table-heading">
           <div><h2>Compiler results</h2></div>
-          <p>Select a row to update the distribution; available analysis data is shown at right.</p>
+          <p>Select a result to view its latency distribution.</p>
         </div>
         <MeasurementTable {measurements} {selectedIndex} {mixedFileCounts} onselect={selectMeasurement} />
       </section>
       <section class="panel span-12 distribution-panel">
         <div class="section-heading">
           <div><h2>Latency distribution</h2><p>{measurementLabel(selected, mixedFileCounts)}</p></div>
-          <span class="section-count">{selected.summary.wall_ms.samples} samples</span>
         </div>
         <Histogram measurement={selected} />
       </section>
@@ -198,10 +196,10 @@
         {#if profileAvailable}
           <section class="panel span-12">
             <div class="section-heading">
-              <div><h2>Host execution timeline</h2><p>Compiler instrumentation in the host job clock, including submitted GPU pass labels.</p></div>
+              <div><h2>Compiler execution timeline</h2><p>Compiler phases aligned to the job clock, with host and GPU activity shown separately.</p></div>
               <span class="section-count">excluded from latency statistics</span>
             </div>
-            <Timeline profile={analysisSelected.profile} />
+            <Timeline profile={analysisSelected.profile} target={analysisSelected.target} />
           </section>
           {#if nsightAvailable && analysisSelected.profile?.nsight}
             <section class="panel span-12">

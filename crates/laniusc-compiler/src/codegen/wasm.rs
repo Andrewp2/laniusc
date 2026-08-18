@@ -4,6 +4,8 @@
 //! pipeline. This module retains only the durable object contract and the GPU
 //! linker used to combine independently compiled units.
 
+use std::sync::Mutex;
+
 use anyhow::{Result, anyhow};
 
 mod object;
@@ -18,23 +20,26 @@ pub use object::{
     GpuWasmSymbolKind,
 };
 
-mod lazy_pass;
-pub(super) use lazy_pass::{LazyWasmPass, create_wasm_bind_group};
-
 pub(crate) mod link;
 pub(crate) use link::GpuWasmLinkInput;
 
-use crate::gpu::{buffers::CapacityBufferCache, device};
+use crate::gpu::{
+    buffers::CapacityBufferCache,
+    device,
+    passes_core::{PassData, make_traced_main_pass},
+};
 
 /// Daemon-resident GPU linker pipelines for durable Wasm objects.
 pub struct GpuWasmLinker {
-    link_module_pass: LazyWasmPass,
-    link_symbol_clear_pass: LazyWasmPass,
-    link_symbol_insert_pass: LazyWasmPass,
-    link_symbol_define_pass: LazyWasmPass,
-    link_resolve_pass: LazyWasmPass,
-    link_relocate_pass: LazyWasmPass,
+    link_module_pass: PassData,
+    link_symbol_clear_pass: PassData,
+    link_symbol_insert_pass: PassData,
+    link_symbol_define_pass: PassData,
+    link_resolve_pass: PassData,
+    link_relocate_pass: PassData,
     job_buffers: CapacityBufferCache,
+    executable_page_graph: Mutex<Option<link::WasmExecutablePageGraph>>,
+    symbol_partition_graph: Mutex<Option<link::WasmSymbolPartitionGraph>>,
 }
 
 impl GpuWasmLinker {
@@ -43,18 +48,22 @@ impl GpuWasmLinker {
         macro_rules! spawn_pass {
             ($stage:literal, $label:literal, $spv:literal, $reflection:literal) => {{
                 let device = gpu.device.clone();
-                std::thread::spawn(move || {
-                    LazyWasmPass::from_artifacts(&device, $stage, $label, $spv, $reflection)
+                std::thread::spawn(move || -> Result<PassData> {
+                    Ok(make_traced_main_pass!(
+                        &device,
+                        trace_wasm_codegen,
+                        $stage,
+                        $label,
+                        artifacts: ($spv, $reflection)
+                    ))
                 })
             }};
         }
         macro_rules! finish_pass {
             ($handle:ident, $stage:literal) => {{
-                let pass = $handle.join().map_err(|_| {
-                    anyhow!("Wasm linker pass {} initialization panicked", $stage)
-                })??;
-                pass.pipeline()?;
-                pass
+                $handle
+                    .join()
+                    .map_err(|_| anyhow!("Wasm linker pass {} initialization panicked", $stage))??
             }};
         }
 
@@ -103,6 +112,8 @@ impl GpuWasmLinker {
             link_resolve_pass: finish_pass!(link_resolve_pass, "link_resolve"),
             link_relocate_pass: finish_pass!(link_relocate_pass, "link_relocate"),
             job_buffers: CapacityBufferCache::default(),
+            executable_page_graph: Mutex::new(None),
+            symbol_partition_graph: Mutex::new(None),
         };
         gpu.persist_pipeline_cache();
         Ok(linker)
@@ -110,6 +121,14 @@ impl GpuWasmLinker {
 
     pub(crate) fn release_job_buffers(&self) {
         self.job_buffers.clear();
+        self.executable_page_graph
+            .lock()
+            .expect("Wasm executable-page graph cache poisoned")
+            .take();
+        self.symbol_partition_graph
+            .lock()
+            .expect("Wasm symbol-partition graph cache poisoned")
+            .take();
     }
 }
 
@@ -117,9 +136,4 @@ fn trace_wasm_codegen(stage: &str) {
     if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
         eprintln!("[laniusc][wasm-link] {stage}");
     }
-}
-
-fn workgroup_grid_1d(groups: u32) -> (u32, u32) {
-    let x = groups.min(65_535).max(1);
-    (x, groups.div_ceil(x).max(1))
 }

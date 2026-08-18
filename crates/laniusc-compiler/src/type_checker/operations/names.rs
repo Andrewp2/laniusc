@@ -5,7 +5,8 @@ const MARK: ReflectedComputeSpec = typecheck_pass!(
     Tokens,
     "type_checker/names/00_mark_lexemes"
 )
-.initializer();
+.initializer()
+.with_indirect_dispatch("token_active_dispatch_args");
 
 const SCATTER: ReflectedComputeSpec = typecheck_pass!(
     "type_check.names.scatter_lexemes",
@@ -21,7 +22,8 @@ const SCATTER: ReflectedComputeSpec = typecheck_pass!(
     typecheck_resource!("name_order_tmp" => "name_hash_hi", Write),
     typecheck_resource!("name_count_out" => "name_scan_total", ReadWrite),
     typecheck_resource!("name_max_len_out" => "name_max_len", ReadWrite),
-]);
+])
+.with_indirect_dispatch("token_active_dispatch_args");
 
 pub(in crate::type_checker) const NAME_COMPACTION: CompactionSpec = CompactionSpec {
     mark: MARK,

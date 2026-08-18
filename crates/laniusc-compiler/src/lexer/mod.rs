@@ -6,6 +6,7 @@
 
 /// Resident lexer buffer model.
 pub mod buffers;
+pub(crate) mod compiler_graph;
 /// Optional lexer debug readback buffers.
 pub mod debug;
 /// GPU lexer driver and global lexer entry points.

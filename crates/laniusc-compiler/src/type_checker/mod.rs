@@ -8,11 +8,7 @@
 //! ownership and resident cache invariants lives in
 //! `docs/compiler/type-checker.md`.
 
-use std::{
-    collections::{HashMap, HashSet},
-    hash::{Hash, Hasher},
-    sync::Mutex,
-};
+use std::{collections::HashSet, sync::Mutex};
 
 mod bind_groups;
 mod bind_models;
@@ -53,6 +49,7 @@ use crate::gpu::{
     device,
     kernels::KernelRegistry,
     operations::{
+        ComputeInvocation,
         ExactLookupOperation,
         PrefixScanOperation,
         RadixDispatchDomain,
@@ -60,7 +57,6 @@ use crate::gpu::{
         RadixSortDispatch,
         RadixSortKernels,
         RadixSortOperation,
-        RadixSortPlan,
         RadixSortResources,
     },
     passes_core::{
@@ -70,12 +66,7 @@ use crate::gpu::{
         plan_workgroups,
         recorded_compute_pass_count,
     },
-    resource_registry::{
-        ResourceMap,
-        reflected_bind_group_from_resources,
-        reflected_bind_group_with_overrides,
-        typed_buffer_from_resources,
-    },
+    resource_registry::{ResourceMap, typed_buffer_from_resources},
     scan::{PrefixScanHierarchyParams, PrefixScanParams},
 };
 
@@ -272,6 +263,7 @@ pub struct GpuTypeChecker {
     params_buf: LaniusBuffer<TypeCheckParams>,
     status_buf: LaniusBuffer<u32>,
     status_readback: LaniusBuffer<u32>,
+    preflight_graph: preflight::TypeCheckPreflightGraph,
     resident_workspace: Mutex<Option<ResidentTypeCheckWorkspace>>,
     current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,
     dependency_interface_state: Mutex<Option<GpuDependencyInterfaceState>>,
@@ -445,6 +437,7 @@ type TypeCheckPasses = KernelRegistry;
 // consumed indirectly by a reflected bind group.
 struct ResidentTypeCheckWorkspace {
     resettable_buffers: Vec<crate::gpu::buffers::ResettableBuffer>,
+    job_storage_resets: Vec<crate::gpu::operations::ResetGraphAllocationsOperation>,
     /// Dead storage inherited from the parser/lexer boundary.
     ///
     /// The type-check graph may consume only a subset of these allocations.
@@ -454,7 +447,6 @@ struct ResidentTypeCheckWorkspace {
     upstream_workspace: Vec<LaniusBuffer<u8>>,
     cache_key: ResidentTypeCheckCacheKey,
     typecheck_graph: compiler_graph::TypeCheckCompilerGraph,
-    compact_expr_scalar_type_init: wgpu::BindGroup,
     name_capacity: u32,
     if_depth_n_blocks: u32,
     fn_n_blocks: u32,
@@ -468,18 +460,16 @@ struct ResidentTypeCheckWorkspace {
     module_path: ModulePathState,
     visible_decl: LaniusBuffer<u32>,
     visible_type: LaniusBuffer<u32>,
-    token_active_dispatch_args: LaniusBuffer<u32>,
     hir_active_dispatch_args: LaniusBuffer<u32>,
-    token_hir_active_dispatch_args: LaniusBuffer<u32>,
-    hir_active_dispatch: wgpu::BindGroup,
+    hir_active_dispatch: ComputeOperation,
     semantic_features: SemanticFeaturesOperation,
+    status_readback: crate::gpu::operations::CopyBufferOperation,
     type_instance_decl_token: LaniusBuffer<u32>,
     _type_instance_aggregate_word_count: LaniusBuffer<u32>,
     _call_dependency_library_id: LaniusBuffer<u32>,
     _call_dependency_unit_id: LaniusBuffer<u32>,
     _call_dependency_local_index: LaniusBuffer<u32>,
     _call_dependency_host_service: LaniusBuffer<u32>,
-    type_subtree_compare_buffers: Box<TypeSubtreeCompareBuffers>,
     name_bind_groups: NameBindGroups,
     language_name_bind_groups: LanguageNameBindGroups,
     if_depth_bind_groups: IfDepthBindGroups,
@@ -490,34 +480,20 @@ struct ResidentTypeCheckWorkspace {
     predicates: PredicateBindGroups,
     type_instances: TypeInstanceBindGroups,
     returns: ReturnValidationOperation,
-    conditions_compact_expr: wgpu::BindGroup,
-    conditions_compact_stmt: wgpu::BindGroup,
     condition_finalization: ConditionFinalizationOperation,
-    conditions_compact_aggregate_requests: wgpu::BindGroup,
-    semantic_expression_refs_project: wgpu::BindGroup,
-    semantic_struct_literal_refs_project: wgpu::BindGroup,
-    semantic_array_index_refs_project: wgpu::BindGroup,
-    semantic_calls_project: wgpu::BindGroup,
-    semantic_artifact_project: wgpu::BindGroup,
-    semantic_local_const_literals_project: wgpu::BindGroup,
-    semantic_local_const_references_project: wgpu::BindGroup,
-    aggregate_compare_scan: PrefixScanOperation,
-    aggregate_compare_dispatch: wgpu::BindGroup,
-    conditions_aggregate_args: wgpu::BindGroup,
-    type_subtree_compare_scan: Box<PrefixScanOperation>,
-    type_subtree_compare_dispatch: Box<wgpu::BindGroup>,
-    conditions_type_subtree: Box<wgpu::BindGroup>,
-    scope_hir: wgpu::BindGroup,
+    semantic_projection: SemanticProjectionOperations,
+    aggregate_comparison: AggregateComparisonOperation,
+    scope_hir: ComputeOperation,
 }
 
 impl ResidentTypeCheckWorkspace {
     fn clear_job_storage(&self, encoder: &mut wgpu::CommandEncoder) {
-        for buffer in &self.resettable_buffers {
-            if buffer.byte_size == 0 {
-                continue;
-            }
-            debug_assert_eq!(buffer.byte_size % wgpu::COPY_BUFFER_ALIGNMENT, 0);
-            encoder.clear_buffer(&buffer.buffer, 0, None);
+        assert!(
+            !self.job_storage_resets.is_empty(),
+            "resident workspace reset operations must be installed"
+        );
+        for reset in &self.job_storage_resets {
+            reset.record(encoder);
         }
     }
 

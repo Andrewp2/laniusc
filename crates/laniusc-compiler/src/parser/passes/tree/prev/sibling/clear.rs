@@ -20,6 +20,15 @@ pub struct TreePrevSiblingClearPass {
     data: PassData,
 }
 
+pub(in crate::parser) const STRUCT_LITERAL_FIELD_NEXT_CLEAR: &str =
+    "hir_struct_lit_field_next_clear";
+
+impl TreePrevSiblingClearPass {
+    pub(in crate::parser) fn graph_pass(&self) -> &PassData {
+        &self.data
+    }
+}
+
 crate::gpu::passes_core::impl_static_shader_pass!(
     TreePrevSiblingClearPass,
     label: "tree_prev_sibling_clear",

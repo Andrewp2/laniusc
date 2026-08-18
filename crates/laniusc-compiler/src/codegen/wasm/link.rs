@@ -5,11 +5,13 @@
 //! passes in `link/executable.rs`.
 
 mod executable;
+pub(super) use executable::WasmExecutablePageGraph;
 mod paged;
 mod symbol_partitions;
 mod symbol_resolution;
-
 use std::path::PathBuf;
+
+pub(super) use symbol_resolution::WasmSymbolPartitionGraph;
 
 use super::{
     GpuWasmRelocatableObject,

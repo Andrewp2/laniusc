@@ -18,8 +18,9 @@ use super::{
 use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
-    operations::ComputeOperation,
-    passes_core::{PassData, make_pass_data_from_shader_key, map_readback_blocking},
+    kernels::KernelRegistry,
+    operations::{ComputeOperation, CopyBufferOperation},
+    passes_core::{PassData, map_readback_blocking},
     readback::PagedReadback,
     resource_registry::ResourceMap,
 };
@@ -58,9 +59,9 @@ pub(crate) struct GpuX86ArtifactStage {
     _byte_offsets: LaniusBuffer<u32>,
     _entrypoint_state: LaniusBuffer<u32>,
     layout: LaniusBuffer<X86ArtifactLayout>,
-    length: LaniusBuffer<u32>,
     words: LaniusBuffer<u32>,
     length_readback: LaniusBuffer<u8>,
+    length_readback_copy: Option<CopyBufferOperation>,
     output_readback: PagedReadback,
 }
 
@@ -68,6 +69,7 @@ impl GpuX86ArtifactStage {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         device: &wgpu::Device,
+        kernels: &KernelRegistry,
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
@@ -126,31 +128,35 @@ impl GpuX86ArtifactStage {
             .collect::<Vec<_>>();
         let fixed_params = &params[0];
 
-        let byte_count_pass = load(device, "lir.x86.byte_count", "codegen/lir/x86/byte_count")?;
+        let byte_count_pass = load(kernels, "lir.x86.byte_count", "codegen/lir/x86/byte_count")?;
         let entrypoint_clear_pass = load(
-            device,
+            kernels,
             "lir.x86.entrypoint.clear",
             "codegen/lir/x86/entrypoint_clear",
         )?;
         let entrypoint_reduce_pass = load(
-            device,
+            kernels,
             "lir.x86.entrypoint.reduce",
             "codegen/lir/x86/entrypoint_reduce",
         )?;
         let layout_pass = load(
-            device,
+            kernels,
             "lir.x86.artifact.layout",
             "codegen/lir/x86/artifact_layout",
         )?;
         let clear_pass = load(
-            device,
+            kernels,
             "lir.x86.artifact.clear",
             "codegen/lir/x86/artifact_clear",
         )?;
-        let emit_pass = load(device, "lir.x86.emit", "codegen/lir/x86/emit")?;
-        let safety_emit_pass = load(device, "lir.x86.safety.emit", "codegen/lir/x86/safety_emit")?;
+        let emit_pass = load(kernels, "lir.x86.emit", "codegen/lir/x86/emit")?;
+        let safety_emit_pass = load(
+            kernels,
+            "lir.x86.safety.emit",
+            "codegen/lir/x86/safety_emit",
+        )?;
         let runtime_emit_pass = load(
-            device,
+            kernels,
             "lir.x86.runtime.emit",
             "codegen/lir/x86/runtime_emit",
         )?;
@@ -185,6 +191,7 @@ impl GpuX86ArtifactStage {
             .collect::<Result<Vec<_>>>()?;
         let byte_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -290,6 +297,22 @@ impl GpuX86ArtifactStage {
         )?;
 
         let length_readback = readback_bytes(device, "artifact.x86.length.readback", 4, 4);
+        let length_readback_copy = graph
+            .pass_id("artifact.x86.length.readback")
+            .map(|_| {
+                CopyBufferOperation::new(
+                    &context,
+                    "artifact.x86.length.readback",
+                    "artifact_length",
+                    &length,
+                    0,
+                    "artifact_length_readback",
+                    &length_readback,
+                    0,
+                    4,
+                )
+            })
+            .transpose()?;
         let output_readback = PagedReadback::new(
             device,
             "artifact.x86.bytes.readback",
@@ -311,9 +334,9 @@ impl GpuX86ArtifactStage {
             _byte_offsets: byte_offsets,
             _entrypoint_state: entrypoint_state,
             layout,
-            length,
             words,
             length_readback,
+            length_readback_copy,
             output_readback,
         })
     }
@@ -371,8 +394,12 @@ impl GpuX86ArtifactStage {
         Ok(())
     }
 
-    pub(crate) fn record_length_readback(&self, encoder: &mut wgpu::CommandEncoder) {
-        self.length.copy_to(encoder, 0, &self.length_readback, 0, 4);
+    pub(crate) fn record_length_readback(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.length_readback_copy
+            .as_ref()
+            .context("x86 artifact graph has no executable length-readback operation")?
+            .record(encoder);
+        Ok(())
     }
 
     #[cfg(test)]
@@ -382,7 +409,7 @@ impl GpuX86ArtifactStage {
         self.record_clear(encoder)?;
         self.record_emit(encoder, 0)?;
         self.record_extra_emits(encoder, 1)?;
-        self.record_length_readback(encoder);
+        self.record_length_readback(encoder)?;
         Ok(())
     }
 
@@ -416,8 +443,8 @@ impl GpuX86ArtifactStage {
     }
 }
 
-fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
-    make_pass_data_from_shader_key(device, label, "main", shader)
+fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData> {
+    Ok(kernels.kernel(shader).clone())
 }
 
 #[cfg(test)]
@@ -427,6 +454,7 @@ mod tests {
         codegen::{
             lowering::{GpuSemanticLirView, target_lowering_allocations},
             lowering_ir::{
+                LoweringArtifactKind,
                 LoweringStatus,
                 LoweringTarget,
                 SemanticLirAggregateElement,
@@ -441,7 +469,7 @@ mod tests {
                 X86LirCore,
                 X86LirLocations,
                 X86LirOperands,
-                lowering_compiler_graph,
+                lowering_compiler_graph_for_artifact,
                 opcode,
             },
         },
@@ -472,7 +500,12 @@ mod tests {
             target_instructions: 12,
             artifact_bytes: 2048,
         };
-        let graph = lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap();
+        let graph = lowering_compiler_graph_for_artifact(
+            capacities,
+            LoweringTarget::X86_64,
+            LoweringArtifactKind::Executable,
+        )
+        .unwrap();
         let workspace =
             CompilerGraphWorkspace::new(&gpu.device, "test.x86_artifact", &graph).unwrap();
         let status: LaniusBuffer<LoweringStatus> = workspace
@@ -724,8 +757,14 @@ mod tests {
         gpu.queue
             .write_buffer(&saved_masks.buffer, 0, &records(&[[0], [0]]));
 
+        let kernels =
+            KernelRegistry::prepare_prefixes(&gpu.device, &["codegen/lir", "scan/counted"], |_| {
+                true
+            })
+            .unwrap();
         let stage = GpuX86ArtifactStage::new(
             &gpu.device,
+            &kernels,
             &graph,
             &workspace,
             &allocations,

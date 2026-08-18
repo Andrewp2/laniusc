@@ -9,22 +9,14 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
     resources: &ResourceMap<'_>,
     shape: VisibleShape,
 ) -> Result<VisibleBindGroups> {
-    let mut visible_resources = resources.clone();
-    visible_resources.alias(
-        "hir_visible_decl_source_by_token",
-        "hir_visible_decl_key_order_tmp",
-    )?;
-    let reflected = |label, kernel| {
-        reflected_bind_group_from_resources(
-            device,
-            label,
-            &passes.kernel(kernel),
-            &visible_resources,
-        )
-    };
-    let clear = reflected(
-        "type_check_visible_01_clear",
-        "type_checker/visible/01/clear/resident",
+    let name_clear_n = shape.tokens.saturating_add(LANGUAGE_SYMBOL_COUNT).max(1);
+    let clear = ComputeOperation::direct(
+        device,
+        graph,
+        resources,
+        compiler_graph::VISIBLE_CLEAR_PASS,
+        &passes.kernel("type_checker/visible/01/clear/resident"),
+        name_clear_n,
     )?;
     let compact_hir_dispatch_args =
         typed_buffer_from_resources(resources, "compact_hir_dispatch_args")?;
@@ -38,19 +30,14 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
             reserved1: 0,
         },
     );
-    let compact_hir_dispatch = reflected_bind_group_with_overrides(
+    let compact_hir_dispatch = ComputeOperation::direct_with_uniform(
         device,
-        "type_check.visible.compact_hir_dispatch",
-        &passes.kernel("type_checker/count/dispatch_args"),
+        graph,
         resources,
-        &[
-            ("gParams", compact_hir_dispatch_params.as_entire_binding()),
-            ("count_in", resources["compact_hir_count"].clone()),
-            (
-                "dispatch_args",
-                compact_hir_dispatch_args.as_entire_binding(),
-            ),
-        ],
+        compiler_graph::VISIBLE_SEMANTIC_DISPATCH_PASS,
+        &passes.kernel("type_checker/count/dispatch_args"),
+        &compact_hir_dispatch_params,
+        1,
     )?;
     let mark_hir_declarations = ComputeOperation::indirect_spec(
         device,
@@ -61,22 +48,14 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         &compact_hir_dispatch_args,
     )?;
     let match_payload_dispatch_args = graph.u32_buffer("match_payload_dispatch_args")?;
-    let match_payload_dispatch = reflected_bind_group_with_overrides(
+    let match_payload_dispatch = ComputeOperation::direct_with_uniform(
         device,
-        "type_check.visible.match_payload_dispatch",
-        &passes.kernel("type_checker/count/dispatch_args"),
+        graph,
         resources,
-        &[
-            ("gParams", compact_hir_dispatch_params.as_entire_binding()),
-            (
-                "count_in",
-                resources["compact_match_payload_row_count"].clone(),
-            ),
-            (
-                "dispatch_args",
-                match_payload_dispatch_args.as_entire_binding(),
-            ),
-        ],
+        compiler_graph::VISIBLE_MATCH_DISPATCH_PASS,
+        &passes.kernel("type_checker/count/dispatch_args"),
+        &compact_hir_dispatch_params,
+        1,
     )?;
     let mark_match_payload_declarations = ComputeOperation::indirect_spec(
         device,
@@ -102,6 +81,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
     let declaration_capacity = shape.record_capacity.max(1);
     let declarations = VisibleDeclSort::new(
         device,
+        graph,
         passes,
         resources,
         declaration_capacity,
@@ -121,12 +101,14 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
             reserved2: 0,
         },
     );
-    let build_hir_decl_scope_leaves = reflected_bind_group_with_overrides(
+    let build_hir_decl_scope_leaves = ComputeOperation::direct_with_uniform(
         device,
-        "type_check_visible_03g_build_hir_decl_scope_leaves",
-        &passes.kernel("type_checker/visible/03g_build_hir_decl_scope_leaves"),
+        graph,
         resources,
-        &[("gParams", leaf_params.as_entire_binding())],
+        VISIBLE_SCOPE_TREE_LEAVES.name,
+        &passes.kernel("type_checker/visible/03g_build_hir_decl_scope_leaves"),
+        &leaf_params,
+        shape.leaf_base.max(1),
     )?;
 
     let mut hir_decl_scope_tree_levels = Vec::new();
@@ -146,27 +128,31 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
                 reserved2: 0,
             },
         );
-        let bind_group = reflected_bind_group_with_overrides(
+        let operation = ComputeOperation::direct_with_uniform(
             device,
-            "type_check_visible_03h_build_hir_decl_scope_tree",
-            &passes.kernel("type_checker/visible/03h_build_hir_decl_scope_tree"),
+            graph,
             resources,
-            &[("gParams", level_params.as_entire_binding())],
+            VISIBLE_SCOPE_TREE_LEVEL.name,
+            &passes.kernel("type_checker/visible/03h_build_hir_decl_scope_tree"),
+            &level_params,
+            level_start.max(1),
         )?;
         hir_decl_scope_tree_levels.push(VisibleDeclScopeTreeLevel {
             _params: level_params,
-            bind_group,
-            work_items: level_start,
+            operation,
         });
         level_start /= 2;
     }
 
-    let hir_names = reflected(
-        "type_check_visible_04_hir_names",
-        "type_checker/visible/04_hir_names",
+    let hir_names = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VISIBLE_NAMES,
+        &compact_hir_dispatch_args,
     )?;
     Ok(VisibleBindGroups {
-        compact_hir_dispatch_args: typed_alias_storage_u32(&compact_hir_dispatch_args, 3),
         clear,
         compact_hir_dispatch,
         mark_hir_declarations,
@@ -178,7 +164,6 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         _compact_hir_dispatch_params: compact_hir_dispatch_params,
         _hir_decl_scope_leaf_params: leaf_params,
         build_hir_decl_scope_leaves,
-        hir_decl_scope_leaf_work_items: shape.leaf_base,
         hir_decl_scope_tree_levels,
         hir_names,
     })

@@ -4,26 +4,34 @@ use super::super::*;
 pub(in crate::type_checker) fn create_language_name_bind_groups(
     device: &wgpu::Device,
     passes: &TypeCheckPasses,
-    resources: &HashMap<String, wgpu::BindingResource<'_>>,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
+    resources: &ResourceMap<'_>,
+    name_capacity: u32,
 ) -> Result<LanguageNameBindGroups> {
     Ok(LanguageNameBindGroups {
-        clear: reflected_bind_group_from_resources(
+        clear: ComputeOperation::direct(
             device,
-            "type_check_language_names_clear",
+            graph,
+            resources,
+            compiler_graph::LANGUAGE_NAMES_CLEAR_PASS,
             &passes.kernel("type_checker/language/names/00_clear"),
-            resources,
+            LANGUAGE_SYMBOL_COUNT,
         )?,
-        type_codes_clear: reflected_bind_group_from_resources(
+        type_codes_clear: ComputeOperation::direct(
             device,
-            "type_check_language_type_codes_clear",
+            graph,
+            resources,
+            compiler_graph::LANGUAGE_TYPE_CODES_CLEAR_PASS,
             &passes.kernel("type_checker/language/decls/00a_clear_type_codes"),
-            resources,
+            name_capacity,
         )?,
-        decls_materialize: reflected_bind_group_from_resources(
+        decls_materialize: ComputeOperation::direct(
             device,
-            "type_check_language_decls_materialize",
-            &passes.kernel("type_checker/language/decls/00_materialize"),
+            graph,
             resources,
+            compiler_graph::LANGUAGE_DECLS_MATERIALIZE_PASS,
+            &passes.kernel("type_checker/language/decls/00_materialize"),
+            LANGUAGE_DECL_COUNT,
         )?,
     })
 }

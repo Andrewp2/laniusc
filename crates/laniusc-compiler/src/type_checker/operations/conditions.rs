@@ -17,7 +17,8 @@ pub(in crate::type_checker) const CONDITIONS_METHODS: ReflectedComputeSpec = typ
     "type_check.conditions.compact_methods",
     Declarations,
     "type_checker/conditions/compact_methods"
-);
+)
+.with_indirect_dispatch("method_compact_dispatch_args");
 pub(in crate::type_checker) const CONDITIONS_PREDICATES: ReflectedComputeSpec = typecheck_pass!(
     "type_check.conditions.compact_predicates",
     Declarations,

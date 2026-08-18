@@ -9,11 +9,13 @@ pub(in crate::type_checker) const STRUCT_FIELD_LOOKUP_CLEAR: ReflectedComputeSpe
     )
     .initializer();
 
-pub(in crate::type_checker) const STRUCT_FIELD_LOOKUP_BUILD: ReflectedComputeSpec = typecheck_pass!(
-    "type_check.struct_fields.lookup.build",
-    Declarations,
-    "type_checker/type/instances/02b_build_struct_field_lookup"
-);
+pub(in crate::type_checker) const STRUCT_FIELD_LOOKUP_BUILD: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.struct_fields.lookup.build",
+        Declarations,
+        "type_checker/type/instances/02b_build_struct_field_lookup"
+    )
+    .with_indirect_dispatch("hir_active_dispatch_args");
 
 pub(in crate::type_checker) struct StructFieldIndex(ExactLookupOperation);
 

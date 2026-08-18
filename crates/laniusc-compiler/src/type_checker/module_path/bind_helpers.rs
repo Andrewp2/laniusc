@@ -32,33 +32,17 @@ pub(super) fn create_record_flag_extract(
     Ok((params, operation))
 }
 
-/// Creates a one-dispatch bind group that writes radix dispatch arguments.
-pub(super) fn create_radix_dispatch(
-    device: &wgpu::Device,
-    pass: &PassData,
-    label: &'static str,
-    params: &LaniusBuffer<ModuleKeyRadixParams>,
-    item_count: &LaniusBuffer<u32>,
-    dispatch_args: &LaniusBuffer<u32>,
-) -> Result<wgpu::BindGroup> {
-    let mut resources = ResourceMap::new();
-    resources.buffer("gParams", params);
-    resources.buffer("name_count_in", item_count);
-    resources.buffer("radix_dispatch_args", dispatch_args);
-    resources.reflected_bind_group_with_overrides(device, label, pass, &[])
-}
-
 /// Creates a one-dispatch bind group that expands a count into dispatch args.
 pub(super) fn create_count_dispatch(
     device: &wgpu::Device,
-    pass: &PassData,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
+    passes: &TypeCheckPasses,
+    resources: &ResourceMap<'_>,
+    spec: crate::gpu::compiler_graph::ReflectedComputeSpec,
     param_label: &str,
-    bind_label: &'static str,
     capacity: u32,
     multiplier: u32,
-    count_in: &LaniusBuffer<u32>,
-    dispatch_args: &LaniusBuffer<u32>,
-) -> Result<(LaniusBuffer<CountDispatchParams>, wgpu::BindGroup)> {
+) -> Result<(LaniusBuffer<CountDispatchParams>, ComputeOperation)> {
     let params = uniform_from_val(
         device,
         param_label,
@@ -69,27 +53,23 @@ pub(super) fn create_count_dispatch(
             reserved1: 0,
         },
     );
-    let mut resources = ResourceMap::new();
+    let mut resources = resources.clone();
     resources.buffer("gParams", &params);
-    resources.buffer("count_in", count_in);
-    resources.buffer("dispatch_args", dispatch_args);
-    let bind_group =
-        resources.reflected_bind_group_with_overrides(device, bind_label, pass, &[])?;
-    Ok((params, bind_group))
+    let operation = ComputeOperation::direct_spec(device, graph, &resources, passes, spec, 1)?;
+    Ok((params, operation))
 }
 
 /// Creates a dispatch-argument bind group sized by the larger of two counts.
 pub(super) fn create_pair_max_dispatch(
     device: &wgpu::Device,
-    pass: &PassData,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
+    passes: &TypeCheckPasses,
+    resources: &ResourceMap<'_>,
+    spec: crate::gpu::compiler_graph::ReflectedComputeSpec,
     param_label: &str,
-    bind_label: &'static str,
     left_capacity: u32,
     right_capacity: u32,
-    left_count_in: &LaniusBuffer<u32>,
-    right_count_in: &LaniusBuffer<u32>,
-    dispatch_args: &LaniusBuffer<u32>,
-) -> Result<(LaniusBuffer<CountPairMaxDispatchParams>, wgpu::BindGroup)> {
+) -> Result<(LaniusBuffer<CountPairMaxDispatchParams>, ComputeOperation)> {
     let params = uniform_from_val(
         device,
         param_label,
@@ -100,12 +80,8 @@ pub(super) fn create_pair_max_dispatch(
             reserved: 0,
         },
     );
-    let mut resources = ResourceMap::new();
+    let mut resources = resources.clone();
     resources.buffer("gParams", &params);
-    resources.buffer("left_count_in", left_count_in);
-    resources.buffer("right_count_in", right_count_in);
-    resources.buffer("dispatch_args", dispatch_args);
-    let bind_group =
-        resources.reflected_bind_group_with_overrides(device, bind_label, pass, &[])?;
-    Ok((params, bind_group))
+    let operation = ComputeOperation::direct_spec(device, graph, &resources, passes, spec, 1)?;
+    Ok((params, operation))
 }

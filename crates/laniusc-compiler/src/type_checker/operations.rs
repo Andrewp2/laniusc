@@ -45,7 +45,9 @@ mod call_claim_index;
 mod call_generic_claim_validation;
 mod calls;
 mod conditions;
+mod dependencies;
 mod generic_parameter_index;
+mod late_semantics;
 mod methods;
 mod module_paths;
 mod names;
@@ -60,7 +62,9 @@ pub(super) use call_claim_index::*;
 pub(super) use call_generic_claim_validation::*;
 pub(super) use calls::*;
 pub(super) use conditions::*;
+pub(super) use dependencies::*;
 pub(super) use generic_parameter_index::*;
+pub(super) use late_semantics::*;
 pub(super) use methods::*;
 pub(super) use module_paths::*;
 pub(super) use names::*;
@@ -153,7 +157,7 @@ impl CompactionOperation {
 /// access surface and bind-group surface; this value owns the executable
 /// schedule so the resident recorder cannot reproduce it independently.
 pub(super) struct SemanticFeaturesOperation {
-    flags: LaniusBuffer<u32>,
+    clear: crate::gpu::operations::ClearBufferOperation,
     collect: ComputeOperation,
     dispatch: ComputeOperation,
 }
@@ -166,9 +170,14 @@ impl SemanticFeaturesOperation {
         resources: &ResourceMap<'_>,
         hir_dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
-        resources.validate_graph_pass(compiler_graph::FEATURES_CLEAR_PASS, &[])?;
+        let flags = graph.u32_buffer("semantic_feature_flags")?;
         Ok(Self {
-            flags: graph.u32_buffer("semantic_feature_flags")?,
+            clear: crate::gpu::operations::ClearBufferOperation::entire(
+                graph,
+                compiler_graph::FEATURES_CLEAR_PASS,
+                "semantic_feature_flags",
+                &flags,
+            )?,
             collect: ComputeOperation::indirect(
                 device,
                 graph,
@@ -189,7 +198,7 @@ impl SemanticFeaturesOperation {
     }
 
     pub(super) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        record_typecheck_clear_buffer(encoder, &self.flags, 0, Some(4));
+        self.clear.record(encoder);
         self.collect.record(encoder)?;
         self.dispatch.record(encoder)
     }

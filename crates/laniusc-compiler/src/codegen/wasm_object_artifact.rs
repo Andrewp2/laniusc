@@ -12,7 +12,6 @@ use super::{
     lowering::GpuSemanticLirView,
     lowering_ir::{
         LoweringCapacities,
-        WasmModuleLayout,
         WasmObjectDefinitionRow,
         WasmObjectFunctionRow,
         WasmObjectRelocationRow,
@@ -32,8 +31,9 @@ use super::{
 use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
-    operations::ComputeOperation,
-    passes_core::{PassData, make_pass_data_from_shader_key, map_readback_blocking},
+    kernels::KernelRegistry,
+    operations::{ComputeOperation, CopyBufferOperation},
+    passes_core::{PassData, map_readback_blocking},
     readback::PagedReadback,
     resource_registry::ResourceMap,
 };
@@ -83,24 +83,20 @@ pub(crate) struct GpuWasmObjectStage {
     identity: LaniusBuffer<WasmObjectIdentity>,
     _relocation_flags: LaniusBuffer<u32>,
     _relocation_prefix: LaniusBuffer<u32>,
-    relocation_total: LaniusBuffer<u32>,
+    _relocation_total: LaniusBuffer<u32>,
     _symbol_flags: LaniusBuffer<u32>,
     _symbol_prefix: LaniusBuffer<u32>,
-    symbol_total: LaniusBuffer<u32>,
+    _symbol_total: LaniusBuffer<u32>,
     _definition_flags: LaniusBuffer<u32>,
     _definition_prefix: LaniusBuffer<u32>,
-    definition_total: LaniusBuffer<u32>,
+    _definition_total: LaniusBuffer<u32>,
     relocations: LaniusBuffer<WasmObjectRelocationRow>,
     functions: LaniusBuffer<WasmObjectFunctionRow>,
     definitions: LaniusBuffer<WasmObjectDefinitionRow>,
     type_words: LaniusBuffer<u32>,
     body_words: LaniusBuffer<u32>,
     data_words: LaniusBuffer<u32>,
-    function_count: LaniusBuffer<u32>,
-    type_total: LaniusBuffer<u32>,
-    code_total: LaniusBuffer<u32>,
-    string_pool_len: LaniusBuffer<u32>,
-    layout: LaniusBuffer<WasmModuleLayout>,
+    metadata_readback_copies: Vec<CopyBufferOperation>,
     metadata_readback: LaniusBuffer<u8>,
     payload_readback: PagedReadback,
 }
@@ -109,6 +105,7 @@ impl GpuWasmObjectStage {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         device: &wgpu::Device,
+        kernels: &KernelRegistry,
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
@@ -207,27 +204,27 @@ impl GpuWasmObjectStage {
         );
 
         let relocation_flags_pass = load(
-            device,
+            kernels,
             "artifact.wasm.object.relocation_flags",
             "codegen/lir/wasm/object_relocation_flags",
         )?;
         let definition_flags_pass = load(
-            device,
+            kernels,
             "artifact.wasm.object.definition_flags",
             "codegen/lir/wasm/object_definition_flags",
         )?;
         let relocations_pass = load(
-            device,
+            kernels,
             "artifact.wasm.object.relocations",
             "codegen/lir/wasm/object_relocations",
         )?;
         let functions_pass = load(
-            device,
+            kernels,
             "artifact.wasm.object.functions",
             "codegen/lir/wasm/object_functions",
         )?;
         let bytes_pass = load(
-            device,
+            kernels,
             "artifact.wasm.object.bytes",
             "codegen/lir/wasm/object_bytes",
         )?;
@@ -248,6 +245,7 @@ impl GpuWasmObjectStage {
         )?;
         let relocation_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -260,6 +258,7 @@ impl GpuWasmObjectStage {
         )?;
         let symbol_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -281,6 +280,7 @@ impl GpuWasmObjectStage {
         )?;
         let definition_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -320,6 +320,76 @@ impl GpuWasmObjectStage {
             &params,
             artifact_capacity,
         )?;
+        let metadata_readback_copies = [
+            (
+                "artifact.wasm.object.function_count.readback",
+                "function_count",
+                semantic.function_count,
+                0,
+            ),
+            (
+                "artifact.wasm.object.type_total.readback",
+                "type_total",
+                module.type_total,
+                4,
+            ),
+            (
+                "artifact.wasm.object.code_total.readback",
+                "code_total",
+                module.code_total,
+                8,
+            ),
+            (
+                "artifact.wasm.object.relocation_total.readback",
+                "relocation_total",
+                &relocation_total,
+                12,
+            ),
+            (
+                "artifact.wasm.object.symbol_total.readback",
+                "symbol_total",
+                &symbol_total,
+                16,
+            ),
+            (
+                "artifact.wasm.object.definition_total.readback",
+                "definition_total",
+                &definition_total,
+                20,
+            ),
+            (
+                "artifact.wasm.object.string_pool_len.readback",
+                "string_pool_len",
+                semantic.string_pool_len,
+                24,
+            ),
+        ]
+        .into_iter()
+        .map(|(name, source_binding, source, destination_offset)| {
+            CopyBufferOperation::new(
+                &context,
+                name,
+                source_binding,
+                source,
+                0,
+                "metadata_readback",
+                &metadata_readback,
+                destination_offset,
+                4,
+            )
+        })
+        .chain(std::iter::once(CopyBufferOperation::new(
+            &context,
+            "artifact.wasm.object.layout.readback",
+            "module_layout",
+            module.layout,
+            0,
+            "metadata_readback",
+            &metadata_readback,
+            32,
+            64,
+        )))
+        .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             relocation_capacity,
@@ -337,24 +407,20 @@ impl GpuWasmObjectStage {
             identity,
             _relocation_flags: relocation_flags,
             _relocation_prefix: relocation_prefix,
-            relocation_total,
+            _relocation_total: relocation_total,
             _symbol_flags: symbol_flags,
             _symbol_prefix: symbol_prefix,
-            symbol_total,
+            _symbol_total: symbol_total,
             _definition_flags: definition_flags,
             _definition_prefix: definition_prefix,
-            definition_total,
+            _definition_total: definition_total,
             relocations,
             functions,
             definitions,
             type_words,
             body_words,
             data_words,
-            function_count: semantic.function_count.clone(),
-            type_total: module.type_total.clone(),
-            code_total: module.code_total.clone(),
-            string_pool_len: semantic.string_pool_len.clone(),
-            layout: module.layout.clone(),
+            metadata_readback_copies,
             metadata_readback,
             payload_readback,
         })
@@ -375,9 +441,9 @@ impl GpuWasmObjectStage {
     #[cfg(test)]
     pub(crate) fn output(&self) -> GpuWasmObjectView<'_> {
         GpuWasmObjectView {
-            relocation_count: &self.relocation_total,
-            symbol_count: &self.symbol_total,
-            definition_count: &self.definition_total,
+            relocation_count: &self._relocation_total,
+            symbol_count: &self._symbol_total,
+            definition_count: &self._definition_total,
             relocations: &self.relocations,
             functions: &self.functions,
             definitions: &self.definitions,
@@ -393,20 +459,9 @@ impl GpuWasmObjectStage {
         self.relocations_op.record(encoder)?;
         self.functions_op.record(encoder)?;
         self.bytes_op.record(encoder)?;
-        for (source, destination) in [
-            (&self.function_count, 0),
-            (&self.type_total, 4),
-            (&self.code_total, 8),
-            (&self.relocation_total, 12),
-            (&self.symbol_total, 16),
-            (&self.definition_total, 20),
-        ] {
-            source.copy_to(encoder, 0, &self.metadata_readback, destination, 4);
+        for copy in &self.metadata_readback_copies {
+            copy.record(encoder);
         }
-        self.string_pool_len
-            .copy_to(encoder, 0, &self.metadata_readback, 24, 4);
-        self.layout
-            .copy_to(encoder, 0, &self.metadata_readback, 32, 64);
         Ok(())
     }
 
@@ -679,6 +734,6 @@ fn scan_contract(kind: &'static str, count: &'static str) -> GraphScanContract {
     }
 }
 
-fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
-    make_pass_data_from_shader_key(device, label, "main", shader)
+fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData> {
+    Ok(kernels.kernel(shader).clone())
 }

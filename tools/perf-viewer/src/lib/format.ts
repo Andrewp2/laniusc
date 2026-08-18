@@ -41,6 +41,15 @@ export function formatBytes(value: number): string {
   return `${value} B`;
 }
 
+export function formatSourceBytes(value: number): string {
+  const decimal = formatBytes(value);
+  const mebibyte = 1024 ** 2;
+  if (value >= mebibyte && value % mebibyte === 0 && value % 1_000_000 !== 0) {
+    return `${decimal} (${(value / mebibyte).toFixed(2)} MiB)`;
+  }
+  return decimal;
+}
+
 export function measurementLabel(measurement: Measurement, mixedFileCounts: boolean): string {
   const compiler = COMPILER_NAMES[measurement.compiler.name] ?? measurement.compiler.name;
   const rawConfiguration = measurement.configuration_display ?? measurement.configuration ?? measurement.target;
@@ -72,7 +81,7 @@ export function resultLabel(run: PerformanceRun): string {
   const kind = run.workload.kind === 'single_file' ? 'Single file' : 'Typical project';
   if (!source) return kind;
   const files = source.files === 1 ? '1 file' : `${source.files.toLocaleString()} files`;
-  return `${kind} · ${files} · ${formatBytes(source.bytes)} · ${source.sloc.toLocaleString()} SLOC`;
+  return `${kind} · ${files} · ${formatSourceBytes(source.bytes)} · ${source.sloc.toLocaleString()} SLOC`;
 }
 
 export function resultOptionLabel(run: PerformanceRun): string {

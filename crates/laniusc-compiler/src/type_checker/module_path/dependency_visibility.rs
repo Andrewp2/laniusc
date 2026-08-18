@@ -1,16 +1,91 @@
 use super::{super::*, buffers::Buffers, inputs::CreateInputs, layout::Layout};
 
+pub(in crate::type_checker) struct DependencyTypeIndexInvocations {
+    initialize: ComputeInvocation,
+    jumps: Box<[ComputeInvocation]>,
+    clear_generic_arity: ComputeInvocation,
+    count_generic_arity: ComputeInvocation,
+}
+
+pub(in crate::type_checker) struct DependencyTypeIndexOperations {
+    initialize: ComputeOperation,
+    jump_a_to_b: Option<ComputeOperation>,
+    jump_b_to_a: Option<ComputeOperation>,
+    clear_generic_arity: ComputeOperation,
+    count_generic_arity: ComputeOperation,
+}
+
+impl DependencyTypeIndexOperations {
+    fn invocations(
+        &self,
+        graph: &compiler_graph::TypeCheckCompilerGraph,
+        names: DependencyTypeIndexPassNames,
+        jump_rounds: u32,
+    ) -> Result<DependencyTypeIndexInvocations> {
+        let initialize = self.initialize.invocation(graph, names.initialize)?;
+        let mut jumps = Vec::with_capacity(jump_rounds as usize);
+        for round in 0..jump_rounds {
+            let operation = if round % 2 == 0 {
+                self.jump_a_to_b
+                    .as_ref()
+                    .expect("an even canonical-type jump requires A-to-B storage")
+            } else {
+                self.jump_b_to_a
+                    .as_ref()
+                    .expect("an odd canonical-type jump requires B-to-A storage")
+            };
+            let name = if round % 2 == 0 && round + 1 == jump_rounds {
+                names.jump_final_a_to_b
+            } else if round % 2 == 0 {
+                names.jump_a_to_b
+            } else {
+                names.jump_b_to_a
+            };
+            jumps.push(operation.invocation(graph, name)?);
+        }
+        Ok(DependencyTypeIndexInvocations {
+            initialize,
+            jumps: jumps.into_boxed_slice(),
+            clear_generic_arity: self
+                .clear_generic_arity
+                .invocation(graph, names.clear_generic_arity)?,
+            count_generic_arity: self
+                .count_generic_arity
+                .invocation(graph, names.count_generic_arity)?,
+        })
+    }
+
+    pub(in crate::type_checker) fn record(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        invocations: &DependencyTypeIndexInvocations,
+    ) -> Result<()> {
+        self.initialize
+            .record_invocation(encoder, &invocations.initialize)?;
+        for (round, invocation) in invocations.jumps.iter().enumerate() {
+            let operation = if round % 2 == 0 {
+                self.jump_a_to_b
+                    .as_ref()
+                    .expect("an even canonical-type jump requires A-to-B storage")
+            } else {
+                self.jump_b_to_a
+                    .as_ref()
+                    .expect("an odd canonical-type jump requires B-to-A storage")
+            };
+            operation.record_invocation(encoder, invocation)?;
+        }
+        self.clear_generic_arity
+            .record_invocation(encoder, &invocations.clear_generic_arity)?;
+        self.count_generic_arity
+            .record_invocation(encoder, &invocations.count_generic_arity)
+    }
+}
+
 /// Per-unit projection of immutable dependency declarations into the local
 /// import graph. Local and dependency declaration identities intentionally use
 /// separate outputs so downstream passes cannot interpret a persisted identity
 /// as a local HIR row.
 pub(in crate::type_checker) struct DependencyVisibilityState {
-    pub(in crate::type_checker) clear_capacity: u32,
-    pub(in crate::type_checker) visible_capacity: u32,
-    pub(in crate::type_checker) lookup_capacity: u32,
-    pub(in crate::type_checker) canonical_type_count: u32,
-    pub(in crate::type_checker) canonical_declaration_count: u32,
-    pub(in crate::type_checker) canonical_member_count: u32,
     /// Stable dependency identity for each resolved value path. These rows
     /// remain valid after dependency pages are replaced, unlike page-local
     /// declaration indices.
@@ -19,33 +94,44 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) resolved_dependency_local_index: LaniusBuffer<u32>,
     pub(in crate::type_checker) declaration_field_count: LaniusBuffer<u32>,
     pub(in crate::type_checker) call_compare_scan_input: LaniusBuffer<u32>,
-    pub(in crate::type_checker) call_compare_dispatch_args: LaniusBuffer<u32>,
     _retained_buffers: Box<[LaniusBuffer<u32>]>,
-    pub(in crate::type_checker) canonical_type_jump_rounds: u32,
     pub(in crate::type_checker) scan: PrefixScanOperation,
     pub(in crate::type_checker) call_compare_scan: PrefixScanOperation,
-    pub(in crate::type_checker) count_group: wgpu::BindGroup,
-    pub(in crate::type_checker) clear_workspace_group: wgpu::BindGroup,
-    pub(in crate::type_checker) scatter_group: wgpu::BindGroup,
-    pub(in crate::type_checker) clear_lookup_group: wgpu::BindGroup,
-    pub(in crate::type_checker) build_lookup_group: wgpu::BindGroup,
-    pub(in crate::type_checker) resolve_type_group: wgpu::BindGroup,
-    pub(in crate::type_checker) resolve_value_group: wgpu::BindGroup,
-    pub(in crate::type_checker) project_calls_group: wgpu::BindGroup,
-    pub(in crate::type_checker) project_call_params_group: wgpu::BindGroup,
-    pub(in crate::type_checker) scatter_call_params_group: wgpu::BindGroup,
-    pub(in crate::type_checker) validate_call_args_group: wgpu::BindGroup,
-    pub(in crate::type_checker) validate_call_results_group: wgpu::BindGroup,
-    pub(in crate::type_checker) validate_call_type_args_group: wgpu::BindGroup,
-    pub(in crate::type_checker) call_compare_dispatch_group: wgpu::BindGroup,
-    pub(in crate::type_checker) init_canonical_type_index_group: wgpu::BindGroup,
-    pub(in crate::type_checker) jump_canonical_type_index_a_to_b_group: wgpu::BindGroup,
-    pub(in crate::type_checker) jump_canonical_type_index_b_to_a_group: wgpu::BindGroup,
-    pub(in crate::type_checker) project_types_group: wgpu::BindGroup,
-    pub(in crate::type_checker) clear_declaration_generic_arity_group: wgpu::BindGroup,
-    pub(in crate::type_checker) count_declaration_generic_arity_group: wgpu::BindGroup,
-    pub(in crate::type_checker) project_type_instances_group: wgpu::BindGroup,
-    pub(in crate::type_checker) project_methods_group: wgpu::BindGroup,
+    pub(in crate::type_checker) count_group: ComputeOperation,
+    pub(in crate::type_checker) clear_workspace_group: ComputeOperation,
+    pub(in crate::type_checker) scatter_group: ComputeOperation,
+    pub(in crate::type_checker) clear_lookup_group: ComputeOperation,
+    pub(in crate::type_checker) build_lookup_group: ComputeOperation,
+    pub(in crate::type_checker) resolve_type_group: ComputeOperation,
+    pub(in crate::type_checker) resolve_value_group: ComputeOperation,
+    pub(in crate::type_checker) project_types_group: ComputeOperation,
+    pub(in crate::type_checker) count_call_collection: ComputeInvocation,
+    pub(in crate::type_checker) scatter_call_collection: ComputeInvocation,
+    pub(in crate::type_checker) clear_lookup_call_collection: ComputeInvocation,
+    pub(in crate::type_checker) build_lookup_call_collection: ComputeInvocation,
+    pub(in crate::type_checker) resolve_type_call_collection: ComputeInvocation,
+    pub(in crate::type_checker) resolve_value_call_collection: ComputeInvocation,
+    pub(in crate::type_checker) project_types_call_collection: ComputeInvocation,
+    pub(in crate::type_checker) project_types_after_clear: ComputeInvocation,
+    pub(in crate::type_checker) project_calls_group: ComputeOperation,
+    pub(in crate::type_checker) project_call_params_group: ComputeOperation,
+    pub(in crate::type_checker) scatter_call_params_group: ComputeOperation,
+    pub(in crate::type_checker) validate_call_args_group: ComputeOperation,
+    pub(in crate::type_checker) validate_call_results_group: ComputeOperation,
+    pub(in crate::type_checker) validate_call_results_validate: ComputeInvocation,
+    pub(in crate::type_checker) generic_call_results_resolve: ComputeInvocation,
+    pub(in crate::type_checker) validate_call_type_args_group: ComputeOperation,
+    pub(in crate::type_checker) call_compare_dispatch_group: ComputeOperation,
+    pub(in crate::type_checker) type_index: DependencyTypeIndexOperations,
+    pub(in crate::type_checker) type_index_module_paths: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_call_collection: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_after_type_clear: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_type_instance_projection: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_call_param_scatter: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_method_projection: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_call_validation: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) project_type_instances_group: ComputeOperation,
+    pub(in crate::type_checker) project_methods_group: ComputeOperation,
     pub(in crate::type_checker) _params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _type_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _value_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
@@ -215,18 +301,15 @@ pub(in crate::type_checker) fn create(
             reserved1: 0,
         },
     );
-    let call_compare_dispatch_group = resources.reflected_bind_group_with_overrides(
+    let mut call_compare_dispatch_resources = resources.clone();
+    call_compare_dispatch_resources.buffer("gParams", &call_compare_dispatch_params);
+    let call_compare_dispatch_group = ComputeOperation::direct_spec(
         device,
-        "type_check.dependencies.call_compare.dispatch",
-        &passes.kernel("type_checker/count/dispatch_args"),
-        &[
-            ("gParams", call_compare_dispatch_params.as_entire_binding()),
-            ("count_in", call_compare_total.as_entire_binding()),
-            (
-                "dispatch_args",
-                call_compare_dispatch_args.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &call_compare_dispatch_resources,
+        passes,
+        DEPENDENCY_CALL_COMPARE_DISPATCH,
+        1,
     )?;
     let canonical_type_roots_a = graph.u32_buffer("dependency_canonical_type_roots_a")?;
     let canonical_type_roots_b = graph.u32_buffer("dependency_canonical_type_roots_b")?;
@@ -245,508 +328,267 @@ pub(in crate::type_checker) fn create(
         .max(lookup_capacity)
         .max(path_capacity)
         .max(inputs.hir_node_capacity.max(1));
-    let clear_workspace_group = resources.reflected_bind_group_with_overrides(
+    let mut visibility_resources = resources.clone();
+    visibility_resources.buffer("gParams", &params);
+    let clear_workspace_group = ComputeOperation::direct_spec(
         device,
-        "type_check_dependencies_00_clear_workspace",
-        &passes.kernel("type_checker/dependencies/00_clear_workspace"),
-        &[("gParams", params.as_entire_binding())],
+        graph,
+        &visibility_resources,
+        passes,
+        DEPENDENCY_WORKSPACE_CLEAR,
+        clear_capacity,
+    )?;
+    let count_group = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &visibility_resources,
+        passes,
+        DEPENDENCY_IMPORT_VISIBILITY_COUNT,
+        &buffers.import_dispatch_args,
+    )?;
+    let scatter_group = ComputeOperation::direct_spec(
+        device,
+        graph,
+        &visibility_resources,
+        passes,
+        DEPENDENCY_IMPORT_VISIBILITY_SCATTER,
+        visible_capacity,
+    )?;
+    let clear_lookup_group = ComputeOperation::direct_spec(
+        device,
+        graph,
+        &visibility_resources,
+        passes,
+        DEPENDENCY_VISIBLE_LOOKUP_CLEAR,
+        lookup_capacity,
+    )?;
+    let build_lookup_group = ComputeOperation::direct_spec(
+        device,
+        graph,
+        &visibility_resources,
+        passes,
+        DEPENDENCY_VISIBLE_LOOKUP_BUILD,
+        visible_capacity,
     )?;
 
-    let count_group = resources.reflected_bind_group_with_overrides(
+    let mut type_path_resources = resources.clone();
+    type_path_resources.buffer("gParams", &type_params);
+    let resolve_type_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_02_count_import_visibility",
-        &passes.kernel("type_checker/dependencies/02_count_import_visibility"),
-        &[
-            ("gParams", params.as_entire_binding()),
-            (
-                "import_count_out",
-                buffers.import_count_out.as_entire_binding(),
-            ),
-            ("import_status", buffers.import_status.as_entire_binding()),
-            (
-                "import_module_id",
-                buffers.import_module_id.as_entire_binding(),
-            ),
-            (
-                "import_target_dependency_module_id",
-                buffers
-                    .import_target_dependency_module_id
-                    .as_ref()
-                    .expect("dependency state has dependency import targets")
-                    .as_entire_binding(),
-            ),
-            ("dependency_visible_count", count.as_entire_binding()),
-        ],
+        graph,
+        &type_path_resources,
+        passes,
+        DEPENDENCY_TYPE_PATHS_RESOLVE,
+        &buffers.path_dispatch_args,
     )?;
-    let scatter_group = resources.reflected_bind_group_with_overrides(
+    let mut value_path_resources = resources.clone();
+    value_path_resources.buffer("gParams", &value_params);
+    let resolve_value_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_03_scatter_import_visibility",
-        &passes.kernel("type_checker/dependencies/03_scatter_import_visibility"),
-        &[
-            ("gParams", params.as_entire_binding()),
-            (
-                "import_count_out",
-                buffers.import_count_out.as_entire_binding(),
-            ),
-            (
-                "import_module_id",
-                buffers.import_module_id.as_entire_binding(),
-            ),
-            (
-                "import_target_dependency_module_id",
-                buffers
-                    .import_target_dependency_module_id
-                    .as_ref()
-                    .expect("dependency state has dependency import targets")
-                    .as_entire_binding(),
-            ),
-            ("dependency_visible_count", count.as_entire_binding()),
-            ("dependency_visible_prefix", prefix.as_entire_binding()),
-            ("dependency_visible_total", total.as_entire_binding()),
-            (
-                "dependency_visible_owner_module",
-                owner_module.as_entire_binding(),
-            ),
-            ("dependency_visible_decl", declaration.as_entire_binding()),
-        ],
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_VALUE_PATHS_RESOLVE,
+        &buffers.path_dispatch_args,
     )?;
-    let clear_lookup_group = resources.reflected_bind_group_with_overrides(
+    let mut canonical_type_resources = resources.clone();
+    canonical_type_resources.buffer("gParams", &canonical_type_params);
+    let type_index_names = DEPENDENCY_TYPE_INDEX_MODULE_PATHS;
+    let initialize_type_index = ComputeOperation::direct(
         device,
-        "type_check_dependencies_04_clear_visible_lookup",
-        &passes.kernel("type_checker/dependencies/04_clear_visible_lookup"),
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("dependency_visible_lookup", lookup.as_entire_binding()),
-        ],
-    )?;
-    let build_lookup_group = resources.reflected_bind_group_with_overrides(
-        device,
-        "type_check_dependencies_05_build_visible_lookup",
-        &passes.kernel("type_checker/dependencies/05_build_visible_lookup"),
-        &[
-            ("gParams", params.as_entire_binding()),
-            ("dependency_visible_total", total.as_entire_binding()),
-            (
-                "dependency_visible_owner_module",
-                owner_module.as_entire_binding(),
-            ),
-            ("dependency_visible_decl", declaration.as_entire_binding()),
-            ("dependency_visible_lookup", lookup.as_entire_binding()),
-        ],
-    )?;
-
-    let make_resolve_group = |label: &'static str,
-                              params: &LaniusBuffer<DependencyInterfaceVisibilityParams>,
-                              resolved_decl: &LaniusBuffer<u32>,
-                              resolved_status: &LaniusBuffer<u32>|
-     -> Result<wgpu::BindGroup> {
-        resources.reflected_bind_group_with_overrides(
-            device,
-            label,
-            &passes.kernel("type_checker/dependencies/06_resolve_paths"),
-            &[
-                ("gParams", params.as_entire_binding()),
-                ("path_count_out", buffers.path_count_out.as_entire_binding()),
-                ("path_kind", buffers.path_kind.as_entire_binding()),
-                (
-                    "path_segment_count",
-                    buffers.path_segment_count.as_entire_binding(),
-                ),
-                (
-                    "path_segment_base",
-                    buffers.path_segment_base.as_entire_binding(),
-                ),
-                (
-                    "path_segment_name_id",
-                    buffers.path_segment_name_id.as_entire_binding(),
-                ),
-                (
-                    "path_owner_module_id",
-                    buffers.path_owner_module_id.as_entire_binding(),
-                ),
-                (
-                    "dependency_visible_owner_module",
-                    owner_module.as_entire_binding(),
-                ),
-                ("dependency_visible_decl", declaration.as_entire_binding()),
-                ("dependency_visible_lookup", lookup.as_entire_binding()),
-                (
-                    "resolved_dependency_decl",
-                    resolved_decl.as_entire_binding(),
-                ),
-                ("resolved_status", resolved_status.as_entire_binding()),
-                (
-                    "resolved_dependency_library_id",
-                    resolved_dependency_library_id.as_entire_binding(),
-                ),
-                (
-                    "resolved_dependency_unit_id",
-                    resolved_dependency_unit_id.as_entire_binding(),
-                ),
-                (
-                    "resolved_dependency_local_index",
-                    resolved_dependency_local_index.as_entire_binding(),
-                ),
-            ],
-        )
-    };
-    let resolve_type_group = make_resolve_group(
-        "type_check_dependencies_06_resolve_type_paths",
-        &type_params,
-        &resolved_type_decl,
-        &buffers.resolved_type_status,
-    )?;
-    let resolve_value_group = make_resolve_group(
-        "type_check_dependencies_06_resolve_value_paths",
-        &value_params,
-        &resolved_value_decl,
-        &buffers.resolved_value_status,
-    )?;
-    let init_canonical_type_index_group = resources.reflected_bind_group_with_overrides(
-        device,
-        "type_check_dependencies_09_init_canonical_type_roots",
+        graph,
+        &canonical_type_resources,
+        type_index_names.initialize,
         &passes.kernel("type_checker/dependencies/09_init_canonical_type_roots"),
-        &[
-            ("gParams", canonical_type_params.as_entire_binding()),
-            (
-                "canonical_type_roots",
-                canonical_type_roots_a.as_entire_binding(),
-            ),
-            (
-                "canonical_type_subtree_start",
-                canonical_type_subtree_a.as_entire_binding(),
-            ),
-        ],
+        dependencies.type_count.max(1),
     )?;
-    let make_jump_group = |label: &'static str,
-                           roots_in: &LaniusBuffer<u32>,
-                           roots_out: &LaniusBuffer<u32>,
-                           subtree_in: &LaniusBuffer<u32>,
-                           subtree_out: &LaniusBuffer<u32>|
-     -> Result<wgpu::BindGroup> {
-        resources.reflected_bind_group_with_overrides(
-            device,
-            label,
-            &passes.kernel("type_checker/dependencies/10_jump_canonical_type_roots"),
-            &[
-                ("gParams", canonical_type_params.as_entire_binding()),
-                ("canonical_type_roots_in", roots_in.as_entire_binding()),
-                ("canonical_type_roots_out", roots_out.as_entire_binding()),
-                (
-                    "canonical_type_subtree_start_in",
-                    subtree_in.as_entire_binding(),
-                ),
-                (
-                    "canonical_type_subtree_start_out",
-                    subtree_out.as_entire_binding(),
-                ),
-            ],
-        )
-    };
-    let jump_canonical_type_index_a_to_b_group = make_jump_group(
-        "type_check_dependencies_10_jump_canonical_type_roots_a_to_b",
-        &canonical_type_roots_a,
-        &canonical_type_roots_b,
-        &canonical_type_subtree_a,
-        &canonical_type_subtree_b,
-    )?;
-    let jump_canonical_type_index_b_to_a_group = make_jump_group(
-        "type_check_dependencies_10_jump_canonical_type_roots_b_to_a",
-        &canonical_type_roots_b,
-        &canonical_type_roots_a,
-        &canonical_type_subtree_b,
-        &canonical_type_subtree_a,
-    )?;
-    let (canonical_type_roots, canonical_type_subtree_start) =
-        if canonical_type_jump_rounds % 2 == 0 {
-            (&canonical_type_roots_a, &canonical_type_subtree_a)
+    let jump_a_to_b = if canonical_type_jump_rounds == 0 {
+        None
+    } else {
+        let name = if canonical_type_jump_rounds == 1 {
+            type_index_names.jump_final_a_to_b
         } else {
-            (&canonical_type_roots_b, &canonical_type_subtree_b)
+            type_index_names.jump_a_to_b
         };
-    let project_types_group = resources.reflected_bind_group_with_overrides(
+        Some(ComputeOperation::direct(
+            device,
+            graph,
+            &canonical_type_resources,
+            name,
+            &passes.kernel("type_checker/dependencies/10_jump_canonical_type_roots"),
+            dependencies.type_count.max(1),
+        )?)
+    };
+    let jump_b_to_a = if canonical_type_jump_rounds >= 2 {
+        Some(ComputeOperation::direct(
+            device,
+            graph,
+            &canonical_type_resources,
+            type_index_names.jump_b_to_a,
+            &passes.kernel("type_checker/dependencies/10_jump_canonical_type_roots"),
+            dependencies.type_count.max(1),
+        )?)
+    } else {
+        None
+    };
+    let clear_generic_arity = ComputeOperation::direct(
         device,
-        "type_check_dependencies_11_project_types",
-        &passes.kernel("type_checker/dependencies/11_project_types"),
-        &[
-            ("gParams", canonical_type_params.as_entire_binding()),
-            ("path_count_out", buffers.path_count_out.as_entire_binding()),
-            ("path_kind", buffers.path_kind.as_entire_binding()),
-            (
-                "path_owner_token",
-                buffers.path_owner_token.as_entire_binding(),
-            ),
-            (
-                "resolved_dependency_decl",
-                resolved_type_decl.as_entire_binding(),
-            ),
-            (
-                "canonical_type_roots",
-                canonical_type_roots.as_entire_binding(),
-            ),
-            (
-                "declaration_field_count",
-                declaration_field_count.as_entire_binding(),
-            ),
-        ],
-    )?;
-    let clear_declaration_generic_arity_group = resources.reflected_bind_group_with_overrides(
-        device,
-        "type_check_dependencies_12_clear_declaration_generic_arity",
+        graph,
+        &canonical_type_resources,
+        type_index_names.clear_generic_arity,
         &passes.kernel("type_checker/dependencies/12_clear_declaration_generic_arity"),
-        &[
-            ("gParams", canonical_type_params.as_entire_binding()),
-            (
-                "declaration_generic_arity",
-                declaration_generic_arity.as_entire_binding(),
-            ),
-            (
-                "declaration_field_count",
-                declaration_field_count.as_entire_binding(),
-            ),
-        ],
+        dependencies.declaration_count.max(1),
     )?;
-    let count_declaration_generic_arity_group = resources.reflected_bind_group_with_overrides(
+    let count_generic_arity = ComputeOperation::direct(
         device,
-        "type_check_dependencies_13_count_declaration_generic_arity",
+        graph,
+        &canonical_type_resources,
+        type_index_names.count_generic_arity,
         &passes.kernel("type_checker/dependencies/13_count_declaration_generic_arity"),
-        &[
-            ("gParams", canonical_type_params.as_entire_binding()),
-            (
-                "declaration_generic_arity",
-                declaration_generic_arity.as_entire_binding(),
-            ),
-            (
-                "declaration_field_count",
-                declaration_field_count.as_entire_binding(),
-            ),
-        ],
+        dependencies.member_count.max(1),
     )?;
-    let project_type_instances_group = resources.reflected_bind_group_with_overrides(
+    let type_index = DependencyTypeIndexOperations {
+        initialize: initialize_type_index,
+        jump_a_to_b,
+        jump_b_to_a,
+        clear_generic_arity,
+        count_generic_arity,
+    };
+    let project_types_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_14_project_type_instances",
-        &passes.kernel("type_checker/dependencies/14_project_type_instances"),
-        &[
-            ("gParams", canonical_type_params.as_entire_binding()),
-            ("path_count_out", buffers.path_count_out.as_entire_binding()),
-            ("path_kind", buffers.path_kind.as_entire_binding()),
-            (
-                "path_segment_count",
-                buffers.path_segment_count.as_entire_binding(),
-            ),
-            (
-                "path_segment_base",
-                buffers.path_segment_base.as_entire_binding(),
-            ),
-            (
-                "path_segment_token",
-                buffers.path_segment_token.as_entire_binding(),
-            ),
-            (
-                "path_owner_token",
-                buffers.path_owner_token.as_entire_binding(),
-            ),
-            (
-                "resolved_dependency_decl",
-                resolved_type_decl.as_entire_binding(),
-            ),
-            (
-                "canonical_type_roots",
-                canonical_type_roots.as_entire_binding(),
-            ),
-            (
-                "declaration_generic_arity",
-                declaration_generic_arity.as_entire_binding(),
-            ),
-            (
-                "declaration_field_count",
-                declaration_field_count.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &canonical_type_resources,
+        passes,
+        DEPENDENCY_TYPES_PROJECT,
+        &buffers.path_dispatch_args,
     )?;
-    let project_methods_group = resources.reflected_bind_group_with_overrides(
+    let project_type_instances_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_15_project_methods",
-        &passes.kernel("type_checker/dependencies/15_project_methods"),
-        &[
-            ("gParams", value_params.as_entire_binding()),
-            (
-                "canonical_type_roots",
-                canonical_type_roots.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &canonical_type_resources,
+        passes,
+        DEPENDENCY_TYPE_INSTANCES_PROJECT,
+        &buffers.path_dispatch_args,
     )?;
-    let project_calls_group = resources.reflected_bind_group_with_overrides(
+    let project_methods_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_07_project_calls",
-        &passes.kernel("type_checker/dependencies/07_project_calls"),
-        &[
-            ("gParams", value_params.as_entire_binding()),
-            (
-                "canonical_type_roots",
-                canonical_type_roots.as_entire_binding(),
-            ),
-            (
-                "declaration_field_count",
-                declaration_field_count.as_entire_binding(),
-            ),
-            (
-                "resolved_value_decl",
-                resolved_value_decl.as_entire_binding(),
-            ),
-            (
-                "resolved_dependency_library_id",
-                resolved_dependency_library_id.as_entire_binding(),
-            ),
-            (
-                "resolved_dependency_unit_id",
-                resolved_dependency_unit_id.as_entire_binding(),
-            ),
-            (
-                "resolved_dependency_local_index",
-                resolved_dependency_local_index.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_METHODS_PROJECT,
+        inputs.hir_active_dispatch_args,
     )?;
-    let project_call_params_group = resources.reflected_bind_group_with_overrides(
+    let project_calls_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_07a_project_call_params",
-        &passes.kernel("type_checker/dependencies/07a_project_call_params"),
-        &[("gParams", value_params.as_entire_binding())],
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_CALLS_PROJECT,
+        inputs.hir_active_dispatch_args,
     )?;
-    let scatter_call_params_group = resources.reflected_bind_group_with_overrides(
+    let project_call_params_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_07b_scatter_call_params",
-        &passes.kernel("type_checker/dependencies/07b_scatter_call_params"),
-        &[
-            ("gParams", value_params.as_entire_binding()),
-            (
-                "canonical_type_roots",
-                canonical_type_roots.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_CALL_PARAMS_PROJECT,
+        inputs.hir_active_dispatch_args,
     )?;
-    let validate_call_args_group = resources.reflected_bind_group_with_overrides(
+    let scatter_call_params_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_08_validate_call_args",
-        &passes.kernel("type_checker/dependencies/08_validate_call_args"),
-        &[
-            ("gParams", value_params.as_entire_binding()),
-            (
-                "canonical_type_roots",
-                canonical_type_roots.as_entire_binding(),
-            ),
-            (
-                "canonical_type_subtree_start",
-                canonical_type_subtree_start.as_entire_binding(),
-            ),
-            (
-                "dependency_call_compare_scan_input",
-                call_compare_scan_input.as_entire_binding(),
-            ),
-            (
-                "dependency_call_compare_expected_type",
-                call_compare_expected_type.as_entire_binding(),
-            ),
-            (
-                "dependency_call_compare_actual_instance",
-                call_compare_actual_instance.as_entire_binding(),
-            ),
-            (
-                "dependency_call_compare_error_token",
-                call_compare_error_token.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_CALL_PARAMS_SCATTER,
+        inputs.hir_active_dispatch_args,
     )?;
-    let validate_call_results_group = resources.reflected_bind_group_with_overrides(
+    let validate_call_args_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_08a_validate_call_results",
-        &passes.kernel("type_checker/dependencies/08a_validate_call_results"),
-        &{
-            let mut bindings = Vec::with_capacity(45);
-            bindings.extend([("gParams", value_params.as_entire_binding())]);
-            bindings.extend([
-                (
-                    "canonical_type_roots",
-                    canonical_type_roots.as_entire_binding(),
-                ),
-                (
-                    "canonical_type_subtree_start",
-                    canonical_type_subtree_start.as_entire_binding(),
-                ),
-                (
-                    "dependency_call_compare_scan_input",
-                    call_compare_scan_input.as_entire_binding(),
-                ),
-                (
-                    "dependency_call_compare_expected_type",
-                    call_compare_expected_type.as_entire_binding(),
-                ),
-                (
-                    "dependency_call_compare_actual_instance",
-                    call_compare_actual_instance.as_entire_binding(),
-                ),
-                (
-                    "dependency_call_compare_error_token",
-                    call_compare_error_token.as_entire_binding(),
-                ),
-            ]);
-            bindings
-        },
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_CALL_ARGS_VALIDATE,
+        inputs.hir_active_dispatch_args,
     )?;
-    let validate_call_type_args_group = resources.reflected_bind_group_with_overrides(
+    let validate_call_results_group = ComputeOperation::indirect_spec(
         device,
-        "type_check_dependencies_08b_validate_call_type_args",
-        &passes.kernel("type_checker/dependencies/08b_validate_call_type_args"),
-        &[
-            ("gParams", value_params.as_entire_binding()),
-            (
-                "dependency_call_compare_scan_input",
-                call_compare_scan_input.as_entire_binding(),
-            ),
-            (
-                "dependency_call_compare_prefix",
-                call_compare_prefix.as_entire_binding(),
-            ),
-            (
-                "dependency_call_compare_total",
-                call_compare_total.as_entire_binding(),
-            ),
-            (
-                "dependency_call_compare_expected_type",
-                call_compare_expected_type.as_entire_binding(),
-            ),
-            (
-                "dependency_call_compare_actual_instance",
-                call_compare_actual_instance.as_entire_binding(),
-            ),
-            (
-                "dependency_call_compare_error_token",
-                call_compare_error_token.as_entire_binding(),
-            ),
-            (
-                "canonical_type_roots",
-                canonical_type_roots.as_entire_binding(),
-            ),
-            (
-                "canonical_type_subtree_start",
-                canonical_type_subtree_start.as_entire_binding(),
-            ),
-        ],
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_CALL_RESULTS_SUBSTITUTE,
+        inputs.hir_active_dispatch_args,
+    )?;
+    let validate_call_type_args_group = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_CALL_TYPE_ARGS_VALIDATE,
+        &call_compare_dispatch_args,
+    )?;
+
+    let replay = DEPENDENCY_PAGE_CALL_COLLECTION;
+    let count_call_collection = count_group.invocation(graph, replay.count_import_visibility)?;
+    let scatter_call_collection =
+        scatter_group.invocation(graph, replay.scatter_import_visibility)?;
+    let clear_lookup_call_collection =
+        clear_lookup_group.invocation(graph, replay.clear_visible_lookup)?;
+    let build_lookup_call_collection =
+        build_lookup_group.invocation(graph, replay.build_visible_lookup)?;
+    let resolve_type_call_collection =
+        resolve_type_group.invocation(graph, replay.resolve_type_paths)?;
+    let resolve_value_call_collection =
+        resolve_value_group.invocation(graph, replay.resolve_value_paths)?;
+    let project_types_call_collection =
+        project_types_group.invocation(graph, replay.project_types)?;
+    let project_types_after_clear =
+        project_types_group.invocation(graph, DEPENDENCY_TYPES_PROJECT_AFTER_CLEAR.name)?;
+    let validate_call_results_validate =
+        validate_call_results_group.invocation(graph, DEPENDENCY_CALL_RESULTS_VALIDATE.name)?;
+    let generic_call_results_resolve = validate_call_results_group
+        .invocation(graph, DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE.name)?;
+    let type_index_module_paths = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_MODULE_PATHS,
+        canonical_type_jump_rounds,
+    )?;
+    let type_index_call_collection = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_CALL_COLLECTION,
+        canonical_type_jump_rounds,
+    )?;
+    let type_index_after_type_clear = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_AFTER_TYPE_CLEAR,
+        canonical_type_jump_rounds,
+    )?;
+    let type_index_type_instance_projection = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_TYPE_INSTANCE_PROJECTION,
+        canonical_type_jump_rounds,
+    )?;
+    let type_index_call_param_scatter = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_CALL_PARAM_SCATTER,
+        canonical_type_jump_rounds,
+    )?;
+    let type_index_method_projection = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_METHOD_PROJECTION,
+        canonical_type_jump_rounds,
+    )?;
+    let type_index_call_validation = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_CALL_VALIDATION,
+        canonical_type_jump_rounds,
     )?;
 
     Ok(Some(Box::new(DependencyVisibilityState {
-        clear_capacity,
-        visible_capacity,
-        lookup_capacity,
-        canonical_type_count: dependencies.type_count,
-        canonical_declaration_count: dependencies.declaration_count,
-        canonical_member_count: dependencies.member_count,
         resolved_dependency_library_id,
         resolved_dependency_unit_id,
         resolved_dependency_local_index,
         declaration_field_count: declaration_field_count.clone(),
         call_compare_scan_input,
-        call_compare_dispatch_args,
         _retained_buffers: Box::new([
             count,
             prefix,
@@ -768,7 +610,6 @@ pub(in crate::type_checker) fn create(
             declaration_generic_arity,
             declaration_field_count,
         ]),
-        canonical_type_jump_rounds,
         scan,
         call_compare_scan,
         count_group,
@@ -778,19 +619,32 @@ pub(in crate::type_checker) fn create(
         build_lookup_group,
         resolve_type_group,
         resolve_value_group,
+        project_types_group,
+        count_call_collection,
+        scatter_call_collection,
+        clear_lookup_call_collection,
+        build_lookup_call_collection,
+        resolve_type_call_collection,
+        resolve_value_call_collection,
+        project_types_call_collection,
+        project_types_after_clear,
         project_calls_group,
         project_call_params_group,
         scatter_call_params_group,
         validate_call_args_group,
         validate_call_results_group,
+        validate_call_results_validate,
+        generic_call_results_resolve,
         validate_call_type_args_group,
         call_compare_dispatch_group,
-        init_canonical_type_index_group,
-        jump_canonical_type_index_a_to_b_group,
-        jump_canonical_type_index_b_to_a_group,
-        project_types_group,
-        clear_declaration_generic_arity_group,
-        count_declaration_generic_arity_group,
+        type_index,
+        type_index_module_paths,
+        type_index_call_collection,
+        type_index_after_type_clear,
+        type_index_type_instance_projection,
+        type_index_call_param_scatter,
+        type_index_method_projection,
+        type_index_call_validation,
         project_type_instances_group,
         project_methods_group,
         _params: params,

@@ -31,6 +31,7 @@ pub(super) fn register_module_path_resources<'a>(
         resources.alias("resolved_dependency_unit_id", "resolved_value_decl")?;
         resources.alias("resolved_dependency_local_index", "resolved_value_decl")?;
         resources.alias("dependency_declaration_field_count", "resolved_value_decl")?;
+        resources.alias("import_target_dependency_module_id", "resolved_value_decl")?;
     }
     resources.buffer("module_record_count_out", &module_path.module_count_out);
     resources.buffer("import_record_count_out", &module_path.import_count_out);

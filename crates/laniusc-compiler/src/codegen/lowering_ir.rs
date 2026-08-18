@@ -235,6 +235,7 @@ struct WasmModuleGraphResources {
     layout: ResourceId,
     module_length: ResourceId,
     module_bytes: ResourceId,
+    module_length_readback: Option<ResourceId>,
 }
 
 #[derive(Clone, Copy)]
@@ -266,6 +267,7 @@ struct WasmObjectGraphResources {
     type_bytes: ResourceId,
     body_bytes: ResourceId,
     data_bytes: ResourceId,
+    metadata_readback: ResourceId,
 }
 
 #[derive(Clone, Copy)]
@@ -296,6 +298,7 @@ struct X86ObjectGraphResources {
     definitions: ResourceId,
     text_bytes: ResourceId,
     rodata_bytes: ResourceId,
+    metadata_readback: ResourceId,
 }
 
 #[derive(Clone, Copy)]
@@ -305,6 +308,7 @@ struct X86ArtifactGraphResources {
     layout: ResourceId,
     artifact_length: ResourceId,
     artifact_bytes: ResourceId,
+    artifact_length_readback: Option<ResourceId>,
 }
 
 #[derive(Clone, Copy)]
@@ -1012,13 +1016,6 @@ fn build_lowering_compiler_graph(
         bytes,
         usage: WorkspaceUsageClass::Storage,
     };
-    let resident = |name, domain, bytes| ResourceDesc {
-        name,
-        domain,
-        class: ResourceClass::Resident,
-        bytes,
-        usage: WorkspaceUsageClass::Storage,
-    };
     let retained_semantic = |name, domain, bytes| ResourceDesc {
         name,
         domain,
@@ -1278,22 +1275,22 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
-    let semantic_struct_field_start_by_hir = graph.add_resource(resident(
+    let semantic_struct_field_start_by_hir = graph.add_resource(workspace(
         "lir.semantic.struct_field_start_by_hir",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
-    let semantic_struct_word_count_by_hir = graph.add_resource(resident(
+    let semantic_struct_word_count_by_hir = graph.add_resource(workspace(
         "lir.semantic.struct_word_count_by_hir",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
-    let semantic_struct_field_word_offset_by_row = graph.add_resource(resident(
+    let semantic_struct_field_word_offset_by_row = graph.add_resource(workspace(
         "lir.semantic.struct_field_word_offset_by_row",
         ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
-    let semantic_struct_field_word_count_by_row = graph.add_resource(resident(
+    let semantic_struct_field_word_count_by_row = graph.add_resource(workspace(
         "lir.semantic.struct_field_word_count_by_row",
         ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
@@ -2498,6 +2495,12 @@ fn build_lowering_compiler_graph(
     let Some(target) = target else {
         return graph.build();
     };
+    let lowering_status_readback = graph.add_storage(
+        "lowering.status_readback",
+        ResourceDomain::ArtifactBytes,
+        ResourceClass::External,
+        LoweringCapacities::bytes::<LoweringStatus>(1),
+    )?;
     let target_domain = match target {
         LoweringTarget::X86_64 => ResourceDomain::X86Instructions,
         LoweringTarget::Wasm => ResourceDomain::WasmInstructions,
@@ -2909,6 +2912,16 @@ fn build_lowering_compiler_graph(
                 usage: WorkspaceUsageClass::Storage,
             })?,
             artifact_bytes: output,
+            artifact_length_readback: if include_object {
+                None
+            } else {
+                Some(graph.add_storage(
+                    "artifact.x86.length_readback",
+                    ResourceDomain::ArtifactBytes,
+                    ResourceClass::External,
+                    LoweringCapacities::bytes::<u32>(1),
+                )?)
+            },
         })
     } else {
         None
@@ -3094,6 +3107,12 @@ fn build_lowering_compiler_graph(
                 bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
                 usage: WorkspaceUsageClass::Storage,
             })?,
+            metadata_readback: graph.add_storage(
+                "artifact.x86.object.metadata_readback",
+                ResourceDomain::ArtifactBytes,
+                ResourceClass::External,
+                64,
+            )?,
         })
     } else {
         None
@@ -3194,6 +3213,16 @@ fn build_lowering_compiler_graph(
                 bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
                 usage: WorkspaceUsageClass::Storage,
             })?,
+            module_length_readback: if include_object {
+                None
+            } else {
+                Some(graph.add_storage(
+                    "artifact.wasm.length_readback",
+                    ResourceDomain::ArtifactBytes,
+                    ResourceClass::External,
+                    LoweringCapacities::bytes::<u32>(1),
+                )?)
+            },
         })
     } else {
         None
@@ -3386,6 +3415,12 @@ fn build_lowering_compiler_graph(
                 bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
                 usage: WorkspaceUsageClass::Storage,
             })?,
+            metadata_readback: graph.add_storage(
+                "artifact.wasm.object.metadata_readback",
+                ResourceDomain::ArtifactBytes,
+                ResourceClass::External,
+                96,
+            )?,
         })
     } else {
         None
@@ -5086,6 +5121,125 @@ fn build_lowering_compiler_graph(
         })?;
     }
 
+    if let Some(x86) = x86_artifact
+        && let Some(readback) = x86.artifact_length_readback
+    {
+        graph.add_buffer_copy_pass(
+            "artifact.x86.length.readback",
+            CompilerPhase::Artifact,
+            "artifact_length",
+            x86.artifact_length,
+            "artifact_length_readback",
+            readback,
+        )?;
+    }
+    if let Some(object) = x86_object {
+        for (name, source_binding, source) in [
+            (
+                "artifact.x86.object.relocation_total.readback",
+                "relocation_total",
+                object.relocation_total,
+            ),
+            (
+                "artifact.x86.object.symbol_total.readback",
+                "symbol_total",
+                object.symbol_total,
+            ),
+            (
+                "artifact.x86.object.definition_total.readback",
+                "definition_total",
+                object.definition_total,
+            ),
+            (
+                "artifact.x86.object.layout.readback",
+                "artifact_layout",
+                x86_artifact.expect("x86 object has x86 artifact").layout,
+            ),
+        ] {
+            graph.add_buffer_copy_pass(
+                name,
+                CompilerPhase::Artifact,
+                source_binding,
+                source,
+                "metadata_readback",
+                object.metadata_readback,
+            )?;
+        }
+    }
+    if let Some(module) = wasm_module
+        && let Some(readback) = module.module_length_readback
+    {
+        graph.add_buffer_copy_pass(
+            "artifact.wasm.length.readback",
+            CompilerPhase::Artifact,
+            "artifact_length",
+            module.module_length,
+            "artifact_length_readback",
+            readback,
+        )?;
+    }
+    if let Some(object) = wasm_object {
+        let module = wasm_module.expect("Wasm object has Wasm module");
+        for (name, source_binding, source) in [
+            (
+                "artifact.wasm.object.function_count.readback",
+                "function_count",
+                semantic_function_total,
+            ),
+            (
+                "artifact.wasm.object.type_total.readback",
+                "type_total",
+                module.type_total,
+            ),
+            (
+                "artifact.wasm.object.code_total.readback",
+                "code_total",
+                module.code_total,
+            ),
+            (
+                "artifact.wasm.object.relocation_total.readback",
+                "relocation_total",
+                object.relocation_total,
+            ),
+            (
+                "artifact.wasm.object.symbol_total.readback",
+                "symbol_total",
+                object.symbol_total,
+            ),
+            (
+                "artifact.wasm.object.definition_total.readback",
+                "definition_total",
+                object.definition_total,
+            ),
+            (
+                "artifact.wasm.object.string_pool_len.readback",
+                "string_pool_len",
+                semantic_string_pool_len,
+            ),
+            (
+                "artifact.wasm.object.layout.readback",
+                "module_layout",
+                module.layout,
+            ),
+        ] {
+            graph.add_buffer_copy_pass(
+                name,
+                CompilerPhase::Artifact,
+                source_binding,
+                source,
+                "metadata_readback",
+                object.metadata_readback,
+            )?;
+        }
+    }
+    graph.add_buffer_copy_pass(
+        "lowering.status.readback",
+        CompilerPhase::Artifact,
+        "lowering_status",
+        lowering_status,
+        "status_readback",
+        lowering_status_readback,
+    )?;
     graph.build()
 }
 
@@ -5555,22 +5709,6 @@ mod tests {
                     .is_none()
             );
             assert!(graph.resource_id("typecheck.call_intrinsic_tags").is_none());
-            let resident_resources = graph
-                .resources()
-                .iter()
-                .filter(|resource| resource.class == ResourceClass::Resident)
-                .map(|resource| resource.name)
-                .collect::<Vec<_>>();
-            assert_eq!(
-                resident_resources,
-                [
-                    "lir.semantic.struct_field_start_by_hir",
-                    "lir.semantic.struct_word_count_by_hir",
-                    "lir.semantic.struct_field_word_offset_by_row",
-                    "lir.semantic.struct_field_word_count_by_row",
-                ],
-                "only compact semantic-layout inputs may outlive lowering workspace slots",
-            );
         }
     }
 

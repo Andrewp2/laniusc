@@ -105,10 +105,6 @@ module_path_buffers! {
     pub(super) decl_key_to_decl_id: LaniusBuffer<u32>,
     pub(super) decl_key_order_tmp: LaniusBuffer<u32>,
     pub(super) decl_key_radix_dispatch_args: LaniusBuffer<u32>,
-    pub(super) decl_key_radix_block_histogram: LaniusBuffer<u32>,
-    pub(super) decl_key_radix_block_bucket_prefix: LaniusBuffer<u32>,
-    pub(super) decl_key_radix_bucket_total: LaniusBuffer<u32>,
-    pub(super) decl_key_radix_bucket_base: LaniusBuffer<u32>,
     pub(super) decl_status: LaniusBuffer<u32>,
     pub(super) decl_duplicate_of: LaniusBuffer<u32>,
     pub(super) decl_type_key_flag: LaniusBuffer<u32>,
@@ -192,7 +188,6 @@ impl Buffers {
             module_capacity,
             import_record_capacity,
             import_visible_capacity,
-            key_radix_histogram_len,
             ..
         } = layout;
         let hir_node_capacity = inputs.hir_node_capacity;
@@ -236,18 +231,6 @@ impl Buffers {
             .module_record_scan_workspace
             .hierarchy
             .alias(n_blocks.max(1) as usize);
-        let key_radix_block_histogram = inputs
-            .module_path_key_radix_block_histogram
-            .alias(key_radix_histogram_len);
-        let key_radix_block_bucket_prefix = inputs
-            .module_path_key_radix_block_bucket_prefix
-            .alias(key_radix_histogram_len);
-        let key_radix_bucket_total = inputs
-            .module_path_key_radix_bucket_total
-            .alias(RADIX_U8_BUCKET_COUNT as usize);
-        let key_radix_bucket_base = inputs
-            .module_path_key_radix_bucket_base
-            .alias(RADIX_U8_BUCKET_COUNT as usize);
         module_storage_buffers!(graph;
             module_count_out: 1;
         );
@@ -319,10 +302,6 @@ impl Buffers {
         module_storage_buffers!(graph;
             decl_key_radix_dispatch_args [INDIRECT]: 3;
         );
-        let decl_key_radix_block_histogram = key_radix_block_histogram.clone();
-        let decl_key_radix_block_bucket_prefix = key_radix_block_bucket_prefix.clone();
-        let decl_key_radix_bucket_total = key_radix_bucket_total.clone();
-        let decl_key_radix_bucket_base = key_radix_bucket_base.clone();
         let decl_status = inputs.decl_status.alias(record_capacity);
         // Duplicate rows are consumed before type-instance passes populate the
         // HIR-keyed generic-param count table.
@@ -488,10 +467,6 @@ impl Buffers {
             decl_key_to_decl_id,
             decl_key_order_tmp,
             decl_key_radix_dispatch_args,
-            decl_key_radix_block_histogram,
-            decl_key_radix_block_bucket_prefix,
-            decl_key_radix_bucket_total,
-            decl_key_radix_bucket_base,
             decl_status,
             decl_duplicate_of,
             decl_type_key_flag,

@@ -10,10 +10,10 @@ use encase::ShaderType;
 
 use crate::{
     gpu::passes_core::{
+        BindGroupCache,
         DispatchDim,
         InputElements,
         PassData,
-        bind_group,
         make_pass_data_from_shader_key,
         plan_workgroups,
     },
@@ -65,14 +65,13 @@ impl PackOffsetsScanPass {
         })
     }
 
-    /// Records the paired scan with direct local/apply dispatches.
-    pub fn record_scan(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-    ) -> Result<()> {
-        self.record_scan_inner(device, encoder, buffers, None)
+    pub(in crate::parser) fn graph_passes(&self) -> (&PassData, &PassData, &PassData, &PassData) {
+        (
+            &self.local,
+            &self.hierarchy_up,
+            &self.hierarchy_down,
+            &self.apply,
+        )
     }
 
     /// Records the paired scan with GPU-produced local/apply dispatches.
@@ -81,17 +80,8 @@ impl PackOffsetsScanPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_args: &wgpu::Buffer,
-    ) -> Result<()> {
-        self.record_scan_inner(device, encoder, buffers, Some(dispatch_args))
-    }
-
-    fn record_scan_inner(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-        dispatch_args: Option<&wgpu::Buffer>,
+        cache: &mut BindGroupCache,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
     ) -> Result<()> {
         // LLP action headers are produced by the preceding dispatch. The scan
         // consumes them through a separately constructed operation, so make
@@ -139,39 +129,43 @@ impl PackOffsetsScanPass {
                 buffers.emit_offsets.as_entire_binding(),
             ),
         ]);
+        let local_operation = crate::parser::compiler_graph::PACK_OFFSETS_LOCAL;
         let local = reflected_group(
             device,
-            &self.local,
-            "pack_offsets_scan.local",
-            &local_resources,
-        )?;
-        self.record_end_pass(
-            encoder,
-            &self.local,
-            &local,
-            "pack_offsets_scan.local",
+            cache,
             buffers,
-            dispatch_args,
+            &self.local,
+            local_operation,
+            local_operation,
+            &local_resources,
+            Some(dispatch_args),
         )?;
+        self.record_end_pass(encoder, &self.local, &local, local_operation, dispatch_args)?;
         crate::gpu::passes_core::flush_deferred_compute(encoder);
 
-        for step in &buffers.pack_offset_scan_plan.up {
+        for (index, step) in buffers.pack_offset_scan_plan.up.iter().enumerate() {
             self.record_hierarchy(
                 device,
                 encoder,
+                cache,
+                buffers,
                 &self.hierarchy_up,
                 "pack_offsets_scan.hierarchy_up",
+                index,
                 step,
                 common(),
             )?;
             crate::gpu::passes_core::flush_deferred_compute(encoder);
         }
-        for step in &buffers.pack_offset_scan_plan.down {
+        for (index, step) in buffers.pack_offset_scan_plan.down.iter().enumerate() {
             self.record_hierarchy(
                 device,
                 encoder,
+                cache,
+                buffers,
                 &self.hierarchy_down,
                 "pack_offsets_scan.hierarchy_down",
+                index,
                 step,
                 common(),
             )?;
@@ -190,20 +184,18 @@ impl PackOffsetsScanPass {
                 buffers.emit_offsets.as_entire_binding(),
             ),
         ]);
+        let apply_operation = crate::parser::compiler_graph::PACK_OFFSETS_APPLY;
         let apply = reflected_group(
             device,
-            &self.apply,
-            "pack_offsets_scan.apply",
-            &apply_resources,
-        )?;
-        self.record_end_pass(
-            encoder,
-            &self.apply,
-            &apply,
-            "pack_offsets_scan.apply",
+            cache,
             buffers,
-            dispatch_args,
+            &self.apply,
+            apply_operation,
+            apply_operation,
+            &apply_resources,
+            Some(dispatch_args),
         )?;
+        self.record_end_pass(encoder, &self.apply, &apply, apply_operation, dispatch_args)?;
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         Ok(())
     }
@@ -212,13 +204,26 @@ impl PackOffsetsScanPass {
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
+        cache: &mut BindGroupCache,
+        buffers: &ParserBuffers,
         pass: &PassData,
         label: &'static str,
+        index: usize,
         step: &'a PackOffsetHierarchyStep,
         mut resources: HashMap<String, wgpu::BindingResource<'a>>,
     ) -> Result<()> {
         resources.insert("gHierarchy".into(), step.params.as_entire_binding());
-        let group = reflected_group(device, pass, label, &resources)?;
+        let invocation = format!("{label}.{index}");
+        let group = reflected_group(
+            device,
+            cache,
+            buffers,
+            pass,
+            &invocation,
+            label,
+            &resources,
+            None,
+        )?;
         let [x, y, _] = pass.thread_group_size;
         let groups = plan_workgroups(
             DispatchDim::D1,
@@ -237,40 +242,40 @@ impl PackOffsetsScanPass {
         pass: &PassData,
         group: &wgpu::BindGroup,
         label: &'static str,
-        buffers: &ParserBuffers,
-        dispatch_args: Option<&wgpu::Buffer>,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
     ) -> Result<()> {
-        if let Some(args) = dispatch_args {
-            crate::gpu::passes_core::record_or_defer_compute_indirect(
-                encoder, pass, group, label, args,
-            );
-        } else {
-            let [x, y, _] = pass.thread_group_size;
-            let groups = plan_workgroups(
-                DispatchDim::D1,
-                InputElements::Elements1D(buffers.n_tokens.saturating_sub(1)),
-                [x, y, 1],
-            )?;
-            crate::gpu::passes_core::record_or_defer_compute_direct(
-                encoder, pass, group, label, groups,
-            );
-        }
+        crate::gpu::passes_core::record_or_defer_compute_indirect(
+            encoder,
+            pass,
+            group,
+            label,
+            dispatch_args,
+        );
         Ok(())
     }
 }
 
 fn reflected_group(
     device: &wgpu::Device,
+    cache: &mut BindGroupCache,
+    buffers: &ParserBuffers,
     pass: &PassData,
-    label: &'static str,
+    invocation: &str,
+    operation: &'static str,
     resources: &HashMap<String, wgpu::BindingResource<'_>>,
-) -> Result<wgpu::BindGroup> {
-    bind_group::create_bind_group_from_reflection(
-        device,
-        Some(label),
-        &pass.bind_group_layouts[0],
-        &pass.reflection,
-        0,
-        resources,
-    )
+    dispatch_args: Option<&crate::gpu::buffers::LaniusBuffer<u32>>,
+) -> Result<std::sync::Arc<wgpu::BindGroup>> {
+    Ok(cache
+        .reflected_for_graph_invocation(
+            device,
+            invocation,
+            operation,
+            pass,
+            buffers,
+            resources,
+            dispatch_args,
+        )?
+        .into_iter()
+        .next()
+        .expect("pack offset scan pass must have one reflected bind group"))
 }

@@ -7,44 +7,7 @@ impl GpuParser {
         encoder: &mut wgpu::CommandEncoder,
         bufs: &ParserBuffers,
     ) -> Result<()> {
-        let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gTree".into(), bufs.tree_prefix_params.as_entire_binding()),
-            (
-                "tree_count_status".into(),
-                bufs.ll1_status.as_entire_binding(),
-            ),
-            (
-                "token_feature_flags".into(),
-                bufs.token_feature_flags.as_entire_binding(),
-            ),
-            (
-                "tree_enum_dispatch_args".into(),
-                bufs.tree_enum_dispatch_args.as_entire_binding(),
-            ),
-            (
-                "tree_match_dispatch_args".into(),
-                bufs.tree_match_dispatch_args.as_entire_binding(),
-            ),
-            (
-                "tree_struct_dispatch_args".into(),
-                bufs.tree_struct_dispatch_args.as_entire_binding(),
-            ),
-        ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_tree_feature_dispatch_args"),
-            &self.tree_feature_dispatch_args.bind_group_layouts[0],
-            &self.tree_feature_dispatch_args.reflection,
-            0,
-            &resources,
-        )?;
-        record_parser_compute(
-            encoder,
-            &self.tree_feature_dispatch_args,
-            &bind_group,
-            "parser.tree_feature_dispatch_args",
-            1,
-        )
+        bufs.dispatch_operations.record_tree_features(encoder)
     }
 
     /// Records indirect dispatch arguments for active adjacent parser token pairs.
@@ -53,33 +16,7 @@ impl GpuParser {
         encoder: &mut wgpu::CommandEncoder,
         bufs: &ParserBuffers,
     ) -> Result<()> {
-        let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), bufs.params_llp.as_entire_binding()),
-            ("token_count".into(), bufs.token_count.as_entire_binding()),
-            (
-                "active_pair_thread_dispatch_args".into(),
-                bufs.active_pair_thread_dispatch_args.as_entire_binding(),
-            ),
-            (
-                "active_pair_group_dispatch_args".into(),
-                bufs.active_pair_group_dispatch_args.as_entire_binding(),
-            ),
-        ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            &self.device,
-            Some("parser_active_pair_dispatch_args"),
-            &self.active_pair_dispatch_args.bind_group_layouts[0],
-            &self.active_pair_dispatch_args.reflection,
-            0,
-            &resources,
-        )?;
-        record_parser_compute(
-            encoder,
-            &self.active_pair_dispatch_args,
-            &bind_group,
-            "parser.active_pair_dispatch_args",
-            1,
-        )
+        bufs.dispatch_operations.record_active_pair(encoder)
     }
 
     /// Records the minimal parser sequence needed to project tree capacity/status.
@@ -104,15 +41,30 @@ impl GpuParser {
         self.passes
             .llp_pairs
             .record_pass_indirect(&mut ctx, &bufs.active_pair_thread_dispatch_args)?;
-        self.passes
-            .pack_totals_blocks
-            .record_pass(ctx.device, ctx.encoder, ctx.buffers)?;
-        self.passes
-            .pack_totals_reduce
-            .record_reduce(ctx.device, ctx.encoder, ctx.buffers)?;
-        self.passes
-            .pack_totals_status
-            .record_pass(ctx.device, ctx.encoder, ctx.buffers)?;
+        self.passes.pack_totals_blocks.record_pass(
+            ctx.device,
+            ctx.encoder,
+            ctx.buffers,
+            ctx.bg_cache
+                .as_deref_mut()
+                .expect("resident parser requires a bind-group cache"),
+        )?;
+        self.passes.pack_totals_reduce.record_reduce(
+            ctx.device,
+            ctx.encoder,
+            ctx.buffers,
+            ctx.bg_cache
+                .as_deref_mut()
+                .expect("resident parser requires a bind-group cache"),
+        )?;
+        self.passes.pack_totals_status.record_pass(
+            ctx.device,
+            ctx.encoder,
+            ctx.buffers,
+            ctx.bg_cache
+                .as_deref_mut()
+                .expect("resident parser requires a bind-group cache"),
+        )?;
         Ok(())
     }
 }

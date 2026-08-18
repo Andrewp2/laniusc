@@ -9,7 +9,7 @@ use std::{
 use anyhow::Result;
 
 use super::{
-    lowering::{GpuSemanticHirInputs, GpuSemanticLoweringStage},
+    lowering::{GpuSemanticHirInputs, GpuSemanticLoweringStage, semantic_input_views},
     lowering_ir::{
         LoweringArtifactKind,
         LoweringCapacities,
@@ -25,8 +25,8 @@ use crate::{
         buffers::{LaniusBuffer, TrackedBufferView, readback_bytes, with_uniform_buffer_arena},
         compiler_graph::CompilerGraphWorkspace,
         passes_core::map_readback_blocking,
+        timer::GpuTimer,
     },
-    parser::buffers::GpuHirView,
     type_checker::GpuSemanticArtifactView,
 };
 
@@ -57,6 +57,20 @@ enum TargetStage {
 }
 
 impl TargetStage {
+    fn lowering_timer_label(&self) -> &'static str {
+        match self {
+            Self::X86_64(_) => "codegen.x86.lowering.done",
+            Self::Wasm(_) => "codegen.wasm.lowering.done",
+        }
+    }
+
+    fn emission_timer_label(&self) -> &'static str {
+        match self {
+            Self::X86_64(_) => "codegen.x86.emission.done",
+            Self::Wasm(_) => "codegen.wasm.emission.done",
+        }
+    }
+
     fn record_count_page(&self, encoder: &mut wgpu::CommandEncoder, page_id: usize) -> Result<()> {
         match self {
             Self::X86_64(stage) => stage.record_count_page(encoder, page_id),
@@ -148,10 +162,12 @@ pub(crate) struct GpuLoweringPipeline {
     capacities: LoweringCapacities,
     artifact_kind: LoweringArtifactKind,
     upstream_signature: Vec<(u64, u64, u64)>,
+    semantic_input_signature: Vec<(u64, u64, u64)>,
     _workspace: CompilerGraphWorkspace,
     semantic: GpuSemanticLoweringStage,
     target: TargetStage,
     status_readback: LaniusBuffer<u8>,
+    status_readback_copy: crate::gpu::operations::CopyBufferOperation,
 }
 
 /// Lazily materialized, capacity-covering workspace for one target.
@@ -186,6 +202,19 @@ fn upstream_storage_signature(upstream: &[TrackedBufferView<'_>]) -> Vec<(u64, u
         .collect()
 }
 
+fn exact_buffer_signature(buffers: &[TrackedBufferView<'_>]) -> Vec<(u64, u64, u64)> {
+    buffers
+        .iter()
+        .map(|buffer| {
+            (
+                buffer.allocation_id().unwrap_or(0),
+                buffer.byte_offset,
+                buffer.byte_size,
+            )
+        })
+        .collect()
+}
+
 impl GpuLoweringWorkspaceCache {
     pub(crate) fn new(target: LoweringTarget) -> Self {
         Self {
@@ -197,11 +226,14 @@ impl GpuLoweringWorkspaceCache {
     pub(crate) fn ensure(
         &self,
         device: &wgpu::Device,
+        kernels: &crate::gpu::kernels::KernelRegistry,
         source_bytes: u32,
         tokens: u32,
         hir_nodes: u32,
         artifact_kind: LoweringArtifactKind,
         upstream: &[TrackedBufferView<'_>],
+        hir: GpuSemanticHirInputs<'_>,
+        semantic: GpuSemanticArtifactView<'_>,
     ) -> Result<Arc<GpuLoweringPipeline>, String> {
         let required =
             LoweringCapacities::from_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?
@@ -211,10 +243,12 @@ impl GpuLoweringWorkspaceCache {
             .lock()
             .expect("lowering workspace cache poisoned");
         let upstream_signature = upstream_storage_signature(upstream);
+        let semantic_input_signature = exact_buffer_signature(&semantic_input_views(hir, semantic));
         if let Some(pipeline) = current.as_ref()
             && pipeline.capacities.covers(required)
             && pipeline.artifact_kind == artifact_kind
             && pipeline.upstream_signature == upstream_signature
+            && pipeline.semantic_input_signature == semantic_input_signature
         {
             return Ok(Arc::clone(pipeline));
         }
@@ -231,11 +265,15 @@ impl GpuLoweringWorkspaceCache {
         let pipeline = Arc::new(
             GpuLoweringPipeline::new_with_upstream(
                 device,
+                kernels,
                 capacities,
                 self.target,
                 artifact_kind,
                 upstream,
                 upstream_signature,
+                semantic_input_signature,
+                hir,
+                semantic,
             )
             .map_err(|err| err.to_string())?,
         );
@@ -274,29 +312,17 @@ impl GpuLoweringWorkspaceCache {
 }
 
 impl GpuLoweringPipeline {
-    #[cfg(test)]
-    pub(crate) fn new(
-        device: &wgpu::Device,
-        capacities: LoweringCapacities,
-        target: LoweringTarget,
-    ) -> Result<Self> {
-        Self::new_with_upstream(
-            device,
-            capacities,
-            target,
-            LoweringArtifactKind::Object,
-            &[],
-            Vec::new(),
-        )
-    }
-
     fn new_with_upstream(
         device: &wgpu::Device,
+        kernels: &crate::gpu::kernels::KernelRegistry,
         capacities: LoweringCapacities,
         target: LoweringTarget,
         artifact_kind: LoweringArtifactKind,
         upstream: &[TrackedBufferView<'_>],
         upstream_signature: Vec<(u64, u64, u64)>,
+        semantic_input_signature: Vec<(u64, u64, u64)>,
+        hir: GpuSemanticHirInputs<'_>,
+        semantic_inputs: GpuSemanticArtifactView<'_>,
     ) -> Result<Self> {
         let label = match target {
             LoweringTarget::X86_64 => "codegen.x86.lowering.uniform_arena",
@@ -305,22 +331,30 @@ impl GpuLoweringPipeline {
         with_uniform_buffer_arena(device, label, || {
             Self::new_with_uniform_arena(
                 device,
+                kernels,
                 capacities,
                 target,
                 artifact_kind,
                 upstream,
                 upstream_signature,
+                semantic_input_signature,
+                hir,
+                semantic_inputs,
             )
         })
     }
 
     fn new_with_uniform_arena(
         device: &wgpu::Device,
+        kernels: &crate::gpu::kernels::KernelRegistry,
         capacities: LoweringCapacities,
         target: LoweringTarget,
         artifact_kind: LoweringArtifactKind,
         upstream: &[TrackedBufferView<'_>],
         upstream_signature: Vec<(u64, u64, u64)>,
+        semantic_input_signature: Vec<(u64, u64, u64)>,
+        hir: GpuSemanticHirInputs<'_>,
+        semantic_inputs: GpuSemanticArtifactView<'_>,
     ) -> Result<Self> {
         let graph = lowering_compiler_graph_for_artifact(capacities, target, artifact_kind)
             .map_err(anyhow::Error::msg)?;
@@ -336,6 +370,9 @@ impl GpuLoweringPipeline {
             capacities,
             graph.clone(),
             &workspace,
+            kernels,
+            hir,
+            semantic_inputs,
         )?;
         let target = match target {
             LoweringTarget::X86_64 => TargetStage::X86_64(GpuX86LirStage::new(
@@ -345,6 +382,7 @@ impl GpuLoweringPipeline {
                 capacities,
                 semantic.output(),
                 artifact_kind == LoweringArtifactKind::Object,
+                kernels,
             )?),
             LoweringTarget::Wasm => TargetStage::Wasm(GpuWasmLirStage::new(
                 device,
@@ -353,94 +391,101 @@ impl GpuLoweringPipeline {
                 capacities,
                 semantic.output(),
                 artifact_kind == LoweringArtifactKind::Object,
+                kernels,
             )?),
         };
         let status_readback = readback_bytes(device, "lowering.status.readback", 32, 32);
+        let status_allocations = workspace.allocations();
+        let status_readback_copy = crate::gpu::operations::CopyBufferOperation::new(
+            &(&graph, &status_allocations),
+            "lowering.status.readback",
+            "lowering_status",
+            semantic.status(),
+            0,
+            "status_readback",
+            &status_readback,
+            0,
+            32,
+        )?;
         Ok(Self {
             capacities,
             artifact_kind,
             upstream_signature,
+            semantic_input_signature,
             _workspace: workspace,
             semantic,
             target,
             status_readback,
+            status_readback_copy,
         })
     }
 
-    fn record_target_pages(&self, encoder: &mut wgpu::CommandEncoder, object: bool) -> Result<()> {
+    fn record_target_pages(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        object: bool,
+        timer: &mut Option<&mut GpuTimer>,
+    ) -> Result<()> {
         self.target.record_before_target_pages(encoder)?;
         for page_id in 0..self.target.target_page_count() {
             self.target.record_measure_page(encoder, page_id)?;
+        }
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, self.target.lowering_timer_label());
         }
         self.target.record_between_target_pages(encoder, object)?;
         for page_id in 0..self.target.target_page_count() {
             self.target.record_emit_page(encoder, page_id)?;
         }
-        self.target.record_after_target_pages(encoder, object)
+        self.target.record_after_target_pages(encoder, object)?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, self.target.emission_timer_label());
+        }
+        Ok(())
     }
 
     pub(crate) fn record(
         &self,
-        device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        hir: GpuSemanticHirInputs<'_>,
-        semantic_inputs: GpuSemanticArtifactView<'_>,
+        mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        self.semantic
-            .record(device, encoder, hir, semantic_inputs)?;
+        self.semantic.record(encoder)?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "lowering.semantic.done");
+        }
         for page_id in 0..self.target.count_page_count() {
             self.target.record_count_page(encoder, page_id)?;
         }
-        self.record_target_pages(encoder, false)?;
-        TrackedBufferView::from(self.semantic.status()).copy_to(
-            encoder,
-            0,
-            (&self.status_readback).into(),
-            0,
-            32,
-        );
+        self.record_target_pages(encoder, false, &mut timer)?;
+        self.status_readback_copy.record(encoder);
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "artifact.status_readback.done");
+        }
         Ok(())
     }
 
-    /// Production boundary from checked compact HIR and the narrow semantic
-    /// type-check artifact. Keeping this conversion here prevents backend
-    /// orchestration from reaching back into raw parser rows or the full
-    /// type-check scratch surface.
-    pub(crate) fn record_checked_hir(
+    pub(crate) fn record_object(
         &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        hir: &GpuHirView,
-        semantic: GpuSemanticArtifactView<'_>,
-    ) -> Result<()> {
-        self.record(device, encoder, hir.into(), semantic)
-    }
-
-    pub(crate) fn record_checked_hir_object(
-        &self,
-        device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        hir: &GpuHirView,
-        semantic: GpuSemanticArtifactView<'_>,
         library_id: u32,
         unit_id: u32,
+        mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        self.semantic
-            .record(device, encoder, hir.into(), semantic)?;
+        self.semantic.record(encoder)?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "lowering.semantic.done");
+        }
         for page_id in 0..self.target.count_page_count() {
             self.target.record_count_page(encoder, page_id)?;
         }
         self.target
             .set_object_identity(queue, library_id, unit_id)?;
-        self.record_target_pages(encoder, true)?;
-        TrackedBufferView::from(self.semantic.status()).copy_to(
-            encoder,
-            0,
-            (&self.status_readback).into(),
-            0,
-            32,
-        );
+        self.record_target_pages(encoder, true, &mut timer)?;
+        self.status_readback_copy.record(encoder);
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "artifact.status_readback.done");
+        }
         Ok(())
     }
 
@@ -523,7 +568,7 @@ impl GpuLoweringPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gpu::device;
+    use crate::gpu::{device, passes_core::pipeline_creation_count};
 
     #[test]
     fn lowering_workspace_cache_starts_without_job_storage() {
@@ -535,25 +580,27 @@ mod tests {
 
     #[test]
     fn physical_gpu_constructs_one_workspace_pipeline_for_each_target() {
+        std::thread::Builder::new()
+            .name("lowering pipeline construction".into())
+            .stack_size(64 * 1024 * 1024)
+            .spawn(run_physical_gpu_constructs_one_workspace_pipeline_for_each_target)
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    fn run_physical_gpu_constructs_one_workspace_pipeline_for_each_target() {
         let gpu = device::global();
-        let capacities = LoweringCapacities {
-            source_bytes: 32,
-            tokens: 32,
-            hir_nodes: 16,
-            semantic_instructions: 48,
-            call_arguments: 16,
-            parameters: 16,
-            aggregate_elements: 16,
-            target_instructions: 64,
-            artifact_bytes: 256,
-        };
-        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
-            let pipeline = GpuLoweringPipeline::new(&gpu.device, capacities, target).unwrap();
-            match (target, &pipeline.target) {
-                (LoweringTarget::X86_64, TargetStage::X86_64(_))
-                | (LoweringTarget::Wasm, TargetStage::Wasm(_)) => {}
-                _ => panic!("pipeline selected the wrong target stage"),
-            }
-        }
+        let compiler =
+            pollster::block_on(crate::compiler::GpuCompiler::new_with_device_and_backends(
+                gpu,
+                crate::compiler::GpuCompilerBackends::all(),
+            ))
+            .unwrap();
+        let pipelines_after_prepare = pipeline_creation_count();
+        let source = "fn main() -> i32 { return 42; }";
+        pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap();
+        pollster::block_on(compiler.compile_source_to_wasm(source)).unwrap();
+        assert_eq!(pipeline_creation_count(), pipelines_after_prepare);
     }
 }

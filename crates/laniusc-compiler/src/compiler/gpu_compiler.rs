@@ -65,7 +65,7 @@ pub struct GpuCompiler<'gpu> {
     pub(super) x86_lowering: Result<Box<GpuLoweringWorkspaceCache>, String>,
     stable_unit_plan: std::sync::Mutex<Option<stable_unit_plan::StableUnitPlan>>,
     compiled_unit_cache: std::sync::Mutex<unit_cache::CompiledUnitCache>,
-    _codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
+    codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
 }
 
 fn prepare_codegen_kernels(
@@ -373,7 +373,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 x86_lowering,
                 stable_unit_plan: std::sync::Mutex::new(None),
                 compiled_unit_cache: std::sync::Mutex::new(unit_cache::CompiledUnitCache::default()),
-                _codegen_kernels: codegen_kernels,
+                codegen_kernels,
             })
         })
     }
@@ -392,6 +392,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         hir_nodes: u32,
         artifact_kind: LoweringArtifactKind,
         upstream_workspace: &[crate::gpu::buffers::TrackedBufferView<'_>],
+        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
     ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
     {
         let maximum = u32::try_from(DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES)
@@ -407,13 +409,19 @@ impl<'gpu> GpuCompiler<'gpu> {
         }
         .as_deref()
         .map_err(Clone::clone)?;
+        let kernels = self.codegen_kernels.as_deref().ok_or_else(|| {
+            "code-generation kernels were not initialized for this compiler".to_string()
+        })?;
         cache.ensure(
             &self.gpu.device,
+            kernels,
             source_bytes,
             tokens,
             hir_nodes,
             artifact_kind,
             upstream_workspace,
+            hir,
+            semantic,
         )
     }
 
@@ -464,10 +472,7 @@ impl<'gpu> GpuCompiler<'gpu> {
 mod tests {
     use super::{GpuCompiler, GpuCompilerBackends};
     use crate::{
-        codegen::{
-            lowering_ir::{LoweringCapacities, LoweringTarget},
-            lowering_pipeline::GpuLoweringPipeline,
-        },
+        codegen::lowering_ir::{LoweringArtifactKind, LoweringTarget},
         gpu::{
             buffers::readback_bytes,
             passes_core::{map_readback_blocking, submit_with_progress},
@@ -492,29 +497,6 @@ mod tests {
             GpuCompilerBackends::all(),
         ))
         .expect("initialize compiler");
-        let capacities = LoweringCapacities {
-            source_bytes: 64 * 1024,
-            tokens: 16 * 1024,
-            hir_nodes: 16 * 1024,
-            semantic_instructions: 96 * 1024,
-            call_arguments: 4 * 1024,
-            parameters: 4 * 1024,
-            aggregate_elements: 16 * 1024,
-            target_instructions: 192 * 1024,
-            artifact_bytes: 2 << 20,
-        };
-        let pipelines = [
-            (
-                LoweringTarget::X86_64,
-                GpuLoweringPipeline::new(&gpu.device, capacities, LoweringTarget::X86_64)
-                    .expect("x86 lowering graph"),
-            ),
-            (
-                LoweringTarget::Wasm,
-                GpuLoweringPipeline::new(&gpu.device, capacities, LoweringTarget::Wasm)
-                    .expect("Wasm lowering graph"),
-            ),
-        ];
         let production_source = "fn main() -> i32 { return 42; }";
         let production_x86 =
             pollster::block_on(compiler.compile_expanded_source_to_x86_64(production_source))
@@ -725,12 +707,11 @@ mod tests {
                 .parser
                 .current_resident_hir()
                 .unwrap_or_else(|| panic!("parser should retain compact HIR for {case}"));
-
             if case == "break_continue" {
                 assert_checked_branch_control_depths(&gpu.device, &gpu.queue, &hir, &compiler);
             }
 
-            for (target, pipeline) in &pipelines {
+            for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
                 let mut encoder =
                     gpu.device
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -740,11 +721,25 @@ mod tests {
                     .type_checker
                     .semantic_artifact()
                     .expect("type checker should retain semantic artifact");
-                pipeline
-                    .record_checked_hir(&gpu.device, &mut encoder, &hir, semantic.view())
-                    .unwrap_or_else(|error| {
-                        panic!("record {target:?} lowering for {case}: {error}")
-                    });
+                let pipeline = compiler
+                    .type_checker
+                    .with_post_typecheck_workspace(&semantic, |workspace| {
+                        compiler.ensure_lowering_pipeline(
+                            target,
+                            u32::try_from(source.len()).unwrap(),
+                            u32::try_from(source.len()).unwrap(),
+                            hir.capacity,
+                            LoweringArtifactKind::Executable,
+                            workspace,
+                            (&hir).into(),
+                            semantic.view(),
+                        )
+                    })
+                    .expect("type-check workspace should remain available")
+                    .expect("lowering workspace");
+                pipeline.record(&mut encoder, None).unwrap_or_else(|error| {
+                    panic!("record {target:?} lowering for {case}: {error}")
+                });
                 crate::gpu::passes_core::submit_with_progress(
                     &gpu.queue,
                     "checked-hir lowering integration",
@@ -755,7 +750,7 @@ mod tests {
                 let artifact = artifact_result.unwrap_or_else(|error| {
                     panic!("finish {target:?} artifact for {case}: {error}")
                 });
-                assert_lowered_program_result(*target, case, &artifact, expected);
+                assert_lowered_program_result(target, case, &artifact, expected);
             }
         }
     }

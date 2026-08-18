@@ -47,12 +47,17 @@ pub(crate) struct RecordedComputeSubmission {
     pub index: u32,
     pub label: String,
     pub passes: Vec<String>,
+    /// Compiler operations dispatched by this submission. This remains
+    /// distinct from `passes`: batching may record several graph operations
+    /// inside one physical WGPU compute pass.
+    pub operations: Vec<String>,
 }
 
 #[derive(Default)]
 struct ComputeScheduleState {
     active_job: u64,
     pending_passes: Vec<String>,
+    pending_operations: Vec<String>,
     submissions: Vec<RecordedComputeSubmission>,
 }
 
@@ -60,12 +65,19 @@ impl ComputeScheduleState {
     fn begin(&mut self, job: u64) {
         self.active_job = job;
         self.pending_passes.clear();
+        self.pending_operations.clear();
         self.submissions.clear();
     }
 
     fn record_pass(&mut self, label: &str) {
         if self.active_job != 0 {
             self.pending_passes.push(label.to_owned());
+        }
+    }
+
+    fn record_operation(&mut self, label: &str) {
+        if self.active_job != 0 {
+            self.pending_operations.push(label.to_owned());
         }
     }
 
@@ -77,6 +89,7 @@ impl ComputeScheduleState {
             index: self.submissions.len() as u32,
             label: label.to_owned(),
             passes: std::mem::take(&mut self.pending_passes),
+            operations: std::mem::take(&mut self.pending_operations),
         });
     }
 
@@ -84,7 +97,7 @@ impl ComputeScheduleState {
         if self.active_job != job || job == 0 {
             return Vec::new();
         }
-        if !self.pending_passes.is_empty() {
+        if !self.pending_passes.is_empty() || !self.pending_operations.is_empty() {
             self.record_submission("<untracked submission>");
         }
         self.active_job = 0;
@@ -173,16 +186,6 @@ fn register_reflected_bind_group_cache(
     for layout in layouts {
         caches.insert((**layout).clone(), Arc::downgrade(cache));
     }
-}
-
-/// Registers layouts owned outside `PassData` with the allocation-identity
-/// bind-group cache and returns an opaque owner that keeps the cache alive.
-pub(crate) fn retain_reflected_bind_group_cache(
-    layouts: &[Arc<wgpu::BindGroupLayout>],
-) -> Arc<dyn Send + Sync> {
-    let cache = Arc::new(std::sync::Mutex::new(ReflectedBindGroupCache::default()));
-    register_reflected_bind_group_cache(layouts, &cache);
-    cache
 }
 
 /// Releases every automatically derived bind group while keeping prepared
@@ -292,6 +295,20 @@ pub(crate) fn recorded_compute_pass_counts_by_label() -> HashMap<String, u64> {
         .clone()
 }
 
+/// Records one logical compiler-graph operation in execution order.
+///
+/// This is intentionally separate from physical compute-pass accounting:
+/// several operations may be batched into one WGPU compute pass without
+/// ceasing to be distinct graph nodes.
+pub(crate) fn record_compiler_operation(label: &str) {
+    if compute_schedule_enabled() {
+        COMPUTE_SCHEDULE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .record_operation(label);
+    }
+}
+
 /// Starts a compute pass and accounts for it at the only boundary that creates
 /// one. Callers must use this instead of `CommandEncoder::begin_compute_pass`
 /// so phase-local helpers and batched operations cannot escape telemetry.
@@ -337,11 +354,13 @@ mod compute_schedule_tests {
                     index: 0,
                     label: "frontend".into(),
                     passes: vec!["a".into(), "b".into()],
+                    operations: Vec::new(),
                 },
                 RecordedComputeSubmission {
                     index: 1,
                     label: "backend".into(),
                     passes: vec!["c".into()],
+                    operations: Vec::new(),
                 },
             ]
         );
@@ -357,12 +376,27 @@ mod compute_schedule_tests {
         assert_eq!(submissions.len(), 1);
         assert_eq!(submissions[0].label, "<untracked submission>");
         assert_eq!(submissions[0].passes, ["orphan"]);
+        assert!(submissions[0].operations.is_empty());
+    }
+
+    #[test]
+    fn compiler_operations_remain_distinct_from_batched_compute_passes() {
+        let mut state = ComputeScheduleState::default();
+        state.begin(11);
+        state.record_pass("frontend.batch");
+        state.record_operation("lex.first");
+        state.record_operation("lex.second");
+        state.record_submission("frontend");
+
+        let submissions = state.finish(11);
+        assert_eq!(submissions[0].passes, ["frontend.batch"]);
+        assert_eq!(submissions[0].operations, ["lex.first", "lex.second"]);
     }
 }
 
 #[cfg(test)]
 mod compute_pass_counting_tests {
-    use std::{fs, path::Path};
+    use std::{collections::BTreeMap, fs, path::Path};
 
     fn visit_rust_sources(path: &Path, visit: &mut impl FnMut(&Path, &str)) {
         for entry in fs::read_dir(path).expect("read compiler source directory") {
@@ -396,6 +430,79 @@ mod compute_pass_counting_tests {
         );
         assert!(raw_calls[0].0.ends_with("gpu/passes_core.rs"));
         assert_eq!(raw_calls[0].2, format!("encoder{raw_begin}descriptor)"));
+    }
+
+    #[test]
+    fn raw_gpu_commands_remain_confined_to_explicit_boundaries() {
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let raw_clear = format!(".{}_{}(", "clear", "buffer");
+        let raw_copy = format!(".{}_{}_{}(", "copy", "buffer", "to_buffer");
+        let raw_bind_group = format!(".{}_{}_{}(", "create", "bind", "group");
+
+        // These are low-level GPU primitives, explicit host-readback/debug
+        // boundaries, a standalone syntax utility, or test-only code. A
+        // decrease is always allowed; an increase requires moving the command
+        // behind a graph operation or deliberately reviewing this boundary.
+        let allowed_maximums = BTreeMap::from([
+            ("codegen/x86/link.rs", 6usize),
+            ("compiler/diagnostics.rs", 1),
+            ("compiler/gpu_compiler/typecheck.rs", 2),
+            ("gpu/buffers.rs", 2),
+            ("gpu/debug.rs", 1),
+            ("gpu/operations/buffer.rs", 7),
+            ("gpu/operations/inclusive_block_scan.rs", 1),
+            ("gpu/passes_core.rs", 1),
+            ("gpu/readback.rs", 1),
+            ("gpu/timer.rs", 1),
+            ("lexer/driver.rs", 3),
+            ("lexer/driver/readback.rs", 2),
+            ("lexer/passes/dfa/scan_block_summaries.rs", 1),
+            ("lexer/passes/pair/scan_block_totals.rs", 1),
+            ("parser/buffers/scans.rs", 3),
+            ("parser/driver/debug.rs", 5),
+            ("parser/driver/resident_tree.rs", 1),
+            ("parser/readback.rs", 90),
+            ("parser/readback/hir_item_readbacks.rs", 99),
+            (
+                "parser/readback/hir_item_readbacks/function_return_readbacks.rs",
+                13,
+            ),
+            ("parser/syntax.rs", 4),
+            ("type_checker/bind_support/control.rs", 2),
+        ]);
+        let mut violations = Vec::new();
+        visit_rust_sources(&source_root, &mut |path, source| {
+            let relative = path
+                .strip_prefix(&source_root)
+                .expect("visited compiler source must be below its source root")
+                .to_string_lossy()
+                .replace('\\', "/");
+            let mutation_count =
+                source.matches(&raw_clear).count() + source.matches(&raw_copy).count();
+            let maximum = allowed_maximums
+                .get(relative.as_str())
+                .copied()
+                .unwrap_or(0);
+            if mutation_count > maximum {
+                violations.push(format!(
+                    "{relative}: {mutation_count} raw mutations (allowed {maximum})"
+                ));
+            }
+
+            let physical_bind_group_count = source.matches(&raw_bind_group).count();
+            let expected = usize::from(relative == "gpu/passes_core.rs");
+            if physical_bind_group_count != expected {
+                violations.push(format!(
+                    "{relative}: {physical_bind_group_count} physical bind-group creations (expected {expected})"
+                ));
+            }
+        });
+
+        assert!(
+            violations.is_empty(),
+            "GPU commands bypass compiler-graph operation boundaries:\n{}",
+            violations.join("\n")
+        );
     }
 }
 
@@ -627,6 +734,7 @@ pub(crate) fn defer_compute_indirect_bind_groups(
     pass: &PassData,
     bind_groups: &[Arc<wgpu::BindGroup>],
     dispatch_args: &wgpu::Buffer,
+    dispatch_offset: u64,
 ) -> bool {
     DEFERRED_COMPUTE.with(|state| {
         let mut state = state.borrow_mut();
@@ -637,7 +745,7 @@ pub(crate) fn defer_compute_indirect_bind_groups(
             pipeline: pass.pipeline.clone(),
             bind_groups: bind_groups.iter().map(|group| (**group).clone()).collect(),
             dispatch_args: dispatch_args.clone(),
-            dispatch_offset: 0,
+            dispatch_offset,
             dynamic_offsets: Vec::new(),
         });
         true
@@ -653,6 +761,7 @@ pub(crate) fn record_or_defer_compute_direct(
     label: &'static str,
     groups: (u32, u32, u32),
 ) {
+    record_compiler_operation(label);
     if defer_compute_direct(pass, bind_group, groups) {
         return;
     }
@@ -676,7 +785,7 @@ pub(crate) fn record_or_defer_compute_indirect(
     pass: &PassData,
     bind_group: &wgpu::BindGroup,
     label: &'static str,
-    dispatch_args: &wgpu::Buffer,
+    dispatch_args: &LaniusBuffer<u32>,
 ) {
     record_or_defer_compute_indirect_offset(encoder, pass, bind_group, label, dispatch_args, 0);
 }
@@ -688,18 +797,26 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
     pass: &PassData,
     bind_group: &wgpu::BindGroup,
     label: &'static str,
-    dispatch_args: &wgpu::Buffer,
+    dispatch_args: &LaniusBuffer<u32>,
     dispatch_offset: u64,
 ) {
-    let dispatch_end = dispatch_offset
+    record_compiler_operation(label);
+    let absolute_offset = dispatch_args.absolute_offset(dispatch_offset);
+    let dispatch_end = absolute_offset
         .checked_add(3 * std::mem::size_of::<u32>() as u64)
         .expect("indirect dispatch argument range overflow");
     assert!(
-        dispatch_end <= dispatch_args.size(),
-        "compute pass `{label}` dispatch arguments {dispatch_offset}..{dispatch_end} exceed buffer size {}",
-        dispatch_args.size(),
+        dispatch_end <= dispatch_args.buffer.size(),
+        "compute pass `{label}` dispatch arguments {absolute_offset}..{dispatch_end} exceed buffer size {}",
+        dispatch_args.buffer.size(),
     );
-    if defer_compute_indirect(pass, bind_group, dispatch_args, dispatch_offset, &[]) {
+    if defer_compute_indirect(
+        pass,
+        bind_group,
+        &dispatch_args.buffer,
+        absolute_offset,
+        &[],
+    ) {
         return;
     }
     flush_deferred_compute(encoder);
@@ -712,7 +829,7 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
     );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
-    compute.dispatch_workgroups_indirect(dispatch_args, dispatch_offset);
+    compute.dispatch_workgroups_indirect(&dispatch_args.buffer, absolute_offset);
 }
 
 /// Flushes all deferred dispatches as one ordered compute pass.
@@ -1861,7 +1978,12 @@ pub mod bind_group {
         let cache_started = bind_group_timing_enabled().then(Instant::now);
         let cache = reflected_bind_group_cache_for_layout(layout);
         let identity = reflected_buffer_resource_identity(entries);
-        let invocation = format!("{}::set::{set_index}", label.unwrap_or("<unnamed>"));
+        // The cache is already selected by bind-group layout, and `identity`
+        // contains every binding index, buffer handle, offset, and size.
+        // Operation labels are diagnostic metadata, not part of the WGPU
+        // binding contract; including them here forced graph nodes with
+        // identical bindings to create duplicate bind groups on a cold job.
+        let invocation = format!("set::{set_index}");
         if let (Some(cache), Some(identity)) = (&cache, identity.as_ref()) {
             let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
             let invocation_cache =
@@ -2284,11 +2406,26 @@ pub struct PassContext<'a, B, D> {
     pub bg_cache: Option<&'a mut BindGroupCache>,
 }
 
+/// Resident phase buffers governed by a materialized compiler graph.
+pub trait CompilerGraphBuffers {
+    /// Proves that a reflected runtime dispatch uses the concrete resources
+    /// declared by its compiler-graph operation.
+    fn validate_compiler_pass(
+        &self,
+        operation: &'static str,
+        resources: &HashMap<String, wgpu::BindingResource<'_>>,
+        dispatch_args: Option<&LaniusBuffer<u32>>,
+    ) -> Result<(), anyhow::Error>;
+}
+
 #[derive(Default)]
 /// Cache of reflected bind groups keyed by kernel and logical invocation.
 pub struct BindGroupCache {
     // Each value contains one bind group per reflected descriptor set.
     map: HashMap<String, Vec<Arc<wgpu::BindGroup>>>,
+    // External inputs are not owned by a resident compiler graph allocation,
+    // so their WGPU identities can change while the graph workspace remains.
+    external_identities: HashMap<String, u64>,
 }
 
 fn bind_group_cache_key(shader_id: &str, invocation: &str) -> String {
@@ -2300,17 +2437,21 @@ impl BindGroupCache {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
+            external_identities: HashMap::new(),
         }
     }
     /// Clears all cached bind groups.
     pub fn clear(&mut self) {
         self.map.clear();
+        self.external_identities.clear();
     }
 
     /// Removes every cached invocation of one shader kernel.
     pub fn remove(&mut self, shader_id: &str) {
         let prefix = format!("{shader_id}::");
         self.map.retain(|key, _| !key.starts_with(&prefix));
+        self.external_identities
+            .retain(|key, _| !key.starts_with(&prefix));
     }
 
     /// Returns reflected bind groups for raw `PassData`, reusing them while the
@@ -2347,6 +2488,112 @@ impl BindGroupCache {
         self.map.insert(cache_key, groups.clone());
         Ok(groups)
     }
+
+    /// Returns reflected bind groups for a graph operation, validating its
+    /// concrete allocation bindings exactly when a new cached binding is
+    /// materialized. Stable daemon jobs therefore pay neither bind-group
+    /// creation nor repeated graph validation.
+    pub(crate) fn reflected_for_graph_pass_data<'a>(
+        &mut self,
+        device: &wgpu::Device,
+        operation: &'static str,
+        pass: &PassData,
+        graph_buffers: &impl CompilerGraphBuffers,
+        resources: &HashMap<String, wgpu::BindingResource<'a>>,
+        dispatch_args: Option<&LaniusBuffer<u32>>,
+    ) -> Result<Vec<Arc<wgpu::BindGroup>>, anyhow::Error> {
+        self.reflected_for_graph_invocation(
+            device,
+            operation,
+            operation,
+            pass,
+            graph_buffers,
+            resources,
+            dispatch_args,
+        )
+    }
+
+    /// Graph-validated reflected bindings for one physical invocation of a
+    /// reusable graph operation. `invocation` distinguishes hierarchy levels
+    /// whose shader and semantic graph node are shared but whose uniform slice
+    /// or ping-pong buffers differ.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn reflected_for_graph_invocation<'a>(
+        &mut self,
+        device: &wgpu::Device,
+        invocation: &str,
+        operation: &'static str,
+        pass: &PassData,
+        graph_buffers: &impl CompilerGraphBuffers,
+        resources: &HashMap<String, wgpu::BindingResource<'a>>,
+        dispatch_args: Option<&LaniusBuffer<u32>>,
+    ) -> Result<Vec<Arc<wgpu::BindGroup>>, anyhow::Error> {
+        let cache_key = bind_group_cache_key(&pass.shader_id, invocation);
+        if let Some(groups) = self.map.get(&cache_key)
+            && groups.len() == pass.bind_group_layouts.len()
+        {
+            return Ok(groups.clone());
+        }
+        graph_buffers.validate_compiler_pass(operation, resources, dispatch_args)?;
+        let groups = pass
+            .bind_group_layouts
+            .iter()
+            .enumerate()
+            .map(|(set_index, layout)| {
+                bind_group::create_bind_group_from_reflection(
+                    device,
+                    Some(invocation),
+                    layout,
+                    &pass.reflection,
+                    set_index,
+                    resources,
+                )
+                .map(Arc::new)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.map.insert(cache_key, groups.clone());
+        Ok(groups)
+    }
+
+    /// Graph-validated reflected bindings whose external WGPU buffers may be
+    /// replaced independently of the resident graph workspace. A changed
+    /// identity replaces the cached binding under the same logical operation,
+    /// avoiding both stale handles and an unbounded cache of old jobs.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn reflected_for_graph_external_invocation<'a>(
+        &mut self,
+        device: &wgpu::Device,
+        invocation: &'static str,
+        pass: &PassData,
+        graph_buffers: &impl CompilerGraphBuffers,
+        resources: &HashMap<String, wgpu::BindingResource<'a>>,
+        dispatch_args: Option<&LaniusBuffer<u32>>,
+        external_buffers: &[&wgpu::Buffer],
+    ) -> Result<Vec<Arc<wgpu::BindGroup>>, anyhow::Error> {
+        let cache_key = bind_group_cache_key(&pass.shader_id, invocation);
+        let identity = buffer_fingerprint(external_buffers);
+        if self.external_identities.get(&cache_key).copied() != Some(identity) {
+            self.map.remove(&cache_key);
+            self.external_identities.insert(cache_key, identity);
+        }
+        self.reflected_for_graph_pass_data(
+            device,
+            invocation,
+            pass,
+            graph_buffers,
+            resources,
+            dispatch_args,
+        )
+    }
+}
+
+/// Stable process-local identity for a set of WGPU buffers.
+pub(crate) fn buffer_fingerprint(buffers: &[&wgpu::Buffer]) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for buffer in buffers {
+        std::hash::Hash::hash(buffer, &mut hasher);
+    }
+    std::hash::Hasher::finish(&hasher)
 }
 
 fn bind_groups_for_pass<P, Buffers, DebugOutput>(
@@ -2354,13 +2601,15 @@ fn bind_groups_for_pass<P, Buffers, DebugOutput>(
     pass: &P,
     buffers: &Buffers,
     cache: Option<&mut BindGroupCache>,
+    operation: &'static str,
+    dispatch_args: Option<&LaniusBuffer<u32>>,
 ) -> Result<Vec<Arc<wgpu::BindGroup>>, anyhow::Error>
 where
     P: Pass<Buffers, DebugOutput> + ?Sized,
+    Buffers: CompilerGraphBuffers,
 {
     let pd = pass.data();
-    let resources = pass.create_resource_map(buffers);
-    let cache_key = bind_group_cache_key(&pd.shader_id, P::NAME);
+    let cache_key = bind_group_cache_key(&pd.shader_id, operation);
     let mut cached_entries: Option<Vec<Arc<wgpu::BindGroup>>> = None;
     if let Some(cache) = cache.as_ref()
         && let Some(v) = cache.map.get(&cache_key)
@@ -2372,11 +2621,14 @@ where
         return Ok(v);
     }
 
+    let resources = pass.create_resource_map(buffers);
+    buffers.validate_compiler_pass(operation, &resources, dispatch_args)?;
+
     let mut bind_groups = Vec::with_capacity(pd.bind_group_layouts.len());
     for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
         let bg = bind_group::create_bind_group_from_reflection(
             device,
-            Some(P::NAME),
+            Some(operation),
             bgl,
             &pd.reflection,
             set_idx,
@@ -2401,12 +2653,15 @@ pub(crate) fn record_reflected_compute(
     encoder: &mut wgpu::CommandEncoder,
     maybe_timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
     cache: Option<&mut BindGroupCache>,
+    graph_buffers: &impl CompilerGraphBuffers,
     kernel: &PassData,
     invocation: &'static str,
     dim: DispatchDim,
     input: InputElements,
     resources: &HashMap<String, wgpu::BindingResource<'_>>,
 ) -> Result<(), anyhow::Error> {
+    record_compiler_operation(invocation);
+    graph_buffers.validate_compiler_pass(invocation, resources, None)?;
     let validation = validation_scope(device, validation_scopes_enabled());
     let bind_groups = if let Some(cache) = cache {
         cache.reflected_for_pass_data(device, invocation, kernel, resources)?
@@ -2475,6 +2730,23 @@ impl<'encoder> ComputePassBatch<'encoder> {
         }
     }
 
+    /// Begins a batch that represents one graph operation with one or more
+    /// shader invocations.
+    pub(crate) fn begin_graph_operation(
+        encoder: &'encoder mut wgpu::CommandEncoder,
+        label: &'static str,
+    ) -> Self {
+        record_compiler_operation(label);
+        Self::begin(encoder, label)
+    }
+
+    /// Marks the next dispatch in this physical batch as another logical graph
+    /// operation. Compatible operations may share a WGPU compute pass without
+    /// losing their distinct compiler-graph identities.
+    pub(crate) fn begin_next_graph_operation(&mut self, label: &'static str) {
+        record_compiler_operation(label);
+    }
+
     /// Records one pre-bound direct dispatch into this compute pass.
     pub(crate) fn record_raw(
         &mut self,
@@ -2514,21 +2786,24 @@ impl<'encoder> ComputePassBatch<'encoder> {
         bind_group: &'encoder wgpu::BindGroup,
         dispatch_args: &'encoder LaniusBuffer<u32>,
     ) {
-        self.record_buffer_indirect_with_offsets(pass, bind_group, dispatch_args, &[]);
+        self.record_buffer_indirect_at_with_offsets(pass, bind_group, dispatch_args, 0, &[]);
     }
 
-    pub(crate) fn record_buffer_indirect_with_offsets(
+    pub(crate) fn record_buffer_indirect_at_with_offsets(
         &mut self,
         pass: &'encoder PassData,
         bind_group: &'encoder wgpu::BindGroup,
         dispatch_args: &'encoder LaniusBuffer<u32>,
+        offset: u64,
         dynamic_offsets: &[u32],
     ) {
         self.pass.set_pipeline(&pass.pipeline);
         self.pass
             .set_bind_group(0, Some(bind_group), dynamic_offsets);
-        self.pass
-            .dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
+        self.pass.dispatch_workgroups_indirect(
+            &dispatch_args.buffer,
+            dispatch_args.byte_offset.saturating_add(offset),
+        );
     }
 
     /// Records one reflected pass using cached bind groups.
@@ -2542,10 +2817,18 @@ impl<'encoder> ComputePassBatch<'encoder> {
     ) -> Result<(), anyhow::Error>
     where
         P: Pass<Buffers, DebugOutput>,
+        Buffers: CompilerGraphBuffers,
     {
+        record_compiler_operation(P::NAME);
         let pd = pass.data();
-        let bind_groups =
-            bind_groups_for_pass::<P, Buffers, DebugOutput>(device, pass, buffers, Some(cache))?;
+        let bind_groups = bind_groups_for_pass::<P, Buffers, DebugOutput>(
+            device,
+            pass,
+            buffers,
+            Some(cache),
+            P::NAME,
+            None,
+        )?;
         let [tgsx, tgsy, _tgsz] = pd.thread_group_size;
         let (gx, gy, gz) = plan_workgroups(P::DIM, input, [tgsx, tgsy, 1])?;
         assert!(gx <= MAX_GROUPS_PER_DIM);
@@ -2571,20 +2854,29 @@ impl<'encoder> ComputePassBatch<'encoder> {
         buffers: &Buffers,
         cache: &mut BindGroupCache,
         pass: &P,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<(), anyhow::Error>
     where
         P: Pass<Buffers, DebugOutput>,
+        Buffers: CompilerGraphBuffers,
     {
+        record_compiler_operation(P::NAME);
         let pd = pass.data();
-        let bind_groups =
-            bind_groups_for_pass::<P, Buffers, DebugOutput>(device, pass, buffers, Some(cache))?;
+        let bind_groups = bind_groups_for_pass::<P, Buffers, DebugOutput>(
+            device,
+            pass,
+            buffers,
+            Some(cache),
+            P::NAME,
+            Some(dispatch_args),
+        )?;
         self.pass.set_pipeline(&pd.pipeline);
         for (i, bg) in bind_groups.iter().enumerate() {
             self.pass
                 .set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
         }
-        self.pass.dispatch_workgroups_indirect(dispatch_args, 0);
+        self.pass
+            .dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
         self.retained_bind_groups.push(bind_groups);
         Ok(())
     }
@@ -2596,7 +2888,7 @@ impl<'encoder> ComputePassBatch<'encoder> {
 /// metadata with runtime GPU resources. `Buffers` is the resident buffer bundle
 /// owned by the compiler phase, while `DebugOutput` is the optional phase-specific
 /// readback sink populated after dispatch.
-pub trait Pass<Buffers, DebugOutput> {
+pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
     /// Stable pass label used for validation scopes, tracing, and timing output.
     const NAME: &'static str;
 
@@ -2623,6 +2915,7 @@ pub trait Pass<Buffers, DebugOutput> {
         ctx: &mut PassContext<'a, Buffers, DebugOutput>,
         input: InputElements,
     ) -> Result<(), anyhow::Error> {
+        record_compiler_operation(Self::NAME);
         let use_scopes = validation_scopes_enabled(); // enable per-pass validation only when asked
 
         let validation_scope = validation_scope(ctx.device, use_scopes);
@@ -2633,6 +2926,8 @@ pub trait Pass<Buffers, DebugOutput> {
             self,
             ctx.buffers,
             ctx.bg_cache.as_deref_mut(),
+            Self::NAME,
+            None,
         )?;
 
         let [tgsx, tgsy, _tgsz] = pd.thread_group_size;
@@ -2678,8 +2973,21 @@ pub trait Pass<Buffers, DebugOutput> {
     fn record_pass_indirect<'a>(
         &self,
         ctx: &mut PassContext<'a, Buffers, DebugOutput>,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<(), anyhow::Error> {
+        self.record_pass_indirect_as(ctx, dispatch_args, Self::NAME)
+    }
+
+    /// Records an indirect dispatch under the semantic operation name supplied
+    /// by the caller. Reusable kernels must use this when one pipeline serves
+    /// multiple graph operations with different resources or schedule positions.
+    fn record_pass_indirect_as<'a>(
+        &self,
+        ctx: &mut PassContext<'a, Buffers, DebugOutput>,
+        dispatch_args: &LaniusBuffer<u32>,
+        operation: &'static str,
+    ) -> Result<(), anyhow::Error> {
+        record_compiler_operation(operation);
         let use_scopes = validation_scopes_enabled();
 
         let validation_scope = validation_scope(ctx.device, use_scopes);
@@ -2690,13 +2998,20 @@ pub trait Pass<Buffers, DebugOutput> {
             self,
             ctx.buffers,
             ctx.bg_cache.as_deref_mut(),
+            operation,
+            Some(dispatch_args),
         )?;
 
-        if !defer_compute_indirect_bind_groups(pd, &bind_groups, dispatch_args) {
+        if !defer_compute_indirect_bind_groups(
+            pd,
+            &bind_groups,
+            &dispatch_args.buffer,
+            dispatch_args.byte_offset,
+        ) {
             let mut pass = begin_counted_compute_pass(
                 ctx.encoder,
                 &wgpu::ComputePassDescriptor {
-                    label: Some(Self::NAME),
+                    label: Some(operation),
                     timestamp_writes: None,
                 },
             );
@@ -2704,15 +3019,15 @@ pub trait Pass<Buffers, DebugOutput> {
             for (i, bg) in bind_groups.iter().enumerate() {
                 pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
             }
-            pass.dispatch_workgroups_indirect(dispatch_args, 0);
+            pass.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
         }
 
         if let Some(t) = ctx.maybe_timer.as_deref_mut() {
-            t.stamp(ctx.encoder, Self::NAME.to_string());
+            t.stamp(ctx.encoder, operation.to_string());
         }
 
         if let Some(err) = pop_validation_scope(validation_scope) {
-            return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
+            return Err(anyhow!("validation in pass {operation}: {err:?}"));
         }
 
         if let Some(d) = ctx.maybe_dbg.as_deref_mut() {

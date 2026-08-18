@@ -6,17 +6,20 @@ use super::{
     ResidentParseResult,
     support::{bool_from_env, read_u32_words},
 };
-use crate::parser::{
-    buffers::ParserBuffers,
-    readback::{
-        validate_hir_call_argument_records,
-        validate_hir_context_relation_records,
-        validate_hir_enum_variant_records,
-        validate_hir_expression_result_root_records,
-        validate_hir_semantic_tree_records,
-        validate_hir_source_address_records,
-        validate_hir_statement_records,
-        validate_hir_struct_declaration_field_records,
+use crate::{
+    gpu::buffers::LaniusBuffer,
+    parser::{
+        buffers::ParserBuffers,
+        readback::{
+            validate_hir_call_argument_records,
+            validate_hir_context_relation_records,
+            validate_hir_enum_variant_records,
+            validate_hir_expression_result_root_records,
+            validate_hir_semantic_tree_records,
+            validate_hir_source_address_records,
+            validate_hir_statement_records,
+            validate_hir_struct_declaration_field_records,
+        },
     },
 };
 
@@ -36,8 +39,19 @@ impl U32Readback {
         Self { label, buffer }
     }
 
-    fn copy_from(&self, encoder: &mut wgpu::CommandEncoder, source: &wgpu::Buffer, byte_size: u64) {
-        encoder.copy_buffer_to_buffer(source, 0, &self.buffer, 0, byte_size);
+    fn copy_from<T>(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        source: &LaniusBuffer<T>,
+        byte_size: u64,
+    ) {
+        assert!(
+            byte_size <= source.byte_size as u64,
+            "{} copies {byte_size} bytes from a {}-byte source view",
+            self.label,
+            source.byte_size,
+        );
+        encoder.copy_buffer_to_buffer(source, source.byte_offset, &self.buffer, 0, byte_size);
     }
 
     fn map(&self) {

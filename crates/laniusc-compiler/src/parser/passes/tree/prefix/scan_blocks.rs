@@ -3,7 +3,14 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::{
-    gpu::passes_core::{DispatchDim, InputElements, Pass, PassData, bind_group, plan_workgroups},
+    gpu::passes_core::{
+        BindGroupCache,
+        DispatchDim,
+        InputElements,
+        Pass,
+        PassData,
+        plan_workgroups,
+    },
     parser::buffers::{ParserBuffers, TreePrefixScanStep},
 };
 
@@ -25,9 +32,10 @@ impl TreePrefixScanBlocksPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
-        for step in &buffers.tree_prefix_scan_steps {
-            self.record_step(device, encoder, buffers, step)?;
+        for (index, step) in buffers.tree_prefix_scan_steps.iter().enumerate() {
+            self.record_step(device, encoder, buffers, cache, index, step)?;
         }
         Ok(())
     }
@@ -37,6 +45,8 @@ impl TreePrefixScanBlocksPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
+        cache: &mut BindGroupCache,
+        index: usize,
         step: &TreePrefixScanStep,
     ) -> Result<()> {
         let prefix_in = if step.read_from_a {
@@ -62,14 +72,25 @@ impl TreePrefixScanBlocksPass {
                 buffers.tree_block_prefix.as_entire_binding(),
             ),
         ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("tree_prefix_02_scan_blocks"),
-            &self.data.bind_group_layouts[0],
-            &self.data.reflection,
-            0,
-            &resources,
-        )?;
+        let operation = if step.write_to_a {
+            crate::parser::compiler_graph::TREE_PREFIX_B_TO_A
+        } else {
+            crate::parser::compiler_graph::TREE_PREFIX_A_TO_B
+        };
+        let invocation = format!("{operation}.{index}");
+        let bind_group = cache
+            .reflected_for_graph_invocation(
+                device,
+                &invocation,
+                operation,
+                &self.data,
+                buffers,
+                &resources,
+                None,
+            )?
+            .into_iter()
+            .next()
+            .expect("tree-prefix scan pass must have one reflected bind group");
         let [tgsx, tgsy, _] = self.data.thread_group_size;
         let (gx, gy, gz) = plan_workgroups(
             DispatchDim::D1,
@@ -79,8 +100,8 @@ impl TreePrefixScanBlocksPass {
         crate::gpu::passes_core::record_or_defer_compute_direct(
             encoder,
             &self.data,
-            &bind_group,
-            "tree_prefix_02_scan_blocks",
+            bind_group.as_ref(),
+            operation,
             (gx, gy, gz),
         );
         Ok(())

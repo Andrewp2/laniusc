@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::{
-    gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
+    gpu::passes_core::{BindGroupCache, PassData},
     parser::buffers::ParserBuffers,
 };
 
@@ -11,6 +11,11 @@ use crate::{
 pub struct HirBinarySpanStepPass {
     data: PassData,
 }
+
+pub(in crate::parser) const A_TO_B: &str = "hir_binary_span_step.a_to_b";
+pub(in crate::parser) const B_TO_A: &str = "hir_binary_span_step.b_to_a";
+pub(in crate::parser) const A_TO_B_FINAL: &str = "hir_binary_span_step.a_to_b_final";
+pub(in crate::parser) const FINALIZE: &str = "hir_binary_span_step.finalize";
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirBinarySpanStepPass,
@@ -25,48 +30,25 @@ impl HirBinarySpanStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_args: &wgpu::Buffer,
-    ) -> Result<()> {
-        self.record_steps_inner(device, encoder, buffers, Some(dispatch_args))
-    }
-
-    /// Records binary-span propagation steps with direct dispatch.
-    pub fn record_steps(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-    ) -> Result<()> {
-        self.record_steps_inner(device, encoder, buffers, None)
-    }
-
-    fn record_steps_inner(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-        dispatch_args: Option<&wgpu::Buffer>,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(device, encoder, buffers, step % 2 == 0, dispatch_args)?;
+            self.record_step(
+                device,
+                encoder,
+                buffers,
+                step,
+                step % 2 == 0,
+                step + 1 == steps && steps % 2 == 1,
+                dispatch_args,
+                cache,
+            )?;
         }
 
         if steps % 2 == 1 {
-            crate::gpu::passes_core::flush_deferred_compute(encoder);
-            let bytes = u64::from(buffers.tree_capacity) * 4;
-            for (src, dst) in [
-                (
-                    &buffers.hir_binary_span_link_b,
-                    &buffers.hir_binary_span_link_a,
-                ),
-                (
-                    &buffers.hir_binary_span_start_b,
-                    &buffers.hir_binary_span_start_a,
-                ),
-            ] {
-                src.copy_to(encoder, 0, dst, 0, bytes);
-            }
+            buffers.record_finalizer(FINALIZE, encoder)?;
         }
 
         Ok(())
@@ -77,8 +59,11 @@ impl HirBinarySpanStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
+        step: u32,
         read_from_a: bool,
-        dispatch_args: Option<&wgpu::Buffer>,
+        final_unpaired_step: bool,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        cache: &mut BindGroupCache,
     ) -> Result<()> {
         let (link_in, start_in, link_out, start_out) = if read_from_a {
             (
@@ -123,43 +108,43 @@ impl HirBinarySpanStepPass {
             ),
         ]);
 
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("hir_binary_span_step"),
-            &self.data.bind_group_layouts[0],
-            &self.data.reflection,
-            0,
-            &resources,
-        )?;
-
-        if let Some(dispatch_args) = dispatch_args {
-            crate::gpu::passes_core::record_or_defer_compute_indirect(
-                encoder,
-                &self.data,
-                &bind_group,
-                "hir_binary_span_step",
-                dispatch_args,
-            );
+        let label = if final_unpaired_step {
+            A_TO_B_FINAL
+        } else if read_from_a {
+            A_TO_B
         } else {
-            let [tgsx, tgsy, _] = self.data.thread_group_size;
-            let groups = plan_workgroups(
-                DispatchDim::D1,
-                InputElements::Elements1D(buffers.tree_capacity),
-                [tgsx, tgsy, 1],
-            )?;
-            crate::gpu::passes_core::record_or_defer_compute_direct(
-                encoder,
+            B_TO_A
+        };
+        let invocation = format!("{label}.{step}");
+        let bind_group = cache
+            .reflected_for_graph_invocation(
+                device,
+                &invocation,
+                label,
                 &self.data,
-                &bind_group,
-                "hir_binary_span_step",
-                groups,
-            );
-        }
+                buffers,
+                &resources,
+                Some(dispatch_args),
+            )?
+            .into_iter()
+            .next()
+            .expect("binary-span step must have one reflected bind group");
+        crate::gpu::passes_core::record_or_defer_compute_indirect(
+            encoder,
+            &self.data,
+            bind_group.as_ref(),
+            label,
+            dispatch_args,
+        );
         Ok(())
+    }
+
+    pub(in crate::parser) fn graph_pass(&self) -> &PassData {
+        &self.data
     }
 }
 
-fn pointer_jump_steps_for_items(items: u32) -> u32 {
+pub(in crate::parser) fn pointer_jump_steps_for_items(items: u32) -> u32 {
     crate::parser::buffers::pointer_jump_step_capacity(items.max(1).div_ceil(32))
 }
 

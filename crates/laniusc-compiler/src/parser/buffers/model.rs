@@ -332,71 +332,136 @@ pub struct GpuHirView {
 }
 
 impl GpuHirView {
-    /// Complete physical buffer surface retained by compact HIR.
-    fn retained_buffers(&self) -> Vec<TrackedBufferView<'_>> {
+    /// Complete name-to-buffer boundary exported by compact HIR.
+    ///
+    /// Type checking registers this surface directly with its compiler graph;
+    /// adding a side table here therefore cannot leave an untracked frontend
+    /// dependency in a downstream shader.
+    pub(crate) fn named_buffers(&self) -> Vec<(&'static str, TrackedBufferView<'_>)> {
         vec![
-            (&self.count).into(),
-            (&self.core).into(),
-            (&self.links).into(),
-            (&self.payload).into(),
-            (&self.type_decl_by_name_token).into(),
-            (&self.scope_end).into(),
-            (&self.nearest_loop).into(),
-            (&self.nearest_block).into(),
-            (&self.nearest_control).into(),
-            (&self.nearest_fn).into(),
-            (&self.fn_return_type).into(),
-            (&self.type_root_owner).into(),
-            (&self.type_alias_target).into(),
-            (&self.const_type).into(),
-            (&self.const_value).into(),
-            (&self.expr_parent).into(),
-            (&self.expr_root).into(),
-            (&self.call_arg_count).into(),
-            (&self.call_args).into(),
-            (&self.param_count).into(),
-            (&self.params).into(),
-            (&self.param_ranges).into(),
-            (&self.type_arg_count).into(),
-            (&self.type_args).into(),
-            (&self.type_arg_ranges).into(),
-            (&self.generic_param_count).into(),
-            (&self.generic_params).into(),
-            (&self.generic_param_ranges).into(),
-            (&self.path_count).into(),
-            (&self.paths).into(),
-            (&self.path_segment_count).into(),
-            (&self.path_segments).into(),
-            (&self.field_count).into(),
-            (&self.fields).into(),
-            (&self.variant_count).into(),
-            (&self.variants).into(),
-            (&self.variant_payload_start).into(),
-            (&self.variant_payload_count).into(),
-            (&self.variant_payload_row_count).into(),
-            (&self.variant_payloads).into(),
-            (&self.match_arm_count).into(),
-            (&self.match_arms).into(),
-            (&self.match_payload_start).into(),
-            (&self.match_payload_count).into(),
-            (&self.match_pattern_payload_count).into(),
-            (&self.match_payload_row_count).into(),
-            (&self.match_payloads).into(),
-            (&self.array_element_start).into(),
-            (&self.array_element_count).into(),
-            (&self.array_element_row_count).into(),
-            (&self.array_elements).into(),
-            (&self.string_count).into(),
-            (&self.strings).into(),
-            (&self.string_data_words).into(),
-            (&self.string_pool_len).into(),
-            (&self.method_count).into(),
-            (&self.method_cores).into(),
-            (&self.method_signatures).into(),
-            (&self.predicate_count).into(),
-            (&self.predicates).into(),
-            (&self.semantic_facts).into(),
+            ("compact_hir_count", (&self.count).into()),
+            ("compact_hir_core", (&self.core).into()),
+            ("compact_hir_links", (&self.links).into()),
+            ("compact_hir_payload", (&self.payload).into()),
+            (
+                "type_decl_hir_node_by_token",
+                (&self.type_decl_by_name_token).into(),
+            ),
+            ("compact_hir_scope_end", (&self.scope_end).into()),
+            ("compact_hir_nearest_loop", (&self.nearest_loop).into()),
+            ("compact_hir_nearest_block", (&self.nearest_block).into()),
+            (
+                "compact_hir_nearest_control",
+                (&self.nearest_control).into(),
+            ),
+            ("compact_hir_nearest_fn", (&self.nearest_fn).into()),
+            ("compact_fn_return_type", (&self.fn_return_type).into()),
+            ("compact_type_root_owner", (&self.type_root_owner).into()),
+            (
+                "compact_type_alias_target",
+                (&self.type_alias_target).into(),
+            ),
+            ("compact_const_type", (&self.const_type).into()),
+            ("compact_const_value", (&self.const_value).into()),
+            ("compact_hir_expr_parent", (&self.expr_parent).into()),
+            ("compact_hir_expr_root", (&self.expr_root).into()),
+            ("compact_call_arg_count", (&self.call_arg_count).into()),
+            ("compact_call_args", (&self.call_args).into()),
+            ("compact_param_count", (&self.param_count).into()),
+            ("compact_params", (&self.params).into()),
+            ("compact_param_ranges", (&self.param_ranges).into()),
+            ("compact_type_arg_count", (&self.type_arg_count).into()),
+            ("compact_type_args", (&self.type_args).into()),
+            ("compact_type_arg_ranges", (&self.type_arg_ranges).into()),
+            (
+                "compact_generic_param_count",
+                (&self.generic_param_count).into(),
+            ),
+            ("compact_generic_params", (&self.generic_params).into()),
+            (
+                "compact_generic_param_ranges",
+                (&self.generic_param_ranges).into(),
+            ),
+            ("compact_path_count", (&self.path_count).into()),
+            ("compact_paths", (&self.paths).into()),
+            (
+                "compact_path_segment_count",
+                (&self.path_segment_count).into(),
+            ),
+            ("compact_path_segments", (&self.path_segments).into()),
+            ("compact_field_count", (&self.field_count).into()),
+            ("compact_fields", (&self.fields).into()),
+            ("compact_variant_count", (&self.variant_count).into()),
+            ("compact_variants", (&self.variants).into()),
+            (
+                "compact_variant_payload_start",
+                (&self.variant_payload_start).into(),
+            ),
+            (
+                "compact_variant_payload_count",
+                (&self.variant_payload_count).into(),
+            ),
+            (
+                "compact_variant_payload_row_count",
+                (&self.variant_payload_row_count).into(),
+            ),
+            ("compact_variant_payloads", (&self.variant_payloads).into()),
+            ("compact_match_arm_count", (&self.match_arm_count).into()),
+            ("compact_match_arms", (&self.match_arms).into()),
+            (
+                "compact_match_payload_start",
+                (&self.match_payload_start).into(),
+            ),
+            (
+                "compact_match_payload_count",
+                (&self.match_payload_count).into(),
+            ),
+            (
+                "compact_match_pattern_payload_count",
+                (&self.match_pattern_payload_count).into(),
+            ),
+            (
+                "compact_match_payload_row_count",
+                (&self.match_payload_row_count).into(),
+            ),
+            ("compact_match_payloads", (&self.match_payloads).into()),
+            (
+                "compact_array_element_start",
+                (&self.array_element_start).into(),
+            ),
+            (
+                "compact_array_element_count",
+                (&self.array_element_count).into(),
+            ),
+            (
+                "compact_array_element_row_count",
+                (&self.array_element_row_count).into(),
+            ),
+            ("compact_array_elements", (&self.array_elements).into()),
+            ("compact_string_count", (&self.string_count).into()),
+            ("compact_strings", (&self.strings).into()),
+            (
+                "compact_string_data_words",
+                (&self.string_data_words).into(),
+            ),
+            ("compact_string_pool_len", (&self.string_pool_len).into()),
+            ("compact_method_count", (&self.method_count).into()),
+            ("compact_method_cores", (&self.method_cores).into()),
+            (
+                "compact_method_signatures",
+                (&self.method_signatures).into(),
+            ),
+            ("compact_predicate_count", (&self.predicate_count).into()),
+            ("compact_predicates", (&self.predicates).into()),
+            ("compact_hir_semantic_facts", (&self.semantic_facts).into()),
         ]
+    }
+
+    fn retained_buffers(&self) -> Vec<TrackedBufferView<'_>> {
+        self.named_buffers()
+            .into_iter()
+            .map(|(_, buffer)| buffer)
+            .collect()
     }
 
     /// Physical allocations retained by the compact semantic artifact.
@@ -427,6 +492,8 @@ impl GpuHirView {
 /// This struct owns resident GPU storage and uniform buffers only; readback and
 /// staging buffers live in driver/result objects.
 pub struct ParserBuffers {
+    /// Capacity-specialized parser schedule and phase-colored workspace.
+    pub(in crate::parser) compiler_graph: crate::parser::compiler_graph::ParserCompilerGraph,
     pub(crate) resettable_buffers: Vec<crate::gpu::buffers::ResettableBuffer>,
     pub source_capacity: u32,
     // sizes
@@ -453,6 +520,16 @@ pub struct ParserBuffers {
     // tables remain in `PrecomputedParseTables` for diagnostics and tests.
     pub ll1_status: LaniusBuffer<u32>,
     pub(crate) ll1_status_readback: LaniusBuffer<u8>,
+    pub(crate) hir_count_readback: LaniusBuffer<u8>,
+    pub(in crate::parser) status_readback_operations:
+        crate::parser::compiler_graph::ParserStatusReadbackOperations,
+    pub(in crate::parser) dispatch_operations:
+        crate::parser::compiler_graph::ParserDispatchOperations,
+    pub(in crate::parser) copy_operations: crate::parser::compiler_graph::ParserCopyOperations,
+    pub(in crate::parser) clear_operations:
+        std::sync::OnceLock<crate::parser::compiler_graph::ParserClearOperations>,
+    pub(in crate::parser) job_storage_reset:
+        Option<crate::gpu::operations::ResetGraphAllocationsOperation>,
 
     // pair-to-header
     pub params_llp: LaniusBuffer<super::super::passes::llp_pairs::LLPParams>,
@@ -723,7 +800,6 @@ pub struct ParserBuffers {
     pub hir_path_family_flag: LaniusBuffer<u32>,
     pub hir_path_rows: LaniusBuffer<HirPath>,
     pub hir_path_segment_table_count: LaniusBuffer<u32>,
-    pub hir_path_segment_family_flag: LaniusBuffer<u32>,
     pub hir_path_segment_rows: LaniusBuffer<HirPathSegment>,
     pub hir_field_table_count: LaniusBuffer<u32>,
     pub hir_field_family_flag: LaniusBuffer<u32>,

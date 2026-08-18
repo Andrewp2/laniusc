@@ -29,8 +29,6 @@ pub(in crate::type_checker) fn create_name_bind_groups(
         &typed_buffer_from_resources(resources, "token_active_dispatch_args")?,
     )?;
 
-    let mut name_resources = compaction_resources.to_binding_map();
-
     let hash_work_items = name_blocks
         .max(1)
         .saturating_mul(NAME_HASH_TABLE_ROWS_PER_BLOCK);
@@ -44,27 +42,33 @@ pub(in crate::type_checker) fn create_name_bind_groups(
             reserved: 0,
         },
     );
-    name_resources.insert("gParams".into(), hash_params.as_entire_binding());
-    name_resources.insert("name_count_in".into(), resources["name_scan_total"].clone());
-    let hash = |label, kernel| {
-        reflected_bind_group_from_resources(device, label, &passes.kernel(kernel), &name_resources)
+    let mut hash_resources = resources.clone();
+    hash_resources.buffer("gParams", &hash_params);
+    let hash = |name, kernel| {
+        ComputeOperation::direct(
+            device,
+            graph,
+            &hash_resources,
+            name,
+            &passes.kernel(kernel),
+            hash_work_items,
+        )
     };
     let hash_prepare = hash(
-        "type_check_names_hash_00_prepare",
+        compiler_graph::NAMES_HASH_PREPARE_PASS,
         "type_checker/names/hash/00_prepare",
     )?;
     let hash_insert = hash(
-        "type_check_names_hash_01_insert",
+        compiler_graph::NAMES_HASH_INSERT_PASS,
         "type_checker/names/hash/01_insert",
     )?;
     let hash_assign_ids = hash(
-        "type_check_names_hash_02_assign_ids",
+        compiler_graph::NAMES_HASH_ASSIGN_PASS,
         "type_checker/names/hash/02_assign_ids",
     )?;
 
     Ok(NameBindGroups {
         compaction,
-        hash_work_items,
         _hash_params: hash_params,
         hash_prepare,
         hash_insert,

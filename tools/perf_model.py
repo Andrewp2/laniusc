@@ -26,6 +26,7 @@ COMPACT_RECORD_ARRAYS = {
     "phases",
     "stages",
     "submissions",
+    "timeline",
 }
 
 
@@ -301,18 +302,20 @@ def validate_execution_graph(measurement_id: str, graph: object) -> None:
         raise ValueError(f"measurement {measurement_id} has an invalid execution graph")
     coverage_fields = (
         "declared_operations",
-        "executed_labels",
-        "matched_labels",
-        "unregistered_executed_labels",
-        "recorded_passes",
-        "matched_recorded_passes",
+        "executed_operation_labels",
+        "matched_operation_labels",
+        "unregistered_operation_labels",
+        "recorded_operations",
+        "matched_recorded_operations",
+        "recorded_compute_passes",
+        "submissions_without_operations",
     )
     if any(
         not isinstance(coverage.get(field), int) or coverage[field] < 0
         for field in coverage_fields
     ):
         raise ValueError(f"measurement {measurement_id} has invalid execution graph coverage")
-    if coverage["matched_labels"] > len(nodes):
+    if coverage["matched_operation_labels"] > len(nodes):
         raise ValueError(f"measurement {measurement_id} has inconsistent execution graph coverage")
     by_id = {node.get("id"): node for node in nodes if isinstance(node, dict)}
     if len(by_id) != len(nodes) or None in by_id:
@@ -352,8 +355,9 @@ def validate_execution_graph(measurement_id: str, graph: object) -> None:
             not isinstance(submission, dict)
             or submission.get("index") != expected_index
             or not isinstance(submission.get("label"), str)
-            or not isinstance(submission.get("recorded_passes"), int)
-            or not isinstance(submission.get("matched_passes"), int)
+            or not isinstance(submission.get("recorded_compute_passes"), int)
+            or not isinstance(submission.get("recorded_operations"), int)
+            or not isinstance(submission.get("matched_operations"), int)
             or (
                 submission.get("first_node") is not None
                 and submission.get("first_node") not in by_id

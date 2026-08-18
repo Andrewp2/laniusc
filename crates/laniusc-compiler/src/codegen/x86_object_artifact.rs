@@ -31,8 +31,9 @@ use super::{
 use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
-    operations::ComputeOperation,
-    passes_core::{PassData, make_pass_data_from_shader_key, map_readback_blocking},
+    kernels::KernelRegistry,
+    operations::{ComputeOperation, CopyBufferOperation},
+    passes_core::{PassData, map_readback_blocking},
     readback::PagedReadback,
     resource_registry::ResourceMap,
 };
@@ -72,19 +73,16 @@ pub(crate) struct GpuX86ObjectStage {
     identity: LaniusBuffer<X86ObjectIdentity>,
     _relocation_flags: LaniusBuffer<u32>,
     _relocation_prefix: LaniusBuffer<u32>,
-    relocation_total: LaniusBuffer<u32>,
     _symbol_flags: LaniusBuffer<u32>,
     _symbol_prefix: LaniusBuffer<u32>,
-    symbol_total: LaniusBuffer<u32>,
     _definition_flags: LaniusBuffer<u32>,
     _definition_prefix: LaniusBuffer<u32>,
-    definition_total: LaniusBuffer<u32>,
     relocations: LaniusBuffer<X86ObjectRelocationRow>,
     undefined_symbols: LaniusBuffer<X86ObjectUndefinedRow>,
     definitions: LaniusBuffer<X86ObjectDefinitionRow>,
     text_words: LaniusBuffer<u32>,
     rodata_words: LaniusBuffer<u32>,
-    layout: LaniusBuffer<super::lowering_ir::X86ArtifactLayout>,
+    metadata_readback_copies: Vec<CopyBufferOperation>,
     metadata_readback: LaniusBuffer<u8>,
     payload_readback: PagedReadback,
 }
@@ -93,6 +91,7 @@ impl GpuX86ObjectStage {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         device: &wgpu::Device,
+        kernels: &KernelRegistry,
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
@@ -185,33 +184,33 @@ impl GpuX86ObjectStage {
         );
 
         let normalize_status_pass = load(
-            device,
+            kernels,
             "artifact.x86.object.normalize_status",
             "codegen/lir/x86/object_normalize_status",
         )?;
 
         let relocation_flags_pass = load(
-            device,
+            kernels,
             "artifact.x86.object.relocation_flags",
             "codegen/lir/x86/object_relocation_flags",
         )?;
         let definition_flags_pass = load(
-            device,
+            kernels,
             "artifact.x86.object.definition_flags",
             "codegen/lir/x86/object_definition_flags",
         )?;
         let relocations_pass = load(
-            device,
+            kernels,
             "artifact.x86.object.relocations",
             "codegen/lir/x86/object_relocations",
         )?;
         let definitions_pass = load(
-            device,
+            kernels,
             "artifact.x86.object.definitions",
             "codegen/lir/x86/object_definitions",
         )?;
         let bytes_pass = load(
-            device,
+            kernels,
             "artifact.x86.object.bytes",
             "codegen/lir/x86/object_bytes",
         )?;
@@ -240,6 +239,7 @@ impl GpuX86ObjectStage {
         )?;
         let relocation_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -252,6 +252,7 @@ impl GpuX86ObjectStage {
         )?;
         let symbol_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -273,6 +274,7 @@ impl GpuX86ObjectStage {
         )?;
         let definition_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             allocations,
@@ -312,6 +314,60 @@ impl GpuX86ObjectStage {
             &params,
             artifact_capacity,
         )?;
+        let metadata_readback_copies = [
+            (
+                "artifact.x86.object.relocation_total.readback",
+                "relocation_total",
+                &relocation_total,
+                0,
+                4,
+                4,
+            ),
+            (
+                "artifact.x86.object.symbol_total.readback",
+                "symbol_total",
+                &symbol_total,
+                0,
+                8,
+                4,
+            ),
+            (
+                "artifact.x86.object.definition_total.readback",
+                "definition_total",
+                &definition_total,
+                0,
+                12,
+                4,
+            ),
+        ]
+        .into_iter()
+        .map(
+            |(name, source_binding, source, source_offset, destination_offset, size)| {
+                CopyBufferOperation::new(
+                    &context,
+                    name,
+                    source_binding,
+                    source,
+                    source_offset,
+                    "metadata_readback",
+                    &metadata_readback,
+                    destination_offset,
+                    size,
+                )
+            },
+        )
+        .chain(std::iter::once(CopyBufferOperation::new(
+            &context,
+            "artifact.x86.object.layout.readback",
+            "artifact_layout",
+            artifact.layout,
+            0,
+            "metadata_readback",
+            &metadata_readback,
+            16,
+            48,
+        )))
+        .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             relocation_capacity,
@@ -330,19 +386,16 @@ impl GpuX86ObjectStage {
             identity,
             _relocation_flags: relocation_flags,
             _relocation_prefix: relocation_prefix,
-            relocation_total,
             _symbol_flags: symbol_flags,
             _symbol_prefix: symbol_prefix,
-            symbol_total,
             _definition_flags: definition_flags,
             _definition_prefix: definition_prefix,
-            definition_total,
             relocations,
             undefined_symbols,
             definitions,
             text_words,
             rodata_words,
-            layout: artifact.layout.clone(),
+            metadata_readback_copies,
             metadata_readback,
             payload_readback,
         })
@@ -382,15 +435,9 @@ impl GpuX86ObjectStage {
         self.relocations_op.record(encoder)?;
         self.definitions_op.record(encoder)?;
         self.bytes_op.record(encoder)?;
-        for (source, destination) in [
-            (&self.relocation_total, 4),
-            (&self.symbol_total, 8),
-            (&self.definition_total, 12),
-        ] {
-            source.copy_to(encoder, 0, &self.metadata_readback, destination, 4);
+        for copy in &self.metadata_readback_copies {
+            copy.record(encoder);
         }
-        self.layout
-            .copy_to(encoder, 0, &self.metadata_readback, 16, 48);
         Ok(())
     }
 
@@ -665,6 +712,6 @@ fn scan_contract(kind: &'static str, count: &'static str) -> GraphScanContract {
     }
 }
 
-fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
-    make_pass_data_from_shader_key(device, label, "main", shader)
+fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData> {
+    Ok(kernels.kernel(shader).clone())
 }

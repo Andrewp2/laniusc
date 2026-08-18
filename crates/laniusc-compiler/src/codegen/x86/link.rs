@@ -5,16 +5,18 @@
 //! byte movement, and relocation application remain GPU work.
 
 mod executable;
+pub(super) use executable::X86ExecutablePageGraph;
 mod layout_chunks;
+pub(super) use layout_chunks::X86LayoutChunkGraph;
 mod paged;
 mod symbol_partitions;
 mod symbol_resolution;
-
 use std::path::PathBuf;
 
 use anyhow::Result;
 #[cfg(test)]
 use anyhow::bail;
+pub(super) use symbol_resolution::X86SymbolPartitionGraph;
 #[cfg(test)]
 use wgpu::util::DeviceExt;
 

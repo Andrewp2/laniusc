@@ -17,8 +17,9 @@ use super::{
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphWorkspace},
+    kernels::KernelRegistry,
     operations::ComputeOperation,
-    passes_core::{PassData, make_pass_data_from_shader_key},
+    passes_core::PassData,
     resource_registry::ResourceMap,
 };
 
@@ -137,6 +138,7 @@ impl GpuX86LirStage {
         capacities: LoweringCapacities,
         semantic: GpuSemanticLirView<'_>,
         include_object: bool,
+        kernels: &KernelRegistry,
     ) -> Result<Self> {
         let allocations = target_lowering_allocations(graph, workspace, semantic)?;
         let resource = |name: &str| {
@@ -185,43 +187,43 @@ impl GpuX86LirStage {
             capacities.hir_nodes.max(1),
         )?;
 
-        let count_pass = load(device, "lir.x86.count", "codegen/lir/x86/count")?;
-        let scatter_pass = load(device, "lir.x86.scatter", "codegen/lir/x86/scatter")?;
-        let resolve_pass = load(device, "lir.x86.resolve", "codegen/lir/x86/resolve")?;
-        let validate_pass = load(device, "lir.x86.validate", "codegen/lir/x86/validate")?;
-        let locations_pass = load(device, "lir.x86.locations", "codegen/lir/x86/locations")?;
+        let count_pass = load(kernels, "lir.x86.count", "codegen/lir/x86/count")?;
+        let scatter_pass = load(kernels, "lir.x86.scatter", "codegen/lir/x86/scatter")?;
+        let resolve_pass = load(kernels, "lir.x86.resolve", "codegen/lir/x86/resolve")?;
+        let validate_pass = load(kernels, "lir.x86.validate", "codegen/lir/x86/validate")?;
+        let locations_pass = load(kernels, "lir.x86.locations", "codegen/lir/x86/locations")?;
         let lifetime_clear_pass = load(
-            device,
+            kernels,
             "lir.x86.lifetime.clear",
             "codegen/lir/x86/lifetime_clear",
         )?;
         let lifetime_collect_pass = load(
-            device,
+            kernels,
             "lir.x86.lifetime.collect",
             "codegen/lir/x86/lifetime_collect",
         )?;
         let lifetime_call_args_pass = load(
-            device,
+            kernels,
             "lir.x86.lifetime.call_args",
             "codegen/lir/x86/lifetime_call_args",
         )?;
         let lifetime_aggregate_elements_pass = load(
-            device,
+            kernels,
             "lir.x86.lifetime.aggregate_elements",
             "codegen/lir/x86/lifetime_aggregate_elements",
         )?;
         let location_assign_pass = load(
-            device,
+            kernels,
             "lir.x86.location.assign",
             "codegen/lir/x86/location_assign",
         )?;
         let decl_slots_clear_pass = load(
-            device,
+            kernels,
             "lir.x86.decl_slots.clear",
             "codegen/lir/x86/decl_slots_clear",
         )?;
         let decl_slots_scatter_pass = load(
-            device,
+            kernels,
             "lir.x86.decl_slots.scatter",
             "codegen/lir/x86/decl_slots_scatter",
         )?;
@@ -288,6 +290,7 @@ impl GpuX86LirStage {
             .collect::<Result<Vec<_>>>()?;
         let count_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -313,6 +316,7 @@ impl GpuX86LirStage {
         )?;
         let target_pages = GpuTargetPagePlanner::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -405,6 +409,7 @@ impl GpuX86LirStage {
             .collect::<Result<Vec<_>>>()?;
         let functions = GpuTargetFunctionTable::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -484,6 +489,7 @@ impl GpuX86LirStage {
         )?;
         let artifact = GpuX86ArtifactStage::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -499,6 +505,7 @@ impl GpuX86LirStage {
             .then(|| {
                 GpuX86ObjectStage::new(
                     device,
+                    kernels,
                     graph,
                     workspace,
                     &allocations,
@@ -633,8 +640,7 @@ impl GpuX86LirStage {
                 .context("x86 object projection was not allocated for this lowering job")?
                 .record_projection(encoder)
         } else {
-            self.artifact.record_length_readback(encoder);
-            Ok(())
+            self.artifact.record_length_readback(encoder)
         }
     }
 
@@ -699,8 +705,8 @@ impl GpuX86LirStage {
     }
 }
 
-fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
-    make_pass_data_from_shader_key(device, label, "main", shader)
+fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData> {
+    Ok(kernels.kernel(shader).clone())
 }
 
 #[cfg(test)]
@@ -1017,6 +1023,11 @@ mod tests {
         let function_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.fn_count", &[1]);
         let param_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.param_count", &[1]);
         let local_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.local_count", &[1]);
+        let kernels =
+            KernelRegistry::prepare_prefixes(&gpu.device, &["codegen/lir", "scan/counted"], |_| {
+                true
+            })
+            .unwrap();
         let stage = GpuX86LirStage::new(
             &gpu.device,
             &graph,
@@ -1049,6 +1060,7 @@ mod tests {
                 status: &status,
             },
             true,
+            &kernels,
         )
         .unwrap();
         let pipelines_before = pipeline_creation_count();

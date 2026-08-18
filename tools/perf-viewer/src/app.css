@@ -218,11 +218,18 @@ tbody tr:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; 
 .lane-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 13px; color: var(--muted); font-size: 11px; }
 .lane-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .lane-legend i { width: 8px; height: 8px; border-radius: 2px; background: var(--lane); }
-.timeline { overflow-x: auto; border: 1px solid var(--line); border-radius: 9px; background: #090d13; }
+.timeline { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: #090d13; }
+.timeline-canvas { cursor: grab; touch-action: none; user-select: none; }
+.timeline-canvas:active { cursor: grabbing; }
 .lane-label { fill: var(--muted); font-size: 10px; }
-.timeline rect { outline: none; cursor: pointer; transition: opacity .12s ease; }
-.timeline rect:hover, .timeline rect:focus-visible { opacity: 1; stroke: var(--text); stroke-width: 1; }
-.timeline rect.selected-event { stroke: white; stroke-width: 2; filter: drop-shadow(0 0 4px rgb(255 255 255 / 35%)); }
+.phase-line { stroke: var(--line); stroke-width: 1; opacity: .45; }
+.unit-boundary { stroke: var(--cyan); stroke-dasharray: 3 4; stroke-width: 1; opacity: .38; }
+.unit-span { stroke: var(--cyan); stroke-width: 1; opacity: .32; }
+.unit-label { fill: color-mix(in srgb, var(--cyan) 72%, var(--muted)); font-size: 9px; font-weight: 700; letter-spacing: .04em; }
+.timeline-event { outline: none; cursor: pointer; transition: opacity .12s ease; }
+.timeline-event.host-span { stroke-width: 1; }
+.timeline-event:hover, .timeline-event:focus-visible { opacity: 1; stroke: var(--text); stroke-width: 1; }
+.timeline-event.selected-event { stroke: white; stroke-width: 2; filter: drop-shadow(0 0 4px rgb(255 255 255 / 35%)); }
 .timeline-details, .graph-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .7fr); gap: 14px; margin-top: 14px; }
 .event-inspector, .longest-events { border: 1px solid var(--line); border-radius: 10px; background: rgb(9 13 19 / 65%); padding: 14px; }
 .event-inspector > strong { display: block; margin-top: 6px; font-size: 17px; }
@@ -235,6 +242,7 @@ tbody tr:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; 
 .longest-events button { display: flex; justify-content: space-between; gap: 12px; width: 100%; border: 0; border-radius: 6px; background: transparent; color: var(--muted); padding: 6px 8px; text-align: left; }
 .longest-events button:hover, .longest-events button.active { background: var(--panel-3); color: var(--text); }
 .longest-events button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.longest-events button span small { display: block; overflow: hidden; margin-top: 1px; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .longest-events button strong { color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .graph-legends { display: grid; justify-items: end; gap: 8px; }
 .edge-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 14px; color: var(--muted); font-size: 10px; }

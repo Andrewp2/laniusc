@@ -3,19 +3,208 @@ use std::io::{Seek, SeekFrom, Write};
 use anyhow::{Result, bail};
 
 use super::{GpuX86LinkInput, paged::GpuX86PagedExecutablePlan};
-use crate::codegen::x86::{
-    GpuX86Linker,
-    support::{dispatch_compute_pass, reflected_bind_group, u32_words_bytes, workgroup_grid_1d},
+use crate::{
+    codegen::x86::{GpuX86Linker, support::u32_words_bytes},
+    gpu::{
+        buffers::LaniusBuffer,
+        compiler_graph::{
+            CompilerGraphBuilder,
+            CompilerPhase,
+            MaterializedCompilerGraph,
+            ResourceClass,
+            ResourceDesc,
+            ResourceDomain,
+        },
+        operations::{ClearBufferOperation, ComputeOperation, CopyBufferOperation},
+        resource_registry::ResourceMap,
+        workspace::WorkspaceUsageClass,
+    },
 };
 
 const RELOCATION_RECORD_BYTES_PER_COLUMN: usize = 16;
 const RELOCATION_BATCH_BYTES_PER_COLUMN: usize = 4 * 1024 * 1024;
 
+pub(crate) struct X86ExecutablePageGraph {
+    output_capacity: usize,
+    text_capacity: usize,
+    rodata_capacity: usize,
+    relocation_capacity: usize,
+    batch_capacity: usize,
+    materialized: MaterializedCompilerGraph,
+}
+
+impl X86ExecutablePageGraph {
+    fn covers(
+        &self,
+        output: usize,
+        text: usize,
+        rodata: usize,
+        relocations: usize,
+        batches: usize,
+    ) -> bool {
+        self.output_capacity >= output
+            && self.text_capacity >= text
+            && self.rodata_capacity >= rodata
+            && self.relocation_capacity >= relocations
+            && self.batch_capacity >= batches
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        generator: &GpuX86Linker,
+        device: &wgpu::Device,
+        output_capacity: usize,
+        text_capacity: usize,
+        rodata_capacity: usize,
+        relocation_capacity: usize,
+        batch_capacity: usize,
+    ) -> Result<Self> {
+        let output_capacity = output_capacity.max(4).next_multiple_of(4);
+        let text_capacity = text_capacity.max(4).next_multiple_of(4);
+        let rodata_capacity = rodata_capacity.max(4).next_multiple_of(4);
+        let relocation_capacity = relocation_capacity.max(1);
+        let batch_capacity = batch_capacity.max(1);
+        let mut graph = CompilerGraphBuilder::new();
+        let mut add = |name: &'static str, class: ResourceClass, bytes: usize| -> Result<()> {
+            graph
+                .add_resource(ResourceDesc {
+                    name,
+                    domain: ResourceDomain::ArtifactBytes,
+                    class,
+                    bytes: bytes.max(4) as u64,
+                    usage: WorkspaceUsageClass::Storage,
+                })
+                .map(|_| ())
+                .map_err(anyhow::Error::msg)
+        };
+        add("x86_elf_layout", ResourceClass::External, 32)?;
+        add("layout_status", ResourceClass::External, 16)?;
+        add("link_text_input", ResourceClass::Input, text_capacity)?;
+        add("link_rodata_input", ResourceClass::Input, rodata_capacity)?;
+        add(
+            "link_relocation_a",
+            ResourceClass::External,
+            relocation_capacity * RELOCATION_RECORD_BYTES_PER_COLUMN,
+        )?;
+        add(
+            "link_relocation_b",
+            ResourceClass::External,
+            relocation_capacity * RELOCATION_RECORD_BYTES_PER_COLUMN,
+        )?;
+        add(
+            "link_relocation_c",
+            ResourceClass::External,
+            relocation_capacity * RELOCATION_RECORD_BYTES_PER_COLUMN,
+        )?;
+        add("link_relocation_status", ResourceClass::External, 16)?;
+        add("out_words", ResourceClass::Workspace, output_capacity)?;
+        add("status", ResourceClass::Workspace, 16)?;
+        add(
+            "page_readback",
+            ResourceClass::External,
+            output_capacity + 32,
+        )?;
+        drop(add);
+
+        let out_words = graph.resource_id("out_words").expect("x86 page output");
+        let status = graph.resource_id("status").expect("x86 page status");
+        let relocation_status = graph
+            .resource_id("link_relocation_status")
+            .expect("x86 page relocation status");
+        let readback = graph
+            .resource_id("page_readback")
+            .expect("x86 page readback");
+        graph
+            .add_buffer_clear_pass(
+                "codegen.x86.link.page.output.clear",
+                CompilerPhase::Artifact,
+                "out_words",
+                out_words,
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_buffer_clear_pass(
+                "codegen.x86.link.page.status.clear",
+                CompilerPhase::Artifact,
+                "status",
+                status,
+            )
+            .map_err(anyhow::Error::msg)?;
+        for (name, pass) in [
+            ("codegen.x86.link.page.elf_write", &generator.elf_write_pass),
+            (
+                "codegen.x86.link.page.copy_sections",
+                &generator.link_copy_sections_pass,
+            ),
+            (
+                "codegen.x86.link.page.relocate",
+                &generator.link_relocate_pass,
+            ),
+        ] {
+            graph
+                .add_reflected_compute_pass_by_name(
+                    name,
+                    CompilerPhase::Artifact,
+                    ResourceDomain::ArtifactBytes,
+                    &pass.reflection,
+                    &[],
+                )
+                .map_err(anyhow::Error::msg)?;
+        }
+        graph
+            .repeat_pass_range(
+                batch_capacity as u32,
+                "codegen.x86.link.page.relocate",
+                "codegen.x86.link.page.relocate",
+            )
+            .map_err(anyhow::Error::msg)?;
+        for (name, source_binding, source) in [
+            (
+                "codegen.x86.link.page.output.readback",
+                "out_words",
+                out_words,
+            ),
+            ("codegen.x86.link.page.status.readback", "status", status),
+            (
+                "codegen.x86.link.page.relocation_status.readback",
+                "link_relocation_status",
+                relocation_status,
+            ),
+        ] {
+            graph
+                .add_buffer_copy_pass(
+                    name,
+                    CompilerPhase::Artifact,
+                    source_binding,
+                    source,
+                    "page_readback",
+                    readback,
+                )
+                .map_err(anyhow::Error::msg)?;
+        }
+        let graph = graph.build().map_err(anyhow::Error::msg)?;
+        let materialized = MaterializedCompilerGraph::new_with_upstream_storage(
+            device,
+            "x86_link_executable_page",
+            graph,
+            &[],
+        )
+        .map_err(anyhow::Error::msg)?;
+        Ok(Self {
+            output_capacity,
+            text_capacity,
+            rodata_capacity,
+            relocation_capacity,
+            batch_capacity,
+            materialized,
+        })
+    }
+}
+
 struct X86ResolvedLinkBuffers<'a> {
     object_bases: &'a [[u32; 2]],
-    elf_layout: &'a wgpu::Buffer,
-    layout_status: &'a wgpu::Buffer,
-    relocation_status: &'a wgpu::Buffer,
+    elf_layout: &'a LaniusBuffer<u32>,
+    layout_status: &'a LaniusBuffer<u32>,
 }
 
 impl GpuX86Linker {
@@ -84,13 +273,6 @@ impl GpuX86Linker {
         let object_layout =
             self.resolve_object_layout_chunks(device, queue, input, output_capacity_u32)?;
         let layout_resolved = started.elapsed();
-        let relocation_status = self.reusable_storage_u32(
-            device,
-            "codegen.x86.link.relocation_status",
-            4,
-            wgpu::BufferUsages::COPY_SRC,
-        );
-
         let result = self.emit_executable_pages(
             device,
             queue,
@@ -101,7 +283,6 @@ impl GpuX86Linker {
                 object_bases: &object_layout.object_bases,
                 elf_layout: &object_layout.elf_layout,
                 layout_status: &object_layout.layout_status,
-                relocation_status: &relocation_status.buffer,
             },
             consume_page,
         );
@@ -162,18 +343,6 @@ impl GpuX86Linker {
                 "codegen.x86.link.page.rodata",
                 &rodata_bytes,
             );
-            let output = self.reusable_storage_u32(
-                device,
-                "codegen.x86.link.page.output",
-                page_capacity / 4,
-                wgpu::BufferUsages::COPY_SRC,
-            );
-            let output_status = self.reusable_storage_u32(
-                device,
-                "codegen.x86.link.page.output_status",
-                4,
-                wgpu::BufferUsages::COPY_SRC,
-            );
             let elf_params = self.reusable_uniform_u32(
                 device,
                 queue,
@@ -195,33 +364,6 @@ impl GpuX86Linker {
                     page.output_len,
                 ],
             );
-            let elf_group = reflected_bind_group(
-                device,
-                Some("codegen.x86.link.page.elf.bind_group"),
-                &self.elf_write_pass,
-                0,
-                &[
-                    ("gParams", elf_params.buffer.as_entire_binding()),
-                    ("x86_elf_layout", resolved.elf_layout.as_entire_binding()),
-                    ("layout_status", resolved.layout_status.as_entire_binding()),
-                    ("out_words", output.buffer.as_entire_binding()),
-                    ("status", output_status.buffer.as_entire_binding()),
-                ],
-            )?;
-            let copy_group = reflected_bind_group(
-                device,
-                Some("codegen.x86.link.page.copy.bind_group"),
-                &self.link_copy_sections_pass,
-                0,
-                &[
-                    ("gCopy", copy_params.buffer.as_entire_binding()),
-                    ("link_text_input", text_input.as_entire_binding()),
-                    ("link_rodata_input", rodata_input.as_entire_binding()),
-                    ("x86_elf_layout", resolved.elf_layout.as_entire_binding()),
-                    ("layout_status", resolved.layout_status.as_entire_binding()),
-                    ("out_words", output.buffer.as_entire_binding()),
-                ],
-            )?;
             let max_relocations_per_batch = max_relocation_batch_records(
                 device.limits().max_storage_buffer_binding_size as usize,
             )?
@@ -250,54 +392,158 @@ impl GpuX86Linker {
                 "codegen.x86.link.page.relocation_params",
                 &[0; 8],
             );
-            let relocate_group = reflected_bind_group(
+            let relocation_status = self.reusable_storage_u32(
                 device,
-                Some("codegen.x86.link.page.relocate.bind_group"),
-                &self.link_relocate_pass,
-                0,
-                &[
-                    ("gReloc", relocation_params.buffer.as_entire_binding()),
-                    ("link_relocation_a", relocation_a.buffer.as_entire_binding()),
-                    ("link_relocation_b", relocation_b.buffer.as_entire_binding()),
-                    ("link_relocation_c", relocation_c.buffer.as_entire_binding()),
-                    ("x86_elf_layout", resolved.elf_layout.as_entire_binding()),
-                    ("out_words", output.buffer.as_entire_binding()),
-                    (
-                        "link_relocation_status",
-                        resolved.relocation_status.as_entire_binding(),
-                    ),
-                ],
-            )?;
+                "codegen.x86.link.page.relocation_status",
+                4,
+                wgpu::BufferUsages::COPY_SRC,
+            );
             queue.write_buffer(
-                resolved.relocation_status,
+                &relocation_status.buffer,
                 0,
                 &u32_words_bytes(&[1, 0, u32::MAX, page.relocation_indices.len() as u32]),
             );
-            let readback =
-                self.reusable_readback(device, "rb.codegen.x86.link.page", page_capacity + 32);
+
+            let relocation_batch_count = page
+                .relocation_indices
+                .len()
+                .div_ceil(max_relocations_per_batch)
+                .max(1);
+            let mut graph_guard = self
+                .executable_page_graph
+                .lock()
+                .expect("x86 executable-page graph cache poisoned");
+            if !graph_guard.as_ref().is_some_and(|graph| {
+                graph.covers(
+                    page_capacity,
+                    text_bytes.len(),
+                    rodata_bytes.len(),
+                    max_relocations_per_batch,
+                    relocation_batch_count,
+                )
+            }) {
+                *graph_guard = Some(X86ExecutablePageGraph::new(
+                    self,
+                    device,
+                    page_capacity,
+                    text_bytes.len(),
+                    rodata_bytes.len(),
+                    max_relocations_per_batch,
+                    relocation_batch_count,
+                )?);
+            }
+            let graph_state = graph_guard
+                .as_ref()
+                .expect("x86 executable-page graph installed");
+            let graph = &graph_state.materialized;
+            let output = graph.buffer::<u32>("out_words")?;
+            let output_status = graph.buffer::<u32>("status")?;
+            let readback = self.reusable_readback(
+                device,
+                "rb.codegen.x86.link.page",
+                graph_state.output_capacity + 32,
+            );
+            let graph_bindings = graph.bindings()?;
+            let mut resources = ResourceMap::new();
+            resources.attach_graph(graph.graph(), graph.allocations());
+            resources.register_graph_bindings(graph.graph(), &graph_bindings);
+            resources.buffer("x86_elf_layout", resolved.elf_layout);
+            resources.buffer("layout_status", resolved.layout_status);
+            resources.buffer("link_text_input", &text_input);
+            resources.buffer("link_rodata_input", &rodata_input);
+            resources.buffer("link_relocation_a", &relocation_a);
+            resources.buffer("link_relocation_b", &relocation_b);
+            resources.buffer("link_relocation_c", &relocation_c);
+            resources.buffer("link_relocation_status", &relocation_status);
+            resources.buffer("page_readback", &readback);
+
+            let output_clear = ClearBufferOperation::entire(
+                graph,
+                "codegen.x86.link.page.output.clear",
+                "out_words",
+                &output,
+            )?;
+            let status_clear = ClearBufferOperation::entire(
+                graph,
+                "codegen.x86.link.page.status.clear",
+                "status",
+                &output_status,
+            )?;
+            let mut elf_resources = resources.clone();
+            elf_resources.buffer("gParams", &elf_params);
+            let elf_write = ComputeOperation::direct(
+                device,
+                graph,
+                &elf_resources,
+                "codegen.x86.link.page.elf_write",
+                &self.elf_write_pass,
+                u32::try_from(graph_state.output_capacity / 4)
+                    .map_err(|_| anyhow::anyhow!("x86 executable page capacity exceeds u32"))?,
+            )?;
+            let mut copy_resources = resources.clone();
+            copy_resources.buffer("gCopy", &copy_params);
+            let copy_sections = ComputeOperation::direct(
+                device,
+                graph,
+                &copy_resources,
+                "codegen.x86.link.page.copy_sections",
+                &self.link_copy_sections_pass,
+                u32::try_from(graph_state.text_capacity.max(graph_state.rodata_capacity))
+                    .map_err(|_| anyhow::anyhow!("x86 section input capacity exceeds u32"))?,
+            )?;
+            let mut relocation_resources = resources.clone();
+            relocation_resources.buffer("gReloc", &relocation_params);
+            let relocate = ComputeOperation::direct(
+                device,
+                graph,
+                &relocation_resources,
+                "codegen.x86.link.page.relocate",
+                &self.link_relocate_pass,
+                u32::try_from(graph_state.relocation_capacity)
+                    .map_err(|_| anyhow::anyhow!("x86 relocation capacity exceeds u32"))?,
+            )?;
+            let output_copy = CopyBufferOperation::new(
+                graph,
+                "codegen.x86.link.page.output.readback",
+                "out_words",
+                &output,
+                0,
+                "page_readback",
+                &readback,
+                0,
+                page_capacity as u64,
+            )?;
+            let status_copy = CopyBufferOperation::new(
+                graph,
+                "codegen.x86.link.page.status.readback",
+                "status",
+                &output_status,
+                0,
+                "page_readback",
+                &readback,
+                page_capacity as u64,
+                16,
+            )?;
+            let relocation_status_copy = CopyBufferOperation::new(
+                graph,
+                "codegen.x86.link.page.relocation_status.readback",
+                "link_relocation_status",
+                &relocation_status,
+                0,
+                "page_readback",
+                &readback,
+                (page_capacity + 16) as u64,
+                16,
+            )?;
             let resources_prepared = started.elapsed();
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("codegen.x86.link.page.encoder"),
             });
-            encoder.clear_buffer(&output.buffer, 0, None);
-            encoder.clear_buffer(&output_status.buffer, 0, None);
-            dispatch_compute_pass(
-                &mut encoder,
-                "link.page.elf_write",
-                "codegen.x86.link.page.elf_write",
-                &self.elf_write_pass,
-                &elf_group,
-                workgroup_grid_1d(((page_capacity / 4) as u32).div_ceil(256)),
-            );
+            output_clear.record(&mut encoder);
+            status_clear.record(&mut encoder);
+            elf_write.record_elements(&mut encoder, (page_capacity / 4) as u32)?;
             let copy_count = page.text_input.len().max(page.rodata_input.len()).max(1) as u32;
-            dispatch_compute_pass(
-                &mut encoder,
-                "link.page.copy_sections",
-                "codegen.x86.link.page.copy_sections",
-                &self.link_copy_sections_pass,
-                &copy_group,
-                workgroup_grid_1d(copy_count.div_ceil(256)),
-            );
+            copy_sections.record_elements(&mut encoder, copy_count)?;
             crate::gpu::passes_core::submit_with_progress(
                 queue,
                 "codegen.x86.link.page.initialize",
@@ -335,14 +581,7 @@ impl GpuX86Linker {
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("codegen.x86.link.page.relocation_batch.encoder"),
                 });
-                dispatch_compute_pass(
-                    &mut encoder,
-                    "link.page.relocate",
-                    "codegen.x86.link.page.relocate",
-                    &self.link_relocate_pass,
-                    &relocate_group,
-                    workgroup_grid_1d((indices.len() as u32).div_ceil(256)),
-                );
+                relocate.record_elements(&mut encoder, indices.len() as u32)?;
                 crate::gpu::passes_core::submit_with_progress(
                     queue,
                     "codegen.x86.link.page.relocation_batch",
@@ -353,25 +592,9 @@ impl GpuX86Linker {
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("codegen.x86.link.page.readback.encoder"),
             });
-            encoder.copy_buffer_to_buffer(
-                &output.buffer,
-                0,
-                &readback.buffer,
-                0,
-                page_capacity as u64,
-            );
-            for (index, status) in [&output_status.buffer, resolved.relocation_status]
-                .into_iter()
-                .enumerate()
-            {
-                encoder.copy_buffer_to_buffer(
-                    status,
-                    0,
-                    &readback.buffer,
-                    (page_capacity + index * 16) as u64,
-                    16,
-                );
-            }
+            output_copy.record(&mut encoder);
+            status_copy.record(&mut encoder);
+            relocation_status_copy.record(&mut encoder);
             crate::gpu::passes_core::submit_with_progress(
                 queue,
                 "codegen.x86.link.page",

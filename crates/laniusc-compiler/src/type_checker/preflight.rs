@@ -1,5 +1,142 @@
 use super::*;
 
+const PREFLIGHT_CLEAR_PASS: &str = "type_check.preflight.clear";
+const PREFLIGHT_COUNT_PASS: &str = "type_check.modules.count_record_candidates";
+const PREFLIGHT_READBACK_PASS: &str = "type_check.preflight.readback";
+
+pub(super) struct TypeCheckPreflightGraph {
+    materialized: crate::gpu::compiler_graph::MaterializedCompilerGraph,
+    bindings: crate::gpu::compiler_graph::CompilerGraphBindings,
+    readback: LaniusBuffer<u32>,
+}
+
+impl TypeCheckPreflightGraph {
+    pub(super) fn new(device: &wgpu::Device, passes: &TypeCheckPasses) -> Result<Self> {
+        use crate::gpu::{
+            compiler_graph::{
+                CompilerGraphBuilder,
+                CompilerPhase,
+                PassAccess,
+                PassDesc,
+                ResourceClass,
+                ResourceDesc,
+                ResourceDomain,
+            },
+            workspace::WorkspaceUsageClass,
+        };
+
+        let mut graph = CompilerGraphBuilder::new();
+        for name in [
+            "compact_hir_count",
+            "compact_hir_core",
+            "compact_hir_payload",
+            "compact_path_count",
+            "compact_param_count",
+            "compact_call_arg_count",
+            "compact_variant_count",
+        ] {
+            graph
+                .add_resource(ResourceDesc {
+                    name,
+                    domain: ResourceDomain::HirNodes,
+                    class: ResourceClass::Input,
+                    bytes: 1,
+                    usage: WorkspaceUsageClass::Storage,
+                })
+                .map_err(anyhow::Error::msg)?;
+        }
+        let candidate_counts = graph
+            .add_resource(ResourceDesc {
+                name: "candidate_counts",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::Output,
+                bytes: 3 * std::mem::size_of::<u32>() as u64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .map_err(anyhow::Error::msg)?;
+        let candidate_counts_readback = graph
+            .add_resource(ResourceDesc {
+                name: "candidate_counts_readback",
+                domain: ResourceDomain::Declarations,
+                class: ResourceClass::External,
+                bytes: 3 * std::mem::size_of::<u32>() as u64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_pass(PassDesc {
+                name: PREFLIGHT_CLEAR_PASS,
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                accesses: vec![PassAccess::write("candidate_counts", candidate_counts)],
+            })
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_kernel_pass_by_name(
+                PREFLIGHT_COUNT_PASS,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                passes,
+                "type_checker/modules/00a_count_record_candidates",
+                &[],
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph
+            .add_buffer_copy_pass(
+                PREFLIGHT_READBACK_PASS,
+                CompilerPhase::TypeCheck,
+                "candidate_counts",
+                candidate_counts,
+                "candidate_counts_readback",
+                candidate_counts_readback,
+            )
+            .map_err(anyhow::Error::msg)?;
+        graph.add_registered_pass_arena_conflicts();
+        let graph = graph.build().map_err(anyhow::Error::msg)?;
+        graph
+            .validate_assigned_pass_reflections(passes)
+            .map_err(anyhow::Error::msg)?;
+        let materialized =
+            crate::gpu::compiler_graph::MaterializedCompilerGraph::new_with_upstream_storage(
+                device,
+                "type_check.preflight",
+                graph,
+                &[],
+            )
+            .map_err(anyhow::Error::msg)?;
+        let bindings = materialized.bindings()?;
+        let readback = readback_u32s(device, "rb.type_check.preflight_capacities", 3);
+        Ok(Self {
+            materialized,
+            bindings,
+            readback,
+        })
+    }
+
+    fn candidate_counts(&self) -> Result<LaniusBuffer<u32>> {
+        self.materialized.u32_buffer("candidate_counts")
+    }
+
+    fn register_bindings<'a>(&'a self, resources: &mut ResourceMap<'a>) {
+        resources.attach_graph(self.materialized.graph(), self.materialized.allocations());
+        resources.register_graph_bindings(self.materialized.graph(), &self.bindings);
+    }
+
+    fn readback(&self) -> LaniusBuffer<u32> {
+        self.readback.clone()
+    }
+}
+
+impl crate::gpu::operations::ComputeGraph for TypeCheckPreflightGraph {
+    fn graph(&self) -> &crate::gpu::compiler_graph::CompilerGraph {
+        self.materialized.graph()
+    }
+
+    fn allocations(&self) -> &crate::gpu::compiler_graph::CompilerGraphAllocations {
+        self.materialized.allocations()
+    }
+}
+
 /// GPU-measured compact capacities needed before resident typecheck allocation.
 #[derive(Clone, Copy, Debug)]
 pub struct TypeCheckPreflightCapacities {
@@ -11,7 +148,7 @@ pub struct TypeCheckPreflightCapacities {
 /// Host-readable result of the GPU compact-record preflight.
 pub struct RecordedModuleRecordCapacity {
     candidate_counts: LaniusBuffer<u32>,
-    readback: wgpu::Buffer,
+    readback: LaniusBuffer<u32>,
 }
 
 impl GpuTypeChecker {
@@ -38,14 +175,9 @@ impl GpuTypeChecker {
         };
         queue.write_buffer(&self.params_buf, 0, &type_check_params_bytes(&params));
 
-        let candidate_counts = typed_storage_u32_rw(
-            device,
-            "type_check.preflight_capacities",
-            3,
-            wgpu::BufferUsages::COPY_DST,
-        );
-        record_typecheck_clear_buffer(encoder, &candidate_counts, 0, Some(12));
+        let candidate_counts = self.preflight_graph.candidate_counts()?;
         let mut resources = ResourceMap::new();
+        self.preflight_graph.register_bindings(&mut resources);
         resources.add("gParams", self.params_buf.as_entire_binding());
         resources.add(
             "compact_hir_count",
@@ -72,27 +204,38 @@ impl GpuTypeChecker {
             "compact_variant_count",
             parse_bufs.hir_variant_table_count.as_entire_binding(),
         );
-        resources.add("candidate_counts", candidate_counts.as_entire_binding());
-        let bind_group = reflected_bind_group_from_resources(
-            device,
-            "type_check_modules_00a_count_record_candidates",
-            &self
-                .passes
-                .kernel("type_checker/modules/00a_count_record_candidates"),
-            &resources,
+        let clear = crate::gpu::operations::ClearBufferOperation::entire(
+            &self.preflight_graph,
+            PREFLIGHT_CLEAR_PASS,
+            "candidate_counts",
+            &candidate_counts,
         )?;
-        record_compute(
-            encoder,
+        let count = crate::gpu::operations::ComputeOperation::direct(
+            device,
+            &self.preflight_graph,
+            &resources,
+            PREFLIGHT_COUNT_PASS,
             &self
                 .passes
                 .kernel("type_checker/modules/00a_count_record_candidates"),
-            &bind_group,
-            "type_check.modules.count_record_candidates",
             parse_bufs.tree_capacity,
         )?;
+        clear.record(encoder);
+        count.record(encoder)?;
 
-        let readback = readback_u32s(device, "rb.type_check.preflight_capacities", 3);
-        record_typecheck_copy_buffer_to_buffer(encoder, &candidate_counts, 0, &readback, 0, 12);
+        let readback = self.preflight_graph.readback();
+        let copy = crate::gpu::operations::CopyBufferOperation::new(
+            &self.preflight_graph,
+            PREFLIGHT_READBACK_PASS,
+            "candidate_counts",
+            &candidate_counts,
+            0,
+            "candidate_counts_readback",
+            &readback,
+            0,
+            12,
+        )?;
+        copy.record(encoder);
         Ok(RecordedModuleRecordCapacity {
             candidate_counts,
             readback,

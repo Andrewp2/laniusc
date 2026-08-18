@@ -2,15 +2,15 @@
 
 use std::{ops::Range, sync::OnceLock};
 
+#[cfg(test)]
 use anyhow::Result;
 #[cfg(test)]
 use wgpu::util::DeviceExt;
 
 use super::GpuX86Linker;
-use crate::gpu::{
-    buffers::LaniusBuffer,
-    passes_core::{PassData, bind_group},
-};
+use crate::gpu::buffers::LaniusBuffer;
+#[cfg(test)]
+use crate::gpu::passes_core::{PassData, bind_group};
 
 fn trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -23,6 +23,7 @@ pub(super) fn trace_x86_codegen(stage: &str) {
     }
 }
 
+#[cfg(test)]
 fn trace_event(stage: &str, event: &str) {
     if trace_enabled() {
         eprintln!("[laniusc][x86-link] {stage}.{event}");
@@ -38,6 +39,18 @@ pub(super) fn u32_words_bytes(words: &[u32]) -> Vec<u8> {
 impl GpuX86Linker {
     pub(crate) fn release_job_buffers(&self) {
         self.job_buffers.clear();
+        self.executable_page_graph
+            .lock()
+            .expect("x86 executable-page graph cache poisoned")
+            .take();
+        self.layout_chunk_graph
+            .lock()
+            .expect("x86 layout-chunk graph cache poisoned")
+            .take();
+        self.symbol_partition_graph
+            .lock()
+            .expect("x86 symbol-partition graph cache poisoned")
+            .take();
         self.input_shadows
             .lock()
             .expect("x86 input-shadow cache poisoned")
@@ -261,12 +274,14 @@ pub(super) fn storage_u32_copy(
     storage_u32_rw(device, label, count, wgpu::BufferUsages::COPY_SRC)
 }
 
+#[cfg(test)]
 pub(super) fn workgroup_grid_1d(groups: u32) -> (u32, u32) {
     let groups = groups.max(1);
     let x = groups.min(65_535);
     (x, groups.div_ceil(x))
 }
 
+#[cfg(test)]
 pub(super) fn dispatch_compute_pass(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage: &str,
@@ -291,6 +306,7 @@ pub(super) fn dispatch_compute_pass(
     trace_event(trace_stage, "record.done");
 }
 
+#[cfg(test)]
 pub(super) fn reflected_bind_group(
     device: &wgpu::Device,
     label: Option<&'static str>,

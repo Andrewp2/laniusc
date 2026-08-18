@@ -1,6 +1,6 @@
 // src/parser/driver.rs
 //! GPU parser driver, reshaped to mirror the style used by the lexer driver:
-//! - Pass bundle + `record_all_passes`
+//! - One compiler-graph schedule shared by resident and one-shot parsing
 //! - Bind-group cache reuse across passes
 //! - Env-gated timers and validation scopes
 //! - Optional readback (LANIUS_READBACK), returning empty streams when off
@@ -35,24 +35,19 @@ pub use results::{
 };
 pub use support::get_global_parser;
 use support::*;
-use token_frontend::ResidentTokenKindBindGroups;
+use token_frontend::ResidentTokenKindOperations;
 use wgpu;
 
 use crate::{
     gpu::{
-        buffers::{TrackedBufferView, storage_ro_from_bytes, storage_ro_from_u32s},
+        buffers::{storage_ro_from_bytes, storage_ro_from_u32s},
         device,
         passes_core::{
             BindGroupCache,
             ComputePassBatch,
-            DispatchDim,
-            InputElements,
             Pass,
             PassContext,
-            PassData,
-            bind_group,
             compute_pass_batching_enabled,
-            plan_workgroups,
             validation_scopes_enabled,
         },
         timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
@@ -75,39 +70,6 @@ pub struct GpuParser {
     queue: Arc<wgpu::Queue>,
     timers_supported: bool,
 
-    token_delimiters_01: PassData,
-    token_delimiters_02_scan_up: PassData,
-    token_delimiters_02_scan_down: PassData,
-    token_statement_event_scan_up: PassData,
-    token_statement_event_scan_down: PassData,
-    token_delimiters_03_owner_local: PassData,
-    token_delimiters_04_owner_apply: PassData,
-    tokens_brace_context: PassData,
-    tokens_statement_phase_01_local: PassData,
-    tokens_statement_phase_02_apply: PassData,
-    tokens_impl_header_01_local: PassData,
-    tokens_impl_header_02_apply: PassData,
-    tokens_where_clause_01_local: PassData,
-    tokens_where_clause_02_apply: PassData,
-    tokens_match_pattern_01_local: PassData,
-    tokens_match_pattern_02_apply: PassData,
-    tokens_delimiter_match_01_depth_blocks: PassData,
-    tokens_delimiter_match_02_build_min_tree: PassData,
-    tokens_bracket_match_03_pair_pse: PassData,
-    tokens_brace_match_03_pair_pse: PassData,
-    active_pair_dispatch_args: PassData,
-    tree_feature_dispatch_args: PassData,
-    tokens_to_kinds: PassData,
-    tokens_type_path_context_01_local: PassData,
-    tokens_type_path_context_02_apply: PassData,
-    tokens_to_identifier_kinds: PassData,
-    tokens_generic_shr_00_raw_local: PassData,
-    tokens_generic_shr_00_raw_apply: PassData,
-    tokens_generic_shr_01_local: PassData,
-    tokens_generic_shr_02_scan_up: PassData,
-    tokens_generic_shr_02_scan_down: PassData,
-    tokens_generic_shr_03_apply: PassData,
-    tokens_generic_shr_04_close_kinds: PassData,
     passes: ParserPasses,
 
     // Bind group cache so passes do not recreate BGs every dispatch.
@@ -116,7 +78,11 @@ pub struct GpuParser {
     // Resident lexer-to-parser buffers reused by the compiler path when the parse
     // table identity is unchanged and the previous allocation is large enough.
     resident_buffers: std::sync::Mutex<Option<ResidentParserBufferCache>>,
-    resident_token_kind_bind_groups: std::sync::Mutex<Option<ResidentTokenKindBindGroups>>,
+    resident_token_kind_operations: std::sync::Mutex<Option<ResidentTokenKindOperations>>,
+    resident_token_file_id_copy:
+        std::sync::Mutex<Option<(u64, crate::gpu::operations::CopyBufferOperation)>>,
+    token_compute_operations:
+        std::sync::Mutex<HashMap<String, crate::gpu::operations::ComputeOperation>>,
 }
 
 impl GpuParser {
@@ -129,148 +95,17 @@ impl GpuParser {
     pub async fn new_with_device(ctx: &device::GpuDevice) -> Result<Self> {
         let device = Arc::clone(&ctx.device);
         let queue = Arc::clone(&ctx.queue);
-        super::syntax::prewarm_passes(&ctx.device)?;
-        macro_rules! make_parser_pass {
-            ($label:literal, $make:ident) => {{ $make(&ctx.device)? }};
-        }
 
         Ok(Self {
             device,
             queue,
             timers_supported: ctx.timers_supported,
-            token_delimiters_01: make_parser_pass!(
-                "tokens_delimiters_01_local",
-                make_token_delimiters_01_pass
-            ),
-            token_delimiters_02_scan_up: make_parser_pass!(
-                "tokens_delimiters_02_scan_up",
-                make_token_delimiters_02_scan_up_pass
-            ),
-            token_delimiters_02_scan_down: make_parser_pass!(
-                "tokens_delimiters_02_scan_down",
-                make_token_delimiters_02_scan_down_pass
-            ),
-            token_statement_event_scan_up: make_parser_pass!(
-                "tokens_context_scan_up",
-                make_token_statement_event_scan_up_pass
-            ),
-            token_statement_event_scan_down: make_parser_pass!(
-                "tokens_context_scan_down",
-                make_token_statement_event_scan_down_pass
-            ),
-            token_delimiters_03_owner_local: make_parser_pass!(
-                "tokens_delimiters_03_owner_local",
-                make_token_delimiters_03_owner_local_pass
-            ),
-            token_delimiters_04_owner_apply: make_parser_pass!(
-                "tokens_delimiters_04_owner_apply",
-                make_token_delimiters_04_owner_apply_pass
-            ),
-            tokens_brace_context: make_parser_pass!(
-                "tokens_brace_context",
-                make_tokens_brace_context_pass
-            ),
-            tokens_statement_phase_01_local: make_parser_pass!(
-                "tokens_statement_phase_01_local",
-                make_tokens_statement_phase_01_local_pass
-            ),
-            tokens_statement_phase_02_apply: make_parser_pass!(
-                "tokens_statement_phase_02_apply",
-                make_tokens_statement_phase_02_apply_pass
-            ),
-            tokens_impl_header_01_local: make_parser_pass!(
-                "tokens_impl_header_01_local",
-                make_tokens_impl_header_01_local_pass
-            ),
-            tokens_impl_header_02_apply: make_parser_pass!(
-                "tokens_impl_header_02_apply",
-                make_tokens_impl_header_02_apply_pass
-            ),
-            tokens_where_clause_01_local: make_parser_pass!(
-                "tokens_where_clause_01_local",
-                make_tokens_where_clause_01_local_pass
-            ),
-            tokens_where_clause_02_apply: make_parser_pass!(
-                "tokens_where_clause_02_apply",
-                make_tokens_where_clause_02_apply_pass
-            ),
-            tokens_match_pattern_01_local: make_parser_pass!(
-                "tokens_match_pattern_01_local",
-                make_tokens_match_pattern_01_local_pass
-            ),
-            tokens_match_pattern_02_apply: make_parser_pass!(
-                "tokens_match_pattern_02_apply",
-                make_tokens_match_pattern_02_apply_pass
-            ),
-            tokens_delimiter_match_01_depth_blocks: make_parser_pass!(
-                "tokens_delimiter_match_01_depth_blocks",
-                make_tokens_delimiter_match_01_depth_blocks_pass
-            ),
-            tokens_delimiter_match_02_build_min_tree: make_parser_pass!(
-                "tokens_delimiter_match_02_build_min_tree",
-                make_tokens_delimiter_match_02_build_min_tree_pass
-            ),
-            tokens_bracket_match_03_pair_pse: make_parser_pass!(
-                "tokens_bracket_match_03_pair_pse",
-                make_tokens_bracket_match_03_pair_pse_pass
-            ),
-            tokens_brace_match_03_pair_pse: make_parser_pass!(
-                "tokens_brace_match_03_pair_pse",
-                make_tokens_brace_match_03_pair_pse_pass
-            ),
-            active_pair_dispatch_args: make_parser_pass!(
-                "active_pair_dispatch_args",
-                make_active_pair_dispatch_args_pass
-            ),
-            tree_feature_dispatch_args: make_parser_pass!(
-                "tree_feature_dispatch_args",
-                make_tree_feature_dispatch_args_pass
-            ),
-            tokens_to_kinds: make_parser_pass!("tokens_to_kinds", make_tokens_to_kinds_pass),
-            tokens_type_path_context_01_local: make_parser_pass!(
-                "tokens_type_path_context_01_local",
-                make_tokens_type_path_context_01_local_pass
-            ),
-            tokens_type_path_context_02_apply: make_parser_pass!(
-                "tokens_type_path_context_02_apply",
-                make_tokens_type_path_context_02_apply_pass
-            ),
-            tokens_to_identifier_kinds: make_parser_pass!(
-                "tokens_to_identifier_kinds",
-                make_tokens_to_identifier_kinds_pass
-            ),
-            tokens_generic_shr_00_raw_local: make_parser_pass!(
-                "tokens_generic_shr_00_raw_local",
-                make_tokens_generic_shr_00_raw_local_pass
-            ),
-            tokens_generic_shr_00_raw_apply: make_parser_pass!(
-                "tokens_generic_shr_00_raw_apply",
-                make_tokens_generic_shr_00_raw_apply_pass
-            ),
-            tokens_generic_shr_01_local: make_parser_pass!(
-                "tokens_generic_shr_01_local",
-                make_tokens_generic_shr_01_local_pass
-            ),
-            tokens_generic_shr_02_scan_up: make_parser_pass!(
-                "tokens_generic_shr_02_scan_up",
-                make_tokens_generic_shr_02_scan_up_pass
-            ),
-            tokens_generic_shr_02_scan_down: make_parser_pass!(
-                "tokens_generic_shr_02_scan_down",
-                make_tokens_generic_shr_02_scan_down_pass
-            ),
-            tokens_generic_shr_03_apply: make_parser_pass!(
-                "tokens_generic_shr_03_apply",
-                make_tokens_generic_shr_03_apply_pass
-            ),
-            tokens_generic_shr_04_close_kinds: make_parser_pass!(
-                "tokens_generic_shr_04_close_kinds",
-                make_tokens_generic_shr_04_close_kinds_pass
-            ),
             passes: ParserPasses::new(&ctx.device)?,
             bg_cache: std::sync::Mutex::new(BindGroupCache::new()),
             resident_buffers: std::sync::Mutex::new(None),
-            resident_token_kind_bind_groups: std::sync::Mutex::new(None),
+            resident_token_kind_operations: std::sync::Mutex::new(None),
+            resident_token_file_id_copy: std::sync::Mutex::new(None),
+            token_compute_operations: std::sync::Mutex::new(HashMap::new()),
         })
     }
 
@@ -320,17 +155,12 @@ impl GpuParser {
             token_count_buf,
             &bufs,
         )?;
-        encoder.clear_buffer(&bufs.default_token_file_id, 0, None);
+        bufs.clear_operations().record_token_file_id(&mut encoder);
         let mut timer_ref: Option<&mut GpuTimer> = None;
         self.record_ll1_resident_passes(&mut encoder, &bufs, true, true, None, &mut timer_ref)?;
 
-        let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb.parser.resident_ll1.status"),
-            size: 24,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        encoder.copy_buffer_to_buffer(&bufs.ll1_status, 0, &status_readback, 0, 24);
+        let status_readback = bufs.ll1_status_readback.buffer.clone();
+        bufs.status_readback_operations.record_full(&mut encoder);
 
         let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
         crate::gpu::passes_core::submit_with_optional_validation(
@@ -547,21 +377,7 @@ impl GpuParser {
             bufs,
             timer_ref,
         )?;
-        if let Some(token_file_id_buf) = token_file_id_buf {
-            let copy_bytes = (token_capacity as u64).saturating_mul(4);
-            if copy_bytes > 0 {
-                parser_copy_buffer_to_buffer(
-                    encoder,
-                    token_file_id_buf,
-                    0,
-                    &bufs.default_token_file_id,
-                    0,
-                    copy_bytes,
-                );
-            }
-        } else {
-            parser_clear_buffer(encoder, &bufs.default_token_file_id, 0, None);
-        }
+        self.record_token_file_ids(encoder, bufs, token_file_id_buf, token_capacity)?;
         self.record_ll1_resident_passes(
             encoder,
             bufs,
@@ -575,16 +391,7 @@ impl GpuParser {
         }
 
         let status_readback = bufs.ll1_status_readback.buffer.clone();
-        parser_copy_buffer_to_buffer(encoder, &bufs.ll1_status, 0, &status_readback, 0, 24);
-        parser_copy_buffer_to_buffer(
-            encoder,
-            &bufs.token_feature_flags,
-            0,
-            &status_readback,
-            24,
-            4,
-        );
-        parser_copy_buffer_to_buffer(encoder, &bufs.tree_depth_status, 0, &status_readback, 28, 4);
+        bufs.status_readback_operations.record_full(encoder);
         drop(parser_batch);
 
         let consumed = consume(bufs, encoder, timer_ref);
@@ -653,9 +460,13 @@ impl GpuParser {
         // bind groups may still reference the preceding resident allocation,
         // so invalidate them before recording into the temporary buffers.
         *self
-            .resident_token_kind_bind_groups
+            .resident_token_kind_operations
             .lock()
-            .expect("parser.resident_token_kind_bind_groups poisoned") = None;
+            .expect("parser.resident_token_kind_operations poisoned") = None;
+        self.token_compute_operations
+            .lock()
+            .expect("parser.token_compute_operations poisoned")
+            .clear();
         self.bg_cache
             .lock()
             .expect("parser.bg_cache poisoned")
@@ -686,9 +497,13 @@ impl GpuParser {
         // those bind groups outlive the temporary buffers and get reused by
         // the following full resident parse when GPU buffer ids are recycled.
         *self
-            .resident_token_kind_bind_groups
+            .resident_token_kind_operations
             .lock()
-            .expect("parser.resident_token_kind_bind_groups poisoned") = None;
+            .expect("parser.resident_token_kind_operations poisoned") = None;
+        self.token_compute_operations
+            .lock()
+            .expect("parser.token_compute_operations poisoned")
+            .clear();
         self.bg_cache
             .lock()
             .expect("parser.bg_cache poisoned")
@@ -717,40 +532,11 @@ impl GpuParser {
             token_count_buf,
             bufs,
         )?;
-        if let Some(token_file_id_buf) = token_file_id_buf {
-            let copy_bytes = (token_capacity as u64).saturating_mul(4);
-            if copy_bytes > 0 {
-                parser_copy_buffer_to_buffer(
-                    &mut encoder,
-                    token_file_id_buf,
-                    0,
-                    &bufs.default_token_file_id,
-                    0,
-                    copy_bytes,
-                );
-            }
-        } else {
-            parser_clear_buffer(&mut encoder, &bufs.default_token_file_id, 0, None);
-        }
+        self.record_token_file_ids(&mut encoder, bufs, token_file_id_buf, token_capacity)?;
         self.record_resident_partial_parse_status(&mut encoder, bufs)?;
 
         let status_readback = &bufs.ll1_status_readback.buffer;
-        parser_copy_buffer_to_buffer(
-            &mut encoder,
-            &bufs.partial_parse_status,
-            0,
-            status_readback,
-            0,
-            24,
-        );
-        parser_copy_buffer_to_buffer(
-            &mut encoder,
-            &bufs.token_feature_flags,
-            0,
-            status_readback,
-            24,
-            4,
-        );
+        bufs.status_readback_operations.record_partial(&mut encoder);
         crate::gpu::passes_core::submit_with_progress(
             &self.queue,
             submission_label,
@@ -868,9 +654,13 @@ impl GpuParser {
             .expect("parser.bg_cache poisoned")
             .clear();
         *self
-            .resident_token_kind_bind_groups
+            .resident_token_kind_operations
             .lock()
-            .expect("parser.resident_token_kind_bind_groups poisoned") = None;
+            .expect("parser.resident_token_kind_operations poisoned") = None;
+        self.token_compute_operations
+            .lock()
+            .expect("parser.token_compute_operations poisoned")
+            .clear();
     }
 
     /// Parses resident token buffers and reads back the debug parse result.
@@ -992,6 +782,34 @@ impl GpuParser {
     ) -> Result<ParseResult> {
         let semantic_token_kinds =
             self.debug_semantic_token_kinds_for_raw_token_kinds(token_kinds_u32, tables)?;
+        if let Some((index, kind)) =
+            semantic_token_kinds
+                .iter()
+                .copied()
+                .enumerate()
+                .find(|(_, kind)| {
+                    if *kind < tables.n_kinds {
+                        return false;
+                    }
+                    // A contextual raw `>>` represents two virtual generic-close
+                    // tokens in one row. The parser shaders recognize the high-bit
+                    // tag and unpack the two 15-bit semantic kinds before indexing
+                    // grammar tables.
+                    let inner = *kind & 0x7fff;
+                    let outer = (*kind >> 15) & 0x7fff;
+                    (*kind & 0x8000_0000) == 0 || inner >= tables.n_kinds || outer >= tables.n_kinds
+                })
+        {
+            let raw = raw_token_kinds_without_optional_sentinels(token_kinds_u32);
+            let raw_index = index.saturating_sub(1);
+            let raw_window_start = raw_index.saturating_sub(2);
+            let raw_window_end = (raw_index + 3).min(raw.len());
+            return Err(anyhow!(
+                "GPU token frontend produced semantic kind {kind} at row {index}, outside grammar kind count {}; corresponding raw-token window {:?} at rows {raw_window_start}..{raw_window_end}",
+                tables.n_kinds,
+                &raw[raw_window_start..raw_window_end],
+            ));
+        }
         self.parse_classified_token_kinds(&semantic_token_kinds, tables)
             .await
     }
@@ -1013,6 +831,7 @@ impl GpuParser {
             n_kinds,
             &action_table_bytes,
             tables,
+            &self.passes,
         );
 
         // Parser buffers are per-call, and cached bind groups hold concrete buffer handles.
@@ -1029,10 +848,6 @@ impl GpuParser {
             None
         };
 
-        // Create an owned debug sink; we will hand out a temporary &mut to the passes.
-        #[cfg(feature = "gpu-debug")]
-        let mut debug_output = DebugOutput::default();
-
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1044,37 +859,12 @@ impl GpuParser {
             t.stamp(&mut encoder, "BEGIN");
         }
 
-        // ---- Record passes inside a short scope so borrows end before readbacks/timer use ----
-        {
-            let mut timer_ref = maybe_timer.as_mut();
-
-            // Build the Option<&mut DebugOutput> locally without moving any outer state.
-            #[allow(unused_mut)]
-            let mut dbg_ref_opt: Option<&mut DebugOutput> = {
-                #[cfg(feature = "gpu-debug")]
-                {
-                    Some(&mut debug_output)
-                }
-                #[cfg(not(feature = "gpu-debug"))]
-                {
-                    None
-                }
-            };
-
-            let mut cache_guard = self.bg_cache.lock().expect("parser.bg_cache poisoned");
-
-            let ctx = PassContext {
-                device: &self.device,
-                encoder: &mut encoder,
-                buffers: &bufs,
-                maybe_timer: &mut timer_ref,
-                maybe_dbg: &mut dbg_ref_opt,
-                bg_cache: Some(&mut *cache_guard),
-            };
-
-            // Record all passes in one place (like the lexer).
-            passes::record_all_passes(&self.queue, ctx, &self.passes)?;
-        } // <- drop ctx, timer_ref, dbg_ref_opt, cache_guard
+        // One-shot parsing uses the same graph-owned schedule as resident
+        // compilation. Only allocation/readback policy differs between these
+        // entry points; maintaining a second direct-dispatch pass list allowed
+        // the executable schedule to diverge from the compiler graph.
+        let mut timer_ref = maybe_timer.as_mut();
+        self.record_ll1_resident_passes(&mut encoder, &bufs, true, true, None, &mut timer_ref)?;
 
         // -------- Submit & (optionally) read back --------
         let rb_enabled = readback_enabled();
@@ -1255,18 +1045,7 @@ impl GpuParser {
             }
         }
 
-        // Move out the owned debug snapshot (when the feature is on), otherwise default.
-        #[allow(unused_mut)]
-        let mut debug_sink = {
-            #[cfg(feature = "gpu-debug")]
-            {
-                std::mem::take(&mut debug_output)
-            }
-            #[cfg(not(feature = "gpu-debug"))]
-            {
-                DebugOutput::default()
-            }
-        };
+        let mut debug_sink = DebugOutput::default();
 
         Ok(ParseResult {
             ll1: Ll1AcceptResult {
@@ -1377,6 +1156,46 @@ impl GpuParser {
     }
 }
 
+impl GpuParser {
+    fn record_token_file_ids(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        source: Option<&wgpu::Buffer>,
+        token_capacity: u32,
+    ) -> Result<()> {
+        if let Some(source) = source {
+            let bytes = u64::from(token_capacity).saturating_mul(4);
+            if bytes != 0 {
+                let fingerprint = buffer_fingerprint(&[source, &buffers.default_token_file_id]);
+                let mut cached = self
+                    .resident_token_file_id_copy
+                    .lock()
+                    .expect("parser.resident_token_file_id_copy poisoned");
+                if cached
+                    .as_ref()
+                    .is_none_or(|(cached_fingerprint, _)| *cached_fingerprint != fingerprint)
+                {
+                    *cached = Some((
+                        fingerprint,
+                        buffers
+                            .compiler_graph
+                            .token_file_id_copy_operation(source, &buffers.default_token_file_id)?,
+                    ));
+                }
+                cached
+                    .as_ref()
+                    .expect("token file-id copy operation was initialized")
+                    .1
+                    .record_size(encoder, bytes);
+            }
+        } else {
+            buffers.clear_operations().record_token_file_id(encoder);
+        }
+        Ok(())
+    }
+}
+
 fn raw_token_kinds_without_optional_sentinels(token_kinds_u32: &[u32]) -> &[u32] {
     let mut start = 0usize;
     let mut end = token_kinds_u32.len();
@@ -1401,82 +1220,10 @@ fn raw_token_kind_rows(raw_kinds: &[u32], row_count: usize) -> Vec<u8> {
     bytes
 }
 
-fn plan_parser_compute(pass: &PassData, n_elements: u32) -> Result<(u32, u32, u32)> {
-    let [tgsx, tgsy, _] = pass.thread_group_size;
-    plan_workgroups(
-        DispatchDim::D1,
-        InputElements::Elements1D(n_elements),
-        [tgsx, tgsy, 1],
-    )
-}
-
 fn parser_compute_pass_batching_enabled(_timer_ref: &mut Option<&mut GpuTimer>) -> bool {
     _timer_ref.is_none() && compute_pass_batching_enabled() && !validation_scopes_enabled()
 }
 
 fn parser_dependency_batching_enabled(_timer_ref: &mut Option<&mut GpuTimer>) -> bool {
     false
-}
-
-fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuffers) {
-    let bytes = u64::from(buffers.tree_capacity) * 4;
-    for buffer in [
-        &buffers.hir_type_arg_owner_b,
-        &buffers.hir_type_arg_link_b,
-        &buffers.hir_type_arg_rank_b,
-    ] {
-        parser_clear_buffer(encoder, buffer, 0, Some(bytes));
-    }
-}
-
-fn record_parser_compute(
-    encoder: &mut wgpu::CommandEncoder,
-    pass: &PassData,
-    bind_group: &wgpu::BindGroup,
-    label: &'static str,
-    n_elements: u32,
-) -> Result<()> {
-    let (gx, gy, gz) = plan_parser_compute(pass, n_elements)?;
-    if crate::gpu::passes_core::defer_compute_direct(pass, bind_group, (gx, gy, gz)) {
-        return Ok(());
-    }
-    let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
-        encoder,
-        &wgpu::ComputePassDescriptor {
-            label: Some(label),
-            timestamp_writes: None,
-        },
-    );
-    compute.set_pipeline(&pass.pipeline);
-    compute.set_bind_group(0, Some(bind_group), &[]);
-    compute.dispatch_workgroups(gx, gy, gz);
-    Ok(())
-}
-
-fn parser_clear_buffer<'a>(
-    encoder: &mut wgpu::CommandEncoder,
-    buffer: impl Into<TrackedBufferView<'a>>,
-    offset: u64,
-    size: Option<u64>,
-) {
-    crate::gpu::passes_core::flush_deferred_compute(encoder);
-    buffer.into().clear(encoder, offset, size);
-}
-
-fn parser_copy_buffer_to_buffer<'a, 'b>(
-    encoder: &mut wgpu::CommandEncoder,
-    source: impl Into<TrackedBufferView<'a>>,
-    source_offset: u64,
-    destination: impl Into<TrackedBufferView<'b>>,
-    destination_offset: u64,
-    size: u64,
-) {
-    crate::gpu::passes_core::flush_deferred_compute(encoder);
-    source.into().copy_to(
-        encoder,
-        source_offset,
-        destination.into(),
-        destination_offset,
-        size,
-    );
 }

@@ -15,8 +15,9 @@ use super::{
 use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphWorkspace},
-    operations::ComputeOperation,
-    passes_core::{PassData, make_pass_data_from_shader_key, map_readback_blocking},
+    kernels::KernelRegistry,
+    operations::{ComputeOperation, CopyBufferOperation},
+    passes_core::{PassData, map_readback_blocking},
     readback::PagedReadback,
     resource_registry::ResourceMap,
 };
@@ -116,6 +117,7 @@ pub(crate) struct GpuWasmLirStage {
     module: GpuWasmModuleStage,
     object: Option<GpuWasmObjectStage>,
     artifact_length_readback: LaniusBuffer<u8>,
+    artifact_length_readback_copy: Option<CopyBufferOperation>,
     artifact_readback: PagedReadback,
     _param_widths: LaniusBuffer<u32>,
     _local_widths: LaniusBuffer<u32>,
@@ -158,6 +160,7 @@ impl GpuWasmLirStage {
         capacities: LoweringCapacities,
         semantic: GpuSemanticLirView<'_>,
         include_object: bool,
+        kernels: &KernelRegistry,
     ) -> Result<Self> {
         let allocations = target_lowering_allocations(graph, workspace, semantic)?;
         let resource = |name: &str| {
@@ -207,38 +210,42 @@ impl GpuWasmLirStage {
             )
             .map_err(anyhow::Error::msg)?;
         let value_capacity = capacities.declaration_capacity();
-        let count_pass = load(device, "lir.wasm.count", "codegen/lir/wasm/count")?;
-        let scatter_pass = load(device, "lir.wasm.scatter", "codegen/lir/wasm/scatter")?;
-        let validate_pass = load(device, "lir.wasm.validate", "codegen/lir/wasm/validate")?;
-        let byte_count_pass = load(device, "lir.wasm.byte_count", "codegen/lir/wasm/byte_count")?;
-        let emit_pass = load(device, "lir.wasm.emit", "codegen/lir/wasm/emit")?;
+        let count_pass = load(kernels, "lir.wasm.count", "codegen/lir/wasm/count")?;
+        let scatter_pass = load(kernels, "lir.wasm.scatter", "codegen/lir/wasm/scatter")?;
+        let validate_pass = load(kernels, "lir.wasm.validate", "codegen/lir/wasm/validate")?;
+        let byte_count_pass = load(
+            kernels,
+            "lir.wasm.byte_count",
+            "codegen/lir/wasm/byte_count",
+        )?;
+        let emit_pass = load(kernels, "lir.wasm.emit", "codegen/lir/wasm/emit")?;
         let param_width_pass = load(
-            device,
+            kernels,
             "lir.wasm.abi.param_widths",
             "codegen/lir/wasm/param_widths",
         )?;
         let local_width_pass = load(
-            device,
+            kernels,
             "lir.wasm.abi.local_widths",
             "codegen/lir/wasm/local_widths",
         )?;
         let abi_functions_pass = load(
-            device,
+            kernels,
             "lir.wasm.abi.functions",
             "codegen/lir/wasm/functions",
         )?;
         let declaration_indices_pass = load(
-            device,
+            kernels,
             "lir.wasm.abi.declaration_indices",
             "codegen/lir/wasm/declaration_indices",
         )?;
         let resolve_indices_pass = load(
-            device,
+            kernels,
             "lir.wasm.resolve_indices",
             "codegen/lir/wasm/resolve_indices",
         )?;
         let attach_bodies_pass = load(
-            device,
+            kernels,
             "lir.wasm.abi.attach_bodies",
             "codegen/lir/wasm/attach_bodies",
         )?;
@@ -305,6 +312,7 @@ impl GpuWasmLirStage {
             .collect::<Result<Vec<_>>>()?;
         let count_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -330,6 +338,7 @@ impl GpuWasmLirStage {
         )?;
         let target_pages = GpuTargetPagePlanner::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -347,6 +356,7 @@ impl GpuWasmLirStage {
         )?;
         let param_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -381,6 +391,7 @@ impl GpuWasmLirStage {
         )?;
         let local_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -545,6 +556,7 @@ impl GpuWasmLirStage {
             .collect::<Result<Vec<_>>>()?;
         let functions = GpuTargetFunctionTable::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -556,6 +568,7 @@ impl GpuWasmLirStage {
         )?;
         let byte_scan = GpuResidentExclusiveScan::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -590,6 +603,7 @@ impl GpuWasmLirStage {
         )?;
         let module = GpuWasmModuleStage::new(
             device,
+            kernels,
             graph,
             workspace,
             &allocations,
@@ -602,6 +616,7 @@ impl GpuWasmLirStage {
             .then(|| {
                 GpuWasmObjectStage::new(
                     device,
+                    kernels,
                     graph,
                     workspace,
                     &allocations,
@@ -613,6 +628,22 @@ impl GpuWasmLirStage {
             .transpose()?;
         let artifact_length_readback =
             readback_bytes(device, "artifact.wasm.length.readback", 4, 4);
+        let artifact_length_readback_copy = graph
+            .pass_id("artifact.wasm.length.readback")
+            .map(|_| {
+                CopyBufferOperation::new(
+                    &context,
+                    "artifact.wasm.length.readback",
+                    "artifact_length",
+                    module.output().length,
+                    0,
+                    "artifact_length_readback",
+                    &artifact_length_readback,
+                    0,
+                    4,
+                )
+            })
+            .transpose()?;
         let artifact_readback = PagedReadback::new(
             device,
             "artifact.wasm.bytes.readback",
@@ -644,6 +675,7 @@ impl GpuWasmLirStage {
             module,
             object,
             artifact_length_readback,
+            artifact_length_readback_copy,
             artifact_readback,
             _param_widths: param_widths,
             _local_widths: local_widths,
@@ -819,10 +851,10 @@ impl GpuWasmLirStage {
                 .context("Wasm object projection was not allocated for this lowering job")?
                 .record(encoder)
         } else {
-            let artifact = self.module.output();
-            artifact
-                .length
-                .copy_to(encoder, 0, &self.artifact_length_readback, 0, 4);
+            self.artifact_length_readback_copy
+                .as_ref()
+                .context("Wasm artifact graph has no executable length-readback operation")?
+                .record(encoder);
             Ok(())
         }
     }
@@ -849,8 +881,8 @@ impl GpuWasmLirStage {
     }
 }
 
-fn load(device: &wgpu::Device, label: &str, shader: &str) -> Result<PassData> {
-    make_pass_data_from_shader_key(device, label, "main", shader)
+fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData> {
+    Ok(kernels.kernel(shader).clone())
 }
 
 #[cfg(test)]
@@ -858,6 +890,7 @@ mod tests {
     use super::*;
     use crate::{
         codegen::lowering_ir::{
+            LoweringArtifactKind,
             LoweringStatus,
             LoweringTarget,
             SemanticLirAggregateElement,
@@ -869,6 +902,7 @@ mod tests {
             SemanticLirParam,
             SemanticLirString,
             lowering_compiler_graph,
+            lowering_compiler_graph_for_artifact,
             opcode,
         },
         gpu::{
@@ -1156,38 +1190,49 @@ mod tests {
             storage_ro_from_u32s(&gpu.device, "test.wasm_stage.param_count", &[2]);
         let semantic_local_count =
             storage_ro_from_u32s(&gpu.device, "test.wasm_stage.local_count", &[2]);
+        macro_rules! semantic_view {
+            ($status:expr, $order:expr) => {
+                GpuSemanticLirView {
+                    count: &semantic_total,
+                    core: &semantic_page_core,
+                    operands: &semantic_page_operands,
+                    layout_word_offset: &semantic_owners,
+                    owner_by_instruction: &semantic_owners,
+                    op_by_instruction: &semantic_ops,
+                    function_id_by_hir: &semantic_owners,
+                    call_args: &semantic_call_args,
+                    call_arg_start_by_hir: &semantic_call_arg_start,
+                    call_arg_count_by_hir: &semantic_call_arg_count_by_hir,
+                    aggregate_elements: &semantic_aggregate_elements,
+                    aggregate_element_count: &semantic_empty_count,
+                    strings: &semantic_string_rows,
+                    string_count: &semantic_empty_count,
+                    string_data_words: &semantic_string_data,
+                    string_pool_len: &semantic_empty_count,
+                    functions: &semantic_functions,
+                    function_count: &semantic_function_count,
+                    params: &semantic_params,
+                    param_count: &semantic_param_count,
+                    locals: &semantic_locals,
+                    local_count: &semantic_local_count,
+                    execution_order: Some($order),
+                    status: $status,
+                }
+            };
+        }
+        let kernels =
+            KernelRegistry::prepare_prefixes(&gpu.device, &["codegen/lir", "scan/counted"], |_| {
+                true
+            })
+            .unwrap();
         let stage = GpuWasmLirStage::new(
             &gpu.device,
             &graph,
             &workspace,
             capacities,
-            GpuSemanticLirView {
-                count: &semantic_total,
-                core: &semantic_page_core,
-                operands: &semantic_page_operands,
-                layout_word_offset: &semantic_owners,
-                owner_by_instruction: &semantic_owners,
-                op_by_instruction: &semantic_ops,
-                function_id_by_hir: &semantic_owners,
-                call_args: &semantic_call_args,
-                call_arg_start_by_hir: &semantic_call_arg_start,
-                call_arg_count_by_hir: &semantic_call_arg_count_by_hir,
-                aggregate_elements: &semantic_aggregate_elements,
-                aggregate_element_count: &semantic_empty_count,
-                strings: &semantic_string_rows,
-                string_count: &semantic_empty_count,
-                string_data_words: &semantic_string_data,
-                string_pool_len: &semantic_empty_count,
-                functions: &semantic_functions,
-                function_count: &semantic_function_count,
-                params: &semantic_params,
-                param_count: &semantic_param_count,
-                locals: &semantic_locals,
-                local_count: &semantic_local_count,
-                execution_order: Some(&semantic_order),
-                status: &semantic_status,
-            },
+            semantic_view!(&semantic_status, &semantic_order),
             true,
+            &kernels,
         )
         .unwrap();
         let pipelines_before = pipeline_creation_count();
@@ -1330,19 +1375,62 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(&artifact_bytes[..8], b"\0asm\x01\0\0\0");
 
+        // Executable and object jobs share prepared kernels, but their output
+        // tables are intentionally separate graph capacities. Build the
+        // executable graph explicitly rather than asking the object graph for
+        // an operation it does not own.
+        let executable_graph = lowering_compiler_graph_for_artifact(
+            capacities,
+            LoweringTarget::Wasm,
+            LoweringArtifactKind::Executable,
+        )
+        .unwrap();
+        let executable_workspace = CompilerGraphWorkspace::new(
+            &gpu.device,
+            "test.wasm_stage.executable",
+            &executable_graph,
+        )
+        .unwrap();
+        let executable_status: LaniusBuffer<LoweringStatus> = executable_workspace
+            .alias(
+                &executable_graph,
+                executable_graph.resource_id("lowering.status").unwrap(),
+                1,
+            )
+            .unwrap();
+        let executable_order: LaniusBuffer<u32> = executable_workspace
+            .alias(
+                &executable_graph,
+                executable_graph
+                    .resource_id("lir.semantic.schedule_order")
+                    .unwrap(),
+                8,
+            )
+            .unwrap();
+        executable_status.write(&gpu.queue, 0, &words(&[[0, u32::MAX, 0, u32::MAX]]));
+        executable_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
+        let executable_stage = GpuWasmLirStage::new(
+            &gpu.device,
+            &executable_graph,
+            &executable_workspace,
+            capacities,
+            semantic_view!(&executable_status, &executable_order),
+            false,
+            &kernels,
+        )
+        .unwrap();
         let allocations_before = tracked_buffer_allocation_stats();
-        // A full compiler job regenerates semantic order before target lowering.
-        // This target-only resident replay supplies the same input explicitly.
-        semantic_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("test.wasm_stage.resident_artifact.encoder"),
             });
-        stage.record(&mut encoder).unwrap();
+        executable_stage.record(&mut encoder).unwrap();
         assert_eq!(tracked_buffer_allocation_stats(), allocations_before);
         gpu.queue.submit(Some(encoder.finish()));
-        let resident_artifact = stage.finish_artifact(&gpu.device, &gpu.queue).unwrap();
+        let resident_artifact = executable_stage
+            .finish_artifact(&gpu.device, &gpu.queue)
+            .unwrap();
         assert_eq!(resident_artifact.len(), 1020);
         assert_eq!(&resident_artifact[..8], b"\0asm\x01\0\0\0");
 

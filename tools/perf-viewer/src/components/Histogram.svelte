@@ -7,7 +7,7 @@
   const layout = $derived.by(() => {
     const width = Math.max(320, containerWidth || 320);
     const { counts, edges } = measurement.summary.wall_ms.histogram;
-    const left = 44, right = 12, top = 10, bottom = 36, height = 205;
+    const left = 0, right = 12, top = 10, bottom = 36, height = 205;
     return {
       width, height, left, right, top, bottom, counts, edges,
       maximum: Math.max(1, ...counts),
@@ -40,7 +40,6 @@
     <line class="axis" x1={layout.left} y1={layout.height - layout.bottom} x2={layout.width - layout.right} y2={layout.height - layout.bottom} />
     <text class="tick" x={layout.left} y={layout.height - 12}>{formatMs(layout.edges[0])}</text>
     <text class="tick" text-anchor="end" x={layout.width - layout.right} y={layout.height - 12}>{formatMs(layout.edges.at(-1) ?? 0)}</text>
-    <text class="tick" x="5" y={layout.top + 10}>{layout.maximum}×</text>
     </svg>
   </div>
   <div class="distribution-stats">

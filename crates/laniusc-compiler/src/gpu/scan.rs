@@ -6,7 +6,9 @@ use encase::ShaderType;
 pub(crate) struct PrefixScanParams {
     pub(crate) n_items: u32,
     pub(crate) n_blocks: u32,
-    pub(crate) scan_step: u32,
+    /// Minimum logical item count. This supports domains with an implicit
+    /// sentinel row even when their GPU-produced count is zero.
+    pub(crate) min_items: u32,
 }
 
 /// Uniform parameters for one level of a 256-way prefix-scan hierarchy.

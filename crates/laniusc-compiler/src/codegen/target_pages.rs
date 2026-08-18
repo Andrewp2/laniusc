@@ -7,8 +7,8 @@ use super::lowering_ir::{LoweringCapacities, TARGET_LIR_PAGE_ROWS, TargetSemanti
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
+    kernels::KernelRegistry,
     operations::ComputeOperation,
-    passes_core::make_pass_data_from_shader_key,
     resource_registry::ResourceMap,
 };
 
@@ -30,6 +30,7 @@ pub(crate) struct GpuTargetPagePlanner {
 impl GpuTargetPagePlanner {
     pub fn new(
         device: &wgpu::Device,
+        kernels: &KernelRegistry,
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
@@ -59,12 +60,9 @@ impl GpuTargetPagePlanner {
                 page_rows: TARGET_LIR_PAGE_ROWS,
             },
         );
-        let pass = make_pass_data_from_shader_key(
-            device,
-            "lir.target.semantic_page_plan",
-            "main",
-            "codegen/lir/semantic/target_page_plan",
-        )?;
+        let pass = kernels
+            .kernel("codegen/lir/semantic/target_page_plan")
+            .clone();
         let operation = ComputeOperation::direct_with_uniform(
             device,
             &(graph, allocations),

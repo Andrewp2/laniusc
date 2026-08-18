@@ -2,12 +2,15 @@ struct Params
 {
     uint n_pairs;
     uint emit_capacity;
+    uint read_from_a;
 };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;
-StructuredBuffer<uint> sc_total;
-StructuredBuffer<uint> emit_total;
+StructuredBuffer<uint> sc_total_a;
+StructuredBuffer<uint> sc_total_b;
+StructuredBuffer<uint> emit_total_a;
+StructuredBuffer<uint> emit_total_b;
 RWStructuredBuffer<uint> partial_parse_status;
 
 static const uint ERR_NONE = 0u;
@@ -39,8 +42,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint sc_sum = sc_total[0u];
-    uint emit_sum = emit_total[0u];
+    uint sc_sum = gParams.read_from_a != 0u ? sc_total_a[0u] : sc_total_b[0u];
+    uint emit_sum = gParams.read_from_a != 0u ? emit_total_a[0u] : emit_total_b[0u];
     bool emit_overflow = emit_sum > gParams.emit_capacity;
     uint reported_emit = min(emit_sum, gParams.emit_capacity);
 

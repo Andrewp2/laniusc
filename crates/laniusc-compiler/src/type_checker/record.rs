@@ -21,15 +21,23 @@ pub(in crate::type_checker) use visible::*;
 
 /// Timer labels used for one type-instance collection sweep.
 pub(super) struct TypeInstanceCollectionTimerLabels {
+    pub stage: TypeInstanceCollectionStage,
     pub scalar: &'static str,
     pub named: &'static str,
     pub aggregate_refs: &'static str,
     pub aggregate_details: &'static str,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum TypeInstanceCollectionStage {
+    Initial,
+    Projected,
+}
+
 /// Timer labels for the initial type-instance collection before projection.
 pub(super) const TYPE_INSTANCE_COLLECTION_INITIAL_LABELS: TypeInstanceCollectionTimerLabels =
     TypeInstanceCollectionTimerLabels {
+        stage: TypeInstanceCollectionStage::Initial,
         scalar: "typecheck.type_instances.initial.collect_scalar.done",
         named: "typecheck.type_instances.initial.collect_named.done",
         aggregate_refs: "typecheck.type_instances.initial.collect_aggregate_refs.done",
@@ -39,6 +47,7 @@ pub(super) const TYPE_INSTANCE_COLLECTION_INITIAL_LABELS: TypeInstanceCollection
 /// Timer labels for the post-projection type-instance collection sweep.
 pub(super) const TYPE_INSTANCE_COLLECTION_PROJECTED_LABELS: TypeInstanceCollectionTimerLabels =
     TypeInstanceCollectionTimerLabels {
+        stage: TypeInstanceCollectionStage::Projected,
         scalar: "typecheck.type_instances.projected.collect_scalar.done",
         named: "typecheck.type_instances.projected.collect_named.done",
         aggregate_refs: "typecheck.type_instances.projected.collect_aggregate_refs.done",
