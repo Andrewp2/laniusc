@@ -1,0 +1,19 @@
+{
+  "base_iterations": 25000000,
+  "expected_stdout": "0\n",
+  "generator_sha256": "ef659b0c1a6058639b50d10d294c4869b71b54c60cc547c06a280c1b8c2c54ed",
+  "optimization_policy": {
+    "current": "current compiler defaults for Lanius and TCC",
+    "debug": "C/C++ -O0; Rust opt-level=0 with overflow checks; Zig Debug",
+    "o2": "GCC -O2 with debug information disabled",
+    "optimized": "C/C++ -O3; Rust opt-level=3; Zig ReleaseFast"
+  },
+  "order_seed": 5395790,
+  "runtime_input": "argc; measured commands pass no extra arguments, so argc=1",
+  "samples_per_language": 30,
+  "schema": "lanius.runtime-comparison.v1",
+  "timed_region": "process spawn through process exit; compilation excluded",
+  "validation_policy": "every warmup and measured execution must exit zero and match expected stdout",
+  "warmups_per_language": 5,
+  "workload": "integer_mix"
+}

@@ -1,0 +1,13 @@
+{
+  "cpu_model": "AMD Ryzen 9 5950X 16-Core Processor",
+  "g++": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "laniusc": "laniusc 0.1.0",
+  "logical_cpus": 32,
+  "pinned_cpu": 0,
+  "rustc": "rustc 1.99.0-nightly (87e5904f5 2026-07-20)",
+  "schema": "lanius.runtime-comparison.v1",
+  "system": "Linux-7.0.0-29-generic-x86_64-with-glibc2.39",
+  "tcc": "tcc version 0.9.27 (x86_64 Linux)",
+  "zig": "0.16.0"
+}

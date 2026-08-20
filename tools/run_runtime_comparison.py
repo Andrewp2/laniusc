@@ -16,11 +16,18 @@ import time
 from pathlib import Path
 
 
-LANGUAGES = ("c", "cpp", "rust", "zig", "lanius")
-LANGUAGE_LANES = tuple(
-    (language, lane)
-    for language in LANGUAGES
-    for lane in (("current",) if language == "lanius" else ("debug", "optimized"))
+LANGUAGE_LANES = (
+    ("c", "debug"),
+    ("c", "o2"),
+    ("c", "optimized"),
+    ("cpp", "debug"),
+    ("cpp", "optimized"),
+    ("rust", "debug"),
+    ("rust", "optimized"),
+    ("zig", "debug"),
+    ("zig", "optimized"),
+    ("tcc", "current"),
+    ("lanius", "current"),
 )
 SCHEMA = "lanius.runtime-comparison.v1"
 
@@ -80,7 +87,8 @@ def main() -> int:
         "optimization_policy": {
             "debug": "C/C++ -O0; Rust opt-level=0 with overflow checks; Zig Debug",
             "optimized": "C/C++ -O3; Rust opt-level=3; Zig ReleaseFast",
-            "current": "current Lanius x86_64 output; no optimizer is implemented",
+            "o2": "GCC -O2 with debug information disabled",
+            "current": "current compiler defaults for Lanius and TCC",
         },
         "validation_policy": "every warmup and measured execution must exit zero and match expected stdout",
         "generator_sha256": sha256_file(Path(__file__).resolve()),
@@ -226,8 +234,7 @@ pub fn main(init: std.process.Init.Minimal) void {{
 """
     lanius = f"""module app::main;
 
-import std::io;
-import std::process;
+extern "lanius_std" fn argc() -> i32;
 
 fn integer_mix(iterations: i32, salt: i32) -> i32 {{
     let total: i32 = 0;
@@ -247,8 +254,8 @@ fn integer_mix(iterations: i32, salt: i32) -> i32 {{
 }}
 
 fn main() -> i32 {{
-    let argc: i32 = std::process::argc();
-    std::io::print_i32(integer_mix({base_iterations} + argc, argc));
+    let argument_count: i32 = argc();
+    print(integer_mix({base_iterations} + argument_count, argument_count));
     return 0;
 }}
 """
@@ -271,7 +278,7 @@ def command_map(
                 "compile": ["gcc", flag, "-g0", str(src / source_name("c")), "-o", str(bin_dir / f"c-{lane}")],
                 "run": [str(bin_dir / f"c-{lane}")],
             }
-            for lane, flag in (("debug", "-O0"), ("optimized", "-O3"))
+            for lane, flag in (("debug", "-O0"), ("o2", "-O2"), ("optimized", "-O3"))
         },
         "cpp": {
             lane: {
@@ -293,6 +300,12 @@ def command_map(
                 "run": [str(bin_dir / f"zig-{lane}")],
             }
             for lane, mode in (("debug", "Debug"), ("optimized", "ReleaseFast"))
+        },
+        "tcc": {
+            "current": {
+                "compile": ["tcc", str(src / source_name("c")), "-o", str(bin_dir / "tcc-current")],
+                "run": [str(bin_dir / "tcc-current")],
+            },
         },
         "lanius": {
             "current": {
@@ -365,6 +378,7 @@ def summarize(samples: list[dict[str, object]]) -> list[dict[str, object]]:
             "lane": lane,
             "samples": len(grouped[language, lane]),
             "median_ms": medians[language, lane],
+            "mean_ms": statistics.mean(grouped[language, lane]),
             "mad_ms": statistics.median(
                 abs(value - medians[language, lane])
                 for value in grouped[language, lane]
@@ -388,6 +402,7 @@ def machine_info(cpu: int | None) -> dict[str, object]:
         "gcc": version(["gcc", "--version"]),
         "g++": version(["g++", "--version"]),
         "zig": version(["zig", "version"]),
+        "tcc": version(["tcc", "-v"]),
         "laniusc": version([str(Path("target/release/laniusc").resolve()), "--version"]),
     }
 
@@ -431,6 +446,7 @@ def write_tsv(path: Path, rows: list[dict[str, object]]) -> None:
         "lane",
         "samples",
         "median_ms",
+        "mean_ms",
         "mad_ms",
         "min_ms",
         "max_ms",
