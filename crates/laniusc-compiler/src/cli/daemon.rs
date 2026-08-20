@@ -47,6 +47,7 @@ use crate::{
             compute_pass_breakdown_enabled,
             finish_compute_schedule_job,
             pipeline_creation_count,
+            recorded_compute_dispatch_count,
             recorded_compute_pass_count,
             recorded_compute_pass_counts_by_label,
         },
@@ -599,6 +600,7 @@ async fn run_session(
             "wgpu_resources": wgpu_resource_metrics(),
             "compute_pipelines_created": pipeline_creation_count(),
             "recorded_compute_passes": recorded_compute_pass_count(),
+            "recorded_compute_dispatches": recorded_compute_dispatch_count(),
             "idle_buffer_timeout_ms": options
                 .idle_buffer_timeout
                 .map(|timeout| timeout.as_millis() as u64),
@@ -661,6 +663,7 @@ async fn run_session(
                     "resident_set_bytes": resident_set_bytes(),
                     "wgpu_resources": wgpu_resource_metrics(),
                     "recorded_compute_passes": recorded_compute_pass_count(),
+                    "recorded_compute_dispatches": recorded_compute_dispatch_count(),
                 }),
             )?;
             continue;
@@ -684,6 +687,25 @@ async fn run_session(
             )?;
             continue;
         }
+        if request.command == "clear-project-compiled-unit-cache" {
+            let before = compiler.compiled_unit_cache_stats();
+            compiler.clear_project_compiled_unit_cache();
+            let after = compiler.compiled_unit_cache_stats();
+            write_response(
+                &mut output,
+                &json!({
+                    "schema": DAEMON_SCHEMA,
+                    "id": request.id,
+                    "ok": true,
+                    "event": "project-compiled-unit-cache-cleared",
+                    "entries_before": before.entries,
+                    "resident_bytes_before": before.resident_bytes,
+                    "entries_after": after.entries,
+                    "resident_bytes_after": after.resident_bytes,
+                }),
+            )?;
+            continue;
+        }
         if request.command == "status" {
             write_response(
                 &mut output,
@@ -696,6 +718,7 @@ async fn run_session(
                     "resident_set_bytes": resident_set_bytes(),
                     "wgpu_resources": wgpu_resource_metrics(),
                     "recorded_compute_passes": recorded_compute_pass_count(),
+                    "recorded_compute_dispatches": recorded_compute_dispatch_count(),
                 }),
             )?;
             continue;
@@ -705,7 +728,7 @@ async fn run_session(
                 &mut output,
                 &protocol_error(
                     request.id,
-                    "command must be compile, clear-compiled-unit-cache, trim, status, or shutdown",
+                    "command must be compile, clear-compiled-unit-cache, clear-project-compiled-unit-cache, trim, status, or shutdown",
                 ),
             )?;
             continue;
@@ -714,6 +737,7 @@ async fn run_session(
         // deadline before it can contend for the resident pipeline lock.
         reaper.disarm();
         let compute_passes_before = recorded_compute_pass_count();
+        let compute_dispatches_before = recorded_compute_dispatch_count();
         let compute_schedule_job = begin_compute_schedule_job();
         let compute_pass_breakdown_before =
             compute_pass_breakdown_enabled().then(recorded_compute_pass_counts_by_label);
@@ -744,6 +768,8 @@ async fn run_session(
         let resources_after = job_resource_creation_counts();
         let recorded_compute_passes_during_job =
             recorded_compute_pass_count().saturating_sub(compute_passes_before);
+        let recorded_compute_dispatches_during_job =
+            recorded_compute_dispatch_count().saturating_sub(compute_dispatches_before);
         let compute_submission_schedule = finish_compute_schedule_job(compute_schedule_job);
         let compute_pass_breakdown_after = compute_pass_breakdown_before
             .as_ref()
@@ -772,6 +798,10 @@ async fn run_session(
             response.insert(
                 "recorded_compute_passes_during_job".into(),
                 json!(recorded_compute_passes_during_job),
+            );
+            response.insert(
+                "recorded_compute_dispatches_during_job".into(),
+                json!(recorded_compute_dispatches_during_job),
             );
             if let (Some(before), Some(after)) = (
                 &compute_pass_breakdown_before,
@@ -1046,6 +1076,10 @@ async fn compile_request(
     };
     let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;
     crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
+    crate::gpu::buffers::begin_tracked_buffer_residency_timeline(crate::gpu::env::env_bool_strict(
+        "LANIUS_GPU_MEMORY_TIMELINE",
+        false,
+    ));
     let unit_cache_before = compiler.compiled_unit_cache_stats();
     let compile_started = Instant::now();
     enum EmittedArtifact {
@@ -1140,6 +1174,25 @@ fn tracked_gpu_buffer_metrics() -> Value {
             }))
             .collect::<Vec<_>>(),
     });
+    let residency_timeline = crate::gpu::buffers::tracked_buffer_residency_timeline();
+    if !residency_timeline.is_empty() {
+        metrics.as_object_mut().expect("tracked GPU buffer metrics object").insert(
+            "residency_timeline".into(),
+            json!({
+                "origin": "compile_start",
+                "semantics": "exact tracked physical LaniusBuffer residency after each allocation or final release",
+                "points": residency_timeline.into_iter().map(|point| json!({
+                    "elapsed_ms": point.elapsed_ns as f64 / 1_000_000.0,
+                    "allocations": point.allocations,
+                    "bytes": point.bytes,
+                    "event": point.event,
+                    "allocation_id": point.allocation_id,
+                    "label": point.label.as_deref(),
+                    "changed_bytes": point.changed_bytes,
+                })).collect::<Vec<_>>(),
+            }),
+        );
+    }
     if crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
         for snapshot in crate::gpu::buffers::tracked_buffer_phase_snapshots() {
             eprintln!(

@@ -388,10 +388,6 @@ impl GpuTypeChecker {
             &module_record_scan_workspace.block_prefix,
         );
         resources.buffer(
-            "module_record_scan_prefix_b",
-            &module_record_scan_workspace.hierarchy,
-        );
-        resources.buffer(
             "module_value_scan_local_prefix",
             &module_value_scan_workspace.local_prefix,
         );
@@ -402,10 +398,6 @@ impl GpuTypeChecker {
         resources.buffer(
             "module_value_scan_prefix_a",
             &module_value_scan_workspace.block_prefix,
-        );
-        resources.buffer(
-            "module_value_scan_prefix_b",
-            &module_value_scan_workspace.hierarchy,
         );
         resources.buffer("type_instance_decl_token", &type_instance_decl_token);
         resources.buffer(
@@ -702,7 +694,6 @@ impl GpuTypeChecker {
 
         Ok(ResidentTypeCheckWorkspace {
             resettable_buffers: Vec::new(),
-            job_storage_resets: Vec::new(),
             upstream_workspace,
             cache_key: allocation,
             typecheck_graph,

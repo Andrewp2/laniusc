@@ -32,7 +32,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa01ScanInblock
     fn create_resource_map<'a>(
         &self,
         b: &'a GpuBuffers,
-    ) -> std::collections::HashMap<String, wgpu::BindingResource<'a>> {
+    ) -> HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
         HashMap::from([
             (

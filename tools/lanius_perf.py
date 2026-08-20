@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import http.server
 import json
 import os
@@ -75,8 +76,16 @@ CANONICAL_WORKLOAD_PRESETS = {
 }
 
 
-def timeline_execution_domain(category: str, lane: str) -> str:
+def timeline_execution_domain(category: str, lane: str, name: str = "") -> str:
     """Classify a trace event by the kind of execution it represents."""
+    if category == "submission_gap" or (
+        category == "gpu"
+        and name
+        in {
+            "parser.tokens.impl_header.begin",
+        }
+    ):
+        return "submission_gap"
     if category == "gpu":
         return "gpu_execution"
     if lane == "host.submit":
@@ -109,10 +118,6 @@ def timeline_compiler_phase(name: str) -> str:
         marker in label for marker in (".typecheck", "_typecheck", ".type_check", "_type_check")
     ):
         return "type_checking"
-    if label.startswith(("parser.", "parse.", "hir.")) or any(
-        marker in label for marker in (".parser", "_parser", ".hir", "_hir")
-    ):
-        return "parsing_hir"
     if "semantic_interface" in label:
         return "semantic_interface"
     if (
@@ -127,15 +132,41 @@ def timeline_compiler_phase(name: str) -> str:
         return "lowering"
     if label.startswith("codegen.") or "artifact" in label or ".link." in label:
         return "artifact_emission"
+    if (
+        label.startswith("compile.source_pack.record.parser_")
+        or label == "parser.recorded_ll1_hir.status"
+    ):
+        return "orchestration"
+    if label.startswith((
+        "hir.",
+        "parser.hir_",
+        "parser.tree_depth_",
+        "parser.source_file_token_end",
+        "parser.done",
+        "parser.ll1_hir",
+        "parser.end",
+    )):
+        return "hir_construction"
+    if label.startswith(("parser.", "parse.")) or any(
+        marker in label for marker in (".parser", "_parser")
+    ):
+        return "parsing"
     return "orchestration"
 
 
 def annotate_timeline_event(event: dict) -> None:
     """Add viewer-facing semantics while retaining the original trace lane."""
-    event["phase"] = timeline_compiler_phase(str(event.get("name", "")))
+    name = str(event.get("name", ""))
     event["execution_domain"] = timeline_execution_domain(
-        str(event.get("category", "")), str(event.get("lane", ""))
+        str(event.get("category", "")), str(event.get("lane", "")), name
     )
+    event["phase"] = (
+        "orchestration"
+        if event["execution_domain"] == "submission_gap"
+        else timeline_compiler_phase(name)
+    )
+    if event["execution_domain"] == "submission_gap":
+        event["name"] = "Between Lanius GPU submissions"
 
 
 def annotate_document_timeline(document: dict) -> None:
@@ -409,9 +440,13 @@ def run_lanius(args: argparse.Namespace) -> int:
             args.startup_timeout,
             args.job_timeout,
         )
-        if not args.skip_profile and mode == "daemon_warm_workspace":
+        if not args.skip_profile and mode in {
+            "daemon_cold_workspace",
+            "daemon_warm_workspace",
+        }:
             profile_case = representative_case
-            measurement["profile"] = profile_warm_job(
+            measurement["profile"] = profile_daemon_job(
+                mode,
                 laniusc,
                 cases,
                 primer_case,
@@ -741,17 +776,24 @@ def measure_mode(
             for index, case in enumerate(sample_cases):
                 output = artifact_dir / f"{mode}-{index}.{suffix}"
                 _, cleared = daemon.request(
-                    {"id": f"clear-{index}", "command": "clear-compiled-unit-cache"}, job_timeout
+                    {
+                        "id": f"clear-{index}",
+                        "command": "clear-project-compiled-unit-cache",
+                    },
+                    job_timeout,
                 )
-                if cleared.get("event") != "compiled-unit-cache-cleared":
+                if cleared.get("event") != "project-compiled-unit-cache-cleared":
                     raise RuntimeError(f"cache clear failed: {cleared}")
                 request = compile_request(
                     f"measure-{index}", case.input_path, case.source_root, target, output
                 )
                 wall_ms, response = daemon.request(request, job_timeout)
                 cache = response.get("compiled_unit_cache", {})
-                if cache.get("hits_during_job", 0) != 0:
-                    raise RuntimeError(f"warm full-build sample reused compiled units: {response}")
+                if (
+                    cache.get("hits_during_job", 0) > 0
+                    and cache.get("misses_during_job", 0) == 0
+                ):
+                    raise RuntimeError(f"warm project build reused every compiled unit: {response}")
                 created = response.get("resources_created_during_job", {})
                 if any(created.get(kind, 0) for kind in ("buffers", "bind_groups", "compute_pipelines")):
                     raise RuntimeError(
@@ -768,14 +810,20 @@ def measure_mode(
         commands = {
             "daemon_start": command_record(daemon_argv, ROOT),
             "capacity_primer_counts_by_seed": primer_counts,
-            "before_each_sample": {"command": "clear-compiled-unit-cache"},
+            "before_each_sample": {"command": "clear-project-compiled-unit-cache"},
             "sample_compile_requests": sample_requests,
         }
+        reused_standard_library = any(
+            sample.get("compiled_unit_cache", {}).get("hits_during_job", 0) > 0
+            for sample in raw_samples
+        )
         semantics = {
             "process": "one daemon for primer and every measured sample",
             "daemon_started_before_timer": True,
             "gpu_workspace_preallocated": True,
-            "compiled_unit_results_reused": False,
+            "compiled_unit_results_reused": reused_standard_library,
+            "project_compiled_unit_results_reused": False,
+            "standard_library_compiled_units_reused": reused_standard_library,
             "source_manifest_metadata_may_be_resident": True,
             "driver_shader_cache": "ambient machine state",
         }
@@ -831,12 +879,14 @@ def sample_from_response(
         "resources_created": response.get("resources_created_during_job"),
         "workspace_request_kind": response.get("workspace_request_kind"),
         "recorded_compute_passes": response.get("recorded_compute_passes_during_job"),
+        "recorded_compute_dispatches": response.get("recorded_compute_dispatches_during_job"),
         "compiled_unit_cache": response.get("compiled_unit_cache"),
         **sample_case_fields(case),
     }
 
 
-def profile_warm_job(
+def profile_daemon_job(
+    mode: str,
     laniusc: Path,
     capacity_cases: list[WorkloadCase],
     primer_case: WorkloadCase | None,
@@ -846,32 +896,45 @@ def profile_warm_job(
     startup_timeout: float,
     job_timeout: float,
 ) -> dict:
-    output = artifact_dir / f"profile.{'wasm' if target == 'wasm' else 'bin'}"
-    trace_path = artifact_dir / "profile-trace.json"
+    if mode not in {"daemon_cold_workspace", "daemon_warm_workspace"}:
+        raise ValueError(f"daemon profiling does not support mode {mode!r}")
+    output = artifact_dir / f"profile-{mode}.{'wasm' if target == 'wasm' else 'bin'}"
+    trace_path = artifact_dir / f"profile-{mode}-trace.json"
     env = os.environ.copy()
     env.update(
         {
             "LANIUS_PERFETTO_TRACE": str(trace_path),
             "LANIUS_GPU_COMPUTE_PASS_BREAKDOWN": "1",
             "LANIUS_GPU_BUFFER_BREAKDOWN": "1",
+            "LANIUS_GPU_MEMORY_TIMELINE": "1",
             "LANIUS_COMPILER_GRAPH_BREAKDOWN": "1",
         }
     )
     daemon = Daemon(
-        daemon_command(laniusc, target), ROOT, env, startup_timeout, artifact_dir / "profile.stderr"
+        daemon_command(laniusc, target),
+        ROOT,
+        env,
+        startup_timeout,
+        artifact_dir / f"profile-{mode}.stderr",
     )
     try:
-        for case in [*capacity_cases, *([primer_case] if primer_case else [])]:
-            prime_workspace_until_stable(
-                daemon,
-                case.input_path,
-                case.source_root,
-                target,
-                output,
-                job_timeout,
-                f"profile-primer-{case.seed}",
-            )
-        daemon.request({"id": "profile-clear", "command": "clear-compiled-unit-cache"}, job_timeout)
+        if mode == "daemon_warm_workspace":
+            for case in [*capacity_cases, *([primer_case] if primer_case else [])]:
+                prime_workspace_until_stable(
+                    daemon,
+                    case.input_path,
+                    case.source_root,
+                    target,
+                    output,
+                    job_timeout,
+                    f"profile-primer-{case.seed}",
+                )
+        clear_command = (
+            "clear-project-compiled-unit-cache"
+            if mode == "daemon_warm_workspace"
+            else "clear-compiled-unit-cache"
+        )
+        daemon.request({"id": "profile-clear", "command": clear_command}, job_timeout)
         wall_ms, response = daemon.request(
             compile_request(
                 "profile",
@@ -891,6 +954,12 @@ def profile_warm_job(
     response.pop("recorded_compute_pass_breakdown", None)
     graph = execution_graph(compiler_graphs, compute_submissions)
     require_complete_execution_graph(graph)
+    memory_timeline = profile_gpu_memory_timeline(
+        response, graph, compute_submissions, timeline
+    )
+    tracked_gpu_buffers = response.get("tracked_gpu_buffers")
+    if isinstance(tracked_gpu_buffers, dict):
+        tracked_gpu_buffers.pop("residency_timeline", None)
     return {
         "excluded_from_timing_statistics": True,
         "reason": "named pass accounting and tracing add measurement overhead",
@@ -898,8 +967,137 @@ def profile_warm_job(
         "response": response,
         "sample": sample_case_fields(profile_case),
         "timeline": timeline,
+        "gpu_memory_timeline": memory_timeline,
         "execution_graph": graph,
         "trace_path": str(trace_path.relative_to(ROOT)),
+    }
+
+
+def profile_gpu_memory_timeline(
+    response: dict,
+    graph: dict,
+    compute_submissions: list[dict],
+    timeline: list[dict],
+) -> dict:
+    """Align physical residency and graph-managed live ranges to the job clock."""
+    tracked = response.get("tracked_gpu_buffers", {})
+    residency = tracked.get("residency_timeline", {}) if isinstance(tracked, dict) else {}
+    load_ms = float(response.get("load_ms", 0.0) or 0.0)
+    physical_points = []
+    for point in residency.get("points", []):
+        if not isinstance(point, dict):
+            continue
+        physical_points.append(
+            {
+                **point,
+                "start_ms": (
+                    0.0
+                    if point.get("event") == "baseline"
+                    else load_ms + float(point.get("elapsed_ms", 0.0) or 0.0)
+                ),
+            }
+        )
+
+    nodes_by_submission: dict[int, list[dict]] = {}
+    for node in graph.get("nodes", []):
+        if node.get("kind") != "declared_operation":
+            continue
+        for submission in node.get("submissions", []):
+            nodes_by_submission.setdefault(int(submission), []).append(node)
+
+    gpu_events = [
+        event for event in timeline
+        if event.get("execution_domain") == "gpu_execution"
+    ]
+    queue_events = [
+        event for event in timeline
+        if event.get("execution_domain") == "queue_submission"
+    ]
+    queue_cursor = 0
+    working_set_intervals = []
+    matched_submissions = 0
+    for fallback_index, submission in enumerate(compute_submissions):
+        if not isinstance(submission, dict):
+            continue
+        submission_index = int(submission.get("index", fallback_index))
+        submission_label = str(submission.get("label", f"submit {submission_index}"))
+        queue_index = next(
+            (
+                index for index in range(queue_cursor, len(queue_events))
+                if queue_events[index].get("name") == submission_label
+            ),
+            None,
+        )
+        matched_events = []
+        if queue_index is not None:
+            matched_submissions += 1
+            queue_cursor = queue_index + 1
+            window_start = float(queue_events[queue_index]["start_ms"])
+            window_end = (
+                float(queue_events[queue_index + 1]["start_ms"])
+                if queue_index + 1 < len(queue_events)
+                else float("inf")
+            )
+            matched_events = [
+                event for event in gpu_events
+                if window_start <= float(event["start_ms"]) < window_end
+            ]
+        if not matched_events:
+            pass_names = {
+                name for name in submission.get("passes", []) if isinstance(name, str)
+            }
+            matched_events = [event for event in gpu_events if event.get("name") in pass_names]
+        graph_nodes = nodes_by_submission.get(submission_index, [])
+        working_set_bytes = max(
+            (
+                int(node.get("graph_managed_working_set_bytes", 0) or 0)
+                for node in graph_nodes
+            ),
+            default=0,
+        )
+        if not matched_events or working_set_bytes <= 0:
+            continue
+        start_ms = min(float(event["start_ms"]) for event in matched_events)
+        end_ms = max(
+            float(event["start_ms"]) + float(event["duration_ms"])
+            for event in matched_events
+        )
+        working_set_intervals.append(
+            {
+                "submission": submission_index,
+                "label": submission_label,
+                "start_ms": start_ms,
+                "duration_ms": max(0.0, end_ms - start_ms),
+                "bytes": working_set_bytes,
+                "operation_count": len(graph_nodes),
+                "phases": sorted(
+                    {
+                        str(node.get("phase"))
+                        for node in graph_nodes
+                        if node.get("phase")
+                    }
+                ),
+            }
+        )
+
+    return {
+        "physical_residency": {
+            "semantics": residency.get(
+                "semantics",
+                "exact tracked physical LaniusBuffer residency after each allocation or final release",
+            ),
+            "points": physical_points,
+        },
+        "graph_managed_working_set": {
+            "semantics": (
+                "maximum deduplicated byte ranges live in the compiler graph during each "
+                "GPU submission, aligned by its queue-submit marker; immutable inputs and "
+                "externally owned resources are excluded"
+            ),
+            "intervals": working_set_intervals,
+            "matched_submissions": matched_submissions,
+            "recorded_submissions": len(compute_submissions),
+        },
     }
 
 
@@ -1040,6 +1238,9 @@ def execution_graph(
                     "name": definition["name"],
                     "phase": definition["phase"],
                     "dispatch_domain": definition["dispatch_domain"],
+                    "graph_managed_working_set_bytes": definition.get(
+                        "graph_managed_working_set_bytes"
+                    ),
                     "declaration_index": definition["id"],
                     "execution_count": execution_count,
                     "submissions": [submit_index],
@@ -1423,6 +1624,14 @@ class Daemon:
         self.stderr_file.close()
 
 
+def result_reference(relative_path: str, contents: bytes) -> str:
+    digest = hashlib.sha256()
+    digest.update(relative_path.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(contents)
+    return digest.hexdigest()[:8]
+
+
 def catalog_results(result_root: Path) -> Path:
     result_root.mkdir(parents=True, exist_ok=True)
     documents = []
@@ -1431,10 +1640,16 @@ def catalog_results(result_root: Path) -> Path:
         if path.name == "catalog.json":
             continue
         try:
-            document = json.loads(path.read_text())
+            relative_path = str(path.relative_to(ROOT))
+            contents = path.read_bytes()
+            document = json.loads(contents)
             validate_document(document)
             annotate_document_timeline(document)
-            documents.append({"path": str(path.relative_to(ROOT)), "document": document})
+            documents.append({
+                "result_id": result_reference(relative_path, contents),
+                "path": relative_path,
+                "document": document,
+            })
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
             invalid.append({"path": str(path.relative_to(ROOT)), "error": str(error)})
     catalog = {

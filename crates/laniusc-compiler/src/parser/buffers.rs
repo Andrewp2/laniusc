@@ -561,7 +561,8 @@ impl ParserBuffers {
         };
         let active_pair_thread_dispatch_args =
             graph_buffer!(u32, "active_pair_thread_dispatch_args");
-        let active_pair_group_dispatch_args = graph_buffer!(u32, "active_pair_group_dispatch_args");
+        let active_stack_thread_dispatch_args =
+            graph_buffer!(u32, "active_stack_thread_dispatch_args");
         // ---------- Pair-to-header ----------
         let semantic_token_kinds = if let Some(kinds) = token_kinds_u32 {
             // Test/debug one-shot parsing receives already-classified parser
@@ -919,18 +920,36 @@ impl ParserBuffers {
         let tree_match_dispatch_args = graph_buffer!(u32, "tree_match_dispatch_args");
         let tree_struct_dispatch_args = graph_buffer!(u32, "tree_struct_dispatch_args");
         let tree_depth_status = graph_buffer!(u32, "tree_depth_status");
-        let canonical_parent_step_capacity =
-            super::passes::hir::semantic::parent::step::pointer_jump_steps_after_local_span(
+        let raw_relation_step_capacity =
+            super::passes::hir::semantic::parent::step::canonical_relation_step_capacity(
                 tree_capacity,
             );
-        let hir_canonical_parent_dispatch_args =
-            graph_buffer!(u32, "hir_canonical_parent_dispatch_args");
+        let hir_raw_relation_dispatch_args = graph_buffer!(u32, "hir_raw_relation_dispatch_args");
         debug_assert_eq!(
-            hir_canonical_parent_dispatch_args.count,
-            canonical_parent_step_capacity.max(1) as usize * 3,
-            "the graph retains one bindable indirect row when no pointer-jump step is scheduled",
+            hir_raw_relation_dispatch_args.count,
+            raw_relation_step_capacity.max(1) as usize * 3,
+            "the graph retains one bindable indirect row when no relation-walk step is scheduled",
+        );
+        let local_relation_step_capacity =
+            super::passes::hir::semantic::parent::step::bounded_walk_steps_after_local_span(
+                tree_capacity,
+                super::passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+            );
+        let hir_local_relation_dispatch_args =
+            graph_buffer!(u32, "hir_local_relation_dispatch_args");
+        debug_assert_eq!(
+            hir_local_relation_dispatch_args.count,
+            local_relation_step_capacity.max(1) as usize * 3,
+            "the graph retains one bindable indirect row when no local relation-walk step is scheduled",
         );
         let hir_semantic_dispatch_args = graph_buffer!(u32, "hir_semantic_dispatch_args");
+        let hir_semantic_relation_dispatch_args =
+            graph_buffer!(u32, "hir_semantic_relation_dispatch_args");
+        debug_assert_eq!(
+            hir_semantic_relation_dispatch_args.count,
+            raw_relation_step_capacity.max(1) as usize * 3,
+            "the graph retains one bindable semantic indirect row when no relation-walk step is scheduled",
+        );
         let tree_depth_block_max = graph_buffer!(u32, "tree_depth_block_max");
         let tree_prefix_scan_steps =
             make_tree_prefix_scan_steps(device, tree_prefix_params_base, tree_n_node_blocks);
@@ -1207,14 +1226,6 @@ impl ParserBuffers {
         let hir_type_arg_next = graph_buffer!(u32, "hir_type_arg_next");
         let hir_type_alias_target_node = graph_buffer!(u32, "hir_type_alias_target_node");
         let hir_fn_return_type_node = graph_buffer!(u32, "hir_fn_return_type_node");
-        let hir_fn_signature_owner_link_a = graph_buffer!(u32, "hir_fn_signature_owner_link_a");
-        let hir_fn_signature_owner_link_b = graph_buffer!(u32, "hir_fn_signature_owner_link_b");
-        let hir_fn_signature_return_owner_a = graph_buffer!(u32, "hir_fn_signature_return_owner_a");
-        let hir_fn_signature_return_owner_b = graph_buffer!(u32, "hir_fn_signature_return_owner_b");
-        let hir_fn_signature_function_owner_a =
-            graph_buffer!(u32, "hir_fn_signature_function_owner_a");
-        let hir_fn_signature_function_owner_b =
-            graph_buffer!(u32, "hir_fn_signature_function_owner_b");
         let hir_type_arg_owner_a = graph_buffer!(u32, "hir_type_arg_owner_a");
         let hir_type_arg_owner_b = graph_buffer!(u32, "hir_type_arg_owner_b");
         let hir_type_arg_link_a = graph_buffer!(u32, "hir_type_arg_link_a");
@@ -1698,7 +1709,6 @@ impl ParserBuffers {
                 &params_llp,
                 &token_count,
                 &active_pair_thread_dispatch_args,
-                &active_pair_group_dispatch_args,
                 &tree_prefix_params,
                 &ll1_status,
                 &token_feature_flags,
@@ -1882,13 +1892,6 @@ impl ParserBuffers {
                     hir_struct_lit_field_rank_b => hir_struct_lit_field_rank_a,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::semantic::parent::step::FN_SIGNATURE_OWNER.finalize,
-                    tree_bytes;
-                    hir_fn_signature_owner_link_b => hir_fn_signature_owner_link_a,
-                    hir_fn_signature_return_owner_b => hir_fn_signature_return_owner_a,
-                    hir_fn_signature_function_owner_b => hir_fn_signature_function_owner_a,
-                ),
-                finalizer!(
                     crate::parser::passes::hir::semantic::parent::step::MATCH_ARM_OWNER.finalize,
                     tree_bytes;
                     hir_semantic_parent_link_b => hir_semantic_parent_link_a,
@@ -1899,14 +1902,6 @@ impl ParserBuffers {
                     tree_bytes;
                     hir_semantic_parent_link_b => hir_semantic_parent_link_a,
                     hir_semantic_parent_value_b => hir_semantic_parent_value_a,
-                ),
-                finalizer!(
-                    crate::parser::passes::hir::semantic::parent::step::CANONICAL_RELATIONS.finalize,
-                    tree_bytes;
-                    hir_semantic_parent_link_b => hir_semantic_parent_link_a,
-                    hir_semantic_parent_value_b => hir_semantic_parent_value_a,
-                    hir_type_arg_rank_b => hir_type_arg_rank_a,
-                    hir_variant_payload_rank_b => hir_variant_payload_rank_a,
                 ),
             ],
         )
@@ -2003,7 +1998,7 @@ impl ParserBuffers {
             source_file_token_end_params,
             source_file_token_end,
             active_pair_thread_dispatch_args,
-            active_pair_group_dispatch_args,
+            active_stack_thread_dispatch_args,
             action_table,
             out_headers,
 
@@ -2064,8 +2059,10 @@ impl ParserBuffers {
             tree_match_dispatch_args,
             tree_struct_dispatch_args,
             tree_depth_status,
-            hir_canonical_parent_dispatch_args,
+            hir_raw_relation_dispatch_args,
+            hir_local_relation_dispatch_args,
             hir_semantic_dispatch_args,
+            hir_semantic_relation_dispatch_args,
             tree_depth_block_max,
             tree_prefix_inblock,
             tree_block_sum,
@@ -2240,12 +2237,6 @@ impl ParserBuffers {
             hir_type_arg_next,
             hir_type_alias_target_node,
             hir_fn_return_type_node,
-            hir_fn_signature_owner_link_a,
-            hir_fn_signature_owner_link_b,
-            hir_fn_signature_return_owner_a,
-            hir_fn_signature_return_owner_b,
-            hir_fn_signature_function_owner_a,
-            hir_fn_signature_function_owner_b,
             hir_type_arg_owner_a,
             hir_type_arg_owner_b,
             hir_type_arg_link_a,

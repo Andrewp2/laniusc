@@ -55,7 +55,7 @@ impl GpuParser {
         stamp_timer(timer_ref, ctx.encoder, "parser.pack_offsets_status");
         self.passes
             .pack_varlen
-            .record_pass_indirect(&mut ctx, &bufs.active_pair_group_dispatch_args)?;
+            .record_pass_indirect(&mut ctx, &bufs.active_pair_thread_dispatch_args)?;
         stamp_timer(timer_ref, ctx.encoder, "parser.pack_varlen");
         passes::record_stack_effect_validation(&mut ctx, &self.passes, timer_ref)?;
         stamp_timer(timer_ref, ctx.encoder, "parser.stack_effect_status");
@@ -538,33 +538,6 @@ impl GpuParser {
                     .hir_type_alias_target
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_alias_target");
-                self.passes
-                    .hir_fn_signature_owner_init
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_fn_signature_owner_init");
-                self.passes.hir_tree_relations.record_two_values(
-                    ctx.device,
-                    ctx.encoder,
-                    ctx.buffers,
-                    crate::parser::passes::hir::semantic::parent::step::TreeRelationBuffers::new(
-                        &bufs.hir_fn_signature_owner_link_a,
-                        &bufs.hir_fn_signature_owner_link_b,
-                        [
-                            &bufs.hir_fn_signature_return_owner_a,
-                            &bufs.hir_fn_signature_function_owner_a,
-                        ],
-                        [
-                            &bufs.hir_fn_signature_return_owner_b,
-                            &bufs.hir_fn_signature_function_owner_b,
-                        ],
-                    ),
-                    &bufs.tree_active_dispatch_args,
-                    crate::parser::passes::hir::semantic::parent::step::FN_SIGNATURE_OWNER,
-                    ctx.bg_cache
-                        .as_deref_mut()
-                        .expect("resident parser requires a bind-group cache"),
-                )?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_fn_signature_owner_step");
                 self.passes
                     .hir_fn_return_type
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
@@ -1202,7 +1175,6 @@ impl GpuParser {
                             ctx.device,
                             ctx.encoder,
                             ctx.buffers,
-                            &bufs.hir_semantic_dispatch_args,
                             ctx.bg_cache
                                 .as_deref_mut()
                                 .expect("resident parser requires a bind-group cache"),

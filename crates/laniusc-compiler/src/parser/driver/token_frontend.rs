@@ -403,7 +403,11 @@ impl GpuParser {
         bufs: &ParserBuffers,
         timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<()> {
-        stamp_timer(timer_ref, encoder, "parser.tokens.impl_header.begin");
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "compile.source_pack.parser.submission.begin",
+        );
         bufs.clear_operations()
             .record_token_impl_header_kind(encoder);
 

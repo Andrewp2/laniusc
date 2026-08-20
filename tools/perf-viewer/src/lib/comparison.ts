@@ -1,5 +1,11 @@
 import type { CatalogEntry, Measurement } from './types';
 
+const CONTEXT_ONLY_COMPILERS = new Set(['tcc']);
+
+export function isComparisonCandidate(measurement: Measurement): boolean {
+  return !CONTEXT_ONLY_COMPILERS.has(measurement.compiler.name.toLowerCase());
+}
+
 export function selectableResults(entries: CatalogEntry[]): CatalogEntry[] {
   return entries.filter((entry) => !entry.document.workload.baseline_only);
 }

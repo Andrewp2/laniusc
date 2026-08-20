@@ -5,7 +5,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Builds semantic ancestor-search commands from the actual raw-tree height.
+/// Builds canonical ancestor-relation commands from the actual raw-tree height.
 pub struct TreeDepthSchedulePass {
     data: PassData,
 }
@@ -34,6 +34,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeDepthSchedul
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
             ("gTree".into(), b.tree_span_params.as_entire_binding()),
+            (
+                "gCanonical".into(),
+                b.hir_canonical_params.as_entire_binding(),
+            ),
             ("gHir".into(), b.hir_params.as_entire_binding()),
             (
                 "tree_active_dispatch_args".into(),
@@ -44,8 +48,12 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeDepthSchedul
                 b.tree_depth_block_max.as_entire_binding(),
             ),
             (
-                "hir_canonical_parent_dispatch_args".into(),
-                b.hir_canonical_parent_dispatch_args.as_entire_binding(),
+                "hir_raw_relation_dispatch_args".into(),
+                b.hir_raw_relation_dispatch_args.as_entire_binding(),
+            ),
+            (
+                "hir_local_relation_dispatch_args".into(),
+                b.hir_local_relation_dispatch_args.as_entire_binding(),
             ),
         ])
     }

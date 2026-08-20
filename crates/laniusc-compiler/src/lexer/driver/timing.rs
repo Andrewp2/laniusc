@@ -21,16 +21,48 @@ pub(crate) fn print_timer_trace(
         let dt_ms = value.saturating_sub(last) as f64 * period_ns as f64 / 1_000_000.0;
         let start_ms = total;
         total += dt_ms;
+        let submission_gap = is_submission_begin(label);
         if print_enabled && dt_ms >= min_ms {
-            eprintln!("[gpu_compile_timer] {label}: {dt_ms:.3}ms (total {total:.3}ms)");
+            let timer_kind = if submission_gap {
+                "gpu_compile_submission_gap"
+            } else {
+                "gpu_compile_timer"
+            };
+            eprintln!("[{timer_kind}] {label}: {dt_ms:.3}ms (total {total:.3}ms)");
         }
-        let lane = if label.starts_with("x86.") {
-            "gpu.x86"
+        if submission_gap {
+            crate::gpu::trace::record_gpu_submission_gap(
+                "Between Lanius GPU submissions",
+                gpu_anchor,
+                start_ms,
+                dt_ms,
+            );
         } else {
-            "gpu.frontend"
-        };
-        crate::gpu::trace::record_gpu_span(lane, label, gpu_anchor, start_ms, dt_ms);
+            let lane = if label.starts_with("x86.") {
+                "gpu.x86"
+            } else {
+                "gpu.frontend"
+            };
+            crate::gpu::trace::record_gpu_span(lane, label, gpu_anchor, start_ms, dt_ms);
+        }
         last = *value;
+    }
+}
+
+fn is_submission_begin(label: &str) -> bool {
+    label.ends_with(".submission.begin")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_submission_begin;
+
+    #[test]
+    fn recognizes_submission_boundaries_without_classifying_shader_markers() {
+        assert!(is_submission_begin(
+            "compile.source_pack.parser.submission.begin"
+        ));
+        assert!(!is_submission_begin("parser.tokens.impl_header.local.done"));
     }
 }
 

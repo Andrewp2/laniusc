@@ -1,17 +1,20 @@
 <script lang="ts">
   import { formatMs, formatRate, measurementLabel } from '../lib/format';
+  import { isComparisonCandidate } from '../lib/comparison';
   import type { Measurement } from '../lib/types';
 
   interface Props { measurements: Measurement[]; selectedIndex: number; mixedFileCounts: boolean }
   let { measurements, selectedIndex, mixedFileCounts }: Props = $props();
   const selected = $derived(measurements[selectedIndex]);
-  const fastest = $derived([...measurements].sort((a, b) => a.summary.wall_ms.median - b.summary.wall_ms.median)[0]);
+  const fastest = $derived([...measurements]
+    .filter(isComparisonCandidate)
+    .sort((a, b) => a.summary.wall_ms.median - b.summary.wall_ms.median)[0]);
   const throughput = $derived([...measurements].sort((a, b) => b.summary.median_bytes_per_second - a.summary.median_bytes_per_second)[0]);
   const laniusBest = $derived([...measurements]
     .filter((measurement) => measurement.compiler.name.toLowerCase() === 'lanius')
     .sort((a, b) => a.summary.wall_ms.median - b.summary.wall_ms.median)[0]);
   const externalBest = $derived([...measurements]
-    .filter((measurement) => measurement.compiler.name.toLowerCase() !== 'lanius')
+    .filter((measurement) => measurement.compiler.name.toLowerCase() !== 'lanius' && isComparisonCandidate(measurement))
     .sort((a, b) => a.summary.wall_ms.median - b.summary.wall_ms.median)[0]);
   const cold = $derived(measurements.find((measurement) => measurement.configuration === 'process_cold'));
   const warm = $derived(measurements.find((measurement) => measurement.configuration === 'daemon_warm_workspace'));

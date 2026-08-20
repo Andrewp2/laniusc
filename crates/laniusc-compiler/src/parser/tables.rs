@@ -8,6 +8,18 @@ use std::{fs, io::Write, path::Path};
 
 use crate::{lexer::tables::tokens::TokenKind, parser::buffers::ActionHeader};
 
+#[derive(Debug, Default)]
+struct LoadedTableFingerprint(Option<u64>);
+
+impl Clone for LoadedTableFingerprint {
+    fn clone(&self) -> Self {
+        // A cloned table may be mutated through its public builder fields.
+        // Force clones back onto content hashing instead of copying an identity
+        // that described the original loaded artifact.
+        Self(None)
+    }
+}
+
 // ---------- MVP (already in tree): action headers for bracket sanity ----------
 
 /// Returns a zeroed action table of size `(n_kinds * n_kinds) * sizeof(ActionHeader)`.
@@ -263,6 +275,10 @@ pub struct PrecomputedParseTables {
     pub prod_rhs_off: Vec<u32>, // len = n_productions
     pub prod_rhs_len: Vec<u32>, // len = n_productions
     pub prod_rhs: Vec<u32>,
+
+    // Loaded compiler tables are immutable artifacts. Preserve their serialized
+    // identity so resident-buffer checks do not rehash every table on every job.
+    loaded_content_fingerprint: LoadedTableFingerprint,
 }
 
 impl PrecomputedParseTables {
@@ -287,7 +303,12 @@ impl PrecomputedParseTables {
             prod_rhs_off: vec![0; n_productions as usize],
             prod_rhs_len: vec![0; n_productions as usize],
             prod_rhs: Vec::new(),
+            loaded_content_fingerprint: LoadedTableFingerprint::default(),
         }
+    }
+
+    pub(crate) fn loaded_content_fingerprint(&self) -> Option<u64> {
+        self.loaded_content_fingerprint.0
     }
 
     #[inline]
@@ -582,6 +603,7 @@ impl PrecomputedParseTables {
 
     /// Loads parse tables from compact little-endian binary bytes.
     pub fn load_bin_bytes(mut data: &[u8]) -> Result<Self, String> {
+        let serialized_tables = data;
         fn take<const N: usize>(buf: &mut &[u8]) -> Result<[u8; N], String> {
             if buf.len() < N {
                 return Err("truncated parse tables".into());
@@ -669,6 +691,13 @@ impl PrecomputedParseTables {
             }
         }
 
+        let digest = blake3::hash(serialized_tables);
+        let fingerprint = u64::from_le_bytes(
+            digest.as_bytes()[..8]
+                .try_into()
+                .expect("BLAKE3 digest is at least eight bytes"),
+        );
+
         Ok(Self {
             n_kinds,
             n_productions,
@@ -687,6 +716,7 @@ impl PrecomputedParseTables {
             prod_rhs_off,
             prod_rhs_len,
             prod_rhs,
+            loaded_content_fingerprint: LoadedTableFingerprint(Some(fingerprint)),
         })
     }
 }
@@ -766,6 +796,20 @@ mod tests {
         assert!(!message.contains("LL(1)"));
         assert!(!message.contains("TablesUnavailable"));
         assert!(!message.contains("(0)"));
+    }
+
+    #[test]
+    fn loaded_table_fingerprint_is_cached_but_not_copied_to_mutable_clones() {
+        let bytes = include_bytes!("../../../../tables/parse_tables.bin");
+        let tables = PrecomputedParseTables::load_bin_bytes(bytes).expect("load parser tables");
+        let expected = u64::from_le_bytes(
+            blake3::hash(bytes).as_bytes()[..8]
+                .try_into()
+                .expect("BLAKE3 digest is at least eight bytes"),
+        );
+
+        assert_eq!(tables.loaded_content_fingerprint(), Some(expected));
+        assert_eq!(tables.clone().loaded_content_fingerprint(), None);
     }
 }
 

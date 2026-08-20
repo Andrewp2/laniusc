@@ -297,8 +297,6 @@ pub struct ParserPasses {
     pub hir_type_alias_owner_init: hir::types::alias::owner::init::HirTypeAliasOwnerInitPass,
     pub hir_type_alias_owner_step: hir::types::alias::owner::step::HirTypeAliasOwnerStepPass,
     pub hir_type_alias_target: hir::types::alias::target::HirTypeAliasTargetPass,
-    pub hir_fn_signature_owner_init:
-        hir::functions::signature::owner::init::HirFnSignatureOwnerInitPass,
     pub hir_fn_return_type: hir::functions::return_type::HirFnReturnTypePass,
     pub hir_method_signature_status: hir::method::signature_status::HirMethodSignatureStatusPass,
     pub hir_item_fields: hir::item::fields::HirItemFieldsPass,
@@ -308,7 +306,6 @@ pub struct ParserPasses {
     pub hir_canonical_stmt_compact: hir::canonical::stmt_compact::HirCanonicalStmtCompactPass,
     pub hir_canonical_identity_aliases:
         hir::canonical::identity_aliases::HirCanonicalIdentityAliasesPass,
-    pub hir_canonical_relations_init: hir::canonical::relations_init::HirCanonicalRelationsInitPass,
     pub hir_canonical_core: hir::canonical::core::HirCanonicalCorePass,
     pub hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass,
     pub hir_canonical_expr_forest_edges:
@@ -540,8 +537,6 @@ impl ParserPasses {
             hir_type_alias_owner_step:
                 hir::types::alias::owner::step::HirTypeAliasOwnerStepPass::new(device)?,
             hir_type_alias_target: hir::types::alias::target::HirTypeAliasTargetPass::new(device)?,
-            hir_fn_signature_owner_init:
-                hir::functions::signature::owner::init::HirFnSignatureOwnerInitPass::new(device)?,
             hir_fn_return_type: hir::functions::return_type::HirFnReturnTypePass::new(device)?,
             hir_method_signature_status:
                 hir::method::signature_status::HirMethodSignatureStatusPass::new(device)?,
@@ -553,8 +548,6 @@ impl ParserPasses {
                 hir::canonical::stmt_compact::HirCanonicalStmtCompactPass::new(device)?,
             hir_canonical_identity_aliases:
                 hir::canonical::identity_aliases::HirCanonicalIdentityAliasesPass::new(device)?,
-            hir_canonical_relations_init:
-                hir::canonical::relations_init::HirCanonicalRelationsInitPass::new(device)?,
             hir_canonical_core: hir::canonical::core::HirCanonicalCorePass::new(device)?,
             hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass::new(device)?,
             hir_canonical_expr_forest_edges:
@@ -988,39 +981,14 @@ pub fn record_canonical_hir_materialization(
         "parser.hir_canonical.params_and_type_args",
     );
 
-    p.hir_canonical_relations_init
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    p.hir_tree_relations
-        .record_canonical_steps_for_three_values(
-            ctx.device,
-            ctx.encoder,
-            ctx.buffers,
-            hir::semantic::parent::step::TreeRelationBuffers::new(
-                &ctx.buffers.hir_semantic_parent_link_a,
-                &ctx.buffers.hir_semantic_parent_link_b,
-                [
-                    &ctx.buffers.hir_semantic_parent_value_a,
-                    &ctx.buffers.hir_type_arg_rank_a,
-                    &ctx.buffers.hir_variant_payload_rank_a,
-                ],
-                [
-                    &ctx.buffers.hir_semantic_parent_value_b,
-                    &ctx.buffers.hir_type_arg_rank_b,
-                    &ctx.buffers.hir_variant_payload_rank_b,
-                ],
-            ),
-            hir::semantic::parent::step::CANONICAL_RELATIONS,
-            ctx.bg_cache
-                .as_deref_mut()
-                .expect("debug parser requires a bind-group cache"),
-        )?;
     p.hir_canonical_core
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.hir_canonical.core");
     p.hir_canonical_nav
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-    stamp_parser_timer(timer_ref, ctx.encoder, "parser.hir_canonical.core_nav");
+    stamp_parser_timer(timer_ref, ctx.encoder, "parser.hir_canonical.nav");
     ctx.buffers.clear_operations().record_phase(
         crate::parser::compiler_graph::hir::CANONICAL_EXPR_FOREST_CLEAR,
         ctx.encoder,
@@ -1146,13 +1114,13 @@ pub fn record_stack_effect_validation(
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1D;
 
-    let n_sc = ctx.buffers.total_sc.max(1);
     ctx.buffers.clear_operations().record_phase(
         crate::parser::compiler_graph::STACK_EFFECT_CLEAR,
         ctx.encoder,
     )?;
 
-    p.b01.record_pass(ctx, E1D(n_sc))?;
+    p.b01
+        .record_pass_indirect(ctx, &ctx.buffers.active_stack_thread_dispatch_args)?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram");
     p.b02.record_scan(
         ctx.device,
@@ -1163,7 +1131,8 @@ pub fn record_stack_effect_validation(
             .expect("parser stack validation requires a bind-group cache"),
     )?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram_scan");
-    p.b03.record_pass(ctx, E1D(n_sc))?;
+    p.b03
+        .record_pass_indirect(ctx, &ctx.buffers.active_stack_thread_dispatch_args)?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.offsets");
     p.b_min_tree.record_build(
         ctx.device,
@@ -1175,9 +1144,11 @@ pub fn record_stack_effect_validation(
     )?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.min_tree");
     if ctx.buffers.emit_stack_matches {
-        p.b_clear_matches.record_pass(ctx, E1D(n_sc))?;
+        p.b_clear_matches
+            .record_pass_indirect(ctx, &ctx.buffers.active_stack_thread_dispatch_args)?;
     }
-    p.pse04.record_pass(ctx, E1D(n_sc))?;
+    p.pse04
+        .record_pass_indirect(ctx, &ctx.buffers.active_stack_thread_dispatch_args)?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.pair_pse");
     p.status_from_brackets.record_pass(ctx, E1D(1))?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.status");

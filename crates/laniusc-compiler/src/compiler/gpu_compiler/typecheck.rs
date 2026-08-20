@@ -39,6 +39,68 @@ struct ParserBoundaryInput<'a> {
     source_buffer: &'a wgpu::Buffer,
 }
 
+struct DeferredParserRecord<T> {
+    check: crate::parser::driver::RecordedResidentLl1HirCheck,
+    token_capacity: u32,
+    tree_capacity: u32,
+    parser_feature_flags: u32,
+    recorded: T,
+}
+
+enum DeferredParserFinish<T> {
+    Complete(T),
+    RetryWithTreeCapacity(u32),
+    RetryAfterLexerBoundary,
+}
+
+fn parser_shape_key_for_source(path: &Path) -> blake3::Hash {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"laniusc-parser-shape-source-identity-v1");
+    let bytes = path.as_os_str().as_encoded_bytes();
+    hasher.update(&(bytes.len() as u64).to_le_bytes());
+    hasher.update(bytes);
+    hasher.finalize()
+}
+
+fn parser_shape_key_for_source_pack<S: AsRef<str>>(
+    sources: &[S],
+    source_paths: Option<&[Option<PathBuf>]>,
+    library_id: Option<u32>,
+    unit_id: u32,
+) -> blake3::Hash {
+    let mut hasher = blake3::Hasher::new();
+    if let Some(paths) = source_paths {
+        hasher.update(b"laniusc-parser-shape-source-pack-identity-v1");
+        hasher.update(&library_id.unwrap_or(u32::MAX).to_le_bytes());
+        hasher.update(&unit_id.to_le_bytes());
+        hasher.update(&(paths.len() as u64).to_le_bytes());
+        for path in paths {
+            match path {
+                Some(path) => {
+                    hasher.update(&[1]);
+                    let bytes = path.as_os_str().as_encoded_bytes();
+                    hasher.update(&(bytes.len() as u64).to_le_bytes());
+                    hasher.update(bytes);
+                }
+                None => {
+                    hasher.update(&[0]);
+                }
+            }
+        }
+    } else {
+        // In-memory packs have no stable external identity. Hash their content
+        // so unrelated callers do not continuously mispredict one another.
+        hasher.update(b"laniusc-parser-shape-source-pack-content-v1");
+        hasher.update(&(sources.len() as u64).to_le_bytes());
+        for source in sources {
+            let source = source.as_ref();
+            hasher.update(&(source.len() as u64).to_le_bytes());
+            hasher.update(source.as_bytes());
+        }
+    }
+    hasher.finalize()
+}
+
 impl<'a> DependencyInterfacePages<'a> {
     fn is_empty(self) -> bool {
         match self {
@@ -61,6 +123,728 @@ impl<'a> DependencyInterfacePages<'a> {
 }
 
 impl<'gpu> GpuCompiler<'gpu> {
+    fn cached_parser_shape(
+        &self,
+        key: &blake3::Hash,
+        source_capacity: u32,
+    ) -> Option<crate::parser::driver::ResidentParserJobShape> {
+        let shape = self
+            .parser_shape_cache
+            .lock()
+            .expect("compiler.parser_shape_cache poisoned")
+            .get(key)?;
+        self.parser
+            .current_resident_allocation_covers(
+                shape.token_capacity,
+                source_capacity,
+                &self.parse_tables,
+                shape.tree_capacity,
+                false,
+                shape.parser_feature_flags,
+            )
+            .then_some(shape)
+    }
+
+    fn remember_parser_shape<T>(&self, key: blake3::Hash, record: &DeferredParserRecord<T>) {
+        self.parser_shape_cache
+            .lock()
+            .expect("compiler.parser_shape_cache poisoned")
+            .insert(
+                key,
+                crate::parser::driver::ResidentParserJobShape {
+                    token_capacity: record.token_capacity,
+                    tree_capacity: record.tree_capacity,
+                    parser_feature_flags: record.parser_feature_flags,
+                },
+            );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_parser_with_deferred_status<T>(
+        &self,
+        device: &wgpu::Device,
+        input: ParserBoundaryInput<'_>,
+        parser_feature_flags: u32,
+        forced_tree_capacity: Option<u32>,
+        encoder: &mut wgpu::CommandEncoder,
+        timer: &mut Option<&mut GpuTimer>,
+        host_timer: &mut CompilerHostTimer,
+        prepare_downstream: impl FnOnce(u32) -> Result<(), CompileError>,
+        record_downstream: impl FnOnce(
+            &crate::parser::buffers::ParserBuffers,
+            &mut wgpu::CommandEncoder,
+            &mut Option<&mut GpuTimer>,
+        ) -> Result<T, CompileError>,
+        map_parser_error: impl Fn(anyhow::Error) -> CompileError,
+    ) -> Result<DeferredParserRecord<T>, CompileError> {
+        let reusable_capacity = forced_tree_capacity.or_else(|| {
+            self.parser.reusable_tree_capacity(
+                input.token_capacity,
+                input.source_capacity,
+                &self.parse_tables,
+                false,
+                parser_feature_flags,
+            )
+        });
+        let tree_capacity = match reusable_capacity {
+            Some(capacity) => capacity,
+            None => {
+                self.parser
+                    .measure_resident_partial_parse_capacity(
+                        input.token_capacity,
+                        input.token_buffer,
+                        input.token_count_buffer,
+                        input.token_file_id_buffer,
+                        &self.parse_tables,
+                    )
+                    .map_err(&map_parser_error)?
+                    .tree_capacity
+            }
+        };
+        host_timer.stamp(match (forced_tree_capacity, reusable_capacity) {
+            (Some(_), _) => "parser_capacity_retry",
+            (None, Some(_)) => "parser_capacity_reused",
+            (None, None) => "parser_capacity_measured",
+        });
+
+        if !self.parser.current_resident_allocation_covers(
+            input.token_capacity,
+            input.source_capacity,
+            &self.parse_tables,
+            tree_capacity,
+            false,
+            parser_feature_flags,
+        ) {
+            self.release_for_frontend_workspace_replacement(
+                device,
+                FrontendWorkspaceReplacement::Parser,
+            );
+        }
+        prepare_downstream(tree_capacity)?;
+        host_timer.stamp("downstream_prepared");
+
+        let (check, recorded) = self
+            .parser
+            .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
+                encoder,
+                input.token_capacity,
+                input.token_buffer,
+                input.token_count_buffer,
+                input.token_file_id_buffer,
+                input.source_capacity,
+                input.source_buffer,
+                &self.parse_tables,
+                Some(tree_capacity),
+                parser_feature_flags,
+                timer,
+                record_downstream,
+            )
+            .map_err(&map_parser_error)?;
+        let recorded = recorded?;
+        host_timer.stamp("parser_and_downstream_recorded");
+        Ok(DeferredParserRecord {
+            check,
+            token_capacity: input.token_capacity,
+            tree_capacity,
+            parser_feature_flags,
+            recorded,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_checked_source_pipeline(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bufs: &crate::lexer::buffers::GpuBuffers,
+        token_capacity: u32,
+        parser_feature_flags: u32,
+        tree_capacity: Option<u32>,
+        encoder: &mut wgpu::CommandEncoder,
+        mut timer: Option<&mut GpuTimer>,
+        src: &str,
+        diagnostic_path: &Path,
+        target: Option<LoweringTarget>,
+    ) -> Result<
+        DeferredParserRecord<(
+            gpu_type_checker::RecordedTypeCheck,
+            crate::parser::buffers::GpuHirView,
+        )>,
+        CompileError,
+    > {
+        let mut parser_host_timer = CompilerHostTimer::new("compile.source.parser");
+        self.record_parser_with_deferred_status(
+            device,
+            ParserBoundaryInput {
+                token_capacity,
+                token_buffer: &bufs.tokens_out,
+                token_count_buffer: &bufs.token_count,
+                token_file_id_buffer: Some(&bufs.token_file_id),
+                source_capacity: bufs.n,
+                source_buffer: &bufs.in_bytes,
+            },
+            parser_feature_flags,
+            tree_capacity,
+            encoder,
+            &mut timer,
+            &mut parser_host_timer,
+            |tree_capacity| {
+                self.prepare_typecheck_for_parser_capacity(
+                    device,
+                    bufs.n,
+                    1,
+                    token_capacity,
+                    bufs,
+                    tree_capacity,
+                    parser_feature_flags,
+                    None,
+                    false,
+                )
+                .map_err(|err| type_check_execution_failed_for_source(diagnostic_path, src, err))
+            },
+            |parse_bufs, encoder, timer| {
+                let hir = crate::parser::buffers::GpuHirView::from_parser_buffers(parse_bufs);
+                let type_check = self.record_typecheck_from_parse_buffers(
+                    device,
+                    queue,
+                    encoder,
+                    bufs.n,
+                    1,
+                    token_capacity,
+                    bufs,
+                    parse_bufs,
+                    &hir,
+                    hir.capacity,
+                    None,
+                    false,
+                    timer.as_deref_mut(),
+                    |err| type_check_execution_failed_for_source(diagnostic_path, src, err),
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.done");
+                }
+                if let Some(target) = target {
+                    let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
+                        CompileError::GpuCodegen("semantic lowering buffers are unavailable".into())
+                    })?;
+                    let pipeline = self
+                        .ensure_lowering_pipeline_for_semantic(
+                            target,
+                            bufs.n,
+                            token_capacity,
+                            hir.capacity,
+                            LoweringArtifactKind::Executable,
+                            &hir,
+                            &semantic,
+                        )
+                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                    pipeline
+                        .record(encoder, timer.as_deref_mut())
+                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                }
+                Ok((type_check, hir))
+            },
+            |err| parser_execution_failed_for_source(diagnostic_path, src, err),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish_checked_source_pipeline(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bufs: &crate::lexer::buffers::GpuBuffers,
+        recorded: DeferredParserRecord<(
+            gpu_type_checker::RecordedTypeCheck,
+            crate::parser::buffers::GpuHirView,
+        )>,
+        src: &str,
+        diagnostic_path: &Path,
+        target: Option<LoweringTarget>,
+    ) -> Result<DeferredParserFinish<Option<Vec<u8>>>, CompileError> {
+        let ll1 = recorded
+            .check
+            .read_status_result(device)
+            .map_err(|err| parser_execution_failed_for_source(diagnostic_path, src, err))?;
+        if !ll1.accepted {
+            if ll1.error_code == 3 && ll1.detail > recorded.tree_capacity {
+                return Ok(DeferredParserFinish::RetryWithTreeCapacity(ll1.detail));
+            }
+            let parser_failure = self
+                .parser
+                .current_resident_parser_failure_for_ll1_rejection(
+                    recorded.token_capacity,
+                    &self.parse_tables,
+                    Some(recorded.tree_capacity),
+                    ll1,
+                );
+            debug_parser_rejection(&parser_failure);
+            return Err(parser_failure_to_compile_error_for_source(
+                device,
+                queue,
+                &bufs.tokens_out.buffer,
+                src,
+                diagnostic_path,
+                &parser_failure,
+            ));
+        }
+        let (type_check, typecheck_hir) = recorded.recorded;
+        self.type_checker
+            .finish_recorded_check(device, &type_check)
+            .map_err(|err| {
+                type_check_error_to_compile_error_for_source(
+                    device,
+                    queue,
+                    bufs,
+                    src,
+                    diagnostic_path,
+                    err,
+                )
+            })?;
+        let artifact = target
+            .map(|target| {
+                self.lowering_pipeline(target)
+                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                    .finish_artifact(device, queue)
+                    .map_err(|err| {
+                        lowering_error_to_compile_error_for_source(
+                            device,
+                            queue,
+                            bufs,
+                            &typecheck_hir,
+                            src,
+                            diagnostic_path,
+                            err,
+                        )
+                    })
+            })
+            .transpose()?;
+        Ok(DeferredParserFinish::Complete(artifact))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_checked_source_pack_downstream(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bufs: &crate::lexer::buffers::GpuBuffers,
+        parse_bufs: &crate::parser::buffers::ParserBuffers,
+        encoder: &mut wgpu::CommandEncoder,
+        timer: &mut Option<&mut GpuTimer>,
+        token_capacity: u32,
+        diagnostic_files: &[DiagnosticSourceFile],
+        dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
+        emit_semantic_interface: bool,
+        library_id: Option<u32>,
+        unit_id: u32,
+        lowering_target: Option<LoweringTarget>,
+        object_request: Option<LoweringObjectRequest>,
+    ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
+        let mut downstream_host_timer =
+            CompilerHostTimer::new("compile.source-pack.record.downstream");
+        let hir = crate::parser::buffers::GpuHirView::from_parser_buffers(parse_bufs);
+        let type_check = self.record_typecheck_from_parse_buffers(
+            device,
+            queue,
+            encoder,
+            bufs.n,
+            diagnostic_files.len().max(1) as u32,
+            token_capacity,
+            bufs,
+            parse_bufs,
+            &hir,
+            hir.capacity,
+            dependency_pages,
+            emit_semantic_interface,
+            timer.as_deref_mut(),
+            |err| type_check_execution_failed_for_source_pack(diagnostic_files, err),
+        )?;
+        downstream_host_timer.stamp("typecheck");
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "typecheck.done");
+        }
+        let semantic_interface_batching =
+            crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some());
+        let semantic_interface = emit_semantic_interface
+            .then_some(library_id)
+            .flatten()
+            .map(|library_id| {
+                let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
+                    semantic_interface_batching,
+                    "semantic_interface.batch",
+                );
+                self.type_checker
+                    .record_semantic_interface(
+                        device,
+                        queue,
+                        encoder,
+                        library_id,
+                        unit_id,
+                        bufs.n,
+                        token_capacity,
+                        &bufs.in_bytes,
+                        buffers::semantic_interface_hir_buffers(&hir),
+                        timer,
+                    )
+                    .map_err(|err| {
+                        CompileError::GpuFrontend(format!(
+                            "semantic-interface identity recording failed: {err}"
+                        ))
+                    })
+            })
+            .transpose()?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.done");
+        }
+        downstream_host_timer.stamp("semantic_interface");
+        if lowering_target.is_some() && object_request.is_some() {
+            return Err(CompileError::GpuCodegen(
+                "one lowering job cannot request both an executable and an object".into(),
+            ));
+        }
+        if let Some(target) = lowering_target {
+            let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
+                CompileError::GpuCodegen("semantic lowering buffers are unavailable".into())
+            })?;
+            let pipeline = self
+                .ensure_lowering_pipeline_for_semantic(
+                    target,
+                    bufs.n,
+                    token_capacity,
+                    hir.capacity,
+                    LoweringArtifactKind::Executable,
+                    &hir,
+                    &semantic,
+                )
+                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+            pipeline
+                .record(encoder, timer.as_deref_mut())
+                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+        }
+        if let Some(request) = object_request {
+            let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
+                CompileError::GpuCodegen("semantic lowering buffers are unavailable".into())
+            })?;
+            let pipeline = self
+                .ensure_lowering_pipeline_for_semantic(
+                    request.target(),
+                    bufs.n,
+                    token_capacity,
+                    hir.capacity,
+                    LoweringArtifactKind::Object,
+                    &hir,
+                    &semantic,
+                )
+                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+            let (library_id, unit_id) = request.ids();
+            pipeline
+                .record_object(queue, encoder, library_id, unit_id, timer.as_deref_mut())
+                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+        }
+        downstream_host_timer.stamp("lowering");
+        Ok(RecordedTypeCheckWithDiagnosticBuffers {
+            type_check,
+            diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
+            hir,
+            semantic_interface,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_checked_source_pack_parser(
+        &self,
+        device: &wgpu::Device,
+        bufs: &crate::lexer::buffers::GpuBuffers,
+        token_capacity: u32,
+        parser_feature_flags: u32,
+        tree_capacity: u32,
+        encoder: &mut wgpu::CommandEncoder,
+        mut timer: Option<&mut GpuTimer>,
+        diagnostic_files: &[DiagnosticSourceFile],
+        dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
+        emit_semantic_interface: bool,
+    ) -> Result<DeferredParserRecord<()>, CompileError> {
+        let mut record_host_timer = CompilerHostTimer::new("compile.source-pack.record");
+        self.record_parser_with_deferred_status(
+            device,
+            ParserBoundaryInput {
+                token_capacity,
+                token_buffer: &bufs.tokens_out,
+                token_count_buffer: &bufs.token_count,
+                token_file_id_buffer: Some(&bufs.token_file_id),
+                source_capacity: bufs.n,
+                source_buffer: &bufs.in_bytes,
+            },
+            parser_feature_flags,
+            Some(tree_capacity),
+            encoder,
+            &mut timer,
+            &mut record_host_timer,
+            |tree_capacity| {
+                self.prepare_typecheck_for_parser_capacity(
+                    device,
+                    bufs.n,
+                    diagnostic_files.len().max(1) as u32,
+                    token_capacity,
+                    bufs,
+                    tree_capacity,
+                    parser_feature_flags,
+                    dependency_pages,
+                    emit_semantic_interface,
+                )
+                .map_err(|err| type_check_execution_failed_for_source_pack(diagnostic_files, err))
+            },
+            |_parse_bufs, _encoder, _timer| Ok(()),
+            |err| parser_execution_failed_for_source_pack(diagnostic_files, err),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_checked_source_pack_after_parser(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bufs: &crate::lexer::buffers::GpuBuffers,
+        parser: &DeferredParserRecord<()>,
+        encoder: &mut wgpu::CommandEncoder,
+        mut timer: Option<&mut GpuTimer>,
+        diagnostic_files: &[DiagnosticSourceFile],
+        dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
+        emit_semantic_interface: bool,
+        library_id: Option<u32>,
+        unit_id: u32,
+        lowering_target: Option<LoweringTarget>,
+        object_request: Option<LoweringObjectRequest>,
+    ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
+        self.parser
+            .with_current_resident_buffers_with_tree_capacity_and_features(
+                parser.token_capacity,
+                &self.parse_tables,
+                parser.tree_capacity,
+                parser.parser_feature_flags,
+                |parse_bufs| {
+                    self.record_checked_source_pack_downstream(
+                        device,
+                        queue,
+                        bufs,
+                        parse_bufs,
+                        encoder,
+                        &mut timer,
+                        parser.token_capacity,
+                        diagnostic_files,
+                        dependency_pages,
+                        emit_semantic_interface,
+                        library_id,
+                        unit_id,
+                        lowering_target,
+                        object_request,
+                    )
+                },
+            )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_checked_source_pack_pipeline(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bufs: &crate::lexer::buffers::GpuBuffers,
+        token_capacity: u32,
+        parser_feature_flags: u32,
+        tree_capacity: Option<u32>,
+        encoder: &mut wgpu::CommandEncoder,
+        mut timer: Option<&mut GpuTimer>,
+        diagnostic_files: &[DiagnosticSourceFile],
+        dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
+        emit_semantic_interface: bool,
+        library_id: Option<u32>,
+        unit_id: u32,
+        lowering_target: Option<LoweringTarget>,
+        object_request: Option<LoweringObjectRequest>,
+    ) -> Result<DeferredParserRecord<RecordedTypeCheckWithDiagnosticBuffers>, CompileError> {
+        let mut record_host_timer = CompilerHostTimer::new("compile.source-pack.record");
+        self.record_parser_with_deferred_status(
+            device,
+            ParserBoundaryInput {
+                token_capacity,
+                token_buffer: &bufs.tokens_out,
+                token_count_buffer: &bufs.token_count,
+                token_file_id_buffer: Some(&bufs.token_file_id),
+                source_capacity: bufs.n,
+                source_buffer: &bufs.in_bytes,
+            },
+            parser_feature_flags,
+            tree_capacity,
+            encoder,
+            &mut timer,
+            &mut record_host_timer,
+            |tree_capacity| {
+                self.prepare_typecheck_for_parser_capacity(
+                    device,
+                    bufs.n,
+                    diagnostic_files.len().max(1) as u32,
+                    token_capacity,
+                    bufs,
+                    tree_capacity,
+                    parser_feature_flags,
+                    dependency_pages,
+                    emit_semantic_interface,
+                )
+                .map_err(|err| type_check_execution_failed_for_source_pack(diagnostic_files, err))
+            },
+            |parse_bufs, encoder, timer| {
+                self.record_checked_source_pack_downstream(
+                    device,
+                    queue,
+                    bufs,
+                    parse_bufs,
+                    encoder,
+                    timer,
+                    token_capacity,
+                    diagnostic_files,
+                    dependency_pages,
+                    emit_semantic_interface,
+                    library_id,
+                    unit_id,
+                    lowering_target,
+                    object_request,
+                )
+            },
+            |err| parser_execution_failed_for_source_pack(diagnostic_files, err),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish_checked_source_pack_pipeline(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        deferred: DeferredParserRecord<RecordedTypeCheckWithDiagnosticBuffers>,
+        diagnostic_files: &[DiagnosticSourceFile],
+        lowering_target: Option<LoweringTarget>,
+        object_request: Option<LoweringObjectRequest>,
+    ) -> Result<DeferredParserFinish<CheckedSourcePackArtifacts>, CompileError> {
+        let mut finish_timer = CompilerHostTimer::new("compile.source-pack.finish");
+        let ll1 = deferred
+            .check
+            .read_status_result(device)
+            .map_err(|err| parser_execution_failed_for_source_pack(diagnostic_files, err))?;
+        if !ll1.accepted {
+            if ll1.error_code == 3 && ll1.detail > deferred.tree_capacity {
+                return Ok(DeferredParserFinish::RetryWithTreeCapacity(ll1.detail));
+            }
+            let parser_failure = self
+                .parser
+                .current_resident_parser_failure_for_ll1_rejection(
+                    deferred.token_capacity,
+                    &self.parse_tables,
+                    Some(deferred.tree_capacity),
+                    ll1,
+                );
+            debug_parser_rejection(&parser_failure);
+            return Err(parser_failure_to_compile_error_for_source_pack(
+                device,
+                queue,
+                &deferred.recorded.diagnostic_tokens.buffer,
+                diagnostic_files,
+                &parser_failure,
+            ));
+        }
+        finish_timer.stamp("parser_status");
+        let recorded = deferred.recorded;
+        self.type_checker
+            .finish_recorded_check(device, &recorded.type_check)
+            .map_err(|err| {
+                type_check_error_to_compile_error_for_source_pack(
+                    device,
+                    queue,
+                    &recorded.diagnostic_tokens,
+                    diagnostic_files,
+                    err,
+                )
+            })?;
+        finish_timer.stamp("typecheck_status");
+        let semantic_interface = recorded
+            .semantic_interface
+            .as_ref()
+            .map(|identity| {
+                self.type_checker
+                    .finish_semantic_interface(device, queue, identity)
+                    .map_err(|err| {
+                        CompileError::GpuFrontend(format!(
+                            "semantic-interface readback failed: {err}"
+                        ))
+                    })
+            })
+            .transpose()?;
+        finish_timer.stamp("semantic_interface");
+        let target_artifact = lowering_target
+            .map(|target| {
+                self.lowering_pipeline(target)
+                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                    .finish_artifact(device, queue)
+                    .map_err(|err| {
+                        lowering_error_to_compile_error_for_source_pack(
+                            device,
+                            queue,
+                            &recorded.diagnostic_tokens,
+                            &recorded.hir,
+                            diagnostic_files,
+                            err,
+                        )
+                    })
+            })
+            .transpose()?;
+        finish_timer.stamp("target_artifact");
+        let x86_object = object_request
+            .and_then(|request| match request {
+                LoweringObjectRequest::X86_64 {
+                    library_id,
+                    unit_id,
+                } => Some((library_id, unit_id)),
+                LoweringObjectRequest::Wasm { .. } => None,
+            })
+            .map(|(library_id, unit_id)| {
+                self.lowering_pipeline(LoweringTarget::X86_64)
+                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                    .finish_x86_object(device, queue, library_id, unit_id)
+                    .map_err(|err| {
+                        lowering_error_to_compile_error_for_source_pack(
+                            device,
+                            queue,
+                            &recorded.diagnostic_tokens,
+                            &recorded.hir,
+                            diagnostic_files,
+                            err,
+                        )
+                    })
+            })
+            .transpose()?;
+        finish_timer.stamp("x86_object");
+        let wasm_object = object_request
+            .and_then(|request| match request {
+                LoweringObjectRequest::Wasm {
+                    library_id,
+                    unit_id,
+                } => Some((library_id, unit_id)),
+                LoweringObjectRequest::X86_64 { .. } => None,
+            })
+            .map(|(library_id, unit_id)| {
+                self.lowering_pipeline(LoweringTarget::Wasm)
+                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
+                    .finish_wasm_object(device, queue, library_id, unit_id)
+                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+            })
+            .transpose()?;
+        finish_timer.stamp("wasm_object");
+        Ok(DeferredParserFinish::Complete(CheckedSourcePackArtifacts {
+            semantic_interface,
+            target_artifact,
+            x86_object,
+            wasm_object,
+        }))
+    }
+
     fn ensure_lowering_pipeline_for_semantic(
         &self,
         target: LoweringTarget,
@@ -153,164 +937,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                     )
                 },
             )
-    }
-
-    fn run_parser_boundary(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        input: ParserBoundaryInput<'_>,
-        tree_capacity: u32,
-        parser_feature_flags: u32,
-        submission_label: &'static str,
-        host_timer: &mut CompilerHostTimer,
-        after_submit: impl FnOnce(),
-    ) -> anyhow::Result<crate::parser::driver::Ll1AcceptResult> {
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some(submission_label),
-        });
-        let timing_enabled = crate::gpu::timer::compile_timing_requested()
-            && device.features().contains(wgpu::Features::TIMESTAMP_QUERY);
-        let mut owned_parser_timer = timing_enabled.then(|| GpuTimer::new(device, queue, 2_048));
-        if let Some(timer) = owned_parser_timer.as_mut() {
-            timer.stamp(&mut encoder, "parser.begin");
-        }
-        let mut parser_timer = owned_parser_timer.as_mut();
-        let (check, recorded) = self
-            .parser
-            .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
-                &mut encoder,
-                input.token_capacity,
-                input.token_buffer,
-                input.token_count_buffer,
-                input.token_file_id_buffer,
-                input.source_capacity,
-                input.source_buffer,
-                &self.parse_tables,
-                Some(tree_capacity),
-                parser_feature_flags,
-                &mut parser_timer,
-                |_parse_bufs, encoder, timer| {
-                    if let Some(timer) = timer.as_deref_mut() {
-                        timer.stamp(encoder, "parser.ll1_hir.done");
-                    }
-                    Ok::<_, anyhow::Error>(())
-                },
-            )?;
-        recorded?;
-        drop(parser_timer);
-        host_timer.stamp("parser_record");
-        if let Some(timer) = owned_parser_timer.as_mut() {
-            timer.stamp(&mut encoder, "parser.end");
-            timer.resolve(&mut encoder);
-        }
-        let command_buffer = encoder.finish();
-        host_timer.stamp("parser_encoder_finish");
-        let submit_timing =
-            crate::gpu::passes_core::submit_with_progress(queue, submission_label, command_buffer);
-        host_timer.stamp("parser_submit");
-        // Workspace construction is host-only: it uses capacities and buffer
-        // identities but does not inspect parser output. Run it while the
-        // submitted parser is executing, before the acceptance readback waits
-        // for the GPU. Callers may only record semantic work after this method
-        // returns an accepted status.
-        after_submit();
-        host_timer.stamp("parser_overlap_work");
-        let result = check.read_status_result(device);
-        host_timer.stamp("parser_status");
-        if let Some(timer) = owned_parser_timer.as_ref()
-            && let Some(stamps) = timer.try_read(device)
-        {
-            crate::lexer::driver::timing::print_timer_trace(
-                &stamps,
-                timer.period_ns(),
-                submit_timing.gpu_anchor,
-            );
-        }
-        result
-    }
-
-    fn run_parser_boundary_with_capacity_reuse(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        input: ParserBoundaryInput<'_>,
-        parser_feature_flags: u32,
-        submission_label: &'static str,
-        host_timer: &mut CompilerHostTimer,
-        mut after_submit: impl FnMut(u32),
-    ) -> anyhow::Result<(u32, crate::parser::driver::Ll1AcceptResult)> {
-        let reusable_capacity = self.parser.reusable_tree_capacity(
-            input.token_capacity,
-            input.source_capacity,
-            &self.parse_tables,
-            false,
-            parser_feature_flags,
-        );
-        let tree_capacity = match reusable_capacity {
-            Some(capacity) => capacity,
-            None => {
-                self.parser
-                    .measure_resident_partial_parse_capacity(
-                        input.token_capacity,
-                        input.token_buffer,
-                        input.token_count_buffer,
-                        input.token_file_id_buffer,
-                        &self.parse_tables,
-                    )?
-                    .tree_capacity
-            }
-        };
-        host_timer.stamp(if reusable_capacity.is_some() {
-            "parser_capacity_reused"
-        } else {
-            "parser_capacity_measured"
-        });
-
-        if !self.parser.current_resident_allocation_covers(
-            input.token_capacity,
-            input.source_capacity,
-            &self.parse_tables,
-            tree_capacity,
-            false,
-            parser_feature_flags,
-        ) {
-            self.release_for_frontend_workspace_replacement(
-                device,
-                FrontendWorkspaceReplacement::Parser,
-            );
-        }
-        let mut result = self.run_parser_boundary(
-            device,
-            queue,
-            input,
-            tree_capacity,
-            parser_feature_flags,
-            submission_label,
-            host_timer,
-            || after_submit(tree_capacity),
-        )?;
-
-        if !result.accepted && result.error_code == 3 && result.detail > tree_capacity {
-            let grown_capacity = result.detail;
-            self.release_for_frontend_workspace_replacement(
-                device,
-                FrontendWorkspaceReplacement::Parser,
-            );
-            result = self.run_parser_boundary(
-                device,
-                queue,
-                input,
-                grown_capacity,
-                parser_feature_flags,
-                submission_label,
-                host_timer,
-                || after_submit(grown_capacity),
-            )?;
-            host_timer.stamp("parser_capacity_retry");
-            return Ok((grown_capacity, result));
-        }
-        Ok((tree_capacity, result))
     }
 
     /// Type-check one in-memory source string using `<source>` as the diagnostic
@@ -534,170 +1160,117 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: Option<LoweringTarget>,
     ) -> Result<Option<Vec<u8>>, CompileError> {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
-        self.lexer
-            .with_recorded_resident_tokens_after_count(
-                src,
-                |device, queue, bufs, token_count, encoder, mut timer| {
-                    let token_capacity = token_count.max(1);
-                    let parser_feature_flags = crate::lexer::features::parser_allocation_features(
-                        bufs.parser_feature_flags_value,
-                    );
-                    let mut parser_host_timer = CompilerHostTimer::new("compile.source.parser");
-                    let mut typecheck_preparation = None;
-                    let (parser_tree_capacity, ll1) = self
-                        .run_parser_boundary_with_capacity_reuse(
-                            device,
-                            queue,
-                            ParserBoundaryInput {
-                                token_capacity,
-                                token_buffer: &bufs.tokens_out,
-                                token_count_buffer: &bufs.token_count,
-                                token_file_id_buffer: Some(&bufs.token_file_id),
-                                source_capacity: bufs.n,
-                                source_buffer: &bufs.in_bytes,
-                            },
-                            parser_feature_flags,
-                            "compiler.typecheck.parser-boundary",
-                            &mut parser_host_timer,
-                            |tree_capacity| {
-                                typecheck_preparation =
-                                    Some(self.prepare_typecheck_for_parser_capacity(
-                                        device,
-                                        bufs.n,
-                                        1,
-                                        token_capacity,
-                                        bufs,
-                                        tree_capacity,
-                                        parser_feature_flags,
-                                        None,
-                                        false,
-                                    ));
-                            },
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source(&diagnostic_path, src, err)
-                        })?;
-                    if !ll1.accepted {
-                        let parser_failure = self
-                            .parser
-                            .current_resident_parser_failure_for_ll1_rejection(
-                                token_capacity,
-                                &self.parse_tables,
-                                Some(parser_tree_capacity),
-                                ll1,
-                            );
-                        debug_parser_rejection(&parser_failure);
-                        return Err(parser_failure_to_compile_error_for_source(
-                            device,
-                            queue,
-                            &bufs.tokens_out.buffer,
-                            src,
-                            &diagnostic_path,
-                            &parser_failure,
-                        ));
-                    }
-                    typecheck_preparation
-                        .expect("parser boundary must prepare the type-check workspace")
-                        .map_err(|err| {
-                            type_check_execution_failed_for_source(&diagnostic_path, src, err)
-                        })?;
-                    let (typecheck_hir, type_check) = self
-                        .parser
-                        .with_current_resident_buffers_with_tree_capacity_and_features(
-                            token_capacity,
-                            &self.parse_tables,
-                            parser_tree_capacity,
-                            parser_feature_flags,
-                            |parse_bufs| {
-                                let hir = crate::parser::buffers::GpuHirView::from_parser_buffers(
-                                    parse_bufs,
-                                );
-                                let type_check = self.record_typecheck_from_parse_buffers(
-                                    device,
-                                    queue,
-                                    encoder,
-                                    bufs.n,
-                                    1,
-                                    token_capacity,
-                                    bufs,
-                                    parse_bufs,
-                                    &hir,
-                                    hir.capacity,
-                                    None,
-                                    false,
-                                    timer.as_deref_mut(),
-                                    |err| {
-                                        type_check_execution_failed_for_source(
-                                            &diagnostic_path,
-                                            src,
-                                            err,
-                                        )
-                                    },
-                                )?;
-                                Ok::<_, CompileError>((hir, type_check))
-                            },
-                        )?;
-                    if let Some(timer) = timer.as_deref_mut() {
-                        timer.stamp(encoder, "typecheck.done");
-                    }
-                    if let Some(target) = target {
-                        let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
-                            CompileError::GpuCodegen(
-                                "semantic lowering buffers are unavailable".into(),
-                            )
-                        })?;
-                        let pipeline = self
-                            .ensure_lowering_pipeline_for_semantic(
-                                target,
-                                bufs.n,
-                                token_capacity,
-                                typecheck_hir.capacity,
-                                LoweringArtifactKind::Executable,
-                                &typecheck_hir,
-                                &semantic,
-                            )
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        pipeline
-                            .record(encoder, timer.as_deref_mut())
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                    }
-                    Ok((type_check, typecheck_hir))
-                },
-                |device, queue, bufs, (type_check, typecheck_hir)| {
-                    self.type_checker
-                        .finish_recorded_check(device, &type_check)
-                        .map_err(|err| {
-                            type_check_error_to_compile_error_for_source(
+        let mut forced_tree_capacity = None;
+        let mut require_lexer_boundary = false;
+        let source_capacity = u32::try_from(src.len()).map_err(|_| {
+            CompileError::GpuFrontend("source exceeds lexer address capacity".into())
+        })?;
+        let parser_shape_key = parser_shape_key_for_source(&diagnostic_path);
+        loop {
+            let warm_shape = (!require_lexer_boundary && forced_tree_capacity.is_none())
+                .then(|| self.cached_parser_shape(&parser_shape_key, source_capacity))
+                .flatten();
+            let attempt = if let Some(shape) = warm_shape {
+                self.lexer
+                    .with_recorded_resident_tokens(
+                        src,
+                        |device, queue, bufs, encoder, timer| {
+                            bufs.record_count_readback(encoder);
+                            let recorded = self.record_checked_source_pipeline(
                                 device,
                                 queue,
                                 bufs,
+                                shape.token_capacity,
+                                shape.parser_feature_flags,
+                                Some(shape.tree_capacity),
+                                encoder,
+                                timer,
                                 src,
                                 &diagnostic_path,
-                                err,
-                            )
-                        })?;
-                    target
-                        .map(|target| {
-                            self.lowering_pipeline(target)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_artifact(device, queue)
+                                target,
+                            )?;
+                            self.remember_parser_shape(parser_shape_key, &recorded);
+                            Ok(recorded)
+                        },
+                        |device, queue, bufs, recorded| {
+                            let (token_count, raw_features) = bufs
+                                .read_recorded_count_and_features(device, "lexer.fused.metadata")
                                 .map_err(|err| {
-                                    lowering_error_to_compile_error_for_source(
-                                        device,
-                                        queue,
-                                        bufs,
-                                        &typecheck_hir,
-                                        src,
-                                        &diagnostic_path,
-                                        err,
-                                    )
-                                })
-                        })
-                        .transpose()
-                },
-            )
-            .await
-            .map_err(|err| source_tokenization_failed_for_source(&diagnostic_path, src, err))?
+                                    parser_execution_failed_for_source(&diagnostic_path, src, err)
+                                })?;
+                            let features =
+                                crate::lexer::features::parser_allocation_features(raw_features);
+                            if token_count > shape.token_capacity
+                                || features != shape.parser_feature_flags
+                            {
+                                return Ok(DeferredParserFinish::RetryAfterLexerBoundary);
+                            }
+                            self.finish_checked_source_pipeline(
+                                device,
+                                queue,
+                                bufs,
+                                recorded,
+                                src,
+                                &diagnostic_path,
+                                target,
+                            )
+                        },
+                    )
+                    .await
+            } else {
+                self.lexer
+                    .with_recorded_resident_tokens_after_count(
+                        src,
+                        |device, queue, bufs, token_count, encoder, timer| {
+                            let parser_feature_flags =
+                                crate::lexer::features::parser_allocation_features(
+                                    bufs.parser_feature_flags_value,
+                                );
+                            let recorded = self.record_checked_source_pipeline(
+                                device,
+                                queue,
+                                bufs,
+                                token_count.max(1),
+                                parser_feature_flags,
+                                forced_tree_capacity,
+                                encoder,
+                                timer,
+                                src,
+                                &diagnostic_path,
+                                target,
+                            )?;
+                            self.remember_parser_shape(parser_shape_key, &recorded);
+                            Ok(recorded)
+                        },
+                        |device, queue, bufs, recorded| {
+                            self.finish_checked_source_pipeline(
+                                device,
+                                queue,
+                                bufs,
+                                recorded,
+                                src,
+                                &diagnostic_path,
+                                target,
+                            )
+                        },
+                    )
+                    .await
+            }
+            .map_err(|err| source_tokenization_failed_for_source(&diagnostic_path, src, err))??;
+            match attempt {
+                DeferredParserFinish::Complete(artifact) => return Ok(artifact),
+                DeferredParserFinish::RetryWithTreeCapacity(required) => {
+                    self.release_for_frontend_workspace_replacement(
+                        &self.gpu.device,
+                        FrontendWorkspaceReplacement::Parser,
+                    );
+                    forced_tree_capacity = Some(required);
+                }
+                DeferredParserFinish::RetryAfterLexerBoundary => {
+                    require_lexer_boundary = true;
+                }
+            }
+        }
     }
     /// Type-checks source-pack text without explicit diagnostic paths.
     pub(super) async fn type_check_explicit_source_pack<S: AsRef<str>>(
@@ -876,299 +1449,162 @@ impl<'gpu> GpuCompiler<'gpu> {
                 ));
             }
         };
-        self.lexer
-            .with_recorded_resident_source_pack_tokens_after_count(
-                sources,
-                |device, queue, bufs, token_count, encoder, mut timer| {
-                    let mut record_host_timer =
-                        CompilerHostTimer::new("compile.source-pack.record");
-                    let token_capacity = token_count.max(1);
-                    let parser_feature_flags = crate::lexer::features::parser_allocation_features(
-                        bufs.parser_feature_flags_value,
-                    );
-                    let mut typecheck_preparation = None;
-                    let (parser_tree_capacity, ll1) = self
-                        .run_parser_boundary_with_capacity_reuse(
-                            device,
-                            queue,
-                            ParserBoundaryInput {
-                                token_capacity,
-                                token_buffer: &bufs.tokens_out,
-                                token_count_buffer: &bufs.token_count,
-                                token_file_id_buffer: Some(&bufs.token_file_id),
-                                source_capacity: bufs.n,
-                                source_buffer: &bufs.in_bytes,
-                            },
-                            parser_feature_flags,
-                            "compiler.typecheck.source_pack.parser-boundary",
-                            &mut record_host_timer,
-                            |tree_capacity| {
-                                typecheck_preparation =
-                                    Some(self.prepare_typecheck_for_parser_capacity(
-                                        device,
-                                        bufs.n,
-                                        diagnostic_files.len().max(1) as u32,
-                                        token_capacity,
-                                        bufs,
-                                        tree_capacity,
-                                        parser_feature_flags,
-                                        dependency_pages.as_ref(),
-                                        emit_semantic_interface,
-                                    ));
-                            },
-                        )
-                        .map_err(|err| {
-                            parser_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?;
-                    if !ll1.accepted {
-                        let parser_failure = self
-                            .parser
-                            .current_resident_parser_failure_for_ll1_rejection(
-                                token_capacity,
-                                &self.parse_tables,
-                                Some(parser_tree_capacity),
-                                ll1,
-                            );
-                        debug_parser_rejection(&parser_failure);
-                        return Err(parser_failure_to_compile_error_for_source_pack(
-                            device,
-                            queue,
-                            &bufs.tokens_out.buffer,
-                            &diagnostic_files,
-                            &parser_failure,
-                        ));
-                    }
-                    typecheck_preparation
-                        .expect("parser boundary must prepare the type-check workspace")
-                        .map_err(|err| {
-                            type_check_execution_failed_for_source_pack(&diagnostic_files, err)
-                        })?;
-                    let (typecheck_hir, type_check) = self
-                        .parser
-                        .with_current_resident_buffers_with_tree_capacity_and_features(
-                            token_capacity,
-                            &self.parse_tables,
-                            parser_tree_capacity,
-                            parser_feature_flags,
-                            |parse_bufs| {
-                                let hir = crate::parser::buffers::GpuHirView::from_parser_buffers(
-                                    parse_bufs,
-                                );
-                                let type_check = self.record_typecheck_from_parse_buffers(
-                                    device,
-                                    queue,
-                                    encoder,
-                                    bufs.n,
-                                    diagnostic_files.len().max(1) as u32,
-                                    token_capacity,
-                                    bufs,
-                                    parse_bufs,
-                                    &hir,
-                                    hir.capacity,
-                                    dependency_pages.as_ref(),
-                                    emit_semantic_interface,
-                                    timer.as_deref_mut(),
-                                    |err| {
-                                        type_check_execution_failed_for_source_pack(
-                                            &diagnostic_files,
-                                            err,
-                                        )
-                                    },
-                                )?;
-                                Ok::<_, CompileError>((hir, type_check))
-                            },
-                        )?;
-                    record_host_timer.stamp("typecheck");
-                    if let Some(timer) = timer.as_deref_mut() {
-                        timer.stamp(encoder, "typecheck.done");
-                    }
-                    let semantic_interface = emit_semantic_interface
-                        .then_some(library_id)
-                        .flatten()
-                        .map(|library_id| {
-                            self.type_checker
-                                .record_semantic_interface(
-                                    device,
-                                    queue,
-                                    encoder,
-                                    library_id,
-                                    unit_id,
-                                    bufs.n,
-                                    token_capacity,
-                                    &bufs.in_bytes,
-                                    buffers::semantic_interface_hir_buffers(&typecheck_hir),
-                                )
-                                .map_err(|err| {
-                                    CompileError::GpuFrontend(format!(
-                                        "semantic-interface identity recording failed: {err}"
-                                    ))
-                                })
-                        })
-                        .transpose()?;
-                    if let Some(timer) = timer.as_deref_mut() {
-                        timer.stamp(encoder, "semantic_interface.done");
-                    }
-                    record_host_timer.stamp("semantic_interface");
-                    if lowering_target.is_some() && object_request.is_some() {
-                        return Err(CompileError::GpuCodegen(
-                            "one lowering job cannot request both an executable and an object"
-                                .into(),
-                        ));
-                    }
-                    if let Some(target) = lowering_target {
-                        let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
-                            CompileError::GpuCodegen(
-                                "semantic lowering buffers are unavailable".into(),
-                            )
-                        })?;
-                        let pipeline = self
-                            .ensure_lowering_pipeline_for_semantic(
-                                target,
-                                bufs.n,
-                                token_capacity,
-                                typecheck_hir.capacity,
-                                LoweringArtifactKind::Executable,
-                                &typecheck_hir,
-                                &semantic,
-                            )
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        pipeline
-                            .record(encoder, timer.as_deref_mut())
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                    }
-                    if let Some(request) = object_request {
-                        let semantic = self.type_checker.semantic_artifact().ok_or_else(|| {
-                            CompileError::GpuCodegen(
-                                "semantic lowering buffers are unavailable".into(),
-                            )
-                        })?;
-                        let pipeline = self
-                            .ensure_lowering_pipeline_for_semantic(
-                                request.target(),
-                                bufs.n,
-                                token_capacity,
-                                typecheck_hir.capacity,
-                                LoweringArtifactKind::Object,
-                                &typecheck_hir,
-                                &semantic,
-                            )
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                        let (library_id, unit_id) = request.ids();
-                        pipeline
-                            .record_object(
-                                queue,
+        let parser_shape_key =
+            parser_shape_key_for_source_pack(sources, source_paths, library_id, unit_id);
+        let mut forced_tree_capacity = None;
+        let mut require_lexer_boundary = false;
+        loop {
+            let warm_shape = (!require_lexer_boundary && forced_tree_capacity.is_none())
+                .then(|| self.cached_parser_shape(&parser_shape_key, source_bytes))
+                .flatten();
+            if let Some(shape) = warm_shape {
+                let attempt = self
+                    .lexer
+                    .with_recorded_resident_source_pack_tokens(
+                        sources,
+                        |device, _queue, bufs, encoder, timer| {
+                            let recorded = self.record_checked_source_pack_parser(
+                                device,
+                                bufs,
+                                shape.token_capacity,
+                                shape.parser_feature_flags,
+                                shape.tree_capacity,
                                 encoder,
-                                library_id,
-                                unit_id,
-                                timer.as_deref_mut(),
-                            )
-                            .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                    }
-                    record_host_timer.stamp("lowering");
-                    Ok(RecordedTypeCheckWithDiagnosticBuffers {
-                        type_check,
-                        diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
-                        hir: typecheck_hir,
-                        semantic_interface,
-                    })
-                },
-                |device, queue, recorded| {
-                    let mut finish_timer = CompilerHostTimer::new("compile.source-pack.finish");
-                    self.type_checker
-                        .finish_recorded_check(device, &recorded.type_check)
-                        .map_err(|err| {
-                            type_check_error_to_compile_error_for_source_pack(
+                                timer,
+                                &diagnostic_files,
+                                dependency_pages.as_ref(),
+                                emit_semantic_interface,
+                            )?;
+                            self.remember_parser_shape(parser_shape_key, &recorded);
+                            Ok(recorded)
+                        },
+                        |device, queue, bufs, parser, encoder, timer| {
+                            self.record_checked_source_pack_after_parser(
                                 device,
                                 queue,
-                                &recorded.diagnostic_tokens,
+                                bufs,
+                                parser,
+                                encoder,
+                                timer,
                                 &diagnostic_files,
-                                err,
+                                dependency_pages.as_ref(),
+                                emit_semantic_interface,
+                                library_id,
+                                unit_id,
+                                lowering_target,
+                                object_request,
                             )
-                        })?;
-                    finish_timer.stamp("typecheck_status");
-                    let semantic_interface = recorded
-                        .semantic_interface
-                        .as_ref()
-                        .map(|identity| {
-                            self.type_checker
-                                .finish_semantic_interface(device, queue, identity)
+                        },
+                        |device, queue, bufs, parser, recorded| {
+                            let (token_count, raw_features) = bufs
+                                .read_recorded_count_and_features(
+                                    device,
+                                    "lexer.source-pack.fused.metadata",
+                                )
                                 .map_err(|err| {
-                                    CompileError::GpuFrontend(format!(
-                                        "semantic-interface readback failed: {err}"
-                                    ))
-                                })
-                        })
-                        .transpose()?;
-                    finish_timer.stamp("semantic_interface");
-                    let target_artifact = lowering_target
-                        .map(|target| {
-                            self.lowering_pipeline(target)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_artifact(device, queue)
-                                .map_err(|err| {
-                                    lowering_error_to_compile_error_for_source_pack(
-                                        device,
-                                        queue,
-                                        &recorded.diagnostic_tokens,
-                                        &recorded.hir,
-                                        &diagnostic_files,
-                                        err,
-                                    )
-                                })
-                        })
-                        .transpose()?;
-                    finish_timer.stamp("target_artifact");
-                    let x86_object = object_request
-                        .and_then(|request| match request {
-                            LoweringObjectRequest::X86_64 {
-                                library_id,
-                                unit_id,
-                            } => Some((library_id, unit_id)),
-                            LoweringObjectRequest::Wasm { .. } => None,
-                        })
-                        .map(|(library_id, unit_id)| {
-                            self.lowering_pipeline(LoweringTarget::X86_64)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_x86_object(device, queue, library_id, unit_id)
-                                .map_err(|err| {
-                                    lowering_error_to_compile_error_for_source_pack(
-                                        device,
-                                        queue,
-                                        &recorded.diagnostic_tokens,
-                                        &recorded.hir,
-                                        &diagnostic_files,
-                                        err,
-                                    )
-                                })
-                        })
-                        .transpose()?;
-                    finish_timer.stamp("x86_object");
-                    let wasm_object = object_request
-                        .and_then(|request| match request {
-                            LoweringObjectRequest::Wasm {
-                                library_id,
-                                unit_id,
-                            } => Some((library_id, unit_id)),
-                            LoweringObjectRequest::X86_64 { .. } => None,
-                        })
-                        .map(|(library_id, unit_id)| {
-                            self.lowering_pipeline(LoweringTarget::Wasm)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                                .finish_wasm_object(device, queue, library_id, unit_id)
-                                .map_err(|err| CompileError::GpuCodegen(err.to_string()))
-                        })
-                        .transpose()?;
-                    finish_timer.stamp("wasm_object");
-                    Ok(CheckedSourcePackArtifacts {
-                        semantic_interface,
-                        target_artifact,
-                        x86_object,
-                        wasm_object,
-                    })
-                },
-            )
-            .await
-            .map_err(|err| source_tokenization_failed_for_source_pack(&diagnostic_files, err))?
+                                    parser_execution_failed_for_source_pack(&diagnostic_files, err)
+                                })?;
+                            let features =
+                                crate::lexer::features::parser_allocation_features(raw_features);
+                            if token_count > shape.token_capacity
+                                || features != shape.parser_feature_flags
+                            {
+                                return Ok(DeferredParserFinish::RetryAfterLexerBoundary);
+                            }
+                            let recorded = DeferredParserRecord {
+                                check: parser.check,
+                                token_capacity: parser.token_capacity,
+                                tree_capacity: parser.tree_capacity,
+                                parser_feature_flags: parser.parser_feature_flags,
+                                recorded,
+                            };
+                            self.finish_checked_source_pack_pipeline(
+                                device,
+                                queue,
+                                recorded,
+                                &diagnostic_files,
+                                lowering_target,
+                                object_request,
+                            )
+                        },
+                    )
+                    .await
+                    .map_err(|err| {
+                        source_tokenization_failed_for_source_pack(&diagnostic_files, err)
+                    })??;
+                match attempt {
+                    DeferredParserFinish::Complete(artifacts) => return Ok(artifacts),
+                    DeferredParserFinish::RetryWithTreeCapacity(required) => {
+                        self.release_for_frontend_workspace_replacement(
+                            &self.gpu.device,
+                            FrontendWorkspaceReplacement::Parser,
+                        );
+                        forced_tree_capacity = Some(required);
+                    }
+                    DeferredParserFinish::RetryAfterLexerBoundary => {
+                        require_lexer_boundary = true;
+                    }
+                }
+                continue;
+            }
+            let attempt = self
+                .lexer
+                .with_recorded_resident_source_pack_tokens_after_count(
+                    sources,
+                    |device, queue, bufs, token_count, encoder, timer| {
+                        let parser_feature_flags =
+                            crate::lexer::features::parser_allocation_features(
+                                bufs.parser_feature_flags_value,
+                            );
+                        let recorded = self.record_checked_source_pack_pipeline(
+                            device,
+                            queue,
+                            bufs,
+                            token_count.max(1),
+                            parser_feature_flags,
+                            forced_tree_capacity,
+                            encoder,
+                            timer,
+                            &diagnostic_files,
+                            dependency_pages.as_ref(),
+                            emit_semantic_interface,
+                            library_id,
+                            unit_id,
+                            lowering_target,
+                            object_request,
+                        )?;
+                        self.remember_parser_shape(parser_shape_key, &recorded);
+                        Ok(recorded)
+                    },
+                    |device, queue, deferred| {
+                        self.finish_checked_source_pack_pipeline(
+                            device,
+                            queue,
+                            deferred,
+                            &diagnostic_files,
+                            lowering_target,
+                            object_request,
+                        )
+                    },
+                )
+                .await
+                .map_err(|err| {
+                    source_tokenization_failed_for_source_pack(&diagnostic_files, err)
+                })??;
+            match attempt {
+                DeferredParserFinish::Complete(artifacts) => return Ok(artifacts),
+                DeferredParserFinish::RetryWithTreeCapacity(required) => {
+                    self.release_for_frontend_workspace_replacement(
+                        &self.gpu.device,
+                        FrontendWorkspaceReplacement::Parser,
+                    );
+                    forced_tree_capacity = Some(required);
+                }
+                DeferredParserFinish::RetryAfterLexerBoundary => {
+                    unreachable!("source-pack path does not yet record speculative lexer metadata")
+                }
+            }
+        }
     }
     #[allow(clippy::too_many_arguments)]
     /// Prepares graph-owned type-check storage without recording semantic work.

@@ -57,6 +57,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeAliasOwne
                 "hir_semantic_parent".into(),
                 b.hir_semantic_parent.as_entire_binding(),
             ),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("first_child".into(), b.first_child.as_entire_binding()),
             (
                 "raw_to_hir".into(),
                 b.hir_canonical_raw_to_dense.as_entire_binding(),

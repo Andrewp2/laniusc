@@ -55,7 +55,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint bound = raw_to_hir[raw];
     uint kind = PREDICATE_GENERIC_BOUND;
     predicate.bound = bound;
-    uint owner_raw = owner_value[raw];
+    uint owner_raw = owner_value[dense];
     predicate.owner = owner_raw < gCanonical.raw_capacity ? raw_to_hir[owner_raw] : INVALID;
 
     uint raw_owner = parent[raw];
@@ -69,7 +69,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else
     {
-        uint anchor = subject_anchor[raw];
+        uint anchor = subject_anchor[dense];
         predicate.subject = hir_token_pos[anchor];
     }
 

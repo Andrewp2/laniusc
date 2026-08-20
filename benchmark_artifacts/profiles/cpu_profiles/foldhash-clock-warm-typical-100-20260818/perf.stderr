@@ -1,0 +1,2 @@
+[ perf record: Woken up 15 times to write data ]
+[ perf record: Captured and wrote 5.490 MB /home/andrew-peterson/code/laniusc/benchmark_artifacts/profiles/cpu_profiles/foldhash-clock-warm-typical-100-20260818/perf.data (673 samples) ]

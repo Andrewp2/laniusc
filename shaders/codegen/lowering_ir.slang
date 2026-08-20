@@ -303,6 +303,17 @@ static const uint X86_LIR_OP_ALIAS = 8u;
 static const uint X86_LIR_OP_RETURN = 9u;
 // IR_OPCODE
 static const uint X86_LIR_OP_BRANCH = 10u;
+// Conditional control transfer whose condition is an integer comparison.
+// The compare result is never materialized: local_ordinal is the comparison
+// predicate, result_or_target is the branch target, and operands A/B are the
+// compared values. The branch is taken when the predicate is false.
+// IR_OPCODE
+static const uint X86_LIR_OP_COMPARE_BRANCH_FALSE = 11u;
+// Branch-free lowering of a pure scalar assignment diamond. The false-arm
+// store executes normally; this row compares A/B and conditionally replaces
+// that stored value with C. result_or_target retains the declaration token.
+// IR_OPCODE
+static const uint X86_LIR_OP_SELECT_STORE = 12u;
 // IR_OPCODE
 static const uint X86_LIR_OP_STORE_LOCAL = 14u;
 // IR_OPCODE
@@ -400,6 +411,13 @@ static const uint X86_LIR_BINARY_BIT_XOR_I32 = 10u;
 static const uint X86_LIR_BINARY_SHL_I32 = 11u;
 // IR_OPCODE
 static const uint X86_LIR_BINARY_SHR_I32 = 12u;
+// Division and remainder by a statically known positive power of two. The
+// divisor is carried directly in operand C instead of naming a value row.
+// Signedness remains the semantic scalar type in operand metadata.
+// IR_OPCODE
+static const uint X86_LIR_BINARY_DIV_CONST_POW2_I32 = 13u;
+// IR_OPCODE
+static const uint X86_LIR_BINARY_REM_CONST_POW2_I32 = 14u;
 // IR_OPCODE
 static const uint X86_LIR_BINARY_ADD_F32 = 16u;
 // IR_OPCODE
@@ -408,6 +426,13 @@ static const uint X86_LIR_BINARY_SUB_F32 = 17u;
 static const uint X86_LIR_BINARY_MUL_F32 = 18u;
 // IR_OPCODE
 static const uint X86_LIR_BINARY_DIV_F32 = 19u;
+// Signed division and remainder by a statically known positive non-power-of-
+// two divisor. Operand C carries the divisor; instruction selection derives
+// the multiplier and shift without retaining the constant producer.
+// IR_OPCODE
+static const uint X86_LIR_BINARY_DIV_CONST_I32 = 20u;
+// IR_OPCODE
+static const uint X86_LIR_BINARY_REM_CONST_I32 = 21u;
 
 // Wasm target-IR opcodes intentionally equal their final primary opcode byte.
 // IR_OPCODE
@@ -549,9 +574,10 @@ static const uint X86_LIR_METADATA_STRING_LEN = 0x20000000u;
 // The compared value is pointer-width, but its RHS is a narrow integer null
 // constant. Keeping this in target metadata avoids weakening semantic types.
 static const uint X86_LIR_METADATA_RHS_NARROW = 0x10000000u;
-// AGGREGATE_INIT's source operand is an immediate machine word rather than a
-// semantic value. Tagged aggregate discriminants use this path so target
-// lowering does not need to manufacture a fake source expression.
+// One target operand is an immediate machine word rather than a semantic
+// value. AGGREGATE_INIT uses operand A; integer binary and compare operations
+// use operand C. Keeping this explicit prevents resolve/location passes from
+// treating literal bits as a target-row reference.
 static const uint X86_LIR_METADATA_IMMEDIATE = 0x08000000u;
 // The instruction belongs to a native string's pointer/length pair. This is
 // deliberately explicit: concrete aggregate type IDs may share their low byte
@@ -568,10 +594,28 @@ static const uint SEMANTIC_LIR_AGGREGATE_TAG_MASK = 0x7fffffffu;
 // them to function-relative frame slots after target paging has been replayed.
 // IR_OPCODE
 static const uint X86_LOCATION_REGISTER = 0x80000000u;
+// During allocation, a scalar producer immediately assigned to a declaration
+// may name that declaration instead of receiving a temporary home. The later
+// location pass resolves the dense token to its physical register or stack
+// slot after declaration allocation has completed.
+// IR_OPCODE
+static const uint X86_LOCATION_DECLARATION = 0x40000000u;
 // IR_OPCODE
 static const uint X86_LOCATION_PAYLOAD_MASK = 0x3fffffffu;
 // IR_OPCODE
 static const uint X86_LOCATION_INVALID = 0xffffffffu;
+static const uint X86_DECLARATION_MULTIPLE_DEFINITIONS = 0xfffffffeu;
+
+// x86 semantic-row states. Nonzero rows survive target-LIR compaction; the
+// specialized states also carry optimizer decisions into later location and
+// instruction-selection passes without another semantic-sized buffer.
+static const uint X86_SEMANTIC_LIVE = 1u;
+static const uint X86_SEMANTIC_SELECT = 2u;
+static const uint X86_SEMANTIC_COALESCED_ALIAS = 4u;
+static const uint X86_SEMANTIC_COMPARE_ALIAS_BRANCH = 8u;
+
+static const uint X86_FUNCTION_REGISTER_DIRECT_ABI_HOMES = 1u;
+static const uint X86_FUNCTION_REGISTER_CALL_WITH_LOOP = 2u;
 
 // Allocatable caller-saved registers for short semantic value lifetimes.
 // Their cyclic assignment is sound for intervals shorter than this count.
@@ -708,7 +752,6 @@ struct SemanticLirLocal
 
 struct SemanticLirSchedule
 {
-    uint function_id;
     uint execution_region;
     uint execution_rank;
     uint execution_tie;
@@ -747,6 +790,13 @@ struct TargetLirFunction
     uint flags;
 };
 
+// x86 specializes the shared flags word after target-function construction.
+// The low bits hold the compact frame-slot count; the high bit records that
+// the function has no calls or stack-resident values and may omit RBP setup.
+static const uint X86_TARGET_FUNCTION_FRAMELESS = 0x80000000u;
+static const uint X86_TARGET_FUNCTION_STACKLESS_CALLER = 0x40000000u;
+static const uint X86_TARGET_FUNCTION_FRAME_SLOT_MASK = 0x3fffffffu;
+
 // This is the existing x86 virtual-instruction physical layout, now named as
 // the target-specific second lowering level.
 struct X86LirCore
@@ -773,6 +823,37 @@ struct X86LirLocations
     uint a;
     uint b;
     uint c;
+};
+
+struct X86SelectInfo
+{
+    uint condition;
+    uint true_value;
+    uint false_value;
+    uint declaration;
+};
+
+struct X86DeclarationAnalysis
+{
+    uint last_read;
+    uint last_access;
+    uint definition;
+    uint read_count;
+};
+
+struct X86FunctionRegisterAnalysis
+{
+    uint first_call;
+    uint first_rdx_clobber;
+    uint first_rcx_clobber;
+    uint flags;
+};
+
+struct X86ValueAnalysis
+{
+    uint value;
+    uint known;
+    uint replacement;
 };
 
 struct WasmLirInstruction

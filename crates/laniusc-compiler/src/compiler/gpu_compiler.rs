@@ -16,6 +16,7 @@ mod x86_codegen;
 
 mod helpers;
 mod host_timer;
+mod resident_source_pack_executor;
 mod stable_unit_plan;
 mod unit_cache;
 use helpers::{
@@ -65,7 +66,55 @@ pub struct GpuCompiler<'gpu> {
     pub(super) x86_lowering: Result<Box<GpuLoweringWorkspaceCache>, String>,
     stable_unit_plan: std::sync::Mutex<Option<stable_unit_plan::StableUnitPlan>>,
     compiled_unit_cache: std::sync::Mutex<unit_cache::CompiledUnitCache>,
+    parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
+}
+
+// A worst-case 10,000-file project may place each file in its own bounded
+// compilation unit. Keep one complete warm-project working set while bounding
+// daemon metadata to a few megabytes.
+const MAX_CACHED_PARSER_SHAPES: usize = 16_384;
+
+#[derive(Clone, Copy)]
+struct CachedParserShape {
+    shape: crate::parser::driver::ResidentParserJobShape,
+    last_used: u64,
+}
+
+#[derive(Default)]
+struct ParserShapeCache {
+    entries: std::collections::HashMap<blake3::Hash, CachedParserShape>,
+    clock: u64,
+}
+
+impl ParserShapeCache {
+    fn get(&mut self, key: &blake3::Hash) -> Option<crate::parser::driver::ResidentParserJobShape> {
+        self.clock = self.clock.wrapping_add(1);
+        let entry = self.entries.get_mut(key)?;
+        entry.last_used = self.clock;
+        Some(entry.shape)
+    }
+
+    fn insert(&mut self, key: blake3::Hash, shape: crate::parser::driver::ResidentParserJobShape) {
+        self.clock = self.clock.wrapping_add(1);
+        if self.entries.len() >= MAX_CACHED_PARSER_SHAPES && !self.entries.contains_key(&key) {
+            if let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| *key)
+            {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.entries.insert(
+            key,
+            CachedParserShape {
+                shape,
+                last_used: self.clock,
+            },
+        );
+    }
 }
 
 fn prepare_codegen_kernels(
@@ -373,6 +422,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 x86_lowering,
                 stable_unit_plan: std::sync::Mutex::new(None),
                 compiled_unit_cache: std::sync::Mutex::new(unit_cache::CompiledUnitCache::default()),
+                parser_shape_cache: std::sync::Mutex::new(ParserShapeCache::default()),
                 codegen_kernels,
             })
         })

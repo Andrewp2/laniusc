@@ -95,6 +95,14 @@ impl GpuX86LinkInput {
     pub(crate) fn for_executable(
         source_objects: &[GpuX86RelocatableObject],
     ) -> Result<Self, String> {
+        Self::for_executable_refs(source_objects)
+    }
+
+    /// Flattens borrowed object containers without first cloning their payloads.
+    pub(crate) fn for_executable_refs<'a>(
+        source_objects: impl IntoIterator<Item = &'a GpuX86RelocatableObject>,
+    ) -> Result<Self, String> {
+        let source_objects = source_objects.into_iter().collect::<Vec<_>>();
         if source_objects.is_empty() {
             return Err("x86 link requires at least one object".to_string());
         }
@@ -106,7 +114,7 @@ impl GpuX86LinkInput {
         );
         input.objects.reserve(source_objects.len());
 
-        for (object_index, object) in source_objects.iter().enumerate() {
+        for (object_index, object) in source_objects.iter().copied().enumerate() {
             input.append_object(object_index, object)?;
             input.text.extend_resident(&object.text);
             input.rodata.extend_resident(&object.rodata);
@@ -378,7 +386,7 @@ impl GpuX86Linker {
         queue.write_buffer(
             &relocation_status.buffer,
             0,
-            &u32_words_bytes(&[1, 0, u32::MAX, input.relocations.len() as u32]),
+            u32_words_bytes(&[1, 0, u32::MAX, input.relocations.len() as u32]),
         );
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.x86.link.relocate.encoder"),
@@ -784,7 +792,7 @@ impl GpuX86Linker {
 fn storage_input_u32(device: &wgpu::Device, label: &str, words: &[u32]) -> wgpu::Buffer {
     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
-        contents: &u32_words_bytes(words),
+        contents: u32_words_bytes(words),
         usage: wgpu::BufferUsages::STORAGE,
     })
 }

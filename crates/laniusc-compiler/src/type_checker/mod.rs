@@ -52,6 +52,7 @@ use crate::gpu::{
         ComputeInvocation,
         ExactLookupOperation,
         PrefixScanOperation,
+        PrefixScanPairOperation,
         RadixDispatchDomain,
         RadixSortDefinition,
         RadixSortDispatch,
@@ -437,7 +438,6 @@ type TypeCheckPasses = KernelRegistry;
 // consumed indirectly by a reflected bind group.
 struct ResidentTypeCheckWorkspace {
     resettable_buffers: Vec<crate::gpu::buffers::ResettableBuffer>,
-    job_storage_resets: Vec<crate::gpu::operations::ResetGraphAllocationsOperation>,
     /// Dead storage inherited from the parser/lexer boundary.
     ///
     /// The type-check graph may consume only a subset of these allocations.
@@ -487,16 +487,6 @@ struct ResidentTypeCheckWorkspace {
 }
 
 impl ResidentTypeCheckWorkspace {
-    fn clear_job_storage(&self, encoder: &mut wgpu::CommandEncoder) {
-        assert!(
-            !self.job_storage_resets.is_empty(),
-            "resident workspace reset operations must be installed"
-        );
-        for reset in &self.job_storage_resets {
-            reset.record(encoder);
-        }
-    }
-
     fn can_reuse_for(&self, key: ResidentTypeCheckCacheKey) -> bool {
         self.cache_key.covers(key)
     }

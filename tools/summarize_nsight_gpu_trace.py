@@ -69,6 +69,20 @@ REGIME_METRICS = {
 
 SUMMED_REGIME_METRICS = {"instructions_executed", "compute_warps_launched"}
 
+FRAME_ONLY_METRICS = {
+    "gpu_frame_time_ms": "GPU frame time",
+    "dispatch_count": "FE_A.TriageSCG.gr__dispatch_count.sum",
+    "compute_queue_active_pct": (
+        "FE_A.TriageSCG.gr__compute_cycles_active_queue_sync.avg."
+        "pct_of_peak_sustained_elapsed"
+    ),
+    "command_wait_for_idle_stall_pct": (
+        "FE_A.TriageSCG.fe__cycles_stalled_cmd_wfi_queue_sync.avg."
+        "pct_of_peak_sustained_elapsed"
+    ),
+    "command_go_idle_count": "FE_B.TriageSCG.fe__output_ops_cmd_go_idle_queue_sync.sum",
+}
+
 NSIGHT_PROFILE_SCHEMA = "lanius.nsight-gpu-profile.v1"
 REPRO_FIELDS = {
     "Device Name": "device_name",
@@ -131,6 +145,14 @@ def summarize_passes(events: list[tuple[str, float]]) -> list[dict[str, object]]
 
 
 def compiler_phase(pass_name: str) -> str:
+    if pass_name.startswith(("codegen/lir/semantic/", "codegen/lir/functions/")):
+        return "semantic_lir"
+    if pass_name.startswith("codegen/lir/schedule/"):
+        return "target_lir"
+    if pass_name.startswith("codegen/lir/x86/"):
+        return "x86_codegen"
+    if pass_name.startswith("codegen/lir/wasm/"):
+        return "wasm_codegen"
     if pass_name.startswith(("lexer.", "dfa_", "pair_")):
         return "lexer"
     if pass_name.startswith("type_check"):
@@ -163,6 +185,8 @@ def compiler_phase(pass_name: str) -> str:
 
 def compiler_stage(pass_name: str) -> str:
     """Return the narrowest stable compiler stage expressed by a pass label."""
+    if pass_name.startswith("codegen/lir/"):
+        pass_name = pass_name.removeprefix("codegen/").replace("/", ".")
     phase = compiler_phase(pass_name)
     if phase == "parser_hir":
         return parser_hir_stage(pass_name)
@@ -417,19 +441,29 @@ def correlate_regimes(
             f"({len(events)} != {len(regimes)})"
         )
 
+    flattened_names = [
+        regime.get("flattened_event_name", "").strip() for regime in regimes
+    ]
     occurrences: dict[str, int] = {}
     rows = []
     for event_index, ((name, milliseconds), regime) in enumerate(zip(events, regimes)):
-        regime_name = regime.get("flattened_event_name", "").strip()
-        if regime_name != name:
+        regime_name = flattened_names[event_index]
+        if regime_name != name and not regime_name.endswith(f"/{name}"):
             raise ValueError(
                 "event/regime row mismatch at index "
                 f"{event_index}: {name!r} != {regime_name!r}"
             )
+        # Nsight exports a scoped debug group as a duration-bearing parent row
+        # followed by its qualified child actions. Keeping both counts the same
+        # GPU interval twice, so retain only the leaf compiler operations.
+        if event_index + 1 < len(flattened_names) and flattened_names[
+            event_index + 1
+        ].startswith(f"{regime_name}/"):
+            continue
         occurrence = occurrences.get(name, 0)
         occurrences[name] = occurrence + 1
         row: dict[str, object] = {
-            "event_index": event_index,
+            "event_index": len(rows),
             "pass_name": name,
             "occurrence": occurrence,
             "time_ms": milliseconds,
@@ -515,6 +549,10 @@ def build_nsight_profile(export_dir: pathlib.Path) -> dict[str, object]:
                 }
             )
 
+    event_pairs = [
+        (str(event["pass_name"]), float(event["time_ms"])) for event in correlated
+    ]
+
     # Keep invocation timing separate from duration-weighted per-pass hardware
     # metrics. Repeating every counter on every invocation more than doubles
     # canonical result size without adding information to the viewer.
@@ -538,7 +576,11 @@ def build_nsight_profile(export_dir: pathlib.Path) -> dict[str, object]:
         gpu_start_ms += milliseconds
 
     frame = read_frame_metrics(export_dir / "GPUTRACE_FRAME.xls")
+    frame.update(read_frame_metrics(export_dir / "FRAME.xls"))
     frame_metrics = {alias: frame.get(metric_name) for alias, metric_name in REGIME_METRICS.items()}
+    frame_metrics.update(
+        {alias: frame.get(metric_name) for alias, metric_name in FRAME_ONLY_METRICS.items()}
+    )
     for row in passes:
         row["phase"] = compiler_phase(str(row["pass_name"]))
         row["stage"] = compiler_stage(str(row["pass_name"]))
@@ -557,8 +599,8 @@ def build_nsight_profile(export_dir: pathlib.Path) -> dict[str, object]:
         "frame_metrics": frame_metrics,
         "events": events,
         "passes": passes,
-        "phases": summarize_phases(raw_events),
-        "stages": summarize_stages(raw_events),
+        "phases": summarize_phases(event_pairs),
+        "stages": summarize_stages(event_pairs),
     }
 
 

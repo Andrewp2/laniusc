@@ -6,7 +6,7 @@ use std::{
         Arc,
         LazyLock,
         Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -246,6 +246,9 @@ static BUFFER_CREATIONS_BY_LABEL: LazyLock<Mutex<HashMap<Arc<str>, u64>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static BUFFER_PHASE_SNAPSHOTS: LazyLock<Mutex<Vec<TrackedBufferPhaseSnapshot>>> =
     LazyLock::new(|| Mutex::new(Vec::new()));
+static BUFFER_RESIDENCY_TIMELINE: LazyLock<Mutex<Option<TrackedBufferResidencyTimeline>>> =
+    LazyLock::new(|| Mutex::new(None));
+static BUFFER_RESIDENCY_TIMELINE_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Process-wide logical allocation totals for live buffers created through
 /// Lanius's typed GPU-buffer helpers. Cloning a buffer handle does not count as
@@ -260,6 +263,23 @@ pub struct TrackedBufferAllocationStats {
 pub struct TrackedBufferPhaseSnapshot {
     pub phase: Arc<str>,
     pub stats: TrackedBufferAllocationStats,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrackedBufferResidencyPoint {
+    pub elapsed_ns: u64,
+    pub allocations: u64,
+    pub bytes: u64,
+    pub event: &'static str,
+    pub allocation_id: Option<u64>,
+    pub label: Option<Arc<str>>,
+    pub changed_bytes: u64,
+}
+
+#[derive(Debug)]
+struct TrackedBufferResidencyTimeline {
+    started: std::time::Instant,
+    points: Vec<TrackedBufferResidencyPoint>,
 }
 
 pub fn tracked_buffer_allocation_stats() -> TrackedBufferAllocationStats {
@@ -295,6 +315,74 @@ pub fn reset_tracked_buffer_allocation_peaks() -> TrackedBufferAllocationStats {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clear();
     current
+}
+
+/// Starts an opt-in job-relative record of physical LaniusBuffer residency.
+///
+/// Profiling owns this boundary. Normal compilation leaves the recorder absent,
+/// so allocation and release keep their existing atomic-only fast path.
+pub fn begin_tracked_buffer_residency_timeline(enabled: bool) {
+    BUFFER_RESIDENCY_TIMELINE_ENABLED.store(false, Ordering::Release);
+    let mut timeline = BUFFER_RESIDENCY_TIMELINE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !enabled {
+        *timeline = None;
+        return;
+    }
+    let stats = tracked_buffer_allocation_stats();
+    *timeline = Some(TrackedBufferResidencyTimeline {
+        started: std::time::Instant::now(),
+        points: vec![TrackedBufferResidencyPoint {
+            elapsed_ns: 0,
+            allocations: stats.allocations,
+            bytes: stats.bytes,
+            event: "baseline",
+            allocation_id: None,
+            label: None,
+            changed_bytes: 0,
+        }],
+    });
+    BUFFER_RESIDENCY_TIMELINE_ENABLED.store(true, Ordering::Release);
+}
+
+pub fn tracked_buffer_residency_timeline() -> Vec<TrackedBufferResidencyPoint> {
+    BUFFER_RESIDENCY_TIMELINE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .map_or_else(Vec::new, |timeline| timeline.points.clone())
+}
+
+fn record_buffer_residency_event(
+    event: &'static str,
+    allocation_id: u64,
+    label: &Arc<str>,
+    changed_bytes: u64,
+) {
+    if !BUFFER_RESIDENCY_TIMELINE_ENABLED.load(Ordering::Acquire) {
+        return;
+    }
+    let mut timeline = BUFFER_RESIDENCY_TIMELINE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(timeline) = timeline.as_mut() else {
+        return;
+    };
+    let stats = tracked_buffer_allocation_stats();
+    timeline.points.push(TrackedBufferResidencyPoint {
+        elapsed_ns: timeline
+            .started
+            .elapsed()
+            .as_nanos()
+            .min(u128::from(u64::MAX)) as u64,
+        allocations: stats.allocations,
+        bytes: stats.bytes,
+        event,
+        allocation_id: Some(allocation_id),
+        label: Some(label.clone()),
+        changed_bytes,
+    });
 }
 
 /// Captures live tracked storage at a named job/phase boundary.
@@ -406,6 +494,7 @@ impl BufferAllocationLedger {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .insert(buffer.clone(), (id, label.clone(), bytes));
         }
+        record_buffer_residency_event("allocate", id, &label, bytes);
         Arc::new(Self {
             id,
             bytes,
@@ -437,6 +526,8 @@ impl Drop for BufferAllocationLedger {
         if remove {
             labels.remove(&self.label);
         }
+        drop(labels);
+        record_buffer_residency_event("release", self.id, &self.label, self.bytes);
     }
 }
 
@@ -1243,8 +1334,6 @@ pub fn readback_bytes(
 pub(crate) enum JobResetPolicy {
     /// Clear the allocation before each job because some first read requires a baseline value.
     ClearBeforeJob,
-    /// Every row that can be read is overwritten by an earlier pass in the same job.
-    OverwriteBeforeRead,
 }
 
 /// Create a STORAGE buffer (read/write) sized for an array of `T` using WGSL/std430 size/stride.
@@ -1382,5 +1471,31 @@ mod tests {
         );
         reset_tracked_buffer_allocation_peaks();
         assert!(tracked_buffer_phase_snapshots().is_empty());
+    }
+
+    #[test]
+    fn residency_timeline_records_physical_allocation_lifetime() {
+        let _guard = ALLOCATION_LEDGER_TEST_LOCK.lock().unwrap();
+        begin_tracked_buffer_residency_timeline(true);
+        let baseline = tracked_buffer_allocation_stats();
+        let ledger = BufferAllocationLedger::new(77, "test.buffer-timeline");
+        drop(ledger);
+
+        let points = tracked_buffer_residency_timeline();
+        assert_eq!(points.len(), 3);
+        assert_eq!(points[0].event, "baseline");
+        assert_eq!(
+            (points[0].allocations, points[0].bytes),
+            (baseline.allocations, baseline.bytes)
+        );
+        assert_eq!(points[1].event, "allocate");
+        assert_eq!(points[1].changed_bytes, 77);
+        assert_eq!(points[2].event, "release");
+        assert_eq!(points[2].changed_bytes, 77);
+        assert_eq!(
+            (points[2].allocations, points[2].bytes),
+            (baseline.allocations, baseline.bytes)
+        );
+        begin_tracked_buffer_residency_timeline(false);
     }
 }

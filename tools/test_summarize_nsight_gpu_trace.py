@@ -22,6 +22,9 @@ class NsightCompilerStageTests(unittest.TestCase):
         self.assertEqual(compiler_phase("lir.wasm.emit"), "wasm_codegen")
         self.assertEqual(compiler_phase("parser_hir_literal_values"), "parser_hir")
         self.assertEqual(compiler_phase("source_file_token_end"), "parser_hir")
+        self.assertEqual(compiler_phase("codegen/lir/semantic/project"), "semantic_lir")
+        self.assertEqual(compiler_phase("codegen/lir/schedule/scatter"), "target_lir")
+        self.assertEqual(compiler_phase("codegen/lir/x86/emit"), "x86_codegen")
 
     def test_x86_pipeline_has_distinct_stages(self) -> None:
         expected = {
@@ -84,6 +87,7 @@ class NsightCompilerStageTests(unittest.TestCase):
                 "lir.x86.emit\t25\t70\n"
             )
             (directory / "GPUTRACE_FRAME.xls").write_text(
+                "GPU frame time\t6.5\n"
                 "GPUTrace.sm__throughput.avg.pct_of_peak_sustained_elapsed\t40\n"
                 "FBSP.TriageSCG.dramc__throughput.avg.pct_of_peak_sustained_elapsed\t55\n"
             )
@@ -106,6 +110,35 @@ class NsightCompilerStageTests(unittest.TestCase):
         self.assertEqual(passes["lexer.dfa-local.batch"]["sm_throughput_pct"], 80.0)
         self.assertEqual(passes["lir.x86.emit"]["dram_throughput_pct"], 70.0)
         self.assertEqual(profile["frame_metrics"]["sm_throughput_pct"], 40.0)
+        self.assertEqual(profile["frame_metrics"]["gpu_frame_time_ms"], 6.5)
+
+    def test_nested_dispatches_replace_their_batch_container(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            (directory / "D3DPERF_EVENTS.xls").write_text(
+                "event_text\ttime_ms\n"
+                "parser.resident.batch\t3.0\n"
+                "        parser/tokens_to_kinds\t2.0\n"
+                "        hir_canonical_core\t1.0\n"
+            )
+            (directory / "GPUTRACE_REGIMES.xls").write_text(
+                "flattened_event_name\tGPUTrace.sm__throughput.avg.pct_of_peak_sustained_elapsed\n"
+                "parser.resident.batch\t20\n"
+                "parser.resident.batch/parser/tokens_to_kinds\t30\n"
+                "parser.resident.batch/hir_canonical_core\t40\n"
+            )
+
+            profile = build_nsight_profile(directory)
+
+        self.assertEqual(profile["event_count"], 2)
+        self.assertEqual(profile["labeled_gpu_time_ms"], 3.0)
+        self.assertEqual(
+            [event["pass_name"] for event in profile["events"]],
+            ["parser/tokens_to_kinds", "hir_canonical_core"],
+        )
+        passes = {row["pass_name"]: row for row in profile["passes"]}
+        self.assertEqual(passes["parser/tokens_to_kinds"]["sm_throughput_pct"], 30.0)
+        self.assertEqual(passes["hir_canonical_core"]["sm_throughput_pct"], 40.0)
 
 
 if __name__ == "__main__":

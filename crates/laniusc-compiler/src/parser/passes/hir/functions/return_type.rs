@@ -50,16 +50,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirFnReturnTypeP
                 "hir_semantic_count".into(),
                 b.hir_semantic_count.as_entire_binding(),
             ),
+            ("parent".into(), b.parent.as_entire_binding()),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_type_form".into(), b.hir_type_form.as_entire_binding()),
-            (
-                "hir_fn_signature_return_owner".into(),
-                b.hir_fn_signature_return_owner_a.as_entire_binding(),
-            ),
-            (
-                "hir_fn_signature_function_owner".into(),
-                b.hir_fn_signature_function_owner_a.as_entire_binding(),
-            ),
             (
                 "raw_to_hir".into(),
                 b.hir_canonical_raw_to_dense.as_entire_binding(),

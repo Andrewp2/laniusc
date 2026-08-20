@@ -73,6 +73,12 @@ impl PackOffsetsStatusPass {
                 "partial_parse_status".into(),
                 buffers.partial_parse_status.as_entire_binding(),
             ),
+            (
+                "active_stack_thread_dispatch_args".into(),
+                buffers
+                    .active_stack_thread_dispatch_args
+                    .as_entire_binding(),
+            ),
         ]);
         let operation = crate::parser::compiler_graph::PACK_OFFSETS_STATUS;
         let bind_group = cache

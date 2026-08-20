@@ -1,0 +1,2 @@
+[ perf record: Woken up 13 times to write data ]
+[ perf record: Captured and wrote 5.611 MB /home/andrew-peterson/code/laniusc/benchmark_artifacts/profiles/cpu_profiles/parser-table-fingerprint-warm-typical-100-20260818/perf.data (688 samples) ]

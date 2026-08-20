@@ -127,6 +127,20 @@ pub fn record_gpu_span(lane: &str, name: &str, anchor: Instant, start_ms: f64, d
     );
 }
 
+/// Records elapsed time between two Lanius GPU submissions.
+///
+/// Timestamp queries measure this wall-clock gap, but no Lanius shader is
+/// executing during it, so it must not be reported as GPU execution.
+pub fn record_gpu_submission_gap(name: &str, anchor: Instant, start_ms: f64, dur_ms: f64) {
+    record_span_at(
+        "submission_gap",
+        "gpu.submission_gap",
+        name,
+        |state| state.instant_us(anchor) + start_ms * 1000.0,
+        dur_ms * 1000.0,
+    );
+}
+
 /// Records an instant trace event on a lane.
 pub fn record_instant(lane: &str, name: &str, at: Instant) {
     match state().lock() {

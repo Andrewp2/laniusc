@@ -60,7 +60,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         output: &Path,
     ) -> Result<u64, CompileError> {
         let limits = self.resident_source_unit_limits();
-        if self.path_manifest_uses_bounded_build(source_pack, limits) {
+        if path_manifest_requires_file_backed_build(source_pack, limits) {
             let artifact = self
                 .compile_path_manifest_bounded_artifact(source_pack, target, limits)
                 .await?;
@@ -90,41 +90,27 @@ impl<'gpu> GpuCompiler<'gpu> {
         })
     }
 
-    fn path_manifest_uses_bounded_build(
-        &self,
-        source_pack: &ExplicitSourcePackPathManifest,
-        limits: CompilationUnitLimits,
-    ) -> bool {
-        source_pack
-            .files
-            .iter()
-            .map(|file| file.library_id)
-            .collect::<std::collections::BTreeSet<_>>()
-            .len()
-            > 1
-            || source_pack.requires_bounded_compilation_with_limits(limits)
-    }
-
     async fn compile_path_manifest(
         &self,
         source_pack: &ExplicitSourcePackPathManifest,
         target: SourcePackArtifactTarget,
     ) -> Result<Vec<u8>, CompileError> {
         let limits = self.resident_source_unit_limits();
-        // A manifest with multiple libraries must retain its dependency graph
-        // even when the aggregate source fits the resident unit.  Flattening
-        // such a manifest into one ordinary source-pack job erases library
-        // identity and makes backend lowering observe declarations from the
-        // wrong unit.  Use the same bounded-unit executor for this case; it is
-        // still capacity-bounded and is the only path that persists semantic
-        // interfaces between libraries.
-        let bounded = self.path_manifest_uses_bounded_build(source_pack, limits);
+        // Multiple libraries retain their dependency graph and nominal unit
+        // identities. Small projects carry compact interfaces and objects in
+        // memory; projects above one resident source unit persist them between
+        // bounded jobs instead.
+        let file_backed = path_manifest_requires_file_backed_build(source_pack, limits);
+        let resident_units = !file_backed && path_manifest_has_multiple_libraries(source_pack);
         let report_memory = crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false);
         if report_memory {
             crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
         }
-        let result = if bounded {
+        let result = if file_backed {
             self.compile_path_manifest_bounded(source_pack, target, limits)
+                .await
+        } else if resident_units {
+            self.compile_path_manifest_resident_units(source_pack, target, limits)
                 .await
         } else {
             let source_pack = load_explicit_source_pack_from_path_manifest(source_pack)?;
@@ -145,7 +131,13 @@ impl<'gpu> GpuCompiler<'gpu> {
             let peak = crate::gpu::buffers::tracked_buffer_allocation_peak_stats();
             eprintln!(
                 "source_pack_scale target={target:?} mode={} source_bytes={} source_files={} units={} max_unit_bytes={} peak_gpu_bytes={} peak_gpu_allocations={}",
-                if bounded { "bounded" } else { "resident" },
+                if file_backed {
+                    "file-backed"
+                } else if resident_units {
+                    "resident-units"
+                } else {
+                    "resident-flat"
+                },
                 source_pack
                     .files
                     .iter()
@@ -162,6 +154,22 @@ impl<'gpu> GpuCompiler<'gpu> {
             }
         }
         result
+    }
+
+    async fn compile_path_manifest_resident_units(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+        target: SourcePackArtifactTarget,
+        limits: CompilationUnitLimits,
+    ) -> Result<Vec<u8>, CompileError> {
+        let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
+        let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
+        let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
+        let mut executor =
+            super::resident_source_pack_executor::ResidentSourcePackExecutor::new(self, target);
+        execute_path_batched_link_build_async(source_pack, &build_plan, batch_limits, &mut executor)
+            .await
+            .map(|result| result.linked_output)
     }
 
     pub(in crate::compiler) async fn compile_path_manifest_bounded(
@@ -253,6 +261,23 @@ impl<'gpu> GpuCompiler<'gpu> {
             _root: artifact_root,
         })
     }
+}
+
+fn path_manifest_has_multiple_libraries(source_pack: &ExplicitSourcePackPathManifest) -> bool {
+    source_pack
+        .files
+        .iter()
+        .map(|file| file.library_id)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        > 1
+}
+
+fn path_manifest_requires_file_backed_build(
+    source_pack: &ExplicitSourcePackPathManifest,
+    limits: CompilationUnitLimits,
+) -> bool {
+    source_pack.requires_bounded_compilation_with_limits(limits)
 }
 
 struct CompletedBoundedArtifact {
@@ -374,6 +399,11 @@ mod tests {
             }],
         };
         assert!(!small_multi_library.requires_bounded_compilation_with_limits(limits));
+        assert!(path_manifest_has_multiple_libraries(&small_multi_library));
+        assert!(!path_manifest_requires_file_backed_build(
+            &small_multi_library,
+            limits
+        ));
 
         let oversized = ExplicitSourcePackPathManifest {
             files: vec![file(0, 0, limits.max_source_bytes + 1)],
@@ -392,6 +422,10 @@ mod tests {
             }],
         };
         assert!(oversized_aggregate.requires_bounded_compilation_with_limits(limits));
+        assert!(path_manifest_requires_file_backed_build(
+            &oversized_aggregate,
+            limits
+        ));
 
         let many_files = ExplicitSourcePackPathManifest {
             files: (0..=limits.max_source_files)

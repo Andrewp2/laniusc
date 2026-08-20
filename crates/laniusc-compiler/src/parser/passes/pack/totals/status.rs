@@ -70,6 +70,12 @@ impl PackTotalsStatusPass {
                 "partial_parse_status".into(),
                 buffers.partial_parse_status.as_entire_binding(),
             ),
+            (
+                "active_stack_thread_dispatch_args".into(),
+                buffers
+                    .active_stack_thread_dispatch_args
+                    .as_entire_binding(),
+            ),
         ]);
         let bind_group = cache
             .reflected_for_graph_pass_data(

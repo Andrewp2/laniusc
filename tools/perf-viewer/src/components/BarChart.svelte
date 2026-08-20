@@ -1,7 +1,7 @@
 <script lang="ts">
   import { scaleLinear, scaleLog } from 'd3';
 
-  export interface BarValue { name: string; value: number; color: string }
+  export interface BarValue { name: string; value: number; color: string; contextOnly?: boolean }
   interface Props {
     values: BarValue[];
     unit: string;
@@ -56,7 +56,7 @@
       {#each values as value, index}
         {@const y = 16 + index * 42}
         {@const barWidth = Math.max(2, layout.scale(value.value))}
-        <text class="bar-label" x="0" y={y + 22}>{value.name}</text>
+        <text class="bar-label" class:context-only={value.contextOnly} x="0" y={y + 22}>{value.name}</text>
         <rect x={layout.left} y={y + 6} width={barWidth} height="24" rx="3" fill={value.color} opacity=".9"><title>{value.name}: {valueFormatter(value.value)}</title></rect>
         <text class="bar-label" x={Math.min(layout.width - layout.right + 8, layout.left + barWidth + 8)} y={y + 23}>
           {valueFormatter(value.value)}

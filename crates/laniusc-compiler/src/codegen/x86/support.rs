@@ -32,8 +32,14 @@ fn trace_event(stage: &str, event: &str) {
 
 const INCREMENTAL_UPLOAD_CHUNK_BYTES: usize = 256 * 1024;
 
-pub(super) fn u32_words_bytes(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+pub(super) fn u32_words_bytes(words: &[u32]) -> &[u8] {
+    // Lanius currently runs its compiler on little-endian x86-64 hosts. The
+    // GPU storage representation is little-endian as well, so materializing a
+    // second Vec and expanding every word byte-by-byte is unnecessary.
+    const { assert!(cfg!(target_endian = "little")) };
+    // SAFETY: `u8` has alignment one, every initialized byte of a `u32` may be
+    // observed through a byte slice, and the byte length is exactly 4x.
+    unsafe { std::slice::from_raw_parts(words.as_ptr().cast(), words.len() * 4) }
 }
 
 impl GpuX86Linker {
@@ -99,8 +105,9 @@ impl GpuX86Linker {
         label: &str,
         words: &[u32],
     ) -> LaniusBuffer<u32> {
+        const ZERO: [u32; 1] = [0];
         let contents = if words.is_empty() {
-            u32_words_bytes(&[0])
+            u32_words_bytes(&ZERO)
         } else {
             u32_words_bytes(words)
         };
@@ -239,7 +246,7 @@ pub(super) fn uniform_u32_words(
     words: &[u32],
 ) -> LaniusBuffer<u32> {
     let bytes = u32_words_bytes(words);
-    let contents = if bytes.is_empty() { &[0u8][..] } else { &bytes };
+    let contents = if bytes.is_empty() { &[0u8][..] } else { bytes };
     let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
         contents,
@@ -301,6 +308,7 @@ pub(super) fn dispatch_compute_pass(
         );
         compute.set_pipeline(&pass.pipeline);
         compute.set_bind_group(0, bind_group, &[]);
+        crate::gpu::passes_core::record_compute_dispatch();
         compute.dispatch_workgroups(groups.0, groups.1, 1);
     }
     trace_event(trace_stage, "record.done");

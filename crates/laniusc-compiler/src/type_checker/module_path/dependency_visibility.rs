@@ -258,10 +258,6 @@ pub(in crate::type_checker) fn create(
             inputs.module_record_scan_workspace.block_prefix,
         ),
         (
-            "module_record_scan_prefix_b",
-            inputs.module_record_scan_workspace.hierarchy,
-        ),
-        (
             "module_value_scan_local_prefix",
             inputs.module_value_scan_workspace.local_prefix,
         ),
@@ -272,10 +268,6 @@ pub(in crate::type_checker) fn create(
         (
             "module_value_scan_prefix_a",
             inputs.module_value_scan_workspace.block_prefix,
-        ),
-        (
-            "module_value_scan_prefix_b",
-            inputs.module_value_scan_workspace.hierarchy,
         ),
     ]);
     let scan = PrefixScanOperation::from_spec(

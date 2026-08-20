@@ -1,0 +1,2 @@
+[ perf record: Woken up 13 times to write data ]
+[ perf record: Captured and wrote 4.792 MB /home/andrew-peterson/code/laniusc/benchmark_artifacts/profiles/cpu_profiles/cache-move-nested-bind-groups-warm-typical-100-20260818/perf.data (586 samples) ]

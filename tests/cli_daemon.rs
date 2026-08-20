@@ -37,6 +37,7 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
         Some("lani"),
     );
     let grown_source = common::temp_artifact_path("laniusc_daemon_capacity", "grown", Some("lani"));
+    let dense_source = common::temp_artifact_path("laniusc_daemon_capacity", "dense", Some("lani"));
     let artifact = common::temp_artifact_path("laniusc_daemon_capacity", emit, extension);
     let requests = common::temp_artifact_path("laniusc_daemon_capacity", "requests", Some("jsonl"));
     fs::write(&source, "fn main() -> i32 { return 42; }\n")
@@ -51,6 +52,11 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
         ),
     )
     .expect("write grown daemon source");
+    fs::write(
+        &dense_source,
+        "fn main() -> i32 { let a = 1; let b = 2; let c = 3; let d = 4; let e = 5; return a + b + c + d + e; }\n",
+    )
+    .expect("write token-dense daemon source");
 
     let mut request_lines = (0..21)
         .map(|job| {
@@ -69,6 +75,18 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
             .to_string()
         })
         .collect::<Vec<_>>();
+    for job in ["dense", "dense-repeat"] {
+        request_lines.push(
+            serde_json::json!({
+                "id": job,
+                "command": "compile",
+                "emit": emit,
+                "input": dense_source,
+                "output": artifact,
+            })
+            .to_string(),
+        );
+    }
     for job in ["growth", "growth-repeat"] {
         request_lines.push(
             serde_json::json!({
@@ -108,8 +126,8 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
         .collect::<Vec<_>>();
     assert_eq!(
         responses.len(),
-        25,
-        "ready, 21 stable jobs, growth, growth repeat, and shutdown"
+        27,
+        "ready, 21 stable jobs, token growth and repeat, byte growth and repeat, and shutdown"
     );
     assert_eq!(responses[0]["event"], "ready");
     assert_eq!(
@@ -140,24 +158,30 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
             "warm job created and dropped an untracked raw WGPU buffer: {response}"
         );
     }
-    assert_eq!(responses[22]["id"], "growth");
+    assert_eq!(responses[22]["id"], "dense");
+    assert_eq!(responses[22]["ok"], true);
+    assert_eq!(responses[22]["workspace_request_kind"], "retained_capacity");
+    assert_eq!(responses[23]["id"], "dense-repeat");
+    assert_eq!(responses[23]["ok"], true);
+    assert_eq!(responses[23]["workspace_request_kind"], "retained_capacity");
+    assert_eq!(responses[24]["id"], "growth");
     assert_eq!(
-        responses[22]["workspace_request_kind"],
+        responses[24]["workspace_request_kind"],
         "cold_or_grown_workspace"
     );
-    assert_eq!(responses[23]["id"], "growth-repeat");
+    assert_eq!(responses[25]["id"], "growth-repeat");
     assert_eq!(
-        responses[23]["workspace_request_kind"], "retained_capacity",
+        responses[25]["workspace_request_kind"], "retained_capacity",
         "repeat after growth created resources: {}",
-        responses[23]
+        responses[25]
     );
-    assert_eq!(responses[23]["resources_created_during_job"]["buffers"], 0);
+    assert_eq!(responses[25]["resources_created_during_job"]["buffers"], 0);
     assert_eq!(
-        responses[23]["resources_created_during_job"]["bind_groups"],
+        responses[25]["resources_created_during_job"]["bind_groups"],
         0
     );
     assert_eq!(
-        responses[23]["resources_created_during_job"]["compute_pipelines"],
+        responses[25]["resources_created_during_job"]["compute_pipelines"],
         0
     );
 }

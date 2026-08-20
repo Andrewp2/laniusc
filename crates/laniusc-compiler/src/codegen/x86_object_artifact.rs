@@ -34,7 +34,7 @@ use crate::gpu::{
     kernels::KernelRegistry,
     operations::{ComputeOperation, CopyBufferOperation},
     passes_core::{PassData, map_readback_blocking},
-    readback::PagedReadback,
+    readback::{PagedReadback, ReadbackRegion},
     resource_registry::ResourceMap,
 };
 
@@ -500,30 +500,51 @@ impl GpuX86ObjectStage {
             );
         }
 
-        let relocation_words = decode_words(&self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.relocations,
-            0,
-            relocation_count * 32,
-            "x86 object relocation readback",
-        )?);
-        let undefined_words = decode_words(&self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.undefined_symbols,
-            0,
-            symbol_count * 16,
-            "x86 object undefined-symbol readback",
-        )?);
-        let definition_words = decode_words(&self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.definitions,
-            0,
-            definition_count * 32,
-            "x86 object definition readback",
-        )?);
+        let [
+            relocation_bytes,
+            undefined_bytes,
+            definition_bytes,
+            text,
+            rodata,
+        ]: [Vec<u8>; 5] = self
+            .payload_readback
+            .read_regions(
+                device,
+                queue,
+                &[
+                    ReadbackRegion::from_buffer(
+                        &self.relocations,
+                        0,
+                        relocation_count * 32,
+                        "x86 object relocations",
+                    )?,
+                    ReadbackRegion::from_buffer(
+                        &self.undefined_symbols,
+                        0,
+                        symbol_count * 16,
+                        "x86 object undefined symbols",
+                    )?,
+                    ReadbackRegion::from_buffer(
+                        &self.definitions,
+                        0,
+                        definition_count * 32,
+                        "x86 object definitions",
+                    )?,
+                    ReadbackRegion::from_buffer(&self.text_words, 0, text_len, "x86 object text")?,
+                    ReadbackRegion::from_buffer(
+                        &self.rodata_words,
+                        0,
+                        rodata_len,
+                        "x86 object rodata",
+                    )?,
+                ],
+                "x86 object payload readback",
+            )?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("x86 object payload readback shape changed"))?;
+        let relocation_words = decode_words(&relocation_bytes);
+        let undefined_words = decode_words(&undefined_bytes);
+        let definition_words = decode_words(&definition_bytes);
         if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
             let identities = definition_words
                 .chunks_exact(8)
@@ -533,23 +554,6 @@ impl GpuX86ObjectStage {
             eprintln!("[x86_object_identity] relocation_words={relocation_words:?}");
             eprintln!("[x86_object_identity] undefined_words={undefined_words:?}");
         }
-        let text = self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.text_words,
-            0,
-            text_len,
-            "x86 object text readback",
-        )?;
-        let rodata = self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.rodata_words,
-            0,
-            rodata_len,
-            "x86 object rodata readback",
-        )?;
-
         let mut relocations = Vec::with_capacity(relocation_count);
         for (index, row) in relocation_words.chunks_exact(8).enumerate() {
             let kind = match row[0] {

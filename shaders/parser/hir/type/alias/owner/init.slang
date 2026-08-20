@@ -1,4 +1,8 @@
-// Seed nearest item-owner propagation over dense semantic-HIR rows.
+// Seed nearest semantic declaration-owner propagation over dense HIR rows.
+// Type aliases consume this relation directly; generic side-table builders
+// reuse it rather than walking the raw parse parent chain independently.
+
+import generated_parse_production_ids;
 
 struct Params
 {
@@ -14,6 +18,8 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_semantic_parent;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_item_kind;
 
@@ -60,6 +66,27 @@ uint item_kind_for_raw(uint node)
     return item_row != INVALID ? hir_item_kind[item_row] : HIR_ITEM_KIND_NONE;
 }
 
+uint declaration_owner(uint node)
+{
+    if (!valid_original_node(node))
+        return INVALID;
+    if (item_kind_for_raw(node) != HIR_ITEM_KIND_NONE)
+        return node;
+    uint production = node_kind[node];
+    if (production == PROD_IMPL_INHERENT || production == PROD_IMPL_TRAIT ||
+        production == PROD_IMPL_FN || production == PROD_TRAIT_METHOD ||
+        production == PROD_TRAIT_METHOD_PUB)
+        return node;
+    if (production == PROD_ITEM_IMPL || production == PROD_PUB_IMPL)
+    {
+        uint child = first_child[node];
+        if (valid_original_node(child) &&
+            (node_kind[child] == PROD_IMPL_INHERENT || node_kind[child] == PROD_IMPL_TRAIT))
+            return child;
+    }
+    return INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -71,6 +98,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = hir_semantic_dense_node[row];
     uint parent = hir_semantic_parent[row];
     hir_type_alias_owner_link_a[row] = valid_semantic_row(parent) ? parent : INVALID;
-    hir_type_alias_owner_value_a[row] =
-        item_kind_for_raw(node) != HIR_ITEM_KIND_NONE ? node : INVALID;
+    hir_type_alias_owner_value_a[row] = declaration_owner(node);
 }

@@ -51,6 +51,14 @@ pub(crate) struct GpuWasmLinkInput {
 impl GpuWasmLinkInput {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn for_executable(objects: &[GpuWasmRelocatableObject]) -> Result<Self, String> {
+        Self::for_executable_refs(objects)
+    }
+
+    /// Flattens borrowed object containers without first cloning their payloads.
+    pub(crate) fn for_executable_refs<'a>(
+        objects: impl IntoIterator<Item = &'a GpuWasmRelocatableObject>,
+    ) -> Result<Self, String> {
+        let objects = objects.into_iter().collect::<Vec<_>>();
         if objects.is_empty() {
             return Err("Wasm link requires at least one object".into());
         }
@@ -59,7 +67,7 @@ impl GpuWasmLinkInput {
             GpuLinkByteSource::resident("Wasm link body bytes", Vec::new()),
             GpuLinkByteSource::resident("Wasm link data bytes", Vec::new()),
         );
-        for (object_index, object) in objects.iter().enumerate() {
+        for (object_index, object) in objects.iter().copied().enumerate() {
             result.append_object(object_index, object)?;
             result.type_bytes.extend_resident(&object.type_bytes);
             result.body_bytes.extend_resident(&object.body_bytes);

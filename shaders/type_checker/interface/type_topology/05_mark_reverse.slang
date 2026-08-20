@@ -23,10 +23,10 @@ uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_S
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint reverse_row = linear_thread_id(dtid);
-    if (reverse_row >= gParams.hir_capacity)
-        return;
-    uint node = gParams.hir_capacity - 1u - reverse_row;
     uint active = min(compact_hir_count[0u], gParams.hir_capacity);
+    if (reverse_row >= active)
+        return;
+    uint node = active - 1u - reverse_row;
     uint root = node < active && compact_hir_core[node].kind == HIR_TYPE
                     ? interface_type_root_owner[node]
                     : INVALID;

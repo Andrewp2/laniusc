@@ -2976,6 +2976,69 @@ fn main(flag: bool) {
 }
 
 #[test]
+fn parser_hir_context_relations_large_path_preserves_statement_and_function_owners() {
+    const LOCAL_DECLARATIONS: usize = 1_500;
+    let mut source = String::from("fn main() -> i32 {\n");
+    for index in 0..LOCAL_DECLARATIONS {
+        source.push_str(&format!("let value_{index}: i32 = {index};\n"));
+    }
+    source.push_str(&format!("return value_{};\n}}\n", LOCAL_DECLARATIONS - 1));
+
+    let parsed = parse_resident_source(&source);
+    assert!(
+        parsed.hir_kind.len()
+            > laniusc_compiler::parser::passes::hir::context::relations::step_small::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
+                as usize,
+        "fixture must exercise the multi-dispatch context-relation path"
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the large context fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let function_node = parsed
+        .hir_kind
+        .iter()
+        .position(|&kind| kind == HIR_NODE_FN)
+        .expect("fixture should publish its function row");
+    let return_node = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| (kind == HIR_NODE_RETURN_STMT).then_some(node))
+        .max_by_key(|&node| parsed.hir_token_pos[node])
+        .expect("fixture should publish its final return statement");
+    let return_value = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand0[return_node],
+        "large-fixture return value",
+    );
+
+    assert_eq!(
+        parsed.hir_nearest_stmt_node[return_node] as usize, return_node,
+        "the final return must remain its own nearest statement"
+    );
+    assert_eq!(
+        parsed.hir_nearest_stmt_node[return_value] as usize, return_node,
+        "the return expression must inherit the final return statement"
+    );
+    assert_eq!(
+        parsed.hir_nearest_fn_node[return_value] as usize, function_node,
+        "the return expression must inherit the enclosing function"
+    );
+    let function_block = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_nearest_block_node[return_node],
+        "large-fixture function block",
+    );
+    assert_eq!(
+        parsed.hir_nearest_block_node[return_value] as usize, function_block,
+        "the return expression and statement must share their containing block"
+    );
+}
+
+#[test]
 fn parser_hir_resident_readback_publishes_expression_roots_and_statement_contexts() {
     let parsed = parse_resident_source(
         r#"
@@ -5818,6 +5881,37 @@ fn take(value: Pair<i32, bool>) -> i32 {
 }
 
 #[test]
+fn parser_hir_nested_generic_type_arguments_split_shift_token() {
+    let parsed = parse_resident_source(
+        r#"
+struct Pair<T, U> {
+    left: T,
+    right: U,
+}
+
+fn take(value: Pair<Pair<i32, bool>, i32>) -> i32 {
+    return 0;
+}
+"#,
+    );
+
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should split the adjacent generic closers: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+    assert!(
+        parsed
+            .hir_type_arg_count
+            .iter()
+            .filter(|&&count| count == 2)
+            .count()
+            >= 2,
+        "the outer and nested Pair types should both retain two type arguments"
+    );
+}
+
+#[test]
 fn parser_hir_pattern_payloads_are_not_type_arguments() {
     let parsed = parse_resident_source(
         r#"
@@ -7282,6 +7376,45 @@ fn main() -> i32 {
     assert_eq!(
         parsed.hir_fn_return_type_node[extern_node], INVALID,
         "void externs should not publish a return type node"
+    );
+}
+
+#[test]
+fn parser_hir_function_return_edge_uses_outer_composite_type() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+pub extern "nested_result" fn nested_result() -> [&i32; 3];
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept a nested composite return type: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let function = parsed
+        .hir_item_kind
+        .iter()
+        .position(|&kind| kind == HIR_ITEM_KIND_EXTERN_FN)
+        .expect("fixture should publish one extern function");
+    let outer = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_fn_return_type_node[function],
+        "outer composite return type",
+    );
+    assert_eq!(
+        parsed.hir_type_form[outer], HIR_TYPE_FORM_ARRAY,
+        "the function edge must publish the outer array, not its nested element type"
+    );
+    let element = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_type_value_node[outer],
+        "array return element type",
+    );
+    assert_eq!(
+        parsed.hir_type_form[element], HIR_TYPE_FORM_REF,
+        "the outer return type should retain its nested reference operand"
     );
 }
 

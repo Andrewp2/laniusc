@@ -4,6 +4,8 @@
 // record count on the GPU. It keeps later passes sized to the compact stream
 // without adding a host readback.
 
+import uint_math;
+
 struct Params
 {
     uint capacity;
@@ -24,9 +26,7 @@ uint active_count()
 {
     uint count = min(count_in[0], gParams.capacity);
     uint multiplier = max(gParams.multiplier, 1u);
-    if (count > 0xffffffffu / multiplier)
-        return 0xffffffffu;
-    return count * multiplier;
+    return saturating_mul_u32(count, multiplier);
 }
 
 [shader("compute")]

@@ -393,7 +393,7 @@ fn resolve_partition(
         queue.write_buffer(
             &params.buffer,
             0,
-            &u32_words_bytes(&[
+            u32_words_bytes(&[
                 definition_count as u32,
                 batch.len() as u32,
                 hash_capacity_u32,
@@ -402,7 +402,7 @@ fn resolve_partition(
         );
         if !batch.is_empty() {
             let query_words = query_words(input, batch)?;
-            queue.write_buffer(&queries.buffer, 0, &u32_words_bytes(&query_words));
+            queue.write_buffer(&queries.buffer, 0, u32_words_bytes(&query_words));
         }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.x86.link.symbol_partition.encoder"),

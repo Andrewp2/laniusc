@@ -775,6 +775,427 @@ fn main() {
 }
 
 #[test]
+fn x86_keeps_fifth_and_sixth_parameters_in_incoming_abi_registers() {
+    let bytes = compile_source(
+        "x86 retained high ABI parameter registers",
+        r#"
+fn high_parameters(
+    first: i32,
+    second: i32,
+    third: i32,
+    fourth: i32,
+    fifth: i32,
+    sixth: i32,
+) -> i32 {
+    return fifth * 10 + sixth;
+}
+
+fn main() -> i32 {
+    return high_parameters(1, 2, 3, 4, 5, 6);
+}
+"#,
+    );
+
+    assert!(
+        bytes.windows(8).any(|window| {
+            window
+                == [
+                    0x41, 0x6b, 0xc0, 0x0a, // imul eax, r8d, 10
+                    0x41, 0x03, 0xc1, // add eax, r9d
+                    0xc3, // ret
+                ]
+        }),
+        "the callee should consume the incoming r8/r9 homes directly without a parameter prologue"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 retained high ABI parameter registers",
+        "x86_retained_high_abi_parameter_registers",
+        &bytes,
+        56,
+    );
+}
+
+#[test]
+fn x86_relocates_fixed_register_parameters_before_later_clobbers() {
+    assert_source_exit(
+        "x86 fixed register parameter clobbers",
+        r#"
+fn rdx_after_division(a: i32, b: i32, c: i32) -> i32 {
+    let quotient: i32 = a / b;
+    return quotient + c;
+}
+
+fn rcx_after_shift(value: i32, amount: i32, spare: i32, after: i32) -> i32 {
+    let shifted: i32 = value << amount;
+    return shifted + after;
+}
+
+fn identity(value: i32) -> i32 {
+    return value;
+}
+
+fn rdx_result_across_division(a: i32, b: i32, c: i32) -> i32 {
+    let offset: i32 = c - 3;
+    let quotient: i32 = a / b;
+    return offset + quotient;
+}
+
+fn parameter_result_across_call(value: i32) -> i32 {
+    let adjusted: i32 = value + 3;
+    let marker: i32 = identity(5);
+    return adjusted + marker;
+}
+
+fn main() -> i32 {
+    return rdx_after_division(20, 4, 7) +
+        rcx_after_shift(3, 2, 0, 9) +
+        rdx_result_across_division(20, 4, 8) +
+        parameter_result_across_call(7);
+}
+"#,
+        58,
+    );
+}
+
+#[test]
+fn x86_encodes_scalar_constant_call_arguments_in_abi_registers() {
+    let bytes = compile_source(
+        "x86 scalar constant call arguments",
+        r#"
+fn weighted(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {
+    return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6;
+}
+
+fn main() -> i32 {
+    return weighted(1, 2, 3, 4, 5, 6);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    let direct_arguments = [
+        0xbfu8, 1, 0, 0, 0, // mov edi, 1
+        0xbe, 2, 0, 0, 0, // mov esi, 2
+        0xba, 3, 0, 0, 0, // mov edx, 3
+        0xb9, 4, 0, 0, 0, // mov ecx, 4
+        0x41, 0xb8, 5, 0, 0, 0, // mov r8d, 5
+        0x41, 0xb9, 6, 0, 0, 0,    // mov r9d, 6
+        0xe8, // call rel32
+    ];
+    assert!(
+        bytes
+            .windows(direct_arguments.len())
+            .any(|window| window == direct_arguments),
+        "constant arguments should be encoded directly in their SysV ABI registers"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 scalar constant call arguments",
+        "x86_scalar_constant_call_arguments",
+        &bytes,
+        91,
+    );
+}
+
+#[test]
+fn x86_coalesces_adjacent_scalar_producer_with_call_argument_register() {
+    let bytes = compile_source(
+        "x86 adjacent producer call argument",
+        r#"
+fn sink(value: i32) -> i32 {
+    return value * 3;
+}
+
+fn bump_and_call(value: i32) -> i32 {
+    return sink(value + 1);
+}
+
+fn main() -> i32 {
+    return bump_and_call(6);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        bytes
+            .windows(4)
+            .any(|window| window == [0x83, 0xc7, 0x01, 0xe8]),
+        "an adjacent scalar producer should update edi and call without an intervening move"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 adjacent producer call argument",
+        "x86_adjacent_producer_call_argument",
+        &bytes,
+        21,
+    );
+}
+
+#[test]
+fn x86_propagates_constants_through_long_local_and_expression_chains() {
+    let mut source = String::from("fn main() -> i32 {\n    let value_0: i32 = 5;\n");
+    for index in 1..=48 {
+        source.push_str(&format!(
+            "    let value_{index}: i32 = value_{} + 1;\n",
+            index - 1
+        ));
+    }
+    source.push_str("    return (value_48");
+    for _ in 0..48 {
+        source.push_str(" + 1");
+    }
+    source.push_str(") * 3;\n}\n");
+
+    let bytes = compile_source("x86 long local constant propagation", &source);
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 long local constant propagation",
+        "x86_long_local_constant_propagation",
+        &bytes,
+        47,
+    );
+    assert!(
+        bytes
+            .windows(6)
+            .any(|window| window == [0xb8, 0x2f, 0x01, 0x00, 0x00, 0xc3]),
+        "the complete 96-operation chain should become `mov eax, 303; ret`"
+    );
+}
+
+#[test]
+fn x86_eliminates_dynamic_scalar_identity_and_immutable_local_chains() {
+    let direct = compile_source(
+        "x86 direct dynamic scalar value",
+        r#"
+fn simplify(value: i32) -> i32 {
+    return value;
+}
+
+fn main() -> i32 {
+    return simplify(7);
+}
+"#,
+    );
+    let through_identities = compile_source(
+        "x86 dynamic scalar identities",
+        r#"
+fn simplify(value: i32) -> i32 {
+    let a: i32 = value + 0;
+    let b: i32 = a * 1;
+    let c: i32 = b ^ 0;
+    let d: i32 = c | 0;
+    let e: i32 = d & -1;
+    let f: i32 = e << 0;
+    return f - 0;
+}
+
+fn main() -> i32 {
+    return simplify(7);
+}
+"#,
+    );
+
+    assert_eq!(
+        through_identities, direct,
+        "dynamic identities and immutable local forwarding should disappear before x86 emission"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 dynamic scalar identities",
+        "x86_dynamic_scalar_identities",
+        &through_identities,
+        7,
+    );
+
+    let direct_zero = compile_source(
+        "x86 direct scalar zero",
+        r#"
+fn simplify(value: i32) -> i32 {
+    return 0;
+}
+
+fn main() -> i32 {
+    return simplify(7);
+}
+"#,
+    );
+    let algebraic_zero = compile_source(
+        "x86 algebraic scalar zero",
+        r#"
+fn simplify(value: i32) -> i32 {
+    let saved: i32 = value;
+    let zero_product: i32 = saved * 0;
+    let zero_mask: i32 = 0 & saved;
+    let same_bits: i32 = saved | saved;
+    return zero_product + zero_mask + (same_bits - same_bits);
+}
+
+fn main() -> i32 {
+    return simplify(7);
+}
+"#,
+    );
+    assert_eq!(
+        algebraic_zero, direct_zero,
+        "integer annihilators and equal-value identities should collapse to the direct constant program"
+    );
+}
+
+#[test]
+fn x86_releases_register_homes_for_eliminated_immutable_locals() {
+    let direct = compile_source(
+        "x86 direct affine expression",
+        r#"
+fn affine(a: i32, b: i32, c: i32) -> i32 {
+    return (a + b) * (c - 3) + a;
+}
+
+fn main() -> i32 {
+    return affine(2, 5, 8);
+}
+"#,
+    );
+    let named = compile_source(
+        "x86 named affine expression",
+        r#"
+fn affine(a: i32, b: i32, c: i32) -> i32 {
+    let sum: i32 = a + b;
+    let offset: i32 = c - 3;
+    let product: i32 = sum * offset;
+    return product + a;
+}
+
+fn main() -> i32 {
+    return affine(2, 5, 8);
+}
+"#,
+    );
+
+    assert_eq!(
+        named, direct,
+        "eliminated immutable locals must not reserve declaration registers or force callee-saved spills"
+    );
+    assert!(
+        named.windows(3).any(|window| window == [0x83, 0xea, 0x03]),
+        "the last use of parameter c should be updated directly in its incoming edx home"
+    );
+    assert!(
+        !named
+            .windows(7)
+            .any(|window| window == [0x41, 0x89, 0xd1, 0x41, 0x83, 0xe9, 0x03]),
+        "register allocation should not copy edx to r9d before subtracting the constant"
+    );
+    assert!(
+        named.windows(12).any(|window| {
+            window
+                == [
+                    0x8d, 0x04, 0x37, // lea eax, [rdi + rsi]
+                    0x83, 0xea, 0x03, // sub edx, 3
+                    0x0f, 0xaf, 0xc2, // imul eax, edx
+                    0x03, 0xc7, // add eax, edi
+                    0xc3, // ret
+                ]
+        }),
+        "the returned arithmetic chain should remain in eax"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 named affine expression",
+        "x86_named_affine_expression",
+        &named,
+        37,
+    );
+}
+
+#[test]
+fn x86_preserves_mutation_calls_and_traps_around_scalar_identities() {
+    let bytes = compile_source(
+        "x86 scalar identity effect preservation",
+        r#"
+extern "lanius_std" fn write_i32(handle: i32, value: i32) -> i32;
+
+fn mutate(value: i32) -> i32 {
+    let local: i32 = value;
+    local += 2;
+    return (local + 0) * 1;
+}
+
+fn main() -> i32 {
+    let discarded: i32 = write_i32(1, mutate(5)) * 0;
+    if (discarded == 0) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    );
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 scalar identity effect preservation",
+        "x86_scalar_identity_effect_preservation",
+        &bytes,
+        "7",
+    );
+
+    assert_source_exit(
+        "identity_wrapped_dynamic_division_trap",
+        r#"
+fn main() -> i32 {
+    let divisor: i32 = 3;
+    divisor = 0;
+    return (12 / divisor) * 0;
+}
+"#,
+        103,
+    );
+}
+
+#[test]
+fn x86_preserves_nonconstant_local_initializer_dependencies() {
+    assert_source_exit(
+        "nonconstant_local_initializer_dependencies",
+        r#"
+fn calculate(value: i32) -> i32 {
+    let local: i32 = value + 2;
+    return local * 3;
+}
+
+fn main() -> i32 {
+    return calculate(5);
+}
+"#,
+        21,
+    );
+}
+
+#[test]
+fn x86_preserves_side_effects_of_unused_local_initializers() {
+    let bytes = compile_source(
+        "x86 unused local initializer side effects",
+        r#"
+extern "lanius_std" fn write_i32(handle: i32, value: i32) -> i32;
+
+fn main() -> i32 {
+    let ignored: i32 = write_i32(1, 9);
+    return 0;
+}
+"#,
+    );
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 unused local initializer side effects",
+        "x86_unused_local_initializer_side_effects",
+        &bytes,
+        "9",
+    );
+}
+
+#[test]
 fn x86_rejects_aggregate_return_call_that_exceeds_sysv_register_slots() {
     let source = r#"
 fn pair6(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> [i32; 2] {
@@ -1168,6 +1589,336 @@ fn main() {
     return total;
 }
 "#,
+        7,
+    );
+}
+
+#[test]
+fn x86_fuses_single_use_integer_comparison_with_branch() {
+    let bytes = compile_source(
+        "x86 compare branch fusion",
+        r#"
+fn classify(value: i32) -> i32 {
+    if (value < 10) {
+        return 7;
+    }
+    return 9;
+}
+
+fn main() -> i32 {
+    return classify(3);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        bytes.windows(2).any(|window| window == [0x0f, 0x8d]),
+        "single-use signed less-than condition should branch directly with jge"
+    );
+    assert!(
+        !bytes.windows(3).any(|window| window == [0x0f, 0x9c, 0xc0]),
+        "single-use signed less-than condition should not materialize with setl al"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 compare branch fusion",
+        "x86_compare_branch_fusion",
+        &bytes,
+        7,
+    );
+}
+
+#[test]
+fn x86_fuses_single_use_f32_comparison_with_branch() {
+    let bytes = compile_source(
+        "x86 f32 compare branch fusion",
+        r#"
+fn classify(value: f32) -> i32 {
+    if (value < 10.0) {
+        return 7;
+    }
+    return 9;
+}
+
+fn main() -> i32 {
+    return classify(3.0);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        bytes.windows(2).any(|window| window == [0x0f, 0x2e]),
+        "single-use f32 comparison should emit ucomiss"
+    );
+    assert!(
+        bytes.windows(2).any(|window| window == [0x0f, 0x83]),
+        "single-use f32 less-than should branch directly with jae"
+    );
+    assert!(
+        !bytes.windows(2).any(|window| window == [0x0f, 0x92]),
+        "single-use f32 less-than should not materialize with setb"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 f32 compare branch fusion",
+        "x86_f32_compare_branch_fusion",
+        &bytes,
+        7,
+    );
+}
+
+#[test]
+fn x86_fuses_single_read_f32_comparison_local_with_branch() {
+    let bytes = compile_source(
+        "x86 local f32 compare branch fusion",
+        r#"
+fn classify(value: f32) -> i32 {
+    let is_nonnegative: bool = value >= 0.0;
+    if (is_nonnegative) {
+        return 7;
+    }
+    return 9;
+}
+
+fn main() -> i32 {
+    return classify(3.0);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        bytes.windows(2).any(|window| window == [0x0f, 0x82]),
+        "a single-read f32 comparison local should branch directly with jb"
+    );
+    assert!(
+        !bytes.windows(2).any(|window| window == [0x0f, 0x93]),
+        "a single-read f32 comparison local should not materialize with setae"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 local f32 compare branch fusion",
+        "x86_local_f32_compare_branch_fusion",
+        &bytes,
+        7,
+    );
+}
+
+#[test]
+fn x86_keeps_reused_f32_comparison_boolean_in_a_gpr() {
+    let bytes = compile_source(
+        "x86 reused f32 comparison Boolean register",
+        r#"
+fn evaluate(value: f32) -> i32 {
+    let is_nonnegative: bool = value >= 0.0;
+    let total: i32 = 0;
+    if (is_nonnegative) {
+        total += 1;
+    }
+    if (is_nonnegative) {
+        total += 2;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    return evaluate(3.0);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        bytes.windows(3).any(|window| {
+            (window[0] == 0x40 || window[0] == 0x41) && window[1..] == [0x0f, 0x93]
+        }),
+        "a reused f32 comparison should materialize directly in its allocated non-RAX GPR"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 reused f32 comparison Boolean register",
+        "x86_reused_f32_comparison_boolean_register",
+        &bytes,
+        3,
+    );
+}
+
+#[test]
+fn x86_fuses_single_read_boolean_local_comparison_with_branch() {
+    let bytes = compile_source(
+        "x86 local boolean compare branch fusion",
+        r#"
+fn classify(value: i32) -> i32 {
+    let is_small: bool = value < 10;
+    if (is_small) {
+        return 7;
+    }
+    return 9;
+}
+
+fn main() -> i32 {
+    return classify(3);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        bytes.windows(2).any(|window| window == [0x0f, 0x8d]),
+        "a comparison stored in a single-read Boolean local should branch directly with jge"
+    );
+    assert!(
+        !bytes.windows(2).any(|window| window == [0x0f, 0x9c]),
+        "a single-read Boolean local should not force signed less-than materialization"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 local boolean compare branch fusion",
+        "x86_local_boolean_compare_branch_fusion",
+        &bytes,
+        7,
+    );
+}
+
+#[test]
+fn x86_preserves_boolean_local_materialization_for_multiple_reads() {
+    let bytes = compile_source(
+        "x86 multi-read boolean local",
+        r#"
+fn evaluate(value: i32) -> i32 {
+    let is_small: bool = value < 10;
+    let total: i32 = 0;
+    if (is_small) {
+        total += 1;
+    }
+    if (is_small) {
+        total += 2;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    return evaluate(3);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        bytes.windows(2).any(|window| window == [0x0f, 0x9c]),
+        "a Boolean local read by multiple branches must remain materialized"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 multi-read boolean local",
+        "x86_multi_read_boolean_local",
+        &bytes,
+        3,
+    );
+}
+
+#[test]
+fn x86_preserves_boolean_local_materialization_for_multiple_definitions() {
+    let bytes = compile_source(
+        "x86 reassigned boolean local",
+        r#"
+fn evaluate(value: i32) -> i32 {
+    let is_small: bool = value < 0;
+    is_small = value < 10;
+    if (is_small) {
+        return 7;
+    }
+    return 9;
+}
+
+fn main() -> i32 {
+    return evaluate(3);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        bytes.windows(2).any(|window| window == [0x0f, 0x9c]),
+        "a reassigned Boolean local must retain its selected materialized definition"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 reassigned boolean local",
+        "x86_reassigned_boolean_local",
+        &bytes,
+        7,
+    );
+}
+
+#[test]
+fn x86_if_converts_pure_scalar_assignment_diamond() {
+    let bytes = compile_source(
+        "x86 scalar assignment diamond",
+        r#"
+fn choose(value: i32) -> i32 {
+    let result: i32 = 0;
+    if ((value & 1) != 0) {
+        result = value + 17;
+    } else {
+        result = value - 23;
+    }
+    return result;
+}
+
+fn main() -> i32 {
+    return choose(-5) + choose(30);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        bytes.windows(2).any(|window| window == [0x0f, 0x45]),
+        "pure masked-bit assignment diamond should select with cmovne"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 scalar assignment diamond",
+        "x86_scalar_assignment_diamond",
+        &bytes,
+        19,
+    );
+}
+
+#[test]
+fn x86_does_not_if_convert_potentially_trapping_assignment_diamond() {
+    let bytes = compile_source(
+        "x86 trapping scalar assignment diamond",
+        r#"
+fn choose(value: i32) -> i32 {
+    let result: i32 = 0;
+    if ((value & 1) != 0) {
+        result = 120 / value;
+    } else {
+        result = 7;
+    }
+    return result;
+}
+
+fn main() -> i32 {
+    return choose(0);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        !bytes.windows(2).any(|window| window == [0x0f, 0x45]),
+        "a potentially trapping arm must remain control-dependent"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 trapping scalar assignment diamond",
+        "x86_trapping_scalar_assignment_diamond",
+        &bytes,
         7,
     );
 }
@@ -1907,6 +2658,496 @@ fn main() {
 }
 "#,
         109,
+    );
+}
+
+#[test]
+fn x86_executes_constant_power_of_two_division_and_remainder() {
+    assert_source_exit(
+        "constant_power_of_two_division_and_remainder",
+        r#"
+fn main() -> bool {
+    let positive: i32 = 29;
+    let negative: i32 = -29;
+    let unsigned: u32 = 4294967295;
+    return positive / 4 == 7 && positive % 4 == 1 &&
+        negative / 4 == -7 && negative % 4 == -1 &&
+        unsigned / 2147483648 == 1 &&
+        unsigned % 2147483648 == 2147483647;
+}
+"#,
+        1,
+    );
+}
+
+#[test]
+fn x86_executes_positive_constant_division_and_remainder() {
+    let values = [
+        i32::MIN,
+        -1_000_003,
+        -1_022,
+        -1_021,
+        -1_020,
+        -1,
+        0,
+        1,
+        1_020,
+        1_021,
+        1_022,
+        1_000_003,
+        i32::MAX,
+    ];
+    let divisors = [3, 5, 7, 10, 1_021];
+    let mut source = "fn main() -> bool {\n".to_owned();
+    for divisor in divisors {
+        for value in values {
+            let value_source = if value == i32::MIN {
+                "(-2147483647 - 1)".to_owned()
+            } else {
+                value.to_string()
+            };
+            source.push_str(&format!(
+                "if (!(({value_source} / {divisor}) == {} && ({value_source} % {divisor}) == {})) {{ return false; }}\n",
+                value / divisor,
+                value % divisor
+            ));
+        }
+    }
+    source.push_str("return true;\n}\n");
+    assert_source_exit("positive_constant_division_and_remainder", &source, 1);
+}
+
+#[test]
+fn x86_preserves_constant_division_numerator_after_remainder() {
+    assert_source_exit(
+        "preserves_constant_division_numerator_after_remainder",
+        r#"
+fn keep_numerator(value: i32) -> i32 {
+    let numerator: i32 = value + 1;
+    let remainder: i32 = numerator % 7;
+    return numerator + remainder;
+}
+
+fn main() -> i32 {
+    return keep_numerator(19);
+}
+"#,
+        26,
+    );
+}
+
+#[test]
+fn x86_executes_integer_immediate_operations_and_identities() {
+    assert_source_exit(
+        "integer_immediate_operations_and_identities",
+        r#"
+fn integer_immediates(value: i32) -> bool {
+    if (value + 7 != 44) { return false; }
+    if (value - 5 != 32) { return false; }
+    if (value * 3 != 111) { return false; }
+    if (7 + value != 44) { return false; }
+    if (3 * value != 111) { return false; }
+    if ((value & 15) != 5) { return false; }
+    if ((value | 64) != 101) { return false; }
+    if ((value ^ 12) != 41) { return false; }
+    if ((value << 2) != 148) { return false; }
+    if ((value >> 2) != 9) { return false; }
+    if (value + 70000 != 70037) { return false; }
+    if (value * 70000 != 2590000) { return false; }
+    if (value <= 12) { return false; }
+    if (12 >= value) { return false; }
+    if (value == 38) { return false; }
+    if (value + 0 != value) { return false; }
+    if (value - 0 != value) { return false; }
+    if (value * 1 != value) { return false; }
+    if ((value | 0) != value) { return false; }
+    if ((value ^ 0) != value) { return false; }
+    if ((value & -1) != value) { return false; }
+    if ((value << 0) != value) { return false; }
+    if ((value >> 0) != value) { return false; }
+    return true;
+}
+
+fn boolean_identities(value: bool) -> bool {
+    return (value && true) && (value || false);
+}
+
+fn main() -> bool {
+    if (!integer_immediates(37)) {
+        return false;
+    }
+    return boolean_identities(true);
+}
+"#,
+        1,
+    );
+}
+
+#[test]
+fn x86_strength_reduces_power_of_two_multiplication() {
+    let bytes = compile_source(
+        "x86 power of two multiplication",
+        r#"
+fn scale(value: i32) -> i32 {
+    return value * 128;
+}
+
+fn main() -> i32 {
+    return scale(3);
+}
+"#,
+    );
+
+    assert!(
+        bytes.windows(6).any(|window| {
+            window
+                == [
+                    0xc1, 0xe7, 0x07, // shl edi, 7
+                    0x89, 0xf8, // mov eax, edi
+                    0xc3, // ret
+                ]
+        }),
+        "multiplication by 128 should use a shift rather than an immediate multiply"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 power of two multiplication",
+        "x86_power_of_two_multiplication",
+        &bytes,
+        128,
+    );
+}
+
+#[test]
+fn x86_strength_reduces_small_constant_multiplication() {
+    let bytes = compile_source(
+        "x86 small constant multiplication",
+        r#"
+fn double(value: i32) -> i32 { return value * 2; }
+fn triple(value: i32) -> i32 { return value * 3; }
+fn quintuple(value: i32) -> i32 { return value * 5; }
+fn nonuple(value: i32) -> i32 { return value * 9; }
+fn negate(value: i32) -> i32 { return value * -1; }
+fn preserve_triple(value: i32) -> i32 { return value * 3 + value; }
+
+fn main() -> i32 {
+    return double(1) + triple(2) + quintuple(3) + nonuple(4) + negate(5) +
+        preserve_triple(7);
+}
+"#,
+    );
+
+    for instruction in [
+        [0x8d, 0x3c, 0x3f], // lea edi, [rdi + rdi]
+        [0x8d, 0x3c, 0x7f], // lea edi, [rdi + rdi * 2]
+        [0x8d, 0x3c, 0xbf], // lea edi, [rdi + rdi * 4]
+        [0x8d, 0x3c, 0xff], // lea edi, [rdi + rdi * 8]
+    ] {
+        assert!(
+            bytes
+                .windows(instruction.len())
+                .any(|window| window == instruction),
+            "small constant multiplication should use a scaled LEA"
+        );
+    }
+    assert!(
+        bytes.windows(2).any(|window| window == [0xf7, 0xdf]),
+        "multiplication by -1 should use neg edi"
+    );
+    assert!(
+        bytes.windows(3).any(|window| window == [0x8d, 0x04, 0x7f]),
+        "a scaled LEA should write directly to the distinct return register"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 small constant multiplication",
+        "x86_small_constant_multiplication",
+        &bytes,
+        82,
+    );
+}
+
+#[test]
+fn x86_folds_immediate_add_sub_copy_into_lea() {
+    let bytes = compile_source(
+        "x86 immediate add subtract addressing modes",
+        r#"
+fn add_small(value: i32) -> i32 { return value + 7; }
+fn subtract_large(value: i32) -> i32 { return value - 300; }
+fn add_high_parameter(
+    first: i32,
+    second: i32,
+    third: i32,
+    fourth: i32,
+    fifth: i32,
+) -> i32 {
+    return fifth + 9;
+}
+
+fn main() -> i32 {
+    return add_small(10) + subtract_large(400) +
+        add_high_parameter(1, 2, 3, 4, 5);
+}
+"#,
+    );
+
+    for instruction in [
+        &[0x8d, 0x47, 0x07, 0xc3][..], // lea eax, [rdi + 7]; ret
+        &[0x8d, 0x87, 0xd4, 0xfe, 0xff, 0xff, 0xc3][..],
+        // lea eax, [rdi - 300]; ret
+        &[0x41, 0x8d, 0x40, 0x09, 0xc3][..],
+        // lea eax, [r8 + 9]; ret
+    ] {
+        assert!(
+            bytes
+                .windows(instruction.len())
+                .any(|window| window == instruction),
+            "an immediate add/subtract into a distinct register should use one LEA: \
+             missing {instruction:02x?}"
+        );
+    }
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 immediate add subtract addressing modes",
+        "x86_immediate_add_subtract_addressing_modes",
+        &bytes,
+        131,
+    );
+}
+
+#[test]
+fn x86_uses_inc_dec_for_in_place_unit_updates() {
+    let bytes = compile_source(
+        "x86 in-place unit updates",
+        r#"
+fn round_trip(value: i32) -> i32 {
+    value += 1;
+    value -= 1;
+    value += -1;
+    value -= -1;
+    return value;
+}
+
+fn main() -> i32 {
+    return round_trip(37);
+}
+"#,
+    );
+
+    assert!(
+        bytes.windows(11).any(|window| {
+            window
+                == [
+                    0xff, 0xc7, // inc edi
+                    0xff, 0xcf, // dec edi
+                    0xff, 0xcf, // add -1: dec edi
+                    0xff, 0xc7, // subtract -1: inc edi
+                    0x89, 0xf8, // mov eax, edi
+                    0xc3, // ret
+                ]
+        }),
+        "unit updates in the same register should use INC and DEC"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 in-place unit updates",
+        "x86_in_place_unit_updates",
+        &bytes,
+        37,
+    );
+}
+
+#[test]
+fn x86_uses_test_for_register_comparisons_with_zero() {
+    let bytes = compile_source(
+        "x86 register comparisons with zero",
+        r#"
+fn is_zero(value: i32) -> bool {
+    return value == 0;
+}
+
+fn fifth_is_nonzero(
+    first: i32,
+    second: i32,
+    third: i32,
+    fourth: i32,
+    fifth: i32,
+) -> bool {
+    return fifth != 0;
+}
+
+fn main() -> bool {
+    return fifth_is_nonzero(1, 2, 3, 4, 5);
+}
+"#,
+    );
+
+    for instruction in [
+        &[0x85, 0xff, 0x0f, 0x94, 0xc0][..],
+        // test edi, edi; sete al
+        &[0x45, 0x85, 0xc0, 0x0f, 0x95, 0xc0][..],
+        // test r8d, r8d; setne al
+    ] {
+        assert!(
+            bytes
+                .windows(instruction.len())
+                .any(|window| window == instruction),
+            "a register comparison with zero should use TEST: missing {instruction:02x?}"
+        );
+    }
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 register comparisons with zero",
+        "x86_register_comparisons_with_zero",
+        &bytes,
+        1,
+    );
+}
+
+#[test]
+fn x86_preserves_parameter_result_intervals_under_register_pressure() {
+    let bytes = compile_source(
+        "x86 parameter result intervals under register pressure",
+        r#"
+fn pressure(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {
+    let v0: i32 = a + 11;
+    let v1: i32 = b + 13;
+    let v2: i32 = c + 17;
+    let v3: i32 = d + 19;
+    let v4: i32 = e + 23;
+    let v5: i32 = f * 29;
+    let v6: i32 = a + 31;
+    let v7: i32 = b + 37;
+    let v8: i32 = c + 41;
+    let v9: i32 = d + 43;
+    let v10: i32 = e + 47;
+    let v11: i32 = f + 53;
+    let v12: i32 = a + 59;
+    let v13: i32 = b + 61;
+    let v14: i32 = c + 67;
+    let v15: i32 = d + 71;
+    return v0 + v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 +
+        v10 + v11 + v12 + v13 + v14 + v15;
+}
+
+fn main() -> i32 {
+    return pressure(1, 2, 3, 4, 5, 6);
+}
+"#,
+    );
+
+    for instruction in [
+        &[0x41, 0x6b, 0xc1, 0x1d, 0x89, 0x45][..],
+        // imul eax, r9d, 29; mov [rbp + disp8], eax
+        &[0x8d, 0x47, 0x1f, 0x89, 0x45][..],
+        // lea eax, [rdi + 31]; mov [rbp + disp8], eax
+    ] {
+        assert!(
+            bytes
+                .windows(instruction.len())
+                .any(|window| window == instruction),
+            "a spilled immediate result should compute directly in EAX: \
+             missing {instruction:02x?}"
+        );
+    }
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 parameter result intervals under register pressure",
+        "x86_parameter_result_intervals_under_register_pressure",
+        &bytes,
+        45,
+    );
+}
+
+#[test]
+fn x86_uses_disp32_beyond_the_near_stack_slot_range() {
+    let parameters = ["a", "b", "c", "d", "e", "f"];
+    let inputs = [1i32, 2, 3, 4, 5, 6];
+    let mut source =
+        String::from("fn pressure(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {\n");
+    source.push_str("    let padding: [i32; 20] = [0");
+    for value in 1..20usize {
+        source.push_str(&format!(", {value}"));
+    }
+    source.push_str("];\n");
+    let mut expected = 0i32;
+    for index in 0..16usize {
+        let immediate = index as i32 + 7;
+        source.push_str(&format!(
+            "    let v{index}: i32 = {} + {immediate};\n",
+            parameters[index % parameters.len()]
+        ));
+        expected += inputs[index % inputs.len()] + immediate;
+    }
+    for chunk in 0..2usize {
+        source.push_str(&format!("    let sum{chunk}: i32 = v{}", chunk * 8));
+        for index in chunk * 8 + 1..chunk * 8 + 8 {
+            source.push_str(&format!(" + v{index}"));
+        }
+        source.push_str(";\n");
+    }
+    source.push_str("    return sum0 + sum1 + padding[0];\n}\n");
+    source.push_str("fn main() -> i32 { return pressure(1, 2, 3, 4, 5, 6); }\n");
+
+    let bytes = compile_source("x86 near and far stack displacements", &source);
+    assert!(
+        bytes.windows(2).any(|window| window == [0x89, 0x45]),
+        "near spill slots should use an RBP-relative disp8 store"
+    );
+    assert!(
+        bytes.windows(2).any(|window| window == [0x89, 0x85]),
+        "spill slots beyond slot 15 should retain an RBP-relative disp32 store"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 near and far stack displacements",
+        "x86_near_and_far_stack_displacements",
+        &bytes,
+        expected & 0xff,
+    );
+}
+
+#[test]
+fn x86_uses_disp8_for_near_64_bit_stack_operands() {
+    let bytes = compile_source(
+        "x86 near 64-bit stack operands",
+        r#"
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn keep(value: Pair) -> Pair {
+    return value;
+}
+
+fn main() -> i32 {
+    let pair: Pair = Pair { left: 7, right: 9 };
+    let kept: Pair = keep(pair);
+    return kept.right;
+}
+"#,
+    );
+
+    for instruction in [
+        &[0x48, 0x8d, 0x45][..], // lea r64, [rbp + disp8]
+        &[0x48, 0x8b, 0x45][..], // mov r64, [rbp + disp8]
+        &[0x48, 0x89, 0x45][..], // mov [rbp + disp8], r64
+    ] {
+        assert!(
+            bytes
+                .windows(instruction.len())
+                .any(|window| window == instruction),
+            "near 64-bit stack operands should use signed disp8 addressing: \
+             missing {instruction:02x?}"
+        );
+    }
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 near 64-bit stack operands",
+        "x86_near_64_bit_stack_operands",
+        &bytes,
+        9,
     );
 }
 
@@ -3734,6 +4975,99 @@ fn main() {
 }
 
 #[test]
+fn x86_uses_disp8_for_near_f32_stack_operands() {
+    let bytes = compile_source(
+        "x86 near f32 stack operands",
+        r#"
+fn identity(value: f32) -> f32 {
+    return value;
+}
+
+fn main() {
+    // The multiplication remains live across the call. SysV has no
+    // callee-saved XMM registers, so this interval must use a spill slot.
+    let value: f32 = 1.5 * 2.5 + identity(3.0);
+    if (value > 6.7) {
+        if (value < 6.8) {
+            return 0;
+        }
+    }
+    return 1;
+}
+"#,
+    );
+
+    let has_rbp_disp8_sse = |opcode: u8| {
+        (0..bytes.len()).any(|start| {
+            if bytes[start] != 0xf3 {
+                return false;
+            }
+            let mut opcode_start = start + 1;
+            if opcode_start < bytes.len() && (bytes[opcode_start] & 0xf0) == 0x40 {
+                opcode_start += 1;
+            }
+            opcode_start + 2 < bytes.len()
+                && bytes[opcode_start] == 0x0f
+                && bytes[opcode_start + 1] == opcode
+                && (bytes[opcode_start + 2] & 0xc7) == 0x45
+        })
+    };
+    assert!(
+        has_rbp_disp8_sse(0x10),
+        "call-crossing f32 spill should use a disp8 MOVSS load"
+    );
+    assert!(
+        has_rbp_disp8_sse(0x11),
+        "call-crossing f32 spill should use a disp8 MOVSS store"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 near f32 stack operands",
+        "x86_near_f32_stack_operands",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
+fn x86_keeps_f32_arithmetic_temporaries_in_xmm_registers() {
+    let bytes = compile_source(
+        "x86 f32 XMM arithmetic temporaries",
+        r#"
+fn main() {
+    let value: f32 = 1.5 * 2.0 + 3.0 * 4.0;
+    if (value > 14.9) {
+        if (value < 15.1) {
+            return 0;
+        }
+    }
+    return 1;
+}
+"#,
+    );
+
+    for opcode in [0x58, 0x59] {
+        assert!(
+            bytes.windows(4).any(|window| {
+                window[0] == 0xf3
+                    && window[1] == 0x0f
+                    && window[2] == opcode
+                    && (window[3] & 0xc0) == 0xc0
+            }),
+            "f32 arithmetic chain should contain a register-register SSE \
+             instruction with opcode {opcode:02x}"
+        );
+    }
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 f32 XMM arithmetic temporaries",
+        "x86_f32_xmm_arithmetic_temporaries",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
 fn x86_executes_f32_sum_of_products() {
     assert_source_exit(
         "f32_sum_of_products",
@@ -5030,9 +6364,20 @@ fn main() {{
 }}
 "#
     );
-    assert_source_exit(
+    let bytes = compile_source("parameter aggregate member copy after disp8 range", &source);
+    assert!(
+        bytes.windows(3).any(|window| window == [0x48, 0x89, 0x85]),
+        "64-bit stack stores beyond slot 15 should retain disp32 addressing"
+    );
+    assert!(
+        bytes.windows(3).any(|window| window == [0x48, 0x8d, 0x85]),
+        "64-bit stack addresses beyond slot 15 should retain disp32 addressing"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "parameter aggregate member copy after disp8 range",
         "parameter_aggregate_member_copy_after_disp8_range",
-        &source,
+        &bytes,
         9,
     );
 }
@@ -6220,6 +7565,41 @@ fn main() -> i32 {
 }
 "#,
         45,
+    );
+}
+
+#[test]
+fn x86_does_not_force_unprofitable_unary_chain_into_rax() {
+    let bytes = compile_source(
+        "x86 unary return chain cost",
+        r#"
+fn combine(value: i32, offset: i32) -> i32 {
+    return -value + offset;
+}
+
+fn main() -> i32 {
+    return combine(7, 20);
+}
+"#,
+    );
+
+    assert!(
+        bytes.windows(6).any(|window| {
+            window
+                == [
+                    0xf7, 0xdf, // neg edi
+                    0x8d, 0x04, 0x37, // lea eax, [rdi + rsi]
+                    0xc3, // ret
+                ]
+        }),
+        "RAX chaining should not add a move when in-place NEG plus LEA is shorter"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 unary return chain cost",
+        "x86_unary_return_chain_cost",
+        &bytes,
+        13,
     );
 }
 

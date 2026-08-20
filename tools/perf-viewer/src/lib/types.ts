@@ -117,12 +117,47 @@ export interface GraphNode {
   name: string;
   phase: string;
   dispatch_domain: string;
+  graph_managed_working_set_bytes?: number | null;
   declaration_index: number;
   execution_count: number;
   submissions: number[];
   submission_label?: string;
   from_graph?: string;
   to_graph?: string;
+}
+
+export interface PhysicalResidencyPoint {
+  start_ms: number;
+  elapsed_ms: number;
+  allocations: number;
+  bytes: number;
+  event: 'baseline' | 'allocate' | 'release';
+  allocation_id?: number | null;
+  label?: string | null;
+  changed_bytes: number;
+}
+
+export interface GraphWorkingSetInterval {
+  submission: number;
+  label: string;
+  start_ms: number;
+  duration_ms: number;
+  bytes: number;
+  operation_count: number;
+  phases: string[];
+}
+
+export interface GpuMemoryTimeline {
+  physical_residency: {
+    semantics: string;
+    points: PhysicalResidencyPoint[];
+  };
+  graph_managed_working_set: {
+    semantics: string;
+    intervals: GraphWorkingSetInterval[];
+    matched_submissions: number;
+    recorded_submissions: number;
+  };
 }
 
 export interface GraphEdge {
@@ -173,6 +208,7 @@ export interface Profile {
   reason: string;
   wall_ms: number;
   timeline: TimelineEvent[];
+  gpu_memory_timeline?: GpuMemoryTimeline;
   execution_graph: ExecutionGraph;
   nsight?: NsightProfile;
 }
@@ -217,7 +253,7 @@ export interface PerformanceRun {
   measurements: Measurement[];
 }
 
-export interface CatalogEntry { path: string; document: PerformanceRun }
+export interface CatalogEntry { result_id: string; path: string; document: PerformanceRun }
 export interface PerformanceCatalog {
   schema: 'lanius.performance-catalog.v1';
   generated_at_unix_seconds: number;

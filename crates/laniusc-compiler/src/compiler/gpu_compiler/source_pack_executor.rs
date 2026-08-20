@@ -1,8 +1,4 @@
-use super::{
-    typecheck::CompiledSourcePackObject,
-    unit_cache::{CompiledUnitCacheHintKey, CompiledUnitCacheKey},
-    *,
-};
+use super::{typecheck::CompiledSourcePackObject, *};
 
 /// Source-pack executor that emits GPU artifact descriptors into a filesystem store.
 ///
@@ -234,31 +230,6 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 handle.job.job_index, handle.job.phase_unit_index
             ))
         })?;
-        let cache_hint = if self.target != SourcePackArtifactTarget::Generic {
-            CompiledUnitCacheHintKey::new(
-                self.target,
-                handle.job.library_id,
-                unit_id,
-                &handle.source_files,
-                &dependency_pages,
-            )
-            .map_err(source_pack_artifact_store_error)?
-        } else {
-            None
-        };
-        let hint_built = started.elapsed();
-        let hinted = cache_hint
-            .as_ref()
-            .and_then(|hint| self.compiler.cached_compiled_unit_by_hint(hint));
-        let sources = if hinted.is_none() {
-            Some(read_explicit_source_path_files(
-                "source-pack library-interface job",
-                &handle.source_files,
-            )?)
-        } else {
-            None
-        };
-        let sources_loaded = started.elapsed();
         if std::env::var_os("LANIUS_DEBUG_SOURCE_PACK_FILES").is_some() {
             eprintln!(
                 "[source-pack-debug] job={} library={} unit={} files={:?}",
@@ -272,68 +243,44 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                     .collect::<Vec<_>>(),
             );
         }
-        let cache_key = (self.target != SourcePackArtifactTarget::Generic && hinted.is_none())
-            .then(|| {
-                CompiledUnitCacheKey::new(
-                    self.target,
-                    handle.job.library_id,
-                    unit_id,
-                    sources
-                        .as_deref()
-                        .expect("cache miss must load source text"),
-                    &dependency_pages,
-                )
-                .map_err(source_pack_artifact_store_error)
-            })
-            .transpose()?;
-        let key_built = started.elapsed();
-        let cached = hinted.or_else(|| {
-            cache_key
-                .as_ref()
-                .and_then(|key| self.compiler.cached_compiled_unit(key))
-        });
-        let cache_hit = cached.is_some();
-        let compiled = match (cached, cache_key.as_ref()) {
-            (Some(compiled), _) => Some(compiled),
-            (None, Some(key)) => {
-                let compiled = self
+        let (compiled, generic_interface, cache_hit) =
+            if self.target == SourcePackArtifactTarget::Generic {
+                let sources = read_explicit_source_path_files(
+                    "source-pack library-interface job",
+                    &handle.source_files,
+                )?;
+                let interface = self
                     .compiler
-                    .compile_source_pack_unit_with_dependency_pages(
-                        sources
-                            .as_deref()
-                            .expect("cache miss must load source text"),
-                        handle.job.library_id,
-                        unit_id,
-                        &dependency_pages,
-                        self.target,
-                    )
-                    .await?;
-                self.compiler.cache_compiled_unit(
-                    cache_hint.clone(),
-                    key.clone(),
-                    compiled.clone(),
-                );
-                Some(compiled)
-            }
-            (None, None) => None,
-        };
-        let (interface, object) = match compiled {
-            Some(compiled) => (compiled.interface, Some(compiled.object)),
-            None => (
-                self.compiler
                     .semantic_interface_for_source_pack_unit_with_dependency_pages(
                         handle.job.library_id,
                         unit_id,
-                        sources
-                            .as_deref()
-                            .expect("generic unit must load source text"),
+                        &sources,
                         &dependency_pages,
                     )
-                    .await?,
+                    .await?;
+                (None, Some(interface), false)
+            } else {
+                let result = self
+                    .compiler
+                    .compile_cached_path_source_pack_unit(
+                        self.target,
+                        &handle.job,
+                        &handle.source_files,
+                        &dependency_pages,
+                    )
+                    .await?;
+                (Some(result.value), None, result.cache_hit)
+            };
+        let (interface, object) = match compiled.as_ref() {
+            Some(compiled) => (&compiled.interface, Some(&compiled.object)),
+            None => (
+                generic_interface
+                    .as_ref()
+                    .expect("generic unit must produce a semantic interface"),
                 None,
             ),
         };
-        let compiled = started.elapsed();
+        let compile_finished = started.elapsed();
         if report_memory {
             let live = crate::gpu::buffers::tracked_buffer_allocation_stats();
             let peak = crate::gpu::buffers::tracked_buffer_allocation_peak_stats();
@@ -365,7 +312,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         attach_semantic_interface_artifact(
             &mut descriptor,
             &interface_artifact,
-            semantic_interface_record_count(&interface),
+            semantic_interface_record_count(interface),
             interface_bytes.len(),
         );
         match object {
@@ -377,12 +324,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                     ))
                 })?;
                 let artifact = self.write_x86_codegen_object_artifact(&handle.job, &bytes)?;
-                attach_x86_codegen_object_artifact(
-                    &mut descriptor,
-                    &artifact,
-                    &object,
-                    bytes.len(),
-                );
+                attach_x86_codegen_object_artifact(&mut descriptor, &artifact, object, bytes.len());
             }
             Some(CompiledSourcePackObject::Wasm(object)) => {
                 let bytes = object.to_bytes().map_err(|reason| {
@@ -395,7 +337,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 attach_wasm_codegen_object_artifact(
                     &mut descriptor,
                     &artifact,
-                    &object,
+                    object,
                     bytes.len(),
                 );
             }
@@ -419,16 +361,13 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         );
         if timing {
             eprintln!(
-                "source_pack_timing phase=unit job={} unit={} cache_hit={} dependencies_ms={:.3} hint_ms={:.3} sources_ms={:.3} key_ms={:.3} compile_or_lookup_ms={:.3} artifacts_ms={:.3} total_ms={:.3}",
+                "source_pack_timing phase=unit job={} unit={} cache_hit={} dependencies_ms={:.3} compile_or_lookup_ms={:.3} artifacts_ms={:.3} total_ms={:.3}",
                 handle.job.job_index,
                 handle.job.phase_unit_index,
                 cache_hit,
                 dependencies_loaded.as_secs_f64() * 1000.0,
-                (hint_built - dependencies_loaded).as_secs_f64() * 1000.0,
-                (sources_loaded - hint_built).as_secs_f64() * 1000.0,
-                (key_built - sources_loaded).as_secs_f64() * 1000.0,
-                (compiled - key_built).as_secs_f64() * 1000.0,
-                (started.elapsed() - compiled).as_secs_f64() * 1000.0,
+                (compile_finished - dependencies_loaded).as_secs_f64() * 1000.0,
+                (started.elapsed() - compile_finished).as_secs_f64() * 1000.0,
                 started.elapsed().as_secs_f64() * 1000.0,
             );
         }

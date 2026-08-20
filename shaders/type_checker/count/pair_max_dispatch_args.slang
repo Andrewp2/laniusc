@@ -4,6 +4,8 @@
 // single shader invocation. It keeps scheduling on GPU counts without adding a
 // host readback or picking one stream as a proxy for the other.
 
+import uint_math;
+
 struct Params
 {
     uint left_capacity;
@@ -27,9 +29,7 @@ uint scaled_active_count()
     uint right_count = min(right_count_in[0], gParams.right_capacity);
     uint count = max(left_count, right_count);
     uint multiplier = max(gParams.multiplier, 1u);
-    if (count > 0xffffffffu / multiplier)
-        return 0xffffffffu;
-    return count * multiplier;
+    return saturating_mul_u32(count, multiplier);
 }
 
 [shader("compute")]

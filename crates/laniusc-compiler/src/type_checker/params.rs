@@ -13,6 +13,8 @@ pub(in crate::type_checker) struct TypeCheckParams {
     pub(in crate::type_checker) n_hir_nodes: u32,
     pub(in crate::type_checker) n_source_files: u32,
     pub(in crate::type_checker) parser_feature_flags: u32,
+    /// Whether dependency-value metadata is produced for this job.
+    pub(in crate::type_checker) dependency_interfaces_present: u32,
 }
 
 /// Uniform for the enclosing-`if` depth prefix-scan passes.

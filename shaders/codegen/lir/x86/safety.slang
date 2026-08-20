@@ -13,6 +13,7 @@ bool x86_safety_integer_division(X86LirCore core, X86LirOperands operands)
 bool x86_safety_shift(X86LirCore core, X86LirOperands operands)
 {
     return core.op == X86_LIR_OP_BINARY &&
+        (operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
         (operands.a == X86_LIR_BINARY_SHL_I32 ||
          operands.a == X86_LIR_BINARY_SHR_I32);
 }

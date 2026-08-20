@@ -129,18 +129,22 @@ impl HostService {
 }
 
 /// Resident schedule keys contain three packed `u32` words. The default
-/// five-MiB frontend-unit bound needs at most 95 significant bits, including
+/// five-MiB frontend-unit bound needs at most 72 significant bits, including
 /// the expression-tie and sentinel encodings.
-pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 12;
+pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 9;
 
 /// Capacity-derived bit layout for the semantic schedule key.
 ///
-/// The four fields are packed into one continuous LSD bit stream instead of
+/// The three ordering fields are packed into one continuous LSD bit stream instead of
 /// rounding each field independently to bytes. Expression ties occupy the
 /// source representation's high `0x7fff_ffff - depth` band; the radix key
 /// extractor maps that band above all ordinary local-row ties and below the
-/// `u32::MAX` sentinel. Digit zero initializes the identity order in whichever
-/// ping-pong buffer makes the last scatter finish in the canonical order.
+/// `u32::MAX` sentinel. Function identity is intentionally absent: compact HIR
+/// functions follow flat source order, every execution region is a global
+/// packed-token position inside its owning function's source span, and those
+/// spans do not overlap. Region order therefore already partitions and orders
+/// functions. Digit zero initializes the identity order in whichever ping-pong
+/// buffer makes the last scatter finish in the canonical order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TargetScheduleRadixLayout {
     pub(crate) packed_bits: u32,
@@ -156,12 +160,10 @@ impl TargetScheduleRadixLayout {
             radix_bits_for_capacity(ordinary_tie_capacity.saturating_add(capacities.hir_nodes)),
             radix_bits_for_capacity(token_or_hir),
             radix_bits_for_capacity(token_or_hir),
-            radix_bits_for_capacity(capacities.hir_nodes),
         ];
         let total_bits = bits.iter().copied().sum::<u32>();
         let steps = total_bits.div_ceil(8);
-        let packed_bits =
-            (1u32 << 31) | bits[0] | (bits[1] << 6) | (bits[2] << 12) | (bits[3] << 18);
+        let packed_bits = (1u32 << 31) | bits[0] | (bits[1] << 6) | (bits[2] << 12);
         debug_assert!(steps > 0);
         Self {
             packed_bits,
@@ -173,9 +175,9 @@ impl TargetScheduleRadixLayout {
     #[cfg(test)]
     pub(crate) const fn packed_width() -> Self {
         Self {
-            packed_bits: (1 << 31) | 24 | (24 << 6) | (24 << 12) | (24 << 18),
+            packed_bits: (1 << 31) | 24 | (24 << 6) | (24 << 12),
             steps: TARGET_SCHEDULE_MAX_RADIX_STEPS,
-            total_bits: 96,
+            total_bits: 72,
         }
     }
 }
@@ -614,6 +616,41 @@ pub struct X86LirLocations {
     pub a: u32,
     pub b: u32,
     pub c: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct X86SelectInfo {
+    pub condition: u32,
+    pub true_value: u32,
+    pub false_value: u32,
+    pub declaration: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct X86DeclarationAnalysis {
+    pub last_read: u32,
+    pub last_access: u32,
+    pub definition: u32,
+    pub read_count: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct X86FunctionRegisterAnalysis {
+    pub first_call: u32,
+    pub first_rdx_clobber: u32,
+    pub first_rcx_clobber: u32,
+    pub flags: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
+pub struct X86ValueAnalysis {
+    pub value: u32,
+    pub known: u32,
+    pub replacement: u32,
 }
 
 #[repr(C)]
@@ -2667,11 +2704,38 @@ fn build_lowering_compiler_graph(
     } else {
         None
     };
-    let x86_clobber_by_position = if target == LoweringTarget::X86_64 {
+    let x86_next_rax_clobber_by_semantic = if target == LoweringTarget::X86_64 {
         Some(graph.add_resource(workspace(
-            "lir.x86.clobber_by_position",
+            "lir.x86.next_rax_clobber_by_semantic",
             ResourceDomain::SemanticInstructions,
             LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+        ))?)
+    } else {
+        None
+    };
+    let x86_decl_analysis_by_token = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.decl_analysis_by_token",
+            ResourceDomain::Tokens,
+            LoweringCapacities::bytes::<X86DeclarationAnalysis>(value_capacity),
+        ))?)
+    } else {
+        None
+    };
+    let x86_live_by_semantic = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.live_by_semantic",
+            ResourceDomain::SemanticInstructions,
+            LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+        ))?)
+    } else {
+        None
+    };
+    let x86_value_by_semantic = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.value_by_semantic",
+            ResourceDomain::SemanticInstructions,
+            LoweringCapacities::bytes::<X86ValueAnalysis>(capacities.semantic_instructions),
         ))?)
     } else {
         None
@@ -2681,6 +2745,60 @@ fn build_lowering_compiler_graph(
             "lir.x86.location_by_semantic",
             ResourceDomain::SemanticInstructions,
             LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+        ))?)
+    } else {
+        None
+    };
+    let x86_select_by_semantic = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.select_by_semantic",
+            ResourceDomain::SemanticInstructions,
+            LoweringCapacities::bytes::<X86SelectInfo>(capacities.semantic_instructions),
+        ))?)
+    } else {
+        None
+    };
+    let x86_function_start = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.function_start",
+            ResourceDomain::Declarations,
+            LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+        ))?)
+    } else {
+        None
+    };
+    let x86_function_end = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.function_end",
+            ResourceDomain::Declarations,
+            LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+        ))?)
+    } else {
+        None
+    };
+    let x86_register_analysis_by_function = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.register_analysis_by_function",
+            ResourceDomain::Declarations,
+            LoweringCapacities::bytes::<X86FunctionRegisterAnalysis>(capacities.hir_nodes),
+        ))?)
+    } else {
+        None
+    };
+    let x86_stack_slot_count_by_function = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.stack_slot_count_by_function",
+            ResourceDomain::Declarations,
+            LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+        ))?)
+    } else {
+        None
+    };
+    let x86_frame_slot_count_by_function = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.frame_slot_count_by_function",
+            ResourceDomain::Declarations,
+            LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
         ))?)
     } else {
         None
@@ -3457,7 +3575,7 @@ fn build_lowering_compiler_graph(
     )?;
     if target == LoweringTarget::X86_64 {
         graph.add_pass(PassDesc {
-            name: "lir.x86.lifetime.clear",
+            name: "lir.x86.analysis.clear",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
@@ -3469,15 +3587,46 @@ fn build_lowering_compiler_graph(
                     "x86_last_use_by_semantic",
                     x86_last_use_by_semantic.unwrap(),
                 ),
-                PassAccess::write("x86_clobber_by_position", x86_clobber_by_position.unwrap()),
+                PassAccess::write(
+                    "x86_next_rax_clobber_by_semantic",
+                    x86_next_rax_clobber_by_semantic.unwrap(),
+                ),
+                PassAccess::write("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
+                PassAccess::write("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
                 PassAccess::write(
                     "x86_location_by_semantic",
                     x86_location_by_semantic.unwrap(),
                 ),
+                PassAccess::write("x86_function_start", x86_function_start.unwrap()),
+                PassAccess::write("x86_function_end", x86_function_end.unwrap()),
+                PassAccess::write(
+                    "x86_register_analysis_by_function",
+                    x86_register_analysis_by_function.unwrap(),
+                ),
+                PassAccess::write(
+                    "x86_decl_analysis_by_token",
+                    x86_decl_analysis_by_token.unwrap(),
+                ),
+                PassAccess::write(
+                    "x86_stack_slot_count_by_function",
+                    x86_stack_slot_count_by_function.unwrap(),
+                ),
+                PassAccess::write(
+                    "x86_frame_slot_count_by_function",
+                    x86_frame_slot_count_by_function.unwrap(),
+                ),
+                PassAccess::write(
+                    "x86_saved_gpr_mask_by_function",
+                    x86_saved_gpr_mask_by_function.unwrap(),
+                ),
+                PassAccess::write(
+                    "x86_decl_location_by_token",
+                    x86_decl_location_by_token.unwrap(),
+                ),
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.x86.lifetime.collect",
+            name: "lir.x86.analysis.index",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
@@ -3485,80 +3634,133 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("semantic_lir_core", semantic_core),
                 PassAccess::read("semantic_lir_operands", semantic_operands),
                 PassAccess::read("semantic_schedule_order", schedule_order),
+                PassAccess::read("semantic_owner_by_instruction", semantic_owner),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 PassAccess::write(
                     "x86_position_by_semantic",
                     x86_position_by_semantic.unwrap(),
                 ),
-                PassAccess::read_write(
+                PassAccess::write(
                     "x86_last_use_by_semantic",
                     x86_last_use_by_semantic.unwrap(),
                 ),
-                PassAccess::write("x86_clobber_by_position", x86_clobber_by_position.unwrap()),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.lifetime.call_args",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::Calls,
-            accesses: vec![
-                PassAccess::read("semantic_lir_total", semantic_total),
-                PassAccess::read("semantic_lir_call_arg_total", semantic_call_arg_total),
-                PassAccess::read("semantic_lir_call_args", semantic_call_args),
-                PassAccess::read(
-                    "x86_position_by_semantic",
-                    x86_position_by_semantic.unwrap(),
-                ),
+                PassAccess::read_write("x86_function_start", x86_function_start.unwrap()),
+                PassAccess::read_write("x86_function_end", x86_function_end.unwrap()),
                 PassAccess::read_write(
-                    "x86_last_use_by_semantic",
-                    x86_last_use_by_semantic.unwrap(),
+                    "x86_decl_analysis_by_token",
+                    x86_decl_analysis_by_token.unwrap(),
                 ),
             ],
         })?;
+        let x86_function_accesses = vec![
+            PassAccess::read("semantic_lir_total", semantic_total),
+            PassAccess::read("semantic_lir_core", semantic_core),
+            PassAccess::read("semantic_lir_operands", semantic_operands),
+            PassAccess::read("semantic_schedule_order", schedule_order),
+            PassAccess::read("semantic_owner_by_instruction", semantic_owner),
+            PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+            PassAccess::read(
+                "semantic_lir_call_arg_count_by_hir",
+                semantic_call_arg_counts_by_hir,
+            ),
+            PassAccess::read(
+                "semantic_lir_call_arg_start_by_hir",
+                semantic_call_arg_prefix_by_hir,
+            ),
+            PassAccess::read("semantic_lir_call_args", semantic_call_args),
+            PassAccess::read(
+                "semantic_lir_aggregate_element_total",
+                semantic_aggregate_element_total,
+            ),
+            PassAccess::read(
+                "semantic_lir_aggregate_elements",
+                semantic_aggregate_elements,
+            ),
+            PassAccess::read("semantic_lir_function_total", semantic_function_total),
+            PassAccess::read("semantic_lir_functions", semantic_functions),
+            PassAccess::read("semantic_lir_params", semantic_params),
+            PassAccess::read("semantic_lir_locals", semantic_locals),
+            PassAccess::read_write(
+                "x86_position_by_semantic",
+                x86_position_by_semantic.unwrap(),
+            ),
+            PassAccess::read_write(
+                "x86_last_use_by_semantic",
+                x86_last_use_by_semantic.unwrap(),
+            ),
+            PassAccess::write(
+                "x86_next_rax_clobber_by_semantic",
+                x86_next_rax_clobber_by_semantic.unwrap(),
+            ),
+            PassAccess::read_write("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
+            PassAccess::read_write("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
+            PassAccess::write(
+                "x86_location_by_semantic",
+                x86_location_by_semantic.unwrap(),
+            ),
+            PassAccess::read("x86_function_start", x86_function_start.unwrap()),
+            PassAccess::read("x86_function_end", x86_function_end.unwrap()),
+            PassAccess::read_write(
+                "x86_decl_analysis_by_token",
+                x86_decl_analysis_by_token.unwrap(),
+            ),
+            PassAccess::write("x86_select_by_semantic", x86_select_by_semantic.unwrap()),
+            PassAccess::write(
+                "x86_register_analysis_by_function",
+                x86_register_analysis_by_function.unwrap(),
+            ),
+            PassAccess::write(
+                "x86_stack_slot_count_by_function",
+                x86_stack_slot_count_by_function.unwrap(),
+            ),
+            PassAccess::write(
+                "x86_frame_slot_count_by_function",
+                x86_frame_slot_count_by_function.unwrap(),
+            ),
+            PassAccess::write(
+                "x86_saved_gpr_mask_by_function",
+                x86_saved_gpr_mask_by_function.unwrap(),
+            ),
+        ];
         graph.add_pass(PassDesc {
-            name: "lir.x86.lifetime.aggregate_elements",
+            name: "lir.x86.optimize.functions",
             phase: target_phase,
             dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![
-                PassAccess::read("semantic_lir_total", semantic_total),
-                PassAccess::read(
-                    "semantic_lir_aggregate_element_total",
-                    semantic_aggregate_element_total,
-                ),
-                PassAccess::read(
-                    "semantic_lir_aggregate_elements",
-                    semantic_aggregate_elements,
-                ),
-                PassAccess::read(
-                    "x86_position_by_semantic",
-                    x86_position_by_semantic.unwrap(),
-                ),
-                PassAccess::read_write(
-                    "x86_last_use_by_semantic",
-                    x86_last_use_by_semantic.unwrap(),
-                ),
-            ],
+            accesses: x86_function_accesses.clone(),
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.x86.location.assign",
+            name: "lir.x86.if_convert",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
                 PassAccess::read("semantic_lir_total", semantic_total),
                 PassAccess::read("semantic_lir_core", semantic_core),
+                PassAccess::read("semantic_lir_operands", semantic_operands),
+                PassAccess::read("semantic_schedule_order", schedule_order),
+                PassAccess::read("semantic_owner_by_instruction", semantic_owner),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 PassAccess::read(
                     "x86_position_by_semantic",
                     x86_position_by_semantic.unwrap(),
                 ),
-                PassAccess::read(
+                PassAccess::read_write(
                     "x86_last_use_by_semantic",
                     x86_last_use_by_semantic.unwrap(),
                 ),
-                PassAccess::read("x86_clobber_by_position", x86_clobber_by_position.unwrap()),
-                PassAccess::write(
-                    "x86_location_by_semantic",
-                    x86_location_by_semantic.unwrap(),
+                PassAccess::read_write("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
+                PassAccess::read("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
+                PassAccess::read(
+                    "x86_decl_analysis_by_token",
+                    x86_decl_analysis_by_token.unwrap(),
                 ),
+                PassAccess::write("x86_select_by_semantic", x86_select_by_semantic.unwrap()),
             ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.x86.allocate.functions",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::Declarations,
+            accesses: x86_function_accesses,
         })?;
     }
     let target_count_accesses = match target {
@@ -3592,6 +3794,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_lir_function_total", semantic_function_total),
             PassAccess::read("semantic_lir_functions", semantic_functions),
             PassAccess::read("semantic_lir_params", semantic_params),
+            PassAccess::read("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
             PassAccess::read(
                 "semantic_lir_aggregate_element_total",
                 semantic_aggregate_element_total,
@@ -3671,6 +3874,9 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_lir_string_total", semantic_string_total),
             PassAccess::read("semantic_lir_function_total", semantic_function_total),
             PassAccess::read("semantic_lir_functions", semantic_functions),
+            PassAccess::read("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
+            PassAccess::read("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
+            PassAccess::read("x86_select_by_semantic", x86_select_by_semantic.unwrap()),
             PassAccess::read("target_lir_offset", target_offsets),
             PassAccess::read("target_lir_total", target_total),
             PassAccess::write("semantic_to_target_start", semantic_to_target_start),
@@ -4036,21 +4242,6 @@ fn build_lowering_compiler_graph(
     })?;
     if target == LoweringTarget::X86_64 {
         graph.add_pass(PassDesc {
-            name: "lir.x86.decl_slots.clear",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::Tokens,
-            accesses: vec![
-                PassAccess::write(
-                    "x86_decl_location_by_token",
-                    x86_decl_location_by_token.expect("x86 declaration location resource"),
-                ),
-                PassAccess::write(
-                    "x86_saved_gpr_mask_by_function",
-                    x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
-                ),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
             name: "lir.x86.decl_slots.scatter",
             phase: target_phase,
             dispatch_domain: ResourceDomain::Declarations,
@@ -4061,12 +4252,6 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("semantic_lir_locals", semantic_locals),
                 PassAccess::read("semantic_lir_function_total", semantic_function_total),
                 PassAccess::read("semantic_lir_functions", semantic_functions),
-                PassAccess::read("target_function_count", function_count),
-                PassAccess::read("target_functions", functions),
-                PassAccess::read(
-                    "target_function_index_by_semantic",
-                    function_index_by_semantic,
-                ),
                 PassAccess::read_write(
                     "x86_decl_location_by_token",
                     x86_decl_location_by_token.expect("x86 declaration location resource"),
@@ -4074,6 +4259,49 @@ fn build_lowering_compiler_graph(
                 PassAccess::read_write(
                     "x86_saved_gpr_mask_by_function",
                     x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
+                ),
+                PassAccess::read(
+                    "x86_register_analysis_by_function",
+                    x86_register_analysis_by_function
+                        .expect("x86 function register analysis resource"),
+                ),
+                PassAccess::read(
+                    "x86_decl_analysis_by_token",
+                    x86_decl_analysis_by_token.expect("x86 declaration analysis resource"),
+                ),
+                PassAccess::read(
+                    "x86_live_by_semantic",
+                    x86_live_by_semantic.expect("x86 semantic liveness resource"),
+                ),
+                PassAccess::read(
+                    "x86_stack_slot_count_by_function",
+                    x86_stack_slot_count_by_function.expect("x86 stack-slot count resource"),
+                ),
+                PassAccess::read_write(
+                    "x86_frame_slot_count_by_function",
+                    x86_frame_slot_count_by_function.expect("x86 frame-slot count resource"),
+                ),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.x86.frame.finalize",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::Declarations,
+            accesses: vec![
+                PassAccess::read("target_function_count", function_count),
+                PassAccess::read_write("target_functions", functions),
+                PassAccess::read(
+                    "x86_frame_slot_count_by_function",
+                    x86_frame_slot_count_by_function.expect("x86 frame-slot count resource"),
+                ),
+                PassAccess::read(
+                    "x86_saved_gpr_mask_by_function",
+                    x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
+                ),
+                PassAccess::read(
+                    "x86_register_analysis_by_function",
+                    x86_register_analysis_by_function
+                        .expect("x86 function register analysis resource"),
                 ),
             ],
         })?;
@@ -4093,6 +4321,8 @@ fn build_lowering_compiler_graph(
             phase: target_phase,
             dispatch_domain: target_domain,
             accesses: vec![
+                PassAccess::read("semantic_lir_core", semantic_core),
+                PassAccess::read("semantic_lir_operands", semantic_operands),
                 PassAccess::read("target_lir_total", target_total),
                 PassAccess::read("target_lir_core", target_core),
                 PassAccess::read("target_lir_operands", target_operands.unwrap()),
@@ -4101,6 +4331,20 @@ fn build_lowering_compiler_graph(
                 PassAccess::read(
                     "x86_location_by_semantic",
                     x86_location_by_semantic.unwrap(),
+                ),
+                PassAccess::read("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
+                PassAccess::read("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
+                PassAccess::read(
+                    "x86_decl_analysis_by_token",
+                    x86_decl_analysis_by_token.expect("x86 declaration analysis resource"),
+                ),
+                PassAccess::read(
+                    "x86_decl_location_by_token",
+                    x86_decl_location_by_token.expect("x86 declaration location resource"),
+                ),
+                PassAccess::read(
+                    "x86_select_by_semantic",
+                    x86_select_by_semantic.expect("x86 select resource"),
                 ),
                 PassAccess::write("target_lir_locations", x86_target_locations.unwrap()),
             ],
@@ -4137,6 +4381,7 @@ fn build_lowering_compiler_graph(
                         target_operands.expect("x86 operand resource"),
                     ),
                     PassAccess::read("semantic_to_target_start", semantic_to_target_start),
+                    PassAccess::read("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
                     PassAccess::read(
                         "target_semantic_origin",
                         target_semantic_origins.expect("x86 semantic origin resource"),
@@ -4301,6 +4546,8 @@ fn build_lowering_compiler_graph(
             phase: CompilerPhase::Artifact,
             dispatch_domain: target_domain,
             accesses: vec![
+                PassAccess::read("semantic_lir_core", semantic_core),
+                PassAccess::read("semantic_lir_operands", semantic_operands),
                 PassAccess::read("target_lir_total", target_total),
                 PassAccess::read(
                     "wasm_local_index_by_decl_token",
@@ -4390,6 +4637,8 @@ fn build_lowering_compiler_graph(
             phase: CompilerPhase::Artifact,
             dispatch_domain: target_domain,
             accesses: vec![
+                PassAccess::read("semantic_lir_core", semantic_core),
+                PassAccess::read("semantic_lir_operands", semantic_operands),
                 PassAccess::read("target_lir_total", target_total),
                 PassAccess::read("target_lir_core", target_core),
                 PassAccess::read("target_lir_operands", target_operands.unwrap()),
@@ -4398,6 +4647,20 @@ fn build_lowering_compiler_graph(
                 PassAccess::read(
                     "x86_location_by_semantic",
                     x86_location_by_semantic.unwrap(),
+                ),
+                PassAccess::read("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
+                PassAccess::read("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
+                PassAccess::read(
+                    "x86_decl_analysis_by_token",
+                    x86_decl_analysis_by_token.expect("x86 declaration analysis resource"),
+                ),
+                PassAccess::read(
+                    "x86_decl_location_by_token",
+                    x86_decl_location_by_token.expect("x86 declaration location resource"),
+                ),
+                PassAccess::read(
+                    "x86_select_by_semantic",
+                    x86_select_by_semantic.expect("x86 select resource"),
                 ),
                 PassAccess::write("target_lir_locations", x86_target_locations.unwrap()),
             ],
@@ -4414,6 +4677,7 @@ fn build_lowering_compiler_graph(
                     target_operands.expect("x86 operand resource"),
                 ),
                 PassAccess::read("semantic_to_target_start", semantic_to_target_start),
+                PassAccess::read("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
                 PassAccess::read(
                     "target_semantic_origin",
                     target_semantic_origins.expect("x86 semantic origin resource"),
@@ -5472,6 +5736,10 @@ mod tests {
         assert_eq!(std::mem::size_of::<X86LirCore>(), 16);
         assert_eq!(std::mem::size_of::<X86LirOperands>(), 16);
         assert_eq!(std::mem::size_of::<X86LirLocations>(), 16);
+        assert_eq!(std::mem::size_of::<X86SelectInfo>(), 16);
+        assert_eq!(std::mem::size_of::<X86DeclarationAnalysis>(), 16);
+        assert_eq!(std::mem::size_of::<X86FunctionRegisterAnalysis>(), 16);
+        assert_eq!(std::mem::size_of::<X86ValueAnalysis>(), 12);
         assert_eq!(std::mem::size_of::<WasmLirInstruction>(), 16);
         assert_eq!(std::mem::size_of::<WasmLirOperands>(), 16);
         assert_eq!(std::mem::size_of::<WasmLirFunction>(), 56);
@@ -5503,9 +5771,9 @@ mod tests {
             target_instructions: 1,
             artifact_bytes: 1,
         });
-        assert_eq!(layout.packed_bits, 0x8041_1453);
-        assert_eq!(layout.steps, 9);
-        assert_eq!(layout.total_bits, 69);
+        assert_eq!(layout.packed_bits, 0x8001_1453);
+        assert_eq!(layout.steps, 7);
+        assert_eq!(layout.total_bits, 53);
 
         let small_capacities = LoweringCapacities {
             source_bytes: 4_096,
@@ -5519,11 +5787,11 @@ mod tests {
             artifact_bytes: 1,
         };
         let small = TargetScheduleRadixLayout::for_capacities(small_capacities);
-        assert_eq!(small.packed_bits, 0x8034_d34e);
-        assert_eq!(small.steps, 7);
+        assert_eq!(small.packed_bits, 0x8000_d34e);
+        assert_eq!(small.steps, 5);
         let graph = lowering_compiler_graph(small_capacities, LoweringTarget::Wasm).unwrap();
         assert!(graph.repeated_regions().iter().any(|region| {
-            region.iterations == 4
+            region.iterations == 3
                 && region.pass_count == 12
                 && graph.passes()[region.first_pass.index()].name
                     == "lir.semantic.schedule.histogram.odd"
@@ -5541,14 +5809,14 @@ mod tests {
             artifact_bytes: 1,
         };
         let odd = TargetScheduleRadixLayout::for_capacities(odd_capacities);
-        assert_eq!(odd.packed_bits, 0x8020_8209);
-        assert_eq!(odd.steps, 5);
+        assert_eq!(odd.packed_bits, 0x8000_8209);
+        assert_eq!(odd.steps, 4);
         let graph = lowering_compiler_graph(odd_capacities, LoweringTarget::Wasm).unwrap();
         assert!(graph.repeated_regions().iter().any(|region| {
-            region.iterations == 3
+            region.iterations == 2
                 && region.pass_count == 12
                 && graph.passes()[region.first_pass.index()].name
-                    == "lir.semantic.schedule.histogram.odd"
+                    == "lir.semantic.schedule.histogram.even"
         }));
     }
 
@@ -5564,7 +5832,7 @@ mod tests {
         .unwrap()
         .bucketed();
         let layout = TargetScheduleRadixLayout::for_capacities(capacities);
-        assert_eq!(layout.total_bits, 95);
+        assert_eq!(layout.total_bits, 72);
         assert_eq!(layout.steps, TARGET_SCHEDULE_MAX_RADIX_STEPS);
         lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap();
     }
@@ -5583,7 +5851,7 @@ mod tests {
             artifact_bytes: 1,
         };
         let error = lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap_err();
-        assert!(error.contains("exceeding the 96-bit resident key capacity"));
+        assert!(error.contains("exceeding the 72-bit resident key capacity"));
     }
 
     #[test]
@@ -5619,11 +5887,16 @@ mod tests {
                     && graph.passes()[region.first_pass.index()].name
                         == "lir.semantic.execution_rank.step_a_to_b"
             }));
+            let schedule_layout = TargetScheduleRadixLayout::for_capacities(capacities);
             assert!(graph.repeated_regions().iter().any(|region| {
-                region.iterations == TargetScheduleRadixLayout::for_capacities(capacities).steps / 2
+                region.iterations == schedule_layout.steps.div_ceil(2)
                     && region.pass_count == 12
                     && graph.passes()[region.first_pass.index()].name
-                        == "lir.semantic.schedule.histogram.even"
+                        == if schedule_layout.steps % 2 == 0 {
+                            "lir.semantic.schedule.histogram.even"
+                        } else {
+                            "lir.semantic.schedule.histogram.odd"
+                        }
             }));
             assert!(
                 graph.repeated_regions().iter().any(|region| {
@@ -5864,20 +6137,17 @@ mod tests {
         )
         .unwrap();
         for (pass_name, artifact) in [
-            ("lir.x86.lifetime.clear", "codegen/lir/x86/lifetime_clear"),
+            ("lir.x86.analysis.clear", "codegen/lir/x86/analysis_clear"),
+            ("lir.x86.analysis.index", "codegen/lir/x86/analysis_index"),
             (
-                "lir.x86.lifetime.collect",
-                "codegen/lir/x86/lifetime_collect",
+                "lir.x86.optimize.functions",
+                "codegen/lir/x86/optimize_functions",
             ),
+            ("lir.x86.if_convert", "codegen/lir/x86/if_convert"),
             (
-                "lir.x86.lifetime.call_args",
-                "codegen/lir/x86/lifetime_call_args",
+                "lir.x86.allocate.functions",
+                "codegen/lir/x86/optimize_functions",
             ),
-            (
-                "lir.x86.lifetime.aggregate_elements",
-                "codegen/lir/x86/lifetime_aggregate_elements",
-            ),
-            ("lir.x86.location.assign", "codegen/lir/x86/location_assign"),
             ("lir.x86.count", "codegen/lir/x86/count"),
             ("lir.target.count_scan.local", "scan/counted/00_local"),
             (
@@ -5916,13 +6186,10 @@ mod tests {
                 "codegen/lir/functions/finalize",
             ),
             (
-                "lir.x86.decl_slots.clear",
-                "codegen/lir/x86/decl_slots_clear",
-            ),
-            (
                 "lir.x86.decl_slots.scatter",
                 "codegen/lir/x86/decl_slots_scatter",
             ),
+            ("lir.x86.frame.finalize", "codegen/lir/x86/frame_finalize"),
             ("lir.x86.byte_count", "codegen/lir/x86/byte_count"),
             ("lir.target.byte_scan.local", "scan/counted/00_local"),
             (

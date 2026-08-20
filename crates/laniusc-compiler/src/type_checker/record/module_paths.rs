@@ -130,21 +130,13 @@ fn record_module_path_stage(
         state.bind_groups.decl_lookup.record(encoder)?;
         state.bind_groups.validate_decl_duplicates.record(encoder)?;
         state.bind_groups.mark_decl_namespace_keys.record(encoder)?;
-        PrefixScanOperation::record_pair(
-            &state.bind_groups.decl_type_key_scan,
-            &state.bind_groups.decl_value_key_scan,
-            encoder,
-        )?;
+        state.bind_groups.decl_namespace_scan.record(encoder)?;
         state
             .bind_groups
             .scatter_decl_namespace_keys
             .record(encoder)?;
         state.bind_groups.mark_public_decl_keys.record(encoder)?;
-        PrefixScanOperation::record_pair(
-            &state.bind_groups.decl_type_public_scan,
-            &state.bind_groups.decl_value_public_scan,
-            encoder,
-        )?;
+        state.bind_groups.decl_public_scan.record(encoder)?;
         state
             .bind_groups
             .clear_interface_public_decls
@@ -159,11 +151,7 @@ fn record_module_path_stage(
             "typecheck.modules.decl_namespace_keys.done",
         );
         state.bind_groups.count_import_visibility.record(encoder)?;
-        PrefixScanOperation::record_pair(
-            &state.bind_groups.import_visible_type_scan,
-            &state.bind_groups.import_visible_value_scan,
-            encoder,
-        )?;
+        state.bind_groups.import_visible_scan.record(encoder)?;
         state
             .bind_groups
             .import_visible_validate_dispatch_args

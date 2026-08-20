@@ -28,6 +28,9 @@ pub(super) fn readback_enabled() -> bool {
 
 /// Hashes parse-table contents that affect resident parser buffer reuse.
 pub(super) fn table_fingerprint(tables: &PrecomputedParseTables) -> u64 {
+    if let Some(fingerprint) = tables.loaded_content_fingerprint() {
+        return fingerprint;
+    }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     tables.n_kinds.hash(&mut hasher);
     tables.n_productions.hash(&mut hasher);
@@ -45,6 +48,21 @@ pub(super) fn table_fingerprint(tables: &PrecomputedParseTables) -> u64 {
     tables.prod_rhs_len.hash(&mut hasher);
     tables.prod_rhs.hash(&mut hasher);
     hasher.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::table_fingerprint;
+    use crate::parser::tables::PrecomputedParseTables;
+
+    #[test]
+    fn generated_table_fingerprint_tracks_content_mutation() {
+        let mut tables = PrecomputedParseTables::new(4, 1);
+        let before = table_fingerprint(&tables);
+        tables.prod_arity[0] = 1;
+
+        assert_ne!(table_fingerprint(&tables), before);
+    }
 }
 
 /// Hashes WGPU buffer identities that affect resident parser bind-group reuse.

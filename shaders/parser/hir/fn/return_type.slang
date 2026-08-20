@@ -1,12 +1,13 @@
 // Publish each function or impl-method parser-owned return type node.
 //
-// A prior parse-tree pointer-jump pass marks, for every parse node, the nearest
-// function owner and nearest return_type_opt production owner. This pass
-// consumes those grammar-owned records plus HIR type records and scatters the
-// preorder-first type node inside each function or impl-method return type
-// production.
-// Downstream type checking can consume the published record instead of
-// searching function subtrees.
+// Only canonical type rows can contribute an output. Starting from those rows,
+// walk grammar forwarding parents until reaching either the return-type wrapper
+// or another canonical type. The latter means this is a nested type rather than
+// the return root. Once the return wrapper is found, the remaining path to the
+// function declaration is fixed signature grammar, independent of user type
+// nesting. This avoids propagating owner columns through every raw parse row.
+
+import generated_parse_production_ids;
 struct Params
 {
     uint n;
@@ -20,10 +21,10 @@ ConstantBuffer<Params> gHirFnReturnType;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_type_form;
-StructuredBuffer<uint> hir_fn_signature_return_owner;
-StructuredBuffer<uint> hir_fn_signature_function_owner;
 StructuredBuffer<uint> raw_to_hir;
 
 RWStructuredBuffer<uint> hir_fn_return_type_node;
@@ -63,6 +64,22 @@ bool valid_semantic_row(uint row)
     return row != INVALID && row < active_semantic_count();
 }
 
+bool function_decl_node(uint node)
+{
+    if (!valid_original_node(node) || hir_kind[node] != HIR_FN)
+        return false;
+    uint production = node_kind[node];
+    return production == PROD_FN || production == PROD_EXTERN_FN ||
+           production == PROD_IMPL_FN || production == PROD_TRAIT_METHOD ||
+           production == PROD_TRAIT_METHOD_PUB;
+}
+
+uint next_parent(uint node)
+{
+    uint next = valid_original_node(node) ? parent[node] : INVALID;
+    return next != node && valid_original_node(next) ? next : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -76,13 +93,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_type_form[node] == HIR_TYPE_FORM_NONE)
         return;
 
-    uint return_owner = hir_fn_signature_return_owner[node];
-    if (!valid_original_node(return_owner))
+    uint cursor = next_parent(node);
+    bool inside_return_type = false;
+    while (valid_original_node(cursor))
+    {
+        if (node_kind[cursor] == PROD_RET_TYPE)
+        {
+            inside_return_type = true;
+            cursor = next_parent(cursor);
+            break;
+        }
+        // A different canonical type between this row and the return wrapper
+        // owns this nested type. Only that outer type may become the function's
+        // published return root.
+        if (hir_kind[cursor] == HIR_TYPE && raw_to_hir[cursor] != INVALID)
+            return;
+        if (function_decl_node(cursor))
+            return;
+        cursor = next_parent(cursor);
+    }
+    if (!inside_return_type)
         return;
 
-    uint function_owner = hir_fn_signature_function_owner[node];
-    if (!valid_original_node(function_owner) || hir_kind[function_owner] != HIR_FN)
-        return;
+    while (valid_original_node(cursor) && !function_decl_node(cursor))
+        cursor = next_parent(cursor);
+    uint function_owner = cursor;
+    if (!function_decl_node(function_owner)) return;
 
     uint output_row = gHirFnReturnType.retain_debug_rows != 0u
         ? function_owner

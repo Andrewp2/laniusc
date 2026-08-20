@@ -166,7 +166,6 @@ pub(super) const AGGREGATE_SCAN_RESOURCES: PrefixScanResources<&'static str> =
         local_prefix: "aggregate_compare_scan_local_prefix",
         block_sum: "aggregate_compare_scan_block_sum",
         block_prefix: "aggregate_compare_scan_prefix_a",
-        hierarchy: "aggregate_compare_scan_prefix_b",
     };
 pub(super) const AGGREGATE_FINAL_DISPATCH_PASS: &str =
     "type_check.aggregate_requests.final.dispatch";
@@ -186,7 +185,6 @@ pub(super) const TYPE_SUBTREE_SCAN_RESOURCES: PrefixScanResources<&'static str> 
         local_prefix: "aggregate_compare_scan_local_prefix",
         block_sum: "aggregate_compare_scan_block_sum",
         block_prefix: "aggregate_compare_scan_prefix_a",
-        hierarchy: "aggregate_compare_scan_prefix_b",
     };
 pub(super) const TYPE_SUBTREE_FINAL_DISPATCH_PASS: &str = "type_check.type_subtree.final.dispatch";
 pub(super) const TYPE_SUBTREE_FINAL_INDIRECT_PASS: &str = "type_check.type_subtree.final.indirect";
@@ -204,7 +202,6 @@ pub(super) const TYPE_SEMANTIC_SCAN: PrefixScanSpec = PrefixScanSpec {
         local_prefix: "aggregate_compare_scan_local_prefix",
         block_sum: "aggregate_compare_scan_block_sum",
         block_prefix: "aggregate_compare_scan_prefix_a",
-        hierarchy: "aggregate_compare_scan_prefix_b",
     },
 };
 pub(super) const TYPE_INSTANCE_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
@@ -220,7 +217,6 @@ pub(super) const TYPE_INSTANCE_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
         local_prefix: "type_instance_arg_row_scan_local_prefix",
         block_sum: "type_instance_arg_row_scan_block_sum",
         block_prefix: "type_instance_arg_row_scan_prefix_a",
-        hierarchy: "type_instance_arg_row_scan_prefix_b",
     },
 };
 pub(super) const GENERIC_PARAM_SLOT_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
@@ -238,7 +234,6 @@ pub(super) const GENERIC_PARAM_SLOT_SCAN: PrefixScanPairSpec = PrefixScanPairSpe
         local_prefix: "generic_type_param_scan_local_prefix",
         block_sum: "generic_type_param_scan_block_sum",
         block_prefix: "generic_type_param_scan_prefix_a",
-        hierarchy: "generic_type_param_scan_prefix_b",
     },
     right: PrefixScanResources {
         count: "generic_param_count_out",
@@ -249,7 +244,6 @@ pub(super) const GENERIC_PARAM_SLOT_SCAN: PrefixScanPairSpec = PrefixScanPairSpe
         local_prefix: "generic_const_param_scan_local_prefix",
         block_sum: "generic_const_param_scan_block_sum",
         block_prefix: "generic_const_param_scan_prefix_a",
-        hierarchy: "generic_const_param_scan_prefix_b",
     },
 };
 pub(super) const LANGUAGE_NAMES_CLEAR_PASS: &str = "type_check.language_names.clear";
@@ -266,7 +260,6 @@ pub(super) const NAMES_SCAN: PrefixScanSpec = PrefixScanSpec {
         local_prefix: "name_scan_local_prefix",
         block_sum: "name_scan_block_sum",
         block_prefix: "name_scan_prefix_a",
-        hierarchy: "name_scan_prefix_b",
     },
 };
 pub(super) const NAMES_HASH_PREPARE_PASS: &str = "type_check.names.hash_prepare";
@@ -321,9 +314,6 @@ pub(super) const FEATURES_CLEAR_PASS: &str = "type_check.semantic_features.clear
 pub(super) const FEATURES_COLLECT_PASS: &str = "type_check.semantic_features.collect";
 pub(super) const FEATURES_DISPATCH_PASS: &str = "type_check.semantic_features.dispatch_args";
 pub(super) const HIR_ACTIVE_DISPATCH_PASS: &str = "type_check.hir_active_dispatch_args";
-pub(super) const JOB_STORAGE_CLEAR_PASS: &str = "type_check.workspace.clear_job_storage";
-pub(super) const SEMANTIC_INTERFACE_JOB_STORAGE_CLEAR_PASS: &str =
-    "type_check.interface.workspace.clear_job_storage";
 pub(super) const IF_DEPTH_CLEAR_PASS: &str = "type_check.if_depth.clear";
 pub(super) const IF_DEPTH_MARK_PASS: &str = "type_check.if_depth.mark";
 pub(super) const IF_DEPTH_LOCAL_PASS: &str = "type_check.if_depth.local";
@@ -368,7 +358,6 @@ pub(super) const VISIBLE_SCAN: PrefixScanSpec = PrefixScanSpec {
         local_prefix: "hir_visible_decl_scan_local_prefix",
         block_sum: "hir_visible_decl_scan_block_sum",
         block_prefix: "hir_visible_decl_scan_prefix_a",
-        hierarchy: "hir_visible_decl_scan_prefix_b",
     },
 };
 const VISIBLE_SORT_PASS: &str = "type_check.visible.sort_hir_decl_keys";
@@ -439,7 +428,6 @@ pub(super) const PREDICATES_OBLIGATION_PAIR_SCAN: PrefixScanSpec = PrefixScanSpe
         local_prefix: "predicate_obligation_scan_local_prefix",
         block_sum: "predicate_obligation_scan_block_sum",
         block_prefix: "predicate_obligation_scan_prefix_a",
-        hierarchy: "predicate_obligation_scan_prefix_b",
     },
 };
 pub(super) const PREDICATES_OBLIGATION_PAIR_DISPATCH_PASS: &str =
@@ -462,7 +450,6 @@ pub(super) const CALL_PARAM_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
         local_prefix: "call_param_row_scan_local_prefix",
         block_sum: "call_param_row_scan_block_sum",
         block_prefix: "call_param_row_scan_prefix_a",
-        hierarchy: "call_param_row_scan_prefix_b",
     },
 };
 pub(super) const CALL_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
@@ -478,7 +465,6 @@ pub(super) const CALL_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
         local_prefix: "call_arg_row_scan_local_prefix",
         block_sum: "call_arg_row_scan_block_sum",
         block_prefix: "call_arg_row_scan_prefix_a",
-        hierarchy: "call_arg_row_scan_prefix_b",
     },
 };
 pub(super) const GENERIC_CLAIM_SCAN: PrefixScanSpec = PrefixScanSpec {
@@ -494,7 +480,6 @@ pub(super) const GENERIC_CLAIM_SCAN: PrefixScanSpec = PrefixScanSpec {
         local_prefix: "call_generic_claim_scan_local_prefix",
         block_sum: "call_generic_claim_scan_block_sum",
         block_prefix: "call_generic_claim_scan_prefix_a",
-        hierarchy: "call_generic_claim_scan_prefix_b",
     },
 };
 pub(super) const GENERIC_CLAIM_INDEX_PREPARE_PASS: &str =
@@ -514,7 +499,6 @@ pub(super) const REQUIRED_GENERIC_SCAN: PrefixScanSpec = PrefixScanSpec {
         local_prefix: "call_required_generic_scan_local_prefix",
         block_sum: "call_required_generic_scan_block_sum",
         block_prefix: "call_required_generic_scan_prefix_a",
-        hierarchy: "call_required_generic_scan_prefix_b",
     },
 };
 pub(super) const REQUIRED_GENERIC_DISPATCH_PASS: &str =
@@ -618,7 +602,6 @@ pub(super) const MODULE_VALUE_SCAN_WORKSPACE: PrefixScanWorkspace<&'static str> 
         local_prefix: "module_value_scan_local_prefix",
         block_sum: "module_value_scan_block_sum",
         block_prefix: "module_value_scan_prefix_a",
-        hierarchy: "module_value_scan_prefix_b",
     };
 pub(super) const IMPORT_RECORD_SCAN_RESOURCES: PrefixScanResources<&'static str> =
     module_record_scan_resources("import_record_count_out");
@@ -670,7 +653,6 @@ const fn module_record_scan_resources(total: &'static str) -> PrefixScanResource
         local_prefix: "module_record_scan_local_prefix",
         block_sum: "module_record_scan_block_sum",
         block_prefix: "module_record_scan_prefix_a",
-        hierarchy: "module_record_scan_prefix_b",
     }
 }
 pub(super) const DECL_TYPE_KEY_SCAN_RESOURCES: PrefixScanResources<&'static str> =
@@ -809,19 +791,17 @@ const fn module_compact_scan_resources(
     dispatch_args: &'static str,
     value_workspace: bool,
 ) -> PrefixScanResources<&'static str> {
-    let (local_prefix, block_sum, block_prefix, hierarchy) = if value_workspace {
+    let (local_prefix, block_sum, block_prefix) = if value_workspace {
         (
             "module_value_scan_local_prefix",
             "module_value_scan_block_sum",
             "module_value_scan_prefix_a",
-            "module_value_scan_prefix_b",
         )
     } else {
         (
             "module_record_scan_local_prefix",
             "module_record_scan_block_sum",
             "module_record_scan_prefix_a",
-            "module_record_scan_prefix_b",
         )
     };
     PrefixScanResources {
@@ -833,7 +813,6 @@ const fn module_compact_scan_resources(
         local_prefix,
         block_sum,
         block_prefix,
-        hierarchy,
     }
 }
 pub(super) const DEPENDENCY_CALL_COMPARE_CLEAR_PASS: &str =
@@ -910,6 +889,30 @@ pub(super) const SEMANTIC_INTERFACE_ROOT_STEP_PASSES: [&str; 8] = [
     "type_check.interface.type_topology.root_step.5",
     "type_check.interface.type_topology.root_step.6",
     "type_check.interface.type_topology.root_step.7",
+];
+const SEMANTIC_INTERFACE_ACTIVE_HIR_PASSES: &[&str] = &[
+    "type_check.interface.type_topology.init",
+    "type_check.interface.type_topology.attach_unary",
+    "type_check.interface.type_topology.seed_declarations",
+    "type_check.interface.type_topology.seed_params",
+    "type_check.interface.type_topology.seed_fields",
+    "type_check.interface.type_topology.seed_variants",
+    "type_check.interface.type_topology.root_init",
+    "type_check.interface.type_topology.mark_reverse",
+    "type_check.interface.type_topology.scatter",
+    "type_check.interface.type_topology.edge_counts",
+    "type_check.interface.type_topology.edge_scatter",
+    "type_check.interface.type_topology.resolve_local_decl",
+    "type_check.interface.type_topology.classify_path",
+    "type_check.interface.type_topology.type_records",
+    "type_check.interface.type_topology.array_lengths",
+    "type_check.interface.type_topology.validate",
+    "type_check.interface.signature.param_edges",
+    "type_check.interface.signature.variant_payload_edges",
+    "type_check.interface.members.variant_counts",
+    "type_check.interface.members.method_counts",
+    "type_check.interface.members.scatter_hir",
+    "type_check.interface.members.normalize_types",
 ];
 pub(super) const SEMANTIC_INTERFACE_EDGE_WRITTEN_CLEAR_PASS: &str =
     "type_check.interface.type_topology.edge_written.clear";
@@ -988,7 +991,6 @@ impl SemanticInterfaceScanGraph {
                     local_prefix: "semantic_interface.scan.local_prefix",
                     block_sum: "semantic_interface.scan.block_sum",
                     block_prefix: "semantic_interface.scan.block_prefix",
-                    hierarchy: "semantic_interface.scan.hierarchy",
                 },
             )
             .map_err(anyhow::Error::msg)?;
@@ -1153,7 +1155,6 @@ impl SemanticInterfaceScanGraph {
                         local_prefix: scratch.local_prefix,
                         block_sum: scratch.block_sum,
                         block_prefix: scratch.block_prefix,
-                        hierarchy: scratch.hierarchy,
                     };
                     let passes = prefix_scan_graph_passes!($label);
                     Ok((resources, passes))
@@ -1522,6 +1523,14 @@ impl SemanticInterfaceScanGraph {
                 )
                 .map_err(anyhow::Error::msg)?;
         }
+        builder
+            .import_resource_alias_from(
+                upstream_graph,
+                "hir_active_dispatch_args",
+                "hir_active_dispatch_args",
+                AccessMode::Read,
+            )
+            .map_err(anyhow::Error::msg)?;
         const IDENTITY_KERNELS: &[&str] = &[
             "type_checker/interface/00_identity_sizes",
             "type_checker/interface/01_identity_records",
@@ -1978,6 +1987,15 @@ impl SemanticInterfaceScanGraph {
                 )
                 .map_err(anyhow::Error::msg)?;
         }
+        for &name in SEMANTIC_INTERFACE_ACTIVE_HIR_PASSES.iter().chain(
+            SEMANTIC_INTERFACE_ROOT_STEP_PASSES
+                .iter()
+                .take(root_steps as usize),
+        ) {
+            builder
+                .add_indirect_dispatch(name, "hir_active_dispatch_args")
+                .map_err(anyhow::Error::msg)?;
+        }
 
         add_clear!(
             SEMANTIC_INTERFACE_NAME_REF_CLEAR_PASS,
@@ -2048,12 +2066,6 @@ impl SemanticInterfaceScanGraph {
                 metadata_readback,
             )
             .map_err(anyhow::Error::msg)?;
-        builder
-            .add_physical_reset_pass(
-                SEMANTIC_INTERFACE_JOB_STORAGE_CLEAR_PASS,
-                CompilerPhase::TypeCheck,
-            )
-            .map_err(anyhow::Error::msg)?;
         builder.add_registered_pass_arena_conflicts();
         let graph = builder.build().map_err(anyhow::Error::msg)?;
         let (resources, passes): (Vec<_>, Vec<_>) = scans.into_iter().unzip();
@@ -2100,7 +2112,6 @@ impl SemanticInterfaceScanGraph {
             local_prefix: alias(scratch.local_prefix, scan_capacity as usize)?,
             block_sum: alias(scratch.block_sum, block_capacity)?,
             block_prefix: alias(scratch.block_prefix, block_capacity)?,
-            hierarchy: alias(scratch.hierarchy, block_capacity)?,
         };
         let bindings = materialized.bindings()?;
         Ok(Self {
@@ -2154,7 +2165,6 @@ impl SemanticInterfaceScanGraph {
             (scan_resources.local_prefix, "scan_local_prefix"),
             (scan_resources.block_sum, "scan_block_sum"),
             (scan_resources.block_prefix, "scan_block_prefix"),
-            (scan_resources.hierarchy, "scan_hierarchy"),
         ]
         .map(|(resource, registered)| {
             (
@@ -2194,62 +2204,6 @@ impl crate::gpu::operations::ComputeGraph for SemanticInterfaceScanGraph {
 }
 
 impl TypeCheckCompilerGraph {
-    pub(super) fn job_storage_reset_operations(
-        &self,
-        buffers: &[crate::gpu::buffers::ResettableBuffer],
-    ) -> Result<Vec<crate::gpu::operations::ResetGraphAllocationsOperation>> {
-        use crate::gpu::buffers::JobResetPolicy;
-
-        let mut primary = Vec::new();
-        let mut semantic_interface = Vec::new();
-        for buffer in buffers {
-            if buffer.reset_policy == JobResetPolicy::OverwriteBeforeRead {
-                continue;
-            }
-            if self
-                .materialized
-                .allocations()
-                .owns_allocation(buffer.allocation_id)
-            {
-                primary.push(buffer.clone());
-            } else if self.semantic_interface_scans.as_ref().is_some_and(|graph| {
-                graph
-                    .materialized
-                    .allocations()
-                    .owns_allocation(buffer.allocation_id)
-            }) {
-                semantic_interface.push(buffer.clone());
-            } else {
-                anyhow::bail!(
-                    "type-check reset allocation `{}` ({}) is not owned by either compiler graph",
-                    buffer.label,
-                    buffer.allocation_id,
-                );
-            }
-        }
-
-        let mut operations = Vec::with_capacity(2);
-        if !primary.is_empty() {
-            operations.push(crate::gpu::operations::ResetGraphAllocationsOperation::new(
-                self,
-                JOB_STORAGE_CLEAR_PASS,
-                &primary,
-            )?);
-        }
-        if !semantic_interface.is_empty() {
-            let graph = self
-                .semantic_interface_scans
-                .as_ref()
-                .expect("semantic-interface allocations require their graph");
-            operations.push(crate::gpu::operations::ResetGraphAllocationsOperation::new(
-                graph,
-                SEMANTIC_INTERFACE_JOB_STORAGE_CLEAR_PASS,
-                &semantic_interface,
-            )?);
-        }
-        Ok(operations)
-    }
-
     pub(super) fn register_bindings<'a>(
         &'a self,
         bindings: &'a CompilerGraphBindings,
@@ -2267,7 +2221,6 @@ impl TypeCheckCompilerGraph {
             local_prefix: self.materialized.u32_buffer(names.local_prefix)?,
             block_sum: self.materialized.u32_buffer(names.block_sum)?,
             block_prefix: self.materialized.u32_buffer(names.block_prefix)?,
-            hierarchy: self.materialized.u32_buffer(names.hierarchy)?,
         })
     }
 
@@ -3073,7 +3026,6 @@ fn build_graph(
         _name_scan_local_prefix as "name_scan_local_prefix" in Tokens => name_rows * 4;
         _name_scan_block_sum as "name_scan_block_sum" in Tokens => name_blocks * 4;
         _name_scan_prefix_a as "name_scan_prefix_a" in Tokens => name_blocks * 4;
-        _name_scan_prefix_b as "name_scan_prefix_b" in Tokens => name_blocks * 4;
     });
 
     // These four arrays form the retained name artifact consumed by module
@@ -3101,11 +3053,9 @@ fn build_graph(
         _module_record_scan_local_prefix as "module_record_scan_local_prefix" in HirNodes => hir_rows * 4;
         _module_record_scan_block_sum as "module_record_scan_block_sum" in HirNodes => hir_blocks * 4;
         _module_record_scan_prefix_a as "module_record_scan_prefix_a" in HirNodes => hir_blocks * 4;
-        _module_record_scan_prefix_b as "module_record_scan_prefix_b" in HirNodes => hir_blocks * 4;
         _module_value_scan_local_prefix as "module_value_scan_local_prefix" in Declarations => hir_rows * 4;
         _module_value_scan_block_sum as "module_value_scan_block_sum" in Declarations => hir_blocks * 4;
         _module_value_scan_prefix_a as "module_value_scan_prefix_a" in Declarations => hir_blocks * 4;
-        _module_value_scan_prefix_b as "module_value_scan_prefix_b" in Declarations => hir_blocks * 4;
     });
     if module_record_capacity > MODULE_RELATION_SMALL_SORT_CAPACITY {
         graph_resources!(graph, Workspace {
@@ -3160,7 +3110,6 @@ fn build_graph(
         _type_instance_arg_row_scan_local_prefix as "type_instance_arg_row_scan_local_prefix" in Types => token_rows * 4;
         _type_instance_arg_row_scan_block_sum as "type_instance_arg_row_scan_block_sum" in Types => token_rows.div_ceil(256) * 4;
         _type_instance_arg_row_scan_prefix_a as "type_instance_arg_row_scan_prefix_a" in Types => token_rows.div_ceil(256) * 4;
-        _type_instance_arg_row_scan_prefix_b as "type_instance_arg_row_scan_prefix_b" in Types => token_rows.div_ceil(256) * 4;
         _method_key_status as "method_key_status" in Declarations => token_rows * 4;
         _method_key_duplicate_of as "method_key_duplicate_of" in Declarations => token_rows * 4;
         _method_lookup_head as "method_lookup_head" in Declarations => token_rows.saturating_mul(2) * 4;
@@ -3230,8 +3179,6 @@ fn build_graph(
         _generic_const_param_scan_block_sum as "generic_const_param_scan_block_sum" in Declarations => token_rows.div_ceil(256) * 4;
         _generic_type_param_scan_prefix_a as "generic_type_param_scan_prefix_a" in Declarations => token_rows.div_ceil(256) * 4;
         _generic_const_param_scan_prefix_a as "generic_const_param_scan_prefix_a" in Declarations => token_rows.div_ceil(256) * 4;
-        _generic_type_param_scan_prefix_b as "generic_type_param_scan_prefix_b" in Declarations => token_rows.div_ceil(256) * 4;
-        _generic_const_param_scan_prefix_b as "generic_const_param_scan_prefix_b" in Declarations => token_rows.div_ceil(256) * 4;
     });
     graph_resources!(graph, Input {
         _compact_generic_param_count as "compact_generic_param_count" in HirNodes => 4;
@@ -3323,7 +3270,6 @@ fn build_graph(
         _predicate_obligation_scan_local_prefix as "predicate_obligation_scan_local_prefix" in HirNodes => predicate_rows * 4;
         _predicate_obligation_scan_block_sum as "predicate_obligation_scan_block_sum" in HirNodes => predicate_rows.div_ceil(256) * 4;
         _predicate_obligation_scan_prefix_a as "predicate_obligation_scan_prefix_a" in HirNodes => predicate_rows.div_ceil(256) * 4;
-        _predicate_obligation_scan_prefix_b as "predicate_obligation_scan_prefix_b" in HirNodes => predicate_rows.div_ceil(256) * 4;
         predicate_obligation_pair_total in HirNodes => 4;
         predicate_obligation_pair_dispatch_args in DispatchArguments [StorageIndirect] => 12;
     });
@@ -3635,7 +3581,6 @@ fn build_graph(
         _hir_visible_decl_scan_local_prefix as "hir_visible_decl_scan_local_prefix" in Tokens => token_rows * 4;
         _hir_visible_decl_scan_block_sum as "hir_visible_decl_scan_block_sum" in Tokens => token_blocks * 4;
         _hir_visible_decl_scan_prefix_a as "hir_visible_decl_scan_prefix_a" in Tokens => token_blocks * 4;
-        _hir_visible_decl_scan_prefix_b as "hir_visible_decl_scan_prefix_b" in Tokens => token_blocks * 4;
     });
     graph_resources!(graph, Workspace {
         hir_visible_decl_count_out in Declarations => 4;
@@ -3737,24 +3682,20 @@ fn build_graph(
         _call_param_row_scan_local_prefix as "call_param_row_scan_local_prefix" in Tokens => token_rows * 4;
         _call_param_row_scan_block_sum as "call_param_row_scan_block_sum" in Tokens => token_rows.div_ceil(256) * 4;
         _call_param_row_scan_prefix_a as "call_param_row_scan_prefix_a" in Tokens => token_rows.div_ceil(256) * 4;
-        _call_param_row_scan_prefix_b as "call_param_row_scan_prefix_b" in Tokens => token_rows.div_ceil(256) * 4;
         _call_arg_row_scan_input as "call_arg_row_scan_input" in HirNodes => hir_rows * 4;
         _call_arg_row_prefix as "call_arg_row_prefix" in HirNodes => hir_rows * 4;
         _call_arg_row_scan_block_sum as "call_arg_row_scan_block_sum" in HirNodes => hir_blocks * 4;
         _call_arg_row_scan_prefix_a as "call_arg_row_scan_prefix_a" in HirNodes => hir_blocks * 4;
-        _call_arg_row_scan_prefix_b as "call_arg_row_scan_prefix_b" in HirNodes => hir_blocks * 4;
         _call_generic_claim_scan_local_prefix as "call_generic_claim_scan_local_prefix" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_scan_input as "call_generic_claim_scan_input" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_prefix as "call_generic_claim_prefix" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_scan_block_sum as "call_generic_claim_scan_block_sum" in CallArguments => call_arg_blocks * 4;
         _call_generic_claim_scan_prefix_a as "call_generic_claim_scan_prefix_a" in CallArguments => call_arg_blocks * 4;
-        _call_generic_claim_scan_prefix_b as "call_generic_claim_scan_prefix_b" in CallArguments => call_arg_blocks * 4;
         _call_required_generic_scan_input as "call_required_generic_scan_input" in HirNodes => hir_rows * 4;
         _call_required_generic_prefix as "call_required_generic_prefix" in HirNodes => hir_rows * 4;
         _call_required_generic_scan_local_prefix as "call_required_generic_scan_local_prefix" in HirNodes => hir_rows * 4;
         _call_required_generic_scan_block_sum as "call_required_generic_scan_block_sum" in HirNodes => hir_blocks * 4;
         _call_required_generic_scan_prefix_a as "call_required_generic_scan_prefix_a" in HirNodes => hir_blocks * 4;
-        _call_required_generic_scan_prefix_b as "call_required_generic_scan_prefix_b" in HirNodes => hir_blocks * 4;
         required_generic_count_out as "call_required_generic_count_out" in CallArguments => 4;
         required_generic_dispatch_args as "call_required_generic_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _call_generic_claim_callee as "call_generic_claim_callee" in CallArguments => claim_rows * 4;
@@ -3819,7 +3760,6 @@ fn build_graph(
         _aggregate_compare_scan_local_prefix as "aggregate_compare_scan_local_prefix" in HirNodes => hir_rows * 4;
         _aggregate_compare_scan_block_sum as "aggregate_compare_scan_block_sum" in HirNodes => aggregate_blocks * 4;
         _aggregate_compare_scan_prefix_a as "aggregate_compare_scan_prefix_a" in HirNodes => aggregate_blocks * 4;
-        _aggregate_compare_scan_prefix_b as "aggregate_compare_scan_prefix_b" in HirNodes => aggregate_blocks * 4;
         aggregate_compare_dispatch_args in HirNodes [StorageIndirect] => 12;
     });
     graph_resources!(graph, Workspace {
@@ -3839,12 +3779,6 @@ fn build_graph(
         type_subtree_compare_error_detail in HirNodes => hir_rows * 4;
         _type_subtree_compare_dispatch_args as "type_subtree_compare_dispatch_args" in HirNodes [StorageIndirect] => 12;
     });
-    // Reusable jobs clear each unique physical allocation. The reset is an
-    // allocation boundary, not a logical producer: every workspace relation
-    // below still names its actual algorithmic initializer.
-    graph.add_physical_reset_pass(JOB_STORAGE_CLEAR_PASS, CompilerPhase::TypeCheck)?;
-    graph.mark_zero_initialized(visible_type)?;
-    graph.mark_zero_initialized(visible_decl)?;
     graph.add_kernel_initializer_by_name(
         HIR_ACTIVE_DISPATCH_PASS,
         CompilerPhase::TypeCheck,
@@ -4288,14 +4222,6 @@ fn build_graph(
                 PassAccess::write(
                     "generic_const_param_scan_prefix_a",
                     _generic_const_param_scan_prefix_a,
-                ),
-                PassAccess::write(
-                    "generic_type_param_scan_prefix_b",
-                    _generic_type_param_scan_prefix_b,
-                ),
-                PassAccess::write(
-                    "generic_const_param_scan_prefix_b",
-                    _generic_const_param_scan_prefix_b,
                 ),
             ],
         })?;
@@ -5946,7 +5872,6 @@ mod tests {
             graph.resource_id("name_scan_local_prefix").unwrap(),
             graph.resource_id("name_scan_block_sum").unwrap(),
             graph.resource_id("name_scan_prefix_a").unwrap(),
-            graph.resource_id("name_scan_prefix_b").unwrap(),
             graph.resource_id("name_max_len").unwrap(),
             graph.resource_id("name_hash_table_a").unwrap(),
             graph.resource_id("name_hash_table_b").unwrap(),
@@ -5962,7 +5887,6 @@ mod tests {
             resource("module_record_scan_local_prefix"),
             resource("module_record_scan_block_sum"),
             resource("module_record_scan_prefix_a"),
-            resource("module_record_scan_prefix_b"),
             resource("module_path_key_radix_block_histogram"),
             resource("module_path_key_radix_block_bucket_prefix"),
             resource("module_path_key_radix_bucket_total"),
@@ -6061,15 +5985,14 @@ mod tests {
         let hierarchy_bindings = [
             resource("module_record_scan_block_sum"),
             resource("module_record_scan_prefix_a"),
-            resource("module_record_scan_prefix_b"),
         ]
         .map(storage_identity)
         .into_iter()
         .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(
             hierarchy_bindings.len(),
-            3,
-            "scan block sums, block prefixes, and hierarchy are bound together",
+            2,
+            "scan block sums and block prefixes are bound together",
         );
         let module_radix_resources = [
             resource("module_path_key_radix_block_histogram"),
@@ -6108,19 +6031,18 @@ mod tests {
             resource("module_record_scan_local_prefix"),
             resource("module_record_scan_block_sum"),
             resource("module_record_scan_prefix_a"),
-            resource("module_record_scan_prefix_b"),
         ] {
             let lifetime = graph.lifetime(resource).unwrap();
             assert!(
                 lifetime.last_pass.index() >= module_type_scan_start.index()
                     && lifetime.last_pass.index() <= module_type_scan_end.index(),
-                "shared scan hierarchy ends inside its final modeled visibility scan",
+                "shared scan workspace ends inside its final modeled visibility scan",
             );
             for radix_resource in module_radix_resources {
                 assert_ne!(
                     storage_identity(resource),
                     storage_identity(radix_resource),
-                    "module scan hierarchy and radix storage overlap in the real schedule",
+                    "module scan workspace and radix storage overlap in the real schedule",
                 );
             }
         }
@@ -6176,7 +6098,6 @@ mod tests {
                 .resource_id("hir_visible_decl_scan_block_sum")
                 .unwrap(),
             graph.resource_id("hir_visible_decl_scan_prefix_a").unwrap(),
-            graph.resource_id("hir_visible_decl_scan_prefix_b").unwrap(),
             graph.resource_id("hir_visible_decl_count_out").unwrap(),
             graph.resource_id("hir_visible_decl_owner_fn").unwrap(),
             graph.resource_id("hir_visible_decl_name_id").unwrap(),
@@ -6450,7 +6371,6 @@ mod tests {
             resource("predicate_obligation_scan_local_prefix"),
             resource("predicate_obligation_scan_block_sum"),
             resource("predicate_obligation_scan_prefix_a"),
-            resource("predicate_obligation_scan_prefix_b"),
             resource("predicate_obligation_pair_total"),
             resource("predicate_obligation_pair_dispatch_args"),
         ] {
@@ -6623,7 +6543,6 @@ mod tests {
             resource("type_instance_arg_row_scan_local_prefix"),
             resource("type_instance_arg_row_scan_block_sum"),
             resource("type_instance_arg_row_scan_prefix_a"),
-            resource("type_instance_arg_row_scan_prefix_b"),
             resource("type_instance_arg_row_ref_tag"),
             resource("type_instance_arg_row_ref_payload"),
             resource("type_instance_arg_hash"),
@@ -6663,7 +6582,6 @@ mod tests {
             slot(resource("type_instance_arg_row_scan_local_prefix")),
             slot(resource("type_instance_arg_row_scan_block_sum")),
             slot(resource("type_instance_arg_row_scan_prefix_a")),
-            slot(resource("type_instance_arg_row_scan_prefix_b")),
         ];
         argument_row_slots.sort_unstable();
         assert!(
@@ -6869,14 +6787,6 @@ mod tests {
             slot(resource("fn_block_prefix")),
             "simultaneously read function-context rows must not alias",
         );
-        assert!(
-            graph
-                .pass(graph.pass_id(JOB_STORAGE_CLEAR_PASS).unwrap())
-                .unwrap()
-                .accesses
-                .is_empty(),
-            "the physical job reset must not masquerade as a logical producer",
-        );
         assert_eq!(
             graph
                 .resource(graph.resource_id("semantic_feature_flags").unwrap())
@@ -7047,12 +6957,11 @@ mod tests {
             resource("aggregate_compare_scan_local_prefix"),
             resource("aggregate_compare_scan_block_sum"),
             resource("aggregate_compare_scan_prefix_a"),
-            resource("aggregate_compare_scan_prefix_b"),
         ] {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
                 ResourceClass::Workspace,
-                "aggregate scan hierarchy must use lifetime-colored graph workspace",
+                "aggregate scan workspace must use lifetime-colored graph workspace",
             );
         }
         assert_eq!(

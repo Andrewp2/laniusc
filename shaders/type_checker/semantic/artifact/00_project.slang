@@ -15,6 +15,7 @@ struct Params
     uint n_hir_nodes;
     uint n_source_files;
     uint parser_feature_flags;
+    uint dependency_interfaces_present;
 };
 
 
@@ -161,7 +162,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         declaration = payload.b;
         type_id = visible_type[payload.b];
     }
-    if (core.kind == HIR_PATH_EXPR)
+    if (gParams.dependency_interfaces_present != 0u && core.kind == HIR_PATH_EXPR)
     {
         uint path = path_id_by_owner_hir[row];
         if (path != INVALID && path < gParams.n_hir_nodes)

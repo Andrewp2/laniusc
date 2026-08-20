@@ -942,11 +942,13 @@ fn collect_shader_dependencies(
         .with_context(|| format!("read shader dependency {}", path.display()))?;
     for dependency in shader_dependencies(&text) {
         let (kind, name, dep) = match dependency {
-            ShaderDependency::Import(import) => (
-                "import",
-                import,
-                resolve_shader_import(shader_root, &path, import),
-            ),
+            ShaderDependency::Import(import) => {
+                let dep = resolve_shader_import(shader_root, &path, import);
+                if dep.is_none() && is_slang_standard_module(import) {
+                    continue;
+                }
+                ("import", import, dep)
+            }
             ShaderDependency::Include(include) => (
                 "include",
                 include,
@@ -962,6 +964,10 @@ fn collect_shader_dependencies(
         collect_shader_dependencies(shader_root, &dep, seen, out)?;
     }
     Ok(())
+}
+
+fn is_slang_standard_module(import: &str) -> bool {
+    matches!(import, "glsl")
 }
 
 enum ShaderDependency<'a> {

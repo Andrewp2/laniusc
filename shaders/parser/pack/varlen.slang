@@ -1,5 +1,5 @@
 // shaders/parser/pack_varlen.slang
-// Packs two dense streams in parallel, one 256-lane wave per token pair:
+// Packs two dense streams in parallel, one GPU thread per token pair:
 //  - out_sc   : stack-change codes (push=odd, pop=even) from sc_superseq
 //  - out_emit : production IDs from pp_superseq
 
@@ -42,9 +42,9 @@ RWStructuredBuffer<uint> out_emit_pos; // len = emit_capacity
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-uint linear_group_id(uint3 gid)
+uint linear_thread_id(uint3 gid, uint3 ltid)
 {
-    return gid.x + gid.y * MAX_GROUPS_X;
+    return (gid.x + gid.y * MAX_GROUPS_X) * WG_SIZE + ltid.x;
 }
 
 // ----- Small helpers into the packed blob -----
@@ -105,31 +105,29 @@ bool source_file_boundary_pair(uint pair_i, uint token_count_value)
            prev_file != this_file;
 }
 
-uint copy_sc_pair(uint idx2d, uint lane, uint dst_sc)
+uint copy_sc_pair(uint idx2d, uint dst_sc)
 {
     uint sco = sc_off_at(idx2d);
     uint scl = sc_len_at(idx2d);
-
-    if (lane < scl)
+    for (uint offset = 0u; offset < scl; ++offset)
     {
-        uint dst = dst_sc + lane;
+        uint dst = dst_sc + offset;
         if (dst < gParams.sc_capacity)
-            out_sc[dst] = sc_seq_at(sco + lane);
+            out_sc[dst] = sc_seq_at(sco + offset);
     }
     return scl;
 }
 
-uint copy_emit_pair(uint idx2d, uint lane, uint dst_emit, uint emit_pos)
+uint copy_emit_pair(uint idx2d, uint dst_emit, uint emit_pos)
 {
     uint epo = pp_off_at(idx2d);
     uint epl = pp_len_at(idx2d);
-
-    if (lane < epl)
+    for (uint offset = 0u; offset < epl; ++offset)
     {
-        uint dst = dst_emit + lane;
+        uint dst = dst_emit + offset;
         if (dst < gParams.emit_capacity)
         {
-            out_emit[dst] = pp_seq_at(epo + lane);
+            out_emit[dst] = pp_seq_at(epo + offset);
             out_emit_pos[dst] = emit_pos;
         }
     }
@@ -145,8 +143,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 
     uint active_tokens = min(gParams.n_tokens, token_count[0] + 2u);
     uint n_pairs = active_tokens > 0u ? active_tokens - 1u : 0u;
-    uint i = linear_group_id(gid);
-    uint lane = ltid.x;
+    uint i = linear_thread_id(gid, ltid);
     if (i >= n_pairs)
         return;
 
@@ -167,12 +164,10 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     {
         uint close_idx = table_index(prev, 0u);
         uint open_idx = table_index(0u, thisK);
-        uint first_sc_len = copy_sc_pair(close_idx, lane, dst_sc);
-        uint first_emit_len = copy_emit_pair(close_idx, lane, dst_emit, i);
-        if (lane >= first_sc_len)
-            copy_sc_pair(open_idx, lane - first_sc_len, dst_sc + first_sc_len);
-        if (lane >= first_emit_len)
-            copy_emit_pair(open_idx, lane - first_emit_len, dst_emit + first_emit_len, i);
+        uint first_sc_len = copy_sc_pair(close_idx, dst_sc);
+        uint first_emit_len = copy_emit_pair(close_idx, dst_emit, i);
+        copy_sc_pair(open_idx, dst_sc + first_sc_len);
+        copy_emit_pair(open_idx, dst_emit + first_emit_len, i);
         return;
     }
 
@@ -182,16 +177,14 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         uint outer = generic_shr_outer(i);
         uint first_idx = table_index(prev, inner);
         uint second_idx = table_index(inner, outer);
-        uint first_sc_len = copy_sc_pair(first_idx, lane, dst_sc);
-        uint first_emit_len = copy_emit_pair(first_idx, lane, dst_emit, i);
-        if (lane >= first_sc_len)
-            copy_sc_pair(second_idx, lane - first_sc_len, dst_sc + first_sc_len);
-        if (lane >= first_emit_len)
-            copy_emit_pair(second_idx, lane - first_emit_len, dst_emit + first_emit_len, i);
+        uint first_sc_len = copy_sc_pair(first_idx, dst_sc);
+        uint first_emit_len = copy_emit_pair(first_idx, dst_emit, i);
+        copy_sc_pair(second_idx, dst_sc + first_sc_len);
+        copy_emit_pair(second_idx, dst_emit + first_emit_len, i);
         return;
     }
 
     uint idx2d = table_index(prev, thisK);
-    copy_sc_pair(idx2d, lane, dst_sc);
-    copy_emit_pair(idx2d, lane, dst_emit, i);
+    copy_sc_pair(idx2d, dst_sc);
+    copy_emit_pair(idx2d, dst_emit, i);
 }

@@ -13,8 +13,6 @@ use crate::{
 /// Reusable pointer-jump operation over one tree link and one or more payloads.
 pub struct TreeRelationOperation {
     data: PassData,
-    pair_data: PassData,
-    triple_data: PassData,
 }
 
 #[derive(Clone, Copy)]
@@ -25,12 +23,6 @@ pub(in crate::parser) struct TreeRelationInvocation {
     pub finalize: &'static str,
 }
 
-pub(in crate::parser) const FN_SIGNATURE_OWNER: TreeRelationInvocation = TreeRelationInvocation {
-    a_to_b: "hir_fn_signature_owner_step.a_to_b",
-    b_to_a: "hir_fn_signature_owner_step.b_to_a",
-    a_to_b_final: "hir_fn_signature_owner_step.a_to_b_final",
-    finalize: "hir_fn_signature_owner_step.finalize",
-};
 pub(in crate::parser) const MATCH_ARM_OWNER: TreeRelationInvocation = TreeRelationInvocation {
     a_to_b: "hir_match_arm_owner_step.a_to_b",
     b_to_a: "hir_match_arm_owner_step.b_to_a",
@@ -44,13 +36,6 @@ pub(in crate::parser) const CANONICAL_VARIANT_PAYLOAD_OWNER: TreeRelationInvocat
         a_to_b_final: "hir_canonical_variant_payload_owner_step.a_to_b_final",
         finalize: "hir_canonical_variant_payload_owner_step.finalize",
     };
-pub(in crate::parser) const CANONICAL_RELATIONS: TreeRelationInvocation = TreeRelationInvocation {
-    a_to_b: "hir_canonical_relations_step.a_to_b",
-    b_to_a: "hir_canonical_relations_step.b_to_a",
-    a_to_b_final: "hir_canonical_relations_step.a_to_b_final",
-    finalize: "hir_canonical_relations_step.finalize",
-};
-
 impl TreeRelationOperation {
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         Ok(Self {
@@ -59,18 +44,6 @@ impl TreeRelationOperation {
                 "hir_semantic_parent_step",
                 "main",
                 "parser/hir/semantic/parent/step",
-            )?,
-            pair_data: make_pass_data_from_shader_key(
-                device,
-                "hir_semantic_parent_pair_step",
-                "main",
-                "parser/hir/semantic/parent/pair_step",
-            )?,
-            triple_data: make_pass_data_from_shader_key(
-                device,
-                "hir_semantic_parent_triple_step",
-                "main",
-                "parser/hir/semantic/parent/triple_step",
             )?,
         })
     }
@@ -98,6 +71,7 @@ impl TreeRelationOperation {
             link_b,
             value_b,
             SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+            &buffers.hir_local_relation_dispatch_args,
             invocation,
             cache,
         )
@@ -121,6 +95,7 @@ impl TreeRelationOperation {
             &buffers.hir_semantic_parent_link_b,
             &buffers.hir_semantic_parent_value_b,
             crate::parser::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
+            &buffers.hir_raw_relation_dispatch_args,
             invocation,
             cache,
         )
@@ -137,6 +112,7 @@ impl TreeRelationOperation {
         link_b: &crate::gpu::buffers::LaniusBuffer<u32>,
         value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
         local_span: u32,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         invocation: TreeRelationInvocation,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
@@ -148,59 +124,8 @@ impl TreeRelationOperation {
             SINGLE_NAMES,
             TreeRelationBuffers::new(link_a, link_b, [value_a], [value_b]),
             bounded_walk_steps_after_local_span(buffers.tree_capacity, local_span),
-            &buffers.tree_active_dispatch_args,
-            invocation,
-            cache,
-        )
-    }
-
-    /// Propagates three canonical ancestor payloads over one shared link.
-    pub(in crate::parser) fn record_canonical_steps_for_three_values(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-        relation: TreeRelationBuffers<'_, 3>,
-        invocation: TreeRelationInvocation,
-        cache: &mut BindGroupCache,
-    ) -> Result<()> {
-        self.record_schedule(
-            device,
-            encoder,
-            buffers,
-            &self.triple_data,
-            TRIPLE_NAMES,
-            relation,
-            bounded_walk_steps_after_local_span(
-                buffers.tree_capacity,
-                crate::parser::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
-            ),
-            &buffers.tree_active_dispatch_args,
-            invocation,
-            cache,
-        )
-    }
-
-    /// Propagates two payload columns over links seeded directly by the caller.
-    pub(in crate::parser) fn record_two_values(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-        relation: TreeRelationBuffers<'_, 2>,
-        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
-        invocation: TreeRelationInvocation,
-        cache: &mut BindGroupCache,
-    ) -> Result<()> {
-        self.record_schedule(
-            device,
-            encoder,
-            buffers,
-            &self.pair_data,
-            PAIR_NAMES,
-            relation,
-            bounded_walk_step_capacity(buffers.tree_capacity),
             dispatch_args,
+            true,
             invocation,
             cache,
         )
@@ -216,6 +141,7 @@ impl TreeRelationOperation {
         relation: TreeRelationBuffers<'_, N>,
         steps: u32,
         dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        per_step_dispatch_args: bool,
         invocation: TreeRelationInvocation,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
@@ -269,12 +195,18 @@ impl TreeRelationOperation {
                 .into_iter()
                 .next()
                 .expect("tree-relation operation must have one reflected bind group");
-            crate::gpu::passes_core::record_or_defer_compute_indirect(
+            let dispatch_offset = if per_step_dispatch_args {
+                u64::from(step) * 3 * std::mem::size_of::<u32>() as u64
+            } else {
+                0
+            };
+            crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
                 encoder,
                 data,
                 bind_group.as_ref(),
                 label,
                 dispatch_args,
+                dispatch_offset,
             );
         }
 
@@ -285,16 +217,8 @@ impl TreeRelationOperation {
         Ok(())
     }
 
-    pub(in crate::parser) fn graph_pair_pass(&self) -> &PassData {
-        &self.pair_data
-    }
-
     pub(in crate::parser) fn graph_single_pass(&self) -> &PassData {
         &self.data
-    }
-
-    pub(in crate::parser) fn graph_triple_pass(&self) -> &PassData {
-        &self.triple_data
     }
 }
 
@@ -312,19 +236,6 @@ const SINGLE_NAMES: RelationNames<1> = RelationNames {
     values_in: ["hir_semantic_parent_value_in"],
     values_out: ["hir_semantic_parent_value_out"],
 };
-const PAIR_NAMES: RelationNames<2> = RelationNames {
-    link_in: "relation_link_in",
-    link_out: "relation_link_out",
-    values_in: ["first_value_in", "second_value_in"],
-    values_out: ["first_value_out", "second_value_out"],
-};
-const TRIPLE_NAMES: RelationNames<3> = RelationNames {
-    link_in: "relation_link_in",
-    link_out: "relation_link_out",
-    values_in: ["first_value_in", "second_value_in", "third_value_in"],
-    values_out: ["first_value_out", "second_value_out", "third_value_out"],
-};
-
 #[derive(Clone, Copy)]
 pub struct TreeRelationBuffers<'a, const N: usize> {
     link_a: &'a crate::gpu::buffers::LaniusBuffer<u32>,
@@ -365,12 +276,6 @@ impl<'a, const N: usize> TreeRelationBuffers<'a, N> {
     }
 }
 
-pub(crate) fn pointer_jump_steps_after_local_span(items: u32) -> u32 {
-    crate::parser::buffers::pointer_jump_step_capacity(
-        items.max(1).div_ceil(SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN),
-    )
-}
-
 pub(in crate::parser) fn bounded_walk_steps_after_local_span(items: u32, local_span: u32) -> u32 {
     bounded_walk_step_capacity(items.max(1).div_ceil(local_span.max(1)))
 }
@@ -384,42 +289,57 @@ pub(in crate::parser) fn canonical_relation_step_capacity(items: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_walk_steps_after_local_span, pointer_jump_steps_after_local_span};
-    use crate::parser::{
-        buffers::pointer_jump_step_capacity,
-        passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+    use super::bounded_walk_steps_after_local_span;
+    use crate::parser::passes::hir::{
+        canonical::RELATION_LOCAL_ANCESTOR_SPAN,
+        nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
     };
 
-    fn scheduled_steps(items: u32, max_depth: u32) -> u32 {
-        let span = SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN;
-        let required = pointer_jump_step_capacity((max_depth + 1).div_ceil(span));
-        let capacity = pointer_jump_steps_after_local_span(items);
+    fn scheduled_steps(items: u32, max_depth: u32, local_span: u32) -> u32 {
+        let required = bounded_walk_steps_after_local_span(max_depth + 1, local_span);
+        let capacity = bounded_walk_steps_after_local_span(items, local_span);
         required + ((required ^ capacity) & 1)
     }
 
     #[test]
-    fn local_walk_reduces_global_pointer_jump_rounds_without_losing_depth_coverage() {
-        assert_eq!(pointer_jump_steps_after_local_span(1), 0);
-        assert_eq!(pointer_jump_steps_after_local_span(32), 0);
-        assert_eq!(pointer_jump_steps_after_local_span(33), 1);
-        assert_eq!(pointer_jump_steps_after_local_span(64), 1);
-        assert_eq!(pointer_jump_steps_after_local_span(65), 2);
-        assert_eq!(pointer_jump_steps_after_local_span(1_687_524), 16);
+    fn canonical_relation_rounds_cover_the_raw_tree_capacity() {
+        assert_eq!(bounded_walk_steps_after_local_span(1, 1), 0);
+        assert_eq!(bounded_walk_steps_after_local_span(16, 1), 1);
+        assert_eq!(bounded_walk_steps_after_local_span(17, 1), 2);
+        assert_eq!(bounded_walk_steps_after_local_span(256, 1), 2);
+        assert_eq!(bounded_walk_steps_after_local_span(257, 1), 3);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 1), 6);
     }
 
     #[test]
     fn actual_depth_schedule_preserves_capacity_ping_pong_parity() {
         let items = 1_687_524;
-        let capacity = pointer_jump_steps_after_local_span(items);
+        let capacity = bounded_walk_steps_after_local_span(items, RELATION_LOCAL_ANCESTOR_SPAN);
         for max_depth in [0, 31, 32, 63, 64, 95, 96, 511, 65_535] {
-            let scheduled = scheduled_steps(items, max_depth);
+            let scheduled = scheduled_steps(items, max_depth, RELATION_LOCAL_ANCESTOR_SPAN);
             assert!(scheduled <= capacity);
             assert_eq!(scheduled % 2, capacity % 2);
         }
-        assert_eq!(scheduled_steps(items, 31), 0);
-        assert_eq!(scheduled_steps(items, 32), 2);
-        assert_eq!(scheduled_steps(items, 64), 2);
-        assert_eq!(scheduled_steps(items, 96), 2);
+        assert_eq!(scheduled_steps(items, 0, 1), 0);
+        assert_eq!(scheduled_steps(items, 1, 1), 2);
+        assert_eq!(scheduled_steps(items, 15, 1), 2);
+        assert_eq!(scheduled_steps(items, 16, 1), 2);
+    }
+
+    #[test]
+    fn locally_seeded_relation_schedule_uses_the_remaining_depth() {
+        let items = 1_687_524;
+        let span = SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN;
+        let capacity = bounded_walk_steps_after_local_span(items, span);
+        for max_depth in [0, 31, 32, 63, 64, 511, 16_383, 65_535] {
+            let scheduled = scheduled_steps(items, max_depth, span);
+            assert!(scheduled <= capacity);
+            assert_eq!(scheduled % 2, capacity % 2);
+        }
+        assert_eq!(scheduled_steps(items, 0, span), 0);
+        assert_eq!(scheduled_steps(items, 31, span), 0);
+        assert_eq!(scheduled_steps(items, 32, span), 2);
+        assert_eq!(scheduled_steps(items, 511, span), 2);
     }
 
     #[test]

@@ -261,6 +261,8 @@ def validate_document(document: dict) -> None:
             validate_profile_storage(measurement_id, profile)
             if profile.get("execution_graph") is not None:
                 validate_execution_graph(measurement_id, profile["execution_graph"])
+            if profile.get("gpu_memory_timeline") is not None:
+                validate_gpu_memory_timeline(measurement_id, profile["gpu_memory_timeline"])
             if profile.get("nsight") is not None:
                 validate_nsight_profile(measurement_id, profile["nsight"])
 
@@ -284,6 +286,42 @@ def validate_profile_storage(measurement_id: str, profile: dict) -> None:
         raise ValueError(
             f"measurement {measurement_id} duplicates raw pass breakdown after graph normalization"
         )
+
+
+def validate_gpu_memory_timeline(measurement_id: str, timeline: object) -> None:
+    if not isinstance(timeline, dict):
+        raise ValueError(f"measurement {measurement_id} has an invalid GPU memory timeline")
+    physical = timeline.get("physical_residency")
+    working = timeline.get("graph_managed_working_set")
+    if not isinstance(physical, dict) or not isinstance(working, dict):
+        raise ValueError(f"measurement {measurement_id} has an invalid GPU memory timeline")
+    points = physical.get("points")
+    intervals = working.get("intervals")
+    if not isinstance(points, list) or not isinstance(intervals, list):
+        raise ValueError(f"measurement {measurement_id} has an invalid GPU memory timeline")
+    previous_start = -1.0
+    for point in points:
+        if not isinstance(point, dict):
+            raise ValueError(f"measurement {measurement_id} has an invalid GPU memory point")
+        start = point.get("start_ms")
+        if (
+            not isinstance(start, (int, float))
+            or start < previous_start
+            or not isinstance(point.get("bytes"), int)
+            or point["bytes"] < 0
+            or not isinstance(point.get("allocations"), int)
+            or point["allocations"] < 0
+        ):
+            raise ValueError(f"measurement {measurement_id} has an invalid GPU memory point")
+        previous_start = float(start)
+    for interval in intervals:
+        if not isinstance(interval, dict) or any(
+            not isinstance(interval.get(field), (int, float)) or interval[field] < 0
+            for field in ("start_ms", "duration_ms", "bytes")
+        ):
+            raise ValueError(
+                f"measurement {measurement_id} has an invalid graph working-set interval"
+            )
 
 
 def validate_execution_graph(measurement_id: str, graph: object) -> None:

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { select, zoom, zoomIdentity } from 'd3';
   import type { D3ZoomEvent, ZoomBehavior, ZoomTransform } from 'd3';
-  import { formatMs } from '../lib/format';
+  import { COMPILER_PHASES, compilerPhaseName, formatMs } from '../lib/format';
   import type { Profile } from '../lib/types';
 
   let { profile, target }: { profile?: Profile; target?: string } = $props();
@@ -12,28 +12,16 @@
   let zoomBehavior: ZoomBehavior<SVGSVGElement, unknown> | undefined;
   let zoomTransform = $state<ZoomTransform>(zoomIdentity);
 
-  const PHASES = [
-    ['orchestration', 'Job setup / coordination'],
-    ['unattributed_gpu', 'Unattributed GPU work'],
-    ['lexing', 'Lexing'],
-    ['parsing_hir', 'Parsing & HIR'],
-    ['type_checking', 'Type checking'],
-    ['semantic_interface', 'Semantic interface'],
-    ['lowering', 'Lowering'],
-    ['x86_emission', 'x86-64 emission'],
-    ['wasm_emission', 'Wasm emission'],
-    ['artifact_emission', 'Artifact emission'],
-  ] as const;
   const DOMAINS = [
     ['host_orchestration', 'Host timing span', 'var(--cyan)'],
     ['queue_submission', 'Queue submission', 'var(--violet)'],
     ['gpu_execution', 'GPU execution', 'var(--red)'],
+    ['submission_gap', 'Between GPU submissions', 'var(--muted)'],
     ['host_readback_wait', 'Host waiting for readback', 'var(--orange)'],
   ] as const;
-  const phaseLabels = new Map<string, string>(PHASES);
+  const phaseLabels = new Map<string, string>(COMPILER_PHASES);
   const domainLabels = new Map<string, string>(DOMAINS.map(([id, label]) => [id, label]));
   const domainColors = new Map<string, string>(DOMAINS.map(([id, , color]) => [id, color]));
-  const domainIndex = new Map<string, number>(DOMAINS.map(([id], index) => [id, index]));
 
   function displayPhase(event: Profile['timeline'][number]): string {
     if (event.phase === 'orchestration' && event.execution_domain === 'gpu_execution') {
@@ -44,7 +32,7 @@
 
   function eventPhaseLabel(event: Profile['timeline'][number]): string {
     const phase = displayPhase(event);
-    return phaseLabels.get(phase) ?? phase;
+    return compilerPhaseName(phase);
   }
 
   function belongsToSelectedTarget(event: Profile['timeline'][number]): boolean {
@@ -56,14 +44,15 @@
   const layout = $derived.by(() => {
     const events = (profile?.timeline ?? []).filter(belongsToSelectedTarget);
     const presentPhases = new Set(events.map(displayPhase));
-    const phases: Array<readonly [string, string]> = PHASES.filter(([id]) => presentPhases.has(id));
+    const phases: Array<readonly [string, string]> = COMPILER_PHASES.filter(([id]) => presentPhases.has(id));
     phases.push(...[...presentPhases]
       .filter((phase) => !phaseLabels.has(phase))
       .sort()
       .map((phase) => [phase, phase] as const));
     const presentDomains = DOMAINS.filter(([id]) => events.some((event) => event.execution_domain === id));
     const width = Math.max(1100, containerWidth || 1100);
-    const left = 160, right = 20, rowHeight = 43, barHeight = 8, plotTop = 26;
+    const left = 160, right = 20, barHeight = 8, plotTop = 26;
+    const rowHeight = Math.max(43, presentDomains.length * 9 + 7);
     const end = Math.max(...events.map((event) => event.start_ms + event.duration_ms), 0.001);
     const unitStarts = events.filter((event) => event.name === 'compile.source-pack.record_more');
     const unitFinishes = events.filter((event) => event.name === 'compile.source-pack.finish');
@@ -82,6 +71,7 @@
       events, phases, presentDomains, units, width, left, right, rowHeight, barHeight, plotTop, end,
       height: 58 + phases.length * rowHeight,
       phaseIndex: new Map(phases.map(([phase], index) => [phase, index])),
+      domainIndex: new Map<string, number>(presentDomains.map(([domain], index) => [domain, index])),
       ticks: [0, .25, .5, .75, 1].map((fraction) => ({ fraction, value: end * fraction })),
       longest: events.map((event, index) => ({ event, index }))
         .filter(({ event }) => event.execution_domain === 'gpu_execution')
@@ -186,7 +176,7 @@
           {@const x = eventX(event.start_ms)}
           {@const width = Math.max(1, eventX(event.start_ms + event.duration_ms) - x)}
           {@const phase = layout.phaseIndex.get(displayPhase(event)) ?? 0}
-          {@const domain = domainIndex.get(event.execution_domain) ?? 0}
+          {@const domain = layout.domainIndex.get(event.execution_domain) ?? 0}
           {@const y = layout.plotTop + phase * layout.rowHeight + domain * 9}
           {@const visible = x + width >= layout.left && x <= layout.width - layout.right}
           {@const isHostSpan = event.execution_domain === 'host_orchestration'}

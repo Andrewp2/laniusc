@@ -8,12 +8,19 @@ RWStructuredBuffer<X86LirCore> target_lir_core;
 RWStructuredBuffer<X86LirOperands> target_lir_operands;
 StructuredBuffer<uint> target_semantic_origin;
 StructuredBuffer<uint> semantic_to_target_start;
+StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint target_value(uint semantic_row, uint total)
 {
+    if (semantic_row < gParams.semantic_capacity)
+    {
+        uint replacement = x86_value_by_semantic[semantic_row].replacement;
+        if (replacement < gParams.semantic_capacity)
+            semantic_row = replacement;
+    }
     uint target_row = semantic_row < gParams.semantic_capacity
         ? semantic_to_target_start[semantic_row] : INVALID;
     return target_row < total ? target_row : INVALID;
@@ -31,11 +38,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     X86LirCore core = target_lir_core[page_row];
     X86LirOperands operands = target_lir_operands[page_row];
-    if (core.result_or_target != INVALID) core.result_or_target = row;
+    if (core.result_or_target != INVALID &&
+        core.op != X86_LIR_OP_COMPARE_BRANCH_FALSE &&
+        core.op != X86_LIR_OP_SELECT_STORE)
+        core.result_or_target = row;
     if (core.op == X86_LIR_OP_BINARY || core.op == X86_LIR_OP_COMPARE)
     {
         operands.b = target_value(operands.b, total);
-        operands.c = target_value(operands.c, total);
+        if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
+            (core.op != X86_LIR_OP_BINARY ||
+             (operands.a != X86_LIR_BINARY_DIV_CONST_POW2_I32 &&
+              operands.a != X86_LIR_BINARY_REM_CONST_POW2_I32 &&
+              operands.a != X86_LIR_BINARY_DIV_CONST_I32 &&
+              operands.a != X86_LIR_BINARY_REM_CONST_I32)))
+            operands.c = target_value(operands.c, total);
     }
     else if (core.op == X86_LIR_OP_UNARY)
         operands.b = target_value(operands.b, total);
@@ -47,10 +63,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.a = target_value(operands.a, total);
     else if (core.op == X86_LIR_OP_CALL_ARG)
     {
-        uint base = target_value(operands.a, total);
-        uint component = operands.c;
-        operands.a = base < total && component < total - base
-            ? base + component : INVALID;
+        if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u)
+        {
+            uint base = target_value(operands.a, total);
+            uint component = operands.c;
+            operands.a = base < total && component < total - base
+                ? base + component : INVALID;
+        }
         operands.c = 0u;
     }
     else if (core.op == X86_LIR_OP_STORE_LOCAL)
@@ -74,6 +93,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.op == X86_LIR_OP_FIELD_STORE)
     {
         operands.a = target_value(operands.a, total);
+        operands.c = target_value(operands.c, total);
+    }
+    else if (core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE)
+    {
+        operands.a = target_value(operands.a, total);
+        if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u)
+            operands.b = target_value(operands.b, total);
+        uint target = target_value(core.result_or_target, total);
+        core.result_or_target = target < total
+            ? target + operands.c : INVALID;
+        operands.c = 0u;
+    }
+    else if (core.op == X86_LIR_OP_SELECT_STORE)
+    {
+        operands.a = target_value(operands.a, total);
+        if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u)
+            operands.b = target_value(operands.b, total);
         operands.c = target_value(operands.c, total);
     }
     if (core.op == X86_LIR_OP_BRANCH)

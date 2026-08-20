@@ -33,6 +33,7 @@ pub(super) fn zeroed_type_check_params_buffer(
         n_hir_nodes: 0,
         n_source_files: 0,
         parser_feature_flags: 0,
+        dependency_interfaces_present: 0,
     })
     .len();
     let raw = device.create_buffer(&wgpu::BufferDescriptor {

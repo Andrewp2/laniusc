@@ -1,7 +1,10 @@
 use super::*;
 use crate::{
     compiler::{GPU_SEMANTIC_INTERFACE_VERSION, GpuSemanticInterfaceArtifact},
-    gpu::readback::{PagedReadback, read_u32_words},
+    gpu::{
+        readback::{PagedReadback, read_u32_words},
+        timer::GpuTimer,
+    },
 };
 
 pub(super) const MODULE_WORDS: usize = 2;
@@ -10,6 +13,12 @@ pub(super) const DECLARATION_WORDS: usize = 14;
 const COUNT_WORDS: usize = 5;
 pub(super) const TYPE_WORDS: usize = 9;
 pub(super) const MEMBER_WORDS: usize = 10;
+
+#[derive(Clone, Copy)]
+struct ActiveHirDomain<'a> {
+    count: &'a LaniusBuffer<u32>,
+    dispatch_args: &'a LaniusBuffer<u32>,
+}
 
 #[allow(clippy::too_many_arguments)]
 fn graph_prefix_scan(
@@ -38,7 +47,6 @@ fn graph_prefix_scan(
         ("scan_local_prefix", workspace.local_prefix),
         ("scan_block_sum", workspace.block_sum),
         ("scan_block_prefix", workspace.block_prefix),
-        ("scan_hierarchy", workspace.hierarchy),
     ]);
     graph.validate_semantic_interface_scan(scan, &resources)?;
     let graph_passes = graph.semantic_interface_scan_passes(scan)?;
@@ -155,6 +163,7 @@ impl GpuTypeChecker {
         token_capacity: u32,
         source_bytes: &wgpu::Buffer,
         hir: GpuSemanticInterfaceHirBuffers<'_>,
+        timer: &mut Option<&mut GpuTimer>,
     ) -> Result<RecordedSemanticInterface> {
         let guard = self
             .resident_workspace
@@ -226,6 +235,14 @@ impl GpuTypeChecker {
                 .u32_buffer("semantic_value_const_present_by_hir")?,
         ];
         let dependency_visibility = module_path.dependency_visibility.as_deref();
+        let hir_active_count = state.typecheck_graph.u32_buffer("hir_active_count")?;
+        let hir_active_dispatch_args = state
+            .typecheck_graph
+            .u32_buffer("hir_active_dispatch_args")?;
+        let active_hir = ActiveHirDomain {
+            count: &hir_active_count,
+            dispatch_args: &hir_active_dispatch_args,
+        };
         let inputs = GpuSemanticInterfaceIdentityBuffers {
             name_capacity: state.name_capacity,
             module_capacity: u32::try_from(module_path.module_key_segment_count.count)
@@ -305,7 +322,9 @@ impl GpuTypeChecker {
             source_bytes,
             hir,
             inputs,
+            active_hir,
             &state.typecheck_graph,
+            timer,
         )
     }
 
@@ -322,7 +341,9 @@ impl GpuTypeChecker {
         source_bytes: &wgpu::Buffer,
         hir: GpuSemanticInterfaceHirBuffers<'_>,
         inputs: GpuSemanticInterfaceIdentityBuffers<'_>,
+        active_hir: ActiveHirDomain<'_>,
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
+        timer: &mut Option<&mut GpuTimer>,
     ) -> Result<RecordedSemanticInterface> {
         let name_capacity = inputs.name_capacity;
         let module_capacity = inputs.module_capacity;
@@ -482,8 +503,13 @@ impl GpuTypeChecker {
             &inputs,
             &status,
             scan_scratch,
+            active_hir,
             typecheck_graph,
+            timer,
         )?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.type_topology");
+        }
         let mut identity_resources = ResourceMap::new();
         typecheck_graph.register_semantic_interface_bindings(&mut identity_resources)?;
         identity_resources.buffer("name_scan_total", inputs.name_count_out);
@@ -655,6 +681,9 @@ impl GpuTypeChecker {
         scan.record(encoder)?;
         record_operation.record(encoder)?;
         byte_operation.record(encoder)?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.identity");
+        }
 
         let artifact_capacity = semantic_interface_artifact_capacity(
             module_capacity,
@@ -792,6 +821,9 @@ impl GpuTypeChecker {
         artifact_operation.record(encoder)?;
         artifact_length_readback.record(encoder);
         status_readback.record(encoder);
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.artifact");
+        }
         Ok(RecordedSemanticInterface {
             expected_library_id: library_id,
             expected_unit_id: unit_id,
@@ -830,7 +862,9 @@ impl GpuTypeChecker {
         inputs: &GpuSemanticInterfaceIdentityBuffers<'_>,
         status: &LaniusBuffer<u32>,
         scan_scratch: PrefixScanWorkspace<&LaniusBuffer<u32>>,
+        active_hir: ActiveHirDomain<'_>,
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
+        timer: &mut Option<&mut GpuTimer>,
     ) -> Result<RecordedSemanticInterfaceTypeTopology> {
         let hir_storage_capacity = hir.compact_hir_capacity;
         let decl_capacity = inputs.declaration_capacity.min(token_capacity).max(1);
@@ -871,14 +905,7 @@ impl GpuTypeChecker {
         let reverse_flag = workspace("semantic_interface.type.reverse_flag")?;
         let (reverse_prefix, count) = typecheck_graph
             .semantic_interface_scan_outputs(compiler_graph::SemanticInterfaceScan::TypeOrder)?;
-        let scan_count = initialized_u32_buffer(
-            &self.semantic_interface_buffers,
-            device,
-            queue,
-            "type_check.interface.type_topology.scan_count",
-            &[capacity],
-            wgpu::BufferUsages::STORAGE,
-        );
+        let scan_count = active_hir.count.clone();
         let hir_order = workspace("semantic_interface.type.hir_order")?;
         let edge_count = workspace("semantic_interface.type.edge_count")?;
         let (edge_prefix, edge_total) = typecheck_graph
@@ -1008,23 +1035,7 @@ impl GpuTypeChecker {
             &member_total,
             scan_scratch,
         )?;
-        let [tgsx, tgsy, _] = self
-            .passes
-            .kernel("scan/counted/00_local")
-            .thread_group_size;
-        let (dispatch_x, dispatch_y, dispatch_z) = plan_workgroups(
-            DispatchDim::D1,
-            InputElements::Elements1D(capacity),
-            [tgsx, tgsy, 1],
-        )?;
-        let dispatch_args = initialized_u32_buffer(
-            &self.semantic_interface_buffers,
-            device,
-            queue,
-            "type_check.interface.type_topology.dispatch_args",
-            &[dispatch_x, dispatch_y, dispatch_z],
-            wgpu::BufferUsages::INDIRECT,
-        );
+        let dispatch_args = active_hir.dispatch_args.clone();
         let scan_params = PrefixScanParams {
             n_items: capacity,
             n_blocks,
@@ -1077,6 +1088,7 @@ impl GpuTypeChecker {
 
         let mut topology_resources = ResourceMap::new();
         typecheck_graph.register_semantic_interface_bindings(&mut topology_resources)?;
+        topology_resources.buffer("hir_active_dispatch_args", &dispatch_args);
         macro_rules! register_resources {
             ($($name:literal => $buffer:expr),* $(,)?) => {
                 $(topology_resources.buffer($name, &$buffer);)*
@@ -1192,13 +1204,13 @@ impl GpuTypeChecker {
         let interface_graph = typecheck_graph.semantic_interface_graph()?;
         macro_rules! bind_topology {
             ($label:literal, $kernel:literal) => {
-                crate::gpu::operations::ComputeOperation::direct(
+                crate::gpu::operations::ComputeOperation::indirect(
                     device,
                     interface_graph,
                     &topology_resources,
                     $label,
                     &self.passes.kernel($kernel),
-                    capacity,
+                    &dispatch_args,
                 )
             };
             ($label:literal, $kernel:literal, $work:expr) => {
@@ -1245,7 +1257,7 @@ impl GpuTypeChecker {
             .iter()
             .take(root_steps)
             .map(|&name| {
-                crate::gpu::operations::ComputeOperation::direct(
+                crate::gpu::operations::ComputeOperation::indirect(
                     device,
                     interface_graph,
                     &topology_resources,
@@ -1253,7 +1265,7 @@ impl GpuTypeChecker {
                     &self
                         .passes
                         .kernel("type_checker/interface/type_topology/04_root_step"),
-                    capacity,
+                    &dispatch_args,
                 )
             })
             .collect::<Result<Vec<_>>>()?;
@@ -1410,25 +1422,40 @@ impl GpuTypeChecker {
         ] {
             operation.record(encoder)?;
         }
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.topology.seed");
+        }
         for operation in &root_step_operations {
             operation.record(encoder)?;
+        }
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.topology.root_propagation");
         }
         mark_reverse.record(encoder)?;
         scan.record(encoder)?;
         scatter.record(encoder)?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.topology.type_order");
+        }
         edge_counts.record(encoder)?;
         edge_scan.record(encoder)?;
+        edge_scatter.record(encoder)?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.topology.type_edges");
+        }
         for operation in [
-            &edge_scatter,
             &resolve_local_decl,
             &classify_path,
             &type_records,
             &array_lengths,
             &validate,
-            &signature_flags,
         ] {
             operation.record(encoder)?;
         }
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.topology.type_records");
+        }
+        signature_flags.record(encoder)?;
         signature_type_scan.record(encoder)?;
         signature_edge_scan.record(encoder)?;
         for operation in [
@@ -1438,6 +1465,13 @@ impl GpuTypeChecker {
             &signature_param_edges,
             &signature_variant_payload_edges,
             &signature_return_edges,
+        ] {
+            operation.record(encoder)?;
+        }
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.topology.signatures");
+        }
+        for operation in [
             &members_variant_counts,
             &members_generic_counts,
             &members_counts,
@@ -1452,6 +1486,9 @@ impl GpuTypeChecker {
             &members_normalize_types,
         ] {
             operation.record(encoder)?;
+        }
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "semantic_interface.topology.members");
         }
 
         Ok(RecordedSemanticInterfaceTypeTopology {

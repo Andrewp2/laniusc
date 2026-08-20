@@ -7,7 +7,9 @@ from lanius_perf import (
     annotate_timeline_event,
     custom_workload_warning,
     execution_graph,
+    profile_gpu_memory_timeline,
     require_complete_execution_graph,
+    result_reference,
     resolve_workload_spec,
     single_file_comparison_group,
     timeline_compiler_phase,
@@ -16,6 +18,16 @@ from lanius_perf import (
     workload_run_id,
 )
 from perf_model import validate_execution_graph
+
+
+class ResultReferenceTests(unittest.TestCase):
+    def test_identifies_the_retained_path_and_contents(self):
+        reference = result_reference("benchmark_artifacts/performance/run.json", b'{"run":1}')
+
+        self.assertEqual(reference, result_reference("benchmark_artifacts/performance/run.json", b'{"run":1}'))
+        self.assertEqual(len(reference), 8)
+        self.assertNotEqual(reference, result_reference("benchmark_artifacts/performance/other.json", b'{"run":1}'))
+        self.assertNotEqual(reference, result_reference("benchmark_artifacts/performance/run.json", b'{"run":2}'))
 
 
 def graph_depths(graph):
@@ -230,6 +242,75 @@ class ExecutionGraphTests(unittest.TestCase):
         depths = graph_depths(graph)
         self.assertLess(depths["g:1@0"], depths["g:0@1"])
 
+    def test_memory_timeline_aligns_residency_and_deduplicated_graph_working_set(self):
+        submissions = [{
+            "index": 0,
+            "label": "frontend",
+            "passes": ["physical.frontend"],
+            "operations": ["parse"],
+        }]
+        graph = execution_graph(
+            [{
+                "label": "parser",
+                "nodes": [{
+                    "id": 0,
+                    "name": "parse",
+                    "phase": "parse",
+                    "dispatch_domain": "tokens",
+                    "graph_managed_working_set_bytes": 4096,
+                }],
+                "edges": [],
+            }],
+            submissions,
+        )
+        memory = profile_gpu_memory_timeline(
+            {
+                "load_ms": 2.5,
+                "tracked_gpu_buffers": {
+                    "residency_timeline": {
+                        "points": [{
+                            "elapsed_ms": 1.5,
+                            "bytes": 8192,
+                            "allocations": 2,
+                            "event": "allocate",
+                            "changed_bytes": 4096,
+                        }],
+                    },
+                },
+            },
+            graph,
+            submissions,
+            [
+                {
+                    "name": "frontend",
+                    "execution_domain": "queue_submission",
+                    "start_ms": 7.5,
+                    "duration_ms": 0.25,
+                },
+                {
+                    "name": "physical.frontend",
+                    "execution_domain": "gpu_execution",
+                    "start_ms": 8.0,
+                    "duration_ms": 3.0,
+                },
+            ],
+        )
+
+        self.assertEqual(memory["physical_residency"]["points"][0]["start_ms"], 4.0)
+        self.assertEqual(
+            memory["graph_managed_working_set"]["intervals"][0],
+            {
+                "submission": 0,
+                "label": "frontend",
+                "start_ms": 8.0,
+                "duration_ms": 3.0,
+                "bytes": 4096,
+                "operation_count": 1,
+                "phases": ["parse"],
+            },
+        )
+        self.assertEqual(memory["graph_managed_working_set"]["matched_submissions"], 1)
+
     def test_final_codegen_emit_has_greatest_topological_depth(self):
         graph = execution_graph(
             [
@@ -399,11 +480,28 @@ class ComparisonGroupTests(unittest.TestCase):
 class TimelineClassificationTests(unittest.TestCase):
     def test_classifies_execution_independently_from_trace_lane(self):
         self.assertEqual(timeline_execution_domain("gpu", "gpu.frontend"), "gpu_execution")
+        self.assertEqual(
+            timeline_execution_domain(
+                "submission_gap", "gpu.submission_gap", "Between Lanius GPU submissions"
+            ),
+            "submission_gap",
+        )
         self.assertEqual(timeline_execution_domain("host", "host.submit"), "queue_submission")
         self.assertEqual(
             timeline_execution_domain("host", "host.readback"), "host_readback_wait"
         )
         self.assertEqual(timeline_execution_domain("host", "host.lexer"), "host_orchestration")
+
+    def test_historical_parser_begin_marker_is_a_submission_gap(self):
+        event = {
+            "name": "parser.tokens.impl_header.begin",
+            "category": "gpu",
+            "lane": "gpu.frontend",
+        }
+        annotate_timeline_event(event)
+        self.assertEqual(event["execution_domain"], "submission_gap")
+        self.assertEqual(event["phase"], "orchestration")
+        self.assertEqual(event["name"], "Between Lanius GPU submissions")
 
     def test_classifies_compiler_phase_from_operation_name(self):
         cases = {
@@ -412,7 +510,13 @@ class TimelineClassificationTests(unittest.TestCase):
             "pair_02_scan_block_totals": "lexing",
             "compact_boundaries[KEPT]": "lexing",
             "tokens_build": "lexing",
-            "parser.recorded-ll1-hir.status": "parsing_hir",
+            "parser.tokens.delimiter_match.done": "parsing",
+            "parser.tree_parent": "parsing",
+            "parser.hir_nodes": "hir_construction",
+            "parser.tree_depth_traverse": "hir_construction",
+            "parser.hir_canonical_materialization": "hir_construction",
+            "parser.recorded-ll1-hir.status": "orchestration",
+            "compile.source-pack.record.parser_status": "orchestration",
             "compile.source-pack.record.typecheck": "type_checking",
             "typecheck.expression_types.done": "type_checking",
             "typecheck.visible.hir_decl_scope_tree.done": "type_checking",
@@ -420,6 +524,7 @@ class TimelineClassificationTests(unittest.TestCase):
             "lowering.semantic.done": "lowering",
             "semantic-interface artifact": "semantic_interface",
             "semantic_interface.done": "semantic_interface",
+            "semantic_interface.type.direct_hir_by_decl": "semantic_interface",
             "codegen.x86.link.page": "x86_emission",
             "codegen.x86.lowering.done": "x86_emission",
             "codegen.x86.emission.done": "x86_emission",

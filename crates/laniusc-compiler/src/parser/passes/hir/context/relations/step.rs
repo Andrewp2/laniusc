@@ -30,7 +30,6 @@ impl HirContextRelationsStepPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
-        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
         let steps = bounded_walk_step_capacity(buffers.tree_capacity);
@@ -42,7 +41,6 @@ impl HirContextRelationsStepPass {
                 step,
                 step % 2 == 0,
                 step + 1 == steps && steps % 2 == 1,
-                dispatch_args,
                 cache,
             )?;
         }
@@ -62,7 +60,6 @@ impl HirContextRelationsStepPass {
         step: u32,
         read_from_a: bool,
         final_unpaired_step: bool,
-        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
         let (link_in, value_in, link_out, value_out) = if read_from_a {
@@ -238,6 +235,7 @@ impl HirContextRelationsStepPass {
             B_TO_A
         };
         let invocation = format!("{label}.{step}");
+        let dispatch_args = &buffers.hir_semantic_relation_dispatch_args;
         let bind_group = cache
             .reflected_for_graph_invocation(
                 device,
@@ -252,12 +250,13 @@ impl HirContextRelationsStepPass {
             .next()
             .expect("context-relation step must have one reflected bind group");
 
-        crate::gpu::passes_core::record_or_defer_compute_indirect(
+        crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
             encoder,
             &self.data,
             bind_group.as_ref(),
             label,
             dispatch_args,
+            u64::from(step) * 3 * std::mem::size_of::<u32>() as u64,
         );
         Ok(())
     }

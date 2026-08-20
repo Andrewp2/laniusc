@@ -449,10 +449,11 @@ impl GpuLoweringPipeline {
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        self.semantic.record(encoder)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "lowering.semantic.done");
-        }
+        let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
+            crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some()),
+            "lowering.executable.batch",
+        );
+        self.semantic.record_timed(encoder, timer.as_deref_mut())?;
         for page_id in 0..self.target.count_page_count() {
             self.target.record_count_page(encoder, page_id)?;
         }
@@ -472,10 +473,11 @@ impl GpuLoweringPipeline {
         unit_id: u32,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        self.semantic.record(encoder)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "lowering.semantic.done");
-        }
+        let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
+            crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some()),
+            "lowering.object.batch",
+        );
+        self.semantic.record_timed(encoder, timer.as_deref_mut())?;
         for page_id in 0..self.target.count_page_count() {
             self.target.record_count_page(encoder, page_id)?;
         }

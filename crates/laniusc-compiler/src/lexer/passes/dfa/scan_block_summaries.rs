@@ -154,6 +154,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
             for r in 0..rounds {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, bg.as_ref(), &[scan_params.dynamic_offset(r as usize)]);
+                crate::gpu::passes_core::record_compute_dispatch();
                 pass.dispatch_workgroups(gx, gy, gz);
             }
         } else {
@@ -173,6 +174,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                 );
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, bg.as_ref(), &[scan_params.dynamic_offset(r as usize)]);
+                crate::gpu::passes_core::record_compute_dispatch();
                 pass.dispatch_workgroups(gx, gy, gz);
                 drop(pass);
 

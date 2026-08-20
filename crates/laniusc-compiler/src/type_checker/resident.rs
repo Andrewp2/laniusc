@@ -51,10 +51,12 @@ impl GpuTypeChecker {
             device.limits().max_compute_workgroup_storage_size >= 32 * 1024;
         let passes = TypeCheckPasses::prepare_prefixes(
             device,
-            &["type_checker", "scan/counted", "radix"],
+            &["type_checker", "scan/counted", "scan/counted_pair", "radix"],
             |key| {
-                key != "type_checker/predicates/01b2_sort_keys_small"
-                    || supports_large_workgroup_storage
+                (key != "type_checker/predicates/01b2_sort_keys_small"
+                    || supports_large_workgroup_storage)
+                    && (!key.starts_with("scan/counted_pair/")
+                        || device.limits().max_storage_buffers_per_shader_stage >= 7)
             },
         )?;
         let params_buf = zeroed_type_check_params_buffer(device, "type_check.resident.params");
@@ -352,9 +354,6 @@ impl GpuTypeChecker {
                 },
             );
             let mut state = state?;
-            state.job_storage_resets = state
-                .typecheck_graph
-                .job_storage_reset_operations(&resettable_buffers)?;
             state.resettable_buffers = resettable_buffers;
             *resident_workspace_guard = Some(state);
         }
@@ -380,11 +379,12 @@ impl GpuTypeChecker {
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
         release_workspace_consumers: impl FnOnce(),
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
-        // Type-check phases contain dependent scans, sorts, and resolution
-        // passes. Coalescing them into one compute pass provides no storage
-        // barriers between dispatches and makes results timing-dependent.
+        // Wgpu gives each compute dispatch its own resource-usage scope and
+        // inserts barriers before conflicting dispatches. Buffer clear/copy
+        // operations flush the deferred stream, while timestamped or
+        // validation-scoped recording keeps separate compute passes.
         let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
-            false,
+            crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some()),
             "type_check.resident.batch",
         );
         let params = TypeCheckParams {
@@ -393,6 +393,7 @@ impl GpuTypeChecker {
             n_hir_nodes: hir_node_capacity,
             n_source_files: source_file_capacity,
             parser_feature_flags: hir_items.parser_feature_flags,
+            dependency_interfaces_present: u32::from(dependency_pages.is_some()),
         };
         self.params_buf
             .write(queue, 0, &type_check_params_bytes(&params));
@@ -435,7 +436,9 @@ impl GpuTypeChecker {
                 Some(bind_groups.semantic_artifact()?);
             let module_path = &bind_groups.module_path;
             let predicates = &bind_groups.predicates;
-            bind_groups.clear_job_storage(encoder);
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.workspace_ready");
+            }
             queue.write_buffer(
                 &bind_groups.if_depth_params,
                 0,
@@ -466,6 +469,9 @@ impl GpuTypeChecker {
             let aliases_required = type_alias_passes_required(parser_feature_flags);
 
             bind_groups.hir_active_dispatch.record(encoder)?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.hir_active_dispatch.done");
+            }
             bind_groups.semantic_features.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.frontend_boundary.done");

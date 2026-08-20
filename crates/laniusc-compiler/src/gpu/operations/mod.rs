@@ -34,7 +34,7 @@ pub(crate) use buffer::{
 pub(crate) use compute::{ComputeGraph, ComputeInvocation, ComputeKernels, ComputeOperation};
 pub(crate) use exact_lookup::ExactLookupOperation;
 pub(crate) use inclusive_block_scan::{InclusiveBlockScanKernels, InclusiveBlockScanPlan};
-pub(crate) use prefix_scan::PrefixScanOperation;
+pub(crate) use prefix_scan::{PrefixScanOperation, PrefixScanPairOperation};
 pub(super) use radix_sort::uses_dynamic_uniform_kernel;
 pub(crate) use radix_sort::{
     RadixDispatchDomain,
@@ -82,6 +82,7 @@ fn record_direct_with_offsets(
     );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
+    crate::gpu::passes_core::record_compute_dispatch();
     compute.dispatch_workgroups(groups.0, groups.1, groups.2);
     Ok(())
 }
@@ -124,6 +125,7 @@ fn record_indirect_at(
     );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
+    crate::gpu::passes_core::record_compute_dispatch();
     compute.dispatch_workgroups_indirect(&dispatch_args.buffer, absolute_offset);
     Ok(())
 }
@@ -155,6 +157,7 @@ fn record_indirect_with_offsets(
     );
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
+    crate::gpu::passes_core::record_compute_dispatch();
     compute.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
     Ok(())
 }

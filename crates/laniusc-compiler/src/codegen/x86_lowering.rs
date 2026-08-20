@@ -39,6 +39,10 @@ struct TargetPageParams {
     target_capacity: u32,
     target_start: u32,
     page_capacity: u32,
+    token_capacity: u32,
+    reserved0: u32,
+    reserved1: u32,
+    reserved2: u32,
 }
 
 #[repr(C)]
@@ -52,11 +56,15 @@ struct DeclSlotParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
-struct LifetimeParams {
+struct X86AnalysisParams {
     semantic_capacity: u32,
     call_arg_capacity: u32,
     aggregate_capacity: u32,
-    reserved: u32,
+    function_capacity: u32,
+    token_capacity: u32,
+    reserved0: u32,
+    reserved1: u32,
+    reserved2: u32,
 }
 
 #[cfg(test)]
@@ -72,19 +80,20 @@ pub(crate) struct GpuX86LirView<'a> {
 pub(crate) struct GpuX86LirStage {
     count_pages: Vec<ComputeOperation>,
     pages: Vec<X86LirPage>,
-    decl_slots_clear: ComputeOperation,
     decl_slots_scatter: ComputeOperation,
-    lifetime_clear: ComputeOperation,
-    lifetime_collect: ComputeOperation,
-    lifetime_call_args: ComputeOperation,
-    lifetime_aggregate_elements: ComputeOperation,
-    location_assign: ComputeOperation,
+    frame_finalize: ComputeOperation,
+    analysis_clear: ComputeOperation,
+    analysis_index: ComputeOperation,
+    optimize_functions: ComputeOperation,
+    if_convert: ComputeOperation,
+    allocate_functions: ComputeOperation,
     count_scan: GpuResidentExclusiveScan,
     target_pages: GpuTargetPagePlanner,
     functions: GpuTargetFunctionTable,
     _count_params: Vec<LaniusBuffer<CountParams>>,
     _decl_slot_params: LaniusBuffer<DeclSlotParams>,
-    _lifetime_params: LaniusBuffer<LifetimeParams>,
+    _analysis_params: LaniusBuffer<X86AnalysisParams>,
+    _allocation_params: LaniusBuffer<X86AnalysisParams>,
     _counts: LaniusBuffer<u32>,
     _offsets: LaniusBuffer<u32>,
     #[cfg(test)]
@@ -186,46 +195,39 @@ impl GpuX86LirStage {
             "lir.x86.saved_gpr_mask_by_function",
             capacities.hir_nodes.max(1),
         )?;
+        #[cfg(not(test))]
+        let _test_only_views = (&decl_location_by_token, &saved_gpr_mask_by_function);
 
         let count_pass = load(kernels, "lir.x86.count", "codegen/lir/x86/count")?;
         let scatter_pass = load(kernels, "lir.x86.scatter", "codegen/lir/x86/scatter")?;
         let resolve_pass = load(kernels, "lir.x86.resolve", "codegen/lir/x86/resolve")?;
         let validate_pass = load(kernels, "lir.x86.validate", "codegen/lir/x86/validate")?;
         let locations_pass = load(kernels, "lir.x86.locations", "codegen/lir/x86/locations")?;
-        let lifetime_clear_pass = load(
+        let analysis_clear_pass = load(
             kernels,
-            "lir.x86.lifetime.clear",
-            "codegen/lir/x86/lifetime_clear",
+            "lir.x86.analysis.clear",
+            "codegen/lir/x86/analysis_clear",
         )?;
-        let lifetime_collect_pass = load(
+        let analysis_index_pass = load(
             kernels,
-            "lir.x86.lifetime.collect",
-            "codegen/lir/x86/lifetime_collect",
+            "lir.x86.analysis.index",
+            "codegen/lir/x86/analysis_index",
         )?;
-        let lifetime_call_args_pass = load(
+        let optimize_functions_pass = load(
             kernels,
-            "lir.x86.lifetime.call_args",
-            "codegen/lir/x86/lifetime_call_args",
+            "lir.x86.optimize.functions",
+            "codegen/lir/x86/optimize_functions",
         )?;
-        let lifetime_aggregate_elements_pass = load(
-            kernels,
-            "lir.x86.lifetime.aggregate_elements",
-            "codegen/lir/x86/lifetime_aggregate_elements",
-        )?;
-        let location_assign_pass = load(
-            kernels,
-            "lir.x86.location.assign",
-            "codegen/lir/x86/location_assign",
-        )?;
-        let decl_slots_clear_pass = load(
-            kernels,
-            "lir.x86.decl_slots.clear",
-            "codegen/lir/x86/decl_slots_clear",
-        )?;
+        let if_convert_pass = load(kernels, "lir.x86.if_convert", "codegen/lir/x86/if_convert")?;
         let decl_slots_scatter_pass = load(
             kernels,
             "lir.x86.decl_slots.scatter",
             "codegen/lir/x86/decl_slots_scatter",
+        )?;
+        let frame_finalize_pass = load(
+            kernels,
+            "lir.x86.frame.finalize",
+            "codegen/lir/x86/frame_finalize",
         )?;
         let decl_slot_params = uniform_from_val(
             device,
@@ -237,14 +239,32 @@ impl GpuX86LirStage {
                 function_capacity: capacities.hir_nodes.max(1),
             },
         );
-        let lifetime_params = uniform_from_val(
+        let analysis_params = uniform_from_val(
             device,
-            "lir.x86.lifetime.params",
-            &LifetimeParams {
+            "lir.x86.analysis.params",
+            &X86AnalysisParams {
                 semantic_capacity,
                 call_arg_capacity: capacities.call_arguments.max(1),
                 aggregate_capacity: capacities.aggregate_elements.max(1),
-                reserved: 0,
+                function_capacity: capacities.hir_nodes.max(1),
+                token_capacity: capacities.declaration_capacity(),
+                reserved0: 0,
+                reserved1: 0,
+                reserved2: 0,
+            },
+        );
+        let allocation_params = uniform_from_val(
+            device,
+            "lir.x86.allocation.params",
+            &X86AnalysisParams {
+                semantic_capacity,
+                call_arg_capacity: capacities.call_arguments.max(1),
+                aggregate_capacity: capacities.aggregate_elements.max(1),
+                function_capacity: capacities.hir_nodes.max(1),
+                token_capacity: capacities.declaration_capacity(),
+                reserved0: 1,
+                reserved1: 0,
+                reserved2: 0,
             },
         );
         let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
@@ -337,6 +357,10 @@ impl GpuX86LirStage {
                         target_capacity,
                         target_start,
                         page_capacity,
+                        token_capacity: capacities.declaration_capacity(),
+                        reserved0: 0,
+                        reserved1: 0,
+                        reserved2: 0,
                     },
                 );
                 Ok(X86LirPage {
@@ -419,17 +443,6 @@ impl GpuX86LirStage {
             capacities.hir_nodes,
             semantic.count,
         )?;
-        let decl_slots_clear = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "lir.x86.decl_slots.clear",
-            &decl_slots_clear_pass,
-            &decl_slot_params,
-            decl_location_by_token
-                .count
-                .max(saved_gpr_mask_by_function.count) as u32,
-        )?;
         let decl_slots_scatter = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -442,50 +455,61 @@ impl GpuX86LirStage {
                 .max(capacities.semantic_instructions)
                 .max(1),
         )?;
-        let lifetime_clear = ComputeOperation::direct_with_uniform(
+        let frame_finalize = ComputeOperation::direct_with_uniform(
             device,
             &context,
             &resources,
-            "lir.x86.lifetime.clear",
-            &lifetime_clear_pass,
-            &lifetime_params,
+            "lir.x86.frame.finalize",
+            &frame_finalize_pass,
+            &decl_slot_params,
+            capacities.hir_nodes.max(1),
+        )?;
+        let analysis_clear = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.x86.analysis.clear",
+            &analysis_clear_pass,
+            &analysis_params,
+            semantic_capacity
+                .max(capacities.hir_nodes.max(1))
+                .max(capacities.declaration_capacity()),
+        )?;
+        let analysis_index = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.x86.analysis.index",
+            &analysis_index_pass,
+            &analysis_params,
             semantic_capacity,
         )?;
-        let lifetime_collect = ComputeOperation::direct_with_uniform(
+        let optimize_functions = ComputeOperation::direct_with_uniform(
             device,
             &context,
             &resources,
-            "lir.x86.lifetime.collect",
-            &lifetime_collect_pass,
-            &lifetime_params,
+            "lir.x86.optimize.functions",
+            &optimize_functions_pass,
+            &analysis_params,
+            capacities.hir_nodes.max(1),
+        )?;
+        let if_convert = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.x86.if_convert",
+            &if_convert_pass,
+            &analysis_params,
             semantic_capacity,
         )?;
-        let lifetime_call_args = ComputeOperation::direct_with_uniform(
+        let allocate_functions = ComputeOperation::direct_with_uniform(
             device,
             &context,
             &resources,
-            "lir.x86.lifetime.call_args",
-            &lifetime_call_args_pass,
-            &lifetime_params,
-            capacities.call_arguments.max(1),
-        )?;
-        let lifetime_aggregate_elements = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "lir.x86.lifetime.aggregate_elements",
-            &lifetime_aggregate_elements_pass,
-            &lifetime_params,
-            capacities.aggregate_elements.max(1),
-        )?;
-        let location_assign = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "lir.x86.location.assign",
-            &location_assign_pass,
-            &lifetime_params,
-            semantic_capacity,
+            "lir.x86.allocate.functions",
+            &optimize_functions_pass,
+            &allocation_params,
+            capacities.hir_nodes.max(1),
         )?;
         let artifact = GpuX86ArtifactStage::new(
             device,
@@ -518,19 +542,20 @@ impl GpuX86LirStage {
         Ok(Self {
             count_pages,
             pages,
-            decl_slots_clear,
             decl_slots_scatter,
-            lifetime_clear,
-            lifetime_collect,
-            lifetime_call_args,
-            lifetime_aggregate_elements,
-            location_assign,
+            frame_finalize,
+            analysis_clear,
+            analysis_index,
+            optimize_functions,
+            if_convert,
+            allocate_functions,
             count_scan,
             target_pages,
             functions,
             _count_params: count_params,
             _decl_slot_params: decl_slot_params,
-            _lifetime_params: lifetime_params,
+            _analysis_params: analysis_params,
+            _allocation_params: allocation_params,
             _counts: counts,
             _offsets: offsets,
             #[cfg(test)]
@@ -566,11 +591,11 @@ impl GpuX86LirStage {
         page_id: usize,
     ) -> Result<()> {
         if page_id == 0 {
-            self.lifetime_clear.record(encoder)?;
-            self.lifetime_collect.record(encoder)?;
-            self.lifetime_call_args.record(encoder)?;
-            self.lifetime_aggregate_elements.record(encoder)?;
-            self.location_assign.record(encoder)?;
+            self.analysis_clear.record(encoder)?;
+            self.analysis_index.record(encoder)?;
+            self.optimize_functions.record(encoder)?;
+            self.if_convert.record(encoder)?;
+            self.allocate_functions.record(encoder)?;
         }
         self.count_pages
             .get(page_id)
@@ -669,8 +694,8 @@ impl GpuX86LirStage {
         self.count_scan.record(encoder)?;
         self.target_pages.record(encoder)?;
         self.functions.record(encoder)?;
-        self.decl_slots_clear.record(encoder)?;
-        self.decl_slots_scatter.record(encoder)
+        self.decl_slots_scatter.record(encoder)?;
+        self.frame_finalize.record(encoder)
     }
 
     #[cfg(test)]
@@ -790,8 +815,8 @@ mod tests {
         let capacities = LoweringCapacities {
             source_bytes: 8,
             tokens: 8,
-            hir_nodes: 4,
-            semantic_instructions: 8,
+            hir_nodes: 8,
+            semantic_instructions: 9,
             call_arguments: 2,
             parameters: 2,
             aggregate_elements: 2,
@@ -888,8 +913,18 @@ mod tests {
                     0,
                     u32::MAX,
                 ],
+                [
+                    opcode::SEMANTIC_LIR_OP_CONST_I32,
+                    3,
+                    0,
+                    u32::MAX,
+                    8,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
             ])),
-            8,
+            9,
         );
         let page_operands = storage_ro_from_bytes::<SemanticLirOperands>(
             &gpu.device,
@@ -903,23 +938,28 @@ mod tests {
                 [6, u32::MAX, u32::MAX, u32::MAX],
                 [4, 0, 0, 2],
                 [7, 7, 11, 23],
+                [8, 42, u32::MAX, u32::MAX],
             ]),
-            8,
+            9,
         );
         let semantic_order: LaniusBuffer<u32> = workspace
             .alias(
                 &graph,
                 graph.resource_id("lir.semantic.schedule_order").unwrap(),
-                8,
+                9,
             )
             .unwrap();
-        semantic_order.write(&gpu.queue, 0, &record_bytes(&[[1u32, 0, 2, 3, 5, 6, 4, 7]]));
+        semantic_order.write(
+            &gpu.queue,
+            0,
+            &record_bytes(&[[1u32, 0, 2, 3, 5, 6, 4, 7, 8]]),
+        );
         let semantic_layout_metadata =
-            storage_ro_from_u32s(&gpu.device, "test.x86_lir.layout_metadata", &[0; 8]);
+            storage_ro_from_u32s(&gpu.device, "test.x86_lir.layout_metadata", &[0; 9]);
         let semantic_owners = storage_ro_from_u32s(
             &gpu.device,
             "test.x86_lir.semantic_owners",
-            &[1, 0, 2, 3, 5, 6, 4, 7],
+            &[1, 0, 2, 3, 5, 6, 4, 7, 7],
         );
         let semantic_function_ids =
             storage_ro_from_u32s(&gpu.device, "test.x86_lir.function_ids", &[0; 8]);
@@ -935,6 +975,7 @@ mod tests {
                 opcode::SEMANTIC_LIR_OP_BRANCH,
                 opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN,
                 opcode::SEMANTIC_LIR_OP_CALL_SYMBOL,
+                opcode::SEMANTIC_LIR_OP_CONST_I32,
             ],
         );
         let call_args = storage_ro_from_bytes::<SemanticLirCallArg>(
@@ -979,8 +1020,8 @@ mod tests {
         let string_rows = storage_ro_from_bytes::<SemanticLirString>(
             &gpu.device,
             "test.x86_lir.strings",
-            &record_bytes(&[[u32::MAX; 4]; 4]),
-            4,
+            &record_bytes(&[[u32::MAX; 4]; 8]),
+            8,
         );
         let empty_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.empty_count", &[0]);
         let string_data = storage_ro_from_u32s(&gpu.device, "test.x86_lir.string_data", &[0; 2]);
@@ -992,8 +1033,12 @@ mod tests {
                 [u32::MAX; 13],
                 [u32::MAX; 13],
                 [u32::MAX; 13],
+                [u32::MAX; 13],
+                [u32::MAX; 13],
+                [u32::MAX; 13],
+                [u32::MAX; 13],
             ]),
-            4,
+            8,
         );
         let params = storage_ro_from_bytes::<SemanticLirParam>(
             &gpu.device,
@@ -1017,8 +1062,20 @@ mod tests {
                 [u32::MAX; 4],
                 [u32::MAX; 4],
                 [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
+                [u32::MAX; 4],
             ]),
-            12,
+            24,
         );
         let function_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.fn_count", &[1]);
         let param_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.param_count", &[1]);
@@ -1108,7 +1165,7 @@ mod tests {
             .copy_to(&mut encoder, 0, &saved_mask_rb, 0, 4);
         gpu.queue.submit(Some(encoder.finish()));
 
-        assert_eq!(read_words(&gpu.device, &total_rb)[0], 10);
+        assert_eq!(read_words(&gpu.device, &total_rb)[0], 9);
         let core_words = read_words(&gpu.device, &core_rb);
         assert_eq!(
             [
@@ -1121,12 +1178,10 @@ mod tests {
                 core_words[26],
                 core_words[30],
                 core_words[34],
-                core_words[38],
             ],
             [
                 opcode::X86_LIR_OP_IMM_I32,
                 opcode::X86_LIR_OP_IMM_I32,
-                opcode::X86_LIR_OP_BINARY,
                 opcode::X86_LIR_OP_RETURN,
                 opcode::X86_LIR_OP_LABEL,
                 opcode::X86_LIR_OP_CALL_ARG,
@@ -1137,33 +1192,37 @@ mod tests {
             ]
         );
         let operand_words = read_words(&gpu.device, &operands_rb);
-        assert_eq!([operand_words[0], operand_words[4]], [7, 9]);
-        assert_eq!(
-            &operand_words[8..11],
-            &[opcode::X86_LIR_BINARY_ADD_I32, 0, 1]
-        );
+        // The first constant remains live as a later call argument. The
+        // constant-only `7 + 9` expression becomes one target immediate and
+        // its otherwise-unused `7` producer disappears.
+        assert_eq!([operand_words[0], operand_words[4]], [9, 16]);
         let location_words = read_words(&gpu.device, &locations_rb);
-        // The current correctness baseline keeps semantic values in their
-        // stack homes; register assignment is a later optimization pass.
-        assert_eq!(location_words[0], 0);
-        assert_eq!(location_words[4], 1);
-        assert_eq!(&location_words[8..12], &[2, u32::MAX, 0, 1]);
+        // Both surviving values are consumed before the call and remain in
+        // caller-saved registers. Folded immediates have no input locations.
+        assert_eq!(location_words[0], opcode::X86_LOCATION_REGISTER | 8);
+        assert_eq!(location_words[4], opcode::X86_LOCATION_REGISTER | 9);
+        assert_eq!(
+            &location_words[4..8],
+            &[
+                opcode::X86_LOCATION_REGISTER | 9,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+            ]
+        );
         assert_eq!(read_words(&gpu.device, &function_count_rb)[0], 1);
-        assert_eq!(&operand_words[32..36], &[u32::MAX, 7, 0, 0]);
-        assert_eq!(&operand_words[36..39], &[7, 11, 23]);
-        assert_eq!(&read_words(&gpu.device, &functions_rb)[..4], &[0, 0, 10, 0]);
+        assert_eq!(&operand_words[28..32], &[u32::MAX, 6, 0, 0]);
+        assert_eq!(&operand_words[32..35], &[7, 11, 23]);
+        assert_eq!(&read_words(&gpu.device, &functions_rb)[..4], &[0, 0, 9, 2]);
         let frame_slots = read_words(&gpu.device, &frame_slots_rb);
         assert_eq!(
             (frame_slots[3], frame_slots[4]),
             (
-                opcode::X86_LOCATION_REGISTER | 3,
-                opcode::X86_LOCATION_REGISTER | 12
+                opcode::X86_LOCATION_REGISTER | 7,
+                opcode::X86_LOCATION_REGISTER | 6
             )
         );
-        assert_eq!(
-            read_words(&gpu.device, &saved_mask_rb)[0],
-            (1 << 3) | (1 << 12)
-        );
+        assert_eq!(read_words(&gpu.device, &saved_mask_rb)[0], 0);
         let status_words = read_words(&gpu.device, &status_rb);
         // This fixture deliberately keeps one parameter on the entrypoint so
         // the LIR can exercise parameter/register placement. Artifact

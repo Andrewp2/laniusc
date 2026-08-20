@@ -172,6 +172,7 @@ impl GpuTypeChecker {
             n_hir_nodes: parse_bufs.tree_capacity,
             n_source_files: source_file_capacity,
             parser_feature_flags: parse_bufs.parser_feature_flags,
+            dependency_interfaces_present: 0,
         };
         queue.write_buffer(&self.params_buf, 0, &type_check_params_bytes(&params));
 

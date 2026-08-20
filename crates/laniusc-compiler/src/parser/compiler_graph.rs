@@ -837,7 +837,6 @@ impl ParserCompilerGraph {
         params_llp: &crate::gpu::buffers::LaniusBuffer<crate::parser::passes::llp_pairs::LLPParams>,
         token_count: &crate::gpu::buffers::LaniusBuffer<u32>,
         active_pair_thread_dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
-        active_pair_group_dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         tree_prefix_params: &crate::gpu::buffers::LaniusBuffer<
             crate::parser::passes::tree::prefix::local::Params,
         >,
@@ -854,11 +853,6 @@ impl ParserCompilerGraph {
             "active_pair_thread_dispatch_args",
             active_pair_thread_dispatch_args,
         );
-        active.buffer(
-            "active_pair_group_dispatch_args",
-            active_pair_group_dispatch_args,
-        );
-
         let mut tree = ResourceMap::new();
         tree.buffer("gTree", tree_prefix_params);
         tree.buffer("ll1_status", ll1_status);
@@ -1871,7 +1865,7 @@ fn build_graph(
     hir::register_resources(&mut graph, capacity)?;
     for name in [
         "active_pair_thread_dispatch_args",
-        "active_pair_group_dispatch_args",
+        "active_stack_thread_dispatch_args",
         "tree_active_dispatch_args",
         "tree_enum_dispatch_args",
         "tree_match_dispatch_args",
@@ -1880,15 +1874,31 @@ fn build_graph(
     ] {
         workspace_indirect(&mut graph, name, 12)?;
     }
-    let canonical_parent_dispatch_rows =
-        crate::parser::passes::hir::semantic::parent::step::pointer_jump_steps_after_local_span(
+    let raw_relation_dispatch_rows =
+        crate::parser::passes::hir::semantic::parent::step::canonical_relation_step_capacity(
             capacity.tree_capacity,
         )
         .max(1);
     workspace_indirect(
         &mut graph,
-        "hir_canonical_parent_dispatch_args",
-        u64::from(canonical_parent_dispatch_rows) * 12,
+        "hir_raw_relation_dispatch_args",
+        u64::from(raw_relation_dispatch_rows) * 12,
+    )?;
+    workspace_indirect(
+        &mut graph,
+        "hir_semantic_relation_dispatch_args",
+        u64::from(raw_relation_dispatch_rows) * 12,
+    )?;
+    let local_relation_dispatch_rows =
+        crate::parser::passes::hir::semantic::parent::step::bounded_walk_steps_after_local_span(
+            capacity.tree_capacity,
+            crate::parser::passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+        )
+        .max(1);
+    workspace_indirect(
+        &mut graph,
+        "hir_local_relation_dispatch_args",
+        u64::from(local_relation_dispatch_rows) * 12,
     )?;
 
     graph.add_physical_reset_pass(JOB_STORAGE_RESET, CompilerPhase::Parse)?;
@@ -1922,18 +1932,11 @@ fn build_graph(
         CompilerPhase::Parse,
         ResourceDomain::DispatchArguments,
         &passes.active_pair_dispatch_args,
-        &[
-            (
-                "active_pair_thread_dispatch_args",
-                "active_pair_thread_dispatch_args",
-                Some(AccessMode::Write),
-            ),
-            (
-                "active_pair_group_dispatch_args",
-                "active_pair_group_dispatch_args",
-                Some(AccessMode::Write),
-            ),
-        ],
+        &[(
+            "active_pair_thread_dispatch_args",
+            "active_pair_thread_dispatch_args",
+            Some(AccessMode::Write),
+        )],
     )?;
     static_pass(
         &mut graph,
@@ -1994,19 +1997,21 @@ fn build_graph(
             ],
         )
     };
+    // The resident workspace can be reused with any active token count up to
+    // its capacity. That active count can change the reduction-step parity, so
+    // the graph must describe every operation the workspace may execute rather
+    // than only the path implied by its physical capacity.
+    register_pack_total_reduce(&mut graph, PACK_TOTALS_REDUCE_A_TO_B, true)?;
+    register_pack_total_reduce(&mut graph, PACK_TOTALS_REDUCE_B_TO_A, false)?;
     let paired_reduce_steps = pack_total_reduce_steps / 2;
     if paired_reduce_steps > 0 {
-        register_pack_total_reduce(&mut graph, PACK_TOTALS_REDUCE_A_TO_B, true)?;
-        register_pack_total_reduce(&mut graph, PACK_TOTALS_REDUCE_B_TO_A, false)?;
         graph.repeat_pass_range(
             paired_reduce_steps,
             PACK_TOTALS_REDUCE_A_TO_B,
             PACK_TOTALS_REDUCE_B_TO_A,
         )?;
     }
-    if pack_total_reduce_steps % 2 == 1 {
-        register_pack_total_reduce(&mut graph, PACK_TOTALS_REDUCE_FINAL_A_TO_B, true)?;
-    }
+    register_pack_total_reduce(&mut graph, PACK_TOTALS_REDUCE_FINAL_A_TO_B, true)?;
     reflected(
         &mut graph,
         PACK_TOTALS_STATUS,
@@ -2021,6 +2026,11 @@ fn build_graph(
             (
                 "partial_parse_status",
                 "partial_parse_status",
+                Some(AccessMode::Write),
+            ),
+            (
+                "active_stack_thread_dispatch_args",
+                "active_stack_thread_dispatch_args",
                 Some(AccessMode::Write),
             ),
         ],
@@ -2108,7 +2118,11 @@ fn build_graph(
         CompilerPhase::Parse,
         ResourceDomain::Tokens,
         passes.pack_offsets_status.data(),
-        &[],
+        &[(
+            "active_stack_thread_dispatch_args",
+            "active_stack_thread_dispatch_args",
+            Some(AccessMode::Write),
+        )],
     )?;
     indirect(
         &mut graph,
@@ -2123,7 +2137,11 @@ fn build_graph(
         &[],
     )?;
     graph.mark_pass_bindings_initialize("pack_varlen", &["out_sc", "out_emit", "out_emit_pos"])?;
-    indirect(&mut graph, "pack_varlen", "active_pair_group_dispatch_args")?;
+    indirect(
+        &mut graph,
+        "pack_varlen",
+        "active_pair_thread_dispatch_args",
+    )?;
     graph.add_buffer_copy_pass(
         PACK_STATUS_PROMOTE,
         CompilerPhase::Parse,
@@ -2191,6 +2209,11 @@ fn build_graph(
                 Some(AccessMode::Write),
             ),
         ],
+    )?;
+    indirect(
+        &mut graph,
+        "brackets_01_scan_inblock",
+        "active_stack_thread_dispatch_args",
     )?;
     let (bracket_up, bracket_down, bracket_finalize) = passes.b02.graph_passes();
     let bracket_scan_aliases = [
@@ -2278,6 +2301,11 @@ fn build_graph(
             ("layer", "bracket_layer", Some(AccessMode::Write)),
         ],
     )?;
+    indirect(
+        &mut graph,
+        "brackets_03_apply_prefix",
+        "active_stack_thread_dispatch_args",
+    )?;
     reflected(
         &mut graph,
         "brackets_04_build_min_tree",
@@ -2308,6 +2336,11 @@ fn build_graph(
                 Some(AccessMode::Write),
             )],
         )?;
+        indirect(
+            &mut graph,
+            "brackets_04_clear_matches",
+            "active_stack_thread_dispatch_args",
+        )?;
     }
     static_pass(
         &mut graph,
@@ -2331,6 +2364,11 @@ fn build_graph(
                 }),
             ),
         ],
+    )?;
+    indirect(
+        &mut graph,
+        "brackets_pse_04_pair_by_layer",
+        "active_stack_thread_dispatch_args",
     )?;
     static_pass(
         &mut graph,
@@ -2614,11 +2652,18 @@ fn build_graph(
         &passes.tree_depth_schedule,
         CompilerPhase::Parse,
         ResourceDomain::DispatchArguments,
-        &[(
-            "hir_canonical_parent_dispatch_args",
-            "hir_canonical_parent_dispatch_args",
-            Some(AccessMode::Write),
-        )],
+        &[
+            (
+                "hir_raw_relation_dispatch_args",
+                "hir_raw_relation_dispatch_args",
+                Some(AccessMode::Write),
+            ),
+            (
+                "hir_local_relation_dispatch_args",
+                "hir_local_relation_dispatch_args",
+                Some(AccessMode::Write),
+            ),
+        ],
     )?;
 
     static_pass(
@@ -2723,11 +2768,23 @@ fn build_graph(
         &passes.hir_semantic_dispatch_args,
         CompilerPhase::Hir,
         ResourceDomain::DispatchArguments,
-        &[(
-            "hir_semantic_dispatch_args",
-            "hir_semantic_dispatch_args",
-            Some(AccessMode::Write),
-        )],
+        &[
+            (
+                "hir_semantic_dispatch_args",
+                "hir_semantic_dispatch_args",
+                Some(AccessMode::Write),
+            ),
+            (
+                "hir_raw_relation_dispatch_args",
+                "hir_raw_relation_dispatch_args",
+                None,
+            ),
+            (
+                "hir_semantic_relation_dispatch_args",
+                "hir_semantic_relation_dispatch_args",
+                Some(AccessMode::Write),
+            ),
+        ],
     )?;
     static_pass(
         &mut graph,
@@ -3438,6 +3495,8 @@ mod tests {
             ACTIVE_PAIR_DISPATCH,
             "llp_pairs",
             PACK_TOTALS_BLOCKS,
+            PACK_TOTALS_REDUCE_A_TO_B,
+            PACK_TOTALS_REDUCE_B_TO_A,
             PACK_TOTALS_REDUCE_FINAL_A_TO_B,
             PACK_TOTALS_STATUS,
             "pack_offsets_scan.local",
@@ -3480,9 +3539,6 @@ mod tests {
             crate::parser::passes::hir::types::alias::owner::step::A_TO_B,
             crate::parser::passes::hir::types::alias::owner::step::B_TO_A,
             "hir_type_alias_target",
-            "hir_fn_signature_owner_init",
-            crate::parser::passes::hir::semantic::parent::step::FN_SIGNATURE_OWNER.a_to_b,
-            crate::parser::passes::hir::semantic::parent::step::FN_SIGNATURE_OWNER.b_to_a,
             "hir_fn_return_type",
             "hir_param_links",
             "hir_param_rank_prefix_00_local",
@@ -3575,9 +3631,6 @@ mod tests {
             "hir_canonical_type_arg_local",
             "hir_canonical_type_arg_prefix_01_blocks.up",
             "hir_canonical_type_arg_scatter",
-            "hir_canonical_relations_init",
-            crate::parser::passes::hir::semantic::parent::step::CANONICAL_RELATIONS.a_to_b,
-            crate::parser::passes::hir::semantic::parent::step::CANONICAL_RELATIONS.b_to_a,
             "hir_canonical_core",
             "hir_canonical_nav",
             "hir_canonical_expr_forest_edges",

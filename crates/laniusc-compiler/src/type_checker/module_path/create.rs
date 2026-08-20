@@ -144,7 +144,6 @@ pub(in crate::type_checker) fn create_with_passes(
         record_scan_local_prefix,
         record_scan_block_sum,
         record_scan_prefix_a,
-        record_scan_prefix_b,
         import_count_out,
         decl_count_out,
         module_dispatch_args,
@@ -349,11 +348,6 @@ pub(in crate::type_checker) fn create_with_passes(
         .module_value_scan_workspace
         .block_prefix
         .alias(record_n_blocks as usize);
-    let value_scan_prefix_b: LaniusBuffer<u32> = inputs
-        .module_value_scan_workspace
-        .hierarchy
-        .alias(record_n_blocks as usize);
-
     let mut scan_resources = module_resources.clone();
     scan_resources.buffers([
         ("decl_count_out", &decl_count_out),
@@ -370,11 +364,9 @@ pub(in crate::type_checker) fn create_with_passes(
         ("module_record_scan_local_prefix", &record_scan_local_prefix),
         ("module_record_scan_block_sum", &record_scan_block_sum),
         ("module_record_scan_prefix_a", &record_scan_prefix_a),
-        ("module_record_scan_prefix_b", &record_scan_prefix_b),
         ("module_value_scan_local_prefix", &value_scan_local_prefix),
         ("module_value_scan_block_sum", &value_scan_block_sum),
         ("module_value_scan_prefix_a", &value_scan_prefix_a),
-        ("module_value_scan_prefix_b", &value_scan_prefix_b),
         ("decl_status", &decl_status),
         (
             "type_decl_generic_param_count_by_owner_token",
@@ -396,7 +388,7 @@ pub(in crate::type_checker) fn create_with_passes(
         ("import_dispatch_args", &import_dispatch_args),
     ]);
 
-    let (decl_type_key_scan, decl_value_key_scan) = PrefixScanOperation::from_pair_spec(
+    let decl_namespace_scan = PrefixScanPairOperation::from_spec(
         device,
         passes,
         &scan_resources,
@@ -469,7 +461,7 @@ pub(in crate::type_checker) fn create_with_passes(
         &decl_key_radix_dispatch_args,
     )?;
 
-    let (decl_type_public_scan, decl_value_public_scan) = PrefixScanOperation::from_pair_spec(
+    let decl_public_scan = PrefixScanPairOperation::from_spec(
         device,
         passes,
         &scan_resources,
@@ -517,13 +509,12 @@ pub(in crate::type_checker) fn create_with_passes(
         &import_dispatch_args,
     )?;
 
-    let (import_visible_type_scan, import_visible_value_scan) =
-        PrefixScanOperation::from_pair_spec(
-            device,
-            passes,
-            &scan_resources,
-            compiler_graph::IMPORT_VISIBLE_SCAN,
-        )?;
+    let import_visible_scan = PrefixScanPairOperation::from_spec(
+        device,
+        passes,
+        &scan_resources,
+        compiler_graph::IMPORT_VISIBLE_SCAN,
+    )?;
 
     let mut import_visible_type_resources = public_resources.clone();
     import_visible_type_resources.buffer("import_visible_count", &import_visible_type_count);
@@ -897,19 +888,16 @@ pub(in crate::type_checker) fn create_with_passes(
             sort_decl_keys,
             validate_decls,
             mark_decl_namespace_keys,
-            decl_type_key_scan,
-            decl_value_key_scan,
+            decl_namespace_scan,
             scatter_decl_namespace_keys,
             decl_lookup,
             validate_decl_duplicates,
             mark_public_decl_keys,
-            decl_type_public_scan,
-            decl_value_public_scan,
+            decl_public_scan,
             clear_interface_public_decls,
             map_interface_public_decls,
             count_import_visibility,
-            import_visible_type_scan,
-            import_visible_value_scan,
+            import_visible_scan,
             scatter_import_visible_type,
             scatter_import_visible_value,
             clear_import_visible_type_lookup,

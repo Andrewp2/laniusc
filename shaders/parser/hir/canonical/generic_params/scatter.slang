@@ -52,7 +52,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint raw = encoded == 0u ? INVALID : encoded - 1u;
     if (raw >= gCanonical.raw_capacity) return;
 
-    uint owner_raw = owner_value[raw];
+    uint owner_raw = owner_value[anchor];
     uint prod = node_kind[raw];
 
     uint block = anchor / 256u;

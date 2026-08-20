@@ -18,6 +18,7 @@ StructuredBuffer<SemanticLirCallArg> semantic_lir_call_args;
 StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<SemanticLirParam> semantic_lir_params;
+StructuredBuffer<uint> x86_live_by_semantic;
 StructuredBuffer<uint> semantic_lir_aggregate_element_total;
 StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
 RWStructuredBuffer<uint> target_lir_count;
@@ -92,6 +93,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     uint semantic_row = semantic_schedule_order[scheduled_row];
+    if (semantic_row >= total || x86_live_by_semantic[semantic_row] == 0u)
+    {
+        target_lir_count[scheduled_row] = 0u;
+        return;
+    }
     SemanticLirCore core = semantic_lir_core[semantic_row];
     uint source_hir = semantic_owner_by_instruction[semantic_row];
     if ((core.flags & SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE) != 0u)

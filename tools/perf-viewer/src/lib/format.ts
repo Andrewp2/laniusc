@@ -1,6 +1,26 @@
-import type { Measurement, PerformanceRun } from './types';
+import type { CatalogEntry, Measurement, PerformanceRun } from './types';
 
 export const SERIES = ['var(--cyan)', 'var(--violet)', 'var(--green)', 'var(--orange)', 'var(--red)'];
+
+export const COMPILER_PHASES = [
+  ['orchestration', 'Job setup / coordination'],
+  ['unattributed_gpu', 'Unattributed GPU work'],
+  ['lexing', 'Lexing'],
+  ['parsing', 'Parsing'],
+  ['hir_construction', 'HIR construction'],
+  ['type_checking', 'Type checking'],
+  ['semantic_interface', 'Semantic interface'],
+  ['lowering', 'Lowering'],
+  ['x86_emission', 'x86-64 emission'],
+  ['wasm_emission', 'Wasm emission'],
+  ['artifact_emission', 'Artifact emission'],
+] as const;
+
+const COMPILER_PHASE_NAMES = new Map<string, string>(COMPILER_PHASES);
+
+export function compilerPhaseName(phase: string): string {
+  return COMPILER_PHASE_NAMES.get(phase) ?? phase;
+}
 
 const COMPILER_NAMES: Record<string, string> = {
   c: 'C',
@@ -71,7 +91,7 @@ export function measurementColor(measurement: Measurement): string {
     cpp: 'var(--green)',
     pareas: 'var(--violet)',
     rust: 'var(--red)',
-    tcc: 'var(--yellow)',
+    tcc: 'var(--context-series)',
     zig: 'var(--blue)',
   } as Record<string, string>)[compiler] ?? 'var(--muted)';
 }
@@ -84,8 +104,8 @@ export function resultLabel(run: PerformanceRun): string {
   return `${kind} · ${files} · ${formatSourceBytes(source.bytes)} · ${source.sloc.toLocaleString()} SLOC`;
 }
 
-export function resultOptionLabel(run: PerformanceRun): string {
-  return `${formatRecordedAt(run.run.recorded_at)} · ${resultLabel(run)}`;
+export function resultOptionLabel(entry: CatalogEntry): string {
+  return `[${entry.result_id}] ${formatRecordedAt(entry.document.run.recorded_at)} · ${resultLabel(entry.document)}`;
 }
 
 export function formatRecordedAt(value: string): string {
@@ -111,6 +131,7 @@ export function analysisCapabilities(measurement: Measurement | undefined): stri
     hasPhaseData(measurement) ? 'phases' : null,
     hasMemoryData(measurement) ? 'memory' : null,
     measurement.profile ? 'profile' : null,
+    measurement.profile?.gpu_memory_timeline ? 'memory timeline' : null,
     measurement.profile?.nsight ? 'Nsight GPU' : null,
   ].filter((value): value is string => value !== null);
 }

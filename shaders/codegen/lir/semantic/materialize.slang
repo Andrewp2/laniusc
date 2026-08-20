@@ -398,7 +398,6 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
                                       HirPayload payload)
 {
     SemanticLirSchedule schedule;
-    schedule.function_id = semantic_function_id[node];
     bool expression_row = semantic_lir_is_expression(hir);
     uint root = expression_row ? compact_expr_root[node] : LIR_INVALID;
     uint local_op = semantic_lir_local_op(hir, payload, local_row, local_count);

@@ -601,7 +601,7 @@ pub struct ParserBuffers {
         LaniusBuffer<super::super::passes::source_file_token_end::Params>,
     pub source_file_token_end: LaniusBuffer<u32>,
     pub active_pair_thread_dispatch_args: LaniusBuffer<u32>,
-    pub active_pair_group_dispatch_args: LaniusBuffer<u32>,
+    pub active_stack_thread_dispatch_args: LaniusBuffer<u32>,
     pub action_table: LaniusBuffer<u8>,
     pub out_headers: LaniusBuffer<ActionHeader>,
 
@@ -669,10 +669,14 @@ pub struct ParserBuffers {
     /// Zero on success; otherwise one plus a raw node whose parent chain was
     /// malformed or cyclic during local depth traversal.
     pub tree_depth_status: LaniusBuffer<u32>,
-    /// Raw-depth-bounded schedule for nearest-ancestor searches whose seed
-    /// shaders inspect a fixed local span before global pointer jumping.
-    pub hir_canonical_parent_dispatch_args: LaniusBuffer<u32>,
+    /// Raw-depth-bounded schedule for relation walks seeded from direct parent links.
+    pub hir_raw_relation_dispatch_args: LaniusBuffer<u32>,
+    /// Raw-depth-bounded schedule for relation walks whose seed pass already
+    /// consumes the configured local ancestor span.
+    pub hir_local_relation_dispatch_args: LaniusBuffer<u32>,
     pub hir_semantic_dispatch_args: LaniusBuffer<u32>,
+    /// Raw-depth-bounded rounds projected onto the dense semantic-HIR dispatch domain.
+    pub hir_semantic_relation_dispatch_args: LaniusBuffer<u32>,
     pub tree_depth_block_max: LaniusBuffer<u32>,
     pub tree_prefix_inblock: LaniusBuffer<i32>,
     pub tree_block_sum: LaniusBuffer<i32>,
@@ -867,12 +871,6 @@ pub struct ParserBuffers {
     pub hir_type_arg_next: LaniusBuffer<u32>,
     pub hir_type_alias_target_node: LaniusBuffer<u32>,
     pub hir_fn_return_type_node: LaniusBuffer<u32>,
-    pub hir_fn_signature_owner_link_a: LaniusBuffer<u32>,
-    pub hir_fn_signature_owner_link_b: LaniusBuffer<u32>,
-    pub hir_fn_signature_return_owner_a: LaniusBuffer<u32>,
-    pub hir_fn_signature_return_owner_b: LaniusBuffer<u32>,
-    pub hir_fn_signature_function_owner_a: LaniusBuffer<u32>,
-    pub hir_fn_signature_function_owner_b: LaniusBuffer<u32>,
     pub hir_type_arg_owner_a: LaniusBuffer<u32>,
     pub hir_type_arg_owner_b: LaniusBuffer<u32>,
     pub hir_type_arg_link_a: LaniusBuffer<u32>,

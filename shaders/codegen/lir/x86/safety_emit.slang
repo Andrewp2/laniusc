@@ -60,6 +60,15 @@ void emit_u32(inout uint cursor, uint value)
 
 uint displacement(uint slot) { return 0u - 8u * (slot + 1u); }
 
+void emit_stack_modrm(inout uint cursor, uint register, uint slot)
+{
+    bool narrow = x86_stack_displacement_bytes(slot) == 1u;
+    emit_u8(cursor, (narrow ? 0x40u : 0x80u) |
+        ((register & 7u) << 3u) | 5u);
+    if (narrow) emit_u8(cursor, displacement(slot));
+    else emit_u32(cursor, displacement(slot));
+}
+
 void move32_register(inout uint cursor, uint source, uint destination)
 {
     if (source == destination) return;
@@ -71,9 +80,7 @@ void move32_register(inout uint cursor, uint source, uint destination)
 
 uint value_slot(uint value_row, TargetLirFunction function)
 {
-    return value_row >= function.instruction_start &&
-           value_row < function.instruction_start + function.instruction_count
-        ? value_row - function.instruction_start : 0u;
+    return x86_location_payload(value_row);
 }
 
 void load_value32(inout uint cursor, uint location, uint destination,
@@ -85,8 +92,8 @@ void load_value32(inout uint cursor, uint location, uint destination,
     {
         if (destination >= 8u) emit_u8(cursor, 0x44u);
         emit_u8(cursor, 0x8bu);
-        emit_u8(cursor, 0x85u | ((destination & 7u) << 3u));
-        emit_u32(cursor, displacement(value_slot(x86_location_payload(location), function)));
+        emit_stack_modrm(cursor, destination,
+            value_slot(x86_location_payload(location), function));
     }
 }
 
@@ -97,15 +104,23 @@ uint declaration_location(uint token)
     return location == X86_LOCATION_INVALID ? 0u : location;
 }
 
-uint argument_register(uint ordinal)
+uint hidden_sret_slot(TargetLirFunction function)
 {
-    static const uint registers[6] = {7u, 6u, 2u, 1u, 8u, 9u};
-    return registers[min(ordinal, 5u)];
+    return function.flags & X86_TARGET_FUNCTION_FRAME_SLOT_MASK;
 }
 
-uint param_store_bytes(SemanticLirFunction function, uint hidden_sret)
+uint base_frame_slots(TargetLirFunction function,
+                      SemanticLirFunction semantic_function)
 {
-    uint bytes = hidden_sret != 0u ? 7u : 0u;
+    return hidden_sret_slot(function) +
+        (semantic_function.result_word_count > 2u ? 1u : 0u);
+}
+
+uint param_store_bytes(TargetLirFunction target_function,
+                       SemanticLirFunction function, uint hidden_sret)
+{
+    uint bytes = hidden_sret != 0u
+        ? x86_stack64_operand_bytes(hidden_sret_slot(target_function)) : 0u;
     uint abi_ordinal = hidden_sret;
     for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
     {
@@ -113,20 +128,22 @@ uint param_store_bytes(SemanticLirFunction function, uint hidden_sret)
         uint width = x86_abi_type_width(param.type_id);
         if (abi_ordinal + width > 6u) break;
         uint destination = declaration_location(param.declaration_id);
-        bytes += x86_move64_from_fixed_bytes(argument_register(abi_ordinal), destination);
+        bytes += x86_move64_from_fixed_bytes(x86_abi_argument_register(abi_ordinal), destination);
         if (width == 2u)
-            bytes += x86_move64_from_fixed_bytes(argument_register(abi_ordinal + 1u),
+            bytes += x86_move64_from_fixed_bytes(x86_abi_argument_register(abi_ordinal + 1u),
                 destination + 1u);
         abi_ordinal += width;
     }
     return bytes;
 }
 
-uint prologue_bytes(SemanticLirFunction function, uint saved_mask)
+uint prologue_bytes(TargetLirFunction target_function,
+                    SemanticLirFunction function, uint saved_mask)
 {
     uint hidden_sret = function.result_word_count > 2u ? 1u : 0u;
-    return 11u + x86_saved_gpr_count(saved_mask) * 7u +
-        param_store_bytes(function, hidden_sret);
+    return 11u + x86_saved_gpr_frame_bytes(saved_mask,
+            base_frame_slots(target_function, function)) +
+        param_store_bytes(target_function, function, hidden_sret);
 }
 
 void emit_exit(inout uint cursor, uint code)
@@ -197,6 +214,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint saved_mask = x86_saved_gpr_mask_by_function[function_id];
     uint cursor = layout.body_offset + target_byte_offset[row];
     if (row == function.instruction_start)
-        cursor += prologue_bytes(semantic_function, saved_mask);
+        cursor += prologue_bytes(function, semantic_function, saved_mask);
     emit_guards(cursor, core, operands, locations, function);
 }

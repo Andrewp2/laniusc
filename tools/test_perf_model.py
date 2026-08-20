@@ -10,6 +10,7 @@ from perf_model import (
     serialize_document,
     summarize,
     validate_execution_graph,
+    validate_gpu_memory_timeline,
     validate_document,
     validate_nsight_profile,
     validate_profile_storage,
@@ -17,6 +18,23 @@ from perf_model import (
 
 
 class PerfModelTests(unittest.TestCase):
+    def test_gpu_memory_timeline_requires_monotonic_physical_points(self):
+        timeline = {
+            "physical_residency": {
+                "points": [
+                    {"start_ms": 1.0, "bytes": 10, "allocations": 1},
+                    {"start_ms": 2.0, "bytes": 20, "allocations": 2},
+                ],
+            },
+            "graph_managed_working_set": {
+                "intervals": [{"start_ms": 1.0, "duration_ms": 2.0, "bytes": 8}],
+            },
+        }
+        validate_gpu_memory_timeline("example", timeline)
+        timeline["physical_residency"]["points"][1]["start_ms"] = 0.5
+        with self.assertRaisesRegex(ValueError, "invalid GPU memory point"):
+            validate_gpu_memory_timeline("example", timeline)
+
     def test_canonical_serializer_keeps_telemetry_records_to_one_line(self):
         document = {
             "profile": {

@@ -1,16 +1,18 @@
 <script lang="ts">
   import BarChart from './components/BarChart.svelte';
+  import AnalysisSummary from './components/AnalysisSummary.svelte';
   import BenchmarkSummary from './components/BenchmarkSummary.svelte';
   import ExecutionGraph from './components/ExecutionGraph.svelte';
   import Facts from './components/Facts.svelte';
   import Histogram from './components/Histogram.svelte';
   import MeasurementTable from './components/MeasurementTable.svelte';
   import MemoryChart from './components/MemoryChart.svelte';
+  import GpuMemoryTimeline from './components/GpuMemoryTimeline.svelte';
   import NsightGpuProfile from './components/NsightGpuProfile.svelte';
   import PhaseChart from './components/PhaseChart.svelte';
   import Timeline from './components/Timeline.svelte';
   import { loadCatalog } from './lib/catalog';
-  import { composeMeasurements, selectableResults } from './lib/comparison';
+  import { composeMeasurements, isComparisonCandidate, selectableResults } from './lib/comparison';
   import {
     analysisCapabilities, formatMs, formatRecordedAt, hasMemoryData, hasPhaseData,
     measurementColor, measurementLabel, resultLabel, resultOptionLabel,
@@ -42,6 +44,7 @@
       name: measurementLabel(measurement, mixedFileCounts),
       value: measurement.summary.wall_ms.median,
       color: measurementColor(measurement),
+      contextOnly: !isComparisonCandidate(measurement),
     }))
     .sort((left, right) => left.value - right.value || left.name.localeCompare(right.name)));
   const phaseAvailable = $derived(measurements.some(hasPhaseData));
@@ -112,7 +115,7 @@
         <label for="run-select">Benchmark result</label>
         <select id="run-select" value={entry.path} onchange={(event) => selectRun(event.currentTarget.value)}>
           {#each filteredEntries as result}
-            <option value={result.path}>{resultOptionLabel(result.document)}</option>
+            <option value={result.path}>{resultOptionLabel(result)}</option>
           {/each}
         </select>
       </div>
@@ -144,23 +147,23 @@
     <BenchmarkSummary {measurements} {selectedIndex} {mixedFileCounts} />
 
     <div class="grid overview-grid">
-      <section class="panel span-12">
+      <section class="report-section span-12">
         <div class="section-heading">
-          <div><h2>Compile latency</h2><p>Median wall time across every recorded compiler configuration.</p></div>
+          <div><h2>Compile time</h2></div>
         </div>
         {#if !frozenBaselineCount}
           <p class="comparison-note" aria-live="polite">No retained external benchmark has the same workload identity. This chart contains only Lanius results.</p>
         {/if}
-        <BarChart values={latencyValues} unit="ms" {logarithmic} valueFormatter={formatMs} accessibleName="Compile latency comparison" />
+        <BarChart values={latencyValues} unit="ms" {logarithmic} valueFormatter={formatMs} accessibleName="Compile time comparison" />
       </section>
-      <section class="panel span-12">
+      <section class="report-section span-12">
         <div class="section-heading table-heading">
           <div><h2>Compiler results</h2></div>
           <p>Select a result to view its latency distribution.</p>
         </div>
         <MeasurementTable {measurements} {selectedIndex} {mixedFileCounts} onselect={selectMeasurement} />
       </section>
-      <section class="panel span-12 distribution-panel">
+      <section class="report-section span-12 distribution-panel">
         <div class="section-heading">
           <div><h2>Latency distribution</h2><p>{measurementLabel(selected, mixedFileCounts)}</p></div>
         </div>
@@ -181,28 +184,38 @@
             </select>
           </div>
         </div>
+        <AnalysisSummary measurement={analysisSelected} />
         {#if phaseAvailable}
-          <section class="panel" class:span-6={memoryAvailable} class:span-12={!memoryAvailable}>
-            <div class="section-heading"><div><h2>Time breakdown</h2></div></div>
+          <section class="report-section analysis-chart" class:span-6={memoryAvailable} class:span-12={!memoryAvailable}>
+            <div class="section-heading"><div><h2>Request timing</h2></div></div>
             <PhaseChart measurement={analysisSelected} />
           </section>
         {/if}
         {#if memoryAvailable}
-          <section class="panel" class:span-6={phaseAvailable} class:span-12={!phaseAvailable}>
+          <section class="report-section analysis-chart" class:span-6={phaseAvailable} class:span-12={!phaseAvailable}>
             <div class="section-heading"><div><h2>Tracked GPU memory</h2></div></div>
             <MemoryChart {measurements} {mixedFileCounts} />
           </section>
         {/if}
         {#if profileAvailable}
-          <section class="panel span-12">
+          <section class="report-section span-12">
             <div class="section-heading">
               <div><h2>Compiler execution timeline</h2><p>Compiler phases aligned to the job clock, with host and GPU activity shown separately.</p></div>
               <span class="section-count">excluded from latency statistics</span>
             </div>
             <Timeline profile={analysisSelected.profile} target={analysisSelected.target} />
           </section>
+          {#if analysisSelected.profile?.gpu_memory_timeline}
+            <section class="report-section span-12">
+              <div class="section-heading">
+                <div><h2>GPU memory over time</h2><p>Physical residency and graph-managed working memory on the compiler job clock.</p></div>
+                <span class="section-count">profile capture</span>
+              </div>
+              <GpuMemoryTimeline memory={analysisSelected.profile.gpu_memory_timeline} profile={analysisSelected.profile} />
+            </section>
+          {/if}
           {#if nsightAvailable && analysisSelected.profile?.nsight}
-            <section class="panel span-12">
+            <section class="report-section span-12">
               <div class="section-heading">
                 <div><h2>Nsight GPU trace</h2><p>Measured GPU action durations and NVIDIA hardware counters.</p></div>
                 <span class="section-count">separate instrumented capture</span>

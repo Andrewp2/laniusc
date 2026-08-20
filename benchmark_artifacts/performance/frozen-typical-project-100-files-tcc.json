@@ -284,13 +284,192 @@
         "artifacts_validated": true,
         "expected_output_validated": true
       }
+    },
+    {
+      "commands": {
+        "command": {
+          "argv": [
+            "ninja",
+            "-f",
+            "build-tcc-parallel-32.ninja",
+            "-j",
+            "32"
+          ],
+          "cwd": "/home/andrew-peterson/code/laniusc/target/typical-project-100/c",
+          "display": "ninja -f build-tcc-parallel-32.ninja -j 32",
+          "environment_overrides": {}
+        }
+      },
+      "compiler": {
+        "name": "tcc",
+        "version": "tcc version 0.9.28rc 2026-08-09 mob@2ba12e8 (x86_64 Linux)"
+      },
+      "configuration": "parallel-32",
+      "configuration_display": "parallel, 32 shards",
+      "id": "tcc-parallel-32",
+      "measurement_semantics": {
+        "build": "Ninja runs 32 byte-balanced TCC partial-link shards in parallel, followed by one TCC link",
+        "debug_info": "disabled",
+        "frozen_baseline": true,
+        "samples": "exact retained wall-time samples",
+        "source_artifact": "benchmark_artifacts/compile_performance_20260818/tcc_ninja_100/results.json"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "wall_ms": 21.729286
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "wall_ms": 19.424628
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "wall_ms": 19.981218
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "wall_ms": 20.833238
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "wall_ms": 19.600342
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "wall_ms": 19.400819
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "wall_ms": 20.318306
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "wall_ms": 20.315496
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "wall_ms": 19.762567
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "wall_ms": 19.493286
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "wall_ms": 19.714577
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "wall_ms": 19.424958
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "wall_ms": 18.781121
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "wall_ms": 17.695379
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "wall_ms": 19.411559
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "wall_ms": 18.847889
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "wall_ms": 18.934065
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "wall_ms": 19.903061
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "wall_ms": 18.277429
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "wall_ms": 18.878237
+        }
+      ],
+      "source": {
+        "bytes": 919373,
+        "files": 100,
+        "kilobytes": 919.373,
+        "largest_file_bytes": 63618,
+        "megabytes": 0.919373,
+        "physical_lines": 28210,
+        "sloc": 26109,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 47246521.908685565,
+        "median_sloc_per_second": 1341739.9037320777,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              2,
+              4,
+              10,
+              3,
+              1
+            ],
+            "edges": [
+              17.695379,
+              18.502160399999998,
+              19.3089418,
+              20.115723199999998,
+              20.9225046,
+              21.729286
+            ],
+            "unit": "ms"
+          },
+          "mad": 0.523576499999999,
+          "maximum": 21.729286,
+          "mean": 19.53637305,
+          "median": 19.459122,
+          "minimum": 17.695379,
+          "p95": 20.878040400000003,
+          "samples": 20
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifacts_validated": true,
+        "expected_output_validated": true
+      }
     }
   ],
   "run": {
-    "git_commit": "8caa2105f5b27ebadb072a11e1e2455a78feb7d8",
+    "git_commit": "98b84cf9c8b09194ede01df3ca4bb9c9f8d1d087",
     "git_dirty": true,
     "id": "frozen-typical-project-100-files-tcc",
-    "recorded_at": "2026-08-18T04:23:51.980361+00:00"
+    "recorded_at": "2026-08-18T18:13:32.539834+00:00"
   },
   "schema": "lanius.performance-run.v1",
   "workload": {

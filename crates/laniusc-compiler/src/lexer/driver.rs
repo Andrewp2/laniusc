@@ -643,18 +643,29 @@ impl GpuLexer {
         Ok(result)
     }
 
-    /// Records source-pack lexing and caller-provided GPU work in one command stream.
+    /// Submits source-pack lexing, parser work, and post-parser work as three
+    /// ordered GPU command buffers without waiting for lexer metadata. Queue
+    /// ordering keeps intermediate artifacts GPU-resident while the host records
+    /// each following stage concurrently with execution of the preceding stage.
     ///
-    /// This variant does not read back token count before `record_more`; callers
-    /// should use byte-capacity-sized downstream buffers or perform their own
-    /// bounded sizing.
-    pub async fn with_recorded_resident_source_pack_tokens<S, T, R, E>(
+    /// This variant does not read back token count before recording later stages;
+    /// callers should use capacity-sized buffers or perform their own bounded
+    /// sizing.
+    pub async fn with_recorded_resident_source_pack_tokens<S, P, T, R, E>(
         &self,
         sources: &[S],
-        record_more: impl FnOnce(
+        record_parser: impl FnOnce(
             &wgpu::Device,
             &wgpu::Queue,
             &buffers::GpuBuffers,
+            &mut wgpu::CommandEncoder,
+            Option<&mut GpuTimer>,
+        ) -> std::result::Result<P, E>,
+        record_after_parser: impl FnOnce(
+            &wgpu::Device,
+            &wgpu::Queue,
+            &buffers::GpuBuffers,
+            &P,
             &mut wgpu::CommandEncoder,
             Option<&mut GpuTimer>,
         ) -> std::result::Result<T, E>,
@@ -662,6 +673,7 @@ impl GpuLexer {
             &wgpu::Device,
             &wgpu::Queue,
             &buffers::GpuBuffers,
+            P,
             T,
         ) -> std::result::Result<R, E>,
     ) -> Result<std::result::Result<R, E>>
@@ -729,32 +741,101 @@ impl GpuLexer {
         if let Some(timer) = maybe_timer.as_mut() {
             timer.stamp(&mut enc, "lexer.source_pack.done");
         }
+        bufs.record_count_readback(&mut enc);
 
-        let recorded_more = match record_more(
+        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
+            &self.queue,
+            "lex.source-pack.resident-without-count-wait",
+            enc.finish(),
+            use_scopes,
+            "source-pack resident lex without a count wait",
+        );
+        let mut staged_host_timer = HostCompileTimer::new();
+
+        let mut parser_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("compile-source-pack-parser-from-retained-shape-enc"),
+                });
+
+        let recorded_parser = match record_parser(
             &self.device,
             &self.queue,
             bufs,
-            &mut enc,
+            &mut parser_encoder,
             maybe_timer.as_mut(),
         ) {
             Ok(recorded) => recorded,
             Err(err) => return Ok(Err(err)),
         };
+        staged_host_timer.stamp("compile.source-pack.parser.recorded");
         if let Some(timer) = maybe_timer.as_mut() {
-            timer.stamp(&mut enc, "compile.source_pack.recorded");
-            timer.resolve(&mut enc);
+            timer.stamp(&mut parser_encoder, "parser.status_readback.done");
         }
 
-        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+        let parser_commands = parser_encoder.finish();
+        staged_host_timer.stamp("compile.source-pack.parser.encoder_finished");
+
+        crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
             &self.queue,
-            "lex.source-pack.recorded-with-code",
-            enc.finish(),
+            "compile.source-pack.parser-from-retained-shape",
+            parser_commands,
             use_scopes,
-            "recorded source-pack resident lex batch",
+            "source-pack parser from retained shape",
         );
+        staged_host_timer.stamp("compile.source-pack.parser.submitted");
 
-        let result = consume_after_submit(&self.device, &self.queue, bufs, recorded_more);
+        let mut downstream_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("compile-source-pack-after-parser-enc"),
+                });
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(
+                &mut downstream_encoder,
+                "compile.source_pack.typecheck.submission.begin",
+            );
+        }
+        let recorded_downstream = match record_after_parser(
+            &self.device,
+            &self.queue,
+            bufs,
+            &recorded_parser,
+            &mut downstream_encoder,
+            maybe_timer.as_mut(),
+        ) {
+            Ok(recorded) => recorded,
+            Err(err) => return Ok(Err(err)),
+        };
+        staged_host_timer.stamp("compile.source-pack.after-parser.recorded");
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut downstream_encoder, "compile.source_pack.recorded");
+            timer.resolve(&mut downstream_encoder);
+        }
+        staged_host_timer.stamp("compile.source-pack.after-parser.timer_resolved");
+
+        let downstream_commands = downstream_encoder.finish();
+        staged_host_timer.stamp("compile.source-pack.after-parser.encoder_finished");
+
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
+            &self.queue,
+            "compile.source-pack.after-parser",
+            downstream_commands,
+            use_scopes,
+            "source-pack compilation after parser",
+        );
+        staged_host_timer.stamp("compile.source-pack.after-parser.submitted");
+
+        let result = consume_after_submit(
+            &self.device,
+            &self.queue,
+            bufs,
+            recorded_parser,
+            recorded_downstream,
+        );
         if let Some(timer) = maybe_timer
             .as_ref()
             .and_then(|timer| timer.try_read(&self.device))

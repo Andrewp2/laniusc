@@ -240,6 +240,21 @@ impl PassAccess {
         }
     }
 
+    /// A logical GPU access used by a physical lowering whose binding surface
+    /// differs from the canonical reflected kernel. It participates in
+    /// dependency, liveness, and alias validation without being matched to
+    /// Slang reflection.
+    pub const fn logical_write(binding: &'static str, resource: ResourceId) -> Self {
+        Self {
+            binding,
+            resource,
+            mode: AccessMode::Write,
+            reflected: false,
+            initializes_before_read: false,
+            invocation: 0,
+        }
+    }
+
     pub const fn in_invocation(mut self, invocation: u16) -> Self {
         self.invocation = invocation;
         self
@@ -270,6 +285,8 @@ pub(crate) struct CompilerGraphDiagnosticNode {
     pub name: &'static str,
     pub phase: &'static str,
     pub dispatch_domain: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graph_managed_working_set_bytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1028,7 +1045,7 @@ impl CompilerGraphWorkspace {
             slots,
             slot_by_resource,
         };
-        register_compiler_graph_diagnostic(label, graph);
+        register_compiler_graph_diagnostic(label, graph, &workspace);
         Ok(workspace)
     }
 
@@ -1260,16 +1277,6 @@ impl MaterializedCompilerGraph {
 }
 
 impl CompilerGraphAllocations {
-    /// Whether a physical allocation participates in this materialized graph.
-    /// Allocation-level reset operations use this without inventing logical
-    /// resource writes that would extend colored lifetimes.
-    pub(crate) fn owns_allocation(&self, allocation_id: u64) -> bool {
-        self.allocation_by_resource
-            .iter()
-            .flatten()
-            .any(|range| range.allocation_id == allocation_id)
-    }
-
     /// Rebinds a logical resource at an explicit stage boundary. The caller is
     /// declaring that an upstream stage owns `buffer` and this stage imports
     /// that allocation under the graph resource's identity.
@@ -1443,7 +1450,78 @@ impl CompilerGraph {
         Ok(())
     }
 
-    fn diagnostic(&self, label: &str) -> CompilerGraphDiagnostic {
+    fn graph_managed_working_set_bytes(
+        &self,
+        workspace: &CompilerGraphWorkspace,
+        pass_index: usize,
+    ) -> u64 {
+        let mut ranges_by_allocation = BTreeMap::<u64, Vec<(u64, u64)>>::new();
+        for (resource_index, lifetime) in self.lifetimes.iter().enumerate() {
+            let Some(lifetime) = lifetime else { continue };
+            if pass_index < lifetime.first_pass.index() || pass_index > lifetime.last_pass.index() {
+                continue;
+            }
+            let Some(slot_id) = workspace.slot_by_resource[resource_index] else {
+                // Immutable inputs and externally owned state are not part of
+                // this graph's managed working set.
+                continue;
+            };
+            let Some((slot_index, _)) = self
+                .workspace
+                .slots
+                .iter()
+                .enumerate()
+                .find(|(_, slot)| slot.slot == slot_id)
+            else {
+                continue;
+            };
+            let slot = &workspace.slots[slot_index];
+            let Some(allocation_id) = slot.allocation_id() else {
+                continue;
+            };
+            let bytes = self.resources[resource_index]
+                .bytes
+                .min(slot.byte_size as u64);
+            if bytes == 0 {
+                continue;
+            }
+            ranges_by_allocation
+                .entry(allocation_id)
+                .or_default()
+                .push((slot.byte_offset, slot.byte_offset.saturating_add(bytes)));
+        }
+
+        ranges_by_allocation
+            .values_mut()
+            .map(|ranges| {
+                ranges.sort_unstable();
+                let mut bytes = 0u64;
+                let mut current: Option<(u64, u64)> = None;
+                for &(start, end) in ranges.iter() {
+                    current = match current {
+                        None => Some((start, end)),
+                        Some((current_start, current_end)) if start <= current_end => {
+                            Some((current_start, current_end.max(end)))
+                        }
+                        Some((current_start, current_end)) => {
+                            bytes = bytes.saturating_add(current_end.saturating_sub(current_start));
+                            Some((start, end))
+                        }
+                    };
+                }
+                if let Some((start, end)) = current {
+                    bytes = bytes.saturating_add(end.saturating_sub(start));
+                }
+                bytes
+            })
+            .sum()
+    }
+
+    fn diagnostic_with_workspace(
+        &self,
+        label: &str,
+        workspace: Option<&CompilerGraphWorkspace>,
+    ) -> CompilerGraphDiagnostic {
         let nodes = self
             .passes
             .iter()
@@ -1453,6 +1531,8 @@ impl CompilerGraph {
                 name: pass.name,
                 phase: pass.phase.diagnostic_name(),
                 dispatch_domain: pass.dispatch_domain.diagnostic_name(),
+                graph_managed_working_set_bytes: workspace
+                    .map(|workspace| self.graph_managed_working_set_bytes(workspace, id)),
             })
             .collect();
 
@@ -1515,6 +1595,11 @@ impl CompilerGraph {
             nodes,
             edges,
         }
+    }
+
+    #[cfg(test)]
+    fn diagnostic(&self, label: &str) -> CompilerGraphDiagnostic {
+        self.diagnostic_with_workspace(label, None)
     }
 
     pub fn repeated_regions(&self) -> &[RepeatedPassRegion] {
@@ -2061,7 +2146,11 @@ static COMPILER_GRAPH_DIAGNOSTICS: std::sync::OnceLock<
     std::sync::Mutex<BTreeMap<String, CompilerGraphDiagnostic>>,
 > = std::sync::OnceLock::new();
 
-fn register_compiler_graph_diagnostic(label: &str, graph: &CompilerGraph) {
+fn register_compiler_graph_diagnostic(
+    label: &str,
+    graph: &CompilerGraph,
+    workspace: &CompilerGraphWorkspace,
+) {
     if !compiler_graph_diagnostics_enabled() {
         return;
     }
@@ -2069,7 +2158,10 @@ fn register_compiler_graph_diagnostic(label: &str, graph: &CompilerGraph) {
         .get_or_init(Default::default)
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert(label.to_owned(), graph.diagnostic(label));
+        .insert(
+            label.to_owned(),
+            graph.diagnostic_with_workspace(label, Some(workspace)),
+        );
 }
 
 pub(crate) fn compiler_graph_diagnostics() -> Vec<CompilerGraphDiagnostic> {
@@ -2483,14 +2575,8 @@ pub struct PrefixScanGraphPasses {
 }
 
 impl PrefixScanGraphPasses {
-    pub fn names(self) -> [&'static str; 5] {
-        [
-            self.local,
-            self.hierarchy_up_first,
-            self.hierarchy_up_rest,
-            self.hierarchy_down,
-            self.apply,
-        ]
+    pub fn names(self) -> [&'static str; 3] {
+        [self.local, self.hierarchy_up_first, self.apply]
     }
 }
 
@@ -2509,7 +2595,6 @@ pub struct PrefixScanResources<T> {
     pub local_prefix: T,
     pub block_sum: T,
     pub block_prefix: T,
-    pub hierarchy: T,
 }
 
 /// Reusable phase-local storage required by a prefix scan.
@@ -2518,7 +2603,6 @@ pub struct PrefixScanWorkspace<T> {
     pub local_prefix: T,
     pub block_sum: T,
     pub block_prefix: T,
-    pub hierarchy: T,
 }
 
 impl<T> PrefixScanWorkspace<T> {
@@ -2527,7 +2611,6 @@ impl<T> PrefixScanWorkspace<T> {
             local_prefix: &self.local_prefix,
             block_sum: &self.block_sum,
             block_prefix: &self.block_prefix,
-            hierarchy: &self.hierarchy,
         }
     }
 }
@@ -2538,7 +2621,6 @@ impl<T: Copy> PrefixScanResources<T> {
             local_prefix: self.local_prefix,
             block_sum: self.block_sum,
             block_prefix: self.block_prefix,
-            hierarchy: self.hierarchy,
         }
     }
 }
@@ -2550,13 +2632,7 @@ fn assign_prefix_scan_kernels(
     passes: PrefixScanGraphPasses,
 ) -> Result<(), String> {
     graph.assign_kernel(passes.local, "scan/counted/00_local")?;
-    graph.assign_kernel(passes.hierarchy_up_first, "scan/counted/01_hierarchy_up")?;
-    if graph.pass_names.contains(passes.hierarchy_up_rest) {
-        graph.assign_kernel(passes.hierarchy_up_rest, "scan/counted/01_hierarchy_up")?;
-    }
-    if graph.pass_names.contains(passes.hierarchy_down) {
-        graph.assign_kernel(passes.hierarchy_down, "scan/counted/02_hierarchy_down")?;
-    }
+    graph.assign_kernel(passes.hierarchy_up_first, "scan/counted/04_block_prefix")?;
     graph.assign_kernel(passes.apply, "scan/counted/02_apply")?;
     for pass in passes.names() {
         if graph.pass_names.contains(pass) {
@@ -2574,7 +2650,6 @@ pub struct PrefixScanGraphResourceNames {
     pub local_prefix: &'static str,
     pub block_sum: &'static str,
     pub block_prefix: &'static str,
-    pub hierarchy: &'static str,
 }
 
 impl PrefixScanGraphResourceNames {
@@ -2583,7 +2658,6 @@ impl PrefixScanGraphResourceNames {
             local_prefix: self.local_prefix,
             block_sum: self.block_sum,
             block_prefix: self.block_prefix,
-            hierarchy: self.hierarchy,
         }
     }
 }
@@ -2702,12 +2776,24 @@ impl PrefixScanPairSpec {
 struct PrefixScanPassSet {
     local: PassDesc,
     hierarchy_up_first: PassDesc,
-    hierarchy_up_rest: Option<PassDesc>,
-    hierarchy_down: Option<PassDesc>,
     apply: PassDesc,
 }
 
 impl PrefixScanPassSet {
+    fn use_output_as_local_prefix(&mut self, output: ResourceId, invocation: u16) {
+        self.local.accesses.push(
+            PassAccess::logical_write("paired_scan_output_prefix", output)
+                .in_invocation(invocation),
+        );
+        let output_access = self
+            .apply
+            .accesses
+            .iter_mut()
+            .find(|access| access.resource == output && access.binding == "scan_output_prefix")
+            .expect("prefix scan apply output access");
+        output_access.mode = AccessMode::ReadWrite;
+    }
+
     fn batch(self, other: Self) -> Self {
         fn batch(mut left: PassDesc, right: PassDesc) -> PassDesc {
             debug_assert_eq!(left.name, right.name);
@@ -2719,14 +2805,6 @@ impl PrefixScanPassSet {
         Self {
             local: batch(self.local, other.local),
             hierarchy_up_first: batch(self.hierarchy_up_first, other.hierarchy_up_first),
-            hierarchy_up_rest: self
-                .hierarchy_up_rest
-                .zip(other.hierarchy_up_rest)
-                .map(|(left, right)| batch(left, right)),
-            hierarchy_down: self
-                .hierarchy_down
-                .zip(other.hierarchy_down)
-                .map(|(left, right)| batch(left, right)),
             apply: batch(self.apply, other.apply),
         }
     }
@@ -2757,7 +2835,6 @@ fn prefix_scan_passes(
         r.local_prefix,
         r.block_sum,
         r.block_prefix,
-        r.hierarchy,
     ] {
         if graph.resources.get(resource.index()).is_none() {
             return Err(format!(
@@ -2798,30 +2875,8 @@ fn prefix_scan_passes(
                 lane(PassAccess::read("scan_count", r.count)),
                 lane(PassAccess::read("scan_block_sum", r.block_sum)),
                 lane(PassAccess::write("scan_block_prefix", r.block_prefix)),
-                lane(PassAccess::write("scan_hierarchy", r.hierarchy)),
             ],
         ),
-        hierarchy_up_rest: (hierarchy_levels > 1).then(|| {
-            pass(
-                passes.hierarchy_up_rest,
-                vec![
-                    lane(PassAccess::read("scan_count", r.count)),
-                    lane(PassAccess::read("scan_block_sum", r.block_sum)),
-                    lane(PassAccess::read_write("scan_block_prefix", r.block_prefix)),
-                    lane(PassAccess::read_write("scan_hierarchy", r.hierarchy)),
-                ],
-            )
-        }),
-        hierarchy_down: (hierarchy_levels > 1).then(|| {
-            pass(
-                passes.hierarchy_down,
-                vec![
-                    lane(PassAccess::read("scan_count", r.count)),
-                    lane(PassAccess::read_write("scan_block_prefix", r.block_prefix)),
-                    lane(PassAccess::read_write("scan_hierarchy", r.hierarchy)),
-                ],
-            )
-        }),
         apply: pass(
             passes.apply,
             vec![
@@ -2838,17 +2893,11 @@ fn prefix_scan_passes(
 
 fn add_prefix_scan_passes(
     graph: &mut CompilerGraphBuilder,
-    hierarchy_levels: u32,
+    _hierarchy_levels: u32,
     passes: PrefixScanPassSet,
 ) -> Result<(), String> {
     graph.add_pass(passes.local)?;
     graph.add_pass(passes.hierarchy_up_first)?;
-    if let Some(pass) = passes.hierarchy_up_rest {
-        graph.add_repeated_region(hierarchy_levels - 1, vec![pass])?;
-    }
-    if let Some(pass) = passes.hierarchy_down {
-        graph.add_repeated_region(hierarchy_levels - 1, vec![pass])?;
-    }
     graph.add_pass(passes.apply)?;
     Ok(())
 }
@@ -2857,7 +2906,7 @@ impl CompilerGraphFragment for PrefixScanPairGraph {
     type Output = ((ResourceId, ResourceId), (ResourceId, ResourceId));
 
     fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
-        let left = prefix_scan_passes(
+        let mut left = prefix_scan_passes(
             graph,
             self.phase,
             self.dispatch_domain,
@@ -2866,7 +2915,7 @@ impl CompilerGraphFragment for PrefixScanPairGraph {
             self.left,
             0,
         )?;
-        let right = prefix_scan_passes(
+        let mut right = prefix_scan_passes(
             graph,
             self.phase,
             self.dispatch_domain,
@@ -2875,6 +2924,8 @@ impl CompilerGraphFragment for PrefixScanPairGraph {
             self.right,
             1,
         )?;
+        left.use_output_as_local_prefix(self.left.output_prefix, 0);
+        right.use_output_as_local_prefix(self.right.output_prefix, 1);
         add_prefix_scan_passes(graph, self.hierarchy_levels, left.batch(right))?;
         assign_prefix_scan_kernels(graph, self.passes)?;
         Ok((
@@ -3235,7 +3286,6 @@ impl CompilerGraphBuilder {
             local_prefix: resource(names.local_prefix)?,
             block_sum: resource(names.block_sum)?,
             block_prefix: resource(names.block_prefix)?,
-            hierarchy: resource(names.hierarchy)?,
         })
     }
 
@@ -3446,7 +3496,6 @@ impl CompilerGraphBuilder {
             local_prefix: workspace.local_prefix,
             block_sum: workspace.block_sum,
             block_prefix: workspace.block_prefix,
-            hierarchy: workspace.hierarchy,
         })
     }
 
@@ -3483,7 +3532,6 @@ impl CompilerGraphBuilder {
             local_prefix: add(names.local_prefix, row_bytes)?,
             block_sum: add(names.block_sum, block_bytes)?,
             block_prefix: add(names.block_prefix, block_bytes)?,
-            hierarchy: add(names.hierarchy, block_bytes)?,
         })
     }
 
@@ -5594,7 +5642,7 @@ mod tests {
     }
 
     #[test]
-    fn prefix_scan_adds_hierarchy_state_and_derived_accesses() {
+    fn prefix_scan_adds_one_block_prefix_pass_and_derived_accesses() {
         let mut builder = CompilerGraphBuilder::new();
         let count = builder
             .add_resource(ResourceDesc {
@@ -5637,7 +5685,6 @@ mod tests {
                     local_prefix: "scan.local_prefix",
                     block_sum: "scan.block_sum",
                     block_prefix: "scan.block_prefix",
-                    hierarchy: "scan.hierarchy",
                 },
             )
             .unwrap();
@@ -5666,28 +5713,15 @@ mod tests {
             graph.resource(resources.dispatch_args).unwrap().usage,
             WorkspaceUsageClass::StorageIndirect,
         );
-        assert_eq!(
-            graph.repeated_regions(),
-            &[
-                RepeatedPassRegion {
-                    first_pass: graph.pass_id("scan.up.rest").unwrap(),
-                    pass_count: 1,
-                    iterations: 2,
-                },
-                RepeatedPassRegion {
-                    first_pass: graph.pass_id("scan.down").unwrap(),
-                    pass_count: 1,
-                    iterations: 2,
-                },
-            ],
-        );
+        assert!(graph.repeated_regions().is_empty());
+        assert!(graph.pass_id("scan.up.rest").is_none());
+        assert!(graph.pass_id("scan.down").is_none());
         let first_up = graph.pass(graph.pass_id("scan.up.first").unwrap()).unwrap();
         assert!(first_up.accesses.iter().any(|access| {
-            access.resource == resources.hierarchy && access.mode == AccessMode::Write
+            access.resource == resources.block_sum && access.mode == AccessMode::Read
         }));
-        let later_up = graph.pass(graph.pass_id("scan.up.rest").unwrap()).unwrap();
-        assert!(later_up.accesses.iter().any(|access| {
-            access.resource == resources.hierarchy && access.mode == AccessMode::ReadWrite
+        assert!(first_up.accesses.iter().any(|access| {
+            access.resource == resources.block_prefix && access.mode == AccessMode::Write
         }));
     }
 
@@ -5723,7 +5757,6 @@ mod tests {
                     local_prefix: "pair.left.local",
                     block_sum: "pair.left.sum",
                     block_prefix: "pair.left.prefix",
-                    hierarchy: "pair.left.hierarchy",
                 },
             )
             .unwrap();
@@ -5741,7 +5774,6 @@ mod tests {
                     local_prefix: "pair.right.local",
                     block_sum: "pair.right.sum",
                     block_prefix: "pair.right.prefix",
-                    hierarchy: "pair.right.hierarchy",
                 },
             )
             .unwrap();
@@ -5793,7 +5825,6 @@ mod tests {
         assert_ne!(slot(left.local_prefix), slot(right.local_prefix));
         assert_ne!(slot(left.block_sum), slot(right.block_sum));
         assert_ne!(slot(left.block_prefix), slot(right.block_prefix));
-        assert_ne!(slot(left.hierarchy), slot(right.hierarchy));
     }
 
     #[test]
@@ -5819,7 +5850,6 @@ mod tests {
             local_prefix: add("empty.local", ResourceClass::Workspace),
             block_sum: add("empty.sum", ResourceClass::Workspace),
             block_prefix: add("empty.prefix", ResourceClass::Workspace),
-            hierarchy: add("empty.hierarchy", ResourceClass::Workspace),
         };
         let error = builder
             .add_fragment(PrefixScanGraph {

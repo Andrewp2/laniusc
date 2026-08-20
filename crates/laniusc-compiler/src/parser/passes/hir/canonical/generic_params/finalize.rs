@@ -37,13 +37,26 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
+            ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
             (
-                "owner_value".into(),
-                b.hir_type_arg_rank_a.as_entire_binding(),
+                "hir_method_signature_flags".into(),
+                b.hir_method_signature_flags.as_entire_binding(),
             ),
             (
                 "raw_to_hir".into(),
                 b.hir_canonical_alias_to_dense.as_entire_binding(),
+            ),
+            (
+                "semantic_prefix_before_raw".into(),
+                b.hir_semantic_prefix_before_node.as_entire_binding(),
+            ),
+            (
+                "raw_to_item".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
+            ),
+            (
+                "generic_owner_by_hir".into(),
+                b.hir_type_alias_owner_value_a.as_entire_binding(),
             ),
             (
                 "candidate_raw_by_anchor".into(),
@@ -56,6 +69,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
             (
                 "generic_param_ranges".into(),
                 b.hir_generic_param_ranges.as_entire_binding(),
+            ),
+            (
+                "owner_value".into(),
+                b.hir_type_arg_rank_a.as_entire_binding(),
             ),
         ])
     }

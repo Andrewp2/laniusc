@@ -1,10 +1,9 @@
 // Publish parser-owned method signature flags.
 //
-// Function-signature owner pointer jumping already maps every parse node in a
-// method/function signature back to the nearest HIR function node. This pass
-// scatters method-level generic and where markers from method syntax rows into
-// a method-node keyed flag table, so predicate validation does not scan method
-// child lists to rediscover unsupported signature metadata.
+// Method-level generic and where markers are direct children of the method
+// declaration. Scatter those markers into a method-node keyed flag table so
+// predicate validation does not scan method child lists to rediscover
+// unsupported signature metadata.
 
 import atomics;
 import generated_parse_production_ids;
@@ -21,7 +20,6 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_fn_signature_function_owner;
 
 RWStructuredBuffer<uint> hir_method_signature_flags;
 
@@ -63,7 +61,7 @@ bool method_signature_owner_node(uint node)
 
 bool direct_method_signature_marker(uint node)
 {
-    uint owner = hir_fn_signature_function_owner[node];
+    uint owner = parent[node];
     if (!method_signature_owner_node(owner))
         return false;
 
@@ -96,7 +94,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (flag == 0u)
         return;
 
-    uint method_node = hir_fn_signature_function_owner[node];
+    uint method_node = parent[node];
     if (!method_signature_owner_node(method_node))
         return;
 

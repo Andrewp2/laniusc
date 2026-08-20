@@ -23,6 +23,198 @@ uint x86_aggregate_value_word_count(SemanticLirCore core,
 }
 
 static const uint X86_LIR_TY_FLOAT = 5u;
+static const uint X86_CONSTANT_DIVISOR_NONE = 0u;
+static const uint X86_CONSTANT_DIVISOR_POWER_OF_TWO = 1u;
+static const uint X86_CONSTANT_DIVISOR_SIGNED = 2u;
+
+bool x86_scalar_immediate_type(uint type_id)
+{
+    return type_id == 1u || type_id == 2u || type_id == 3u ||
+        type_id == 4u || type_id == 6u;
+}
+
+bool x86_declaration_needs_home(X86DeclarationAnalysis analysis,
+                                uint definition_live)
+{
+    if (analysis.definition == X86_DECLARATION_MULTIPLE_DEFINITIONS)
+        return true;
+    if (analysis.definition == X86_LOCATION_INVALID)
+        return analysis.read_count != 0u;
+    return definition_live != 0u;
+}
+
+uint x86_caller_declaration_register(uint ordinal)
+{
+    // Preserve the fifth and sixth SysV integer arguments in their incoming
+    // R8/R9 registers. RDX/RCX remain fixed emitter scratch registers for now;
+    // declarations two and three use the otherwise-free R10/R11 lanes.
+    static const uint registers[6] = {7u, 6u, 10u, 11u, 8u, 9u};
+    return registers[min(ordinal, 5u)];
+}
+
+uint x86_caller_declaration_ordinal(uint physical_register)
+{
+    if (physical_register == 8u) return 4u;
+    if (physical_register == 9u) return 5u;
+    if (physical_register == 10u) return 2u;
+    if (physical_register == 11u) return 3u;
+    return X86_LOCATION_INVALID;
+}
+
+uint x86_abi_argument_register(uint ordinal)
+{
+    static const uint registers[6] = {7u, 6u, 2u, 1u, 8u, 9u};
+    return registers[min(ordinal, 5u)];
+}
+
+uint x86_parameter_abi_ordinal(SemanticLirFunction function, uint ordinal)
+{
+    return ordinal + (function.result_word_count > 2u ? 1u : 0u);
+}
+
+bool x86_integer_immediate_operation(uint semantic_op, uint type_id,
+                                     uint immediate)
+{
+    if (type_id == X86_LIR_TY_FLOAT ||
+        type_id == SEMANTIC_LIR_TY_POINTER ||
+        type_id == SEMANTIC_LIR_TY_STRING)
+        return false;
+    if (semantic_op == SEMANTIC_LIR_OP_SHIFT_LEFT ||
+        semantic_op == SEMANTIC_LIR_OP_SHIFT_RIGHT)
+        return immediate <= 31u;
+    return semantic_op == SEMANTIC_LIR_OP_ADD ||
+        semantic_op == SEMANTIC_LIR_OP_SUB ||
+        semantic_op == SEMANTIC_LIR_OP_MUL ||
+        semantic_op == SEMANTIC_LIR_OP_BIT_AND ||
+        semantic_op == SEMANTIC_LIR_OP_BIT_OR ||
+        semantic_op == SEMANTIC_LIR_OP_BIT_XOR ||
+        semantic_op == SEMANTIC_LIR_OP_LOGICAL_AND ||
+        semantic_op == SEMANTIC_LIR_OP_LOGICAL_OR ||
+        semantic_op == SEMANTIC_LIR_OP_COMPARE;
+}
+
+bool x86_integer_immediate_commutative(uint semantic_op)
+{
+    return semantic_op == SEMANTIC_LIR_OP_ADD ||
+        semantic_op == SEMANTIC_LIR_OP_MUL ||
+        semantic_op == SEMANTIC_LIR_OP_BIT_AND ||
+        semantic_op == SEMANTIC_LIR_OP_BIT_OR ||
+        semantic_op == SEMANTIC_LIR_OP_BIT_XOR ||
+        semantic_op == SEMANTIC_LIR_OP_LOGICAL_AND ||
+        semantic_op == SEMANTIC_LIR_OP_LOGICAL_OR;
+}
+
+uint x86_swapped_compare_predicate(uint predicate)
+{
+    if (predicate == 2u) return 3u;
+    if (predicate == 3u) return 2u;
+    if (predicate == 4u) return 5u;
+    if (predicate == 5u) return 4u;
+    return predicate;
+}
+
+bool x86_fold_integer_binary(uint semantic_op, uint type_id, uint predicate,
+                             uint left, uint right, out uint value)
+{
+    value = 0u;
+    if (type_id == X86_LIR_TY_FLOAT ||
+        type_id == SEMANTIC_LIR_TY_POINTER ||
+        type_id == SEMANTIC_LIR_TY_STRING)
+        return false;
+    bool is_unsigned = type_id == 4u || type_id == 6u;
+    if (semantic_op == SEMANTIC_LIR_OP_ADD) value = left + right;
+    else if (semantic_op == SEMANTIC_LIR_OP_SUB) value = left - right;
+    else if (semantic_op == SEMANTIC_LIR_OP_MUL) value = left * right;
+    else if (semantic_op == SEMANTIC_LIR_OP_DIV)
+    {
+        if (right == 0u || (!is_unsigned && left == 0x80000000u &&
+                            right == 0xffffffffu))
+            return false;
+        value = is_unsigned ? left / right : uint(int(left) / int(right));
+    }
+    else if (semantic_op == SEMANTIC_LIR_OP_REM)
+    {
+        if (right == 0u || (!is_unsigned && left == 0x80000000u &&
+                            right == 0xffffffffu))
+            return false;
+        if (is_unsigned) value = left % right;
+        else
+        {
+            // Define signed remainder from the already-required truncating
+            // quotient. This matches x86/C semantics even on shader compilers
+            // whose constant `%` handling chooses modulo for negative values.
+            int signed_left = int(left);
+            int signed_right = int(right);
+            int quotient = signed_left / signed_right;
+            value = uint(signed_left - quotient * signed_right);
+        }
+    }
+    else if (semantic_op == SEMANTIC_LIR_OP_BIT_AND) value = left & right;
+    else if (semantic_op == SEMANTIC_LIR_OP_BIT_OR) value = left | right;
+    else if (semantic_op == SEMANTIC_LIR_OP_BIT_XOR) value = left ^ right;
+    else if (semantic_op == SEMANTIC_LIR_OP_SHIFT_LEFT)
+    {
+        if (right > 31u) return false;
+        value = left << right;
+    }
+    else if (semantic_op == SEMANTIC_LIR_OP_SHIFT_RIGHT)
+    {
+        if (right > 31u) return false;
+        value = is_unsigned ? left >> right : uint(int(left) >> right);
+    }
+    else if (semantic_op == SEMANTIC_LIR_OP_LOGICAL_AND)
+        value = left != 0u && right != 0u ? 1u : 0u;
+    else if (semantic_op == SEMANTIC_LIR_OP_LOGICAL_OR)
+        value = left != 0u || right != 0u ? 1u : 0u;
+    else if (semantic_op == SEMANTIC_LIR_OP_COMPARE)
+    {
+        if (predicate == 0u) value = left == right ? 1u : 0u;
+        else if (predicate == 1u) value = left != right ? 1u : 0u;
+        else if (is_unsigned)
+            value = predicate == 2u ? (left < right ? 1u : 0u) :
+                predicate == 3u ? (left > right ? 1u : 0u) :
+                predicate == 4u ? (left <= right ? 1u : 0u) :
+                (left >= right ? 1u : 0u);
+        else
+            value = predicate == 2u ? (int(left) < int(right) ? 1u : 0u) :
+                predicate == 3u ? (int(left) > int(right) ? 1u : 0u) :
+                predicate == 4u ? (int(left) <= int(right) ? 1u : 0u) :
+                (int(left) >= int(right) ? 1u : 0u);
+    }
+    else return false;
+    return true;
+}
+
+bool x86_fold_integer_unary(uint semantic_op, uint type_id, uint input,
+                            out uint value)
+{
+    value = 0u;
+    if (type_id == X86_LIR_TY_FLOAT ||
+        type_id == SEMANTIC_LIR_TY_POINTER ||
+        type_id == SEMANTIC_LIR_TY_STRING)
+        return false;
+    if (semantic_op == SEMANTIC_LIR_OP_NEGATE)
+        value = 0u - input;
+    else if (semantic_op == SEMANTIC_LIR_OP_LOGICAL_NOT)
+        value = input == 0u ? 1u : 0u;
+    else return false;
+    return true;
+}
+
+uint x86_constant_divisor_kind(uint semantic_op, uint type_id, uint divisor)
+{
+    if ((semantic_op != SEMANTIC_LIR_OP_DIV &&
+         semantic_op != SEMANTIC_LIR_OP_REM) || divisor == 0u)
+        return X86_CONSTANT_DIVISOR_NONE;
+    bool power_of_two = (divisor & (divisor - 1u)) == 0u;
+    bool is_unsigned = type_id == 4u || type_id == 6u;
+    if (power_of_two && (is_unsigned || int(divisor) > 0))
+        return X86_CONSTANT_DIVISOR_POWER_OF_TWO;
+    if (!power_of_two && type_id == 3u && int(divisor) > 1)
+        return X86_CONSTANT_DIVISOR_SIGNED;
+    return X86_CONSTANT_DIVISOR_NONE;
+}
+
 uint x86_lir_count(SemanticLirCore core, SemanticLirOperands operands)
 {
     if (semantic_lir_op(core) == SEMANTIC_LIR_OP_NOP) return 0u;

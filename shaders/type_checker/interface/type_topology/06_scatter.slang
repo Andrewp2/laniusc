@@ -2,6 +2,7 @@
 
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<uint> interface_type_reverse_flag;
 StructuredBuffer<uint> interface_type_reverse_prefix;
 RWStructuredBuffer<uint> interface_type_hir_order;
@@ -16,9 +17,10 @@ uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_S
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint reverse_row = linear_thread_id(dtid);
-    if (reverse_row >= gParams.hir_capacity || interface_type_reverse_flag[reverse_row] == 0u)
+    uint active = min(compact_hir_count[0u], gParams.hir_capacity);
+    if (reverse_row >= active || interface_type_reverse_flag[reverse_row] == 0u)
         return;
-    uint node = gParams.hir_capacity - 1u - reverse_row;
+    uint node = active - 1u - reverse_row;
     uint dst = interface_type_reverse_prefix[reverse_row];
     if (dst >= gParams.hir_capacity)
         return;

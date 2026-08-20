@@ -34,7 +34,7 @@ use crate::gpu::{
     kernels::KernelRegistry,
     operations::{ComputeOperation, CopyBufferOperation},
     passes_core::{PassData, map_readback_blocking},
-    readback::PagedReadback,
+    readback::{PagedReadback, ReadbackRegion},
     resource_registry::ResourceMap,
 };
 
@@ -514,54 +514,58 @@ impl GpuWasmObjectStage {
             );
         }
 
-        let function_words = decode_words(&self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.functions,
-            0,
-            function_count * 24,
-            "Wasm object function readback",
-        )?);
-        let relocation_words = decode_words(&self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.relocations,
-            0,
-            relocation_count * 32,
-            "Wasm object relocation readback",
-        )?);
-        let definition_words = decode_words(&self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.definitions,
-            0,
-            definition_count * 32,
-            "Wasm object definition readback",
-        )?);
-        let type_bytes = self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.type_words,
-            0,
-            type_len,
-            "Wasm object type readback",
-        )?;
-        let body_bytes = self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.body_words,
-            0,
-            body_len,
-            "Wasm object body readback",
-        )?;
-        let data_bytes = self.payload_readback.read_buffer(
-            device,
-            queue,
-            &self.data_words,
-            0,
-            data_len,
-            "Wasm object data readback",
-        )?;
+        let [
+            function_bytes,
+            relocation_bytes,
+            definition_bytes,
+            type_bytes,
+            body_bytes,
+            data_bytes,
+        ]: [Vec<u8>; 6] = self
+            .payload_readback
+            .read_regions(
+                device,
+                queue,
+                &[
+                    ReadbackRegion::from_buffer(
+                        &self.functions,
+                        0,
+                        function_count * 24,
+                        "Wasm object functions",
+                    )?,
+                    ReadbackRegion::from_buffer(
+                        &self.relocations,
+                        0,
+                        relocation_count * 32,
+                        "Wasm object relocations",
+                    )?,
+                    ReadbackRegion::from_buffer(
+                        &self.definitions,
+                        0,
+                        definition_count * 32,
+                        "Wasm object definitions",
+                    )?,
+                    ReadbackRegion::from_buffer(
+                        &self.type_words,
+                        0,
+                        type_len,
+                        "Wasm object types",
+                    )?,
+                    ReadbackRegion::from_buffer(
+                        &self.body_words,
+                        0,
+                        body_len,
+                        "Wasm object bodies",
+                    )?,
+                    ReadbackRegion::from_buffer(&self.data_words, 0, data_len, "Wasm object data")?,
+                ],
+                "Wasm object payload readback",
+            )?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Wasm object payload readback shape changed"))?;
+        let function_words = decode_words(&function_bytes);
+        let relocation_words = decode_words(&relocation_bytes);
+        let definition_words = decode_words(&definition_bytes);
 
         let functions = function_words
             .chunks_exact(6)

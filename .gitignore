@@ -25,3 +25,6 @@ benchmark_artifacts/**/BASE_UNLOCKED/PASS_METRICS.*
 benchmark_artifacts/**/BASE_UNLOCKED/GPUTRACE_REGIMES.*
 benchmark_artifacts/profiles/cpu_profiles/**/benchmark
 benchmark_artifacts/profiles/cpu_profiles/**/benchmark-warm-only
+# Raw perf captures can retain unrelated process memory and command strings.
+# Keep the derived reports, folded stacks, summaries, and flamegraphs instead.
+benchmark_artifacts/profiles/cpu_profiles/**/perf.data

@@ -1,0 +1,2 @@
+[ perf record: Woken up 14 times to write data ]
+[ perf record: Captured and wrote 5.048 MB /home/andrew-peterson/code/laniusc/benchmark_artifacts/profiles/cpu_profiles/cache-resident-accounting-warm-typical-100-20260818/perf.data (618 samples) ]

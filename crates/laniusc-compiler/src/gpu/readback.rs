@@ -12,6 +12,39 @@ pub(crate) struct PagedReadback {
     staging: LaniusBuffer<u8>,
 }
 
+/// One logical GPU-buffer range in a batched readback. The range retains the
+/// arena-relative offset check performed by [`LaniusBuffer`] while erasing the
+/// source element type so unrelated object columns can share one transfer.
+#[derive(Clone, Copy)]
+pub(crate) struct ReadbackRegion<'a> {
+    source: &'a wgpu::Buffer,
+    source_offset: u64,
+    byte_len: usize,
+}
+
+impl<'a> ReadbackRegion<'a> {
+    pub(crate) fn from_buffer<T>(
+        source: &'a LaniusBuffer<T>,
+        source_offset: u64,
+        byte_len: usize,
+        label: &str,
+    ) -> Result<Self> {
+        if source_offset % 4 != 0 {
+            return Err(anyhow!(
+                "{label} source offset {source_offset} is not four-byte aligned"
+            ));
+        }
+        if source_offset.saturating_add(byte_len as u64) > source.byte_size as u64 {
+            return Err(anyhow!("{label} exceeds its logical GPU buffer view"));
+        }
+        Ok(Self {
+            source: &source.buffer,
+            source_offset: source.absolute_offset(source_offset),
+            byte_len,
+        })
+    }
+}
+
 impl PagedReadback {
     pub(crate) fn new(device: &wgpu::Device, label: &str, page_bytes: usize) -> Self {
         let page_bytes = page_bytes.max(4).next_multiple_of(4);
@@ -80,6 +113,83 @@ impl PagedReadback {
             byte_len,
             label,
         )
+    }
+
+    /// Copies unrelated logical buffer ranges into the same reusable staging
+    /// page and maps that page once. Large aggregate outputs still paginate,
+    /// but small object columns no longer pay one queue synchronization per
+    /// column.
+    pub(crate) fn read_regions(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        regions: &[ReadbackRegion<'_>],
+        label: &str,
+    ) -> Result<Vec<Vec<u8>>> {
+        let mut outputs = regions
+            .iter()
+            .map(|region| Vec::with_capacity(region.byte_len))
+            .collect::<Vec<_>>();
+        let mut consumed = vec![0usize; regions.len()];
+
+        while regions
+            .iter()
+            .zip(&consumed)
+            .any(|(region, consumed)| *consumed < region.byte_len)
+        {
+            let mut encoder = device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+            let mut page_cursor = 0usize;
+            let mut page_copies = Vec::new();
+
+            for (index, region) in regions.iter().enumerate() {
+                while consumed[index] < region.byte_len && page_cursor < self.staging.byte_size {
+                    let remaining = region.byte_len - consumed[index];
+                    let page_remaining = self.staging.byte_size - page_cursor;
+                    if page_remaining < 4 {
+                        break;
+                    }
+                    let logical_len = remaining.min(page_remaining);
+                    let copy_len = logical_len.next_multiple_of(4);
+                    if copy_len > page_remaining {
+                        break;
+                    }
+                    let source_offset = region.source_offset + consumed[index] as u64;
+                    encoder.copy_buffer_to_buffer(
+                        region.source,
+                        source_offset,
+                        &self.staging.buffer,
+                        page_cursor as u64,
+                        copy_len as u64,
+                    );
+                    page_copies.push((index, page_cursor, logical_len));
+                    consumed[index] += logical_len;
+                    page_cursor += copy_len;
+                }
+                if page_cursor == self.staging.byte_size {
+                    break;
+                }
+            }
+
+            if page_copies.is_empty() {
+                return Err(anyhow!(
+                    "{label} could not fit an aligned copy in its {}-byte staging page",
+                    self.staging.byte_size
+                ));
+            }
+            queue.submit(Some(encoder.finish()));
+
+            let slice = self.staging.buffer.slice(..page_cursor as u64);
+            map_readback_blocking(device, &slice, label)?;
+            let mapped = slice.get_mapped_range();
+            for (index, offset, logical_len) in page_copies {
+                outputs[index].extend_from_slice(&mapped[offset..offset + logical_len]);
+            }
+            drop(mapped);
+            self.staging.unmap();
+        }
+
+        Ok(outputs)
     }
 }
 

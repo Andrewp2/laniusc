@@ -15,7 +15,7 @@ StructuredBuffer<uint> canonical_prefix_before_raw;
 StructuredBuffer<uint> canonical_dense_to_raw;
 StructuredBuffer<uint> canonical_raw_to_dense;
 StructuredBuffer<uint> canonical_alias_to_dense;
-StructuredBuffer<uint> parent_value;
+StructuredBuffer<uint> parent;
 StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
@@ -131,6 +131,24 @@ uint semantic_id(uint raw)
 {
     return valid_raw(raw) ? canonical_alias_to_dense[raw] : INVALID;
 }
+
+// Canonical rows are sparse in the raw grammar tree.  Resolve the nearest
+// durable ancestor only for rows that survive compaction instead of running a
+// whole-tree pointer walk over forwarding/list productions.
+uint canonical_parent(uint raw)
+{
+    uint ancestor = valid_raw(raw) ? parent[raw] : INVALID;
+    for (uint hop = 0u; hop < gCanonical.raw_capacity; ++hop)
+    {
+        if (!valid_raw(ancestor) || ancestor == raw) return INVALID;
+        uint dense = dense_id(ancestor);
+        if (dense != INVALID) return dense;
+        uint next = parent[ancestor];
+        if (next == ancestor) return INVALID;
+        ancestor = next;
+    }
+    return INVALID;
+}
 uint expression_id(uint raw)
 {
     if (!valid_raw(raw)) return INVALID;
@@ -188,10 +206,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         core.kind = 29u;
     else if (item_kind == 9u || item_kind == 10u)
         core.kind = 2u;
-    // Parent-init pointer jumping already publishes the nearest canonical
-    // ancestor as a dense HIR id. Preserve that identity directly; applying
-    // raw_to_dense a second time would reinterpret dense rows as raw nodes.
-    core.parent = parent_value[raw];
+    core.parent = canonical_parent(raw);
     core.token_start = hir_token_pos[raw];
     core.token_end = hir_token_end[raw];
 

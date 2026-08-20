@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use super::ComputeGraph;
 use crate::gpu::{
-    buffers::{JobResetPolicy, LaniusBuffer, ResettableBuffer, TrackedBufferView},
+    buffers::{LaniusBuffer, ResettableBuffer, TrackedBufferView},
     compiler_graph::BoundGraphResource,
     passes_core::record_compiler_operation,
     resource_registry::ResourceMap,
@@ -117,31 +117,6 @@ pub(crate) struct ResetGraphAllocationsOperation {
 }
 
 impl ResetGraphAllocationsOperation {
-    pub(crate) fn new(
-        graph: &impl ComputeGraph,
-        name: &'static str,
-        buffers: &[ResettableBuffer],
-    ) -> Result<Self> {
-        if graph.graph().pass_id(name).is_none() {
-            return Err(anyhow::anyhow!("compiler graph has no pass `{name}`"));
-        }
-        let mut allocations = Vec::new();
-        for buffer in buffers {
-            if buffer.reset_policy == JobResetPolicy::OverwriteBeforeRead {
-                continue;
-            }
-            if !graph.allocations().owns_allocation(buffer.allocation_id) {
-                return Err(anyhow::anyhow!(
-                    "compiler graph reset `{name}` received non-graph allocation `{}` ({})",
-                    buffer.label,
-                    buffer.allocation_id,
-                ));
-            }
-            allocations.push(buffer.tracked_view().alias(buffer.byte_size as usize));
-        }
-        Ok(Self { name, allocations })
-    }
-
     /// Creates a physical job-boundary reset for allocations owned by the
     /// surrounding phase object rather than by the graph workspace itself.
     /// The reset is allocation-scoped and therefore intentionally does not
@@ -159,14 +134,6 @@ impl ResetGraphAllocationsOperation {
             .map(|buffer| buffer.tracked_view().alias::<u8>(buffer.byte_size as usize))
             .collect();
         Ok(Self { name, allocations })
-    }
-
-    pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
-        record_compiler_operation(self.name);
-        crate::gpu::passes_core::flush_deferred_compute(encoder);
-        for buffer in &self.allocations {
-            encoder.clear_buffer(&buffer.buffer, 0, None);
-        }
     }
 
     /// Resets an active prefix of each allocation. This preserves capacity-

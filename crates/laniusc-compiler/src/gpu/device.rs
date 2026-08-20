@@ -409,6 +409,9 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
     device.on_uncaptured_error(Arc::new(|e| {
         eprintln!("[wgpu uncaptured] {e:?}");
     }));
+    device.set_device_lost_callback(|reason, message| {
+        eprintln!("[wgpu device lost] reason={reason:?} message={message}");
+    });
 
     let timers_supported = adapter_features.contains(wgpu::Features::TIMESTAMP_QUERY);
     let (

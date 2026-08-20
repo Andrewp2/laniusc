@@ -38,6 +38,17 @@ use support::*;
 use token_frontend::ResidentTokenKindOperations;
 use wgpu;
 
+/// Logical dimensions from the most recently recorded job that can safely be
+/// used for a speculative, fully GPU-resident warm compilation. The lexer
+/// validates its newly produced count and feature mask after submission; a
+/// mismatch discards the speculative result and retries with exact metadata.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ResidentParserJobShape {
+    pub token_capacity: u32,
+    pub tree_capacity: u32,
+    pub parser_feature_flags: u32,
+}
+
 use crate::{
     gpu::{
         buffers::{storage_ro_from_bytes, storage_ro_from_u32s},
@@ -47,8 +58,7 @@ use crate::{
             ComputePassBatch,
             Pass,
             PassContext,
-            compute_pass_batching_enabled,
-            validation_scopes_enabled,
+            compute_pass_batching_allowed,
         },
         timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
     },
@@ -344,14 +354,6 @@ impl GpuParser {
             );
         }
 
-        // Dependent parser dispatches (prefix scans and pointer jumps) require
-        // storage visibility between iterations. A single compute pass does
-        // not provide those barriers, so parser-wide coalescing is invalid.
-        let parser_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
-            false,
-            "parser.resident.batch",
-        );
-
         let active_tree_capacity = tree_capacity_override
             .unwrap_or(bufs.tree_capacity)
             .min(bufs.tree_capacity)
@@ -369,6 +371,15 @@ impl GpuParser {
             }
         }
 
+        // WebGPU gives every compute dispatch its own usage scope, and wgpu
+        // emits resource barriers between conflicting dispatches even when
+        // they share one compute pass. Graph-declared clear/copy operations
+        // and explicit compute batches flush this ordered stream before they
+        // record their own encoder commands.
+        let parser_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
+            parser_compute_pass_batching_enabled(timer_ref),
+            "parser.resident.batch",
+        );
         self.record_tokens_to_kinds_timed(
             encoder,
             token_capacity,
@@ -1220,10 +1231,10 @@ fn raw_token_kind_rows(raw_kinds: &[u32], row_count: usize) -> Vec<u8> {
     bytes
 }
 
-fn parser_compute_pass_batching_enabled(_timer_ref: &mut Option<&mut GpuTimer>) -> bool {
-    _timer_ref.is_none() && compute_pass_batching_enabled() && !validation_scopes_enabled()
+fn parser_compute_pass_batching_enabled(timer_ref: &mut Option<&mut GpuTimer>) -> bool {
+    compute_pass_batching_allowed(timer_ref.is_some())
 }
 
-fn parser_dependency_batching_enabled(_timer_ref: &mut Option<&mut GpuTimer>) -> bool {
-    false
+fn parser_dependency_batching_enabled(timer_ref: &mut Option<&mut GpuTimer>) -> bool {
+    parser_compute_pass_batching_enabled(timer_ref)
 }

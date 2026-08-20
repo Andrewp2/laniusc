@@ -20,6 +20,9 @@ StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
 StructuredBuffer<uint> semantic_lir_string_total;
 StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+StructuredBuffer<uint> x86_live_by_semantic;
+StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
+StructuredBuffer<X86SelectInfo> x86_select_by_semantic;
 StructuredBuffer<uint> target_lir_offset;
 StructuredBuffer<uint> target_lir_total;
 RWStructuredBuffer<uint> semantic_to_target_start;
@@ -59,9 +62,20 @@ uint call_abi_argument_count(uint start, uint count)
     return result;
 }
 
+bool direct_i32_constant(uint semantic_row, uint semantic_count,
+                         out uint value)
+{
+    value = 0u;
+    if (semantic_row >= semantic_count) return false;
+    X86ValueAnalysis analysis = x86_value_by_semantic[semantic_row];
+    value = analysis.value;
+    return analysis.known != 0u;
+}
+
 void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir, uint abi_row,
                     SemanticLirCore source, uint argument_start,
-                    uint argument_count, uint call_result_words)
+                    uint argument_count, uint call_result_words,
+                    uint semantic_count)
 {
     SemanticLirCallArg argument;
     argument.call_instruction = INVALID;
@@ -112,6 +126,17 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir,
             ? X86_LIR_METADATA_STRING_LEN : 0u);
     if (argument_type == SEMANTIC_LIR_TY_POINTER)
         operands.metadata |= X86_LIR_METADATA_WIDE;
+    uint immediate;
+    bool encoded_immediate = !string_value &&
+        (argument.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) == 0u &&
+        x86_scalar_immediate_type(argument_type) &&
+        direct_i32_constant(
+            argument.value_instruction, semantic_count, immediate);
+    if (encoded_immediate)
+    {
+        operands.a = immediate;
+        operands.metadata |= X86_LIR_METADATA_IMMEDIATE;
+    }
     target_lir_core[page_row] = core;
     target_lir_operands[page_row] = operands;
     target_semantic_origin[page_row] = semantic_row;
@@ -165,7 +190,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (local_row < argument_rows)
     {
         write_call_arg(page_row, row, semantic_row, source_hir, local_row, source,
-            argument_start, argument_count, call_result_words);
+            argument_start, argument_count, call_result_words, semantic_count);
         return;
     }
 
@@ -278,7 +303,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.a = element.value_instruction;
         operands.b = word - element.word_offset;
         operands.c = target_start + 1u + word;
-        operands.metadata = source.type_id |
+        uint element_type = element.value_instruction <
+            gParams.semantic_capacity
+                ? semantic_lir_core[element.value_instruction].type_id
+                : source.type_id;
+        operands.metadata = element_type |
             ((element.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u
                 ? X86_LIR_METADATA_AGGREGATE : 0u);
         if (enum_discriminant)
@@ -343,6 +372,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint a = args.a;
     uint b = args.b;
     uint c = args.c;
+    uint local_ordinal = 0u;
     uint flags = x86_lir_supported(source) ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
     if ((source.flags & (SEMANTIC_LIR_FLAG_UNSUPPORTED |
                          SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE)) != 0u)
@@ -365,7 +395,55 @@ void main(uint3 dtid: SV_DispatchThreadID)
         source.type_id == SEMANTIC_LIR_TY_STRING)
         metadata |= X86_LIR_METADATA_STRING_PAIR;
 
-    if (op == X86_LIR_OP_IMM_I32) { a = args.a; b = 0u; c = 0u; }
+    bool select_store =
+        x86_live_by_semantic[semantic_row] == X86_SEMANTIC_SELECT;
+    uint propagated_value = 0u;
+    bool propagated_constant = direct_i32_constant(
+        semantic_row, semantic_count, propagated_value);
+    if (select_store)
+    {
+        X86SelectInfo info = x86_select_by_semantic[semantic_row];
+        if (info.condition >= semantic_count ||
+            info.true_value >= semantic_count ||
+            info.declaration == INVALID)
+        {
+            flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+        }
+        else
+        {
+            SemanticLirCore compare_core = semantic_lir_core[info.condition];
+            SemanticLirOperands compare = semantic_lir_operands[info.condition];
+            uint left = 0u;
+            uint immediate = 0u;
+            bool left_constant = direct_i32_constant(
+                compare.a, semantic_count, left);
+            bool right_constant = direct_i32_constant(
+                compare.b, semantic_count, immediate);
+            bool immediate_compare = (right_constant || left_constant) &&
+                x86_integer_immediate_operation(
+                    SEMANTIC_LIR_OP_COMPARE, compare_core.type_id,
+                    right_constant ? immediate : left);
+            op = X86_LIR_OP_SELECT_STORE;
+            result = info.declaration;
+            a = immediate_compare && left_constant
+                ? compare.b : compare.a;
+            b = immediate_compare
+                ? (right_constant ? immediate : left) : compare.b;
+            c = info.true_value;
+            metadata = compare_core.type_id & 0xffu;
+            if (immediate_compare)
+                metadata |= X86_LIR_METADATA_IMMEDIATE;
+            local_ordinal = immediate_compare && left_constant
+                ? x86_swapped_compare_predicate(compare.c) : compare.c;
+        }
+    }
+    else if (propagated_constant)
+    {
+        op = X86_LIR_OP_IMM_I32;
+        a = propagated_value;
+        b = 0u;
+        c = 0u;
+    }
     else if (semantic_lir_op(source) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
              args.a == INTRINSIC_I32_ARRAY_DATA_PTR)
     {
@@ -403,20 +481,112 @@ void main(uint3 dtid: SV_DispatchThreadID)
         c = args.c;
         metadata = (metadata & 0x00ffffffu) | (8u << 24u);
     }
-    else if (op == X86_LIR_OP_BINARY) { c = args.b; b = args.a; a = x86_binary_payload(source); }
+    else if (op == X86_LIR_OP_BINARY)
+    {
+        uint semantic_op = semantic_lir_op(source);
+        uint left = 0u;
+        uint immediate = 0u;
+        uint folded = 0u;
+        c = args.b;
+        b = args.a;
+        a = x86_binary_payload(source);
+        bool left_constant = direct_i32_constant(
+            args.a, semantic_count, left);
+        bool right_constant = direct_i32_constant(
+            args.b, semantic_count, immediate);
+        if (left_constant && right_constant &&
+            x86_fold_integer_binary(semantic_op, source.type_id, args.c,
+                left, immediate, folded))
+        {
+            op = X86_LIR_OP_IMM_I32;
+            a = folded;
+            b = 0u;
+            c = 0u;
+        }
+        uint divisor_kind = op != X86_LIR_OP_IMM_I32 && right_constant
+                ? x86_constant_divisor_kind(
+                    semantic_op, source.type_id, immediate)
+                : X86_CONSTANT_DIVISOR_NONE;
+        if (divisor_kind == X86_CONSTANT_DIVISOR_POWER_OF_TWO)
+        {
+            a = semantic_op == SEMANTIC_LIR_OP_DIV
+                ? X86_LIR_BINARY_DIV_CONST_POW2_I32
+                : X86_LIR_BINARY_REM_CONST_POW2_I32;
+            c = immediate;
+        }
+        else if (divisor_kind == X86_CONSTANT_DIVISOR_SIGNED)
+        {
+            a = semantic_op == SEMANTIC_LIR_OP_DIV
+                ? X86_LIR_BINARY_DIV_CONST_I32
+                : X86_LIR_BINARY_REM_CONST_I32;
+            c = immediate;
+        }
+        else if (op != X86_LIR_OP_IMM_I32 &&
+                 ((right_constant && x86_integer_immediate_operation(
+                     semantic_op, source.type_id, immediate)) ||
+                  (left_constant &&
+                   x86_integer_immediate_commutative(semantic_op) &&
+                   x86_integer_immediate_operation(
+                       semantic_op, source.type_id, left))))
+        {
+            bool swap = !right_constant;
+            b = swap ? args.b : args.a;
+            c = swap ? left : immediate;
+            metadata |= X86_LIR_METADATA_IMMEDIATE;
+        }
+    }
     else if (op == X86_LIR_OP_COMPARE)
     {
         c = args.b; b = args.a; a = args.c;
+        uint left = 0u;
+        uint immediate = 0u;
+        uint folded = 0u;
+        bool left_constant = direct_i32_constant(
+            args.a, semantic_count, left);
+        bool right_constant = direct_i32_constant(
+            args.b, semantic_count, immediate);
+        if (left_constant && right_constant &&
+            x86_fold_integer_binary(SEMANTIC_LIR_OP_COMPARE, source.type_id,
+                args.c, left, immediate, folded))
+        {
+            op = X86_LIR_OP_IMM_I32;
+            a = folded;
+            b = 0u;
+            c = 0u;
+        }
+        else if ((right_constant || left_constant) &&
+            x86_integer_immediate_operation(
+                SEMANTIC_LIR_OP_COMPARE, source.type_id,
+                right_constant ? immediate : left))
+        {
+            bool swap = !right_constant;
+            a = swap ? x86_swapped_compare_predicate(args.c) : args.c;
+            b = swap ? args.b : args.a;
+            c = swap ? left : immediate;
+            metadata |= X86_LIR_METADATA_IMMEDIATE;
+        }
         if (source.type_id == SEMANTIC_LIR_TY_POINTER && args.b < gParams.semantic_capacity &&
             semantic_lir_core[args.b].type_id != SEMANTIC_LIR_TY_POINTER)
             metadata |= X86_LIR_METADATA_RHS_NARROW;
     }
     else if (op == X86_LIR_OP_UNARY)
     {
-        a = semantic_lir_op(source) == SEMANTIC_LIR_OP_LOGICAL_NOT ? X86_LIR_UNARY_NOT_BOOL
-            : source.type_id == X86_LIR_TY_FLOAT ? X86_LIR_UNARY_NEG_F32
-            : X86_LIR_UNARY_NEG_I32;
-        b = args.a; c = 0u;
+        uint folded;
+        uint input;
+        if (direct_i32_constant(args.a, semantic_count, input) &&
+            x86_fold_integer_unary(
+                semantic_lir_op(source), source.type_id, input, folded))
+        {
+            op = X86_LIR_OP_IMM_I32;
+            a = folded; b = 0u; c = 0u;
+        }
+        else
+        {
+            a = semantic_lir_op(source) == SEMANTIC_LIR_OP_LOGICAL_NOT ? X86_LIR_UNARY_NOT_BOOL
+                : source.type_id == X86_LIR_TY_FLOAT ? X86_LIR_UNARY_NEG_F32
+                : X86_LIR_UNARY_NEG_I32;
+            b = args.a; c = 0u;
+        }
     }
     else if (op == X86_LIR_OP_RETURN)
     {
@@ -428,7 +598,52 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (op == X86_LIR_OP_BRANCH)
     {
         result = INVALID;
-        if (semantic_lir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN) { a = args.a; b = args.b; c = args.c; }
+        bool conditional = semantic_lir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN ||
+            semantic_lir_op(source) == SEMANTIC_LIR_OP_BRANCH_IF;
+        uint condition = conditional ? args.a : INVALID;
+        uint comparison = condition;
+        if (x86_live_by_semantic[semantic_row] ==
+            X86_SEMANTIC_COMPARE_ALIAS_BRANCH)
+            comparison = x86_select_by_semantic[semantic_row].condition;
+        bool fused_compare = comparison < semantic_count &&
+            x86_live_by_semantic[comparison] == 0u &&
+            semantic_lir_op(semantic_lir_core[comparison]) ==
+                SEMANTIC_LIR_OP_COMPARE;
+        if (fused_compare)
+        {
+            SemanticLirCore compare_core = semantic_lir_core[comparison];
+            SemanticLirOperands compare = semantic_lir_operands[comparison];
+            uint left = 0u;
+            uint immediate = 0u;
+            bool left_constant = direct_i32_constant(
+                compare.a, semantic_count, left);
+            bool right_constant = direct_i32_constant(
+                compare.b, semantic_count, immediate);
+            bool immediate_compare = (right_constant || left_constant) &&
+                x86_integer_immediate_operation(
+                    SEMANTIC_LIR_OP_COMPARE, compare_core.type_id,
+                    right_constant ? immediate : left);
+            op = X86_LIR_OP_COMPARE_BRANCH_FALSE;
+            a = immediate_compare && left_constant
+                ? compare.b : compare.a;
+            b = immediate_compare
+                ? (right_constant ? immediate : left) : compare.b;
+            c = semantic_lir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN
+                ? args.c : 0u;
+            metadata = compare_core.type_id & 0xffu;
+            if (immediate_compare)
+                metadata |= X86_LIR_METADATA_IMMEDIATE;
+            local_ordinal = immediate_compare && left_constant
+                ? x86_swapped_compare_predicate(compare.c) : compare.c;
+            if (compare_core.type_id == SEMANTIC_LIR_TY_POINTER &&
+                compare.b < semantic_count &&
+                semantic_lir_core[compare.b].type_id !=
+                    SEMANTIC_LIR_TY_POINTER)
+                metadata |= X86_LIR_METADATA_RHS_NARROW;
+            result = semantic_lir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN
+                ? args.b : args.c;
+        }
+        else if (semantic_lir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN) { a = args.a; b = args.b; c = args.c; }
         else if (semantic_lir_op(source) == SEMANTIC_LIR_OP_BRANCH_IF) { a = args.a; b = args.c; c = 0u; }
         else { a = INVALID; b = args.a; c = 0u; }
     }
@@ -445,11 +660,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
              call_result_words == 0u &&
              (metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
-    if (op == X86_LIR_OP_BRANCH && b == INVALID) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+    if ((op == X86_LIR_OP_BRANCH && b == INVALID) ||
+        (op == X86_LIR_OP_COMPARE_BRANCH_FALSE && result == INVALID))
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
 
     X86LirCore core;
     core.source_hir = source_hir;
-    core.local_ordinal = (op == X86_LIR_OP_INDEX_LOAD || op == X86_LIR_OP_INDEX_STORE)
+    core.local_ordinal = op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
+        op == X86_LIR_OP_SELECT_STORE
+        ? local_ordinal
+        : (op == X86_LIR_OP_INDEX_LOAD || op == X86_LIR_OP_INDEX_STORE)
         ? semantic_lir_layout_word_offset[semantic_row]
         : op == X86_LIR_OP_CALL_SYMBOL ? call_result_words : 0u;
     core.op = op;
@@ -457,7 +677,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // have inserted CALL_ARG rows before this operation, so machine emission
     // must address the concrete target row for the result value and any
     // caller-owned aggregate storage derived from it.
-    core.result_or_target = result == INVALID ? INVALID : row;
+    core.result_or_target = op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
+        op == X86_LIR_OP_SELECT_STORE
+        ? result : result == INVALID ? INVALID : row;
     X86LirOperands operands;
     operands.a = a;
     operands.b = b;

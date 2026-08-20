@@ -46,6 +46,11 @@ impl Ll1AcceptResult {
                 self.detail, self.emit_len
             ),
             4 => "parse error: input is incomplete or contains mismatched syntax".to_string(),
+            5 => format!(
+                "parse error: this input is too large for the retained token buffers \
+                 (needed {} tokens)",
+                self.detail
+            ),
             _ => "parse error: could not match the grammar".to_string(),
         }
     }

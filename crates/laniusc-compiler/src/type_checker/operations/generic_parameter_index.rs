@@ -36,8 +36,7 @@ pub(in crate::type_checker) const GENERIC_PARAM_ROWS_SCATTER: ReflectedComputeSp
 /// slot assignment.
 pub(in crate::type_checker) struct GenericParameterIndex {
     lookup: ExactLookupOperation,
-    type_scan: PrefixScanOperation,
-    const_scan: PrefixScanOperation,
+    slot_scan: PrefixScanPairOperation,
     scatter_rows: ComputeOperation,
 }
 
@@ -102,8 +101,6 @@ impl GenericParameterRecordOperation {
                     "generic_const_param_scan_block_sum",
                     "generic_type_param_scan_prefix_a",
                     "generic_const_param_scan_prefix_a",
-                    "generic_type_param_scan_prefix_b",
-                    "generic_const_param_scan_prefix_b",
                 ],
             )?,
         ))
@@ -164,7 +161,7 @@ impl GenericParameterIndex {
         token_capacity: u32,
     ) -> Result<Self> {
         let hir_dispatch = typed_buffer_from_resources(resources, "hir_active_dispatch_args")?;
-        let (type_scan, const_scan) = PrefixScanOperation::from_pair_spec(
+        let slot_scan = PrefixScanPairOperation::from_spec(
             device,
             passes,
             resources,
@@ -181,8 +178,7 @@ impl GenericParameterIndex {
                 token_capacity.saturating_mul(2).max(1),
                 &hir_dispatch,
             )?,
-            type_scan,
-            const_scan,
+            slot_scan,
             scatter_rows: ComputeOperation::indirect_spec(
                 device,
                 graph,
@@ -196,7 +192,7 @@ impl GenericParameterIndex {
 
     pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.lookup.record(encoder)?;
-        PrefixScanOperation::record_pair(&self.type_scan, &self.const_scan, encoder)?;
+        self.slot_scan.record(encoder)?;
         self.scatter_rows.record(encoder)
     }
 }

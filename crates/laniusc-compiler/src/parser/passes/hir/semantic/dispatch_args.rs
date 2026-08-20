@@ -45,6 +45,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticDispa
                 "hir_semantic_dispatch_args".into(),
                 b.hir_semantic_dispatch_args.as_entire_binding(),
             ),
+            (
+                "hir_raw_relation_dispatch_args".into(),
+                b.hir_raw_relation_dispatch_args.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_relation_dispatch_args".into(),
+                b.hir_semantic_relation_dispatch_args.as_entire_binding(),
+            ),
         ])
     }
 }

@@ -136,10 +136,37 @@ impl GpuBuffers {
         self.job_initialize.record(encoder);
     }
 
-    pub(in crate::lexer) fn record_count_readback(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub(crate) fn record_count_readback(&self, encoder: &mut wgpu::CommandEncoder) {
         for copy in &self.count_readback {
             copy.record(encoder);
         }
+    }
+
+    /// Reads the token count and parser feature mask copied by
+    /// `record_count_readback`. This is intentionally usable after a fused
+    /// lexer/parser submission so warm jobs need no intermediate host wait.
+    pub(crate) fn read_recorded_count_and_features(
+        &self,
+        device: &wgpu::Device,
+        label: &str,
+    ) -> anyhow::Result<(u32, u32)> {
+        let slice = self.token_count_readback.buffer.slice(..);
+        crate::gpu::passes_core::map_readback_for_progress(&slice, label);
+        crate::gpu::passes_core::wait_for_map_progress(
+            device,
+            label,
+            wgpu::PollType::wait_indefinitely(),
+        );
+        let bytes = slice.get_mapped_range();
+        if bytes.len() < 8 {
+            anyhow::bail!("lexer metadata readback contained fewer than 8 bytes");
+        }
+        let token_count = u32::from_le_bytes(bytes[0..4].try_into().expect("four-byte slice"));
+        let parser_feature_flags =
+            u32::from_le_bytes(bytes[4..8].try_into().expect("four-byte slice"));
+        drop(bytes);
+        self.token_count_readback.buffer.unmap();
+        Ok((token_count, parser_feature_flags))
     }
 
     /// Allocates lexer buffers for a byte capacity and source-file capacity.

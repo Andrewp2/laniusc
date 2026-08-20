@@ -42,11 +42,23 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPred
                 "type_root_owner".into(),
                 b.hir_type_root_owner.as_entire_binding(),
             ),
+            ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
+            (
+                "hir_method_signature_flags".into(),
+                b.hir_method_signature_flags.as_entire_binding(),
+            ),
+            (
+                "raw_to_item".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
+            ),
             (
                 "subject_anchor".into(),
                 b.hir_variant_payload_rank_a.as_entire_binding(),
             ),
-            ("hir_core".into(), b.hir_core.as_entire_binding()),
+            (
+                "owner_value".into(),
+                b.hir_type_arg_rank_a.as_entire_binding(),
+            ),
             (
                 "canonical_count".into(),
                 b.hir_canonical_count.as_entire_binding(),

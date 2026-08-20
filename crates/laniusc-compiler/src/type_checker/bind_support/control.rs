@@ -354,6 +354,7 @@ mod tests {
             );
             compute.set_pipeline(&mark_pass.pipeline);
             compute.set_bind_group(0, Some(&mark_group), &[]);
+            crate::gpu::passes_core::record_compute_dispatch();
             compute.dispatch_workgroups(1, 1, 1);
         }
         encoder.copy_buffer_to_buffer(&delta.buffer, 0, &delta_readback.buffer, 0, 64 * 4);
@@ -367,6 +368,7 @@ mod tests {
             );
             compute.set_pipeline(&local_pass.pipeline);
             compute.set_bind_group(0, Some(&local_group), &[]);
+            crate::gpu::passes_core::record_compute_dispatch();
             compute.dispatch_workgroups(1, 1, 1);
         }
         {
@@ -379,6 +381,7 @@ mod tests {
             );
             compute.set_pipeline(&apply_pass.pipeline);
             compute.set_bind_group(0, Some(&apply_group), &[]);
+            crate::gpu::passes_core::record_compute_dispatch();
             compute.dispatch_workgroups(1, 1, 1);
         }
         encoder.copy_buffer_to_buffer(&depth.buffer, 0, &depth_readback.buffer, 0, 64 * 4);

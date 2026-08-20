@@ -17,6 +17,7 @@ use crate::gpu::{
     kernels::KernelRegistry,
     operations::ComputeOperation,
     resource_registry::ResourceMap,
+    timer::GpuTimer,
 };
 
 #[repr(C)]
@@ -29,6 +30,7 @@ struct ScheduleParams {
 }
 
 struct ScheduleStep {
+    key_step: u32,
     direction: usize,
     histogram: ComputeOperation,
     scatter: ComputeOperation,
@@ -180,6 +182,7 @@ impl GpuStableScheduleSorter {
                 let direction = (step + initial_direction) % 2;
                 let offsets = vec![radix_params.dynamic_offset(step)];
                 Ok(ScheduleStep {
+                    key_step: step as u32,
                     direction,
                     histogram: ComputeOperation::direct_with_offsets(
                         device,
@@ -220,11 +223,38 @@ impl GpuStableScheduleSorter {
         &self.order
     }
 
+    #[cfg(test)]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.record_timed(encoder, None)
+    }
+
+    pub(crate) fn record_timed(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        mut timer: Option<&mut GpuTimer>,
+    ) -> Result<()> {
+        let mut stamp = |label: String, encoder: &mut wgpu::CommandEncoder| {
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, label);
+            }
+        };
         for step in &self.steps {
+            let digit = step.key_step;
             step.histogram.record(encoder)?;
+            stamp(
+                format!("lowering.semantic.schedule.digit.{digit}.histogram.done"),
+                encoder,
+            );
             self.scans[step.direction].record(encoder)?;
+            stamp(
+                format!("lowering.semantic.schedule.digit.{digit}.scan.done"),
+                encoder,
+            );
             step.scatter.record(encoder)?;
+            stamp(
+                format!("lowering.semantic.schedule.digit.{digit}.scatter.done"),
+                encoder,
+            );
         }
         Ok(())
     }

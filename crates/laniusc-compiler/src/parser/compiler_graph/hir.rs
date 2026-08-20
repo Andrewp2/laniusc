@@ -90,12 +90,6 @@ fn graph_owned_hir_workspace(name: &str) -> bool {
                 | "hir_type_alias_owner_link_b"
                 | "hir_type_alias_owner_value_a"
                 | "hir_type_alias_owner_value_b"
-                | "hir_fn_signature_owner_link_a"
-                | "hir_fn_signature_owner_link_b"
-                | "hir_fn_signature_return_owner_a"
-                | "hir_fn_signature_return_owner_b"
-                | "hir_fn_signature_function_owner_a"
-                | "hir_fn_signature_function_owner_b"
                 | "hir_param_owner_a"
                 | "hir_param_link_a"
                 | "hir_param_rank_a"
@@ -466,12 +460,6 @@ pub(super) fn register_resources(
         "hir_type_alias_owner_link_b",
         "hir_type_alias_owner_value_a",
         "hir_type_alias_owner_value_b",
-        "hir_fn_signature_owner_link_a",
-        "hir_fn_signature_owner_link_b",
-        "hir_fn_signature_return_owner_a",
-        "hir_fn_signature_return_owner_b",
-        "hir_fn_signature_function_owner_a",
-        "hir_fn_signature_function_owner_b",
         "hir_binary_span_link_a",
         "hir_binary_span_link_b",
         "hir_binary_span_start_a",
@@ -1504,6 +1492,8 @@ fn register_item_paths_and_type_aliases(
         ResourceDomain::HirNodes,
         &[
             ("tree_count_status", "partial_parse_status", None),
+            ("node_kind", "node_kind", None),
+            ("first_child", "first_child", None),
             ("raw_to_hir", "hir_canonical_raw_to_dense", None),
         ],
     )?;
@@ -1677,60 +1667,6 @@ fn register_function_signatures(
     capacity: ParserGraphCapacity,
     passes: &ParserPasses,
 ) -> Result<(), String> {
-    use crate::parser::passes::hir::semantic::parent::step::FN_SIGNATURE_OWNER;
-
-    static_pass(
-        graph,
-        &passes.hir_fn_signature_owner_init,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[("tree_count_status", "partial_parse_status", None)],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_fn_signature_owner_init",
-        &[
-            "hir_fn_signature_owner_link_a",
-            "hir_fn_signature_return_owner_a",
-            "hir_fn_signature_function_owner_a",
-        ],
-    )?;
-    indirect(
-        graph,
-        "hir_fn_signature_owner_init",
-        "tree_active_dispatch_args",
-    )?;
-    register_ping_pong_walk(
-        graph,
-        passes.hir_tree_relations.graph_pair_pass(),
-        FN_SIGNATURE_OWNER.a_to_b,
-        FN_SIGNATURE_OWNER.b_to_a,
-        FN_SIGNATURE_OWNER.a_to_b_final,
-        FN_SIGNATURE_OWNER.finalize,
-        "tree_active_dispatch_args",
-        true,
-        crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity),
-        &[("tree_count_status", "partial_parse_status", None)],
-        &[
-            PingPongBinding {
-                input_binding: "relation_link_in",
-                output_binding: "relation_link_out",
-                a: "hir_fn_signature_owner_link_a",
-                b: "hir_fn_signature_owner_link_b",
-            },
-            PingPongBinding {
-                input_binding: "first_value_in",
-                output_binding: "first_value_out",
-                a: "hir_fn_signature_return_owner_a",
-                b: "hir_fn_signature_return_owner_b",
-            },
-            PingPongBinding {
-                input_binding: "second_value_in",
-                output_binding: "second_value_out",
-                a: "hir_fn_signature_function_owner_a",
-                b: "hir_fn_signature_function_owner_b",
-            },
-        ],
-    )?;
     static_pass(
         graph,
         &passes.hir_fn_return_type,
@@ -1738,16 +1674,6 @@ fn register_function_signatures(
         ResourceDomain::HirNodes,
         &[
             ("tree_count_status", "partial_parse_status", None),
-            (
-                "hir_fn_signature_return_owner",
-                "hir_fn_signature_return_owner_a",
-                None,
-            ),
-            (
-                "hir_fn_signature_function_owner",
-                "hir_fn_signature_function_owner_a",
-                None,
-            ),
             ("raw_to_hir", "hir_canonical_raw_to_dense", None),
         ],
     )?;
@@ -1758,14 +1684,7 @@ fn register_function_signatures(
             &passes.hir_method_signature_status,
             CompilerPhase::Hir,
             ResourceDomain::HirNodes,
-            &[
-                ("tree_count_status", "partial_parse_status", None),
-                (
-                    "hir_fn_signature_function_owner",
-                    "hir_fn_signature_function_owner_a",
-                    None,
-                ),
-            ],
+            &[("tree_count_status", "partial_parse_status", None)],
         )?;
         indirect(
             graph,
@@ -2258,7 +2177,7 @@ fn register_canonical_variants(
         CANONICAL_VARIANT_PAYLOAD_OWNER.b_to_a,
         CANONICAL_VARIANT_PAYLOAD_OWNER.a_to_b_final,
         CANONICAL_VARIANT_PAYLOAD_OWNER.finalize,
-        "tree_active_dispatch_args",
+        "hir_raw_relation_dispatch_args",
         true,
         canonical_relation_step_capacity(capacity.tree_capacity),
         &[("tree_count_status", "partial_parse_status", None)],
@@ -2635,7 +2554,7 @@ fn register_matches(
         MATCH_ARM_OWNER.b_to_a,
         MATCH_ARM_OWNER.a_to_b_final,
         MATCH_ARM_OWNER.finalize,
-        "tree_active_dispatch_args",
+        "hir_local_relation_dispatch_args",
         true,
         bounded_walk_steps_after_local_span(
             capacity.tree_capacity,
@@ -3388,7 +3307,7 @@ fn register_context_relations(
             B_TO_A,
             A_TO_B_FINAL,
             FINALIZE,
-            "hir_semantic_dispatch_args",
+            "hir_semantic_relation_dispatch_args",
             true,
             crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity),
             &[
@@ -3463,15 +3382,12 @@ fn register_canonical_materialization(
 ) -> Result<(), String> {
     use crate::parser::passes::{
         CanonicalConstruct,
-        hir::{
-            canonical::expr_forest::root_step::{
-                A_TO_B as EXPR_A_TO_B,
-                A_TO_B_FINAL as EXPR_A_TO_B_FINAL,
-                B_TO_A as EXPR_B_TO_A,
-                FINALIZE as EXPR_FINALIZE,
-                bounded_parent_walk_steps,
-            },
-            semantic::parent::step::{CANONICAL_RELATIONS, canonical_relation_step_capacity},
+        hir::canonical::expr_forest::root_step::{
+            A_TO_B as EXPR_A_TO_B,
+            A_TO_B_FINAL as EXPR_A_TO_B_FINAL,
+            B_TO_A as EXPR_B_TO_A,
+            FINALIZE as EXPR_FINALIZE,
+            bounded_parent_walk_steps,
         },
     };
 
@@ -3571,69 +3487,6 @@ fn register_canonical_materialization(
 
     static_pass(
         graph,
-        &passes.hir_canonical_relations_init,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[
-            ("tree_count_status", "partial_parse_status", None),
-            ("raw_to_hir", "hir_canonical_alias_to_dense", None),
-            ("raw_to_item", "hir_canonical_raw_to_dense", None),
-            ("canonical_flag", "hir_semantic_flag", None),
-            (
-                "canonical_prefix_before_raw",
-                "hir_canonical_prefix_before_raw",
-                None,
-            ),
-            ("relation_link_a", "hir_semantic_parent_link_a", None),
-            ("canonical_parent_a", "hir_semantic_parent_value_a", None),
-            ("generic_owner_a", "hir_type_arg_rank_a", None),
-            ("predicate_subject_a", "hir_variant_payload_rank_a", None),
-        ],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_canonical_relations_init",
-        &["relation_link_a", "canonical_parent_a"],
-    )?;
-    register_ping_pong_walk(
-        graph,
-        passes.hir_tree_relations.graph_triple_pass(),
-        CANONICAL_RELATIONS.a_to_b,
-        CANONICAL_RELATIONS.b_to_a,
-        CANONICAL_RELATIONS.a_to_b_final,
-        CANONICAL_RELATIONS.finalize,
-        "tree_active_dispatch_args",
-        true,
-        canonical_relation_step_capacity(capacity.tree_capacity),
-        &[("tree_count_status", "partial_parse_status", None)],
-        &[
-            PingPongBinding {
-                input_binding: "relation_link_in",
-                output_binding: "relation_link_out",
-                a: "hir_semantic_parent_link_a",
-                b: "hir_semantic_parent_link_b",
-            },
-            PingPongBinding {
-                input_binding: "first_value_in",
-                output_binding: "first_value_out",
-                a: "hir_semantic_parent_value_a",
-                b: "hir_semantic_parent_value_b",
-            },
-            PingPongBinding {
-                input_binding: "second_value_in",
-                output_binding: "second_value_out",
-                a: "hir_type_arg_rank_a",
-                b: "hir_type_arg_rank_b",
-            },
-            PingPongBinding {
-                input_binding: "third_value_in",
-                output_binding: "third_value_out",
-                a: "hir_variant_payload_rank_a",
-                b: "hir_variant_payload_rank_b",
-            },
-        ],
-    )?;
-    static_pass(
-        graph,
         &passes.hir_canonical_core,
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
@@ -3651,7 +3504,7 @@ fn register_canonical_materialization(
                 "hir_canonical_alias_to_dense",
                 None,
             ),
-            ("parent_value", "hir_semantic_parent_value_a", None),
+            ("parent", "parent", None),
             (
                 "hir_method_impl_receiver_type",
                 "hir_method_impl_receiver_type_node",
@@ -3782,7 +3635,20 @@ fn register_canonical_materialization(
         ResourceDomain::HirNodes,
         &[
             ("owner_value", "hir_type_arg_rank_a", None),
+            ("hir_item_kind", "hir_item_kind", None),
+            (
+                "hir_method_signature_flags",
+                "hir_method_signature_flags",
+                None,
+            ),
+            ("raw_to_item", "hir_canonical_raw_to_dense", None),
             ("raw_to_hir", "hir_canonical_alias_to_dense", None),
+            (
+                "semantic_prefix_before_raw",
+                "hir_semantic_prefix_before_node",
+                None,
+            ),
+            ("generic_owner_by_hir", "hir_type_alias_owner_value_a", None),
             (
                 "candidate_raw_by_anchor",
                 "hir_canonical_anchor_owner",
@@ -3794,7 +3660,7 @@ fn register_canonical_materialization(
     )?;
     graph.mark_pass_bindings_initialize(
         "hir_canonical_generic_param_finalize",
-        &["family_flag", "generic_param_ranges"],
+        &["family_flag", "generic_param_ranges", "owner_value"],
     )?;
     register_canonical_compaction_prefix(
         graph,
@@ -4043,13 +3909,32 @@ fn register_canonical_materialization(
             ("raw_to_hir", "hir_canonical_alias_to_dense", None),
             ("hir_to_raw", "hir_canonical_dense_to_raw", None),
             ("type_root_owner", "hir_type_root_owner", None),
-            ("subject_anchor", "hir_variant_payload_rank_a", None),
+            ("hir_item_kind", "hir_item_kind", None),
+            (
+                "hir_method_signature_flags",
+                "hir_method_signature_flags",
+                None,
+            ),
+            ("raw_to_item", "hir_canonical_raw_to_dense", None),
+            (
+                "subject_anchor",
+                "hir_variant_payload_rank_a",
+                Some(AccessMode::Write),
+            ),
+            (
+                "owner_value",
+                "hir_type_arg_rank_a",
+                Some(AccessMode::Write),
+            ),
             ("canonical_count", "hir_canonical_count", None),
             ("canonical_dense_to_raw", "hir_canonical_dense_to_raw", None),
             ("family_flag", "hir_method_family_flag", None),
         ],
     )?;
-    graph.mark_pass_bindings_initialize("hir_canonical_predicate_finalize", &["family_flag"])?;
+    graph.mark_pass_bindings_initialize(
+        "hir_canonical_predicate_finalize",
+        &["family_flag", "subject_anchor", "owner_value"],
+    )?;
     register_canonical_compaction_prefix(
         graph,
         capacity,

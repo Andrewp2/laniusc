@@ -34,6 +34,7 @@ use crate::{
         operations::ComputeOperation,
         passes_core::PassData,
         resource_registry::ResourceMap,
+        timer::GpuTimer,
     },
     parser::buffers::GpuHirView,
     type_checker::GpuSemanticArtifactView,
@@ -1398,35 +1399,66 @@ impl GpuSemanticLoweringStage {
         &self.status
     }
 
+    #[cfg(test)]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.record_timed(encoder, None)
+    }
+
+    pub(crate) fn record_timed(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        mut timer: Option<&mut GpuTimer>,
+    ) -> Result<()> {
+        macro_rules! stamp {
+            ($label:literal) => {
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, $label);
+                }
+            };
+        }
+
         let operations = &self.operations;
         operations.status_clear.record(encoder)?;
+        stamp!("lowering.semantic.status.done");
         operations.function_mark.record(encoder)?;
         operations.function_scan.record(encoder)?;
+        stamp!("lowering.semantic.functions.scan.done");
         operations.local_mark.record(encoder)?;
         operations.local_scan.record(encoder)?;
+        stamp!("lowering.semantic.locals.scan.done");
         operations.function_layout_clear.record(encoder)?;
         operations.function_layout_collect.record(encoder)?;
         operations.function_layout_words.record(encoder)?;
         operations.function_scatter.record(encoder)?;
         operations.function_params.record(encoder)?;
+        stamp!("lowering.semantic.functions.layout.done");
         operations.project.record(encoder)?;
+        stamp!("lowering.semantic.project.done");
         operations.call_argument_scan.record(encoder)?;
+        stamp!("lowering.semantic.call_arguments.scan.done");
         operations.local_scatter.record(encoder)?;
+        stamp!("lowering.semantic.locals.scatter.done");
         operations.execution_rank_init.record(encoder)?;
         for _ in 0..self.execution_rank_pairs {
             operations.execution_rank_a_to_b.record(encoder)?;
             operations.execution_rank_b_to_a.record(encoder)?;
         }
+        stamp!("lowering.semantic.execution_rank.done");
         operations.count.record(encoder)?;
         operations.instruction_scan.record(encoder)?;
+        stamp!("lowering.semantic.instructions.scan.done");
         operations.scatter.record(encoder)?;
+        stamp!("lowering.semantic.instructions.scatter.done");
         operations.call_args.record(encoder)?;
+        stamp!("lowering.semantic.call_arguments.scatter.done");
         operations.aggregate_elements.record(encoder)?;
+        stamp!("lowering.semantic.aggregate_elements.done");
         operations.strings.record(encoder)?;
+        stamp!("lowering.semantic.strings.done");
         if let Some(sorter) = &self.semantic_sorter {
-            sorter.record(encoder)?;
+            sorter.record_timed(encoder, timer.as_deref_mut())?;
         }
+        stamp!("lowering.semantic.schedule.done");
         Ok(())
     }
 }
@@ -1514,6 +1546,7 @@ mod tests {
         );
         compute.set_pipeline(&pass.pipeline);
         compute.set_bind_group(0, Some(bind_group), &[]);
+        crate::gpu::passes_core::record_compute_dispatch();
         compute.dispatch_workgroups(x, y, z);
         Ok(())
     }
@@ -1529,7 +1562,7 @@ mod tests {
     fn packed_schedule_key(layout: TargetScheduleRadixLayout, raw: [u32; 4]) -> [u32; 3] {
         let mut packed = 0u128;
         let mut destination_bit = 0u32;
-        for (field, value) in [raw[3], raw[2], raw[1], raw[0]].into_iter().enumerate() {
+        for (field, value) in [raw[3], raw[2], raw[1]].into_iter().enumerate() {
             let width = ((layout.packed_bits >> (field as u32 * 6)) & 0x3f).clamp(1, 32);
             let mask = if width == 32 {
                 u32::MAX
@@ -2039,12 +2072,15 @@ mod tests {
             count as usize * 4,
             count as usize,
         );
-        order_a.copy_to(&mut encoder, 0, &readback, 0, u64::from(count) * 4);
+        order_b.copy_to(&mut encoder, 0, &readback, 0, u64::from(count) * 4);
         gpu.queue.submit(Some(encoder.finish()));
 
         let actual = read_words(&gpu.device, &readback);
         let mut expected = (0..count).collect::<Vec<_>>();
-        expected.sort_by_key(|&row| key_words[row as usize]);
+        expected.sort_by_key(|&row| {
+            let key = key_words[row as usize];
+            [key[1], key[2], key[3]]
+        });
         assert_eq!(actual, expected);
     }
 
@@ -2120,7 +2156,7 @@ mod tests {
             &order,
         )
         .unwrap();
-        assert_eq!(radix_layout.steps, 5);
+        assert_eq!(radix_layout.steps, 4);
         let pipelines_before = pipeline_creation_count();
         let buffers_before = tracked_buffer_allocation_stats();
         let passes_before = crate::gpu::passes_core::recorded_compute_pass_count();
@@ -2133,7 +2169,7 @@ mod tests {
         let passes_after = crate::gpu::passes_core::recorded_compute_pass_count();
         let hierarchy_levels = hierarchical_scan_levels(count.div_ceil(256)).len();
         let passes_per_digit = 3 + 2 * hierarchy_levels as u64;
-        assert_eq!(passes_after - passes_before, 5 * passes_per_digit);
+        assert_eq!(passes_after - passes_before, 4 * passes_per_digit);
         assert_eq!(pipeline_creation_count(), pipelines_before);
         assert_eq!(tracked_buffer_allocation_stats(), buffers_before);
 
@@ -2149,7 +2185,10 @@ mod tests {
         gpu.queue.submit(Some(encoder.finish()));
         let actual = read_words(&gpu.device, &readback);
         let mut expected = (0..count).collect::<Vec<_>>();
-        expected.sort_by_key(|&row| key_words[row as usize]);
+        expected.sort_by_key(|&row| {
+            let key = key_words[row as usize];
+            [key[1], key[2], key[3]]
+        });
         assert_eq!(actual, expected);
     }
 

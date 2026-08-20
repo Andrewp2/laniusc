@@ -56,10 +56,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMethodSignatu
             ("parent".into(), b.parent.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
-                "hir_fn_signature_function_owner".into(),
-                b.hir_fn_signature_function_owner_a.as_entire_binding(),
-            ),
-            (
                 "hir_method_signature_flags".into(),
                 b.hir_method_signature_flags.as_entire_binding(),
             ),

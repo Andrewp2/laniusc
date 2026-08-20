@@ -16,7 +16,6 @@ pub mod nav;
 pub mod params;
 pub mod paths;
 pub mod predicates;
-pub mod relations_init;
 pub mod scatter;
 pub mod stmt_compact;
 pub mod strings;

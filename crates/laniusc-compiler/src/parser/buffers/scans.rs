@@ -319,6 +319,7 @@ mod tests {
             );
             pass.set_pipeline(&up.pipeline);
             pass.set_bind_group(0, Some(&group), &[]);
+            crate::gpu::passes_core::record_compute_dispatch();
             pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
         }
         for step in &plan.down {
@@ -343,6 +344,7 @@ mod tests {
             );
             pass.set_pipeline(&down.pipeline);
             pass.set_bind_group(0, Some(&group), &[]);
+            crate::gpu::passes_core::record_compute_dispatch();
             pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
         }
         encoder.copy_buffer_to_buffer(
@@ -484,6 +486,7 @@ mod tests {
             );
             pass.set_pipeline(&up.pipeline);
             pass.set_bind_group(0, Some(&group), &[]);
+            crate::gpu::passes_core::record_compute_dispatch();
             pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
         }
         for step in &plan.down {
@@ -524,6 +527,7 @@ mod tests {
             );
             pass.set_pipeline(&down.pipeline);
             pass.set_bind_group(0, Some(&group), &[]);
+            crate::gpu::passes_core::record_compute_dispatch();
             pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
         }
         encoder.copy_buffer_to_buffer(

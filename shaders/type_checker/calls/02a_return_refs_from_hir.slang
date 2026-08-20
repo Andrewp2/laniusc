@@ -31,7 +31,6 @@ StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> module_type_path_type;
-StructuredBuffer<uint> visible_type;
 
 RWStructuredBuffer<uint> fn_return_ref_tag;
 RWStructuredBuffer<uint> fn_return_ref_payload;
@@ -74,9 +73,6 @@ uint scalar_type_for_token(uint token)
     if (!valid_token(token))
         return TY_UNKNOWN;
     uint ty = module_type_path_type[token];
-    if (ty != TY_UNKNOWN)
-        return ty;
-    ty = visible_type[token];
     if (ty != TY_UNKNOWN)
         return ty;
     uint name_id = name_id_by_token[token];

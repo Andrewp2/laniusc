@@ -13,8 +13,7 @@ uint target_schedule_field(SemanticLirSchedule key, uint field)
 {
     return field == 0u ? key.execution_tie
         : field == 1u ? key.execution_rank
-        : field == 2u ? key.execution_region
-        : key.function_id;
+        : key.execution_region;
 }
 
 uint target_schedule_field_mask(uint width)
@@ -62,7 +61,7 @@ TargetScheduleKey target_schedule_pack(
     key.word1 = 0u;
     key.word2 = 0u;
     uint destination_bit = 0u;
-    for (uint field = 0u; field < 4u; field += 1u)
+    for (uint field = 0u; field < 3u; field += 1u)
     {
         uint width = target_schedule_field_width(packed_bits, field);
         uint value = target_schedule_encoded_field(

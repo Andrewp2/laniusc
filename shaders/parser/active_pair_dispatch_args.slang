@@ -11,7 +11,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;
 RWStructuredBuffer<uint> active_pair_thread_dispatch_args;
-RWStructuredBuffer<uint> active_pair_group_dispatch_args;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -41,5 +40,4 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint pairs = active_pair_count();
     write_args(active_pair_thread_dispatch_args, (pairs + WG_SIZE - 1u) / WG_SIZE);
-    write_args(active_pair_group_dispatch_args, pairs);
 }
