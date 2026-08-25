@@ -481,7 +481,15 @@ pub(super) fn register_resources(
         "hir_variant_compact_payload_count",
         "hir_variant_payload_family_flag",
     ] {
-        let bytes = if matches!(name, "hir_variant_raw_to_row" | "hir_match_arm_raw_to_row") {
+        let bytes = if name.starts_with("hir_canonical_") {
+            // Canonical HIR rows have a distinct-source-token anchor. Their
+            // hard capacity is therefore token_count, never the grammar-
+            // amplified raw parse-tree capacity. Keeping these resources in
+            // the raw-node domain defeats the compaction boundary and can
+            // also make a ping-pong finalizer rely on an oversized colored
+            // slot rather than its declared logical buffer.
+            canonical_rows * 4
+        } else if matches!(name, "hir_variant_raw_to_row" | "hir_match_arm_raw_to_row") {
             canonical_rows * 4
         } else if matches!(name, "hir_variant_parent_enum" | "hir_variant_ordinal") {
             if capacity.parser_feature_flags

@@ -972,8 +972,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         projection_metadata = array_length;
     if (semantic_short_circuit_rhs(node, hir_count))
     {
-        if (op == SEMANTIC_LIR_OP_CALL || op == SEMANTIC_LIR_OP_CALL_HOST ||
-            op == SEMANTIC_LIR_OP_CALL_SYMBOL || op == SEMANTIC_LIR_OP_CALL_INTRINSIC)
+        if (semantic_lir_is_call(op))
             core.flags |= SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_CALL;
         uint index_hir = assignment_indexed
             ? assignment_lhs_payload.c : payload.c;

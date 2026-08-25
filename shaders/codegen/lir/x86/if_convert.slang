@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 import codegen.lir.x86.common;
 import gpu_index;
 
@@ -14,11 +15,11 @@ struct Params
     uint reserved2;
 };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> semantic_lir_total;
-StructuredBuffer<SemanticLirCore> semantic_lir_core;
-StructuredBuffer<SemanticLirOperands> semantic_lir_operands;
+StructuredBuffer<uint> opt_ir_total;
+StructuredBuffer<OptIrNodeCore> opt_ir_core;
+StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
 StructuredBuffer<uint> semantic_schedule_order;
-StructuredBuffer<uint> semantic_owner_by_instruction;
+StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> x86_position_by_semantic;
 RWStructuredBuffer<uint> x86_last_use_by_semantic;
@@ -36,17 +37,10 @@ bool scalar_gpr_type(uint type_id)
         type_id == 4u || type_id == 6u || type_id == 8u;
 }
 
-bool call_op(uint op)
-{
-    return op == SEMANTIC_LIR_OP_CALL || op == SEMANTIC_LIR_OP_CALL_HOST ||
-        op == SEMANTIC_LIR_OP_CALL_INTRINSIC ||
-        op == SEMANTIC_LIR_OP_CALL_SYMBOL;
-}
-
 bool same_function(uint row, uint total, uint function_id)
 {
     if (row >= total) return false;
-    uint owner = semantic_owner_by_instruction[row];
+    uint owner = opt_ir_source_hir[row];
     return owner < gParams.function_capacity &&
         semantic_function_id_by_hir[owner] == function_id;
 }
@@ -63,18 +57,18 @@ bool direct_integer_constant(uint row, uint total, out uint value)
 bool masked_single_bit(uint row, uint total)
 {
     if (row >= total ||
-        semantic_lir_op(semantic_lir_core[row]) != SEMANTIC_LIR_OP_BIT_AND)
+        opt_ir_op(opt_ir_core[row]) != SEMANTIC_LIR_OP_BIT_AND)
         return false;
-    SemanticLirOperands operands = semantic_lir_operands[row];
+    OptIrNodeOperands operands = opt_ir_operands[row];
     uint mask;
     bool constant_mask = direct_integer_constant(operands.a, total, mask) ||
         direct_integer_constant(operands.b, total, mask);
     return constant_mask && mask != 0u && (mask & (mask - 1u)) == 0u;
 }
 
-bool select_arm_value_op(SemanticLirCore core)
+bool select_arm_value_op(OptIrNodeCore core)
 {
-    uint op = semantic_lir_op(core);
+    uint op = opt_ir_op(core);
     return op == SEMANTIC_LIR_OP_NOP ||
         op == SEMANTIC_LIR_OP_CONST_I32 ||
         op == SEMANTIC_LIR_OP_VALUE_GET ||
@@ -96,14 +90,14 @@ bool scalar_assignment(uint row, uint total, out uint declaration,
     declaration = INVALID;
     value = INVALID;
     if (row >= total) return false;
-    SemanticLirCore core = semantic_lir_core[row];
-    uint op = semantic_lir_op(core);
+    OptIrNodeCore core = opt_ir_core[row];
+    uint op = opt_ir_op(core);
     if ((op != SEMANTIC_LIR_OP_VALUE_SET && op != SEMANTIC_LIR_OP_STORE) ||
         (core.flags & (SEMANTIC_LIR_FLAG_INDEXED |
                        SEMANTIC_LIR_FLAG_FIELD)) != 0u ||
         !scalar_gpr_type(core.type_id))
         return false;
-    SemanticLirOperands operands = semantic_lir_operands[row];
+    OptIrNodeOperands operands = opt_ir_operands[row];
     declaration = operands.a;
     value = operands.b;
     return declaration < gParams.token_capacity && value < total;
@@ -121,9 +115,9 @@ bool pure_select_arm(uint first_position, uint store_position, uint total,
     {
         uint row = semantic_schedule_order[position];
         if (!same_function(row, total, function_id)) return false;
-        SemanticLirCore core = semantic_lir_core[row];
+        OptIrNodeCore core = opt_ir_core[row];
         if (!select_arm_value_op(core)) return false;
-        uint op = semantic_lir_op(core);
+        uint op = opt_ir_op(core);
         if (op != SEMANTIC_LIR_OP_NOP &&
             op != SEMANTIC_LIR_OP_CONST_I32 &&
             op != SEMANTIC_LIR_OP_VALUE_GET)
@@ -137,12 +131,12 @@ bool pure_select_arm(uint first_position, uint store_position, uint total,
 
 void mark_coalescible_value_get(uint row, uint position, uint total)
 {
-    SemanticLirCore core = semantic_lir_core[row];
-    if (semantic_lir_op(core) != SEMANTIC_LIR_OP_VALUE_GET ||
+    OptIrNodeCore core = opt_ir_core[row];
+    if (opt_ir_op(core) != SEMANTIC_LIR_OP_VALUE_GET ||
         !scalar_gpr_type(core.type_id) ||
         x86_live_by_semantic[row] != X86_SEMANTIC_LIVE)
         return;
-    uint declaration = semantic_lir_operands[row].a;
+    uint declaration = opt_ir_operands[row].a;
     uint last_use = x86_last_use_by_semantic[row];
     if (declaration >= gParams.token_capacity || last_use < position ||
         last_use >= total || last_use - position > 64u)
@@ -157,11 +151,11 @@ void mark_coalescible_value_get(uint row, uint position, uint total)
     {
         uint candidate = semantic_schedule_order[cursor];
         if (candidate >= total) return;
-        SemanticLirCore candidate_core = semantic_lir_core[candidate];
-        SemanticLirOperands candidate_operands =
-            semantic_lir_operands[candidate];
-        uint op = semantic_lir_op(candidate_core);
-        if (call_op(op)) return;
+        OptIrNodeCore candidate_core = opt_ir_core[candidate];
+        OptIrNodeOperands candidate_operands =
+            opt_ir_operands[candidate];
+        uint op = opt_ir_op(candidate_core);
+        if (semantic_lir_is_call(op)) return;
         if (op == SEMANTIC_LIR_OP_VALUE_SET &&
             candidate_operands.a == declaration)
             return;
@@ -191,35 +185,35 @@ void retain_value(uint value, uint position, uint total, uint function_id)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint position = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    uint total = min(gParams.semantic_capacity, semantic_lir_total[0u]);
+    uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
     if (position >= total) return;
     uint branch_row = semantic_schedule_order[position];
     if (branch_row >= total) return;
     mark_coalescible_value_get(branch_row, position, total);
     if (position == 0u) return;
     if (branch_row >= total ||
-        semantic_lir_op(semantic_lir_core[branch_row]) !=
+        opt_ir_op(opt_ir_core[branch_row]) !=
             SEMANTIC_LIR_OP_IF_BEGIN)
         return;
 
-    uint owner = semantic_owner_by_instruction[branch_row];
+    uint owner = opt_ir_source_hir[branch_row];
     if (owner >= gParams.function_capacity) return;
     uint function_id = semantic_function_id_by_hir[owner];
     if (function_id >= gParams.function_capacity) return;
 
-    SemanticLirOperands branch = semantic_lir_operands[branch_row];
+    OptIrNodeOperands branch = opt_ir_operands[branch_row];
     if (branch.c != 1u || branch.a >= total || branch.b >= total ||
         semantic_schedule_order[position - 1u] != branch.a ||
         !same_function(branch.a, total, function_id) ||
         !same_function(branch.b, total, function_id) ||
-        semantic_lir_op(semantic_lir_core[branch.a]) !=
+        opt_ir_op(opt_ir_core[branch.a]) !=
             SEMANTIC_LIR_OP_COMPARE ||
-        semantic_lir_core[branch.a].type_id == X86_LIR_TY_FLOAT ||
+        opt_ir_core[branch.a].type_id == X86_LIR_TY_FLOAT ||
         x86_last_use_by_semantic[branch.a] != position ||
-        semantic_lir_op(semantic_lir_core[branch.b]) != SEMANTIC_LIR_OP_ELSE)
+        opt_ir_op(opt_ir_core[branch.b]) != SEMANTIC_LIR_OP_ELSE)
         return;
 
-    SemanticLirOperands comparison = semantic_lir_operands[branch.a];
+    OptIrNodeOperands comparison = opt_ir_operands[branch.a];
     uint left_constant;
     uint right_constant;
     if (direct_integer_constant(comparison.a, total, left_constant) &&
@@ -239,9 +233,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint else_position = x86_position_by_semantic[branch.b];
-    uint end_row = semantic_lir_operands[branch.b].a;
+    uint end_row = opt_ir_operands[branch.b].a;
     if (!same_function(end_row, total, function_id) ||
-        semantic_lir_op(semantic_lir_core[end_row]) !=
+        opt_ir_op(opt_ir_core[end_row]) !=
             SEMANTIC_LIR_OP_CONTROL_END)
         return;
     uint end_position = x86_position_by_semantic[end_row];
@@ -285,11 +279,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool left_immediate = direct_integer_constant(
         comparison.a, total, immediate) &&
         x86_integer_immediate_operation(SEMANTIC_LIR_OP_COMPARE,
-            semantic_lir_core[branch.a].type_id, immediate);
+            opt_ir_core[branch.a].type_id, immediate);
     bool right_immediate = direct_integer_constant(
         comparison.b, total, immediate) &&
         x86_integer_immediate_operation(SEMANTIC_LIR_OP_COMPARE,
-            semantic_lir_core[branch.a].type_id, immediate);
+            opt_ir_core[branch.a].type_id, immediate);
     if (left_immediate)
         retain_value(comparison.b, end_position, total, function_id);
     else

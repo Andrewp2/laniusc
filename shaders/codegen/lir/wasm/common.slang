@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 
 static const uint WASM_LIR_INVALID = 0xffffffffu;
 static const uint TY_FLOAT = 5u;
@@ -6,30 +7,30 @@ static const uint TY_UINT = 4u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 
-uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands,
+uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
                     bool call_index_base, bool direct_field_store_receiver)
 {
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_NOP) return 0u;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_NOP) return 0u;
     // Expression operands are already on the Wasm stack when their semantic
     // owner is lowered. Signed integer negation therefore appends
     // `i32.const -1; i32.mul` and owns two target records.
-    bool false_branch = semantic_lir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF &&
+    bool false_branch = opt_ir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF &&
         (core.flags & SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID) != 0u &&
         (core.flags & SEMANTIC_LIR_FLAG_BRANCH_FALSE) != 0u;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW)
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW)
         return operands.b * 6u +
             ((operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u ? 5u : 0u) + 5u;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
     // Strings are represented by the Wasm ABI as `(data_ptr, byte_len)`.
     // A semantic value operation still names one source value, so target
     // lowering expands its local access to the two ABI stack values here.
-    if ((semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
-         semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_SET) && core.type_id == TY_STRING)
+    if ((opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
+         opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_SET) && core.type_id == TY_STRING)
         return 2u;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_LOAD &&
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
         return call_index_base ? 6u : 4u;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_LOAD &&
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
         return 5u;
     // The semantic schedule leaves the evaluated receiver below the RHS.
@@ -37,16 +38,16 @@ uint wasm_lir_count(SemanticLirCore core, SemanticLirOperands operands,
     // This works for an arbitrarily deep member chain because each receiver is
     // consumed from the preceding semantic LOAD instead of being reconstructed
     // from a source declaration token.
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_STORE &&
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_STORE &&
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
         return direct_field_store_receiver ? 8u : 7u;
     // The language print intrinsic accepts an i32, while the stable Wasm
     // runtime boundary accepts i64. Keep that ABI choice in target lowering:
     // one row widens the checked value and one row calls import zero.
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == 1u)
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == 1u)
         return 2u;
-    return (semantic_lir_op(core) == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT) || false_branch ||
-        (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+    return (opt_ir_op(core) == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT) || false_branch ||
+        (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
          operands.a == INTRINSIC_I32_ARRAY_DATA_PTR)
         ? 2u : 1u;
 }
@@ -79,48 +80,48 @@ uint wasm_compare_opcode(uint predicate, uint type_id)
     return WASM_LIR_OP_I32_GE_S;
 }
 
-uint wasm_scalar_opcode(SemanticLirCore core, SemanticLirOperands operands)
+uint wasm_scalar_opcode(OptIrNodeCore core, OptIrNodeOperands operands)
 {
     bool f32 = core.type_id == TY_FLOAT;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CONST_I32) return WASM_LIR_OP_I32_CONST;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CONST_F32) return WASM_LIR_OP_F32_CONST;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_GET) return WASM_LIR_OP_LOCAL_GET;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_SET || semantic_lir_op(core) == SEMANTIC_LIR_OP_STORE)
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_I32) return WASM_LIR_OP_I32_CONST;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_F32) return WASM_LIR_OP_F32_CONST;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET) return WASM_LIR_OP_LOCAL_GET;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_SET || opt_ir_op(core) == SEMANTIC_LIR_OP_STORE)
         return WASM_LIR_OP_LOCAL_SET;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_ADD) return f32 ? WASM_LIR_OP_F32_ADD : WASM_LIR_OP_I32_ADD;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_SUB) return f32 ? WASM_LIR_OP_F32_SUB : WASM_LIR_OP_I32_SUB;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_MUL) return f32 ? WASM_LIR_OP_F32_MUL : WASM_LIR_OP_I32_MUL;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_DIV) return f32 ? WASM_LIR_OP_F32_DIV : WASM_LIR_OP_I32_DIV_S;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_REM) return WASM_LIR_OP_I32_REM_S;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_BIT_AND) return WASM_LIR_OP_I32_AND;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_BIT_OR) return WASM_LIR_OP_I32_OR;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_BIT_XOR) return WASM_LIR_OP_I32_XOR;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_SHIFT_LEFT) return WASM_LIR_OP_I32_SHL;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_SHIFT_RIGHT) return WASM_LIR_OP_I32_SHR_S;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_LOGICAL_AND) return WASM_LIR_OP_I32_AND;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_LOGICAL_OR) return WASM_LIR_OP_I32_OR;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_COMPARE)
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_ADD) return f32 ? WASM_LIR_OP_F32_ADD : WASM_LIR_OP_I32_ADD;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_SUB) return f32 ? WASM_LIR_OP_F32_SUB : WASM_LIR_OP_I32_SUB;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_MUL) return f32 ? WASM_LIR_OP_F32_MUL : WASM_LIR_OP_I32_MUL;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_DIV) return f32 ? WASM_LIR_OP_F32_DIV : WASM_LIR_OP_I32_DIV_S;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_REM) return WASM_LIR_OP_I32_REM_S;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_BIT_AND) return WASM_LIR_OP_I32_AND;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_BIT_OR) return WASM_LIR_OP_I32_OR;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_BIT_XOR) return WASM_LIR_OP_I32_XOR;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_SHIFT_LEFT) return WASM_LIR_OP_I32_SHL;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_SHIFT_RIGHT) return WASM_LIR_OP_I32_SHR_S;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOGICAL_AND) return WASM_LIR_OP_I32_AND;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOGICAL_OR) return WASM_LIR_OP_I32_OR;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_COMPARE)
         return wasm_compare_opcode(operands.c, core.type_id);
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_LOGICAL_NOT) return WASM_LIR_OP_I32_EQZ;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_NEGATE && f32) return WASM_LIR_OP_F32_NEG;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL) return WASM_LIR_OP_CALL;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_HOST) return WASM_LIR_OP_CALL_HOST;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL) return WASM_LIR_OP_CALL_SYMBOL;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_BLOCK_BEGIN) return WASM_LIR_OP_BLOCK;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_LOOP_BEGIN) return WASM_LIR_OP_LOOP;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_IF_BEGIN) return WASM_LIR_OP_IF;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_ELSE) return WASM_LIR_OP_ELSE;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CONTROL_END) return WASM_LIR_OP_END;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_BRANCH) return WASM_LIR_OP_BRANCH;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF) return WASM_LIR_OP_BRANCH_IF;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_RETURN) return WASM_LIR_OP_RETURN;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_DROP) return WASM_LIR_OP_DROP;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOGICAL_NOT) return WASM_LIR_OP_I32_EQZ;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_NEGATE && f32) return WASM_LIR_OP_F32_NEG;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL) return WASM_LIR_OP_CALL;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_HOST) return WASM_LIR_OP_CALL_HOST;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL) return WASM_LIR_OP_CALL_SYMBOL;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_BLOCK_BEGIN) return WASM_LIR_OP_BLOCK;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOOP_BEGIN) return WASM_LIR_OP_LOOP;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_IF_BEGIN) return WASM_LIR_OP_IF;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_ELSE) return WASM_LIR_OP_ELSE;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONTROL_END) return WASM_LIR_OP_END;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_BRANCH) return WASM_LIR_OP_BRANCH;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF) return WASM_LIR_OP_BRANCH_IF;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_RETURN) return WASM_LIR_OP_RETURN;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_DROP) return WASM_LIR_OP_DROP;
     return WASM_LIR_OP_UNREACHABLE;
 }
 
-bool wasm_lir_supported(SemanticLirCore core)
+bool wasm_lir_supported(OptIrNodeCore core)
 {
-    uint op = semantic_lir_op(core);
+    uint op = opt_ir_op(core);
     return op == SEMANTIC_LIR_OP_CONST_I32 || op == SEMANTIC_LIR_OP_CONST_F32 ||
         op == SEMANTIC_LIR_OP_CONST_STRING ||
         op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_VALUE_SET ||

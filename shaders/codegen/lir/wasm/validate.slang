@@ -1,11 +1,13 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 import gpu_index;
 
 struct Params { uint semantic_capacity; uint target_capacity; uint target_start; uint page_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<WasmLirInstruction> target_lir_core;
-StructuredBuffer<uint> semantic_owner_by_instruction;
+StructuredBuffer<uint> opt_ir_source_hir;
+StructuredBuffer<uint> opt_ir_semantic_row;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -28,7 +30,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     WasmLirInstruction target = target_lir_core[page_row];
     if ((target.flags & TARGET_LIR_FLAG_UNSUPPORTED) == 0u) return;
     uint hir = target.semantic_instruction < gParams.semantic_capacity
-        ? semantic_owner_by_instruction[target.semantic_instruction] : 0xffffffffu;
+        ? opt_ir_source_hir[target.semantic_instruction] : 0xffffffffu;
     InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
     InterlockedMin(lowering_status[0u].first_unsupported_hir, hir);
+    InterlockedMin(lowering_status[0u].first_unsupported_semantic_row,
+        target.semantic_instruction < gParams.semantic_capacity
+            ? opt_ir_semantic_row[target.semantic_instruction] : 0xffffffffu);
+    InterlockedMin(lowering_status[0u].first_unsupported_opt_row,
+        target.semantic_instruction);
 }

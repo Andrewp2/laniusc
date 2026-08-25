@@ -1,8 +1,8 @@
-use crate::gpu::timer::MINIMUM_TIME_TO_NOT_ELIDE_MS;
+use crate::gpu::timer::{GpuTimestampSample, MINIMUM_TIME_TO_NOT_ELIDE_MS};
 
 /// Prints and records GPU timing spans for combined lexer/compile submissions.
 pub(crate) fn print_timer_trace(
-    stamps: &[(String, u64)],
+    stamps: &[GpuTimestampSample],
     period_ns: f32,
     gpu_anchor: std::time::Instant,
 ) {
@@ -15,9 +15,11 @@ pub(crate) fn print_timer_trace(
         .unwrap_or(MINIMUM_TIME_TO_NOT_ELIDE_MS);
     let print_enabled = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
         || crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false);
-    let mut last = stamps[0].1;
+    let mut last = stamps[0].ticks;
     let mut total = 0.0f64;
-    for (label, value) in stamps.iter().skip(1) {
+    for sample in stamps.iter().skip(1) {
+        let label = &sample.label;
+        let value = sample.ticks;
         let dt_ms = value.saturating_sub(last) as f64 * period_ns as f64 / 1_000_000.0;
         let start_ms = total;
         total += dt_ms;
@@ -43,9 +45,16 @@ pub(crate) fn print_timer_trace(
             } else {
                 "gpu.frontend"
             };
-            crate::gpu::trace::record_gpu_span(lane, label, gpu_anchor, start_ms, dt_ms);
+            crate::gpu::trace::record_gpu_span(
+                lane,
+                label,
+                sample.phase,
+                gpu_anchor,
+                start_ms,
+                dt_ms,
+            );
         }
-        last = *value;
+        last = value;
     }
 }
 

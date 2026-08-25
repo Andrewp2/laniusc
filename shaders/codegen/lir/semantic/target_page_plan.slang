@@ -10,7 +10,7 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> semantic_lir_total;
+StructuredBuffer<uint> opt_ir_total;
 StructuredBuffer<uint> target_lir_offset;
 StructuredBuffer<uint> target_lir_total;
 RWStructuredBuffer<TargetSemanticPage> target_semantic_pages;
@@ -37,7 +37,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint page_id = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     if (page_id >= gParams.page_count) return;
 
-    uint semantic_count = min(gParams.semantic_capacity, semantic_lir_total[0u]);
+    uint semantic_count = min(gParams.semantic_capacity, opt_ir_total[0u]);
     uint target_total = min(gParams.target_capacity, target_lir_total[0u]);
     uint target_start = page_id * gParams.page_rows;
     uint target_count = target_start < target_total

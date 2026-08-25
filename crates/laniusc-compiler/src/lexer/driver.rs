@@ -230,7 +230,12 @@ impl GpuLexer {
         let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
 
         let mut maybe_timer = if timers_on {
-            Some(GpuTimer::new(&self.device, &self.queue, 128))
+            Some(GpuTimer::new(
+                &self.device,
+                &self.queue,
+                crate::gpu::timer::COMPILE_QUERY_CAPACITY,
+                crate::gpu::timer::GpuCompilerPhase::Lexing,
+            ))
         } else {
             None
         };
@@ -352,9 +357,11 @@ impl GpuLexer {
                 && !vals.is_empty()
             {
                 let period_ns = timer.period_ns() as f64;
-                let t0 = vals[0].1;
+                let t0 = vals[0].ticks;
                 let mut prev = t0;
-                for (label, t) in vals {
+                for sample in vals {
+                    let label = sample.label;
+                    let t = sample.ticks;
                     let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
                     let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
                     if dt_ms < MINIMUM_TIME_TO_NOT_ELIDE_MS {
@@ -419,9 +426,11 @@ impl GpuLexer {
             && !vals.is_empty()
         {
             let period_ns = timer.period_ns() as f64;
-            let t0 = vals[0].1;
+            let t0 = vals[0].ticks;
             let mut prev = t0;
-            for (label, t) in vals {
+            for sample in vals {
+                let label = sample.label;
+                let t = sample.ticks;
                 let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
                 let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
                 if dt_ms < MINIMUM_TIME_TO_NOT_ELIDE_MS {
@@ -713,7 +722,12 @@ impl GpuLexer {
             });
         let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
-            Some(GpuTimer::new(&self.device, &self.queue, 512))
+            Some(GpuTimer::new(
+                &self.device,
+                &self.queue,
+                crate::gpu::timer::COMPILE_QUERY_CAPACITY,
+                crate::gpu::timer::GpuCompilerPhase::Lexing,
+            ))
         } else {
             None
         };
@@ -896,7 +910,12 @@ impl GpuLexer {
         let mut host_timer = HostCompileTimer::new();
         let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut lex_timer = if timers_on {
-            Some(GpuTimer::new(&self.device, &self.queue, 128))
+            Some(GpuTimer::new(
+                &self.device,
+                &self.queue,
+                crate::gpu::timer::COMPILE_QUERY_CAPACITY,
+                crate::gpu::timer::GpuCompilerPhase::Lexing,
+            ))
         } else {
             None
         };
@@ -991,7 +1010,12 @@ impl GpuLexer {
                     label: Some("compile-source-pack-after-token-count-enc"),
                 });
         let mut maybe_timer = if timers_on {
-            Some(GpuTimer::new(&self.device, &self.queue, 512))
+            Some(GpuTimer::new(
+                &self.device,
+                &self.queue,
+                crate::gpu::timer::COMPILE_QUERY_CAPACITY,
+                crate::gpu::timer::GpuCompilerPhase::Lexing,
+            ))
         } else {
             None
         };
@@ -1103,7 +1127,12 @@ impl GpuLexer {
             });
         let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
-            Some(GpuTimer::new(&self.device, &self.queue, 512))
+            Some(GpuTimer::new(
+                &self.device,
+                &self.queue,
+                crate::gpu::timer::COMPILE_QUERY_CAPACITY,
+                crate::gpu::timer::GpuCompilerPhase::Lexing,
+            ))
         } else {
             None
         };
@@ -1286,7 +1315,12 @@ impl GpuLexer {
                 });
         let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
-            Some(GpuTimer::new(&self.device, &self.queue, 512))
+            Some(GpuTimer::new(
+                &self.device,
+                &self.queue,
+                crate::gpu::timer::COMPILE_QUERY_CAPACITY,
+                crate::gpu::timer::GpuCompilerPhase::Lexing,
+            ))
         } else {
             None
         };
@@ -1468,7 +1502,12 @@ impl GpuLexer {
                 });
         let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
-            Some(GpuTimer::new(&self.device, &self.queue, 512))
+            Some(GpuTimer::new(
+                &self.device,
+                &self.queue,
+                crate::gpu::timer::COMPILE_QUERY_CAPACITY,
+                crate::gpu::timer::GpuCompilerPhase::Lexing,
+            ))
         } else {
             None
         };
@@ -1634,7 +1673,12 @@ impl GpuLexer {
                 });
         let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut maybe_timer = if timers_on {
-            Some(GpuTimer::new(&self.device, &self.queue, 512))
+            Some(GpuTimer::new(
+                &self.device,
+                &self.queue,
+                crate::gpu::timer::COMPILE_QUERY_CAPACITY,
+                crate::gpu::timer::GpuCompilerPhase::Lexing,
+            ))
         } else {
             None
         };

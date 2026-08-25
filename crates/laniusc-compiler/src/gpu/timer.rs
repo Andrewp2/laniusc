@@ -1,10 +1,70 @@
 //! Simple per-encode GPU timestamp helper. Not thread-safe; create per "frame"/encode.
 
+use std::sync::{
+    Arc,
+    Mutex,
+    atomic::{AtomicU64, Ordering},
+};
+
 use log::warn;
 use wgpu;
 
+static OPERATION_CAPTURE_SCOPE_COUNT: AtomicU64 = AtomicU64::new(0);
+static OPERATION_TIMESTAMP_COUNT: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    static ACTIVE_OPERATION_TIMER: std::cell::RefCell<Vec<Arc<Mutex<GpuTimerRecordingState>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Stable compiler phase attached to every measured GPU interval.
+///
+/// There is deliberately no `Unknown` or `Orchestration` variant: executing
+/// GPU work without a compiler phase is an instrumentation contract error.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GpuCompilerPhase {
+    Lexing,
+    Parsing,
+    HirConstruction,
+    TypeChecking,
+    SemanticInterface,
+    Optimization,
+    Lowering,
+    X86Emission,
+    WasmEmission,
+    ArtifactEmission,
+}
+
+impl GpuCompilerPhase {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Lexing => "lexing",
+            Self::Parsing => "parsing",
+            Self::HirConstruction => "hir_construction",
+            Self::TypeChecking => "type_checking",
+            Self::SemanticInterface => "semantic_interface",
+            Self::Optimization => "optimization",
+            Self::Lowering => "lowering",
+            Self::X86Emission => "x86_emission",
+            Self::WasmEmission => "wasm_emission",
+            Self::ArtifactEmission => "artifact_emission",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct GpuTimestampSample {
+    pub label: String,
+    pub phase: GpuCompilerPhase,
+    pub ticks: u64,
+}
+
 /// Default minimum span duration printed by timing helpers.
 pub const MINIMUM_TIME_TO_NOT_ELIDE_MS: f64 = 0.2;
+
+/// Query capacity for one fully attributed compiler job. Exhaustion is a hard
+/// profiling error so captures can never silently omit kernel events.
+pub const COMPILE_QUERY_CAPACITY: u32 = 4_096;
 
 /// Returns whether compile GPU timestamps are needed for console output or tracing.
 pub(crate) fn compile_timing_requested() -> bool {
@@ -16,18 +76,54 @@ pub(crate) fn compile_timing_requested() -> bool {
 /// A timer for measuring GPU execution time.
 pub struct GpuTimer {
     period_in_nanoseconds: f32,
-    query_set: wgpu::QuerySet,
     resolve_buffer: wgpu::Buffer,
     readback_buffer: wgpu::Buffer,
+    recording: Arc<Mutex<GpuTimerRecordingState>>,
+}
+
+struct GpuTimerRecordingState {
+    query_set: wgpu::QuerySet,
     next: u32,
     capacity: u32,
-    /// Labels recorded for each timestamp query.
-    pub stamp_labels: Vec<String>,
+    phase: GpuCompilerPhase,
+    timestamps_inside_passes: bool,
+    operation_capture_enabled: bool,
+    stamp_metadata: Vec<(String, GpuCompilerPhase)>,
+}
+
+/// Installs one timer at the generic GPU-operation recording boundary.
+///
+/// The guard owns a reference-counted recording handle rather than borrowing
+/// the timer, so compiler phases may continue to change phase metadata while
+/// the scope is active. Nested phase helpers may reuse the same timer, while a
+/// second timer is rejected so one command stream has one timing owner.
+pub struct GpuOperationCaptureGuard {
+    recording: Arc<Mutex<GpuTimerRecordingState>>,
+}
+
+impl Drop for GpuOperationCaptureGuard {
+    fn drop(&mut self) {
+        ACTIVE_OPERATION_TIMER.with(|active| {
+            let popped = active
+                .borrow_mut()
+                .pop()
+                .expect("GPU operation timing scope stack underflow");
+            assert!(
+                Arc::ptr_eq(&popped, &self.recording),
+                "GPU operation timing scopes must be dropped in stack order"
+            );
+        });
+    }
 }
 
 impl GpuTimer {
     /// Creates a new GpuTimer with the given maximum number of queries.
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, max_queries: u32) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        max_queries: u32,
+        phase: GpuCompilerPhase,
+    ) -> Self {
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("LaniusTimestamps"),
             ty: wgpu::QueryType::Timestamp,
@@ -50,41 +146,102 @@ impl GpuTimer {
 
         Self {
             period_in_nanoseconds: queue.get_timestamp_period(),
-            query_set,
             resolve_buffer,
             readback_buffer,
-            next: 0,
-            capacity: max_queries,
-            stamp_labels: vec![],
+            recording: Arc::new(Mutex::new(GpuTimerRecordingState {
+                query_set,
+                next: 0,
+                capacity: max_queries,
+                phase,
+                timestamps_inside_passes: device
+                    .features()
+                    .contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES),
+                operation_capture_enabled: false,
+                stamp_metadata: vec![],
+            })),
         }
+    }
+
+    /// Makes every generic compute operation emit its own timestamp until the
+    /// returned scope guard is dropped.
+    pub fn capture_operations(&self) -> GpuOperationCaptureGuard {
+        OPERATION_CAPTURE_SCOPE_COUNT.fetch_add(1, Ordering::Relaxed);
+        self.recording
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .operation_capture_enabled = true;
+        ACTIVE_OPERATION_TIMER.with(|active| {
+            let mut active = active.borrow_mut();
+            if let Some(current) = active.last() {
+                assert!(
+                    Arc::ptr_eq(current, &self.recording),
+                    "nested GPU operation timing scopes must use the same timer"
+                );
+            }
+            active.push(self.recording.clone());
+        });
+        GpuOperationCaptureGuard {
+            recording: self.recording.clone(),
+        }
+    }
+
+    /// Changes the phase inherited by subsequent timestamp stamps.
+    pub fn set_phase(&mut self, phase: GpuCompilerPhase) {
+        self.recording
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .phase = phase;
     }
 
     /// Records a timestamp with the given label.
     pub fn stamp(&mut self, enc: &mut wgpu::CommandEncoder, label: impl Into<String>) -> u32 {
-        // If we've filled the query set, ignore extra stamps gracefully.
-        if self.next >= self.capacity {
-            return self.capacity.saturating_sub(1);
+        let label = label.into();
+        // Once this timer has adopted operation-level capture, hand-written
+        // milestones must never become synthetic GPU intervals between
+        // kernels. Submission boundaries remain as timeline anchors.
+        let captured_automatically = self
+            .recording
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .operation_capture_enabled;
+        if captured_automatically && !is_submission_boundary(&label) {
+            return self
+                .recording
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .next
+                .saturating_sub(1);
         }
-        let index = self.next;
-        self.next += 1;
-        self.stamp_labels.push(label.into());
-        enc.write_timestamp(&self.query_set, index);
-        index
+        stamp_recording(&self.recording, enc, label)
     }
 
     /// Resets the timer.
     pub fn reset(&mut self) {
-        self.stamp_labels.clear();
-        self.next = 0;
+        let mut recording = self
+            .recording
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        recording.stamp_metadata.clear();
+        recording.next = 0;
+        recording.operation_capture_enabled = false;
     }
 
     /// Resolves the timestamp queries.
     pub fn resolve(&self, encoder: &mut wgpu::CommandEncoder) {
-        let query_count = self.next.min(self.capacity);
+        let recording = self
+            .recording
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let query_count = recording.next;
         if query_count == 0 {
             return;
         }
-        encoder.resolve_query_set(&self.query_set, 0..query_count, &self.resolve_buffer, 0);
+        encoder.resolve_query_set(
+            &recording.query_set,
+            0..query_count,
+            &self.resolve_buffer,
+            0,
+        );
         encoder.copy_buffer_to_buffer(
             &self.resolve_buffer,
             0,
@@ -95,8 +252,12 @@ impl GpuTimer {
     }
 
     /// Attempts to read the recorded timestamps.
-    pub fn try_read(&self, device: &wgpu::Device) -> Option<Vec<(String, u64)>> {
-        let query_count = self.next.min(self.capacity);
+    pub fn try_read(&self, device: &wgpu::Device) -> Option<Vec<GpuTimestampSample>> {
+        let recording = self
+            .recording
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let query_count = recording.next;
         if query_count == 0 {
             return None;
         }
@@ -128,7 +289,12 @@ impl GpuTimer {
 
             let mut out = Vec::with_capacity(query_count as usize);
             for (i, val) in vals.iter().enumerate() {
-                out.push((self.stamp_labels[i].clone(), *val));
+                let (label, phase) = &recording.stamp_metadata[i];
+                out.push(GpuTimestampSample {
+                    label: label.clone(),
+                    phase: *phase,
+                    ticks: *val,
+                });
             }
             Some(out)
         } else {
@@ -140,4 +306,104 @@ impl GpuTimer {
     pub fn period_ns(&self) -> f32 {
         self.period_in_nanoseconds
     }
+}
+
+/// Returns whether generic compute recording is currently being timed.
+pub(crate) fn operation_capture_active() -> bool {
+    ACTIVE_OPERATION_TIMER.with(|active| !active.borrow().is_empty())
+}
+
+/// Returns whether the active timer can write timestamps between dispatches
+/// without ending the surrounding WGPU compute pass.
+pub(crate) fn operation_capture_supports_in_pass_timestamps() -> bool {
+    ACTIVE_OPERATION_TIMER.with(|active| {
+        active.borrow().last().is_some_and(|recording| {
+            recording
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .timestamps_inside_passes
+        })
+    })
+}
+
+/// Returns whether profiling must retain the split-pass fallback because the
+/// adapter cannot timestamp inside a compute pass.
+pub(crate) fn operation_capture_requires_split_passes() -> bool {
+    operation_capture_active() && !operation_capture_supports_in_pass_timestamps()
+}
+
+/// Process-wide count used to enforce complete profiled-job coverage.
+pub(crate) fn operation_capture_scope_count() -> u64 {
+    OPERATION_CAPTURE_SCOPE_COUNT.load(Ordering::Relaxed)
+}
+
+/// Process-wide count of dispatch-boundary timestamps.
+pub(crate) fn operation_timestamp_count() -> u64 {
+    OPERATION_TIMESTAMP_COUNT.load(Ordering::Relaxed)
+}
+
+/// Records the completion timestamp for one generic GPU operation.
+pub(crate) fn stamp_active_operation(encoder: &mut wgpu::CommandEncoder, label: impl Into<String>) {
+    ACTIVE_OPERATION_TIMER.with(|active| {
+        let recording = active.borrow().last().cloned();
+        if let Some(recording) = recording {
+            stamp_recording(&recording, encoder, label.into());
+            OPERATION_TIMESTAMP_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+}
+
+/// Records one kernel completion while its batched compute pass remains open.
+pub(crate) fn stamp_active_operation_in_pass(
+    pass: &mut wgpu::ComputePass<'_>,
+    label: impl Into<String>,
+) {
+    ACTIVE_OPERATION_TIMER.with(|active| {
+        let recording = active.borrow().last().cloned();
+        if let Some(recording) = recording {
+            assert!(
+                recording
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .timestamps_inside_passes,
+                "batched GPU operation timing requires TIMESTAMP_QUERY_INSIDE_PASSES"
+            );
+            let (query_set, index) = reserve_timestamp(&recording, label.into());
+            pass.write_timestamp(&query_set, index);
+            OPERATION_TIMESTAMP_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+}
+
+fn stamp_recording(
+    recording: &Arc<Mutex<GpuTimerRecordingState>>,
+    encoder: &mut wgpu::CommandEncoder,
+    label: String,
+) -> u32 {
+    let (query_set, index) = reserve_timestamp(recording, label);
+    encoder.write_timestamp(&query_set, index);
+    index
+}
+
+fn reserve_timestamp(
+    recording: &Arc<Mutex<GpuTimerRecordingState>>,
+    label: String,
+) -> (wgpu::QuerySet, u32) {
+    let mut recording = recording
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    assert!(
+        recording.next < recording.capacity,
+        "GPU operation timing query capacity {} exhausted while recording `{label}`; increase the timer capacity instead of silently dropping GPU events",
+        recording.capacity,
+    );
+    let index = recording.next;
+    recording.next += 1;
+    let phase = recording.phase;
+    recording.stamp_metadata.push((label, phase));
+    (recording.query_set.clone(), index)
+}
+
+fn is_submission_boundary(label: &str) -> bool {
+    label.ends_with(".submission.begin")
 }

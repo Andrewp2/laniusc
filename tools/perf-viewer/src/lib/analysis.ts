@@ -14,7 +14,7 @@ export function analysisHighlights(measurement: Measurement | undefined): Analys
   const gpuTimeByPhase = new Map<string, number>();
   for (const event of measurement.profile?.timeline ?? []) {
     if (event.execution_domain !== 'gpu_execution' || !Number.isFinite(event.duration_ms)) continue;
-    const phase = event.phase === 'orchestration' ? 'unattributed_gpu' : event.phase;
+    const phase = event.phase;
     gpuTimeByPhase.set(phase, (gpuTimeByPhase.get(phase) ?? 0) + event.duration_ms);
   }
   const busiest = [...gpuTimeByPhase.entries()].sort((left, right) => right[1] - left[1])[0];

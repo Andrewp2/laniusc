@@ -525,6 +525,7 @@ class TimelineClassificationTests(unittest.TestCase):
             "semantic-interface artifact": "semantic_interface",
             "semantic_interface.done": "semantic_interface",
             "semantic_interface.type.direct_hir_by_decl": "semantic_interface",
+            "optimization.ssa_values.done": "optimization",
             "codegen.x86.link.page": "x86_emission",
             "codegen.x86.lowering.done": "x86_emission",
             "codegen.x86.emission.done": "x86_emission",
@@ -548,6 +549,44 @@ class TimelineClassificationTests(unittest.TestCase):
         self.assertEqual(event["phase"], "orchestration")
         self.assertEqual(event["execution_domain"], "host_orchestration")
         self.assertEqual(event["lane"], "host.lexer")
+
+    def test_gpu_phase_metadata_is_authoritative(self):
+        event = {
+            "name": "opaque-pass-label",
+            "category": "gpu",
+            "lane": "gpu.frontend",
+            "compiler_phase": "optimization",
+        }
+        annotate_timeline_event(event, require_gpu_phase=True)
+        self.assertEqual(event["phase"], "optimization")
+
+    def test_new_gpu_trace_rejects_missing_phase_metadata(self):
+        event = {
+            "name": "parser.hir_nodes",
+            "category": "gpu",
+            "lane": "gpu.frontend",
+        }
+        with self.assertRaisesRegex(RuntimeError, "no mandatory compiler_phase"):
+            annotate_timeline_event(event, require_gpu_phase=True)
+
+    def test_gpu_trace_rejects_invalid_phase_metadata(self):
+        event = {
+            "name": "opaque-pass-label",
+            "category": "gpu",
+            "lane": "gpu.frontend",
+            "compiler_phase": "unknown",
+        }
+        with self.assertRaisesRegex(RuntimeError, "invalid compiler phase"):
+            annotate_timeline_event(event, require_gpu_phase=True)
+
+    def test_historical_gpu_endpoint_receives_a_real_phase(self):
+        event = {
+            "name": "compile.source_pack.recorded",
+            "category": "gpu",
+            "lane": "gpu.frontend",
+        }
+        annotate_timeline_event(event)
+        self.assertEqual(event["phase"], "artifact_emission")
 
 
 if __name__ == "__main__":

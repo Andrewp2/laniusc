@@ -4,13 +4,13 @@ export const SERIES = ['var(--cyan)', 'var(--violet)', 'var(--green)', 'var(--or
 
 export const COMPILER_PHASES = [
   ['orchestration', 'Job setup / coordination'],
-  ['unattributed_gpu', 'Unattributed GPU work'],
   ['lexing', 'Lexing'],
   ['parsing', 'Parsing'],
   ['hir_construction', 'HIR construction'],
   ['type_checking', 'Type checking'],
   ['semantic_interface', 'Semantic interface'],
   ['lowering', 'Lowering'],
+  ['optimization', 'Optimization'],
   ['x86_emission', 'x86-64 emission'],
   ['wasm_emission', 'Wasm emission'],
   ['artifact_emission', 'Artifact emission'],

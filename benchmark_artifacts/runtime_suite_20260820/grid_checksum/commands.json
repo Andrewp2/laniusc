@@ -1,0 +1,176 @@
+{
+  "commands": {
+    "c": {
+      "debug": {
+        "compile": [
+          "gcc",
+          "-O0",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.c",
+          "-o",
+          "target/runtime-comparison/grid_checksum/c-debug"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/c-debug"
+        ]
+      },
+      "o2": {
+        "compile": [
+          "gcc",
+          "-O2",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.c",
+          "-o",
+          "target/runtime-comparison/grid_checksum/c-o2"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/c-o2"
+        ]
+      },
+      "optimized": {
+        "compile": [
+          "gcc",
+          "-O3",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.c",
+          "-o",
+          "target/runtime-comparison/grid_checksum/c-optimized"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/c-optimized"
+        ]
+      }
+    },
+    "cpp": {
+      "debug": {
+        "compile": [
+          "g++",
+          "-O0",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.cpp",
+          "-o",
+          "target/runtime-comparison/grid_checksum/cpp-debug"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/cpp-debug"
+        ]
+      },
+      "optimized": {
+        "compile": [
+          "g++",
+          "-O3",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.cpp",
+          "-o",
+          "target/runtime-comparison/grid_checksum/cpp-optimized"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/cpp-optimized"
+        ]
+      }
+    },
+    "lanius": {
+      "default": {
+        "compile": [
+          "target/release/laniusc",
+          "--stdlib-root",
+          "stdlib",
+          "--emit",
+          "x86_64",
+          "-o",
+          "target/runtime-comparison/grid_checksum/lanius-default",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.lani"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/lanius-default"
+        ]
+      }
+    },
+    "rust": {
+      "debug": {
+        "compile": [
+          "rustc",
+          "-C",
+          "opt-level=0",
+          "-C",
+          "overflow-checks=yes",
+          "-C",
+          "debuginfo=0",
+          "-C",
+          "strip=debuginfo",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.rs",
+          "-o",
+          "target/runtime-comparison/grid_checksum/rust-debug"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/rust-debug"
+        ]
+      },
+      "optimized": {
+        "compile": [
+          "rustc",
+          "-C",
+          "opt-level=3",
+          "-C",
+          "overflow-checks=no",
+          "-C",
+          "debuginfo=0",
+          "-C",
+          "strip=debuginfo",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.rs",
+          "-o",
+          "target/runtime-comparison/grid_checksum/rust-optimized"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/rust-optimized"
+        ]
+      }
+    },
+    "tcc": {
+      "default": {
+        "compile": [
+          "tcc",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.c",
+          "-o",
+          "target/runtime-comparison/grid_checksum/tcc-default"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/tcc-default"
+        ]
+      }
+    },
+    "zig": {
+      "debug": {
+        "compile": [
+          "zig",
+          "build-exe",
+          "-lc",
+          "-O",
+          "Debug",
+          "-fstrip",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.zig",
+          "-femit-bin=target/runtime-comparison/grid_checksum/zig-debug"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/zig-debug"
+        ]
+      },
+      "optimized": {
+        "compile": [
+          "zig",
+          "build-exe",
+          "-lc",
+          "-O",
+          "ReleaseFast",
+          "-fstrip",
+          "benchmark_artifacts/runtime_suite_20260820/grid_checksum/src/grid_checksum.zig",
+          "-femit-bin=target/runtime-comparison/grid_checksum/zig-optimized"
+        ],
+        "run": [
+          "target/runtime-comparison/grid_checksum/zig-optimized"
+        ]
+      }
+    }
+  },
+  "schema": "lanius.runtime-comparison.v2"
+}

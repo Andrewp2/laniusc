@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 import gpu_index;
 
 struct Params
@@ -13,17 +14,20 @@ struct Params
     uint reserved2;
 };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> semantic_lir_total;
-StructuredBuffer<SemanticLirCore> semantic_lir_core;
-StructuredBuffer<SemanticLirOperands> semantic_lir_operands;
+StructuredBuffer<uint> opt_ir_total;
+StructuredBuffer<OptIrNodeCore> opt_ir_core;
+StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
 StructuredBuffer<uint> semantic_schedule_order;
-StructuredBuffer<uint> semantic_owner_by_instruction;
+StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 RWStructuredBuffer<uint> x86_position_by_semantic;
 RWStructuredBuffer<uint> x86_last_use_by_semantic;
 RWStructuredBuffer<uint> x86_function_start;
 RWStructuredBuffer<uint> x86_function_end;
+RWStructuredBuffer<X86FunctionRegisterAnalysis>
+    x86_register_analysis_by_function;
 RWStructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
+RWStructuredBuffer<uint> x86_direct_call_count_by_function;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
@@ -33,14 +37,19 @@ static const uint INVALID = 0xffffffffu;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint position = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    uint total = min(gParams.semantic_capacity, semantic_lir_total[0u]);
+    uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
     if (position >= total) return;
     uint row = semantic_schedule_order[position];
     if (row >= total) return;
 
-    SemanticLirCore core = semantic_lir_core[row];
-    SemanticLirOperands operands = semantic_lir_operands[row];
-    uint op = semantic_lir_op(core);
+    OptIrNodeCore core = opt_ir_core[row];
+    OptIrNodeOperands operands = opt_ir_operands[row];
+    uint op = opt_ir_op(core);
+    if (op == SEMANTIC_LIR_OP_CALL && operands.a < gParams.function_capacity)
+    {
+        uint ignored;
+        InterlockedAdd(x86_direct_call_count_by_function[operands.a], 1u, ignored);
+    }
     if (op == SEMANTIC_LIR_OP_VALUE_GET)
     {
         uint declaration = operands.a;
@@ -83,11 +92,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     x86_position_by_semantic[row] = position;
     x86_last_use_by_semantic[row] = position;
-    uint owner = semantic_owner_by_instruction[row];
+    uint owner = opt_ir_source_hir[row];
     if (owner >= gParams.function_capacity) return;
     uint function_id = semantic_function_id_by_hir[owner];
     if (function_id >= gParams.function_capacity) return;
     uint ignored;
     InterlockedMin(x86_function_start[function_id], position, ignored);
     InterlockedMax(x86_function_end[function_id], position + 1u, ignored);
+    if (semantic_lir_is_call(op))
+        InterlockedMin(
+            x86_register_analysis_by_function[function_id].first_call,
+            position + 1u, ignored);
 }

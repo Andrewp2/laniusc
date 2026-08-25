@@ -9,13 +9,13 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    lowering::GpuSemanticLirView,
     lowering_ir::{
         LoweringCapacities,
         X86ObjectDefinitionRow,
         X86ObjectRelocationRow,
         X86ObjectUndefinedRow,
     },
+    optimization::GpuOptIrView,
     scan::{GpuResidentExclusiveScan, GraphScanContract},
     x86::{
         GPU_X86_OBJECT_VERSION,
@@ -96,9 +96,10 @@ impl GpuX86ObjectStage {
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
         capacities: LoweringCapacities,
-        semantic: GpuSemanticLirView<'_>,
+        opt: GpuOptIrView<'_>,
         artifact: GpuX86ArtifactObjectView<'_>,
     ) -> Result<Self> {
+        let metadata = opt.metadata;
         let target_capacity = capacities.target_instructions.max(1);
         let relocation_capacity = capacities.semantic_instructions.max(1);
         let function_capacity = capacities.hir_nodes.max(1);
@@ -218,7 +219,7 @@ impl GpuX86ObjectStage {
         let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
         let mut resources = ResourceMap::new();
         resources.register_graph_bindings(graph, &graph_bindings);
-        semantic.register(graph, &mut resources)?;
+        opt.register(graph, &mut resources)?;
         let context = (graph, allocations);
         let normalize_status = ComputeOperation::direct(
             device,
@@ -243,9 +244,9 @@ impl GpuX86ObjectStage {
             graph,
             workspace,
             allocations,
-            scan_contract("relocation", "lir.semantic.total"),
+            scan_contract("relocation", "lir.opt.total"),
             relocation_capacity,
-            semantic.count,
+            opt.count,
             &relocation_flags,
             &relocation_prefix,
             &relocation_total,
@@ -256,9 +257,9 @@ impl GpuX86ObjectStage {
             graph,
             workspace,
             allocations,
-            scan_contract("symbol", "lir.semantic.total"),
+            scan_contract("symbol", "lir.opt.total"),
             relocation_capacity,
-            semantic.count,
+            opt.count,
             &symbol_flags,
             &symbol_prefix,
             &symbol_total,
@@ -280,7 +281,7 @@ impl GpuX86ObjectStage {
             allocations,
             scan_contract("definition", "lir.semantic.function_total"),
             function_capacity,
-            semantic.function_count,
+            metadata.function_count,
             &definition_flags,
             &definition_prefix,
             &definition_total,

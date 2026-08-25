@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -26,20 +27,80 @@ LANGUAGE_LANES = (
     ("rust", "optimized"),
     ("zig", "debug"),
     ("zig", "optimized"),
-    ("tcc", "current"),
-    ("lanius", "current"),
+    ("tcc", "default"),
+    ("lanius", "default"),
 )
-SCHEMA = "lanius.runtime-comparison.v1"
+SCHEMA = "lanius.runtime-comparison.v2"
+SUITE_SCHEMA = "lanius.runtime-suite.v1"
+
+
+@dataclass(frozen=True)
+class Workload:
+    name: str
+    description: str
+    default_iterations: int
+    operations_per_iteration: int
+
+    def expected_stdout(self, iterations: int) -> str:
+        result = {
+            "integer_mix": integer_mix,
+            "grid_checksum": grid_checksum,
+            "array_walk": array_walk,
+        }[self.name](iterations, 1)
+        return f"{result}\n"
+
+    def sources(self, iterations: int) -> dict[str, str]:
+        return {
+            "integer_mix": integer_mix_sources,
+            "grid_checksum": grid_checksum_sources,
+            "array_walk": array_walk_sources,
+        }[self.name](iterations)
+
+
+WORKLOADS = {
+    workload.name: workload
+    for workload in (
+        Workload(
+            "integer_mix",
+            "scalar integer arithmetic with data-dependent branches",
+            25_000_000,
+            1,
+        ),
+        Workload(
+            "grid_checksum",
+            "nested loops and repeated helper calls over a two-dimensional domain",
+            32_000,
+            251,
+        ),
+        Workload(
+            "array_walk",
+            "indexed stack-array mutation and reduction over a 64-element working set",
+            100_000,
+            64,
+        ),
+    )
+}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--workload",
+        choices=[*WORKLOADS, "all"],
+        default="integer_mix",
+        help="runtime workload to materialize or measure",
+    )
+    parser.add_argument(
         "--out",
-        default="benchmark_artifacts/runtime_integer_mix",
+        default=None,
         help="checked artifact directory",
     )
-    parser.add_argument("--iterations", type=int, default=25_000_000)
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=None,
+        help="override the selected workload's outer iteration count",
+    )
     parser.add_argument("--warmups", type=int, default=3)
     parser.add_argument("--samples", type=int, default=20)
     parser.add_argument("--order-seed", type=int, default=0x52554E)
@@ -49,16 +110,66 @@ def main() -> int:
         help="compile and measure rather than only regenerating sources/config",
     )
     args = parser.parse_args()
-    if args.iterations <= 0 or args.iterations > 100_000_000:
+    if args.iterations is not None and not 0 < args.iterations <= 100_000_000:
         parser.error("--iterations must be in 1..=100000000")
+    if args.workload == "all" and args.iterations is not None:
+        parser.error("--iterations may only be used with one workload")
     if args.warmups < 0 or args.samples <= 0:
         parser.error("--warmups must be nonnegative and --samples must be positive")
 
     repo = Path(__file__).resolve().parents[1]
-    out = resolve(repo, args.out)
+    default_out = (
+        "benchmark_artifacts/runtime_suite"
+        if args.workload == "all"
+        else f"benchmark_artifacts/runtime_{args.workload}"
+    )
+    out = resolve(repo, args.out or default_out)
+    selected = list(WORKLOADS.values()) if args.workload == "all" else [WORKLOADS[args.workload]]
+    suite_rows = []
+    suite_summary = []
+    for workload in selected:
+        workload_out = out / workload.name if args.workload == "all" else out
+        iterations = args.iterations or workload.default_iterations
+        rows = run_workload(repo, workload_out, workload, iterations, args)
+        suite_summary.extend({"workload": workload.name, **row} for row in rows)
+        suite_rows.append(
+            {
+                "workload": workload.name,
+                "description": workload.description,
+                "artifact_path": str(workload_out.relative_to(out)),
+                "iterations": iterations,
+                "operation_count": iterations * workload.operations_per_iteration,
+            }
+        )
+    if args.workload == "all":
+        write_json(
+            out / "suite.json",
+            {
+                "schema": SUITE_SCHEMA,
+                "runtime_schema": SCHEMA,
+                "generator_sha256": sha256_file(Path(__file__).resolve()),
+                "measured": args.measure,
+                "workloads": suite_rows,
+            },
+        )
+        write_json(
+            out / "summary.json",
+            {"schema": SUITE_SCHEMA, "rows": suite_summary},
+        )
+        write_suite_tsv(out / "results.tsv", suite_summary)
+    return 0
+
+
+def run_workload(
+    repo: Path,
+    out: Path,
+    workload: Workload,
+    iterations: int,
+    args: argparse.Namespace,
+) -> list[dict[str, object]]:
     src_dir = out / "src"
     output_dir = out / "outputs"
-    bin_dir = repo / "target" / "runtime-comparison" / "integer_mix"
+    bin_dir = repo / "target" / "runtime-comparison" / workload.name
     src_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -68,16 +179,18 @@ def main() -> int:
 
     # Every executable sees exactly one process argument (argv[0]). Making the
     # trip count depend on argc prevents whole-program constant evaluation.
-    expected = integer_mix(args.iterations + 1, 1)
-    expected_stdout = f"{expected}\n"
-    for language, source in sources(args.iterations).items():
-        (src_dir / source_name(language)).write_text(source)
+    expected_stdout = workload.expected_stdout(iterations)
+    for language, source in workload.sources(iterations).items():
+        (src_dir / source_name(workload.name, language)).write_text(source)
 
-    commands = command_map(repo, out, bin_dir)
+    commands = command_map(repo, out, bin_dir, workload.name)
     config = {
         "schema": SCHEMA,
-        "workload": "integer_mix",
-        "base_iterations": args.iterations,
+        "workload": workload.name,
+        "description": workload.description,
+        "base_iterations": iterations,
+        "operations_per_iteration": workload.operations_per_iteration,
+        "operation_count": iterations * workload.operations_per_iteration,
         "runtime_input": "argc; measured commands pass no extra arguments, so argc=1",
         "expected_stdout": expected_stdout,
         "warmups_per_language": args.warmups,
@@ -88,7 +201,7 @@ def main() -> int:
             "debug": "C/C++ -O0; Rust opt-level=0 with overflow checks; Zig Debug",
             "optimized": "C/C++ -O3; Rust opt-level=3; Zig ReleaseFast",
             "o2": "GCC -O2 with debug information disabled",
-            "current": "current compiler defaults for Lanius and TCC",
+            "default": "compiler defaults for Lanius and TCC",
         },
         "validation_policy": "every warmup and measured execution must exit zero and match expected stdout",
         "generator_sha256": sha256_file(Path(__file__).resolve()),
@@ -102,7 +215,7 @@ def main() -> int:
         write_json(out / "summary.json", {"schema": SCHEMA, "rows": []})
         write_tsv(out / "results.tsv", [])
         write_json(out / "manifest.json", manifest(out))
-        return 0
+        return []
 
     ensure_tools(commands)
     for language, lane in LANGUAGE_LANES:
@@ -153,12 +266,12 @@ def main() -> int:
     write_json(out / "summary.json", {"schema": SCHEMA, "rows": rows})
     write_tsv(out / "results.tsv", rows)
     write_json(out / "manifest.json", manifest(out))
-    return 0
+    return rows
 
 
 def integer_mix(iterations: int, salt: int) -> int:
     total = 0
-    for index in range(iterations):
+    for index in range(iterations + salt):
         lane = (index + salt) % 1021
         if lane % 4 < 2:
             total += lane
@@ -171,7 +284,7 @@ def integer_mix(iterations: int, salt: int) -> int:
     return total
 
 
-def sources(base_iterations: int) -> dict[str, str]:
+def integer_mix_sources(base_iterations: int) -> dict[str, str]:
     c = f"""#include <stdio.h>
 
 static int integer_mix(int iterations, int salt) {{
@@ -262,55 +375,302 @@ fn main() -> i32 {{
     return {"c": c, "cpp": cpp, "rust": rust, "zig": zig, "lanius": lanius}
 
 
-def source_name(language: str) -> str:
+def grid_checksum(rows: int, salt: int) -> int:
+    total = 0
+    for y in range(rows + salt):
+        for x in range(251):
+            distance = x - y if x > y else y - x
+            mixed = (x * 17 + y * 31 + salt * 13) % 97
+            total += distance + mixed
+            if total > 100_000:
+                total -= 200_001
+            if total < -100_000:
+                total += 200_001
+    return total
+
+
+def grid_checksum_sources(base_rows: int) -> dict[str, str]:
+    c = f"""#include <stdio.h>
+
+static int cell_score(int x, int y, int salt) {{
+    int distance = x > y ? x - y : y - x;
+    int mixed = (x * 17 + y * 31 + salt * 13) % 97;
+    return distance + mixed;
+}}
+
+static int grid_checksum(int rows, int salt) {{
+    int total = 0;
+    for (int y = 0; y < rows; ++y) {{
+        for (int x = 0; x < 251; ++x) {{
+            total += cell_score(x, y, salt);
+            if (total > 100000) total -= 200001;
+            if (total < -100000) total += 200001;
+        }}
+    }}
+    return total;
+}}
+
+int main(int argc, char **argv) {{
+    (void)argv;
+    printf("%d\\n", grid_checksum({base_rows} + argc, argc));
+    return 0;
+}}
+"""
+    cpp = c.replace("#include <stdio.h>", "#include <cstdio>").replace(
+        "printf", "std::printf"
+    )
+    rust = f"""fn cell_score(x: i32, y: i32, salt: i32) -> i32 {{
+    let distance = if x > y {{ x - y }} else {{ y - x }};
+    let mixed = (x * 17 + y * 31 + salt * 13) % 97;
+    distance + mixed
+}}
+
+fn grid_checksum(rows: i32, salt: i32) -> i32 {{
+    let mut total = 0;
+    let mut y = 0;
+    while y < rows {{
+        let mut x = 0;
+        while x < 251 {{
+            total += cell_score(x, y, salt);
+            if total > 100_000 {{ total -= 200_001; }}
+            if total < -100_000 {{ total += 200_001; }}
+            x += 1;
+        }}
+        y += 1;
+    }}
+    total
+}}
+
+fn main() {{
+    let argc = std::env::args_os().count() as i32;
+    println!("{{}}", grid_checksum({base_rows} + argc, argc));
+}}
+"""
+    zig = f"""const std = @import("std");
+const c = @cImport({{ @cInclude("stdio.h"); }});
+
+fn cellScore(x: i32, y: i32, salt: i32) i32 {{
+    const distance = if (x > y) x - y else y - x;
+    const mixed = @mod(x * 17 + y * 31 + salt * 13, 97);
+    return distance + mixed;
+}}
+
+fn gridChecksum(rows: i32, salt: i32) i32 {{
+    var total: i32 = 0;
+    var y: i32 = 0;
+    while (y < rows) : (y += 1) {{
+        var x: i32 = 0;
+        while (x < 251) : (x += 1) {{
+            total += cellScore(x, y, salt);
+            if (total > 100000) total -= 200001;
+            if (total < -100000) total += 200001;
+        }}
+    }}
+    return total;
+}}
+
+pub fn main(init: std.process.Init.Minimal) void {{
+    const argc: i32 = @intCast(init.args.vector.len);
+    _ = c.printf("%d\\n", gridChecksum({base_rows} + argc, argc));
+}}
+"""
+    lanius = f"""module app::main;
+
+extern "lanius_std" fn argc() -> i32;
+
+fn cell_score(x: i32, y: i32, salt: i32) -> i32 {{
+    let distance: i32 = 0;
+    if (x > y) {{ distance = x - y; }} else {{ distance = y - x; }}
+    let mixed: i32 = (x * 17 + y * 31 + salt * 13) % 97;
+    return distance + mixed;
+}}
+
+fn grid_checksum(rows: i32, salt: i32) -> i32 {{
+    let total: i32 = 0;
+    let y: i32 = 0;
+    while (y < rows) {{
+        let x: i32 = 0;
+        while (x < 251) {{
+            total += cell_score(x, y, salt);
+            if (total > 100000) {{ total -= 200001; }}
+            if (total < -100000) {{ total += 200001; }}
+            x += 1;
+        }}
+        y += 1;
+    }}
+    return total;
+}}
+
+fn main() -> i32 {{
+    let argument_count: i32 = argc();
+    print(grid_checksum({base_rows} + argument_count, argument_count));
+    return 0;
+}}
+"""
+    return {"c": c, "cpp": cpp, "rust": rust, "zig": zig, "lanius": lanius}
+
+
+def array_walk(rounds: int, salt: int) -> int:
+    values = [index * 17 + 3 for index in range(64)]
+    checksum = 0
+    for round_index in range(rounds + salt):
+        for index, previous in enumerate(values):
+            value = (previous * 33 + round_index + index + salt) % 10_007
+            values[index] = value
+            checksum = (checksum + value) % 1_000_003
+    return checksum
+
+
+def array_walk_sources(base_rounds: int) -> dict[str, str]:
+    initial = ", ".join(str(index * 17 + 3) for index in range(64))
+    c = f"""#include <stdio.h>
+
+static int array_walk(int rounds, int salt) {{
+    int values[64] = {{{initial}}};
+    int checksum = 0;
+    for (int round = 0; round < rounds; ++round) {{
+        for (int index = 0; index < 64; ++index) {{
+            int value = (values[index] * 33 + round + index + salt) % 10007;
+            values[index] = value;
+            checksum = (checksum + value) % 1000003;
+        }}
+    }}
+    return checksum;
+}}
+
+int main(int argc, char **argv) {{
+    (void)argv;
+    printf("%d\\n", array_walk({base_rounds} + argc, argc));
+    return 0;
+}}
+"""
+    cpp = c.replace("#include <stdio.h>", "#include <cstdio>").replace(
+        "printf", "std::printf"
+    )
+    rust = f"""fn array_walk(rounds: i32, salt: i32) -> i32 {{
+    let mut values: [i32; 64] = [{initial}];
+    let mut checksum = 0;
+    let mut round = 0;
+    while round < rounds {{
+        let mut index = 0;
+        while index < 64 {{
+            let value = (values[index] * 33 + round + index as i32 + salt) % 10_007;
+            values[index] = value;
+            checksum = (checksum + value) % 1_000_003;
+            index += 1;
+        }}
+        round += 1;
+    }}
+    checksum
+}}
+
+fn main() {{
+    let argc = std::env::args_os().count() as i32;
+    println!("{{}}", array_walk({base_rounds} + argc, argc));
+}}
+"""
+    zig = f"""const std = @import("std");
+const c = @cImport({{ @cInclude("stdio.h"); }});
+
+fn arrayWalk(rounds: i32, salt: i32) i32 {{
+    var values = [_]i32{{{initial}}};
+    var checksum: i32 = 0;
+    var round: i32 = 0;
+    while (round < rounds) : (round += 1) {{
+        var index: usize = 0;
+        while (index < 64) : (index += 1) {{
+            const value = @mod(values[index] * 33 + round + @as(i32, @intCast(index)) + salt, 10007);
+            values[index] = value;
+            checksum = @mod(checksum + value, 1000003);
+        }}
+    }}
+    return checksum;
+}}
+
+pub fn main(init: std.process.Init.Minimal) void {{
+    const argc: i32 = @intCast(init.args.vector.len);
+    _ = c.printf("%d\\n", arrayWalk({base_rounds} + argc, argc));
+}}
+"""
+    lanius = f"""module app::main;
+
+extern "lanius_std" fn argc() -> i32;
+
+fn array_walk(rounds: i32, salt: i32) -> i32 {{
+    let values: [i32; 64] = [{initial}];
+    let checksum: i32 = 0;
+    let round: i32 = 0;
+    while (round < rounds) {{
+        let index: i32 = 0;
+        while (index < 64) {{
+            let value: i32 = (values[index] * 33 + round + index + salt) % 10007;
+            values[index] = value;
+            checksum = (checksum + value) % 1000003;
+            index += 1;
+        }}
+        round += 1;
+    }}
+    return checksum;
+}}
+
+fn main() -> i32 {{
+    let argument_count: i32 = argc();
+    print(array_walk({base_rounds} + argument_count, argument_count));
+    return 0;
+}}
+"""
+    return {"c": c, "cpp": cpp, "rust": rust, "zig": zig, "lanius": lanius}
+
+
+def source_name(workload: str, language: str) -> str:
     suffix = {"cpp": "cpp", "c": "c", "rust": "rs", "zig": "zig", "lanius": "lani"}
-    return f"integer_mix.{suffix[language]}"
+    return f"{workload}.{suffix[language]}"
 
 
 def command_map(
-    repo: Path, out: Path, bin_dir: Path
+    repo: Path, out: Path, bin_dir: Path, workload: str
 ) -> dict[str, dict[str, dict[str, list[str]]]]:
     src = portable_path(repo, out / "src")
     bin_dir = portable_path(repo, bin_dir)
     return {
         "c": {
             lane: {
-                "compile": ["gcc", flag, "-g0", str(src / source_name("c")), "-o", str(bin_dir / f"c-{lane}")],
+                "compile": ["gcc", flag, "-g0", str(src / source_name(workload, "c")), "-o", str(bin_dir / f"c-{lane}")],
                 "run": [str(bin_dir / f"c-{lane}")],
             }
             for lane, flag in (("debug", "-O0"), ("o2", "-O2"), ("optimized", "-O3"))
         },
         "cpp": {
             lane: {
-                "compile": ["g++", flag, "-g0", str(src / source_name("cpp")), "-o", str(bin_dir / f"cpp-{lane}")],
+                "compile": ["g++", flag, "-g0", str(src / source_name(workload, "cpp")), "-o", str(bin_dir / f"cpp-{lane}")],
                 "run": [str(bin_dir / f"cpp-{lane}")],
             }
             for lane, flag in (("debug", "-O0"), ("optimized", "-O3"))
         },
         "rust": {
             lane: {
-                "compile": ["rustc", "-C", f"opt-level={level}", "-C", f"overflow-checks={'yes' if lane == 'debug' else 'no'}", "-C", "debuginfo=0", "-C", "strip=debuginfo", str(src / source_name("rust")), "-o", str(bin_dir / f"rust-{lane}")],
+                "compile": ["rustc", "-C", f"opt-level={level}", "-C", f"overflow-checks={'yes' if lane == 'debug' else 'no'}", "-C", "debuginfo=0", "-C", "strip=debuginfo", str(src / source_name(workload, "rust")), "-o", str(bin_dir / f"rust-{lane}")],
                 "run": [str(bin_dir / f"rust-{lane}")],
             }
             for lane, level in (("debug", 0), ("optimized", 3))
         },
         "zig": {
             lane: {
-                "compile": ["zig", "build-exe", "-lc", "-O", mode, "-fstrip", str(src / source_name("zig")), "-femit-bin=" + str(bin_dir / f"zig-{lane}")],
+                "compile": ["zig", "build-exe", "-lc", "-O", mode, "-fstrip", str(src / source_name(workload, "zig")), "-femit-bin=" + str(bin_dir / f"zig-{lane}")],
                 "run": [str(bin_dir / f"zig-{lane}")],
             }
             for lane, mode in (("debug", "Debug"), ("optimized", "ReleaseFast"))
         },
         "tcc": {
-            "current": {
-                "compile": ["tcc", str(src / source_name("c")), "-o", str(bin_dir / "tcc-current")],
-                "run": [str(bin_dir / "tcc-current")],
+            "default": {
+                "compile": ["tcc", str(src / source_name(workload, "c")), "-o", str(bin_dir / "tcc-default")],
+                "run": [str(bin_dir / "tcc-default")],
             },
         },
         "lanius": {
-            "current": {
-                "compile": ["target/release/laniusc", "--stdlib-root", "stdlib", "--emit", "x86_64", "-o", str(bin_dir / "lanius-current"), str(src / source_name("lanius"))],
-                "run": [str(bin_dir / "lanius-current")],
+            "default": {
+                "compile": ["target/release/laniusc", "--stdlib-root", "stdlib", "--emit", "x86_64", "-o", str(bin_dir / "lanius-default"), str(src / source_name(workload, "lanius"))],
+                "run": [str(bin_dir / "lanius-default")],
             },
         },
     }
@@ -371,7 +731,7 @@ def summarize(samples: list[dict[str, object]]) -> list[dict[str, object]]:
         for language, lane in LANGUAGE_LANES
     }
     medians = {key: statistics.median(values) for key, values in grouped.items()}
-    lanius = medians["lanius", "current"]
+    lanius = medians["lanius", "default"]
     return [
         {
             "language": language,
@@ -385,7 +745,7 @@ def summarize(samples: list[dict[str, object]]) -> list[dict[str, object]]:
             ),
             "min_ms": min(grouped[language, lane]),
             "max_ms": max(grouped[language, lane]),
-            "lanius_runtime_ratio": lanius / medians[language, lane],
+            "lanius_speedup": medians[language, lane] / lanius,
         }
         for language, lane in LANGUAGE_LANES
     ]
@@ -450,7 +810,26 @@ def write_tsv(path: Path, rows: list[dict[str, object]]) -> None:
         "mad_ms",
         "min_ms",
         "max_ms",
-        "lanius_runtime_ratio",
+        "lanius_speedup",
+    )
+    lines = ["\t".join(fields)]
+    for row in rows:
+        lines.append("\t".join(str(row[field]) for field in fields))
+    path.write_text("\n".join(lines) + "\n")
+
+
+def write_suite_tsv(path: Path, rows: list[dict[str, object]]) -> None:
+    fields = (
+        "workload",
+        "language",
+        "lane",
+        "samples",
+        "median_ms",
+        "mean_ms",
+        "mad_ms",
+        "min_ms",
+        "max_ms",
+        "lanius_speedup",
     )
     lines = ["\t".join(fields)]
     for row in rows:

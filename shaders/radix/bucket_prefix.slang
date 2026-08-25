@@ -4,8 +4,8 @@
 // - Dispatch after the key-specific histogram pass.
 // - Each radix bucket is scanned independently on the GPU to produce the
 //   exclusive per-block bucket prefix consumed by stable radix scatter.
-// - This helper scans sixteen histogram blocks per lane, covering 4096 blocks per
-//   bucket without host-side record inspection.
+// - Each lane scans a contiguous share of the active histogram blocks, so the
+//   operation has no fixed 4096-block correctness ceiling.
 
 import radix;
 
@@ -26,10 +26,7 @@ RWStructuredBuffer<uint> radix_bucket_total;
 
 static const uint WG_SIZE = 256u;
 static const uint RADIX_BUCKETS = RADIX_U8_BUCKETS;
-static const uint MAX_RADIX_BLOCKS = 4096u;
-static const uint SCAN_SLOTS = 4096u;
-
-groupshared uint scan_values[4096];
+groupshared uint lane_totals[256];
 
 uint active_item_count()
 {
@@ -41,8 +38,7 @@ uint active_block_count()
     return radix_active_block_count(
         active_item_count(),
         gParams.max_blocks,
-        WG_SIZE,
-        MAX_RADIX_BLOCKS);
+        WG_SIZE);
 }
 
 [shader("compute")]
@@ -53,7 +49,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     if (bucket >= RADIX_BUCKETS)
         return;
 
-    radix_bucket_prefix_scan_16<256, 4096>(
+    radix_bucket_prefix_scan<256>(
         ltid.x,
         bucket,
         active_block_count(),
@@ -61,5 +57,5 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         radix_block_histogram,
         radix_block_bucket_prefix,
         radix_bucket_total,
-        scan_values);
+        lane_totals);
 }

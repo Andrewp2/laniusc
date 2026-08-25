@@ -5,8 +5,8 @@ use encase::ShaderType;
 
 use super::{
     functions::GpuTargetFunctionTable,
-    lowering::{GpuSemanticLirView, target_lowering_allocations},
     lowering_ir::{LoweringCapacities, SEMANTIC_LIR_PAGE_ROWS, TARGET_LIR_PAGE_ROWS},
+    optimization::{GpuOptIrView, lowering_allocations_with_opt},
     scan::{GpuResidentExclusiveScan, GraphScanContract},
     target_pages::GpuTargetPagePlanner,
     wasm_module::GpuWasmModuleStage,
@@ -158,11 +158,12 @@ impl GpuWasmLirStage {
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         capacities: LoweringCapacities,
-        semantic: GpuSemanticLirView<'_>,
+        opt: GpuOptIrView<'_>,
         include_object: bool,
         kernels: &KernelRegistry,
     ) -> Result<Self> {
-        let allocations = target_lowering_allocations(graph, workspace, semantic)?;
+        let metadata = opt.metadata;
+        let allocations = lowering_allocations_with_opt(graph, workspace, opt)?;
         let resource = |name: &str| {
             graph
                 .resource_id(name)
@@ -177,7 +178,7 @@ impl GpuWasmLirStage {
         let target_capacity = capacities.target_instructions.max(1);
         #[cfg(test)]
         let target_page_rows = target_capacity.min(TARGET_LIR_PAGE_ROWS);
-        let _semantic_order = semantic
+        let _semantic_order = metadata
             .execution_order
             .context("Wasm lowering requires GPU-scheduled semantic LIR")?;
         let counts = alias_u32("lir.wasm.count_by_semantic", semantic_capacity)?;
@@ -272,7 +273,7 @@ impl GpuWasmLirStage {
         let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
         let mut resources = ResourceMap::new();
         resources.register_graph_bindings(graph, &graph_bindings);
-        semantic.register(graph, &mut resources)?;
+        opt.register(graph, &mut resources)?;
         let context = (graph, &allocations);
         let count_params = (0..semantic_capacity.div_ceil(SEMANTIC_LIR_PAGE_ROWS))
             .map(|page_id| {
@@ -321,7 +322,7 @@ impl GpuWasmLirStage {
                 up_pass: "lir.target.count_scan.hierarchy_up",
                 down_pass: "lir.target.count_scan.hierarchy_down",
                 apply_pass: "lir.target.count_scan.apply",
-                count: "lir.semantic.total",
+                count: "lir.opt.total",
                 input: "lir.wasm.count_by_semantic",
                 local: "lir.target.count_scan_local",
                 block_sum: "lir.target.count_scan_block_sum",
@@ -331,7 +332,7 @@ impl GpuWasmLirStage {
                 total: "lir.wasm.total",
             },
             semantic_capacity,
-            semantic.count,
+            opt.count,
             &counts,
             &offsets,
             &total,
@@ -375,7 +376,7 @@ impl GpuWasmLirStage {
                 total: "lir.wasm.param_value_total",
             },
             capacities.parameters.max(1),
-            semantic.param_count,
+            metadata.param_count,
             &param_widths,
             &param_prefix,
             &param_value_total,
@@ -410,7 +411,7 @@ impl GpuWasmLirStage {
                 total: "lir.wasm.local_value_total",
             },
             capacities.hir_nodes.max(1),
-            semantic.local_count,
+            metadata.local_count,
             &local_widths,
             &local_prefix,
             &local_value_total,
@@ -564,7 +565,7 @@ impl GpuWasmLirStage {
             semantic_capacity,
             target_capacity,
             capacities.hir_nodes,
-            semantic.count,
+            opt.count,
         )?;
         let byte_scan = GpuResidentExclusiveScan::new(
             device,
@@ -608,7 +609,7 @@ impl GpuWasmLirStage {
             workspace,
             &allocations,
             capacities,
-            semantic,
+            metadata,
             &abi_functions,
             &artifact_words,
         )?;
@@ -621,7 +622,7 @@ impl GpuWasmLirStage {
                     workspace,
                     &allocations,
                     capacities,
-                    semantic,
+                    opt,
                     module.object_projection_inputs(),
                 )
             })
@@ -889,21 +890,25 @@ fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData
 mod tests {
     use super::*;
     use crate::{
-        codegen::lowering_ir::{
-            LoweringArtifactKind,
-            LoweringStatus,
-            LoweringTarget,
-            SemanticLirAggregateElement,
-            SemanticLirCallArg,
-            SemanticLirCore,
-            SemanticLirFunction,
-            SemanticLirLocal,
-            SemanticLirOperands,
-            SemanticLirParam,
-            SemanticLirString,
-            lowering_compiler_graph,
-            lowering_compiler_graph_for_artifact,
-            opcode,
+        codegen::{
+            lowering::GpuSemanticLirView,
+            lowering_ir::{
+                LoweringArtifactKind,
+                LoweringStatus,
+                LoweringTarget,
+                SemanticLirAggregateElement,
+                SemanticLirCallArg,
+                SemanticLirCore,
+                SemanticLirFunction,
+                SemanticLirLocal,
+                SemanticLirOperands,
+                SemanticLirParam,
+                SemanticLirString,
+                lowering_compiler_graph,
+                lowering_compiler_graph_for_artifact,
+                opcode,
+            },
+            optimization::GpuOptimizationStage,
         },
         gpu::{
             buffers::{
@@ -1102,20 +1107,6 @@ mod tests {
         semantic_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
         let semantic_owners =
             storage_ro_from_u32s(&gpu.device, "test.wasm_stage.semantic_owners", &[0; 8]);
-        let semantic_ops = storage_ro_from_u32s(
-            &gpu.device,
-            "test.wasm_stage.semantic_ops",
-            &[
-                opcode::SEMANTIC_LIR_OP_CONST_I32,
-                opcode::SEMANTIC_LIR_OP_CONST_I32,
-                opcode::SEMANTIC_LIR_OP_ADD,
-                opcode::SEMANTIC_LIR_OP_BRANCH_IF,
-                opcode::SEMANTIC_LIR_OP_RETURN,
-                opcode::SEMANTIC_LIR_OP_VALUE_GET,
-                opcode::SEMANTIC_LIR_OP_VALUE_SET,
-                opcode::SEMANTIC_LIR_OP_CALL_SYMBOL,
-            ],
-        );
         let semantic_call_args = storage_ro_from_bytes::<SemanticLirCallArg>(
             &gpu.device,
             "test.wasm_stage.semantic_call_args",
@@ -1198,9 +1189,9 @@ mod tests {
                     operands: &semantic_page_operands,
                     layout_word_offset: &semantic_owners,
                     owner_by_instruction: &semantic_owners,
-                    op_by_instruction: &semantic_ops,
                     function_id_by_hir: &semantic_owners,
                     call_args: &semantic_call_args,
+                    call_arg_count: &semantic_empty_count,
                     call_arg_start_by_hir: &semantic_call_arg_start,
                     call_arg_count_by_hir: &semantic_call_arg_count_by_hir,
                     aggregate_elements: &semantic_aggregate_elements,
@@ -1220,17 +1211,28 @@ mod tests {
                 }
             };
         }
-        let kernels =
-            KernelRegistry::prepare_prefixes(&gpu.device, &["codegen/lir", "scan/counted"], |_| {
-                true
-            })
-            .unwrap();
+        let kernels = KernelRegistry::prepare_prefixes(
+            &gpu.device,
+            crate::codegen::lowering::LOWERING_KERNEL_PREFIXES,
+            |_| true,
+        )
+        .unwrap();
+        let semantic = semantic_view!(&semantic_status, &semantic_order);
+        let optimizer = GpuOptimizationStage::new(
+            &gpu.device,
+            &graph,
+            &workspace,
+            capacities,
+            semantic,
+            &kernels,
+        )
+        .unwrap();
         let stage = GpuWasmLirStage::new(
             &gpu.device,
             &graph,
             &workspace,
             capacities,
-            semantic_view!(&semantic_status, &semantic_order),
+            optimizer.output(semantic),
             true,
             &kernels,
         )
@@ -1242,6 +1244,7 @@ mod tests {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("test.wasm_stage.encoder"),
             });
+        optimizer.record(&mut encoder, None).unwrap();
         stage.record_lir(&mut encoder).unwrap();
         assert_eq!(pipeline_creation_count(), pipelines_before);
         assert_eq!(tracked_buffer_allocation_stats(), buffers_before);
@@ -1409,12 +1412,22 @@ mod tests {
             .unwrap();
         executable_status.write(&gpu.queue, 0, &words(&[[0, u32::MAX, 0, u32::MAX]]));
         executable_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
+        let executable_semantic = semantic_view!(&executable_status, &executable_order);
+        let executable_optimizer = GpuOptimizationStage::new(
+            &gpu.device,
+            &executable_graph,
+            &executable_workspace,
+            capacities,
+            executable_semantic,
+            &kernels,
+        )
+        .unwrap();
         let executable_stage = GpuWasmLirStage::new(
             &gpu.device,
             &executable_graph,
             &executable_workspace,
             capacities,
-            semantic_view!(&executable_status, &executable_order),
+            executable_optimizer.output(executable_semantic),
             false,
             &kernels,
         )
@@ -1425,6 +1438,7 @@ mod tests {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("test.wasm_stage.resident_artifact.encoder"),
             });
+        executable_optimizer.record(&mut encoder, None).unwrap();
         executable_stage.record(&mut encoder).unwrap();
         assert_eq!(tracked_buffer_allocation_stats(), allocations_before);
         gpu.queue.submit(Some(encoder.finish()));

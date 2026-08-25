@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 import codegen.lir.x86.location_common;
 import gpu_index;
 
@@ -14,12 +15,13 @@ struct Params
     uint reserved2;
 };
 ConstantBuffer<Params> gParams;
-StructuredBuffer<SemanticLirCore> semantic_lir_core;
-StructuredBuffer<SemanticLirOperands> semantic_lir_operands;
+StructuredBuffer<OptIrNodeCore> opt_ir_core;
+StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<X86LirCore> target_lir_core;
 StructuredBuffer<X86LirOperands> target_lir_operands;
 StructuredBuffer<uint> target_semantic_origin;
+StructuredBuffer<uint> target_lir_flags;
 StructuredBuffer<uint> semantic_to_target_start;
 StructuredBuffer<uint> x86_location_by_semantic;
 StructuredBuffer<uint> x86_live_by_semantic;
@@ -43,13 +45,13 @@ uint value_location(uint semantic_row)
     uint replacement = x86_value_by_semantic[semantic_row].replacement;
     if (replacement < gParams.semantic_capacity)
         semantic_row = replacement;
-    SemanticLirCore core = semantic_lir_core[semantic_row];
+    OptIrNodeCore core = opt_ir_core[semantic_row];
     uint allocated = x86_location_by_semantic[semantic_row];
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_VALUE_GET &&
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET &&
         (core.type_id == 1u || core.type_id == 2u || core.type_id == 3u ||
          core.type_id == 4u || core.type_id == 6u || core.type_id == 8u))
     {
-        uint declaration = semantic_lir_operands[semantic_row].a;
+        uint declaration = opt_ir_operands[semantic_row].a;
         if (declaration < gParams.token_capacity)
         {
             uint location = x86_decl_location_by_token[declaration];
@@ -107,8 +109,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint allocated = value_location(semantic_row);
         uint producer = semantic_to_target_start[semantic_row];
+        bool inline_clone =
+            (target_lir_flags[page_row] & TARGET_LIR_FLAG_INLINE_CLONE) != 0u;
         if ((allocated & X86_LOCATION_REGISTER) != 0u && allocated != INVALID &&
-            producer == row)
+            (producer == row || inline_clone))
             locations.result = allocated;
         else if (allocated != INVALID && row >= producer)
             locations.result = stack_location(allocated + row - producer);
@@ -139,6 +143,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.op == X86_LIR_OP_UNARY)
         locations.b = value_location(operands.b);
     else if (core.op == X86_LIR_OP_RETURN)
+        locations.a = value_location(operands.a);
+    else if (core.op == X86_LIR_OP_INLINE_RESULT)
         locations.a = value_location(operands.a);
     else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
         locations.a = value_location(operands.a);

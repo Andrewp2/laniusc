@@ -1033,6 +1033,19 @@ fn type_checker_resolves_visible_declarations_through_large_radix_path() {
 }
 
 #[test]
+fn type_checker_resolves_parameters_beyond_first_compact_hir_workgroup() {
+    let mut source = String::new();
+    for function in 0..40 {
+        writeln!(
+            source,
+            "pub fn echo_{function}(value: i32) -> i32 {{ return value; }}"
+        )
+        .expect("write generated function");
+    }
+    assert_gpu_type_check_ok(&source);
+}
+
+#[test]
 fn type_checker_rejects_names_after_their_compact_scope_ends() {
     assert_gpu_type_check_diagnostic(
         r#"

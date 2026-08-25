@@ -1,14 +1,15 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 import gpu_index;
 
 struct Params { uint target_capacity; uint function_capacity; uint artifact_capacity; uint reserved; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
-StructuredBuffer<SemanticLirCore> semantic_lir_core;
-StructuredBuffer<SemanticLirOperands> semantic_lir_operands;
-StructuredBuffer<uint> semantic_lir_total;
+StructuredBuffer<OptIrNodeCore> opt_ir_core;
+StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
+StructuredBuffer<uint> opt_ir_total;
 StructuredBuffer<uint> semantic_schedule_order;
-StructuredBuffer<uint> semantic_owner_by_instruction;
+StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> semantic_to_target_start;
 StructuredBuffer<uint> target_function_count;
@@ -39,7 +40,7 @@ static const uint TARGET_SYMBOL = 2u;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    uint semantic_count = semantic_lir_total[0u];
+    uint semantic_count = opt_ir_total[0u];
     if (row >= semantic_count || x86_object_relocation_flag[row] == 0u) return;
 
     uint semantic_row = semantic_schedule_order[row];
@@ -47,23 +48,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint target_total = min(target_lir_total[0u], gParams.target_capacity);
     if (target_row >= target_total) return;
 
-    SemanticLirCore core = semantic_lir_core[semantic_row];
-    SemanticLirOperands operands = semantic_lir_operands[semantic_row];
+    OptIrNodeCore core = opt_ir_core[semantic_row];
+    OptIrNodeOperands operands = opt_ir_operands[semantic_row];
     uint function_id =
-        semantic_function_id_by_hir[semantic_owner_by_instruction[semantic_row]];
+        semantic_function_id_by_hir[opt_ir_source_hir[semantic_row]];
     uint function_index = function_id < gParams.function_capacity
         ? target_function_index_by_semantic[function_id] : INVALID;
     uint function_count = min(target_function_count[0u], gParams.function_capacity);
     if (function_index >= function_count) return;
     TargetLirFunction function = target_functions[function_index];
 
-    uint type_ref_tag = semantic_lir_type_ref_tag(core);
-    bool aggregate_symbol = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL &&
+    uint type_ref_tag = opt_ir_type_ref_tag(core);
+    bool aggregate_symbol = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL &&
         (type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
          (type_ref_tag == SEMANTIC_TYPE_REF_SCALAR && core.type_ref_payload >= 128u) ||
          (type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u));
     uint aggregate_words = core.value_word_count;
-    uint instruction_bytes = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
+    uint instruction_bytes = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
         ? (aggregate_symbol
             ? aggregate_words > 2u ? 19u : 19u + aggregate_words * 7u
             : 11u) : 17u;
@@ -78,12 +79,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     X86ArtifactLayout layout = x86_artifact_layout[0u];
     uint wrapper_length = layout.body_offset - layout.text_offset;
     relocation.site_offset = wrapper_length + target_byte_offset[target_row] + prefix_bytes +
-        (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
+        (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
             ? aggregate_symbol && aggregate_words > 2u ? 8u : 1u
             : 2u);
-    relocation.addend_lo = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xfffffffcu : 0u;
-    relocation.addend_hi = semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xffffffffu : 0u;
-    if (semantic_lir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL)
+    relocation.addend_lo = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xfffffffcu : 0u;
+    relocation.addend_hi = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xffffffffu : 0u;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL)
     {
         uint symbol_index = x86_object_symbol_prefix[row];
         relocation.kind = RELOCATION_CALL_REL32;

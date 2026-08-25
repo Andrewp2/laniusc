@@ -1,0 +1,22 @@
+{
+  "base_iterations": 32000,
+  "description": "nested loops and repeated helper calls over a two-dimensional domain",
+  "expected_stdout": "-35892\n",
+  "generator_sha256": "9f60a45b6e2e6258cbee7f62bf4d0d18119a7ac66d42694f5cee1a92e64919c4",
+  "operation_count": 8032000,
+  "operations_per_iteration": 251,
+  "optimization_policy": {
+    "debug": "C/C++ -O0; Rust opt-level=0 with overflow checks; Zig Debug",
+    "default": "compiler defaults for Lanius and TCC",
+    "o2": "GCC -O2 with debug information disabled",
+    "optimized": "C/C++ -O3; Rust opt-level=3; Zig ReleaseFast"
+  },
+  "order_seed": 5395790,
+  "runtime_input": "argc; measured commands pass no extra arguments, so argc=1",
+  "samples_per_language": 20,
+  "schema": "lanius.runtime-comparison.v2",
+  "timed_region": "process spawn through process exit; compilation excluded",
+  "validation_policy": "every warmup and measured execution must exit zero and match expected stdout",
+  "warmups_per_language": 3,
+  "workload": "grid_checksum"
+}

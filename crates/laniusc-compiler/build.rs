@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     env,
     fs,
     io,
@@ -65,10 +66,12 @@ fn generate_lowering_ir_opcodes(workspace_root: &Path) {
     let text = fs::read_to_string(&source)
         .unwrap_or_else(|err| panic!("read lowering IR schema {}: {err}", source.display()));
     let mut generated = String::from("// Generated from shaders/codegen/lowering_ir.slang.\n");
+    let lines = text.lines().map(str::trim).collect::<Vec<_>>();
     let mut marked = false;
     let mut count = 0usize;
-    for line in text.lines() {
-        let line = line.trim();
+    let mut semantic_opcodes = BTreeMap::<u32, String>::new();
+    let mut semantic_opcode_count = None;
+    for &line in &lines {
         if line == "// IR_OPCODE" {
             marked = true;
             continue;
@@ -90,12 +93,156 @@ fn generate_lowering_ir_opcodes(workspace_root: &Path) {
             .and_then(|value| value.strip_suffix('u'))
             .unwrap_or_else(|| panic!("lowering IR opcode must end in `u;`: {line:?}"));
         generated.push_str(&format!("pub const {name}: u32 = {value};\n"));
+        if name == "SEMANTIC_LIR_OP_COUNT" {
+            semantic_opcode_count = Some(parse_schema_u32(value, name));
+        } else if name.starts_with("SEMANTIC_LIR_OP_") && !name.starts_with("SEMANTIC_LIR_OP_FLAG_")
+        {
+            let value = parse_schema_u32(value, name);
+            assert!(
+                semantic_opcodes.insert(value, name.to_string()).is_none(),
+                "duplicate semantic LIR opcode value {value}"
+            );
+        }
         count += 1;
     }
     assert!(count > 0, "lowering IR schema contains no marked opcodes");
+
+    let semantic_opcode_count =
+        semantic_opcode_count.expect("lowering IR schema must define SEMANTIC_LIR_OP_COUNT");
+    assert_eq!(
+        semantic_opcodes.len(),
+        semantic_opcode_count as usize,
+        "semantic opcode count does not cover the declared opcode namespace"
+    );
+    for value in 0..semantic_opcode_count {
+        assert!(
+            semantic_opcodes.contains_key(&value),
+            "semantic opcode namespace is missing value {value}"
+        );
+    }
+
+    let mut properties = BTreeMap::<u32, [u32; 8]>::new();
+    for (index, line) in lines.iter().enumerate() {
+        let Some(name) = line.strip_prefix("// IR_SEMANTIC_OP ") else {
+            continue;
+        };
+        let (&opcode, _) = semantic_opcodes
+            .iter()
+            .find(|(_, opcode_name)| opcode_name.as_str() == name)
+            .unwrap_or_else(|| panic!("semantic property row names unknown opcode {name}"));
+        let record = lines
+            .get(index + 1)
+            .unwrap_or_else(|| panic!("semantic property row {name} has no record"));
+        let record = record
+            .strip_prefix('{')
+            .and_then(|record| record.strip_suffix("},"))
+            .unwrap_or_else(|| {
+                panic!("semantic property row {name} must be one `{{ ... }},` line")
+            });
+        let fields = record
+            .split(',')
+            .map(str::trim)
+            .filter(|field| !field.is_empty())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fields.len(),
+            8,
+            "semantic property row {name} must contain eight uint fields"
+        );
+        let mut values = [0u32; 8];
+        for (destination, field) in values.iter_mut().zip(fields) {
+            *destination = parse_schema_u32(
+                field
+                    .strip_suffix('u')
+                    .unwrap_or_else(|| panic!("semantic property value must end in `u`: {field}")),
+                name,
+            );
+        }
+        assert!(
+            properties.insert(opcode, values).is_none(),
+            "duplicate semantic property row for {name}"
+        );
+    }
+    assert_eq!(
+        properties.len(),
+        semantic_opcode_count as usize,
+        "every semantic opcode must have exactly one IR_SEMANTIC_OP property row"
+    );
+
+    generated.push_str(
+        "\n#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]\n\
+         pub struct SemanticLirOpProperties {\n\
+         \x20   pub flags: u32,\n\
+         \x20   pub operand_roles: u32,\n\
+         \x20   pub result_kind: u32,\n\
+         \x20   pub type_rule: u32,\n\
+         \x20   pub control_role: u32,\n\
+         \x20   pub effect: u32,\n\
+         \x20   pub variadic_kind: u32,\n\
+         \x20   pub arithmetic: u32,\n\
+         }\n\n\
+         impl SemanticLirOpProperties {\n\
+         \x20   pub const fn has_flag(self, flag: u32) -> bool {\n\
+         \x20       self.flags & flag != 0\n\
+         \x20   }\n\n\
+         \x20   pub const fn operand_role(self, ordinal: u32) -> u32 {\n\
+         \x20       if ordinal < 3 {\n\
+         \x20           (self.operand_roles >> (ordinal * 4)) & 0xf\n\
+         \x20       } else {\n\
+         \x20           SEMANTIC_LIR_OPERAND_NONE\n\
+         \x20       }\n\
+         \x20   }\n\
+         }\n\n",
+    );
+    generated.push_str(&format!(
+        "pub const SEMANTIC_LIR_OP_PROPERTIES: [SemanticLirOpProperties; {}] = [\n",
+        semantic_opcode_count
+    ));
+    for opcode in 0..semantic_opcode_count {
+        let name = &semantic_opcodes[&opcode];
+        let [
+            flags,
+            operand_roles,
+            result_kind,
+            type_rule,
+            control_role,
+            effect,
+            variadic_kind,
+            arithmetic,
+        ] = properties[&opcode];
+        generated.push_str(&format!(
+            "    SemanticLirOpProperties {{ flags: {flags}, operand_roles: {operand_roles}, result_kind: {result_kind}, type_rule: {type_rule}, control_role: {control_role}, effect: {effect}, variadic_kind: {variadic_kind}, arithmetic: {arithmetic} }}, // {name}\n"
+        ));
+    }
+    generated.push_str("];\n\n");
+    generated.push_str(&format!(
+        "pub const SEMANTIC_LIR_OP_NAMES: [&str; {}] = [\n",
+        semantic_opcode_count
+    ));
+    for opcode in 0..semantic_opcode_count {
+        generated.push_str(&format!("    \"{}\",\n", semantic_opcodes[&opcode]));
+    }
+    generated.push_str(
+        "];\n\n\
+         pub const fn semantic_lir_op_properties(op: u32) -> SemanticLirOpProperties {\n\
+         \x20   let index = if op < SEMANTIC_LIR_OP_COUNT { op } else { SEMANTIC_LIR_OP_INVALID };\n\
+         \x20   SEMANTIC_LIR_OP_PROPERTIES[index as usize]\n\
+         }\n",
+    );
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
     fs::write(out_dir.join("lowering_ir_opcodes.rs"), generated)
         .expect("write generated lowering IR opcodes");
+}
+
+fn parse_schema_u32(value: &str, name: &str) -> u32 {
+    if let Some(value) = value.strip_prefix("0x") {
+        u32::from_str_radix(value, 16)
+            .unwrap_or_else(|err| panic!("invalid hexadecimal value for {name}: {err}"))
+    } else {
+        value
+            .parse::<u32>()
+            .unwrap_or_else(|err| panic!("invalid uint value for {name}: {err}"))
+    }
 }
 
 fn workspace_root() -> PathBuf {

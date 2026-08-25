@@ -196,6 +196,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         input.token_count_buffer,
                         input.token_file_id_buffer,
                         &self.parse_tables,
+                        timer,
                     )
                     .map_err(&map_parser_error)?
                     .tree_capacity
@@ -337,7 +338,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &hir,
                             &semantic,
                         )
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                        .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
                     pipeline
                         .record(encoder, timer.as_deref_mut())
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
@@ -516,7 +517,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     &hir,
                     &semantic,
                 )
-                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
             pipeline
                 .record(encoder, timer.as_deref_mut())
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;

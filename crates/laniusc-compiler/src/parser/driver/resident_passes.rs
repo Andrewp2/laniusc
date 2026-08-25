@@ -157,6 +157,9 @@ impl GpuParser {
                     .tree_prev_sibling_scatter
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.tree_prev_sibling_scatter");
+                if let Some(timer) = timer_ref.as_deref_mut() {
+                    timer.set_phase(crate::gpu::timer::GpuCompilerPhase::HirConstruction);
+                }
                 self.passes
                     .hir_nodes
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;

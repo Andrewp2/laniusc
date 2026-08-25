@@ -10,7 +10,6 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
 ) -> Result<()> {
     groups.clear.record(encoder)?;
     stamp_typecheck_timer(&mut timer, encoder, "typecheck.visible.clear.done");
-    groups.compact_hir_dispatch.record(encoder)?;
     groups.mark_hir_declarations.record(encoder)?;
     stamp_typecheck_timer(
         &mut timer,

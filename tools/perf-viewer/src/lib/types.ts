@@ -39,6 +39,7 @@ export interface TimelineEvent {
   category: string;
   lane: string;
   phase: string;
+  compiler_phase?: string;
   execution_domain: string;
   start_ms: number;
   duration_ms: number;

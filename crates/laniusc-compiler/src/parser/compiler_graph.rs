@@ -3443,6 +3443,21 @@ mod tests {
             u64::from(capacity.token_capacity) * 4,
             "production call records only retain the token-anchored compactable domain",
         );
+        for name in [
+            "hir_canonical_expr_parent",
+            "hir_canonical_expr_root",
+            "hir_canonical_expr_root_scratch",
+            "hir_canonical_nearest_fn",
+        ] {
+            assert_eq!(
+                graph
+                    .resource(graph.resource_id(name).expect("canonical HIR resource"))
+                    .expect("canonical HIR resource description")
+                    .bytes,
+                u64::from(capacity.token_capacity) * 4,
+                "canonical HIR resource {name} must use the token-anchored capacity",
+            );
+        }
         assert!(
             graph.pass_id("tree_prev_sibling_clear").unwrap().index()
                 < graph.pass_id("tree_prev_sibling_scatter").unwrap().index()

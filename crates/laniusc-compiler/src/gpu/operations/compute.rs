@@ -357,6 +357,10 @@ impl ComputeOperation {
         second: &Self,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()> {
+        if crate::gpu::timer::operation_capture_requires_split_passes() {
+            first.record(encoder)?;
+            return second.record(encoder);
+        }
         let mut batch = ComputePassBatch::begin_graph_operation(encoder, first.name);
         first.record_into_batch(&mut batch)?;
         batch.begin_next_graph_operation(second.name);

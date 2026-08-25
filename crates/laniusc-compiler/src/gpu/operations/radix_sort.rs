@@ -744,6 +744,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn shared_radix_steps_request_dynamic_uniform_variants() {
+        for key in ["radix/bucket_prefix", "radix/bucket_bases"] {
+            let reflection = crate::reflection::parse_reflection_from_file(
+                crate::shader_artifacts::artifact_path(&format!("{key}.reflect.json")),
+            )
+            .unwrap();
+            assert!(uses_dynamic_uniform_kernel(&reflection), "{key}");
+        }
+    }
+
+    #[test]
     fn radix_strategy_selects_small_kernel_at_its_capacity_boundary() {
         assert_eq!(
             select_strategy("keys", 2048, 2048, 24, true).unwrap(),

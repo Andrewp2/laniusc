@@ -10,7 +10,6 @@ RWStructuredBuffer<SemanticLirOperands> semantic_lir_operands;
 RWStructuredBuffer<uint> semantic_lir_layout_word_offset;
 RWStructuredBuffer<TargetScheduleKey> semantic_lir_schedule;
 RWStructuredBuffer<uint> semantic_owner_by_instruction;
-RWStructuredBuffer<uint> semantic_op_by_instruction;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -60,7 +59,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         op = SEMANTIC_LIR_OP_CALL_SYMBOL;
     else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 5u)
         op = SEMANTIC_LIR_OP_AGGREGATE_NEW;
-    semantic_op_by_instruction[row] = op;
     if (row < gParams.resident_rows)
     {
         SemanticLirRow result =

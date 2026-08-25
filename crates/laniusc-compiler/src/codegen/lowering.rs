@@ -40,6 +40,13 @@ use crate::{
     type_checker::GpuSemanticArtifactView,
 };
 
+/// Shader namespaces required by the shared semantic, optimization, and
+/// target-lowering pipeline. Keeping this list centralized prevents a test or
+/// daemon constructor from preparing only the surface kernels while omitting
+/// a reusable operation's internal scan/sort kernels.
+pub(crate) const LOWERING_KERNEL_PREFIXES: &[&str] =
+    &["codegen/lir", "scan/counted", "scan/counted_pair", "radix"];
+
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 struct SemanticProjectParams {
@@ -186,9 +193,9 @@ pub(crate) struct GpuSemanticLirView<'a> {
     pub operands: &'a LaniusBuffer<SemanticLirOperands>,
     pub layout_word_offset: &'a LaniusBuffer<u32>,
     pub owner_by_instruction: &'a LaniusBuffer<u32>,
-    pub op_by_instruction: &'a LaniusBuffer<u32>,
     pub function_id_by_hir: &'a LaniusBuffer<u32>,
     pub call_args: &'a LaniusBuffer<SemanticLirCallArg>,
+    pub call_arg_count: &'a LaniusBuffer<u32>,
     pub call_arg_start_by_hir: &'a LaniusBuffer<u32>,
     pub call_arg_count_by_hir: &'a LaniusBuffer<u32>,
     pub aggregate_elements: &'a LaniusBuffer<SemanticLirAggregateElement>,
@@ -229,9 +236,9 @@ impl<'a> GpuSemanticLirView<'a> {
             "lir.semantic.owner_by_instruction",
             self.owner_by_instruction
         );
-        buffer!("lir.semantic.op_by_instruction", self.op_by_instruction);
         buffer!("semantic.function_ids", self.function_id_by_hir);
         buffer!("lir.semantic.call_args", self.call_args);
+        buffer!("lir.semantic.call_arg_total", self.call_arg_count);
         buffer!(
             "lir.semantic.call_arg_prefix_by_hir",
             self.call_arg_start_by_hir
@@ -263,10 +270,10 @@ impl<'a> GpuSemanticLirView<'a> {
     }
 }
 
-/// Creates the physical ownership scope for a target-lowering stage. Semantic
-/// artifacts are explicit imports at this boundary; target scratch and outputs
-/// retain the graph workspace's allocation identities.
-pub(super) fn target_lowering_allocations(
+/// Creates a physical ownership scope that imports the semantic lowering
+/// artifact. Optimization and target stages add their own graph-owned scratch
+/// and outputs to this shared boundary.
+pub(super) fn lowering_allocations_with_semantic(
     graph: &CompilerGraph,
     workspace: &CompilerGraphWorkspace,
     semantic: GpuSemanticLirView<'_>,
@@ -296,7 +303,6 @@ pub(super) fn target_lowering_allocations(
         "lir.semantic.owner_by_instruction",
         semantic.owner_by_instruction
     );
-    import!("lir.semantic.op_by_instruction", semantic.op_by_instruction);
     import!("semantic.function_ids", semantic.function_id_by_hir);
     import!("lir.semantic.call_args", semantic.call_args);
     import!(
@@ -688,10 +694,10 @@ pub(crate) struct GpuSemanticLoweringStage {
     operands: LaniusBuffer<SemanticLirOperands>,
     layout_word_offset: LaniusBuffer<u32>,
     owner_by_instruction: LaniusBuffer<u32>,
-    op_by_instruction: LaniusBuffer<u32>,
     function_ids: LaniusBuffer<u32>,
     semantic_sorter: Option<GpuStableScheduleSorter>,
     call_args: LaniusBuffer<SemanticLirCallArg>,
+    call_arg_count: LaniusBuffer<u32>,
     call_arg_counts_by_hir: LaniusBuffer<u32>,
     call_arg_prefix_by_hir: LaniusBuffer<u32>,
     aggregate_elements: LaniusBuffer<SemanticLirAggregateElement>,
@@ -719,8 +725,7 @@ impl GpuSemanticLoweringStage {
         hir: GpuSemanticHirInputs<'_>,
         semantic: GpuSemanticArtifactView<'_>,
     ) -> Result<Self> {
-        let kernels =
-            KernelRegistry::prepare_prefixes(device, &["codegen/lir", "scan/counted"], |_| true)?;
+        let kernels = KernelRegistry::prepare_prefixes(device, LOWERING_KERNEL_PREFIXES, |_| true)?;
         let graph = semantic_lowering_compiler_graph(capacities).map_err(anyhow::Error::msg)?;
         let workspace = CompilerGraphWorkspace::new(device, "codegen.lir", &graph)
             .map_err(anyhow::Error::msg)?;
@@ -770,10 +775,6 @@ impl GpuSemanticLoweringStage {
         let layout_word_offset = alias("lir.semantic.layout_word_offset", semantic_resident_rows)?;
         let owner_by_instruction = alias(
             "lir.semantic.owner_by_instruction",
-            capacities.semantic_instructions,
-        )?;
-        let op_by_instruction = alias(
-            "lir.semantic.op_by_instruction",
             capacities.semantic_instructions,
         )?;
         let schedule: LaniusBuffer<TargetScheduleKey> = workspace
@@ -1339,10 +1340,10 @@ impl GpuSemanticLoweringStage {
             operands,
             layout_word_offset,
             owner_by_instruction,
-            op_by_instruction,
             function_ids,
             semantic_sorter,
             call_args,
+            call_arg_count,
             call_arg_counts_by_hir,
             call_arg_prefix_by_hir,
             aggregate_elements,
@@ -1370,9 +1371,9 @@ impl GpuSemanticLoweringStage {
             operands: &self.operands,
             layout_word_offset: &self.layout_word_offset,
             owner_by_instruction: &self.owner_by_instruction,
-            op_by_instruction: &self.op_by_instruction,
             function_id_by_hir: &self.function_ids,
             call_args: &self.call_args,
+            call_arg_count: &self.call_arg_count,
             call_arg_start_by_hir: &self.call_arg_prefix_by_hir,
             call_arg_count_by_hir: &self.call_arg_counts_by_hir,
             aggregate_elements: &self.aggregate_elements,
@@ -1409,6 +1410,9 @@ impl GpuSemanticLoweringStage {
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
+        }
         macro_rules! stamp {
             ($label:literal) => {
                 if let Some(timer) = timer.as_deref_mut() {
@@ -2139,10 +2143,8 @@ mod tests {
             .collect::<Vec<_>>();
         keys.write(&gpu.queue, 0, &words(&packed_keys));
         let kernels =
-            KernelRegistry::prepare_prefixes(&gpu.device, &["codegen/lir", "scan/counted"], |_| {
-                true
-            })
-            .unwrap();
+            KernelRegistry::prepare_prefixes(&gpu.device, LOWERING_KERNEL_PREFIXES, |_| true)
+                .unwrap();
         let sorter = GpuStableScheduleSorter::new_semantic(
             &gpu.device,
             &kernels,
@@ -2284,8 +2286,11 @@ mod tests {
         let target_counts = storage_rw_for_array::<u32>(&gpu.device, "test.wasm_lir.counts", 5);
         let semantic_order =
             storage_ro_from_u32s(&gpu.device, "test.wasm_lir.order", &[0, 1, 2, 3, 4]);
-        let semantic_owner =
-            storage_ro_from_u32s(&gpu.device, "test.wasm_lir.owner", &[0, 1, 2, 3, 4]);
+        let opt_source_hir = storage_ro_from_u32s(
+            &gpu.device,
+            "test.wasm_lir.opt_source_hir",
+            &[0, 1, 2, 3, 4],
+        );
         let semantic_function =
             storage_ro_from_u32s(&gpu.device, "test.wasm_lir.function_by_hir", &[u32::MAX; 5]);
         let semantic_layout =
@@ -2336,12 +2341,9 @@ mod tests {
             "test.wasm_lir.count.group",
             &[
                 ("gParams", count_params.as_entire_binding()),
-                ("semantic_lir_total", semantic_total.as_entire_binding()),
-                ("semantic_lir_core", semantic_core.as_entire_binding()),
-                (
-                    "semantic_lir_operands",
-                    semantic_operands.as_entire_binding(),
-                ),
+                ("opt_ir_total", semantic_total.as_entire_binding()),
+                ("opt_ir_core", semantic_core.as_entire_binding()),
+                ("opt_ir_operands", semantic_operands.as_entire_binding()),
                 (
                     "semantic_schedule_order",
                     semantic_order.as_entire_binding(),
@@ -2356,20 +2358,14 @@ mod tests {
             "test.wasm_lir.scatter.group",
             &[
                 ("gParams", scatter_params.as_entire_binding()),
-                ("semantic_lir_total", semantic_total.as_entire_binding()),
-                ("semantic_lir_core", semantic_core.as_entire_binding()),
+                ("opt_ir_total", semantic_total.as_entire_binding()),
+                ("opt_ir_core", semantic_core.as_entire_binding()),
                 (
                     "semantic_lir_layout_word_offset",
                     semantic_layout.as_entire_binding(),
                 ),
-                (
-                    "semantic_lir_operands",
-                    semantic_operands.as_entire_binding(),
-                ),
-                (
-                    "semantic_owner_by_instruction",
-                    semantic_owner.as_entire_binding(),
-                ),
+                ("opt_ir_operands", semantic_operands.as_entire_binding()),
+                ("opt_ir_source_hir", opt_source_hir.as_entire_binding()),
                 (
                     "semantic_function_id_by_hir",
                     semantic_function.as_entire_binding(),
@@ -2652,10 +2648,8 @@ mod tests {
         .unwrap();
         let workspace = CompilerGraphWorkspace::new(&gpu.device, "test.lir", &graph).unwrap();
         let kernels =
-            KernelRegistry::prepare_prefixes(&gpu.device, &["codegen/lir", "scan/counted"], |_| {
-                true
-            })
-            .unwrap();
+            KernelRegistry::prepare_prefixes(&gpu.device, LOWERING_KERNEL_PREFIXES, |_| true)
+                .unwrap();
         let (method_count, method_cores, method_signatures) =
             empty_method_families(&gpu.device, "test.semantic_lir.methods");
         let patterns = empty_pattern_families(&gpu.device, "test.semantic_lir.patterns", 10);

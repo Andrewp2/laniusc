@@ -9,13 +9,13 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    lowering::GpuSemanticLirView,
     lowering_ir::{
         LoweringCapacities,
         WasmObjectDefinitionRow,
         WasmObjectFunctionRow,
         WasmObjectRelocationRow,
     },
+    optimization::GpuOptIrView,
     scan::{GpuResidentExclusiveScan, GraphScanContract},
     wasm::{
         GPU_WASM_OBJECT_VERSION,
@@ -110,9 +110,10 @@ impl GpuWasmObjectStage {
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
         capacities: LoweringCapacities,
-        semantic: GpuSemanticLirView<'_>,
+        opt: GpuOptIrView<'_>,
         module: GpuWasmModuleObjectView<'_>,
     ) -> Result<Self> {
+        let metadata = opt.metadata;
         let target_capacity = capacities.target_instructions.max(1);
         let relocation_capacity = capacities.semantic_instructions.max(1);
         let function_capacity = capacities.hir_nodes.max(1);
@@ -232,7 +233,7 @@ impl GpuWasmObjectStage {
         let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
         let mut resources = ResourceMap::new();
         resources.register_graph_bindings(graph, &graph_bindings);
-        semantic.register(graph, &mut resources)?;
+        opt.register(graph, &mut resources)?;
         let context = (graph, allocations);
         let relocation_flags_op = ComputeOperation::direct_with_uniform(
             device,
@@ -249,9 +250,9 @@ impl GpuWasmObjectStage {
             graph,
             workspace,
             allocations,
-            scan_contract("relocation", "lir.semantic.total"),
+            scan_contract("relocation", "lir.opt.total"),
             relocation_capacity,
-            semantic.count,
+            opt.count,
             &relocation_flags,
             &relocation_prefix,
             &relocation_total,
@@ -262,9 +263,9 @@ impl GpuWasmObjectStage {
             graph,
             workspace,
             allocations,
-            scan_contract("symbol", "lir.semantic.total"),
+            scan_contract("symbol", "lir.opt.total"),
             relocation_capacity,
-            semantic.count,
+            opt.count,
             &symbol_flags,
             &symbol_prefix,
             &symbol_total,
@@ -286,7 +287,7 @@ impl GpuWasmObjectStage {
             allocations,
             scan_contract("definition", "lir.semantic.function_total"),
             function_capacity,
-            semantic.function_count,
+            metadata.function_count,
             &definition_flags,
             &definition_prefix,
             &definition_total,
@@ -324,7 +325,7 @@ impl GpuWasmObjectStage {
             (
                 "artifact.wasm.object.function_count.readback",
                 "function_count",
-                semantic.function_count,
+                metadata.function_count,
                 0,
             ),
             (
@@ -360,7 +361,7 @@ impl GpuWasmObjectStage {
             (
                 "artifact.wasm.object.string_pool_len.readback",
                 "string_pool_len",
-                semantic.string_pool_len,
+                metadata.string_pool_len,
                 24,
             ),
         ]

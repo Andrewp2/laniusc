@@ -31,6 +31,7 @@ pub enum CompilerPhase {
     Hir,
     TypeCheck,
     SemanticLowering,
+    Optimization,
     X86Lowering,
     WasmLowering,
     Artifact,
@@ -47,7 +48,20 @@ pub enum ResourceDomain {
     Types,
     Calls,
     CallArguments,
+    AggregateElements,
     SemanticInstructions,
+    OptimizationNodes,
+    OptimizationValues,
+    OptimizationFunctions,
+    OptimizationBlocks,
+    OptimizationRegions,
+    OptimizationEdges,
+    OptimizationAccesses,
+    OptimizationAccessGroups,
+    OptimizationSsaDemands,
+    OptimizationSsaBlockArguments,
+    OptimizationSsaIncomingValues,
+    OptimizationUses,
     X86Instructions,
     WasmInstructions,
     ArtifactBytes,
@@ -99,6 +113,7 @@ impl CompilerPhase {
             Self::Hir => "hir",
             Self::TypeCheck => "type_check",
             Self::SemanticLowering => "semantic_lowering",
+            Self::Optimization => "optimization",
             Self::X86Lowering => "x86_lowering",
             Self::WasmLowering => "wasm_lowering",
             Self::Artifact => "artifact",
@@ -118,7 +133,20 @@ impl ResourceDomain {
             Self::Types => "types",
             Self::Calls => "calls",
             Self::CallArguments => "call_arguments",
+            Self::AggregateElements => "aggregate_elements",
             Self::SemanticInstructions => "semantic_instructions",
+            Self::OptimizationNodes => "optimization_nodes",
+            Self::OptimizationValues => "optimization_values",
+            Self::OptimizationFunctions => "optimization_functions",
+            Self::OptimizationBlocks => "optimization_blocks",
+            Self::OptimizationRegions => "optimization_regions",
+            Self::OptimizationEdges => "optimization_edges",
+            Self::OptimizationAccesses => "optimization_accesses",
+            Self::OptimizationAccessGroups => "optimization_access_groups",
+            Self::OptimizationSsaDemands => "optimization_ssa_demands",
+            Self::OptimizationSsaBlockArguments => "optimization_ssa_block_arguments",
+            Self::OptimizationSsaIncomingValues => "optimization_ssa_incoming_values",
+            Self::OptimizationUses => "optimization_uses",
             Self::X86Instructions => "x86_instructions",
             Self::WasmInstructions => "wasm_instructions",
             Self::ArtifactBytes => "artifact_bytes",
@@ -609,6 +637,13 @@ pub struct CompilerGraph {
 pub struct CompilerGraphWorkspace {
     slots: Vec<LaniusBuffer<u8>>,
     slot_by_resource: Vec<Option<u32>>,
+    /// Disjoint ranges of dead producer allocations imported by this phase.
+    ///
+    /// The job-wide reset runs before the producer phase, so that producer
+    /// can dirty these allocations again before the consumer sees them. The
+    /// consumer must therefore clear imported storage at its own phase
+    /// boundary, after all producer commands and before its first pass.
+    phase_reset_ranges: Vec<LaniusBuffer<u8>>,
 }
 
 /// A compiler graph together with the physical storage selected for it.
@@ -778,6 +813,28 @@ impl CompilerGraphWorkspace {
         graph: &CompilerGraph,
         upstream: &[TrackedBufferView<'_>],
     ) -> Result<Self, String> {
+        Self::new_with_upstream_storage_policy(device, label, graph, upstream, true)
+    }
+
+    /// Reuses only phase-local slots, keeping retained outputs in dedicated
+    /// allocations. This preserves whole upstream allocations for the next
+    /// phase instead of pinning them with one durable consumer range.
+    pub fn new_with_upstream_storage_excluding_outputs(
+        device: &wgpu::Device,
+        label: &str,
+        graph: &CompilerGraph,
+        upstream: &[TrackedBufferView<'_>],
+    ) -> Result<Self, String> {
+        Self::new_with_upstream_storage_policy(device, label, graph, upstream, false)
+    }
+
+    fn new_with_upstream_storage_policy(
+        device: &wgpu::Device,
+        label: &str,
+        graph: &CompilerGraph,
+        upstream: &[TrackedBufferView<'_>],
+        import_outputs: bool,
+    ) -> Result<Self, String> {
         if std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some()
             || std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_UPSTREAM_REUSE").is_some()
         {
@@ -787,26 +844,42 @@ impl CompilerGraphWorkspace {
         // allocation. Treat that allocation as one candidate. The producer
         // phase is complete, so multiple consumer slots may safely occupy
         // disjoint ranges of that candidate.
-        let available = unique_physical_upstream_views(upstream);
+        let alignment = u64::from(device.limits().min_storage_buffer_offset_alignment).max(1);
+        let mut available = Vec::new();
+        for view in unique_physical_upstream_views(upstream) {
+            let aligned_start = view.byte_offset.next_multiple_of(alignment);
+            let skipped = aligned_start - view.byte_offset;
+            if skipped < view.byte_size {
+                available.push(view.subrange(skipped, view.byte_size - skipped)?);
+            }
+        }
+        let slot_can_import = |slot: u32| {
+            let resources = graph
+                .workspace
+                .assignments
+                .iter()
+                .filter(|assignment| assignment.slot == slot)
+                .filter_map(|assignment| {
+                    graph
+                        .resource_id(assignment.name)
+                        .and_then(|resource| graph.resource(resource))
+                })
+                .collect::<Vec<_>>();
+            resources.iter().any(|resource| {
+                !matches!(
+                    resource.class,
+                    ResourceClass::Input | ResourceClass::External
+                )
+            }) && (import_outputs
+                || resources
+                    .iter()
+                    .all(|resource| resource.class != ResourceClass::Output))
+        };
         let mut slots = graph
             .workspace
             .slots
             .iter()
-            .filter(|slot| {
-                slot.usage == WorkspaceUsageClass::Storage
-                    && graph.workspace.assignments.iter().any(|assignment| {
-                        assignment.slot == slot.slot
-                            && graph
-                                .resource_id(assignment.name)
-                                .and_then(|resource| graph.resource(resource))
-                                .is_some_and(|resource| {
-                                    !matches!(
-                                        resource.class,
-                                        ResourceClass::Input | ResourceClass::External
-                                    )
-                                })
-                    })
-            })
+            .filter(|slot| slot.usage == WorkspaceUsageClass::Storage && slot_can_import(slot.slot))
             .collect::<Vec<_>>();
         slots.sort_unstable_by_key(|slot| std::cmp::Reverse(slot.bytes));
 
@@ -818,7 +891,7 @@ impl CompilerGraphWorkspace {
                 .iter()
                 .map(|buffer| buffer.byte_size)
                 .collect::<Vec<_>>(),
-            u64::from(device.limits().min_storage_buffer_offset_alignment),
+            alignment,
             &arena_conflicts,
             &BTreeSet::new(),
         );
@@ -847,18 +920,7 @@ impl CompilerGraphWorkspace {
                 .workspace
                 .assignments
                 .iter()
-                .find(|assignment| {
-                    assignment.slot == slot.slot
-                        && graph
-                            .resource_id(assignment.name)
-                            .and_then(|resource| graph.resource(resource))
-                            .is_some_and(|resource| {
-                                !matches!(
-                                    resource.class,
-                                    ResourceClass::Input | ResourceClass::External
-                                )
-                            })
-                })
+                .find(|assignment| assignment.slot == slot.slot)
                 .ok_or_else(|| format!("workspace slot {} has no logical resource", slot.slot))?;
             let resource = graph.resource_id(assignment.name).ok_or_else(|| {
                 format!(
@@ -892,6 +954,41 @@ impl CompilerGraphWorkspace {
         graph: &CompilerGraph,
         imports: &[(ResourceId, LaniusBuffer<u8>)],
     ) -> Result<Self, String> {
+        let mut reset_ranges_by_allocation =
+            BTreeMap::<u64, (&wgpu::Buffer, Vec<(u64, u64)>)>::new();
+        for (_, buffer) in imports {
+            let Some(allocation_id) = buffer.allocation_id() else {
+                continue;
+            };
+            let end = buffer
+                .byte_offset
+                .checked_add(buffer.byte_size as u64)
+                .ok_or_else(|| "imported compiler graph reset range overflows".to_owned())?;
+            reset_ranges_by_allocation
+                .entry(allocation_id)
+                .or_insert_with(|| (&buffer.buffer, Vec::new()))
+                .1
+                .push((buffer.byte_offset, end));
+        }
+        let mut phase_reset_ranges = Vec::new();
+        for (allocation_id, (buffer, mut ranges)) in reset_ranges_by_allocation {
+            ranges.sort_unstable();
+            let mut merged = Vec::<(u64, u64)>::new();
+            for (start, end) in ranges {
+                if let Some((_, previous_end)) = merged.last_mut()
+                    && start <= *previous_end
+                {
+                    *previous_end = (*previous_end).max(end);
+                } else {
+                    merged.push((start, end));
+                }
+            }
+            phase_reset_ranges.extend(merged.into_iter().map(|(start, end)| {
+                let bytes = end - start;
+                TrackedBufferView::from_parts(buffer, start, bytes, Some(allocation_id))
+                    .alias::<u8>(bytes as usize)
+            }));
+        }
         let mut imported_by_slot = BTreeMap::<u32, LaniusBuffer<u8>>::new();
         for (resource, buffer) in imports {
             let desc = graph
@@ -1044,9 +1141,24 @@ impl CompilerGraphWorkspace {
         let workspace = Self {
             slots,
             slot_by_resource,
+            phase_reset_ranges,
         };
         register_compiler_graph_diagnostic(label, graph, &workspace);
         Ok(workspace)
+    }
+
+    /// Records the initialization boundary required by cross-phase storage
+    /// reuse. Adjacent imported slots are merged, while unused allocation
+    /// tails are left untouched to avoid unnecessary memory traffic.
+    pub fn record_phase_reset(&self, encoder: &mut wgpu::CommandEncoder) {
+        for range in &self.phase_reset_ranges {
+            range.clear(encoder, 0, None);
+        }
+    }
+
+    #[cfg(test)]
+    fn phase_reset_range_count(&self) -> usize {
+        self.phase_reset_ranges.len()
     }
 
     pub fn alias<T>(
@@ -1155,6 +1267,18 @@ impl MaterializedCompilerGraph {
         Ok(Self::from_parts(graph, workspace))
     }
 
+    pub(crate) fn new_with_upstream_storage_excluding_outputs(
+        device: &wgpu::Device,
+        label: &str,
+        graph: CompilerGraph,
+        upstream: &[TrackedBufferView<'_>],
+    ) -> Result<Self, String> {
+        let workspace = CompilerGraphWorkspace::new_with_upstream_storage_excluding_outputs(
+            device, label, &graph, upstream,
+        )?;
+        Ok(Self::from_parts(graph, workspace))
+    }
+
     fn from_parts(graph: CompilerGraph, workspace: CompilerGraphWorkspace) -> Self {
         let allocations = workspace.allocations();
         Self {
@@ -1176,6 +1300,13 @@ impl MaterializedCompilerGraph {
         self.workspace
             .bindings(&self.graph)
             .map_err(anyhow::Error::msg)
+    }
+
+    /// Records the reset of storage imported from the preceding compiler
+    /// phase. This must be called at the consumer boundary on every job, not
+    /// only when the resident workspace is first materialized.
+    pub(crate) fn record_phase_reset(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.workspace.record_phase_reset(encoder);
     }
 
     /// Validates the concrete storage bindings used by one reflected runtime
@@ -2630,10 +2761,25 @@ pub type PrefixScanGraphResources = PrefixScanResources<ResourceId>;
 fn assign_prefix_scan_kernels(
     graph: &mut CompilerGraphBuilder,
     passes: PrefixScanGraphPasses,
+    in_place: bool,
 ) -> Result<(), String> {
-    graph.assign_kernel(passes.local, "scan/counted/00_local")?;
+    graph.assign_kernel(
+        passes.local,
+        if in_place {
+            "scan/counted/00_local_in_place"
+        } else {
+            "scan/counted/00_local"
+        },
+    )?;
     graph.assign_kernel(passes.hierarchy_up_first, "scan/counted/04_block_prefix")?;
-    graph.assign_kernel(passes.apply, "scan/counted/02_apply")?;
+    graph.assign_kernel(
+        passes.apply,
+        if in_place {
+            "scan/counted/02_apply_in_place"
+        } else {
+            "scan/counted/02_apply"
+        },
+    )?;
     for pass in passes.names() {
         if graph.pass_names.contains(pass) {
             graph.require_complete_reflection(pass)?;
@@ -2825,17 +2971,36 @@ fn prefix_scan_passes(
             passes.local,
         ));
     }
+    let in_place = r.input == r.output_prefix;
+    if in_place && r.local_prefix != r.input {
+        return Err(format!(
+            "in-place prefix scan {} must use its input as local-prefix storage",
+            passes.local,
+        ));
+    }
+    let roles: &[ResourceId] = if in_place {
+        &[
+            r.count,
+            r.input,
+            r.total,
+            r.dispatch_args,
+            r.block_sum,
+            r.block_prefix,
+        ]
+    } else {
+        &[
+            r.count,
+            r.input,
+            r.output_prefix,
+            r.total,
+            r.dispatch_args,
+            r.local_prefix,
+            r.block_sum,
+            r.block_prefix,
+        ]
+    };
     let mut distinct = BTreeSet::new();
-    for resource in [
-        r.count,
-        r.input,
-        r.output_prefix,
-        r.total,
-        r.dispatch_args,
-        r.local_prefix,
-        r.block_sum,
-        r.block_prefix,
-    ] {
+    for &resource in roles {
         if graph.resources.get(resource.index()).is_none() {
             return Err(format!(
                 "prefix scan {} references unknown resource {}",
@@ -2858,17 +3023,42 @@ fn prefix_scan_passes(
         dispatch_domain,
         accesses,
     };
+    let local_accesses = if in_place {
+        vec![
+            lane(PassAccess::read("scan_count", r.count)),
+            lane(PassAccess::read_write("scan_values", r.input)),
+            lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
+            lane(PassAccess::write("scan_block_sum", r.block_sum)),
+        ]
+    } else {
+        vec![
+            lane(PassAccess::read("scan_count", r.count)),
+            lane(PassAccess::read("scan_input", r.input)),
+            lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
+            lane(PassAccess::write("scan_local_prefix", r.local_prefix)),
+            lane(PassAccess::write("scan_block_sum", r.block_sum)),
+        ]
+    };
+    let apply_accesses = if in_place {
+        vec![
+            lane(PassAccess::read("scan_count", r.count)),
+            lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
+            lane(PassAccess::read("scan_block_prefix", r.block_prefix)),
+            lane(PassAccess::read_write("scan_values", r.input)),
+            lane(PassAccess::write("scan_total", r.total)),
+        ]
+    } else {
+        vec![
+            lane(PassAccess::read("scan_count", r.count)),
+            lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
+            lane(PassAccess::read("scan_local_prefix", r.local_prefix)),
+            lane(PassAccess::read("scan_block_prefix", r.block_prefix)),
+            lane(PassAccess::write("scan_output_prefix", r.output_prefix)),
+            lane(PassAccess::write("scan_total", r.total)),
+        ]
+    };
     Ok(PrefixScanPassSet {
-        local: pass(
-            passes.local,
-            vec![
-                lane(PassAccess::read("scan_count", r.count)),
-                lane(PassAccess::read("scan_input", r.input)),
-                lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
-                lane(PassAccess::write("scan_local_prefix", r.local_prefix)),
-                lane(PassAccess::write("scan_block_sum", r.block_sum)),
-            ],
-        ),
+        local: pass(passes.local, local_accesses),
         hierarchy_up_first: pass(
             passes.hierarchy_up_first,
             vec![
@@ -2877,17 +3067,7 @@ fn prefix_scan_passes(
                 lane(PassAccess::write("scan_block_prefix", r.block_prefix)),
             ],
         ),
-        apply: pass(
-            passes.apply,
-            vec![
-                lane(PassAccess::read("scan_count", r.count)),
-                lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
-                lane(PassAccess::read("scan_local_prefix", r.local_prefix)),
-                lane(PassAccess::read("scan_block_prefix", r.block_prefix)),
-                lane(PassAccess::write("scan_output_prefix", r.output_prefix)),
-                lane(PassAccess::write("scan_total", r.total)),
-            ],
-        ),
+        apply: pass(passes.apply, apply_accesses),
     })
 }
 
@@ -2906,6 +3086,14 @@ impl CompilerGraphFragment for PrefixScanPairGraph {
     type Output = ((ResourceId, ResourceId), (ResourceId, ResourceId));
 
     fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
+        let left_in_place = self.left.input == self.left.output_prefix;
+        let right_in_place = self.right.input == self.right.output_prefix;
+        if left_in_place != right_in_place {
+            return Err(format!(
+                "paired prefix scan {} must use the same storage mode in both lanes",
+                self.passes.local,
+            ));
+        }
         let mut left = prefix_scan_passes(
             graph,
             self.phase,
@@ -2924,10 +3112,12 @@ impl CompilerGraphFragment for PrefixScanPairGraph {
             self.right,
             1,
         )?;
-        left.use_output_as_local_prefix(self.left.output_prefix, 0);
-        right.use_output_as_local_prefix(self.right.output_prefix, 1);
+        if !left_in_place {
+            left.use_output_as_local_prefix(self.left.output_prefix, 0);
+            right.use_output_as_local_prefix(self.right.output_prefix, 1);
+        }
         add_prefix_scan_passes(graph, self.hierarchy_levels, left.batch(right))?;
-        assign_prefix_scan_kernels(graph, self.passes)?;
+        assign_prefix_scan_kernels(graph, self.passes, left_in_place)?;
         Ok((
             (self.left.output_prefix, self.left.total),
             (self.right.output_prefix, self.right.total),
@@ -2949,7 +3139,11 @@ impl CompilerGraphFragment for PrefixScanGraph {
             0,
         )?;
         add_prefix_scan_passes(graph, self.hierarchy_levels, passes)?;
-        assign_prefix_scan_kernels(graph, self.passes)?;
+        assign_prefix_scan_kernels(
+            graph,
+            self.passes,
+            self.resources.input == self.resources.output_prefix,
+        )?;
         Ok((self.resources.output_prefix, self.resources.total))
     }
 }
@@ -3532,6 +3726,55 @@ impl CompilerGraphBuilder {
             local_prefix: add(names.local_prefix, row_bytes)?,
             block_sum: add(names.block_sum, block_bytes)?,
             block_prefix: add(names.block_prefix, block_bytes)?,
+        })
+    }
+
+    /// Reserves hierarchy storage for a scan which overwrites its input with
+    /// the exclusive prefix. The input is also the local-prefix relation, so
+    /// no capacity-sized temporary is allocated.
+    pub fn add_in_place_prefix_scan_workspace(
+        &mut self,
+        input: ResourceId,
+        domain: ResourceDomain,
+        capacity: u64,
+        rows_per_block: u64,
+        names: PrefixScanWorkspace<&'static str>,
+    ) -> Result<PrefixScanWorkspace<ResourceId>, String> {
+        if rows_per_block == 0 {
+            return Err("prefix scan requires a nonzero row block size".into());
+        }
+        let input_desc = self
+            .resources
+            .get(input.index())
+            .ok_or_else(|| format!("unknown in-place prefix scan input {}", input.index()))?;
+        if input_desc.name != names.local_prefix {
+            return Err(format!(
+                "in-place prefix scan local-prefix name `{}` does not name input `{}`",
+                names.local_prefix, input_desc.name,
+            ));
+        }
+        let block_bytes = capacity
+            .max(1)
+            .div_ceil(rows_per_block)
+            .max(1)
+            .checked_mul(4)
+            .ok_or_else(|| "prefix scan block storage size overflows".to_owned())?;
+        let block_sum = self.add_storage(
+            names.block_sum,
+            domain,
+            ResourceClass::Workspace,
+            block_bytes,
+        )?;
+        let block_prefix = self.add_storage(
+            names.block_prefix,
+            domain,
+            ResourceClass::Workspace,
+            block_bytes,
+        )?;
+        Ok(PrefixScanWorkspace {
+            local_prefix: input,
+            block_sum,
+            block_prefix,
         })
     }
 
@@ -4462,6 +4705,7 @@ fn plan_graph_workspace(
     struct SlotState {
         plan: WorkspaceSlotPlan,
         lifetimes: Vec<ResourceLifetime>,
+        retained_output: bool,
     }
 
     let mut order = resources
@@ -4483,9 +4727,10 @@ fn plan_graph_workspace(
     order.sort_unstable_by_key(|(_, resource, lifetime)| {
         (
             match resource.class {
-                // Establish retained tail intervals first. Earlier workspace
-                // may then join the same slot, while the output's graph-end
-                // lifetime prevents any later workspace from doing so.
+                // Establish retained tail intervals first. They keep exact-
+                // sized output slots; transient storage is colored only with
+                // other transient storage so its physical allocation remains
+                // reclaimable by the next compiler graph.
                 ResourceClass::Output => 0u8,
                 ResourceClass::Workspace | ResourceClass::Artifact => 1,
                 ResourceClass::Input | ResourceClass::External => unreachable!(),
@@ -4505,10 +4750,7 @@ fn plan_graph_workspace(
     let mut slots = Vec::<SlotState>::new();
     let mut assignment_by_resource = BTreeMap::<usize, u32>::new();
     for (resource_index, resource, lifetime) in order {
-        // Outputs are processed before workspace; their graph-end lifetime
-        // admits only scratch that dies before publication. The materializer
-        // separately makes every output slot an exclusive physical arena,
-        // preserving its identity after the graph.
+        let retained_output = resource.class == ResourceClass::Output;
         let reusable = (!disable_coloring)
             .then(|| {
                 slots
@@ -4516,6 +4758,7 @@ fn plan_graph_workspace(
                     .enumerate()
                     .filter(|(_, slot)| {
                         slot.plan.usage == resource.usage
+                            && slot.retained_output == retained_output
                             && slot.lifetimes.iter().all(|other| {
                                 lifetime.last_pass < other.first_pass
                                     || other.last_pass < lifetime.first_pass
@@ -4540,6 +4783,7 @@ fn plan_graph_workspace(
                     usage: resource.usage,
                 },
                 lifetimes: Vec::new(),
+                retained_output,
             });
             index
         });
@@ -4612,6 +4856,7 @@ mod tests {
         let workspace = CompilerGraphWorkspace {
             slots: Vec::new(),
             slot_by_resource: vec![None],
+            phase_reset_ranges: Vec::new(),
         };
         let bindings = workspace.bindings(&graph).unwrap();
         assert!(bindings.buffer(unused).is_none());
@@ -4705,6 +4950,94 @@ mod tests {
         assert_eq!(unique.len(), 1);
         assert_eq!(unique[0].byte_offset, 0);
         assert_eq!(unique[0].byte_size, 256);
+    }
+
+    #[test]
+    fn imported_ranges_share_one_phase_reset_allocation() {
+        let mut builder = CompilerGraphBuilder::new();
+        let first = builder
+            .add_storage("first", ResourceDomain::Types, ResourceClass::Workspace, 64)
+            .unwrap();
+        let second = builder
+            .add_storage(
+                "second",
+                ResourceDomain::Types,
+                ResourceClass::Workspace,
+                64,
+            )
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "produce",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![
+                    PassAccess::write("first", first),
+                    PassAccess::write("second", second),
+                ],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+        let device = &crate::gpu::device::global().device;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("compiler_graph.phase_reset_identity"),
+            size: 256,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let first_import = TrackedBufferView::from_parts(&buffer, 0, 64, Some(41)).alias::<u8>(64);
+        let second_import =
+            TrackedBufferView::from_parts(&buffer, 64, 64, Some(41)).alias::<u8>(64);
+        let workspace = CompilerGraphWorkspace::new_with_imports(
+            device,
+            "phase_reset_test",
+            &graph,
+            &[(first, first_import), (second, second_import)],
+        )
+        .unwrap();
+
+        assert_eq!(workspace.phase_reset_range_count(), 1);
+    }
+
+    #[test]
+    fn retained_output_does_not_import_phase_local_storage() {
+        let mut builder = CompilerGraphBuilder::new();
+        let output = builder
+            .add_storage("retained", ResourceDomain::Types, ResourceClass::Output, 64)
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "produce.retained",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("retained", output)],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+        let device = &crate::gpu::device::global().device;
+        let upstream = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("compiler_graph.dead_phase_storage"),
+            size: 256,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let upstream = TrackedBufferView::from_parts(&upstream, 0, 256, Some(71));
+        let workspace = CompilerGraphWorkspace::new_with_upstream_storage_excluding_outputs(
+            device,
+            "retained_output_test",
+            &graph,
+            &[upstream],
+        )
+        .unwrap();
+
+        assert_eq!(workspace.phase_reset_range_count(), 0);
+        assert_ne!(
+            workspace
+                .alias::<u8>(&graph, output, 64)
+                .unwrap()
+                .allocation_id(),
+            Some(71)
+        );
     }
 
     #[test]
@@ -4818,7 +5151,7 @@ mod tests {
     }
 
     #[test]
-    fn retained_output_reuses_only_workspace_that_dies_before_publication() {
+    fn retained_output_keeps_transient_storage_reclaimable() {
         let mut builder = CompilerGraphBuilder::new();
         let early_scratch = builder
             .add_storage(
@@ -4893,8 +5226,9 @@ mod tests {
             .find(|assignment| assignment.name == "late_scratch")
             .unwrap()
             .slot;
-        assert_eq!(early_scratch_slot, output_slot);
+        assert_ne!(early_scratch_slot, output_slot);
         assert_ne!(late_scratch_slot, output_slot);
+        assert_eq!(early_scratch_slot, late_scratch_slot);
         let conflicts = graph.workspace_arena_conflicts();
         assert!(conflicts.contains(&(
             late_scratch_slot.min(output_slot),
@@ -5825,6 +6159,138 @@ mod tests {
         assert_ne!(slot(left.local_prefix), slot(right.local_prefix));
         assert_ne!(slot(left.block_sum), slot(right.block_sum));
         assert_ne!(slot(left.block_prefix), slot(right.block_prefix));
+    }
+
+    #[test]
+    fn in_place_paired_prefix_scan_reuses_each_input_as_its_prefix() {
+        let mut builder = CompilerGraphBuilder::new();
+        let mut add = |name, class, bytes, usage| {
+            builder
+                .add_resource(ResourceDesc {
+                    name,
+                    domain: ResourceDomain::Declarations,
+                    class,
+                    bytes,
+                    usage,
+                })
+                .unwrap()
+        };
+        let count = add(
+            "in-place.count",
+            ResourceClass::Input,
+            4,
+            WorkspaceUsageClass::Storage,
+        );
+        let left_input = add(
+            "in-place.left",
+            ResourceClass::Workspace,
+            4096,
+            WorkspaceUsageClass::Storage,
+        );
+        let right_input = add(
+            "in-place.right",
+            ResourceClass::Workspace,
+            4096,
+            WorkspaceUsageClass::Storage,
+        );
+        let dispatch_args = add(
+            "in-place.dispatch",
+            ResourceClass::Input,
+            12,
+            WorkspaceUsageClass::StorageIndirect,
+        );
+        let left_total = add(
+            "in-place.left.total",
+            ResourceClass::Workspace,
+            4,
+            WorkspaceUsageClass::Storage,
+        );
+        let right_total = add(
+            "in-place.right.total",
+            ResourceClass::Workspace,
+            4,
+            WorkspaceUsageClass::Storage,
+        );
+        let left_workspace = builder
+            .add_in_place_prefix_scan_workspace(
+                left_input,
+                ResourceDomain::Declarations,
+                1024,
+                256,
+                PrefixScanWorkspace {
+                    local_prefix: "in-place.left",
+                    block_sum: "in-place.left.sum",
+                    block_prefix: "in-place.left.prefix",
+                },
+            )
+            .unwrap();
+        let right_workspace = builder
+            .add_in_place_prefix_scan_workspace(
+                right_input,
+                ResourceDomain::Declarations,
+                1024,
+                256,
+                PrefixScanWorkspace {
+                    local_prefix: "in-place.right",
+                    block_sum: "in-place.right.sum",
+                    block_prefix: "in-place.right.prefix",
+                },
+            )
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "in-place.mark",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                accesses: vec![
+                    PassAccess::logical_write("left", left_input),
+                    PassAccess::logical_write("right", right_input),
+                ],
+            })
+            .unwrap();
+        let resources =
+            |input, total, workspace: PrefixScanWorkspace<ResourceId>| PrefixScanResources {
+                count,
+                input,
+                output_prefix: input,
+                total,
+                dispatch_args,
+                local_prefix: workspace.local_prefix,
+                block_sum: workspace.block_sum,
+                block_prefix: workspace.block_prefix,
+            };
+        let left = resources(left_input, left_total, left_workspace);
+        let right = resources(right_input, right_total, right_workspace);
+        builder
+            .add_fragment(PrefixScanPairGraph {
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Declarations,
+                hierarchy_levels: 1,
+                passes: PrefixScanGraphPasses {
+                    local: "in-place.local",
+                    hierarchy_up_first: "in-place.block-prefix",
+                    hierarchy_up_rest: "in-place.block-prefix.rest",
+                    hierarchy_down: "in-place.block-prefix.down",
+                    apply: "in-place.apply",
+                },
+                left,
+                right,
+            })
+            .unwrap();
+
+        let graph = builder.build().unwrap();
+        for pass_name in ["in-place.local", "in-place.apply"] {
+            let pass = graph.pass(graph.pass_id(pass_name).unwrap()).unwrap();
+            for input in [left_input, right_input] {
+                assert!(pass.accesses.iter().any(|access| {
+                    access.resource == input && access.mode == AccessMode::ReadWrite
+                }));
+            }
+        }
+        assert_eq!(left.local_prefix, left_input);
+        assert_eq!(right.local_prefix, right_input);
+        assert_eq!(graph.resource(left.block_sum).unwrap().bytes, 16);
+        assert_eq!(graph.resource(right.block_sum).unwrap().bytes, 16);
     }
 
     #[test]

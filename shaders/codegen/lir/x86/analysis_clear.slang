@@ -28,6 +28,7 @@ RWStructuredBuffer<uint> x86_frame_slot_count_by_function;
 RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 RWStructuredBuffer<uint> x86_decl_location_by_token;
 RWStructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
+RWStructuredBuffer<uint> x86_direct_call_count_by_function;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -65,7 +66,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         x86_function_start[row] = INVALID;
         x86_function_end[row] = 0u;
         X86FunctionRegisterAnalysis register_analysis;
-        register_analysis.first_call = 0u;
+        // Parallel indexing lowers this sentinel with InterlockedMin. The
+        // constant-time allocation finalizer converts it back to the public
+        // zero-means-no-call representation.
+        register_analysis.first_call = INVALID;
         register_analysis.first_rdx_clobber = 0u;
         register_analysis.first_rcx_clobber = 0u;
         register_analysis.flags = 0u;
@@ -73,5 +77,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         x86_stack_slot_count_by_function[row] = 0u;
         x86_frame_slot_count_by_function[row] = 0u;
         x86_saved_gpr_mask_by_function[row] = 0u;
+        x86_direct_call_count_by_function[row] = 0u;
     }
 }

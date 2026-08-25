@@ -397,26 +397,40 @@ impl<'a> ResourceMap<'a> {
             .expect("pass id came from this graph")
             .accesses
         {
-            let registered_name = aliases
-                .iter()
-                .find_map(|(binding, registered)| {
-                    (*binding == access.binding).then_some(*registered)
-                })
-                .unwrap_or(access.binding);
+            let explicit_name = aliases.iter().find_map(|(binding, registered)| {
+                (*binding == access.binding).then_some(*registered)
+            });
             let canonical_name = graph
                 .resource(access.resource)
                 .expect("pass access resource belongs to graph")
                 .name;
-            let identity = self
-                .graph_identities
-                .get(registered_name)
-                .or_else(|| self.graph_identities.get(canonical_name))
+            // Reflected binding names such as `scan_input` are deliberately
+            // reused by many graph operations. They are therefore not stable
+            // resource identities in a phase-wide registry. The graph's
+            // canonical resource is authoritative unless the operation gives
+            // an explicit local override (for example a radix ping-pong lane).
+            // Falling back to the reflected name keeps small operation-local
+            // registries valid when they contain no canonical graph names.
+            let resolved = explicit_name
+                .and_then(|name| self.graph_identities.get(name).map(|identity| (name, identity)))
+                .or_else(|| {
+                    self.graph_identities
+                        .get(canonical_name)
+                        .map(|identity| (canonical_name, identity))
+                })
+                .or_else(|| {
+                    self.graph_identities
+                        .get(access.binding)
+                        .map(|identity| (access.binding, identity))
+                })
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "compiler pass `{pass_name}` binding `{}` maps to `{registered_name}` (canonical resource `{canonical_name}`), which is not registered as a buffer",
+                        "compiler pass `{pass_name}` binding `{}` has no registered buffer for its explicit override {:?}, canonical resource `{canonical_name}`, or reflected name",
                         access.binding,
+                        explicit_name,
                     )
                 })?;
+            let (_, identity) = resolved;
             let bound = graph
                 .bind_registered_resource(
                     access.binding,
@@ -583,4 +597,70 @@ pub(crate) fn typed_buffer_from_resources<T>(
         identity.allocation_id,
     )
     .alias(count))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gpu::{
+        compiler_graph::{
+            CompilerGraphBuilder,
+            CompilerPhase,
+            PassAccess,
+            PassDesc,
+            ResourceClass,
+            ResourceDesc,
+            ResourceDomain,
+        },
+        workspace::WorkspaceUsageClass,
+    };
+
+    #[test]
+    fn graph_binding_resolution_prefers_canonical_resource_over_ambiguous_shader_name() {
+        let mut builder = CompilerGraphBuilder::new();
+        let input = builder
+            .add_resource(ResourceDesc {
+                name: "canonical.scan.input",
+                domain: ResourceDomain::OptimizationNodes,
+                class: ResourceClass::Input,
+                bytes: 64,
+                usage: WorkspaceUsageClass::Storage,
+            })
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "scan.local",
+                phase: CompilerPhase::Optimization,
+                dispatch_domain: ResourceDomain::OptimizationNodes,
+                accesses: vec![PassAccess::read("scan_input", input)],
+            })
+            .unwrap();
+        let graph = builder.build().unwrap();
+
+        let mut resources = ResourceMap::new();
+        resources.graph_identities.insert(
+            "scan_input".to_owned(),
+            GraphResourceIdentity {
+                allocation_id: Some(1),
+                byte_offset: 0,
+                byte_size: 16,
+                logical_byte_size: 16,
+            },
+        );
+        resources.graph_identities.insert(
+            "canonical.scan.input".to_owned(),
+            GraphResourceIdentity {
+                allocation_id: Some(2),
+                byte_offset: 256,
+                byte_size: 64,
+                logical_byte_size: 64,
+            },
+        );
+
+        let bindings = resources.graph_bindings(&graph, "scan.local").unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].allocation_id, 2);
+        assert_eq!(bindings[0].byte_offset, 256);
+        assert_eq!(bindings[0].byte_size, 64);
+    }
 }

@@ -1,0 +1,26 @@
+module app::main;
+
+extern "lanius_std" fn argc() -> i32;
+
+fn integer_mix(iterations: i32, salt: i32) -> i32 {
+    let total: i32 = 0;
+    let index: i32 = 0;
+    while (index < iterations) {
+        let lane: i32 = (index + salt) % 1021;
+        if ((lane % 4) < 2) {
+            total += lane;
+        } else {
+            total -= lane;
+        }
+        if (total > 100000) { total -= 200001; }
+        if (total < -100000) { total += 200001; }
+        index += 1;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    let argument_count: i32 = argc();
+    print(integer_mix(25000000 + argument_count, argument_count));
+    return 0;
+}

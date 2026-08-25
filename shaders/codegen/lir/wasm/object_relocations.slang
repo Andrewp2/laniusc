@@ -1,15 +1,16 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 import gpu_index;
 
 struct Params { uint target_capacity; uint function_capacity; uint artifact_capacity; uint reserved; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
-StructuredBuffer<SemanticLirCore> semantic_lir_core;
-StructuredBuffer<SemanticLirOperands> semantic_lir_operands;
+StructuredBuffer<OptIrNodeCore> opt_ir_core;
+StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
 StructuredBuffer<SemanticLirString> semantic_lir_strings;
-StructuredBuffer<uint> semantic_lir_total;
+StructuredBuffer<uint> opt_ir_total;
 StructuredBuffer<uint> semantic_schedule_order;
-StructuredBuffer<uint> semantic_owner_by_instruction;
+StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> semantic_to_target_start;
 StructuredBuffer<uint> target_byte_offset;
@@ -29,17 +30,17 @@ static const uint RELOCATION_SYMBOL = 2u;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    uint semantic_count = semantic_lir_total[0u];
+    uint semantic_count = opt_ir_total[0u];
     if (row >= semantic_count || wasm_object_relocation_flag[row] == 0u) return;
 
     uint semantic_row = semantic_schedule_order[row];
     uint target_row = semantic_to_target_start[semantic_row];
     uint target_total = min(target_lir_total[0u], gParams.target_capacity);
     if (target_row >= target_total) return;
-    SemanticLirCore instruction = semantic_lir_core[semantic_row];
-    SemanticLirOperands operands = semantic_lir_operands[semantic_row];
+    OptIrNodeCore instruction = opt_ir_core[semantic_row];
+    OptIrNodeOperands operands = opt_ir_operands[semantic_row];
     uint function_id =
-        semantic_function_id_by_hir[semantic_owner_by_instruction[semantic_row]];
+        semantic_function_id_by_hir[opt_ir_source_hir[semantic_row]];
     if (function_id >= gParams.function_capacity) return;
     WasmLirFunction function = wasm_lir_functions[function_id];
     uint relative_instruction_byte = target_byte_offset[target_row] - function.body_byte_start;
@@ -51,8 +52,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // the call opcode.
     relocation.body_byte_offset = wasm_code_entry_offset[function_id] + 22u +
         function.local_count * 6u + relative_instruction_byte + 1u;
-    bool data = semantic_lir_op(instruction) == SEMANTIC_LIR_OP_CONST_STRING;
-    bool symbolic = semantic_lir_op(instruction) == SEMANTIC_LIR_OP_CALL_SYMBOL;
+    bool data = opt_ir_op(instruction) == SEMANTIC_LIR_OP_CONST_STRING;
+    bool symbolic = opt_ir_op(instruction) == SEMANTIC_LIR_OP_CALL_SYMBOL;
     relocation.target_kind = data ? 3u : symbolic ? RELOCATION_SYMBOL : RELOCATION_LOCAL_FUNCTION;
     relocation.target_index = data ? semantic_lir_strings[operands.a].data_offset
         : symbolic ? wasm_object_symbol_prefix[row] : operands.a;

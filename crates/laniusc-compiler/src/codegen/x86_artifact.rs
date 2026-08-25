@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    lowering::GpuSemanticLirView,
     lowering_ir::{
         LoweringCapacities,
         TARGET_LIR_PAGE_ROWS,
@@ -13,6 +12,7 @@ use super::{
         X86LirLocations,
         X86LirOperands,
     },
+    optimization::GpuOptIrMetadataView,
     scan::{GpuResidentExclusiveScan, GraphScanContract},
 };
 use crate::gpu::{
@@ -34,7 +34,7 @@ struct X86ArtifactParams {
     artifact_capacity: u32,
     target_start: u32,
     page_capacity: u32,
-    reserved0: u32,
+    semantic_capacity: u32,
     reserved1: u32,
 }
 
@@ -74,7 +74,7 @@ impl GpuX86ArtifactStage {
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
         capacities: LoweringCapacities,
-        semantic: GpuSemanticLirView<'_>,
+        metadata: GpuOptIrMetadataView<'_>,
         total: &LaniusBuffer<u32>,
         core: &LaniusBuffer<X86LirCore>,
         operands: &LaniusBuffer<X86LirOperands>,
@@ -120,7 +120,7 @@ impl GpuX86ArtifactStage {
                         page_capacity: emit_capacity
                             .saturating_sub(target_start)
                             .min(TARGET_LIR_PAGE_ROWS),
-                        reserved0: 0,
+                        semantic_capacity: capacities.semantic_instructions.max(1),
                         reserved1: 0,
                     },
                 )
@@ -163,7 +163,7 @@ impl GpuX86ArtifactStage {
         let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
         let mut resources = ResourceMap::new();
         resources.register_graph_bindings(graph, &graph_bindings);
-        semantic.register(graph, &mut resources)?;
+        metadata.register(graph, &mut resources)?;
         resources.graph_buffer(graph, "lir.x86.total", total)?;
         resources.graph_buffer(graph, "lir.x86.core", core)?;
         resources.graph_buffer(graph, "lir.x86.operands", operands)?;
@@ -452,7 +452,7 @@ mod tests {
     use super::*;
     use crate::{
         codegen::{
-            lowering::{GpuSemanticLirView, target_lowering_allocations},
+            lowering::{GpuSemanticLirView, lowering_allocations_with_semantic},
             lowering_ir::{
                 LoweringArtifactKind,
                 LoweringStatus,
@@ -472,6 +472,7 @@ mod tests {
                 lowering_compiler_graph_for_artifact,
                 opcode,
             },
+            optimization::GpuOptIrMetadataView,
         },
         gpu::{
             buffers::{storage_ro_from_bytes, storage_ro_from_u32s},
@@ -590,9 +591,9 @@ mod tests {
             operands: &semantic_operands,
             layout_word_offset: &no_call_counts,
             owner_by_instruction: &no_call_counts,
-            op_by_instruction: &no_call_counts,
             function_id_by_hir: &function_ids,
             call_args: &semantic_call_args,
+            call_arg_count: &zero,
             call_arg_start_by_hir: &no_call_starts,
             call_arg_count_by_hir: &no_call_counts,
             aggregate_elements: &aggregate_elements,
@@ -610,7 +611,7 @@ mod tests {
             execution_order: None,
             status: &status,
         };
-        let allocations = target_lowering_allocations(&graph, &workspace, semantic).unwrap();
+        let allocations = lowering_allocations_with_semantic(&graph, &workspace, semantic).unwrap();
 
         let total = workspace
             .alias::<u32>(&graph, graph.resource_id("lir.x86.total").unwrap(), 1)
@@ -757,11 +758,12 @@ mod tests {
         gpu.queue
             .write_buffer(&saved_masks.buffer, 0, &records(&[[0], [0]]));
 
-        let kernels =
-            KernelRegistry::prepare_prefixes(&gpu.device, &["codegen/lir", "scan/counted"], |_| {
-                true
-            })
-            .unwrap();
+        let kernels = KernelRegistry::prepare_prefixes(
+            &gpu.device,
+            crate::codegen::lowering::LOWERING_KERNEL_PREFIXES,
+            |_| true,
+        )
+        .unwrap();
         let stage = GpuX86ArtifactStage::new(
             &gpu.device,
             &kernels,
@@ -769,7 +771,7 @@ mod tests {
             &workspace,
             &allocations,
             capacities,
-            semantic,
+            GpuOptIrMetadataView::from_semantic(semantic),
             &total,
             &core,
             &operands,

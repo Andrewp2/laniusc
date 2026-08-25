@@ -70,7 +70,7 @@ fn record_direct_with_offsets(
         InputElements::Elements1D(n_elements),
         [x, y, 1],
     )?;
-    if defer_compute_direct_with_offsets(pass, bind_group, groups, dynamic_offsets) {
+    if defer_compute_direct_with_offsets(pass, bind_group, groups, dynamic_offsets, label) {
         return Ok(());
     }
     let mut compute = begin_counted_compute_pass(
@@ -84,6 +84,8 @@ fn record_direct_with_offsets(
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     crate::gpu::passes_core::record_compute_dispatch();
     compute.dispatch_workgroups(groups.0, groups.1, groups.2);
+    drop(compute);
+    crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
     Ok(())
 }
 
@@ -113,6 +115,7 @@ fn record_indirect_at(
         &dispatch_args.buffer,
         absolute_offset,
         &[],
+        label,
     ) {
         return Ok(());
     }
@@ -127,6 +130,8 @@ fn record_indirect_at(
     compute.set_bind_group(0, Some(bind_group), &[]);
     crate::gpu::passes_core::record_compute_dispatch();
     compute.dispatch_workgroups_indirect(&dispatch_args.buffer, absolute_offset);
+    drop(compute);
+    crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
     Ok(())
 }
 
@@ -145,6 +150,7 @@ fn record_indirect_with_offsets(
         &dispatch_args.buffer,
         dispatch_args.byte_offset,
         dynamic_offsets,
+        label,
     ) {
         return Ok(());
     }
@@ -159,5 +165,7 @@ fn record_indirect_with_offsets(
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     crate::gpu::passes_core::record_compute_dispatch();
     compute.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
+    drop(compute);
+    crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
     Ok(())
 }

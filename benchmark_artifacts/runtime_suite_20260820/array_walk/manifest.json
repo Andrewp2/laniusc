@@ -1,0 +1,139 @@
+{
+  "files": [
+    {
+      "path": "commands.json",
+      "sha256": "2ac30944af47bc092e7e58ef62152f6c992dfe620647ea431b6ed414c022caa9"
+    },
+    {
+      "path": "config.json",
+      "sha256": "28a33a7d88eeeca5c25d0286873adb504bf8be545c5042c7acbf52b53b2d2af3"
+    },
+    {
+      "path": "machine_info.json",
+      "sha256": "4428315d5bc1d02274dcd486e709c681967714aa1af70d6c1902a36c23f4889c"
+    },
+    {
+      "path": "outputs/c-debug.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/c-o2.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/c-optimized.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/cpp-debug.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/cpp-optimized.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/lanius-default.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/rust-debug.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/rust-optimized.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/tcc-default.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/zig-debug.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "outputs/zig-optimized.stdout",
+      "sha256": "7aaf5a8849acbd381d91a7419bcd011892113efd6a958415b08179e1794718a1"
+    },
+    {
+      "path": "results.tsv",
+      "sha256": "66d617cf8eec7e85fb8d028e382febdf3e66b406e63399ccc669eefbff0585ba"
+    },
+    {
+      "path": "samples.json",
+      "sha256": "b23d85fc2178f68325ba2bfd937a5c6bc303928a01f921b187499e190d89e52b"
+    },
+    {
+      "path": "src/array_walk.c",
+      "sha256": "748fe340c4c4d87f37bfb8a61df9b55edbc6a587a62abb68e55a8b4016611880"
+    },
+    {
+      "path": "src/array_walk.cpp",
+      "sha256": "81729bc93074316f36703d7810e4f1e7a0fff42b29851f7805f62f4611bf7619"
+    },
+    {
+      "path": "src/array_walk.lani",
+      "sha256": "c61f079d021e5b5460b0952400ff2d029d0e3a090bd498da2ed09e9e67369c24"
+    },
+    {
+      "path": "src/array_walk.rs",
+      "sha256": "0b9d6cb2f0cb0785c248ba2e857536980bdfc29fa853005ffe301250a4279e50"
+    },
+    {
+      "path": "src/array_walk.zig",
+      "sha256": "d93cf02087762f5470953051d76fa2ce8d7098dfe4009f467f85f0de86695a8e"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "2448f78f00a5dca8392f06af5ae57441b0079f6b076355de954911a05f8e7fc2"
+    }
+  ],
+  "language_lanes": [
+    {
+      "lane": "debug",
+      "language": "c"
+    },
+    {
+      "lane": "o2",
+      "language": "c"
+    },
+    {
+      "lane": "optimized",
+      "language": "c"
+    },
+    {
+      "lane": "debug",
+      "language": "cpp"
+    },
+    {
+      "lane": "optimized",
+      "language": "cpp"
+    },
+    {
+      "lane": "debug",
+      "language": "rust"
+    },
+    {
+      "lane": "optimized",
+      "language": "rust"
+    },
+    {
+      "lane": "debug",
+      "language": "zig"
+    },
+    {
+      "lane": "optimized",
+      "language": "zig"
+    },
+    {
+      "lane": "default",
+      "language": "tcc"
+    },
+    {
+      "lane": "default",
+      "language": "lanius"
+    }
+  ],
+  "schema": "lanius.runtime-comparison.v2"
+}

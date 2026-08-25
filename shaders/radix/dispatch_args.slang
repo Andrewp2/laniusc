@@ -20,8 +20,6 @@ RWStructuredBuffer<uint> radix_dispatch_args;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_RADIX_BLOCKS = 4096u;
-
 uint active_item_count()
 {
     return min(name_count_in[0], gParams.item_capacity);
@@ -34,8 +32,7 @@ void main()
     uint blocks = radix_active_block_count(
         active_item_count(),
         gParams.max_blocks,
-        WG_SIZE,
-        MAX_RADIX_BLOCKS);
+        WG_SIZE);
     blocks = max(blocks, 1u);
 
     radix_dispatch_args[0u] = min(blocks, MAX_GROUPS_X);

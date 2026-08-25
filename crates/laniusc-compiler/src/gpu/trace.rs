@@ -8,6 +8,8 @@ use std::{
 use log::warn;
 use serde::Serialize;
 
+use super::timer::GpuCompilerPhase;
+
 #[derive(Clone, Serialize)]
 struct TraceEvent {
     name: String,
@@ -117,14 +119,43 @@ pub fn record_host_span(lane: &str, name: &str, start: Instant, end: Instant) {
 }
 
 /// Records a GPU-duration span relative to a host anchor instant.
-pub fn record_gpu_span(lane: &str, name: &str, anchor: Instant, start_ms: f64, dur_ms: f64) {
-    record_span_at(
-        "gpu",
-        lane,
-        name,
-        |state| state.instant_us(anchor) + start_ms * 1000.0,
-        dur_ms * 1000.0,
-    );
+pub fn record_gpu_span(
+    lane: &str,
+    name: &str,
+    phase: GpuCompilerPhase,
+    anchor: Instant,
+    start_ms: f64,
+    dur_ms: f64,
+) {
+    match state().lock() {
+        Ok(mut state) => {
+            if !state.enabled() {
+                return;
+            }
+            let tid = state.lane_id(lane);
+            let mut args = BTreeMap::new();
+            args.insert(
+                "lane".to_string(),
+                serde_json::Value::String(lane.to_string()),
+            );
+            args.insert(
+                "compiler_phase".to_string(),
+                serde_json::Value::String(phase.as_str().to_string()),
+            );
+            let ts = state.instant_us(anchor) + start_ms * 1000.0;
+            state.events.push(TraceEvent {
+                name: name.to_string(),
+                cat: "gpu".to_string(),
+                ph: "X",
+                ts,
+                dur: Some(dur_ms * 1000.0),
+                pid: 1,
+                tid,
+                args,
+            });
+        }
+        Err(err) => warn!("failed to lock GPU trace state: {err}"),
+    }
 }
 
 /// Records elapsed time between two Lanius GPU submissions.

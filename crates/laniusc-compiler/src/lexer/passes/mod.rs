@@ -84,16 +84,20 @@ pub fn record_all_passes(
     p: &LexerPasses,
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1;
+    let _operation_capture = ctx
+        .maybe_timer
+        .as_deref()
+        .map(crate::gpu::timer::GpuTimer::capture_operations);
     // Reset values that are either accumulated atomically or only written at
     // token boundaries. These are logical graph resources even when workspace
     // coloring places them inside larger shared allocations.
     ctx.buffers.record_job_initialize(ctx.encoder);
     let source_file_capacity = ctx.buffers.source_file_start.count as u32;
 
-    let can_batch = ctx.maybe_timer.is_none()
-        && ctx.maybe_dbg.is_none()
+    let can_batch = ctx.maybe_dbg.is_none()
         && ctx.bg_cache.is_some()
         && compute_pass_batching_enabled()
+        && !crate::gpu::timer::operation_capture_requires_split_passes()
         && !validation_scopes_enabled();
     if can_batch {
         {

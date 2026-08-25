@@ -91,6 +91,309 @@ static const uint SEMANTIC_LIR_OP_CALL_SYMBOL = 39u;
 // when only some pattern forms require an intermediate machine operation.
 // IR_OPCODE
 static const uint SEMANTIC_LIR_OP_NOP = 40u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_COUNT = 41u;
+
+// Semantic operation metadata is indexed directly by opcode. Rust consumes
+// the same rows through crates/laniusc-compiler/build.rs; adding an opcode
+// without one row is a build error.
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_PRODUCES_VALUE = 1u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_CONTROL = 2u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_TERMINATOR = 4u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_COMMUTATIVE = 8u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_ASSOCIATIVE = 16u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_MAY_TRAP = 32u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_CALL = 64u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_DECLARATION_READ = 128u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_DECLARATION_WRITE = 256u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_MEMORY_READ = 512u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_MEMORY_WRITE = 1024u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_FLAG_NO_OP = 2048u;
+
+// Structured-control role used by target-independent CFG construction.
+// `CONTROL` in the generic flag set establishes effect ordering; this field
+// states how the row participates in basic-block and edge construction.
+// IR_OPCODE
+static const uint SEMANTIC_LIR_CONTROL_NONE = 0u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_CONTROL_BLOCK_LABEL = 1u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_CONTROL_LOOP_HEADER = 2u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_CONTROL_CONDITIONAL_BRANCH = 3u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_CONTROL_ELSE_BRANCH = 4u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_CONTROL_MERGE_LABEL = 5u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_CONTROL_BRANCH = 6u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_CONTROL_RETURN = 7u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_CONTROL_COUNT = 8u;
+
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_NONE = 0u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_VALUE = 1u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_DECLARATION = 2u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_LITERAL = 3u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_FUNCTION = 4u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_HOST_SERVICE = 5u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_CONTROL_TARGET = 6u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_PREDICATE = 7u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_SIDE_TABLE_START = 8u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_COUNT = 9u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_SYMBOL_ID = 10u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_INTRINSIC = 11u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_TYPE = 12u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_METADATA = 13u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OPERAND_DYNAMIC = 14u;
+
+// IR_OPCODE
+static const uint SEMANTIC_LIR_RESULT_NONE = 0u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_RESULT_SCALAR = 1u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_RESULT_BOOL = 2u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_RESULT_AGGREGATE = 3u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_RESULT_ADDRESS = 4u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_RESULT_STRING = 5u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_RESULT_DYNAMIC = 6u;
+
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_NONE = 0u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_CORE = 1u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_COMPARISON = 2u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_BOOL = 3u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_DECLARATION = 4u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_CONVERSION = 5u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_CALLEE = 6u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_HOST_SERVICE = 7u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_INTRINSIC = 8u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_SYMBOL = 9u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_ADDRESS = 10u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_TYPE_RULE_AGGREGATE = 11u;
+
+// IR_OPCODE
+static const uint SEMANTIC_LIR_EFFECT_NONE = 0u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_EFFECT_DECLARATION = 1u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_EFFECT_CONTROL = 2u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_EFFECT_MEMORY_READ = 3u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_EFFECT_MEMORY_WRITE = 4u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_EFFECT_CALL = 5u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_EFFECT_HOST = 6u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_EFFECT_DYNAMIC = 7u;
+
+// IR_OPCODE
+static const uint SEMANTIC_LIR_VARIADIC_NONE = 0u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_VARIADIC_CALL_ARGUMENTS = 1u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_VARIADIC_AGGREGATE_ELEMENTS = 2u;
+
+// Arithmetic behavior is a bit set because one semantic opcode may serve
+// both integer and floating-point types.
+// IR_OPCODE
+static const uint SEMANTIC_LIR_ARITHMETIC_NONE = 0u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_ARITHMETIC_INTEGER_WRAPPING = 1u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_ARITHMETIC_FLOAT_IEEE = 2u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_ARITHMETIC_DIVIDE_BY_ZERO_TRAPS = 4u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_ARITHMETIC_SIGNED_DIVIDE_OVERFLOW_TRAPS = 8u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_ARITHMETIC_SHIFT_RANGE_TRAPS = 16u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_ARITHMETIC_CONVERSION_CHECKED = 32u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_ARITHMETIC_SHORT_CIRCUIT = 64u;
+
+struct SemanticLirOpProperties
+{
+    uint flags;
+    // Operands a, b, and c occupy successive four-bit fields.
+    uint operand_roles;
+    uint result_kind;
+    uint type_rule;
+    uint control_role;
+    uint effect;
+    uint variadic_kind;
+    uint arithmetic;
+};
+
+static const SemanticLirOpProperties
+    SEMANTIC_LIR_OP_PROPERTIES[SEMANTIC_LIR_OP_COUNT] = {
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_INVALID
+{ 0u, 0x000u, 0u, 0u, 0u, 7u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CONST_I32
+{ 1u, 0x003u, 1u, 1u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CONST_F32
+{ 1u, 0x003u, 1u, 1u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_VALUE_GET
+{ 129u, 0x002u, 6u, 4u, 0u, 1u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_VALUE_SET
+{ 256u, 0x012u, 0u, 4u, 0u, 1u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_ADD
+{ 1u, 0x011u, 1u, 1u, 0u, 0u, 0u, 3u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_SUB
+{ 1u, 0x011u, 1u, 1u, 0u, 0u, 0u, 3u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_MUL
+{ 1u, 0x011u, 1u, 1u, 0u, 0u, 0u, 3u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_DIV
+{ 33u, 0x011u, 1u, 1u, 0u, 0u, 0u, 14u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_REM
+{ 33u, 0x011u, 1u, 1u, 0u, 0u, 0u, 12u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_BIT_AND
+{ 25u, 0x011u, 1u, 1u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_BIT_OR
+{ 25u, 0x011u, 1u, 1u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_BIT_XOR
+{ 25u, 0x011u, 1u, 1u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_SHIFT_LEFT
+{ 33u, 0x011u, 1u, 1u, 0u, 0u, 0u, 16u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_SHIFT_RIGHT
+{ 33u, 0x011u, 1u, 1u, 0u, 0u, 0u, 16u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_COMPARE
+{ 1u, 0x711u, 2u, 2u, 0u, 0u, 0u, 2u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_NEGATE
+{ 1u, 0x001u, 1u, 1u, 0u, 0u, 0u, 3u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_LOGICAL_NOT
+{ 1u, 0x001u, 2u, 3u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CONVERT
+{ 33u, 0x0d1u, 1u, 5u, 0u, 0u, 0u, 32u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CALL
+{ 97u, 0xdd4u, 6u, 6u, 0u, 5u, 1u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CALL_HOST
+{ 97u, 0xdd5u, 6u, 7u, 0u, 6u, 1u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_BLOCK_BEGIN
+{ 2u, 0xeeeu, 0u, 0u, 1u, 2u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_LOOP_BEGIN
+{ 2u, 0xeeeu, 0u, 0u, 2u, 2u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_IF_BEGIN
+{ 6u, 0xd61u, 0u, 0u, 3u, 2u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_ELSE
+{ 6u, 0x006u, 0u, 0u, 4u, 2u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CONTROL_END
+{ 2u, 0x000u, 0u, 0u, 5u, 2u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_BRANCH
+{ 6u, 0x0d6u, 0u, 0u, 6u, 2u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_BRANCH_IF
+{ 6u, 0x6d1u, 0u, 0u, 3u, 2u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_RETURN
+{ 6u, 0x001u, 0u, 0u, 7u, 2u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_DROP
+{ 0u, 0x001u, 0u, 0u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_ADDRESS
+{ 1u, 0x001u, 4u, 10u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_LOAD
+{ 545u, 0xde1u, 6u, 1u, 0u, 3u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_STORE
+{ 1056u, 0x1eeu, 0u, 1u, 0u, 4u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_AGGREGATE_COPY
+{ 1u, 0x001u, 3u, 11u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CONST_STRING
+{ 1u, 0x003u, 5u, 1u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_LOGICAL_AND
+{ 1u, 0x011u, 2u, 3u, 0u, 0u, 0u, 64u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_LOGICAL_OR
+{ 1u, 0x011u, 2u, 3u, 0u, 0u, 0u, 64u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_AGGREGATE_NEW
+{ 1u, 0xd98u, 3u, 11u, 0u, 0u, 2u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CALL_INTRINSIC
+{ 97u, 0xddbu, 6u, 8u, 0u, 7u, 1u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CALL_SYMBOL
+{ 97u, 0xaaau, 6u, 9u, 0u, 5u, 1u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_NOP
+{ 2048u, 0x000u, 0u, 0u, 0u, 0u, 0u, 0u },
+};
+
+SemanticLirOpProperties semantic_lir_op_properties(uint op)
+{
+    return SEMANTIC_LIR_OP_PROPERTIES[
+        op < SEMANTIC_LIR_OP_COUNT ? op : SEMANTIC_LIR_OP_INVALID];
+}
+
+bool semantic_lir_op_has_flag(uint op, uint flag)
+{
+    return (semantic_lir_op_properties(op).flags & flag) != 0u;
+}
+
+uint semantic_lir_operand_role(uint op, uint ordinal)
+{
+    if (ordinal >= 3u) return SEMANTIC_LIR_OPERAND_NONE;
+    return (semantic_lir_op_properties(op).operand_roles >> (ordinal * 4u)) & 0xfu;
+}
+
+bool semantic_lir_is_call(uint op)
+{
+    return semantic_lir_op_has_flag(op, SEMANTIC_LIR_OP_FLAG_CALL);
+}
+
+bool semantic_lir_produces_value(uint op)
+{
+    return semantic_lir_op_has_flag(op,
+        SEMANTIC_LIR_OP_FLAG_PRODUCES_VALUE);
+}
+
+bool semantic_lir_is_control(uint op)
+{
+    return semantic_lir_op_has_flag(op, SEMANTIC_LIR_OP_FLAG_CONTROL);
+}
+
+uint semantic_lir_control_role(uint op)
+{
+    return semantic_lir_op_properties(op).control_role;
+}
 
 // Canonical scalar type shared by semantic and target lowering. Pointer width
 // is selected by the target: 64 bits on x86_64 and 32 bits on Wasm32.
@@ -251,6 +554,10 @@ static const uint LOWERING_STATUS_STRING_CAPACITY = 64u;
 static const uint LOWERING_STATUS_MULTIPLE_ENTRYPOINTS = 128u;
 // IR_OPCODE
 static const uint LOWERING_STATUS_MISSING_ENTRYPOINT = 256u;
+// IR_OPCODE
+static const uint LOWERING_STATUS_OPTIMIZATION_CAPACITY = 512u;
+// IR_OPCODE
+static const uint LOWERING_STATUS_OPTIMIZATION_STRUCTURE = 1024u;
 
 // Target-validation diagnostics carried across the GPU lowering boundary.
 // IR_OPCODE
@@ -281,6 +588,34 @@ static const uint LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_CALL = 11u;
 static const uint LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_TRAP = 12u;
 // IR_OPCODE
 static const uint LOWERING_DIAGNOSTIC_X86_MATCH_EXPRESSION = 13u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_OPERAND_REWRITE = 14u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_OPERAND_VALIDATE = 15u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE = 16u;
+// IR_OPCODE
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_DOMINANCE = 17u;
+// Canonical value-use compaction or projection failed.
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_USE_COMPACTION = 18u;
+// The compact value-use relation did not reproduce its source relations.
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_USE_VALIDATE = 19u;
+// The stable use order was not a permutation sorted by dense value ID.
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_USE_ORDER = 20u;
+// Compact value-use group construction failed.
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_USE_GROUP = 21u;
+// Value-use groups did not cover the ordered use relation exactly.
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_USE_GROUP_VALIDATE = 22u;
+
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_VALUE_MARK = 23u;
+
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_VALUE_SCATTER = 24u;
+
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_VALUE_VALIDATE = 25u;
+
+static const uint LOWERING_DIAGNOSTIC_OPT_ACCESS_LOCAL_DEFINITIONS_VALIDATE = 26u;
+
+static const uint LOWERING_DIAGNOSTIC_OPT_SSA_TRIVIAL_BLOCK_ARGUMENT_VALIDATE = 27u;
 
 // Diagnostic details either name a source token directly or a compact HIR
 // row whose token anchor must be read from compact HIR.
@@ -316,6 +651,10 @@ static const uint X86_LIR_OP_COMPARE_BRANCH_FALSE = 11u;
 static const uint X86_LIR_OP_SELECT_STORE = 12u;
 // IR_OPCODE
 static const uint X86_LIR_OP_STORE_LOCAL = 14u;
+// Target-only boundary for an inlined scalar call. This row moves the cloned
+// callee's return value into the caller allocation without emitting CALL/RET.
+// IR_OPCODE
+static const uint X86_LIR_OP_INLINE_RESULT = 19u;
 // IR_OPCODE
 static const uint X86_LIR_OP_CALL = 20u;
 // One independently lowered SysV argument placement. These rows immediately
@@ -560,6 +899,9 @@ static const uint TARGET_LIR_FLAG_UNSUPPORTED = 1u;
 // than a function-index relocation. The linker rewrites its immediate after
 // concatenating unit string pools.
 static const uint TARGET_LIR_FLAG_DATA_RELOCATION = 2u;
+// The row was cloned from a single-use callee. Its semantic allocation is
+// reusable, but its target-stream producer position is call-site local.
+static const uint TARGET_LIR_FLAG_INLINE_CLONE = 4u;
 // x86 operand metadata: the value uses the aggregate-reference ABI. This is
 // derived from the full checked type before scalar type IDs are compacted.
 // IR_OPCODE
@@ -761,12 +1103,13 @@ struct LoweringStatus
 {
     uint flags;
     uint first_unsupported_hir;
+    uint first_unsupported_semantic_row;
+    uint first_unsupported_opt_row;
     uint required_capacity;
     uint available_capacity;
     uint diagnostic_reason;
     uint diagnostic_detail_kind;
     uint diagnostic_detail;
-    uint diagnostic_aux;
 };
 
 // Capacity-packed lexicographic target scheduling key. Fields are encoded in
@@ -847,6 +1190,17 @@ struct X86FunctionRegisterAnalysis
     uint first_rdx_clobber;
     uint first_rcx_clobber;
     uint flags;
+};
+
+// Eligible functions have exactly one private direct call site, so removing
+// their standalone body offsets the cloned rows and preserves the target-
+// stream capacity bound. `return_value == INVALID` rejects inlining.
+struct X86InlineInfo
+{
+    uint return_value;
+    uint body_row_count;
+    uint schedule_start;
+    uint schedule_end;
 };
 
 struct X86ValueAnalysis

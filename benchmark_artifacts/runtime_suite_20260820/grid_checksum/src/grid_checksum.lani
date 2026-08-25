@@ -1,0 +1,32 @@
+module app::main;
+
+extern "lanius_std" fn argc() -> i32;
+
+fn cell_score(x: i32, y: i32, salt: i32) -> i32 {
+    let distance: i32 = 0;
+    if (x > y) { distance = x - y; } else { distance = y - x; }
+    let mixed: i32 = (x * 17 + y * 31 + salt * 13) % 97;
+    return distance + mixed;
+}
+
+fn grid_checksum(rows: i32, salt: i32) -> i32 {
+    let total: i32 = 0;
+    let y: i32 = 0;
+    while (y < rows) {
+        let x: i32 = 0;
+        while (x < 251) {
+            total += cell_score(x, y, salt);
+            if (total > 100000) { total -= 200001; }
+            if (total < -100000) { total += 200001; }
+            x += 1;
+        }
+        y += 1;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    let argument_count: i32 = argc();
+    print(grid_checksum(32000 + argument_count, argument_count));
+    return 0;
+}

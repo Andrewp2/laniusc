@@ -33,14 +33,13 @@ pub(in crate::type_checker) struct FnContextBindGroups {
 /// Bind groups for HIR-visible declaration collection and lexical lookup.
 pub(in crate::type_checker) struct VisibleBindGroups {
     pub(in crate::type_checker) clear: ComputeOperation,
-    pub(in crate::type_checker) compact_hir_dispatch: ComputeOperation,
     pub(in crate::type_checker) mark_hir_declarations: ComputeOperation,
     pub(in crate::type_checker) match_payload_dispatch: ComputeOperation,
     pub(in crate::type_checker) mark_match_payload_declarations: ComputeOperation,
     pub(in crate::type_checker) declaration_scan: PrefixScanOperation,
     pub(in crate::type_checker) scatter_declarations: ComputeOperation,
     pub(in crate::type_checker) declarations: VisibleDeclSort,
-    pub(in crate::type_checker) _compact_hir_dispatch_params: LaniusBuffer<CountDispatchParams>,
+    pub(in crate::type_checker) _match_payload_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) _hir_decl_scope_leaf_params: LaniusBuffer<VisibleDeclTreeParams>,
     pub(in crate::type_checker) build_hir_decl_scope_leaves: ComputeOperation,
     pub(in crate::type_checker) hir_decl_scope_tree_levels: Vec<VisibleDeclScopeTreeLevel>,

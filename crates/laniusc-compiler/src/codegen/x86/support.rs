@@ -298,7 +298,12 @@ pub(super) fn dispatch_compute_pass(
     groups: (u32, u32),
 ) {
     trace_event(trace_stage, "record.start");
-    if !crate::gpu::passes_core::defer_compute_direct(pass, bind_group, (groups.0, groups.1, 1)) {
+    if !crate::gpu::passes_core::defer_compute_direct(
+        pass,
+        bind_group,
+        (groups.0, groups.1, 1),
+        label,
+    ) {
         let mut compute = crate::gpu::passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor {

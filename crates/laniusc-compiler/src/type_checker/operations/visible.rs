@@ -10,7 +10,7 @@ pub(in crate::type_checker) const VISIBLE_HIR_DECL_MARK: ReflectedComputeSpec = 
     ("hir_visible_decl_flag", AccessMode::ReadWrite),
     ("hir_visible_decl_source_by_token", AccessMode::ReadWrite),
 ])
-.with_indirect_dispatch("compact_hir_dispatch_args");
+.with_indirect_dispatch("hir_active_dispatch_args");
 
 pub(in crate::type_checker) const VISIBLE_MATCH_DECL_MARK: ReflectedComputeSpec = typecheck_pass!(
     "type_check.visible.mark_match_payload_decls",
@@ -59,4 +59,4 @@ pub(in crate::type_checker) const VISIBLE_NAMES: ReflectedComputeSpec = typechec
     "type_checker/visible/04_hir_names"
 )
 .with_modes(&[("visible_decl", AccessMode::Write)])
-.with_indirect_dispatch("compact_hir_dispatch_args");
+.with_indirect_dispatch("hir_active_dispatch_args");

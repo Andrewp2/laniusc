@@ -1,0 +1,176 @@
+{
+  "commands": {
+    "c": {
+      "debug": {
+        "compile": [
+          "gcc",
+          "-O0",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.c",
+          "-o",
+          "target/runtime-comparison/integer_mix/c-debug"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/c-debug"
+        ]
+      },
+      "o2": {
+        "compile": [
+          "gcc",
+          "-O2",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.c",
+          "-o",
+          "target/runtime-comparison/integer_mix/c-o2"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/c-o2"
+        ]
+      },
+      "optimized": {
+        "compile": [
+          "gcc",
+          "-O3",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.c",
+          "-o",
+          "target/runtime-comparison/integer_mix/c-optimized"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/c-optimized"
+        ]
+      }
+    },
+    "cpp": {
+      "debug": {
+        "compile": [
+          "g++",
+          "-O0",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.cpp",
+          "-o",
+          "target/runtime-comparison/integer_mix/cpp-debug"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/cpp-debug"
+        ]
+      },
+      "optimized": {
+        "compile": [
+          "g++",
+          "-O3",
+          "-g0",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.cpp",
+          "-o",
+          "target/runtime-comparison/integer_mix/cpp-optimized"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/cpp-optimized"
+        ]
+      }
+    },
+    "lanius": {
+      "default": {
+        "compile": [
+          "target/release/laniusc",
+          "--stdlib-root",
+          "stdlib",
+          "--emit",
+          "x86_64",
+          "-o",
+          "target/runtime-comparison/integer_mix/lanius-default",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.lani"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/lanius-default"
+        ]
+      }
+    },
+    "rust": {
+      "debug": {
+        "compile": [
+          "rustc",
+          "-C",
+          "opt-level=0",
+          "-C",
+          "overflow-checks=yes",
+          "-C",
+          "debuginfo=0",
+          "-C",
+          "strip=debuginfo",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.rs",
+          "-o",
+          "target/runtime-comparison/integer_mix/rust-debug"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/rust-debug"
+        ]
+      },
+      "optimized": {
+        "compile": [
+          "rustc",
+          "-C",
+          "opt-level=3",
+          "-C",
+          "overflow-checks=no",
+          "-C",
+          "debuginfo=0",
+          "-C",
+          "strip=debuginfo",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.rs",
+          "-o",
+          "target/runtime-comparison/integer_mix/rust-optimized"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/rust-optimized"
+        ]
+      }
+    },
+    "tcc": {
+      "default": {
+        "compile": [
+          "tcc",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.c",
+          "-o",
+          "target/runtime-comparison/integer_mix/tcc-default"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/tcc-default"
+        ]
+      }
+    },
+    "zig": {
+      "debug": {
+        "compile": [
+          "zig",
+          "build-exe",
+          "-lc",
+          "-O",
+          "Debug",
+          "-fstrip",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.zig",
+          "-femit-bin=target/runtime-comparison/integer_mix/zig-debug"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/zig-debug"
+        ]
+      },
+      "optimized": {
+        "compile": [
+          "zig",
+          "build-exe",
+          "-lc",
+          "-O",
+          "ReleaseFast",
+          "-fstrip",
+          "benchmark_artifacts/runtime_suite_20260820/integer_mix/src/integer_mix.zig",
+          "-femit-bin=target/runtime-comparison/integer_mix/zig-optimized"
+        ],
+        "run": [
+          "target/runtime-comparison/integer_mix/zig-optimized"
+        ]
+      }
+    }
+  },
+  "schema": "lanius.runtime-comparison.v2"
+}

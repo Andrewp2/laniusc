@@ -345,6 +345,10 @@ impl GpuTypeChecker {
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
         timer: &mut Option<&mut GpuTimer>,
     ) -> Result<RecordedSemanticInterface> {
+        let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.set_phase(crate::gpu::timer::GpuCompilerPhase::SemanticInterface);
+        }
         let name_capacity = inputs.name_capacity;
         let module_capacity = inputs.module_capacity;
         let decl_storage_capacity = inputs.declaration_capacity;

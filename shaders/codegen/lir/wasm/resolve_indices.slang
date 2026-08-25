@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 import gpu_index;
 
 struct Params
@@ -15,7 +16,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<uint> wasm_local_index_by_decl_token;
-StructuredBuffer<uint> semantic_owner_by_instruction;
+StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<WasmLirFunction> wasm_lir_functions;
 StructuredBuffer<WasmLirOperands> target_lir_operands;
@@ -41,7 +42,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint declaration = inst.immediate;
         uint function_id = inst.semantic_instruction < gParams.semantic_capacity
             ? semantic_function_id_by_hir[
-                semantic_owner_by_instruction[inst.semantic_instruction]] : INVALID;
+                opt_ir_source_hir[inst.semantic_instruction]] : INVALID;
         if ((declaration == WASM_SYNTHETIC_I32_TEMP ||
              declaration == WASM_SYNTHETIC_F32_TEMP) && function_id != INVALID)
         {

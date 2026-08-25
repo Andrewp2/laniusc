@@ -738,6 +738,8 @@ async fn run_session(
         reaper.disarm();
         let compute_passes_before = recorded_compute_pass_count();
         let compute_dispatches_before = recorded_compute_dispatch_count();
+        let operation_capture_scopes_before = crate::gpu::timer::operation_capture_scope_count();
+        let operation_timestamps_before = crate::gpu::timer::operation_timestamp_count();
         let compute_schedule_job = begin_compute_schedule_job();
         let compute_pass_breakdown_before =
             compute_pass_breakdown_enabled().then(recorded_compute_pass_counts_by_label);
@@ -770,6 +772,11 @@ async fn run_session(
             recorded_compute_pass_count().saturating_sub(compute_passes_before);
         let recorded_compute_dispatches_during_job =
             recorded_compute_dispatch_count().saturating_sub(compute_dispatches_before);
+        let operation_capture_scopes_during_job =
+            crate::gpu::timer::operation_capture_scope_count()
+                .saturating_sub(operation_capture_scopes_before);
+        let operation_timestamps_during_job = crate::gpu::timer::operation_timestamp_count()
+            .saturating_sub(operation_timestamps_before);
         let compute_submission_schedule = finish_compute_schedule_job(compute_schedule_job);
         let compute_pass_breakdown_after = compute_pass_breakdown_before
             .as_ref()
@@ -777,7 +784,20 @@ async fn run_session(
         let bind_group_timing =
             bind_group_timing_counters().saturating_sub(bind_group_timing_before);
         let created = resources_after.saturating_sub(resources_before);
-        let successful = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
+        let mut successful = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
+        if successful && operation_capture_scopes_during_job != 0 {
+            if operation_timestamps_during_job != recorded_compute_dispatches_during_job {
+                successful = false;
+                let response_id = response.get("id").cloned().unwrap_or(Value::Null);
+                response = json!({
+                    "id": response_id,
+                    "ok": false,
+                    "error": format!(
+                        "profiled compiler jobs require exactly one timestamp per GPU kernel dispatch; recorded {recorded_compute_dispatches_during_job} dispatches but {operation_timestamps_during_job} operation timestamps"
+                    ),
+                });
+            }
+        }
         crate::gpu::passes_core::finish_reflected_bind_group_job(
             bind_group_job,
             successful && created.buffers > 0,

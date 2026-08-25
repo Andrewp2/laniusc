@@ -1490,6 +1490,15 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             emit_u8(cursor, 0xc9u);
         emit_u8(cursor, 0xc3u);
     }
+    else if (core.op == X86_LIR_OP_INLINE_RESULT)
+    {
+        if ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT)
+            move_f32_location(cursor, locations.a, locations.result);
+        else if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
+            move_location64(cursor, locations.a, locations.result);
+        else
+            move_location32(cursor, locations.a, locations.result);
+    }
     else if (core.op == X86_LIR_OP_CALL_ARG)
     {
         uint destination = X86_LOCATION_REGISTER |

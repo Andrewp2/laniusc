@@ -1,0 +1,126 @@
+{
+  "rows": [
+    {
+      "lane": "debug",
+      "language": "c",
+      "lanius_speedup": 0.990285889347373,
+      "mad_ms": 0.19121349999999993,
+      "max_ms": 26.118058,
+      "mean_ms": 20.9893943,
+      "median_ms": 20.383815,
+      "min_ms": 20.107295,
+      "samples": 20
+    },
+    {
+      "lane": "o2",
+      "language": "c",
+      "lanius_speedup": 0.9458114277230486,
+      "mad_ms": 0.16166400000000003,
+      "max_ms": 25.118004,
+      "mean_ms": 20.4435745,
+      "median_ms": 19.468363,
+      "min_ms": 19.128481,
+      "samples": 20
+    },
+    {
+      "lane": "optimized",
+      "language": "c",
+      "lanius_speedup": 0.952783669151343,
+      "mad_ms": 0.24422650000000168,
+      "max_ms": 25.192262,
+      "mean_ms": 20.17220445,
+      "median_ms": 19.611878,
+      "min_ms": 19.103742,
+      "samples": 20
+    },
+    {
+      "lane": "debug",
+      "language": "cpp",
+      "lanius_speedup": 0.9964106183085625,
+      "mad_ms": 0.3026035,
+      "max_ms": 26.35327,
+      "mean_ms": 21.900482,
+      "median_ms": 20.509885,
+      "min_ms": 20.158324,
+      "samples": 20
+    },
+    {
+      "lane": "optimized",
+      "language": "cpp",
+      "lanius_speedup": 0.9451811252439302,
+      "mad_ms": 0.14239449999999998,
+      "max_ms": 25.081756,
+      "mean_ms": 20.5391261,
+      "median_ms": 19.455389,
+      "min_ms": 19.112752,
+      "samples": 20
+    },
+    {
+      "lane": "debug",
+      "language": "rust",
+      "lanius_speedup": 1.3940314766470356,
+      "mad_ms": 0.09894599999999976,
+      "max_ms": 36.735216,
+      "mean_ms": 29.2574065,
+      "median_ms": 28.6944205,
+      "min_ms": 28.472604,
+      "samples": 20
+    },
+    {
+      "lane": "optimized",
+      "language": "rust",
+      "lanius_speedup": 0.942670967725637,
+      "mad_ms": 0.11772999999999811,
+      "max_ms": 23.634019,
+      "mean_ms": 19.6713045,
+      "median_ms": 19.4037205,
+      "min_ms": 19.204177,
+      "samples": 20
+    },
+    {
+      "lane": "debug",
+      "language": "zig",
+      "lanius_speedup": 2.1140911372495066,
+      "mad_ms": 0.13683550000000366,
+      "max_ms": 54.738157,
+      "mean_ms": 44.18027845,
+      "median_ms": 43.5159615,
+      "min_ms": 43.146185,
+      "samples": 20
+    },
+    {
+      "lane": "optimized",
+      "language": "zig",
+      "lanius_speedup": 1.188935767251166,
+      "mad_ms": 0.3773964999999997,
+      "max_ms": 31.443837,
+      "mean_ms": 26.2687597,
+      "median_ms": 24.472777999999998,
+      "min_ms": 24.073582,
+      "samples": 20
+    },
+    {
+      "lane": "default",
+      "language": "tcc",
+      "lanius_speedup": 0.8797977124499267,
+      "mad_ms": 0.15882900000000078,
+      "max_ms": 23.775813,
+      "mean_ms": 19.09727475,
+      "median_ms": 18.109552,
+      "min_ms": 17.899765,
+      "samples": 20
+    },
+    {
+      "lane": "default",
+      "language": "lanius",
+      "lanius_speedup": 1.0,
+      "mad_ms": 0.12557550000000006,
+      "max_ms": 25.645175,
+      "mean_ms": 21.17969955,
+      "median_ms": 20.583768,
+      "min_ms": 20.327977,
+      "samples": 20
+    }
+  ],
+  "schema": "lanius.runtime-comparison.v2"
+}

@@ -11,6 +11,8 @@ pub(crate) mod lowering;
 /// GPU-resident target-independent and target-specific lowering contracts.
 pub mod lowering_ir;
 pub(crate) mod lowering_pipeline;
+pub(crate) mod optimization;
+pub(crate) mod optimization_ir;
 pub(crate) mod scan;
 pub(crate) mod schedule;
 pub(crate) mod target_pages;

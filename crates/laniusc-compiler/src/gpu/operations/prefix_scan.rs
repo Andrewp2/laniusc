@@ -31,11 +31,27 @@ fn standard_passes(kernels: &KernelRegistry) -> PrefixScanPasses<'_> {
     }
 }
 
+fn in_place_passes(kernels: &KernelRegistry) -> PrefixScanPasses<'_> {
+    PrefixScanPasses {
+        local: kernels.kernel("scan/counted/00_local_in_place"),
+        block_prefix: kernels.kernel("scan/counted/04_block_prefix"),
+        apply: kernels.kernel("scan/counted/02_apply_in_place"),
+    }
+}
+
 fn pair_passes(kernels: &KernelRegistry) -> Option<PrefixScanPasses<'_>> {
     Some(PrefixScanPasses {
         local: kernels.optional("scan/counted_pair/00_local")?,
         block_prefix: kernels.optional("scan/counted_pair/01_block_prefix")?,
         apply: kernels.optional("scan/counted_pair/03_apply")?,
+    })
+}
+
+fn pair_in_place_passes(kernels: &KernelRegistry) -> Option<PrefixScanPasses<'_>> {
+    Some(PrefixScanPasses {
+        local: kernels.optional("scan/counted_pair/00_local_in_place")?,
+        block_prefix: kernels.optional("scan/counted_pair/01_block_prefix")?,
+        apply: kernels.optional("scan/counted_pair/03_apply_in_place")?,
     })
 }
 
@@ -87,7 +103,7 @@ impl PrefixScanOperation {
         Self::from_resource_names_with_passes(
             device,
             spec.passes.local,
-            standard_passes(kernels),
+            kernels,
             spec.passes,
             resources,
             spec.resources,
@@ -109,23 +125,29 @@ impl PrefixScanOperation {
         total: TrackedBufferView<'_>,
         workspace: PrefixScanWorkspace<&LaniusBuffer<u32>>,
     ) -> Result<Self> {
+        let buffers = PrefixScanBuffers {
+            count,
+            dispatch_args,
+            input,
+            output_prefix,
+            total,
+            local_prefix: workspace.local_prefix.into(),
+            block_sum: workspace.block_sum.into(),
+            block_prefix: workspace.block_prefix.into(),
+        };
+        let passes = if same_view(buffers.input, buffers.output_prefix) {
+            in_place_passes(kernels)
+        } else {
+            standard_passes(kernels)
+        };
         Self::new(
             device,
             Some((queue, cache)),
             label,
             params,
-            standard_passes(kernels),
+            passes,
             graph_passes,
-            PrefixScanBuffers {
-                count,
-                dispatch_args,
-                input,
-                output_prefix,
-                total,
-                local_prefix: workspace.local_prefix.into(),
-                block_sum: workspace.block_sum.into(),
-                block_prefix: workspace.block_prefix.into(),
-            },
+            buffers,
         )
     }
 
@@ -140,7 +162,7 @@ impl PrefixScanOperation {
         Self::from_resource_names_with_passes(
             device,
             label,
-            standard_passes(kernels),
+            kernels,
             graph_passes,
             resources,
             names,
@@ -150,12 +172,17 @@ impl PrefixScanOperation {
     fn from_resource_names_with_passes(
         device: &wgpu::Device,
         label: &'static str,
-        passes: PrefixScanPasses<'_>,
+        kernels: &KernelRegistry,
         graph_passes: PrefixScanGraphPasses,
         resources: &ResourceMap<'_>,
         names: PrefixScanResources<&str>,
     ) -> Result<Self> {
         let (params, buffers) = scan_buffers_from_names(resources, names)?;
+        let passes = if same_view(buffers.input, buffers.output_prefix) {
+            in_place_passes(kernels)
+        } else {
+            standard_passes(kernels)
+        };
         Self::new(device, None, label, params, passes, graph_passes, buffers)
     }
 
@@ -179,20 +206,34 @@ impl PrefixScanOperation {
                     bindings,
                 )
             };
-        let local = bind(
-            "local",
-            passes.local,
-            &[
-                ("gScan", params_buffer.as_entire_binding()),
-                ("scan_count", buffers.count.as_entire_binding()),
-                ("scan_input", buffers.input.as_entire_binding()),
-                (
-                    "scan_local_prefix",
-                    buffers.local_prefix.as_entire_binding(),
-                ),
-                ("scan_block_sum", buffers.block_sum.as_entire_binding()),
-            ],
-        )?;
+        let in_place = same_view(buffers.input, buffers.output_prefix);
+        let local = if in_place {
+            bind(
+                "local",
+                passes.local,
+                &[
+                    ("gScan", params_buffer.as_entire_binding()),
+                    ("scan_count", buffers.count.as_entire_binding()),
+                    ("scan_values", buffers.input.as_entire_binding()),
+                    ("scan_block_sum", buffers.block_sum.as_entire_binding()),
+                ],
+            )?
+        } else {
+            bind(
+                "local",
+                passes.local,
+                &[
+                    ("gScan", params_buffer.as_entire_binding()),
+                    ("scan_count", buffers.count.as_entire_binding()),
+                    ("scan_input", buffers.input.as_entire_binding()),
+                    (
+                        "scan_local_prefix",
+                        buffers.local_prefix.as_entire_binding(),
+                    ),
+                    ("scan_block_sum", buffers.block_sum.as_entire_binding()),
+                ],
+            )?
+        };
         let block_params = scan_uniform(
             device,
             reusable,
@@ -219,27 +260,44 @@ impl PrefixScanOperation {
                 ),
             ],
         )?;
-        let apply = bind(
-            "apply",
-            passes.apply,
-            &[
-                ("gScan", params_buffer.as_entire_binding()),
-                ("scan_count", buffers.count.as_entire_binding()),
-                (
-                    "scan_local_prefix",
-                    buffers.local_prefix.as_entire_binding(),
-                ),
-                (
-                    "scan_block_prefix",
-                    buffers.block_prefix.as_entire_binding(),
-                ),
-                (
-                    "scan_output_prefix",
-                    buffers.output_prefix.as_entire_binding(),
-                ),
-                ("scan_total", buffers.total.as_entire_binding()),
-            ],
-        )?;
+        let apply = if in_place {
+            bind(
+                "apply",
+                passes.apply,
+                &[
+                    ("gScan", params_buffer.as_entire_binding()),
+                    ("scan_count", buffers.count.as_entire_binding()),
+                    (
+                        "scan_block_prefix",
+                        buffers.block_prefix.as_entire_binding(),
+                    ),
+                    ("scan_values", buffers.output_prefix.as_entire_binding()),
+                    ("scan_total", buffers.total.as_entire_binding()),
+                ],
+            )?
+        } else {
+            bind(
+                "apply",
+                passes.apply,
+                &[
+                    ("gScan", params_buffer.as_entire_binding()),
+                    ("scan_count", buffers.count.as_entire_binding()),
+                    (
+                        "scan_local_prefix",
+                        buffers.local_prefix.as_entire_binding(),
+                    ),
+                    (
+                        "scan_block_prefix",
+                        buffers.block_prefix.as_entire_binding(),
+                    ),
+                    (
+                        "scan_output_prefix",
+                        buffers.output_prefix.as_entire_binding(),
+                    ),
+                    ("scan_total", buffers.total.as_entire_binding()),
+                ],
+            )?
+        };
         Ok(Self {
             graph_passes,
             passes: [
@@ -298,6 +356,10 @@ impl PrefixScanOperation {
         right: &Self,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()> {
+        if crate::gpu::timer::operation_capture_requires_split_passes() {
+            left.record(encoder)?;
+            return right.record(encoder);
+        }
         if left
             .passes
             .iter()
@@ -408,26 +470,42 @@ impl FusedPrefixScanPair {
                     bindings,
                 )
             };
-        let local = bind(
-            "local",
-            passes.local,
-            &[
-                ("gScan", params_buffer.as_entire_binding()),
-                ("scan_count", left.count.as_entire_binding()),
-                ("scan_input_left", left.input.as_entire_binding()),
-                ("scan_input_right", right.input.as_entire_binding()),
-                (
-                    "scan_output_prefix_left",
-                    left.output_prefix.as_entire_binding(),
-                ),
-                (
-                    "scan_output_prefix_right",
-                    right.output_prefix.as_entire_binding(),
-                ),
-                ("scan_block_sum_left", left.block_sum.as_entire_binding()),
-                ("scan_block_sum_right", right.block_sum.as_entire_binding()),
-            ],
-        )?;
+        let in_place = same_view(left.input, left.output_prefix);
+        let local = if in_place {
+            bind(
+                "local",
+                passes.local,
+                &[
+                    ("gScan", params_buffer.as_entire_binding()),
+                    ("scan_count", left.count.as_entire_binding()),
+                    ("scan_values_left", left.input.as_entire_binding()),
+                    ("scan_values_right", right.input.as_entire_binding()),
+                    ("scan_block_sum_left", left.block_sum.as_entire_binding()),
+                    ("scan_block_sum_right", right.block_sum.as_entire_binding()),
+                ],
+            )?
+        } else {
+            bind(
+                "local",
+                passes.local,
+                &[
+                    ("gScan", params_buffer.as_entire_binding()),
+                    ("scan_count", left.count.as_entire_binding()),
+                    ("scan_input_left", left.input.as_entire_binding()),
+                    ("scan_input_right", right.input.as_entire_binding()),
+                    (
+                        "scan_output_prefix_left",
+                        left.output_prefix.as_entire_binding(),
+                    ),
+                    (
+                        "scan_output_prefix_right",
+                        right.output_prefix.as_entire_binding(),
+                    ),
+                    ("scan_block_sum_left", left.block_sum.as_entire_binding()),
+                    ("scan_block_sum_right", right.block_sum.as_entire_binding()),
+                ],
+            )?
+        };
         let block_params = uniform_from_val(
             device,
             &format!("{label}.block-prefix.params"),
@@ -458,32 +536,55 @@ impl FusedPrefixScanPair {
                 ),
             ],
         )?;
-        let apply = bind(
-            "apply",
-            passes.apply,
-            &[
-                ("gScan", params_buffer.as_entire_binding()),
-                ("scan_count", left.count.as_entire_binding()),
-                (
-                    "scan_block_prefix_left",
-                    left.block_prefix.as_entire_binding(),
-                ),
-                (
-                    "scan_block_prefix_right",
-                    right.block_prefix.as_entire_binding(),
-                ),
-                (
-                    "scan_output_prefix_left",
-                    left.output_prefix.as_entire_binding(),
-                ),
-                (
-                    "scan_output_prefix_right",
-                    right.output_prefix.as_entire_binding(),
-                ),
-                ("scan_total_left", left.total.as_entire_binding()),
-                ("scan_total_right", right.total.as_entire_binding()),
-            ],
-        )?;
+        let apply = if in_place {
+            bind(
+                "apply",
+                passes.apply,
+                &[
+                    ("gScan", params_buffer.as_entire_binding()),
+                    ("scan_count", left.count.as_entire_binding()),
+                    (
+                        "scan_block_prefix_left",
+                        left.block_prefix.as_entire_binding(),
+                    ),
+                    (
+                        "scan_block_prefix_right",
+                        right.block_prefix.as_entire_binding(),
+                    ),
+                    ("scan_values_left", left.output_prefix.as_entire_binding()),
+                    ("scan_values_right", right.output_prefix.as_entire_binding()),
+                    ("scan_total_left", left.total.as_entire_binding()),
+                    ("scan_total_right", right.total.as_entire_binding()),
+                ],
+            )?
+        } else {
+            bind(
+                "apply",
+                passes.apply,
+                &[
+                    ("gScan", params_buffer.as_entire_binding()),
+                    ("scan_count", left.count.as_entire_binding()),
+                    (
+                        "scan_block_prefix_left",
+                        left.block_prefix.as_entire_binding(),
+                    ),
+                    (
+                        "scan_block_prefix_right",
+                        right.block_prefix.as_entire_binding(),
+                    ),
+                    (
+                        "scan_output_prefix_left",
+                        left.output_prefix.as_entire_binding(),
+                    ),
+                    (
+                        "scan_output_prefix_right",
+                        right.output_prefix.as_entire_binding(),
+                    ),
+                    ("scan_total_left", left.total.as_entire_binding()),
+                    ("scan_total_right", right.total.as_entire_binding()),
+                ],
+            )?
+        };
         Ok(Self {
             graph_passes,
             passes: [
@@ -551,11 +652,23 @@ impl PrefixScanPairOperation {
             && left_params.min_items == right_params.min_items
             && same_view(left.count, right.count)
             && same_view(left.dispatch_args, right.dispatch_args);
+        let left_in_place = same_view(left.input, left.output_prefix);
+        let right_in_place = same_view(right.input, right.output_prefix);
+        if left_in_place != right_in_place {
+            return Err(anyhow!(
+                "paired prefix scans must use the same storage mode in both lanes"
+            ));
+        }
         let paired_scan_enabled =
             !crate::gpu::env::env_bool_strict("LANIUS_GPU_DISABLE_PAIRED_PREFIX_SCAN", false);
+        let fused_passes = if left_in_place {
+            pair_in_place_passes(kernels)
+        } else {
+            pair_passes(kernels)
+        };
         if compatible
             && paired_scan_enabled
-            && let Some(passes) = pair_passes(kernels)
+            && let Some(passes) = fused_passes
         {
             return Ok(Self {
                 execution: PrefixScanPairExecution::Fused(FusedPrefixScanPair::new(
@@ -570,7 +683,11 @@ impl PrefixScanPairOperation {
             });
         }
 
-        let scalar = standard_passes(kernels);
+        let scalar = if left_in_place {
+            in_place_passes(kernels)
+        } else {
+            standard_passes(kernels)
+        };
         Ok(Self {
             execution: PrefixScanPairExecution::Separate(Box::new((
                 PrefixScanOperation::new(

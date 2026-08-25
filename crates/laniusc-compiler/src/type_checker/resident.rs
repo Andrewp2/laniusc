@@ -379,6 +379,12 @@ impl GpuTypeChecker {
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
         release_workspace_consumers: impl FnOnce(),
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
+        let _operation_capture = timer
+            .as_deref()
+            .map(crate::gpu::timer::GpuTimer::capture_operations);
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.set_phase(crate::gpu::timer::GpuCompilerPhase::TypeChecking);
+        }
         // Wgpu gives each compute dispatch its own resource-usage scope and
         // inserts barriers before conflicting dispatches. Buffer clear/copy
         // operations flush the deferred stream, while timestamped or
@@ -467,6 +473,15 @@ impl GpuTypeChecker {
             let matches_required = match_passes_required(parser_feature_flags);
             let aggregates_required = aggregate_passes_required(parser_feature_flags);
             let aliases_required = type_alias_passes_required(parser_feature_flags);
+
+            // Parser scratch is reused physically by the resident type-check
+            // graph. The job reset precedes parser execution, so reset those
+            // imported allocations here after parsing has finished and before
+            // type checking reads or partially initializes them.
+            bind_groups.typecheck_graph.record_phase_reset(encoder);
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.phase_reset.done");
+            }
 
             bind_groups.hir_active_dispatch.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {

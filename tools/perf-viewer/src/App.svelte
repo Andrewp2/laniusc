@@ -200,8 +200,7 @@
         {#if profileAvailable}
           <section class="report-section span-12">
             <div class="section-heading">
-              <div><h2>Compiler execution timeline</h2><p>Compiler phases aligned to the job clock, with host and GPU activity shown separately.</p></div>
-              <span class="section-count">excluded from latency statistics</span>
+              <div><h2>Compiler execution timeline</h2><p>This timeline was captured in a separate instrumented run and is not included in the benchmark results above.</p></div>
             </div>
             <Timeline profile={analysisSelected.profile} target={analysisSelected.target} />
           </section>

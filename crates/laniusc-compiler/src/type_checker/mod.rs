@@ -8,7 +8,7 @@
 //! ownership and resident cache invariants lives in
 //! `docs/compiler/type-checker.md`.
 
-use std::{collections::HashSet, sync::Mutex};
+use std::sync::Mutex;
 
 mod bind_groups;
 mod bind_models;
@@ -655,34 +655,38 @@ pub(crate) struct OwnedGpuSemanticArtifact {
 }
 
 impl OwnedGpuSemanticArtifact {
-    fn retained_allocation_ids(&self) -> HashSet<u64> {
-        [
-            self.value_decl_by_hir.allocation_id(),
-            self.value_type_by_hir.allocation_id(),
-            self.value_const_by_hir.allocation_id(),
-            self.value_const_present_by_hir.allocation_id(),
-            self.param_type_by_row.allocation_id(),
-            self.enclosing_fn_by_hir.allocation_id(),
-            self.function_return_type_by_hir.allocation_id(),
-            self.function_entrypoint_by_hir.allocation_id(),
-            self.function_host_service_by_hir.allocation_id(),
-            self.control_depth_by_hir.allocation_id(),
-            self.calls_by_hir.allocation_id(),
-            self.expr_ref_tag_by_hir.allocation_id(),
-            self.expr_ref_payload_by_hir.allocation_id(),
-            self.aggregate_decl_token_by_hir.allocation_id(),
-            self.aggregate_word_count_by_hir.allocation_id(),
-            self.array_length_by_hir.allocation_id(),
-            self.member_field_ordinal_by_hir.allocation_id(),
-            self.iterable_kind_by_hir.allocation_id(),
-            self.function_result_word_count_by_hir.allocation_id(),
-            self.expr_scalar_type_by_hir.allocation_id(),
-            self.public_decl_index_by_hir.allocation_id(),
-            self.struct_init_field_ordinal_by_row.allocation_id(),
+    fn retained_buffers(&self) -> Vec<crate::gpu::buffers::TrackedBufferView<'_>> {
+        vec![
+            (&self.value_decl_by_hir).into(),
+            (&self.value_type_by_hir).into(),
+            (&self.value_const_by_hir).into(),
+            (&self.value_const_present_by_hir).into(),
+            (&self.param_type_by_row).into(),
+            (&self.enclosing_fn_by_hir).into(),
+            (&self.function_return_type_by_hir).into(),
+            (&self.function_entrypoint_by_hir).into(),
+            (&self.function_host_service_by_hir).into(),
+            (&self.control_depth_by_hir).into(),
+            (&self.calls_by_hir).into(),
+            (&self.expr_ref_tag_by_hir).into(),
+            (&self.expr_ref_payload_by_hir).into(),
+            (&self.aggregate_decl_token_by_hir).into(),
+            (&self.aggregate_word_count_by_hir).into(),
+            (&self.array_length_by_hir).into(),
+            (&self.member_field_ordinal_by_hir).into(),
+            (&self.iterable_kind_by_hir).into(),
+            (&self.function_result_word_count_by_hir).into(),
+            (&self.expr_scalar_type_by_hir).into(),
+            (&self.public_decl_index_by_hir).into(),
+            (&self.struct_init_field_ordinal_by_row).into(),
         ]
-        .into_iter()
-        .flatten()
-        .collect()
+    }
+
+    fn retained_allocation_ids(&self) -> std::collections::HashSet<u64> {
+        self.retained_buffers()
+            .into_iter()
+            .filter_map(crate::gpu::buffers::TrackedBufferView::allocation_id)
+            .collect()
     }
 
     pub(crate) fn view(&self) -> GpuSemanticArtifactView<'_> {

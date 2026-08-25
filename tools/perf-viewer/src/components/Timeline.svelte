@@ -24,9 +24,6 @@
   const domainColors = new Map<string, string>(DOMAINS.map(([id, , color]) => [id, color]));
 
   function displayPhase(event: Profile['timeline'][number]): string {
-    if (event.phase === 'orchestration' && event.execution_domain === 'gpu_execution') {
-      return 'unattributed_gpu';
-    }
     return event.phase;
   }
 

@@ -41,6 +41,20 @@ LANIUS_MODES = ("process_cold", "daemon_cold_workspace", "daemon_warm_workspace"
 DEFAULT_BENCHMARK_SEED = 20260808
 DEFAULT_SAMPLE_COUNT = 20
 CANONICAL_SINGLE_FILE_PRESET = "single-file-1mb"
+GPU_COMPILER_PHASES = frozenset(
+    {
+        "lexing",
+        "parsing",
+        "hir_construction",
+        "type_checking",
+        "semantic_interface",
+        "lowering",
+        "optimization",
+        "x86_emission",
+        "wasm_emission",
+        "artifact_emission",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -96,7 +110,7 @@ def timeline_execution_domain(category: str, lane: str, name: str = "") -> str:
 
 
 def timeline_compiler_phase(name: str) -> str:
-    """Classify a trace label into a stable compiler phase for the viewer."""
+    """Infer a compiler phase for historical traces that predate typed phases."""
     label = name.lower().replace("-", "_")
 
     if (
@@ -120,6 +134,8 @@ def timeline_compiler_phase(name: str) -> str:
         return "type_checking"
     if "semantic_interface" in label:
         return "semantic_interface"
+    if label.startswith("optimization.") or ".optimization." in label:
+        return "optimization"
     if (
         label.startswith(("codegen.x86", "x86."))
         or "x86_object" in label
@@ -154,19 +170,39 @@ def timeline_compiler_phase(name: str) -> str:
     return "orchestration"
 
 
-def annotate_timeline_event(event: dict) -> None:
+def annotate_timeline_event(event: dict, *, require_gpu_phase: bool = False) -> None:
     """Add viewer-facing semantics while retaining the original trace lane."""
     name = str(event.get("name", ""))
     event["execution_domain"] = timeline_execution_domain(
         str(event.get("category", "")), str(event.get("lane", "")), name
     )
-    event["phase"] = (
-        "orchestration"
-        if event["execution_domain"] == "submission_gap"
-        else timeline_compiler_phase(name)
-    )
     if event["execution_domain"] == "submission_gap":
+        event["phase"] = "orchestration"
         event["name"] = "Between Lanius GPU submissions"
+        return
+    if event["execution_domain"] == "gpu_execution":
+        phase = event.get("compiler_phase")
+        if phase is None:
+            if require_gpu_phase:
+                raise RuntimeError(
+                    f"GPU trace event {name!r} has no mandatory compiler_phase metadata"
+                )
+            phase = timeline_compiler_phase(name)
+            if phase == "orchestration" and name.lower().replace("-", "_") in {
+                "compile.after_count.recorded",
+                "compile.source_pack.recorded",
+            }:
+                # Old traces used these terminal stamps for the interval that
+                # finished artifact production. New traces carry typed phase
+                # metadata and never enter this compatibility path.
+                phase = "artifact_emission"
+        if phase not in GPU_COMPILER_PHASES:
+            raise RuntimeError(
+                f"GPU trace event {name!r} has invalid compiler phase {phase!r}"
+            )
+        event["phase"] = phase
+        return
+    event["phase"] = timeline_compiler_phase(name)
 
 
 def annotate_document_timeline(document: dict) -> None:
@@ -404,9 +440,11 @@ def run_lanius(args: argparse.Namespace) -> int:
     unknown = set(modes) - set(LANIUS_MODES)
     if not modes or unknown:
         raise ValueError(f"--modes must be a subset of {','.join(LANIUS_MODES)}; unknown={sorted(unknown)}")
+    print("lanius_perf: building the release compiler", flush=True)
+    checked(["cargo", "build", "--release", "--bin", "laniusc"], ROOT)
     laniusc = ROOT / "target" / "release" / "laniusc"
     if not laniusc.is_file():
-        raise ValueError(f"release compiler is missing: {laniusc}; build it before benchmarking")
+        raise ValueError(f"release build did not produce the compiler: {laniusc}")
 
     run_id, workload, cases, primer_case, generation_commands = prepare_workload(
         spec, args.target
@@ -1160,7 +1198,10 @@ def profile_timeline(trace: dict, boundary_name: str) -> list[dict]:
             "start_ms": (event_start - start) / 1000.0,
             "duration_ms": event_duration / 1000.0,
         }
-        annotate_timeline_event(row)
+        compiler_phase = event.get("args", {}).get("compiler_phase")
+        if compiler_phase is not None:
+            row["compiler_phase"] = compiler_phase
+        annotate_timeline_event(row, require_gpu_phase=True)
         rows.append(row)
     rows.sort(key=lambda row: (row["start_ms"], row["lane"], row["name"]))
     return rows

@@ -1,0 +1,6 @@
+name = "lanius-formal"
+version = "0.1.0"
+defaultTargets = ["Lanius"]
+
+[[lean_lib]]
+name = "Lanius"

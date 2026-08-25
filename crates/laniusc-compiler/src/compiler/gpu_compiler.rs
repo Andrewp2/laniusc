@@ -123,7 +123,7 @@ fn prepare_codegen_kernels(
 ) -> anyhow::Result<crate::gpu::kernels::KernelRegistry> {
     crate::gpu::kernels::KernelRegistry::prepare_prefixes(
         device,
-        &["codegen/lir", "scan/counted"],
+        crate::codegen::lowering::LOWERING_KERNEL_PREFIXES,
         |key| {
             let target_enabled = if key.contains("/x86/") {
                 backends.x86

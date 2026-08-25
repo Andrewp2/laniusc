@@ -365,7 +365,9 @@ impl CopyBuffersOperation {
         for &(source_binding, source, destination_binding, destination, size) in copies {
             if size > source.byte_size || size > destination.byte_size {
                 return Err(anyhow::anyhow!(
-                    "compiler copy `{name}` exceeds its source or destination prefix"
+                    "compiler copy `{name}` requests {size} bytes but source `{source_binding}` has {} and destination `{destination_binding}` has {}",
+                    source.byte_size,
+                    destination.byte_size,
                 ));
             }
             let source_access = pass_desc

@@ -18,11 +18,9 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         &passes.kernel("type_checker/visible/01/clear/resident"),
         name_clear_n,
     )?;
-    let compact_hir_dispatch_args =
-        typed_buffer_from_resources(resources, "compact_hir_dispatch_args")?;
-    let compact_hir_dispatch_params = uniform_from_val(
+    let match_payload_dispatch_params = uniform_from_val(
         device,
-        "type_check.visible.compact_hir_dispatch.params",
+        "type_check.visible.match_payload_dispatch.params",
         &CountDispatchParams {
             capacity: shape.hir_nodes.max(1),
             multiplier: 1,
@@ -30,22 +28,15 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
             reserved1: 0,
         },
     );
-    let compact_hir_dispatch = ComputeOperation::direct_with_uniform(
-        device,
-        graph,
-        resources,
-        compiler_graph::VISIBLE_SEMANTIC_DISPATCH_PASS,
-        &passes.kernel("type_checker/count/dispatch_args"),
-        &compact_hir_dispatch_params,
-        1,
-    )?;
+    let hir_active_dispatch_args =
+        typed_buffer_from_resources(resources, "hir_active_dispatch_args")?;
     let mark_hir_declarations = ComputeOperation::indirect_spec(
         device,
         graph,
         resources,
         passes,
         VISIBLE_HIR_DECL_MARK,
-        &compact_hir_dispatch_args,
+        &hir_active_dispatch_args,
     )?;
     let match_payload_dispatch_args = graph.u32_buffer("match_payload_dispatch_args")?;
     let match_payload_dispatch = ComputeOperation::direct_with_uniform(
@@ -54,7 +45,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         resources,
         compiler_graph::VISIBLE_MATCH_DISPATCH_PASS,
         &passes.kernel("type_checker/count/dispatch_args"),
-        &compact_hir_dispatch_params,
+        &match_payload_dispatch_params,
         1,
     )?;
     let mark_match_payload_declarations = ComputeOperation::indirect_spec(
@@ -150,18 +141,17 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         resources,
         passes,
         VISIBLE_NAMES,
-        &compact_hir_dispatch_args,
+        &hir_active_dispatch_args,
     )?;
     Ok(VisibleBindGroups {
         clear,
-        compact_hir_dispatch,
         mark_hir_declarations,
         match_payload_dispatch,
         mark_match_payload_declarations,
         declaration_scan,
         scatter_declarations,
         declarations,
-        _compact_hir_dispatch_params: compact_hir_dispatch_params,
+        _match_payload_dispatch_params: match_payload_dispatch_params,
         _hir_decl_scope_leaf_params: leaf_params,
         build_hir_decl_scope_leaves,
         hir_decl_scope_tree_levels,

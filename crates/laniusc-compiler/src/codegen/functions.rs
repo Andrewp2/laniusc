@@ -34,8 +34,8 @@ pub(crate) struct GpuTargetFunctionView<'a> {
 
 /// Compact target ranges derived from the already sorted semantic schedule.
 ///
-/// Function ownership is semantic metadata. Target lowering supplies only the
-/// exact scanned target offset for each scheduled semantic row, so this stage
+/// Function ownership is preserved as optimizer provenance. Target lowering
+/// supplies only the exact scanned target offset for each scheduled OptIR row, so this stage
 /// never scans or allocates scratch proportional to expanded target capacity.
 pub(crate) struct GpuTargetFunctionTable {
     mark: ComputeOperation,
@@ -64,7 +64,7 @@ impl GpuTargetFunctionTable {
         semantic_capacity: u32,
         target_capacity: u32,
         function_capacity: u32,
-        semantic_total: &LaniusBuffer<u32>,
+        opt_total: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         let semantic_capacity = semantic_capacity.max(1);
         let target_capacity = target_capacity.max(1);
@@ -128,7 +128,7 @@ impl GpuTargetFunctionTable {
                 up_pass: "lir.target.function_scan.hierarchy_up",
                 down_pass: "lir.target.function_scan.hierarchy_down",
                 apply_pass: "lir.target.function_scan.apply",
-                count: "lir.semantic.total",
+                count: "lir.opt.total",
                 input: "lir.target.function_flags",
                 local: "lir.target.function_scan_local",
                 block_sum: "lir.target.function_scan_block_sum",
@@ -138,7 +138,7 @@ impl GpuTargetFunctionTable {
                 total: "lir.target.function_count",
             },
             semantic_capacity,
-            semantic_total,
+            opt_total,
             &flags,
             &prefix,
             &count,

@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 import codegen.lir.x86.common;
 import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.location_common;
@@ -13,7 +14,7 @@ struct Params
     uint artifact_capacity;
     uint target_start;
     uint page_capacity;
-    uint reserved0;
+    uint semantic_capacity;
     uint reserved1;
 };
 ConstantBuffer<Params> gParams;
@@ -21,6 +22,9 @@ StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<X86LirCore> target_lir_core;
 StructuredBuffer<X86LirOperands> target_lir_operands;
 StructuredBuffer<X86LirLocations> target_lir_locations;
+StructuredBuffer<uint> target_semantic_origin;
+StructuredBuffer<uint> opt_ir_source_hir;
+StructuredBuffer<uint> opt_ir_semantic_row;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> target_function_count;
 StructuredBuffer<TargetLirFunction> target_functions;
@@ -35,6 +39,17 @@ RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+
+void report_unsupported(uint page_row, uint source_hir)
+{
+    uint opt_row = target_semantic_origin[page_row];
+    uint semantic_row = opt_row < gParams.semantic_capacity
+        ? opt_ir_semantic_row[opt_row] : INVALID;
+    InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
+    InterlockedMin(lowering_status[0u].first_unsupported_hir, source_hir);
+    InterlockedMin(lowering_status[0u].first_unsupported_semantic_row, semantic_row);
+    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, opt_row);
+}
 
 uint declaration_location(uint token)
 {
@@ -325,6 +340,12 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
               restore_bytes + (frameless ? 1u : 2u);
     if (core.op == X86_LIR_OP_RETURN_VOID)
         return 2u + restore_bytes + (frameless ? 1u : 2u);
+    if (core.op == X86_LIR_OP_INLINE_RESULT)
+        return (operands.metadata & 0xffu) == X86_LIR_TY_FLOAT
+            ? x86_move_f32_between_bytes(locations.a, locations.result)
+            : (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER
+                ? x86_move64_between_bytes(locations.a, locations.result)
+                : x86_move32_between_bytes(locations.a, locations.result);
     if (core.op == X86_LIR_OP_CALL_ARG)
     {
         if (operands.b >= 6u) return 0u;
@@ -459,8 +480,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? target_function_index_by_semantic[function_id] : INVALID;
     if (function_index >= function_count)
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
         return;
     }
     TargetLirFunction function = target_functions[function_index];
@@ -480,18 +500,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         core.op == X86_LIR_OP_ALIAS ||
         core.op == X86_LIR_OP_STORE_LOCAL ||
         core.op == X86_LIR_OP_CALL_ARG ||
+        core.op == X86_LIR_OP_INLINE_RESULT ||
         core.op == X86_LIR_OP_INTRINSIC_IDENTITY || zero_binary_identity;
     if (bytes == 0u && !supported_zero)
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     if (core.op == X86_LIR_OP_CALL_ARG &&
         (operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
         operands.a >= total)
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     if ((core.op == X86_LIR_OP_AGGREGATE_INIT &&
          (operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
@@ -500,24 +519,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
          (operands.a >= total || operands.b >= total)) ||
         (core.op == X86_LIR_OP_FIELD_LOAD && operands.a >= total))
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     if ((core.op == X86_LIR_OP_INDEX_STORE &&
          (operands.a >= total || operands.b >= total || operands.c >= total)) ||
         (core.op == X86_LIR_OP_FIELD_STORE &&
          (operands.a >= total || operands.c >= total)))
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     if (core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE &&
         (operands.a >= total || core.result_or_target >= total ||
          ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
           operands.b >= total)))
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     if (core.op == X86_LIR_OP_SELECT_STORE &&
         (declaration_location(core.result_or_target) == X86_LOCATION_INVALID ||
@@ -526,33 +542,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
          ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
           operands.b >= total)))
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     uint callee_index = operands.a < gParams.function_capacity
         ? target_function_index_by_semantic[operands.a] : INVALID;
     if (core.op == X86_LIR_OP_CALL && callee_index >= function_count)
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     if (core.op == X86_LIR_OP_CALL_SYMBOL &&
         (operands.a == INVALID || operands.b == INVALID || operands.c == INVALID))
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     if (core.op == X86_LIR_OP_CALL_HOST && operands.a != HOST_SERVICE_I32_TO_F32 &&
         !x86_runtime_service_supported(operands.a))
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     uint hidden_sret = semantic_function.result_word_count > 2u ? 1u : 0u;
     if (function_abi_param_count(semantic_function) + hidden_sret > 6u)
     {
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
-        InterlockedMin(lowering_status[0u].first_unsupported_hir, core.source_hir);
+        report_unsupported(page_row, core.source_hir);
     }
     if (row == function.instruction_start)
     {

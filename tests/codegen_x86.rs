@@ -791,7 +791,8 @@ fn high_parameters(
 }
 
 fn main() -> i32 {
-    return high_parameters(1, 2, 3, 4, 5, 6);
+    return high_parameters(1, 2, 3, 4, 5, 6) +
+        high_parameters(0, 0, 0, 0, 0, 0);
 }
 "#,
     );
@@ -1054,7 +1055,7 @@ fn affine(a: i32, b: i32, c: i32) -> i32 {
 }
 
 fn main() -> i32 {
-    return affine(2, 5, 8);
+    return affine(2, 5, 8) + affine(0, 0, 3);
 }
 "#,
     );
@@ -1069,7 +1070,7 @@ fn affine(a: i32, b: i32, c: i32) -> i32 {
 }
 
 fn main() -> i32 {
-    return affine(2, 5, 8);
+    return affine(2, 5, 8) + affine(0, 0, 3);
 }
 "#,
     );
@@ -2793,7 +2794,7 @@ fn scale(value: i32) -> i32 {
 }
 
 fn main() -> i32 {
-    return scale(3);
+    return scale(3) + scale(0);
 }
 "#,
     );
@@ -2886,7 +2887,9 @@ fn add_high_parameter(
 
 fn main() -> i32 {
     return add_small(10) + subtract_large(400) +
-        add_high_parameter(1, 2, 3, 4, 5);
+        add_high_parameter(1, 2, 3, 4, 5) +
+        add_small(-7) + subtract_large(300) +
+        add_high_parameter(0, 0, 0, 0, -9);
 }
 "#,
     );
@@ -2929,7 +2932,7 @@ fn round_trip(value: i32) -> i32 {
 }
 
 fn main() -> i32 {
-    return round_trip(37);
+    return round_trip(37) + round_trip(0);
 }
 "#,
     );
@@ -4593,6 +4596,59 @@ fn main() {
 }
 "#,
         70,
+    );
+}
+
+#[test]
+fn x86_preserves_loop_carried_declarations_across_nested_helper_calls() {
+    assert_source_exit(
+        "loop_carried_declarations_across_nested_helper_calls",
+        r#"
+fn cell_score(x: i32, y: i32, salt: i32) -> i32 {
+    let distance: i32 = 0;
+    if (x > y) { distance = x - y; } else { distance = y - x; }
+    let mixed: i32 = (x * 17 + y * 31 + salt * 13) % 97;
+    return distance + mixed;
+}
+
+fn grid_checksum(rows: i32, salt: i32) -> i32 {
+    let total: i32 = 0;
+    let y: i32 = 0;
+    while (y < rows) {
+        let x: i32 = 0;
+        while (x < 251) {
+            total += cell_score(x, y, salt);
+            if (total > 100000) { total -= 200001; }
+            if (total < -100000) { total += 200001; }
+            x += 1;
+        }
+        y += 1;
+    }
+    return total;
+}
+
+fn main() -> bool {
+    return grid_checksum(9, 1) == -17982;
+}
+"#,
+        1,
+    );
+}
+
+#[test]
+fn x86_keeps_multi_use_small_helpers_callable() {
+    assert_source_exit(
+        "multi_use_small_helper",
+        r#"
+fn bump(value: i32) -> i32 {
+    return value + 1;
+}
+
+fn main() -> i32 {
+    return bump(2) + bump(3);
+}
+"#,
+        7,
     );
 }
 
@@ -7578,7 +7634,7 @@ fn combine(value: i32, offset: i32) -> i32 {
 }
 
 fn main() -> i32 {
-    return combine(7, 20);
+    return combine(7, 20) + combine(0, 0);
 }
 "#,
     );

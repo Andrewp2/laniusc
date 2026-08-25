@@ -1,0 +1,29 @@
+{
+  "generator_sha256": "9f60a45b6e2e6258cbee7f62bf4d0d18119a7ac66d42694f5cee1a92e64919c4",
+  "measured": true,
+  "runtime_schema": "lanius.runtime-comparison.v2",
+  "schema": "lanius.runtime-suite.v1",
+  "workloads": [
+    {
+      "artifact_path": "integer_mix",
+      "description": "scalar integer arithmetic with data-dependent branches",
+      "iterations": 25000000,
+      "operation_count": 25000000,
+      "workload": "integer_mix"
+    },
+    {
+      "artifact_path": "grid_checksum",
+      "description": "nested loops and repeated helper calls over a two-dimensional domain",
+      "iterations": 32000,
+      "operation_count": 8032000,
+      "workload": "grid_checksum"
+    },
+    {
+      "artifact_path": "array_walk",
+      "description": "indexed stack-array mutation and reduction over a 64-element working set",
+      "iterations": 100000,
+      "operation_count": 6400000,
+      "workload": "array_walk"
+    }
+  ]
+}

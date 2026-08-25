@@ -330,8 +330,6 @@ pub(super) const FN_CONTEXT_SCAN_DOWN_PASS: &str = "type_check.fn_context.hierar
 pub(super) const FN_CONTEXT_APPLY_PASS: &str = "type_check.fn_context.apply";
 pub(super) const CALLS_BACKEND_TARGETS_PASS: &str = "type_check.calls.backend_targets";
 pub(super) const VISIBLE_CLEAR_PASS: &str = "type_check.visible.clear";
-pub(super) const VISIBLE_SEMANTIC_DISPATCH_PASS: &str =
-    "type_check.visible.compact_hir_dispatch_args";
 pub(super) const VISIBLE_MATCH_DISPATCH_PASS: &str =
     "type_check.visible.match_payload_dispatch_args";
 const VISIBLE_SCAN_PASS: &str = "type_check.visible.decl_scan";
@@ -2204,6 +2202,10 @@ impl crate::gpu::operations::ComputeGraph for SemanticInterfaceScanGraph {
 }
 
 impl TypeCheckCompilerGraph {
+    pub(super) fn record_phase_reset(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.materialized.record_phase_reset(encoder);
+    }
+
     pub(super) fn register_bindings<'a>(
         &'a self,
         bindings: &'a CompilerGraphBindings,
@@ -2309,7 +2311,7 @@ impl TypeCheckCompilerGraph {
             .map_err(anyhow::Error::msg)?;
         stamp!("validate_reflection");
 
-        let materialized = MaterializedCompilerGraph::new_with_upstream_storage(
+        let materialized = MaterializedCompilerGraph::new_with_upstream_storage_excluding_outputs(
             device,
             "type_check",
             graph,
@@ -3577,7 +3579,6 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         hir_visible_decl_flag in Tokens => token_rows * 4;
         _hir_visible_decl_prefix as "hir_visible_decl_prefix" in Tokens => token_rows * 4;
-        compact_hir_dispatch_args in DispatchArguments [StorageIndirect] => 12;
         _hir_visible_decl_scan_local_prefix as "hir_visible_decl_scan_local_prefix" in Tokens => token_rows * 4;
         _hir_visible_decl_scan_block_sum as "hir_visible_decl_scan_block_sum" in Tokens => token_blocks * 4;
         _hir_visible_decl_scan_prefix_a as "hir_visible_decl_scan_prefix_a" in Tokens => token_blocks * 4;
@@ -4811,17 +4812,6 @@ fn build_graph(
             "hir_value_decl_name_present" => hir_value_decl_name_present: Write,
             "hir_visible_decl_flag" => hir_visible_decl_flag: Write,
             "hir_visible_decl_source_by_token" => hir_visible_decl_key_order_tmp: Write,
-        ],
-    )?;
-    graph.add_kernel_pass_by_name(
-        VISIBLE_SEMANTIC_DISPATCH_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::DispatchArguments,
-        kernels,
-        "type_checker/count/dispatch_args",
-        reflected_bindings![
-            "count_in" => compact_hir_count,
-            "dispatch_args" => compact_hir_dispatch_args: Write,
         ],
     )?;
     VISIBLE_HIR_DECL_MARK.register_kernel(&mut graph, kernels)?;

@@ -57,6 +57,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.b = target_value(operands.b, total);
     else if (core.op == X86_LIR_OP_RETURN)
         operands.a = target_value(operands.a, total);
+    else if (core.op == X86_LIR_OP_INLINE_RESULT)
+        operands.a = target_value(operands.a, total);
     else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
         operands.a = target_value(operands.a, total);
     else if (core.op == X86_LIR_OP_AGGREGATE_COPY_WORD)

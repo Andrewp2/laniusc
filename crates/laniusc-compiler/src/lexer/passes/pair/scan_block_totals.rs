@@ -51,7 +51,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         let device = ctx.device;
         let encoder = &mut ctx.encoder;
         let b = ctx.buffers;
-        let maybe_timer = &mut ctx.maybe_timer;
         let maybe_dbg = &mut ctx.maybe_dbg;
 
         let use_scopes = validation_scopes_enabled();
@@ -75,14 +74,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             dbg.gpu.pair_scan_rounds.clear();
         }
 
-        let can_batch = maybe_timer.is_none()
-            && maybe_dbg.is_none()
+        let can_batch = maybe_dbg.is_none()
             && compute_pass_batching_enabled()
+            && !crate::gpu::timer::operation_capture_requires_split_passes()
             && !use_scopes;
         if scan_steps.is_empty() {
-            if let Some(t) = maybe_timer {
-                t.stamp(encoder, Self::NAME.to_string());
-            }
             if let Some(err) = crate::gpu::passes_core::pop_validation_scope(validation_scope) {
                 return Err(anyhow::anyhow!(
                     "validation in pass {}: {:?}",
@@ -153,6 +149,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 pass.set_bind_group(0, bg.as_ref(), &[scan_params.dynamic_offset(r)]);
                 crate::gpu::passes_core::record_compute_dispatch();
                 pass.dispatch_workgroups(gx, gy, gz);
+                crate::gpu::timer::stamp_active_operation_in_pass(&mut pass, Self::NAME);
             }
         } else {
             for (r, step) in scan_steps.iter().copied().enumerate() {
@@ -171,6 +168,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 crate::gpu::passes_core::record_compute_dispatch();
                 pass.dispatch_workgroups(gx, gy, gz);
                 drop(pass);
+                crate::gpu::timer::stamp_active_operation(encoder, Self::NAME.to_owned());
 
                 #[cfg(feature = "gpu-debug")]
                 if let Some(dbg) = maybe_dbg.as_deref_mut() {
@@ -192,10 +190,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                     });
                 }
             }
-        }
-
-        if let Some(t) = maybe_timer {
-            t.stamp(encoder, Self::NAME.to_string());
         }
 
         if let Some(err) = crate::gpu::passes_core::pop_validation_scope(validation_scope) {

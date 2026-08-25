@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    lowering::GpuSemanticLirView,
     lowering_ir::{LoweringCapacities, WasmLirFunction, WasmModuleLayout},
+    optimization::GpuOptIrMetadataView,
     scan::{GpuResidentExclusiveScan, GraphScanContract},
 };
 use crate::gpu::{
@@ -67,7 +67,7 @@ impl GpuWasmModuleStage {
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
         capacities: LoweringCapacities,
-        semantic: GpuSemanticLirView<'_>,
+        metadata: GpuOptIrMetadataView<'_>,
         functions: &LaniusBuffer<WasmLirFunction>,
         body_words: &LaniusBuffer<u32>,
     ) -> Result<Self> {
@@ -106,7 +106,7 @@ impl GpuWasmModuleStage {
             },
         );
         let mut resources = ResourceMap::new();
-        semantic.register(graph, &mut resources)?;
+        metadata.register(graph, &mut resources)?;
         resources.graph_buffer(graph, "lir.wasm.functions", functions)?;
         resources.graph_buffer(graph, "lir.wasm.body_bytes", body_words)?;
         resources.graph_buffer(graph, "lir.wasm.module.type_lengths", &type_lengths)?;
@@ -158,7 +158,7 @@ impl GpuWasmModuleStage {
                 total: "lir.wasm.module.type_total",
             },
             function_capacity,
-            semantic.function_count,
+            metadata.function_count,
             &type_lengths,
             &type_offsets,
             &type_total,
@@ -184,7 +184,7 @@ impl GpuWasmModuleStage {
                 total: "lir.wasm.module.code_total",
             },
             function_capacity,
-            semantic.function_count,
+            metadata.function_count,
             &code_lengths,
             &code_offsets,
             &code_total,

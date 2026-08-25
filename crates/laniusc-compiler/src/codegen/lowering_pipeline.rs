@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::{
     lowering::{GpuSemanticHirInputs, GpuSemanticLoweringStage, semantic_input_views},
@@ -17,6 +17,7 @@ use super::{
         LoweringTarget,
         lowering_compiler_graph_for_artifact,
     },
+    optimization::GpuOptimizationStage,
     wasm_lowering::GpuWasmLirStage,
     x86_lowering::GpuX86LirStage,
 };
@@ -40,11 +41,16 @@ impl std::fmt::Display for LoweringFailure {
         let status = self.status;
         write!(
             formatter,
-            "GPU lowering failed (flags=0x{:x}, first HIR={}, required capacity={}, available capacity={})",
+            "GPU lowering failed (flags=0x{:x}, semantic row={}, OptIR row={}, source HIR={}, required capacity={}, available capacity={}, diagnostic reason={}, diagnostic detail kind={}, diagnostic detail={})",
             status.flags,
+            status.first_unsupported_semantic_row,
+            status.first_unsupported_opt_row,
             status.first_unsupported_hir,
             status.required_capacity,
             status.available_capacity,
+            status.diagnostic_reason,
+            status.diagnostic_detail_kind,
+            status.diagnostic_detail,
         )
     }
 }
@@ -57,6 +63,13 @@ enum TargetStage {
 }
 
 impl TargetStage {
+    fn compiler_phase(&self) -> crate::gpu::timer::GpuCompilerPhase {
+        match self {
+            Self::X86_64(_) => crate::gpu::timer::GpuCompilerPhase::X86Emission,
+            Self::Wasm(_) => crate::gpu::timer::GpuCompilerPhase::WasmEmission,
+        }
+    }
+
     fn lowering_timer_label(&self) -> &'static str {
         match self {
             Self::X86_64(_) => "codegen.x86.lowering.done",
@@ -71,9 +84,14 @@ impl TargetStage {
         }
     }
 
-    fn record_count_page(&self, encoder: &mut wgpu::CommandEncoder, page_id: usize) -> Result<()> {
+    fn record_count_page(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        page_id: usize,
+        timer: &mut Option<&mut GpuTimer>,
+    ) -> Result<()> {
         match self {
-            Self::X86_64(stage) => stage.record_count_page(encoder, page_id),
+            Self::X86_64(stage) => stage.record_count_page(encoder, page_id, timer),
             Self::Wasm(stage) => stage.record_count_page(encoder, page_id),
         }
     }
@@ -163,8 +181,9 @@ pub(crate) struct GpuLoweringPipeline {
     artifact_kind: LoweringArtifactKind,
     upstream_signature: Vec<(u64, u64, u64)>,
     semantic_input_signature: Vec<(u64, u64, u64)>,
-    _workspace: CompilerGraphWorkspace,
+    workspace: CompilerGraphWorkspace,
     semantic: GpuSemanticLoweringStage,
+    optimizer: GpuOptimizationStage,
     target: TargetStage,
     status_readback: LaniusBuffer<u8>,
     status_readback_copy: crate::gpu::operations::CopyBufferOperation,
@@ -275,7 +294,7 @@ impl GpuLoweringWorkspaceCache {
                 hir,
                 semantic,
             )
-            .map_err(|err| err.to_string())?,
+            .map_err(|err| format!("{err:#}"))?,
         );
         *current = Some(Arc::clone(&pipeline));
         Ok(pipeline)
@@ -374,27 +393,48 @@ impl GpuLoweringPipeline {
             hir,
             semantic_inputs,
         )?;
+        let optimizer = GpuOptimizationStage::new(
+            device,
+            &graph,
+            &workspace,
+            capacities,
+            semantic.output(),
+            kernels,
+        )
+        .context("construct GPU optimization stage")?;
         let target = match target {
-            LoweringTarget::X86_64 => TargetStage::X86_64(GpuX86LirStage::new(
-                device,
-                &graph,
-                &workspace,
-                capacities,
-                semantic.output(),
-                artifact_kind == LoweringArtifactKind::Object,
-                kernels,
-            )?),
-            LoweringTarget::Wasm => TargetStage::Wasm(GpuWasmLirStage::new(
-                device,
-                &graph,
-                &workspace,
-                capacities,
-                semantic.output(),
-                artifact_kind == LoweringArtifactKind::Object,
-                kernels,
-            )?),
+            LoweringTarget::X86_64 => TargetStage::X86_64(
+                GpuX86LirStage::new(
+                    device,
+                    &graph,
+                    &workspace,
+                    capacities,
+                    optimizer.output(semantic.output()),
+                    artifact_kind == LoweringArtifactKind::Object,
+                    kernels,
+                )
+                .context("construct x86 lowering stage")?,
+            ),
+            LoweringTarget::Wasm => TargetStage::Wasm(
+                GpuWasmLirStage::new(
+                    device,
+                    &graph,
+                    &workspace,
+                    capacities,
+                    optimizer.output(semantic.output()),
+                    artifact_kind == LoweringArtifactKind::Object,
+                    kernels,
+                )
+                .context("construct Wasm lowering stage")?,
+            ),
         };
-        let status_readback = readback_bytes(device, "lowering.status.readback", 32, 32);
+        let status_bytes = std::mem::size_of::<LoweringStatus>();
+        let status_readback = readback_bytes(
+            device,
+            "lowering.status.readback",
+            status_bytes,
+            status_bytes,
+        );
         let status_allocations = workspace.allocations();
         let status_readback_copy = crate::gpu::operations::CopyBufferOperation::new(
             &(&graph, &status_allocations),
@@ -405,15 +445,16 @@ impl GpuLoweringPipeline {
             "status_readback",
             &status_readback,
             0,
-            32,
+            status_bytes as u64,
         )?;
         Ok(Self {
             capacities,
             artifact_kind,
             upstream_signature,
             semantic_input_signature,
-            _workspace: workspace,
+            workspace,
             semantic,
+            optimizer,
             target,
             status_readback,
             status_readback_copy,
@@ -426,7 +467,14 @@ impl GpuLoweringPipeline {
         object: bool,
         timer: &mut Option<&mut GpuTimer>,
     ) -> Result<()> {
+        let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.set_phase(self.target.compiler_phase());
+        }
         self.target.record_before_target_pages(encoder)?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "codegen.target.layout.done");
+        }
         for page_id in 0..self.target.target_page_count() {
             self.target.record_measure_page(encoder, page_id)?;
         }
@@ -434,6 +482,9 @@ impl GpuLoweringPipeline {
             timer.stamp(encoder, self.target.lowering_timer_label());
         }
         self.target.record_between_target_pages(encoder, object)?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "codegen.target.artifact_layout.done");
+        }
         for page_id in 0..self.target.target_page_count() {
             self.target.record_emit_page(encoder, page_id)?;
         }
@@ -449,17 +500,35 @@ impl GpuLoweringPipeline {
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
+        let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
+        }
         let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some()),
             "lowering.executable.batch",
         );
+        self.workspace.record_phase_reset(encoder);
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "lowering.phase_reset.done");
+        }
         self.semantic.record_timed(encoder, timer.as_deref_mut())?;
+        self.optimizer.record(encoder, timer.as_deref_mut())?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "lowering.optimization.identity.done");
+            timer.set_phase(self.target.compiler_phase());
+        }
         for page_id in 0..self.target.count_page_count() {
-            self.target.record_count_page(encoder, page_id)?;
+            self.target
+                .record_count_page(encoder, page_id, &mut timer)?;
+        }
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "codegen.target.analysis_count.done");
         }
         self.record_target_pages(encoder, false, &mut timer)?;
         self.status_readback_copy.record(encoder);
         if let Some(timer) = timer.as_deref_mut() {
+            timer.set_phase(crate::gpu::timer::GpuCompilerPhase::ArtifactEmission);
             timer.stamp(encoder, "artifact.status_readback.done");
         }
         Ok(())
@@ -473,19 +542,36 @@ impl GpuLoweringPipeline {
         unit_id: u32,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
+        }
         let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some()),
             "lowering.object.batch",
         );
+        self.workspace.record_phase_reset(encoder);
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "lowering.phase_reset.done");
+        }
         self.semantic.record_timed(encoder, timer.as_deref_mut())?;
+        self.optimizer.record(encoder, timer.as_deref_mut())?;
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "lowering.optimization.identity.done");
+            timer.set_phase(self.target.compiler_phase());
+        }
         for page_id in 0..self.target.count_page_count() {
-            self.target.record_count_page(encoder, page_id)?;
+            self.target
+                .record_count_page(encoder, page_id, &mut timer)?;
+        }
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "codegen.target.analysis_count.done");
         }
         self.target
             .set_object_identity(queue, library_id, unit_id)?;
         self.record_target_pages(encoder, true, &mut timer)?;
         self.status_readback_copy.record(encoder);
         if let Some(timer) = timer.as_deref_mut() {
+            timer.set_phase(crate::gpu::timer::GpuCompilerPhase::ArtifactEmission);
             timer.stamp(encoder, "artifact.status_readback.done");
         }
         Ok(())
@@ -546,12 +632,13 @@ impl GpuLoweringPipeline {
         let status = LoweringStatus {
             flags: word(0),
             first_unsupported_hir: word(1),
-            required_capacity: word(2),
-            available_capacity: word(3),
-            diagnostic_reason: word(4),
-            diagnostic_detail_kind: word(5),
-            diagnostic_detail: word(6),
-            diagnostic_aux: word(7),
+            first_unsupported_semantic_row: word(2),
+            first_unsupported_opt_row: word(3),
+            required_capacity: word(4),
+            available_capacity: word(5),
+            diagnostic_reason: word(6),
+            diagnostic_detail_kind: word(7),
+            diagnostic_detail: word(8),
         };
         drop(mapped);
         self.status_readback.unmap();

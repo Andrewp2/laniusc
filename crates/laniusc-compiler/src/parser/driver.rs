@@ -331,6 +331,13 @@ impl GpuParser {
             &mut Option<&mut GpuTimer>,
         ) -> std::result::Result<R, E>,
     ) -> Result<(RecordedResidentLl1HirCheck, std::result::Result<R, E>)> {
+        if let Some(timer) = timer_ref.as_deref_mut() {
+            timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Parsing);
+        }
+        // Own operation-level timing at the complete parser recording
+        // boundary. Token classification and parser setup are GPU kernels too;
+        // starting this scope inside the LL(1) body silently omitted them.
+        let operation_capture = timer_ref.as_deref().map(GpuTimer::capture_operations);
         let mut resident_guard = self
             .resident_buffers
             .lock()
@@ -404,6 +411,7 @@ impl GpuParser {
         let status_readback = bufs.ll1_status_readback.buffer.clone();
         bufs.status_readback_operations.record_full(encoder);
         drop(parser_batch);
+        drop(operation_capture);
 
         let consumed = consume(bufs, encoder, timer_ref);
         Ok((RecordedResidentLl1HirCheck { status_readback }, consumed))
@@ -418,6 +426,7 @@ impl GpuParser {
         token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
     ) -> Result<u32> {
+        let mut no_timer = None;
         Ok(self
             .measure_resident_partial_parse_capacity(
                 token_capacity,
@@ -425,6 +434,7 @@ impl GpuParser {
                 token_count_buf,
                 token_file_id_buf,
                 tables,
+                &mut no_timer,
             )?
             .tree_capacity)
     }
@@ -438,7 +448,12 @@ impl GpuParser {
         token_count_buf: &wgpu::Buffer,
         token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
+        timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<ResidentParserCapacity> {
+        if let Some(timer) = timer_ref.as_deref_mut() {
+            timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Parsing);
+        }
+        let operation_capture = timer_ref.as_deref().map(GpuTimer::capture_operations);
         // Once a full parser workspace exists, use its partial-parse storage
         // to size ordinary edits. This preserves every buffer and bind-group
         // identity while still measuring the changed token stream on the GPU.
@@ -456,7 +471,7 @@ impl GpuParser {
                 cached
                     .buffers
                     .set_active_token_capacity(&self.queue, token_capacity.max(1));
-                return self.measure_partial_parse_capacity_with_buffers(
+                let result = self.measure_partial_parse_capacity_with_buffers(
                     token_capacity,
                     token_buf,
                     token_count_buf,
@@ -464,6 +479,8 @@ impl GpuParser {
                     &cached.buffers,
                     "parser.partial-parse-capacity.resident",
                 );
+                drop(operation_capture);
+                return result;
             }
         }
 
@@ -519,6 +536,7 @@ impl GpuParser {
             .lock()
             .expect("parser.bg_cache poisoned")
             .clear();
+        drop(operation_capture);
         result
     }
 
@@ -854,7 +872,12 @@ impl GpuParser {
         // Timing is gated the same way as the lexer (and only if supported).
         let timers_on = self.timers_supported && bool_from_env("LANIUS_GPU_TIMING", false);
         let mut maybe_timer = if timers_on {
-            Some(GpuTimer::new(&self.device, &self.queue, 128))
+            Some(GpuTimer::new(
+                &self.device,
+                &self.queue,
+                crate::gpu::timer::COMPILE_QUERY_CAPACITY,
+                crate::gpu::timer::GpuCompilerPhase::Parsing,
+            ))
         } else {
             None
         };
@@ -911,9 +934,11 @@ impl GpuParser {
                 && !vals.is_empty()
             {
                 let period_ns = timer.period_ns() as f64;
-                let t0 = vals[0].1;
+                let t0 = vals[0].ticks;
                 let mut prev = t0;
-                for (label, t) in vals {
+                for sample in vals {
+                    let label = sample.label;
+                    let t = sample.ticks;
                     let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
                     let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
                     if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
@@ -1044,9 +1069,11 @@ impl GpuParser {
             && !vals.is_empty()
         {
             let period_ns = timer.period_ns() as f64;
-            let t0 = vals[0].1;
+            let t0 = vals[0].ticks;
             let mut prev = t0;
-            for (label, t) in vals {
+            for sample in vals {
+                let label = sample.label;
+                let t = sample.ticks;
                 let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
                 let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
                 if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
