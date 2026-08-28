@@ -1,0 +1,164 @@
+module verified::symbol;
+
+import verified::token;
+
+pub struct TokenMatch {
+    kind: i32,
+    length: i32,
+}
+
+pub fn token_match_kind(result: TokenMatch) -> i32 {
+    return result.kind;
+}
+
+pub fn token_match_length(result: TokenMatch) -> i32 {
+    return result.length;
+}
+
+fn token_match(kind: i32, length: i32) -> TokenMatch {
+    return TokenMatch { kind: kind, length: length };
+}
+
+// Matches the longest fixed punctuation/operator prefix. For `//` and `/*`,
+// this returns the two-byte opener; the comment scanner extends it to the
+// complete raw token or reports EOF for an unterminated block comment.
+pub fn match_symbol_head(source: [i32], source_length: i32, start: i32) -> TokenMatch {
+    let first: i32 = source[start];
+    let second: i32 = -1;
+    let third: i32 = -1;
+    if (start + 1 < source_length) {
+        second = source[start + 1];
+    }
+    if (start + 2 < source_length) {
+        third = source[start + 2];
+    }
+
+    if (first == 60) {
+        if (second == 60) {
+            if (third == 61) {
+                return token_match(verified::token::SHIFT_LEFT_ASSIGN, 3);
+            }
+            return token_match(verified::token::SHIFT_LEFT, 2);
+        }
+        if (second == 61) {
+            return token_match(verified::token::LESS_EQUAL, 2);
+        }
+        if (second == 62) {
+            return token_match(verified::token::ANGLE_GENERIC, 2);
+        }
+        return token_match(verified::token::LESS, 1);
+    }
+    if (first == 62) {
+        if (second == 62) {
+            if (third == 61) {
+                return token_match(verified::token::SHIFT_RIGHT_ASSIGN, 3);
+            }
+            return token_match(verified::token::SHIFT_RIGHT, 2);
+        }
+        if (second == 61) {
+            return token_match(verified::token::GREATER_EQUAL, 2);
+        }
+        return token_match(verified::token::GREATER, 1);
+    }
+    if (first == 43) {
+        if (second == 61) {
+            return token_match(verified::token::PLUS_ASSIGN, 2);
+        }
+        if (second == 43) {
+            return token_match(verified::token::INCREMENT, 2);
+        }
+        return token_match(verified::token::PLUS, 1);
+    }
+    if (first == 45) {
+        if (second == 61) {
+            return token_match(verified::token::MINUS_ASSIGN, 2);
+        }
+        if (second == 45) {
+            return token_match(verified::token::DECREMENT, 2);
+        }
+        if (second == 62) {
+            return token_match(verified::token::ARROW, 2);
+        }
+        return token_match(verified::token::MINUS, 1);
+    }
+    if (first == 61) {
+        if (second == 61) {
+            return token_match(verified::token::EQUAL, 2);
+        }
+        if (second == 62) {
+            return token_match(verified::token::MATCH_ARROW, 2);
+        }
+        return token_match(verified::token::ASSIGN, 1);
+    }
+    if (first == 47) {
+        if (second == 47) {
+            return token_match(verified::token::LINE_COMMENT, 2);
+        }
+        if (second == 42) {
+            return token_match(verified::token::BLOCK_COMMENT, 2);
+        }
+        if (second == 61) {
+            return token_match(verified::token::SLASH_ASSIGN, 2);
+        }
+        return token_match(verified::token::SLASH, 1);
+    }
+    if (first == 38) {
+        if (second == 38) {
+            return token_match(verified::token::LOGICAL_AND, 2);
+        }
+        if (second == 61) {
+            return token_match(verified::token::AMPERSAND_ASSIGN, 2);
+        }
+        return token_match(verified::token::AMPERSAND, 1);
+    }
+    if (first == 124) {
+        if (second == 124) {
+            return token_match(verified::token::LOGICAL_OR, 2);
+        }
+        if (second == 61) {
+            return token_match(verified::token::PIPE_ASSIGN, 2);
+        }
+        return token_match(verified::token::PIPE, 1);
+    }
+    if (first == 33) {
+        if (second == 61) {
+            return token_match(verified::token::NOT_EQUAL, 2);
+        }
+        return token_match(verified::token::NOT, 1);
+    }
+    if (first == 42) {
+        if (second == 61) {
+            return token_match(verified::token::STAR_ASSIGN, 2);
+        }
+        return token_match(verified::token::STAR, 1);
+    }
+    if (first == 37) {
+        if (second == 61) {
+            return token_match(verified::token::PERCENT_ASSIGN, 2);
+        }
+        return token_match(verified::token::PERCENT, 1);
+    }
+    if (first == 94) {
+        if (second == 61) {
+            return token_match(verified::token::CARET_ASSIGN, 2);
+        }
+        return token_match(verified::token::CARET, 1);
+    }
+    if (first == 46) {
+        if (second == 46) {
+            return token_match(verified::token::DOT_DOT, 2);
+        }
+        return token_match(verified::token::DOT, 1);
+    }
+    if (first == 40) { return token_match(verified::token::LEFT_PAREN, 1); }
+    if (first == 41) { return token_match(verified::token::RIGHT_PAREN, 1); }
+    if (first == 91) { return token_match(verified::token::LEFT_BRACKET, 1); }
+    if (first == 93) { return token_match(verified::token::RIGHT_BRACKET, 1); }
+    if (first == 123) { return token_match(verified::token::LEFT_BRACE, 1); }
+    if (first == 125) { return token_match(verified::token::RIGHT_BRACE, 1); }
+    if (first == 126) { return token_match(verified::token::TILDE, 1); }
+    if (first == 44) { return token_match(verified::token::COMMA, 1); }
+    if (first == 59) { return token_match(verified::token::SEMICOLON, 1); }
+    if (first == 58) { return token_match(verified::token::COLON, 1); }
+    return token_match(verified::token::QUESTION, 1);
+}

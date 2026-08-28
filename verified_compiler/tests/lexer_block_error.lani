@@ -1,0 +1,15 @@
+module app::main;
+
+import verified::lexer;
+
+fn main() -> i32 {
+    let source: [i32; 4] = [47, 42, 97, 0];
+    let result: verified::lexer::ScanEnd = verified::lexer::scan_block_comment_end(source, 3, 0);
+    if (verified::lexer::scan_succeeded(result)) {
+        return 1;
+    }
+    if (verified::lexer::scan_error_offset(result) != 3) {
+        return 2;
+    }
+    return 0;
+}

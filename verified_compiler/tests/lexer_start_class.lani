@@ -1,0 +1,59 @@
+module app::main;
+
+import verified::lexer;
+
+fn class_code(byte: i32) -> i32 {
+    if (verified::lexer::classify_start(byte) == verified::lexer::START_IDENTIFIER) {
+        return 1;
+    }
+    if (verified::lexer::classify_start(byte) == verified::lexer::START_DECIMAL_NUMBER) {
+        return 2;
+    }
+    if (verified::lexer::classify_start(byte) == verified::lexer::START_WHITESPACE) {
+        return 3;
+    }
+    if (verified::lexer::classify_start(byte) == verified::lexer::START_SYMBOL) {
+        return 4;
+    }
+    if (verified::lexer::classify_start(byte) == verified::lexer::START_STRING_LITERAL) {
+        return 5;
+    }
+    if (verified::lexer::classify_start(byte) == verified::lexer::START_CHARACTER_LITERAL) {
+        return 6;
+    }
+    return 7;
+}
+
+fn main() -> i32 {
+    if (class_code(97) != 1) {
+        return 1;
+    }
+    if (class_code(90) != 1) {
+        return 2;
+    }
+    if (class_code(95) != 1) {
+        return 3;
+    }
+    if (class_code(48) != 2) {
+        return 4;
+    }
+    if (class_code(10) != 3) {
+        return 5;
+    }
+    if (class_code(43) != 4) {
+        return 6;
+    }
+    if (class_code(34) != 5) {
+        return 7;
+    }
+    if (class_code(39) != 6) {
+        return 8;
+    }
+    if (class_code(0) != 7) {
+        return 9;
+    }
+    if (class_code(128) != 7) {
+        return 10;
+    }
+    return 0;
+}

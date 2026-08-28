@@ -1269,6 +1269,62 @@ theorem execStmt_more_fuel
       execStmt fuel program state statement :=
   (evaluatorFuelStableAt fuel).stmt extra program state statement terminal
 
+/-- A successful expression evaluation remains successful at any larger fuel
+    bound. This packages the subtraction arithmetic needed to use
+    `evalExpr_more_fuel` with an ordered pair of fuel bounds. -/
+theorem evalExpr_done_at_larger_fuel
+    {small large : Nat} (enough : small ≤ large)
+    (result : evalExpr small program state expression = .done value finalState) :
+    evalExpr large program state expression = .done value finalState := by
+  have terminal : Terminal (evalExpr small program state expression) := by
+    rw [result]
+    trivial
+  have stable := evalExpr_more_fuel (extra := large - small) terminal
+  rw [Nat.sub_add_cancel enough] at stable
+  exact stable.trans result
+
+/-- A successful argument-list evaluation remains successful at any larger
+    fuel bound. -/
+theorem evalExprs_done_at_larger_fuel
+    {small large : Nat} (enough : small ≤ large)
+    (result : evalExprs small program state expressions =
+      .done values finalState) :
+    evalExprs large program state expressions = .done values finalState := by
+  have terminal : Terminal (evalExprs small program state expressions) := by
+    rw [result]
+    trivial
+  have stable := (evaluatorFuelStableAt small).exprs
+    (large - small) program state expressions terminal
+  rw [Nat.sub_add_cancel enough] at stable
+  exact stable.trans result
+
+/-- A successfully resolved place remains resolved at any larger fuel bound. -/
+theorem evalPlace_done_at_larger_fuel
+    {small large : Nat} (enough : small ≤ large)
+    (result : evalPlace small program state place = .done resolved finalState) :
+    evalPlace large program state place = .done resolved finalState := by
+  have terminal : Terminal (evalPlace small program state place) := by
+    rw [result]
+    trivial
+  have stable := (evaluatorFuelStableAt small).place
+    (large - small) program state place terminal
+  rw [Nat.sub_add_cancel enough] at stable
+  exact stable.trans result
+
+/-- A successfully completed statement remains completed at any larger fuel
+    bound. -/
+theorem execStmt_done_at_larger_fuel
+    {small large : Nat} (enough : small ≤ large)
+    (result : execStmt small program state statement =
+      .done completion finalState) :
+    execStmt large program state statement = .done completion finalState := by
+  have terminal : Terminal (execStmt small program state statement) := by
+    rw [result]
+    trivial
+  have stable := execStmt_more_fuel (extra := large - small) terminal
+  rw [Nat.sub_add_cancel enough] at stable
+  exact stable.trans result
+
 /-- A whole-program observation is terminal exactly when it is a return,
     explicit exit, or trap. Fuel exhaustion is not an observation of the
     language program. -/

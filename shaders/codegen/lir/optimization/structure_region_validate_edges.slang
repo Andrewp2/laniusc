@@ -27,8 +27,16 @@ RWStructuredBuffer<LoweringStatus> lowering_status;
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-void report_structure_failure(uint edge_id)
+void report_structure_failure(uint edge_id, uint reason)
 {
+    uint ignored;
+    InterlockedCompareExchange(lowering_status[0u].diagnostic_reason,
+        LOWERING_DIAGNOSTIC_NONE,
+        LOWERING_DIAGNOSTIC_OPT_STRUCTURE_REGION_VALIDATE_EDGES, ignored);
+    // Sort by edge first and subreason second so this detail describes the
+    // same earliest edge published through first_unsupported_opt_row.
+    InterlockedMin(lowering_status[0u].diagnostic_detail,
+        (edge_id << 8u) | (reason & 0xffu));
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, edge_id);
@@ -48,7 +56,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool valid = edge.from_block < block_total && to_block < block_total;
     if (!valid)
     {
-        report_structure_failure(edge_id);
+        report_structure_failure(edge_id, 1u);
         return;
     }
 
@@ -66,15 +74,35 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 OPT_IR_EDGE_BACK) != 0u);
 
     uint entry = valid ? opt_ir_functions[from.function_id].entry_block : INVALID;
+    bool source_unreachable = edge.from_block != entry &&
+        opt_ir_immediate_dominator[edge.from_block] ==
+            OPT_IR_DOMINATOR_UNREACHABLE;
+    // Unreachable blocks remain in the structural IR so source provenance and
+    // later dead-code elimination stay exact. Their outgoing edges are valid
+    // CFG records, but they impose no dominance obligation on reachable code.
+    if (source_unreachable)
+        return;
+
     uint dominator = valid ? opt_ir_immediate_dominator[to_block] : INVALID;
-    valid = valid && to_block != entry && dominator < block_total &&
-        opt_ir_blocks[dominator].function_id == from.function_id;
+    if (to_block == entry)
+    {
+        report_structure_failure(edge_id, 2u);
+        return;
+    }
+    if (dominator >= block_total)
+    {
+        report_structure_failure(edge_id, 3u);
+        return;
+    }
+    if (opt_ir_blocks[dominator].function_id != from.function_id)
+    {
+        report_structure_failure(edge_id, 4u);
+        return;
+    }
 
     uint cursor = edge.from_block;
-    bool source_unreachable = cursor != entry &&
-        opt_ir_immediate_dominator[cursor] == OPT_IR_DOMINATOR_UNREACHABLE;
     uint steps = 0u;
-    while (valid && !source_unreachable && cursor != dominator)
+    while (valid && cursor != dominator)
     {
         uint parent = opt_ir_immediate_dominator[cursor];
         valid = parent < block_total && parent != cursor &&
@@ -83,6 +111,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         steps += 1u;
         valid = valid && steps < block_total;
     }
-    if (!valid || (!source_unreachable && cursor != dominator))
-        report_structure_failure(edge_id);
+    if (!valid)
+        report_structure_failure(edge_id, 5u);
+    else if (cursor != dominator)
+        report_structure_failure(edge_id, 6u);
 }

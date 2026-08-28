@@ -1,0 +1,565 @@
+import Lanius.Extraction.VerifiedParserAppend
+
+namespace Lanius.Extraction.ParserResult
+
+open Lanius.Core
+open Lanius.Semantics
+open Lanius.Properties
+open Lanius.Separation
+open Lanius.CallContracts
+open Lanius.Extraction
+open Lanius.Extraction.ParserAppend
+open Lanius.Compiler.Parser
+
+def extractedParserParseResultWire : CoreFunction :=
+  artifact_function%
+    (include_str "Artifacts" / "parser.json"),
+    "verified_compiler/src/verified/parser.lani",
+    "parse_result"
+
+def extractedParserParseResultFunction : Function :=
+  CoreDecode.function extractedParserParseResultWire
+
+def extractedParserAppendOrFullWire : CoreFunction :=
+  artifact_function%
+    (include_str "Artifacts" / "parser.json"),
+    "verified_compiler/src/verified/parser.lani",
+    "append_or_full"
+
+def extractedParserAppendOrFullFunction : Function :=
+  CoreDecode.function extractedParserAppendOrFullWire
+
+def parseResultValue
+    (status stateCount rootState errorPosition : Int) : Value :=
+  .structure 0 [
+    .signed .i32 status,
+    .signed .i32 stateCount,
+    .signed .i32 rootState,
+    .signed .i32 errorPosition]
+
+def parserParseResultBindings
+    (status stateCount rootState errorPosition : Int) :
+    List (VarId × Value) := [
+  (0, .signed .i32 status),
+  (1, .signed .i32 stateCount),
+  (2, .signed .i32 rootState),
+  (3, .signed .i32 errorPosition)]
+
+def parserParseResultCallee
+    (caller : State) (status stateCount rootState errorPosition : Int) : State :=
+  enterCall caller
+    (parserParseResultBindings status stateCount rootState errorPosition)
+
+def parserParseResultExpr : Expr :=
+  .structValue 0 [.local 0, .local 1, .local 2, .local 3]
+
+def parserParseResultBody : Stmt :=
+  .sequence (.returnValue (some parserParseResultExpr)) .skip
+
+theorem extractedParserParseResult_function_shape :
+    extractedParserParseResultFunction.id = 4 ∧
+      extractedParserParseResultFunction.parameters = [
+        (0, parserI32Type), (1, parserI32Type), (2, parserI32Type),
+        (3, parserI32Type)] ∧
+      extractedParserParseResultFunction.returnType = .structure 0 ∧
+      extractedParserParseResultFunction.body = some parserParseResultBody ∧
+      extractedParserParseResultFunction.external = none := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+theorem verifiedParserCore_finds_parseResult :
+    verifiedParserCore.function? extractedParserParseResultFunction.id =
+      some extractedParserParseResultFunction := by
+  unfold verifiedParserCore extractedParserParseResultFunction
+    extractedParserParseResultWire
+  rfl
+
+private theorem parserParseResultCallee_local0
+    (wellFormed : StateWellFormed caller) :
+    (parserParseResultCallee caller status stateCount rootState
+      errorPosition).local? 0 = some (.signed .i32 status) := by
+  simpa [parserParseResultCallee, parserParseResultBindings] using
+    (enterCall_local_of_binding caller [] [
+      (1, .signed .i32 stateCount), (2, .signed .i32 rootState),
+      (3, .signed .i32 errorPosition)] 0 (.signed .i32 status)
+      wellFormed (by simp))
+
+private theorem parserParseResultCallee_local1
+    (wellFormed : StateWellFormed caller) :
+    (parserParseResultCallee caller status stateCount rootState
+      errorPosition).local? 1 = some (.signed .i32 stateCount) := by
+  simpa [parserParseResultCallee, parserParseResultBindings] using
+    (enterCall_local_of_binding caller [(0, .signed .i32 status)] [
+      (2, .signed .i32 rootState), (3, .signed .i32 errorPosition)]
+      1 (.signed .i32 stateCount) wellFormed (by simp))
+
+private theorem parserParseResultCallee_local2
+    (wellFormed : StateWellFormed caller) :
+    (parserParseResultCallee caller status stateCount rootState
+      errorPosition).local? 2 = some (.signed .i32 rootState) := by
+  simpa [parserParseResultCallee, parserParseResultBindings] using
+    (enterCall_local_of_binding caller [
+      (0, .signed .i32 status), (1, .signed .i32 stateCount)] [
+      (3, .signed .i32 errorPosition)] 2 (.signed .i32 rootState)
+      wellFormed (by simp))
+
+private theorem parserParseResultCallee_local3
+    (wellFormed : StateWellFormed caller) :
+    (parserParseResultCallee caller status stateCount rootState
+      errorPosition).local? 3 = some (.signed .i32 errorPosition) := by
+  simpa [parserParseResultCallee, parserParseResultBindings] using
+    (enterCall_local_of_binding caller [
+      (0, .signed .i32 status), (1, .signed .i32 stateCount),
+      (2, .signed .i32 rootState)] [] 3 (.signed .i32 errorPosition)
+      wellFormed (by simp))
+
+/-- Store-pure contract for the extracted four-field `parse_result`
+    constructor. Every recognizer exit uses this one checked constructor. -/
+theorem extractedParserParseResultCall_contract
+    (before afterArguments : State) (arguments : List Expr)
+    (status stateCount rootState errorPosition : Int)
+    (afterArgumentsWellFormed : StateWellFormed afterArguments)
+    (argumentsResult : ArgumentsEvaluateTo verifiedParserCore before arguments [
+      .signed .i32 status, .signed .i32 stateCount,
+      .signed .i32 rootState, .signed .i32 errorPosition] afterArguments) :
+    let callee := parserParseResultCallee afterArguments status stateCount
+      rootState errorPosition
+    let after := restoreLocals afterArguments callee
+    Evaluates verifiedParserCore before
+      (.call extractedParserParseResultFunction.id arguments)
+      (parseResultValue status stateCount rootState errorPosition) after ∧
+    ModifiesOnly CellSet.empty afterArguments after ∧
+    StateWellFormed after := by
+  let bindings := parserParseResultBindings status stateCount rootState
+    errorPosition
+  let callee := parserParseResultCallee afterArguments status stateCount
+    rootState errorPosition
+  let after := restoreLocals afterArguments callee
+  have calleeWellFormed : StateWellFormed callee := by
+    simpa [callee, parserParseResultCallee, bindings,
+      parserParseResultBindings] using
+      (enterCall_preserves_wellFormed
+        (bindings := bindings) afterArgumentsWellFormed)
+  have local0 : Evaluates verifiedParserCore callee (.local 0)
+      (.signed .i32 status) callee :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 0 _
+      (parserParseResultCallee_local0 afterArgumentsWellFormed)⟩
+  have local1 : Evaluates verifiedParserCore callee (.local 1)
+      (.signed .i32 stateCount) callee :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 1 _
+      (parserParseResultCallee_local1 afterArgumentsWellFormed)⟩
+  have local2 : Evaluates verifiedParserCore callee (.local 2)
+      (.signed .i32 rootState) callee :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 2 _
+      (parserParseResultCallee_local2 afterArgumentsWellFormed)⟩
+  have local3 : Evaluates verifiedParserCore callee (.local 3)
+      (.signed .i32 errorPosition) callee :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 3 _
+      (parserParseResultCallee_local3 afterArgumentsWellFormed)⟩
+  have fields : ArgumentsEvaluateTo verifiedParserCore callee
+      [.local 0, .local 1, .local 2, .local 3]
+      [.signed .i32 status, .signed .i32 stateCount,
+        .signed .i32 rootState, .signed .i32 errorPosition] callee :=
+    ArgumentsEvaluateTo.cons local0
+      (ArgumentsEvaluateTo.cons local1
+        (ArgumentsEvaluateTo.cons local2
+          (ArgumentsEvaluateTo.singleton local3)))
+  have constructed : Evaluates verifiedParserCore callee parserParseResultExpr
+      (parseResultValue status stateCount rootState errorPosition) callee := by
+    simpa [parserParseResultExpr, parseResultValue] using
+      (evaluatesStructValue (typeId := 0) fields)
+  have bodyResult : Executes verifiedParserCore callee parserParseResultBody
+      (.returned (some
+        (parseResultValue status stateCount rootState errorPosition)))
+      callee := by
+    simpa [parserParseResultBody] using
+      (executesSequenceReturned (second := Stmt.skip)
+        (executesReturnValue constructed))
+  have evaluation : Evaluates verifiedParserCore before
+      (.call extractedParserParseResultFunction.id arguments)
+      (parseResultValue status stateCount rootState errorPosition) after := by
+    apply evaluatesCallReturned (body := parserParseResultBody)
+      argumentsResult verifiedParserCore_finds_parseResult
+    · rw [extractedParserParseResult_function_shape.2.1]
+      rfl
+    · exact extractedParserParseResult_function_shape.2.2.2.1
+    · simpa [after, callee, parserParseResultCallee, bindings,
+        parserParseResultBindings] using bodyResult
+  have entered : StoreEffect CellSet.empty afterArguments callee := by
+    simpa [callee, parserParseResultCallee, bindings,
+      parserParseResultBindings] using enterCall_effect afterArguments bindings
+  have effect : ModifiesOnly CellSet.empty afterArguments after := by
+    simpa [after] using entered.restoreLocals
+  have afterWellFormed : StateWellFormed after :=
+    entered.restoreLocals_wellFormed afterArgumentsWellFormed calleeWellFormed
+  exact ⟨evaluation, effect, afterWellFormed⟩
+
+def parserAppendOrFullBindings
+    (appended : AppendOutcome) (errorPosition : Int) :
+    List (VarId × Value) := [
+  (0, appendOutcomeValue appended),
+  (1, .signed .i32 errorPosition)]
+
+def parserAppendOrFullCallee
+    (caller : State) (appended : AppendOutcome) (errorPosition : Int) : State :=
+  enterCall caller (parserAppendOrFullBindings appended errorPosition)
+
+def parserAppendOrFullResultCall : Expr :=
+  .call extractedParserParseResultFunction.id [
+    .constant 2,
+    .field (.local 0) 2,
+    .unary .negate (.value (.signed .i32 1)),
+    .local 1]
+
+def parserAppendOrFullBody : Stmt :=
+  .sequence (.returnValue (some parserAppendOrFullResultCall)) .skip
+
+theorem extractedParserAppendOrFull_function_shape :
+    extractedParserAppendOrFullFunction.id = 18 ∧
+      extractedParserAppendOrFullFunction.parameters = [
+        (0, .structure 2), (1, parserI32Type)] ∧
+      extractedParserAppendOrFullFunction.returnType = .structure 0 ∧
+      extractedParserAppendOrFullFunction.body = some parserAppendOrFullBody ∧
+      extractedParserAppendOrFullFunction.external = none := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+theorem verifiedParserCore_finds_appendOrFull :
+    verifiedParserCore.function? extractedParserAppendOrFullFunction.id =
+      some extractedParserAppendOrFullFunction := by
+  unfold verifiedParserCore extractedParserAppendOrFullFunction
+    extractedParserAppendOrFullWire
+  rfl
+
+theorem verifiedParser_parse_output_full_constant :
+    verifiedParserCore.constant? 2 = some {
+      id := 2, type := parserI32Type, value := .signed .i32 2
+    } := by
+  rfl
+
+/-- The extracted `append_or_full` helper is store-pure and returns the exact
+    output-capacity diagnostic while retaining the append state count. -/
+theorem extractedParserAppendOrFullCall_contract
+    (before afterArguments : State) (arguments : List Expr)
+    (appended : AppendOutcome) (errorPosition : Int)
+    (afterArgumentsWellFormed : StateWellFormed afterArguments)
+    (argumentsResult : ArgumentsEvaluateTo verifiedParserCore before arguments [
+      appendOutcomeValue appended, .signed .i32 errorPosition]
+      afterArguments) :
+    ∃ after,
+      Evaluates verifiedParserCore before
+        (.call extractedParserAppendOrFullFunction.id arguments)
+        (parseResultValue 2 (Int.ofNat appended.stateCount) (-1)
+          errorPosition) after ∧
+      ModifiesOnly CellSet.empty afterArguments after ∧
+      StateWellFormed after := by
+  let bindings := parserAppendOrFullBindings appended errorPosition
+  let callee := parserAppendOrFullCallee afterArguments appended errorPosition
+  have calleeWellFormed : StateWellFormed callee := by
+    simpa [callee, parserAppendOrFullCallee, bindings,
+      parserAppendOrFullBindings] using
+      (enterCall_preserves_wellFormed
+        (bindings := bindings) afterArgumentsWellFormed)
+  have local0 : Evaluates verifiedParserCore callee (.local 0)
+      (appendOutcomeValue appended) callee :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 0 _ (by
+      simpa [callee, parserAppendOrFullCallee, bindings,
+        parserAppendOrFullBindings] using
+        (enterCall_local_of_binding afterArguments [] [
+          (1, .signed .i32 errorPosition)] 0 (appendOutcomeValue appended)
+          afterArgumentsWellFormed (by simp)))⟩
+  have countField : Evaluates verifiedParserCore callee
+      (.field (.local 0) 2)
+      (.signed .i32 (Int.ofNat appended.stateCount)) callee := by
+    apply evaluatesStructureField local0
+    simp [appendOutcomeValue, appendResultValue]
+  have fullConstant : Evaluates verifiedParserCore callee (.constant 2)
+      (.signed .i32 2) callee :=
+    evaluatesConstant verifiedParser_parse_output_full_constant
+  have negativeOne := evaluatesParserAppendNegativeOne callee
+  have errorLocal : Evaluates verifiedParserCore callee (.local 1)
+      (.signed .i32 errorPosition) callee :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 1 _ (by
+      simpa [callee, parserAppendOrFullCallee, bindings,
+        parserAppendOrFullBindings] using
+        (enterCall_local_of_binding afterArguments [
+          (0, appendOutcomeValue appended)] [] 1
+          (.signed .i32 errorPosition) afterArgumentsWellFormed (by simp)))⟩
+  have resultArguments : ArgumentsEvaluateTo verifiedParserCore callee
+      [.constant 2, .field (.local 0) 2,
+        .unary .negate (.value (.signed .i32 1)), .local 1]
+      [.signed .i32 2, .signed .i32 (Int.ofNat appended.stateCount),
+        .signed .i32 (-1), .signed .i32 errorPosition] callee :=
+    ArgumentsEvaluateTo.cons fullConstant
+      (ArgumentsEvaluateTo.cons countField
+        (ArgumentsEvaluateTo.cons negativeOne
+          (ArgumentsEvaluateTo.singleton errorLocal)))
+  let afterResult := restoreLocals callee
+    (parserParseResultCallee callee 2 (Int.ofNat appended.stateCount) (-1)
+      errorPosition)
+  have resultContract := extractedParserParseResultCall_contract callee callee
+    [.constant 2, .field (.local 0) 2,
+      .unary .negate (.value (.signed .i32 1)), .local 1]
+    2 (Int.ofNat appended.stateCount) (-1) errorPosition calleeWellFormed
+    resultArguments
+  have bodyResult : Executes verifiedParserCore callee parserAppendOrFullBody
+      (.returned (some (parseResultValue 2
+        (Int.ofNat appended.stateCount) (-1) errorPosition))) afterResult := by
+    simpa [parserAppendOrFullBody, parserAppendOrFullResultCall, afterResult]
+      using
+        (executesSequenceReturned (second := Stmt.skip)
+          (executesReturnValue resultContract.1))
+  let after := restoreLocals afterArguments afterResult
+  have evaluation : Evaluates verifiedParserCore before
+      (.call extractedParserAppendOrFullFunction.id arguments)
+      (parseResultValue 2 (Int.ofNat appended.stateCount) (-1)
+        errorPosition) after := by
+    apply evaluatesCallReturned (body := parserAppendOrFullBody)
+      argumentsResult verifiedParserCore_finds_appendOrFull
+    · rw [extractedParserAppendOrFull_function_shape.2.1]
+      rfl
+    · exact extractedParserAppendOrFull_function_shape.2.2.2.1
+    · simpa [after, callee, parserAppendOrFullCallee, bindings,
+        parserAppendOrFullBindings] using bodyResult
+  have entered : StoreEffect CellSet.empty afterArguments callee := by
+    simpa [callee, parserAppendOrFullCallee, bindings,
+      parserAppendOrFullBindings] using enterCall_effect afterArguments bindings
+  have bodyEffect : ModifiesOnly CellSet.empty callee afterResult := by
+    simpa [afterResult] using resultContract.2.1
+  have combined : StoreEffect CellSet.empty afterArguments afterResult :=
+    entered.trans_same bodyEffect.toStoreEffect
+  have effect : ModifiesOnly CellSet.empty afterArguments after := by
+    simpa [after] using combined.restoreLocals
+  have afterWellFormed : StateWellFormed after :=
+    combined.restoreLocals_wellFormed afterArgumentsWellFormed
+      resultContract.2.2
+  exact ⟨after, evaluation, effect, afterWellFormed⟩
+
+def parserAppendOutcomeFullCall
+    (resultLocal : VarId) (errorPosition : Expr) : Expr :=
+  .call extractedParserAppendOrFullFunction.id
+    [.local resultLocal, errorPosition]
+
+def parserAppendOutcomeFullBranch
+    (resultLocal : VarId) (errorPosition : Expr) : Stmt :=
+  .sequence
+    (.returnValue (some
+      (parserAppendOutcomeFullCall resultLocal errorPosition))) .skip
+
+/-- Common control flow generated after every `append_state` invocation in
+    the recognizer. It either returns a capacity diagnostic or commits the
+    returned state count. Keeping this as data lets each extracted site prove
+    an exact shape equality and then reuse one semantic theorem. -/
+def parserAppendOutcomeContinuationThen
+    (resultLocal stateCountLocal : VarId) (errorPosition : Expr)
+    (tail : Stmt) : Stmt :=
+  .sequence
+    (.ifThenElse
+      (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
+      (parserAppendOutcomeFullBranch resultLocal errorPosition) .skip)
+    (.sequence
+      (.expression
+        (.assign .set (.local stateCountLocal)
+          (.field (.local resultLocal) 2)))
+      tail)
+
+def parserAppendOutcomeContinuation
+    (resultLocal stateCountLocal : VarId) (errorPosition : Expr) : Stmt :=
+  parserAppendOutcomeContinuationThen resultLocal stateCountLocal
+    errorPosition .skip
+
+structure AppendOutcomeFullControlThenResult
+    (before : State) (resultLocal stateCountLocal : VarId)
+    (errorPosition : Expr)
+    (tail : Stmt) (outcome : AppendOutcome) (errorValue : Int) where
+  after : State
+  execution : Executes verifiedParserCore before
+    (parserAppendOutcomeContinuationThen resultLocal stateCountLocal
+      errorPosition tail)
+    (.returned (some (parseResultValue 2
+      (Int.ofNat outcome.stateCount) (-1) errorValue))) after
+  effect : ModifiesOnly CellSet.empty before after
+  wellFormed : StateWellFormed after
+
+/-- The capacity return is independent of the successful continuation tail:
+    return propagation skips that tail for every extracted append site. -/
+noncomputable def executeAppendOutcomeFullThen
+    (before : State) (resultLocal stateCountLocal : VarId)
+    (errorPosition : Expr) (tail : Stmt)
+    (outcome : AppendOutcome) (errorValue : Int)
+    (wellFormed : StateWellFormed before)
+    (resultFound : before.local? resultLocal =
+      some (appendOutcomeValue outcome))
+    (errorResult : Evaluates verifiedParserCore before errorPosition
+      (.signed .i32 errorValue) before)
+    (statusFull : outcome.status = .full) :
+    AppendOutcomeFullControlThenResult before resultLocal stateCountLocal
+      errorPosition tail outcome errorValue := by
+  have localResult : Evaluates verifiedParserCore before (.local resultLocal)
+      (appendOutcomeValue outcome) before :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore before resultLocal _
+      resultFound⟩
+  have statusResult : Evaluates verifiedParserCore before
+      (.field (.local resultLocal) 0) (.signed .i32 1) before := by
+    apply evaluatesStructureField localResult
+    rw [statusFull]
+    simp [appendOutcomeValue, appendResultValue, appendStatusValue]
+  have fullConstant : Evaluates verifiedParserCore before (.constant 41)
+      (.signed .i32 1) before :=
+    evaluatesConstant verifiedParser_append_status_constants.2
+  have fullCondition : Evaluates verifiedParserCore before
+      (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
+      (.boolean true) before := by
+    apply evaluatesEagerBinary (by decide) (by decide) statusResult
+      fullConstant
+    simp [evalBinaryValue, scalarEqual]
+  have callArguments : ArgumentsEvaluateTo verifiedParserCore before
+      [.local resultLocal, errorPosition]
+      [appendOutcomeValue outcome, .signed .i32 errorValue] before :=
+    ArgumentsEvaluateTo.cons localResult
+      (ArgumentsEvaluateTo.singleton errorResult)
+  let callResult := extractedParserAppendOrFullCall_contract before before
+    [.local resultLocal, errorPosition] outcome errorValue wellFormed
+    callArguments
+  let after := Classical.choose callResult
+  have callFacts := Classical.choose_spec callResult
+  have fullBranch : Executes verifiedParserCore before
+      (parserAppendOutcomeFullBranch resultLocal errorPosition)
+      (.returned (some (parseResultValue 2
+        (Int.ofNat outcome.stateCount) (-1) errorValue))) after := by
+    exact executesSequenceReturned (executesReturnValue (by
+      simpa [parserAppendOutcomeFullCall] using callFacts.1))
+  have selected : Executes verifiedParserCore before
+      (.ifThenElse
+        (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
+        (parserAppendOutcomeFullBranch resultLocal errorPosition) .skip)
+      (.returned (some (parseResultValue 2
+        (Int.ofNat outcome.stateCount) (-1) errorValue))) after :=
+    executesIfTrue fullCondition fullBranch
+  exact {
+    after := after
+    execution := by
+      exact executesSequenceReturned selected
+    effect := callFacts.2.1
+    wellFormed := callFacts.2.2
+  }
+
+structure AppendOutcomeFullControlResult
+    (before : State) (resultLocal stateCountLocal : VarId)
+    (errorPosition : Expr)
+    (outcome : AppendOutcome) (errorValue : Int) where
+  after : State
+  execution : Executes verifiedParserCore before
+    (parserAppendOutcomeContinuation resultLocal stateCountLocal errorPosition)
+    (.returned (some (parseResultValue 2
+      (Int.ofNat outcome.stateCount) (-1) errorValue))) after
+  effect : ModifiesOnly CellSet.empty before after
+  wellFormed : StateWellFormed after
+
+/-- Generic full arm for all extracted recognizer append sites. -/
+noncomputable def executeAppendOutcomeFull
+    (before : State) (resultLocal stateCountLocal : VarId)
+    (errorPosition : Expr) (outcome : AppendOutcome) (errorValue : Int)
+    (wellFormed : StateWellFormed before)
+    (resultFound : before.local? resultLocal =
+      some (appendOutcomeValue outcome))
+    (errorResult : Evaluates verifiedParserCore before errorPosition
+      (.signed .i32 errorValue) before)
+    (statusFull : outcome.status = .full) :
+    AppendOutcomeFullControlResult before resultLocal stateCountLocal
+      errorPosition outcome errorValue := by
+  let result := executeAppendOutcomeFullThen before resultLocal
+    stateCountLocal errorPosition .skip outcome errorValue wellFormed
+    resultFound errorResult statusFull
+  exact {
+    after := result.after
+    execution := by
+      simpa [parserAppendOutcomeContinuation] using result.execution
+    effect := result.effect
+    wellFormed := result.wellFormed
+  }
+
+structure AppendOutcomeOkControlResult
+    (before : State) (resultLocal stateCountLocal : VarId)
+    (stateCountCell : CellId) (errorPosition : Expr)
+    (outcome : AppendOutcome) where
+  after : State
+  execution : Executes verifiedParserCore before
+    (parserAppendOutcomeContinuation resultLocal stateCountLocal errorPosition)
+    .next after
+  guardExecution : Executes verifiedParserCore before
+    (.ifThenElse
+      (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
+      (parserAppendOutcomeFullBranch resultLocal errorPosition) .skip)
+    .next before
+  assignmentEvaluation : Evaluates verifiedParserCore before
+    (.assign .set (.local stateCountLocal)
+      (.field (.local resultLocal) 2)) .unit after
+  effect : ModifiesOnly (CellSet.singleton stateCountCell) before after
+  stateCountOwned : (Assertion.localPointsTo stateCountLocal stateCountCell
+    (some (.signed .i32 (Int.ofNat outcome.stateCount)))).holds after
+  wellFormed : StateWellFormed after
+
+/-- Generic non-full arm for all extracted recognizer append sites. -/
+noncomputable def executeAppendOutcomeOk
+    (before : State) (resultLocal stateCountLocal : VarId)
+    (stateCountCell : CellId) (errorPosition : Expr)
+    (outcome : AppendOutcome) (oldStateCount : Nat)
+    (wellFormed : StateWellFormed before)
+    (resultFound : before.local? resultLocal =
+      some (appendOutcomeValue outcome))
+    (stateCountOwned : (Assertion.localPointsTo stateCountLocal stateCountCell
+      (some (.signed .i32 (Int.ofNat oldStateCount)))).holds before)
+    (statusOk : outcome.status = .ok) :
+    AppendOutcomeOkControlResult before resultLocal stateCountLocal
+      stateCountCell errorPosition outcome := by
+  have localResult : Evaluates verifiedParserCore before (.local resultLocal)
+      (appendOutcomeValue outcome) before :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore before resultLocal _
+      resultFound⟩
+  have statusResult : Evaluates verifiedParserCore before
+      (.field (.local resultLocal) 0) (.signed .i32 0) before := by
+    apply evaluatesStructureField localResult
+    rw [statusOk]
+    simp [appendOutcomeValue, appendResultValue, appendStatusValue]
+  have fullConstant : Evaluates verifiedParserCore before (.constant 41)
+      (.signed .i32 1) before :=
+    evaluatesConstant verifiedParser_append_status_constants.2
+  have notFull : Evaluates verifiedParserCore before
+      (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
+      (.boolean false) before := by
+    apply evaluatesEagerBinary (by decide) (by decide) statusResult
+      fullConstant
+    simp [evalBinaryValue, scalarEqual]
+  have skipped : Executes verifiedParserCore before
+      (.ifThenElse
+        (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
+        (parserAppendOutcomeFullBranch resultLocal errorPosition) .skip)
+      .next before := executesIfFalse notFull
+        (executesSkip verifiedParserCore before)
+  have countField : Evaluates verifiedParserCore before
+      (.field (.local resultLocal) 2)
+      (.signed .i32 (Int.ofNat outcome.stateCount)) before := by
+    apply evaluatesStructureField localResult
+    simp [appendOutcomeValue, appendResultValue]
+  let assignmentResult := evaluatesSetOwnedLocalFromEmpty
+    (program := verifiedParserCore) stateCountLocal stateCountCell wellFormed
+    stateCountOwned countField wellFormed (ModifiesOnly.refl before)
+  let after := Classical.choose assignmentResult
+  have assignmentFacts := Classical.choose_spec assignmentResult
+  have assignmentExecution : Executes verifiedParserCore before
+      (.sequence
+        (.expression
+          (.assign .set (.local stateCountLocal)
+            (.field (.local resultLocal) 2))) .skip) .next after :=
+    executesSequence (executesExpression assignmentFacts.1)
+      (executesSkip verifiedParserCore after)
+  exact {
+    after := after
+    execution := executesSequence skipped assignmentExecution
+    guardExecution := skipped
+    assignmentEvaluation := assignmentFacts.1
+    effect := assignmentFacts.2.2.2
+    stateCountOwned := assignmentFacts.2.2.1
+    wellFormed := assignmentFacts.2.1
+  }
+
+end Lanius.Extraction.ParserResult

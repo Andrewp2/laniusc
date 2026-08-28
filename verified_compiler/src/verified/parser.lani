@@ -1,0 +1,393 @@
+module verified::parser;
+
+// A generic Earley recognizer over a physical-token lattice. The caller owns
+// both immutable grammar storage and the reusable workspace; recognizing a
+// source allocates no parser-owned memory.
+pub const PARSE_SUCCESS: i32 = 0;
+pub const PARSE_REJECTED: i32 = 1;
+pub const PARSE_OUTPUT_FULL: i32 = 2;
+pub const PARSE_BAD_GRAMMAR: i32 = 3;
+pub const PARSE_BAD_INPUT: i32 = 4;
+const GRAMMAR_VERSION: i32 = 1;
+const GRAMMAR_HEADER_WORDS: i32 = 17;
+const HEADER_VERSION: i32 = 0;
+const HEADER_KIND_COUNT: i32 = 1;
+const HEADER_PRODUCTION_COUNT: i32 = 2;
+const HEADER_NONTERMINAL_COUNT: i32 = 3;
+const HEADER_START_NONTERMINAL: i32 = 4;
+const HEADER_SPLIT_TOKEN_KIND: i32 = 5;
+const HEADER_SPLIT_COMPONENT_KIND: i32 = 6;
+const HEADER_CANONICAL_KINDS_OFFSET: i32 = 7;
+const HEADER_PRODUCTION_LHS_OFFSET: i32 = 8;
+const HEADER_RHS_OFFSETS_OFFSET: i32 = 9;
+const HEADER_RHS_LENGTHS_OFFSET: i32 = 10;
+const HEADER_RHS_SYMBOLS_OFFSET: i32 = 11;
+const HEADER_RHS_SYMBOL_COUNT: i32 = 12;
+const HEADER_LHS_OFFSETS_OFFSET: i32 = 13;
+const HEADER_LHS_COUNTS_OFFSET: i32 = 14;
+const HEADER_LHS_PRODUCTIONS_OFFSET: i32 = 15;
+const HEADER_LHS_PRODUCTION_COUNT: i32 = 16;
+const CHART_WORDS: i32 = 2;
+const CHART_HEAD: i32 = 0;
+const CHART_TAIL: i32 = 1;
+
+// A state records one recognized prefix. `previous_state` and the child fields
+// retain a derivation for later parse-tree materialization; deduplication keeps
+// the first derivation for each (production, dot, origin) at a chart position.
+const STATE_WORDS: i32 = 9;
+const STATE_PRODUCTION: i32 = 0;
+const STATE_DOT: i32 = 1;
+const STATE_ORIGIN: i32 = 2;
+const STATE_POSITION: i32 = 3;
+const STATE_NEXT: i32 = 4;
+const STATE_PREVIOUS: i32 = 5;
+const STATE_CHILD_TAG: i32 = 6;
+const STATE_CHILD_PAYLOAD: i32 = 7;
+const STATE_CHILD_KIND: i32 = 8;
+pub const CHILD_NONE: i32 = 0;
+pub const CHILD_TOKEN: i32 = 1;
+pub const CHILD_STATE: i32 = 2;
+const APPEND_OK: i32 = 0;
+const APPEND_FULL: i32 = 1;
+pub struct ParseResult {
+    status: i32,
+    state_count: i32,
+    root_state: i32,
+    error_position: i32,
+}
+pub fn parse_status(result: ParseResult) -> i32 {
+    return result.status;
+}
+pub fn parse_state_count(result: ParseResult) -> i32 {
+    return result.state_count;
+}
+pub fn parse_root_state(result: ParseResult) -> i32 {
+    return result.root_state;
+}
+pub fn parse_error_position(result: ParseResult) -> i32 {
+    return result.error_position;
+}
+fn parse_result(status: i32, state_count: i32, root_state: i32, error_position: i32,) -> ParseResult {
+    return ParseResult {
+        status: status,
+        state_count: state_count,
+        root_state: root_state,
+        error_position: error_position,
+    };
+}
+struct StateSeed {
+    production: i32,
+    dot: i32,
+    origin: i32,
+    previous_state: i32,
+    child_tag: i32,
+    child_payload: i32,
+    child_kind: i32,
+}
+fn state_seed(production: i32, dot: i32, origin: i32, previous_state: i32, child_tag: i32, child_payload: i32, child_kind: i32,) -> StateSeed {
+    return StateSeed {
+        production: production,
+        dot: dot,
+        origin: origin,
+        previous_state: previous_state,
+        child_tag: child_tag,
+        child_payload: child_payload,
+        child_kind: child_kind,
+    };
+}
+struct AppendResult {
+    status: i32,
+    state_id: i32,
+    state_count: i32,
+    inserted: bool,
+}
+fn append_result(status: i32, state_id: i32, state_count: i32, inserted: bool,) -> AppendResult {
+    return AppendResult {
+        status: status,
+        state_id: state_id,
+        state_count: state_count,
+        inserted: inserted,
+    };
+}
+fn range_valid(offset: i32, count: i32, length: i32) -> bool {
+    return offset >= GRAMMAR_HEADER_WORDS && count >= 0 && offset <= length && count <= length - offset;
+}
+fn grammar_is_valid(grammar:[i32], grammar_length: i32) -> bool {
+    if (grammar_length<GRAMMAR_HEADER_WORDS) {
+        return false;
+    }
+    if (grammar[HEADER_VERSION] != GRAMMAR_VERSION) {
+        return false;
+    }
+    let kind_count: i32 = grammar[HEADER_KIND_COUNT];
+    let production_count: i32 = grammar[HEADER_PRODUCTION_COUNT];
+    let nonterminal_count: i32 = grammar[HEADER_NONTERMINAL_COUNT];
+    let start_nonterminal: i32 = grammar[HEADER_START_NONTERMINAL];
+    let rhs_symbol_count: i32 = grammar[HEADER_RHS_SYMBOL_COUNT];
+    let lhs_production_count: i32 = grammar[HEADER_LHS_PRODUCTION_COUNT];
+    if (kind_count <= 0 || production_count <= 0 || nonterminal_count <= 0 || start_nonterminal<0 || start_nonterminal >= nonterminal_count) {
+        return false;
+    }
+    if (!range_valid(grammar[HEADER_CANONICAL_KINDS_OFFSET], kind_count, grammar_length) || !range_valid(grammar[HEADER_PRODUCTION_LHS_OFFSET], production_count, grammar_length) || !range_valid(grammar[HEADER_RHS_OFFSETS_OFFSET], production_count, grammar_length) || !range_valid(grammar[HEADER_RHS_LENGTHS_OFFSET], production_count, grammar_length) || !range_valid(grammar[HEADER_RHS_SYMBOLS_OFFSET], rhs_symbol_count, grammar_length) || !range_valid(grammar[HEADER_LHS_OFFSETS_OFFSET], nonterminal_count, grammar_length) || !range_valid(grammar[HEADER_LHS_COUNTS_OFFSET], nonterminal_count, grammar_length) || !range_valid(grammar[HEADER_LHS_PRODUCTIONS_OFFSET], lhs_production_count, grammar_length)) {
+        return false;
+    }
+    let production_lhs_offset: i32 = grammar[HEADER_PRODUCTION_LHS_OFFSET];
+    let rhs_offsets_offset: i32 = grammar[HEADER_RHS_OFFSETS_OFFSET];
+    let rhs_lengths_offset: i32 = grammar[HEADER_RHS_LENGTHS_OFFSET];
+    let rhs_symbols_offset: i32 = grammar[HEADER_RHS_SYMBOLS_OFFSET];
+    let production: i32 = 0;
+    while (production<production_count) {
+        let lhs: i32 = grammar[production_lhs_offset + production];
+        let rhs_offset: i32 = grammar[rhs_offsets_offset + production];
+        let rhs_length: i32 = grammar[rhs_lengths_offset + production];
+        if (lhs<0 || lhs >= nonterminal_count || rhs_offset<0 || rhs_length<0 || rhs_offset>rhs_symbol_count || rhs_length>rhs_symbol_count - rhs_offset) {
+            return false;
+        }
+        let rhs_index: i32 = 0;
+        while (rhs_index<rhs_length) {
+            let symbol: i32 = grammar[rhs_symbols_offset + rhs_offset + rhs_index];
+            if (symbol<0 || symbol >= kind_count + nonterminal_count) {
+                return false;
+            }
+            rhs_index += 1;
+        }
+        production += 1;
+    }
+    let lhs_offsets_offset: i32 = grammar[HEADER_LHS_OFFSETS_OFFSET];
+    let lhs_counts_offset: i32 = grammar[HEADER_LHS_COUNTS_OFFSET];
+    let lhs_productions_offset: i32 = grammar[HEADER_LHS_PRODUCTIONS_OFFSET];
+    let nonterminal: i32 = 0;
+    while (nonterminal<nonterminal_count) {
+        let first: i32 = grammar[lhs_offsets_offset + nonterminal];
+        let count: i32 = grammar[lhs_counts_offset + nonterminal];
+        if (first<0 || count<0 || first>lhs_production_count || count>lhs_production_count - first) {
+            return false;
+        }
+        let index: i32 = 0;
+        while (index<count) {
+            let listed: i32 = grammar[lhs_productions_offset + first + index];
+            if (listed<0 || listed >= production_count || grammar[production_lhs_offset + listed] != nonterminal) {
+                return false;
+            }
+            index += 1;
+        }
+        nonterminal += 1;
+    }
+    return true;
+}
+fn chart_word(position: i32, field: i32) -> i32 {
+    return position * CHART_WORDS + field;
+}
+fn state_word(state_base: i32, state_id: i32, field: i32) -> i32 {
+    return state_base + state_id * STATE_WORDS + field;
+}
+fn state_value(workspace:[i32], state_base: i32, state_id: i32, field: i32,) -> i32 {
+    return workspace[state_word(state_base, state_id, field)];
+}
+fn find_state(workspace:[i32], state_base: i32, position: i32, seed: StateSeed,) -> i32 {
+    let current: i32 = workspace[chart_word(position, CHART_HEAD)];
+    while (current >= 0) {
+        if (state_value(workspace, state_base, current, STATE_PRODUCTION) == seed.production && state_value(workspace, state_base, current, STATE_DOT) == seed.dot && state_value(workspace, state_base, current, STATE_ORIGIN) == seed.origin) {
+            return current;
+        }
+        current = state_value(workspace, state_base, current, STATE_NEXT);
+    }
+    return -1;
+}
+fn append_state(workspace:[i32], state_base: i32, state_capacity: i32, position: i32, seed: StateSeed, state_count: i32,) -> AppendResult {
+    let existing: i32 = find_state(workspace, state_base, position, seed);
+    if (existing >= 0) {
+        return append_result(APPEND_OK, existing, state_count, false);
+    }
+    if (state_count >= state_capacity) {
+        return append_result(APPEND_FULL, -1, state_count, false);
+    }
+    let state_id: i32 = state_count;
+    workspace[state_word(state_base, state_id, STATE_PRODUCTION)] = seed.production;
+    workspace[state_word(state_base, state_id, STATE_DOT)] = seed.dot;
+    workspace[state_word(state_base, state_id, STATE_ORIGIN)] = seed.origin;
+    workspace[state_word(state_base, state_id, STATE_POSITION)] = position;
+    workspace[state_word(state_base, state_id, STATE_NEXT)] = -1;
+    workspace[state_word(state_base, state_id, STATE_PREVIOUS)] = seed.previous_state;
+    workspace[state_word(state_base, state_id, STATE_CHILD_TAG)] = seed.child_tag;
+    workspace[state_word(state_base, state_id, STATE_CHILD_PAYLOAD)] = seed.child_payload;
+    workspace[state_word(state_base, state_id, STATE_CHILD_KIND)] = seed.child_kind;
+    let head_word: i32 = chart_word(position, CHART_HEAD);
+    let tail_word: i32 = chart_word(position, CHART_TAIL);
+    let tail: i32 = workspace[tail_word];
+    if (tail<0) {
+        workspace[head_word] = state_id;
+    } else {
+        workspace[state_word(state_base, tail, STATE_NEXT)] = state_id;
+    }
+    workspace[tail_word] = state_id;
+    return append_result(APPEND_OK, state_id, state_count + 1, true);
+}
+fn production_rhs_length(grammar:[i32], production: i32) -> i32 {
+    return grammar[grammar[HEADER_RHS_LENGTHS_OFFSET] + production];
+}
+fn production_rhs_symbol(grammar:[i32], production: i32, dot: i32) -> i32 {
+    let relative: i32 = grammar[grammar[HEADER_RHS_OFFSETS_OFFSET] + production];
+    return grammar[grammar[HEADER_RHS_SYMBOLS_OFFSET] + relative + dot];
+}
+fn production_lhs(grammar:[i32], production: i32) -> i32 {
+    return grammar[grammar[HEADER_PRODUCTION_LHS_OFFSET] + production];
+}
+// Returns the next lattice position, or -1 when the terminal cannot consume
+// the physical token. Even positions are token boundaries; odd positions are
+// between the two virtual components of one configured split token.
+fn scan_terminal(grammar:[i32], tokens:[i32], token_count: i32, position: i32, semantic_kind: i32,) -> i32 {
+    let token_index: i32 = position / 2;
+    if (token_index >= token_count) {
+        return -1;
+    }
+    let raw_kind: i32 = tokens[token_index];
+    let canonical_kind: i32 = grammar[grammar[HEADER_CANONICAL_KINDS_OFFSET] + semantic_kind];
+    if (position % 2 == 1) {
+        if (raw_kind == grammar[HEADER_SPLIT_TOKEN_KIND] && canonical_kind == grammar[HEADER_SPLIT_COMPONENT_KIND]) {
+            return position + 1;
+        }
+        return -1;
+    }
+    if (raw_kind == canonical_kind) {
+        return position + 2;
+    }
+    if (raw_kind == grammar[HEADER_SPLIT_TOKEN_KIND] && canonical_kind == grammar[HEADER_SPLIT_COMPONENT_KIND]) {
+        return position + 1;
+    }
+    return -1;
+}
+fn append_or_full(appended: AppendResult, error_position: i32,) -> ParseResult {
+    return parse_result(PARSE_OUTPUT_FULL, appended.state_count, -1, error_position,);
+}
+// Recognizes one token stream. Grammar symbols encode terminals as
+// [0, kind_count) and nonterminals as kind_count + nonterminal. The workspace
+// requires 2 * (2 * token_count + 1) chart words followed by nine words per
+// available Earley state.
+pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32], token_count: i32, workspace:[i32], workspace_length: i32,) -> ParseResult {
+    if (!grammar_is_valid(grammar, grammar_length)) {
+        return parse_result(PARSE_BAD_GRAMMAR, 0, -1, 0);
+    }
+    // `state_base = (token_count * 2 + 1) * CHART_WORDS` must remain a
+    // nonnegative i32 before it is compared with the caller's workspace.
+    if (token_count<0 || token_count>536870911 || workspace_length<0) {
+        return parse_result(PARSE_BAD_INPUT, 0, -1, 0);
+    }
+    let final_position: i32 = token_count * 2;
+    let chart_count: i32 = final_position + 1;
+    let state_base: i32 = chart_count * CHART_WORDS;
+    if (workspace_length<state_base) {
+        return parse_result(PARSE_OUTPUT_FULL, 0, -1, 0);
+    }
+    let state_capacity: i32 =(workspace_length - state_base) / STATE_WORDS;
+    let chart_word_index: i32 = 0;
+    while (chart_word_index<state_base) {
+        workspace[chart_word_index] = -1;
+        chart_word_index += 1;
+    }
+    let kind_count: i32 = grammar[HEADER_KIND_COUNT];
+    let start_nonterminal: i32 = grammar[HEADER_START_NONTERMINAL];
+    let lhs_offsets_offset: i32 = grammar[HEADER_LHS_OFFSETS_OFFSET];
+    let lhs_counts_offset: i32 = grammar[HEADER_LHS_COUNTS_OFFSET];
+    let lhs_productions_offset: i32 = grammar[HEADER_LHS_PRODUCTIONS_OFFSET];
+    let start_first: i32 = grammar[lhs_offsets_offset + start_nonterminal];
+    let start_count: i32 = grammar[lhs_counts_offset + start_nonterminal];
+    let state_count: i32 = 0;
+    let start_index: i32 = 0;
+    while (start_index<start_count) {
+        let production: i32 = grammar[lhs_productions_offset + start_first + start_index];
+        let appended: AppendResult = append_state(workspace, state_base, state_capacity, 0, state_seed(production, 0, 0, -1, CHILD_NONE, -1, -1), state_count,);
+        if (appended.status == APPEND_FULL) {
+            return append_or_full(appended, 0);
+        }
+        state_count = appended.state_count;
+        start_index += 1;
+    }
+    let furthest_position: i32 = 0;
+    let position: i32 = 0;
+    while (position <= final_position) {
+        if (workspace[chart_word(position, CHART_HEAD)] >= 0) {
+            furthest_position = position;
+        }
+        let state_id: i32 = workspace[chart_word(position, CHART_HEAD)];
+        while (state_id >= 0) {
+            let production: i32 = state_value(workspace, state_base, state_id, STATE_PRODUCTION);
+            let dot: i32 = state_value(workspace, state_base, state_id, STATE_DOT);
+            let origin: i32 = state_value(workspace, state_base, state_id, STATE_ORIGIN);
+            let rhs_length: i32 = production_rhs_length(grammar, production);
+            if (dot<rhs_length) {
+                let symbol: i32 = production_rhs_symbol(grammar, production, dot);
+                if (symbol<kind_count) {
+                    let next_position: i32 = scan_terminal(grammar, tokens, token_count, position, symbol);
+                    if (next_position >= 0) {
+                        let appended: AppendResult = append_state(workspace, state_base, state_capacity, next_position, state_seed(production, dot + 1, origin, state_id, CHILD_TOKEN, position / 2, symbol,), state_count,);
+                        if (appended.status == APPEND_FULL) {
+                            return append_or_full(appended, position);
+                        }
+                        state_count = appended.state_count;
+                    }
+                } else {
+                    let expected_nonterminal: i32 = symbol - kind_count;
+                    let first: i32 = grammar[lhs_offsets_offset + expected_nonterminal];
+                    let count: i32 = grammar[lhs_counts_offset + expected_nonterminal];
+                    let predicted_index: i32 = 0;
+                    while (predicted_index<count) {
+                        let predicted: i32 = grammar[lhs_productions_offset + first + predicted_index];
+                        let appended: AppendResult = append_state(workspace, state_base, state_capacity, position, state_seed(predicted, 0, position, -1, CHILD_NONE, -1, -1), state_count,);
+                        if (appended.status == APPEND_FULL) {
+                            return append_or_full(appended, position);
+                        }
+                        state_count = appended.state_count;
+                        predicted_index += 1;
+                    }
+                    // A nullable completion may predate this parent state, so
+                    // replay already-completed zero-width children here.
+                    let candidate: i32 = workspace[chart_word(position, CHART_HEAD)];
+                    while (candidate >= 0) {
+                        let candidate_production: i32 = state_value(workspace, state_base, candidate, STATE_PRODUCTION);
+                        let candidate_dot: i32 = state_value(workspace, state_base, candidate, STATE_DOT);
+                        let candidate_origin: i32 = state_value(workspace, state_base, candidate, STATE_ORIGIN);
+                        if (candidate_origin == position && candidate_dot == production_rhs_length(grammar, candidate_production) && production_lhs(grammar, candidate_production) == expected_nonterminal) {
+                            let appended: AppendResult = append_state(workspace, state_base, state_capacity, position, state_seed(production, dot + 1, origin, state_id, CHILD_STATE, candidate, -1,), state_count,);
+                            if (appended.status == APPEND_FULL) {
+                                return append_or_full(appended, position);
+                            }
+                            state_count = appended.state_count;
+                        }
+                        candidate = state_value(workspace, state_base, candidate, STATE_NEXT);
+                    }
+                }
+            } else {
+                let completed_lhs: i32 = production_lhs(grammar, production);
+                let parent: i32 = workspace[chart_word(origin, CHART_HEAD)];
+                while (parent >= 0) {
+                    let parent_production: i32 = state_value(workspace, state_base, parent, STATE_PRODUCTION);
+                    let parent_dot: i32 = state_value(workspace, state_base, parent, STATE_DOT);
+                    let parent_rhs_length: i32 = production_rhs_length(grammar, parent_production);
+                    if (parent_dot<parent_rhs_length && production_rhs_symbol(grammar, parent_production, parent_dot) == kind_count + completed_lhs) {
+                        let parent_origin: i32 = state_value(workspace, state_base, parent, STATE_ORIGIN);
+                        let appended: AppendResult = append_state(workspace, state_base, state_capacity, position, state_seed(parent_production, parent_dot + 1, parent_origin, parent, CHILD_STATE, state_id, -1,), state_count,);
+                        if (appended.status == APPEND_FULL) {
+                            return append_or_full(appended, position);
+                        }
+                        state_count = appended.state_count;
+                    }
+                    parent = state_value(workspace, state_base, parent, STATE_NEXT);
+                }
+            }
+            // Read after processing: appending to the current chart can update
+            // this state's next link, and those new states must be processed.
+            state_id = state_value(workspace, state_base, state_id, STATE_NEXT);
+        }
+        position += 1;
+    }
+    let root_state: i32 = workspace[chart_word(final_position, CHART_HEAD)];
+    while (root_state >= 0) {
+        let production: i32 = state_value(workspace, state_base, root_state, STATE_PRODUCTION);
+        if (state_value(workspace, state_base, root_state, STATE_ORIGIN) == 0 && production_lhs(grammar, production) == start_nonterminal && state_value(workspace, state_base, root_state, STATE_DOT) == production_rhs_length(grammar, production)) {
+            return parse_result(PARSE_SUCCESS, state_count, root_state, 0);
+        }
+        root_state = state_value(workspace, state_base, root_state, STATE_NEXT);
+    }
+    return parse_result(PARSE_REJECTED, state_count, -1, furthest_position);
+}

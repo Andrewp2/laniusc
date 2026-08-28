@@ -1,0 +1,16 @@
+module app::main;
+
+import verified::symbol;
+
+fn main() -> i32 {
+    let source: [i32; 4] = [60, 60, 61, 0];
+    let result: verified::symbol::TokenMatch =
+        verified::symbol::match_symbol_head(source, 3, 0);
+    if (verified::symbol::token_match_kind(result) != 52) {
+        return 1;
+    }
+    if (verified::symbol::token_match_length(result) != 3) {
+        return 2;
+    }
+    return 0;
+}

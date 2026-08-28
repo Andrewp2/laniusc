@@ -1194,11 +1194,23 @@ impl<'gpu> GpuCompiler<'gpu> {
                             Ok(recorded)
                         },
                         |device, queue, bufs, recorded| {
-                            let (token_count, raw_features) = bufs
-                                .read_recorded_count_and_features(device, "lexer.fused.metadata")
+                            let (token_count, raw_features, lex_error) = bufs
+                                .read_recorded_count_features_and_error(
+                                    device,
+                                    "lexer.fused.metadata",
+                                )
                                 .map_err(|err| {
                                     parser_execution_failed_for_source(&diagnostic_path, src, err)
                                 })?;
+                            if let Some(offset) = lex_error {
+                                return Err(source_lexical_failure_for_source(
+                                    &diagnostic_path,
+                                    src,
+                                    crate::lexer::LexicalFailure {
+                                        offset: offset as usize,
+                                    },
+                                ));
+                            }
                             let features =
                                 crate::lexer::features::parser_allocation_features(raw_features);
                             if token_count > shape.token_capacity
@@ -1257,7 +1269,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     )
                     .await
             }
-            .map_err(|err| source_tokenization_failed_for_source(&diagnostic_path, src, err))??;
+            .map_err(|err| source_lexer_error_for_source(&diagnostic_path, src, err))??;
             match attempt {
                 DeferredParserFinish::Complete(artifact) => return Ok(artifact),
                 DeferredParserFinish::RetryWithTreeCapacity(required) => {
@@ -1497,14 +1509,22 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         },
                         |device, queue, bufs, parser, recorded| {
-                            let (token_count, raw_features) = bufs
-                                .read_recorded_count_and_features(
+                            let (token_count, raw_features, lex_error) = bufs
+                                .read_recorded_count_features_and_error(
                                     device,
                                     "lexer.source-pack.fused.metadata",
                                 )
                                 .map_err(|err| {
                                     parser_execution_failed_for_source_pack(&diagnostic_files, err)
                                 })?;
+                            if let Some(offset) = lex_error {
+                                return Err(source_lexical_failure_for_source_pack(
+                                    &diagnostic_files,
+                                    crate::lexer::LexicalFailure {
+                                        offset: offset as usize,
+                                    },
+                                ));
+                            }
                             let features =
                                 crate::lexer::features::parser_allocation_features(raw_features);
                             if token_count > shape.token_capacity
@@ -1530,9 +1550,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         },
                     )
                     .await
-                    .map_err(|err| {
-                        source_tokenization_failed_for_source_pack(&diagnostic_files, err)
-                    })??;
+                    .map_err(|err| source_lexer_error_for_source_pack(&diagnostic_files, err))??;
                 match attempt {
                     DeferredParserFinish::Complete(artifacts) => return Ok(artifacts),
                     DeferredParserFinish::RetryWithTreeCapacity(required) => {
@@ -1589,9 +1607,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     },
                 )
                 .await
-                .map_err(|err| {
-                    source_tokenization_failed_for_source_pack(&diagnostic_files, err)
-                })??;
+                .map_err(|err| source_lexer_error_for_source_pack(&diagnostic_files, err))??;
             match attempt {
                 DeferredParserFinish::Complete(artifacts) => return Ok(artifacts),
                 DeferredParserFinish::RetryWithTreeCapacity(required) => {

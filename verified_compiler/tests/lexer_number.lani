@@ -1,0 +1,24 @@
+module lexer_number;
+
+import verified::number;
+import verified::token_scan;
+
+fn main() -> i32 {
+    let decimal: [i32; 13] = [49, 50, 46, 51, 52, 101, 43, 53, 95, 54, 32, 120, 0];
+    let decimal_result = verified::number::scan_number(decimal, 12, 0);
+    if (!verified::token_scan::succeeded(decimal_result)) { return 1; }
+    if (verified::token_scan::kind(decimal_result) != 33) { return 2; }
+    if (verified::token_scan::end_offset(decimal_result) != 10) { return 3; }
+
+    let range: [i32; 6] = [49, 50, 46, 46, 51, 52];
+    let range_result = verified::number::scan_number(range, 6, 0);
+    if (!verified::token_scan::succeeded(range_result)) { return 4; }
+    if (verified::token_scan::kind(range_result) != 2) { return 5; }
+    if (verified::token_scan::end_offset(range_result) != 2) { return 6; }
+
+    let invalid_prefix: [i32; 2] = [48, 120];
+    let invalid_result = verified::number::scan_number(invalid_prefix, 2, 0);
+    if (verified::token_scan::succeeded(invalid_result)) { return 7; }
+    if (verified::token_scan::error_offset(invalid_result) != 2) { return 8; }
+    return 0;
+}

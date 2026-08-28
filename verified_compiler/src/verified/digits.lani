@@ -1,0 +1,78 @@
+module verified::digits;
+
+pub struct DigitScan {
+    success: bool,
+    end_offset: i32,
+    error_offset: i32,
+}
+
+pub fn digit_scan_succeeded(result: DigitScan) -> bool {
+    return result.success;
+}
+
+pub fn digit_scan_end_offset(result: DigitScan) -> i32 {
+    return result.end_offset;
+}
+
+pub fn digit_scan_error_offset(result: DigitScan) -> i32 {
+    return result.error_offset;
+}
+
+fn successful_digits(end_offset: i32) -> DigitScan {
+    return DigitScan { success: true, end_offset: end_offset, error_offset: 0 };
+}
+
+fn failed_digits(error_offset: i32) -> DigitScan {
+    return DigitScan { success: false, end_offset: 0, error_offset: error_offset };
+}
+
+pub fn is_digit_for_base(byte: i32, base: i32) -> bool {
+    if (byte >= 48 && byte <= 57) {
+        return byte - 48 < base;
+    }
+    if (byte >= 97 && byte <= 102) {
+        return byte - 97 + 10 < base;
+    }
+    if (byte >= 65 && byte <= 70) {
+        return byte - 65 + 10 < base;
+    }
+    return false;
+}
+
+// Scans one or more digits. An underscore commits to a separator and must be
+// followed by another digit; its successor (or EOF) is the failure point.
+pub fn scan_digit_run(
+    source: [i32],
+    source_length: i32,
+    start: i32,
+    base: i32,
+) -> DigitScan {
+    if (start >= source_length) {
+        return failed_digits(start);
+    }
+    if (!is_digit_for_base(source[start], base)) {
+        return failed_digits(start);
+    }
+
+    let offset: i32 = start + 1;
+    while (offset < source_length) {
+        let byte: i32 = source[offset];
+        if (is_digit_for_base(byte, base)) {
+            offset += 1;
+        } else {
+            if (byte == 95) {
+                let required_digit: i32 = offset + 1;
+                if (required_digit >= source_length) {
+                    return failed_digits(required_digit);
+                }
+                if (!is_digit_for_base(source[required_digit], base)) {
+                    return failed_digits(required_digit);
+                }
+                offset = required_digit + 1;
+            } else {
+                return successful_digits(offset);
+            }
+        }
+    }
+    return successful_digits(offset);
+}

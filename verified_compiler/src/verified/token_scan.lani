@@ -1,0 +1,45 @@
+module verified::token_scan;
+
+// The common result of scanning one raw token. A successful scan identifies
+// both the token kind and its exclusive end. A failed scan identifies the
+// first byte offset at which the committed token form cannot continue.
+pub struct TokenScan {
+    success: bool,
+    kind: i32,
+    end_offset: i32,
+    error_offset: i32,
+}
+
+pub fn succeeded(result: TokenScan) -> bool {
+    return result.success;
+}
+
+pub fn kind(result: TokenScan) -> i32 {
+    return result.kind;
+}
+
+pub fn end_offset(result: TokenScan) -> i32 {
+    return result.end_offset;
+}
+
+pub fn error_offset(result: TokenScan) -> i32 {
+    return result.error_offset;
+}
+
+pub fn successful(kind: i32, end_offset: i32) -> TokenScan {
+    return TokenScan {
+        success: true,
+        kind: kind,
+        end_offset: end_offset,
+        error_offset: 0,
+    };
+}
+
+pub fn failed(error_offset: i32) -> TokenScan {
+    return TokenScan {
+        success: false,
+        kind: 0,
+        end_offset: 0,
+        error_offset: error_offset,
+    };
+}

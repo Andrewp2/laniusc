@@ -36,6 +36,7 @@ StructuredBuffer<uint> next_emit; // u16 packed: next_state (low 15) | HIGH_BIT 
 
 RWStructuredBuffer<uint> flags_packed;
 RWStructuredBuffer<uint> tok_types;
+RWStructuredBuffer<uint> lex_error_offset;
 
 bool is_skip(uint tk)
 {
@@ -151,6 +152,20 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
     const bool emit_here = is_highest_bit_set(packed);
     const uint state_after = packed & 0x7FFFu;
     const bool at_eof = (i_abs + 1u == gParams.n) || is_file_end(i_abs + 1u);
+
+    // Every malformed stream has one concrete first-failure position. Reject
+    // transitions fail at the byte being consumed; a committed but incomplete
+    // token at EOF fails at the exclusive file-end offset.
+    const bool rejected = state_after == N_STATES - 1u;
+    const bool incomplete_at_eof = at_eof && token_map[state_after] == TOKEN_INVALID;
+    if (rejected || incomplete_at_eof)
+    {
+        uint error_offset = rejected ? i_abs : i_abs + 1u;
+        uint ignored;
+        // Zero is the no-error initializer. Inverting an offset lets atomicMax
+        // select the earliest failure without a separate nonzero fill pass.
+        InterlockedMax(lex_error_offset[0u], 0xffffffffu - error_offset, ignored);
+    }
 
     uint f = 0u;
     if (emit_here | at_eof)

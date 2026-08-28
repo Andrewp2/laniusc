@@ -1,0 +1,15 @@
+module app::main;
+
+import verified::lexer;
+
+fn main() -> i32 {
+    let source: [i32; 6] = [34, 97, 92, 110, 34, 0];
+    let result: verified::lexer::ScanEnd = verified::lexer::scan_string_end(source, 5, 0);
+    if (!verified::lexer::scan_succeeded(result)) {
+        return 1;
+    }
+    if (verified::lexer::scan_end_offset(result) != 5) {
+        return 2;
+    }
+    return 0;
+}

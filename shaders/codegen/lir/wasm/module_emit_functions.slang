@@ -59,10 +59,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     store_leb5(function_pos, function.type_index);
 
     uint code_pos = layout.code_entries_start + wasm_code_entry_offset[function_id];
-    uint body_content_length = 17u + function.local_count * 6u +
+    uint body_content_length = 23u + function.local_count * 6u +
         function.body_byte_count + 1u + result_count;
     store_leb5(code_pos, body_content_length);
-    store_leb5(code_pos + 5u, function.local_count + 2u);
+    store_leb5(code_pos + 5u, function.local_count + 3u);
     uint local_pos = code_pos + 10u;
     for (uint row = 0u; row < function.local_count; row += 1u)
     {
@@ -79,6 +79,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     local_pos += 6u;
     store_leb5(local_pos, 1u);
     store(local_pos + 5u, WASM_MODULE_F32);
+    local_pos += 6u;
+    store_leb5(local_pos, 1u);
+    store(local_pos + 5u, WASM_MODULE_I32);
     local_pos += 6u;
     for (uint byte_i = 0u; byte_i < function.body_byte_count; byte_i += 1u)
         store(local_pos + byte_i,

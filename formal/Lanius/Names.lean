@@ -57,7 +57,7 @@ def Environment.importsModule
 inductive Reference where
   | unqualified (lookupNamespace : LookupNamespace) (name : String)
   | qualified (lookupNamespace : LookupNamespace) (modulePath : ModulePath) (name : String)
-deriving DecidableEq, Repr
+deriving BEq, DecidableEq, Repr
 
 def HasLocalDeclaration
     (environment : Environment) (current : ModuleId)

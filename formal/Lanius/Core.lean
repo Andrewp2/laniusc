@@ -97,6 +97,8 @@ inductive Value where
   | reference (referent : Ty) (cell : CellId) (projections : List ValueProjection)
 deriving Repr
 
+deriving instance BEq for Value
+
 inductive UnaryOp where
   | positive
   | logicalNot
@@ -254,6 +256,9 @@ mutual
     | index (base : Place) (index : Expr)
 end
 
+deriving instance BEq for Pattern, Expr, Place
+deriving instance Repr for Pattern, Expr, Place
+
 inductive Stmt where
   | skip
   | expression (expression : Expr)
@@ -268,6 +273,9 @@ inductive Stmt where
   | returnValue (value : Option Expr)
   | breakLoop
   | continueLoop
+
+deriving instance BEq for Stmt
+deriving instance Repr for Stmt
 
 structure StructDecl where
   id : TypeId
@@ -285,11 +293,13 @@ structure Function where
   returnType : Ty
   body : Option Stmt
   external : Option ExternalBehavior := none
+deriving BEq, Repr
 
 structure Constant where
   id : ConstantId
   type : Ty
   value : Value
+deriving BEq, Repr
 
 structure Program where
   target : Target := Target.x86_64
@@ -297,6 +307,7 @@ structure Program where
   enumerations : List EnumDecl := []
   constants : List Constant := []
   functions : List Function := []
+deriving BEq, Repr
 
 def Program.function? (program : Program) (id : FunctionId) : Option Function :=
   program.functions.find? (fun function => function.id == id)

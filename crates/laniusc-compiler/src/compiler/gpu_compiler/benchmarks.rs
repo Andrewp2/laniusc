@@ -22,9 +22,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 |_device, _queue, _bufs, ()| Ok::<_, CompileError>(()),
             )
             .await
-            .map_err(|err| {
-                source_tokenization_failed_for_source(Path::new("<benchmark>"), &src, err)
-            })?
+            .map_err(|err| source_lexer_error_for_source(Path::new("<benchmark>"), &src, err))?
     }
     /// Estimate the live frontend capacities produced by lexing and parsing a
     /// source string.
@@ -146,7 +144,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             )
             .await
             .map_err(|err| {
-                source_tokenization_failed_for_source(Path::new("<benchmark>"), &src, err)
+                source_lexer_error_for_source(Path::new("<benchmark>"), &src, err)
             })?
     }
 }

@@ -131,6 +131,56 @@ pub(super) fn source_tokenization_failed_for_source(
     )
 }
 
+/// Reports a source-language lexical failure at the byte selected by the GPU DFA.
+///
+/// This is deliberately separate from `source_tokenization_failed_for_source`:
+/// malformed source has a meaningful location, while allocation, submission, and
+/// readback failures do not and must not masquerade as source errors.
+pub(super) fn source_lexical_failure_for_source(
+    diagnostic_path: &Path,
+    source: &str,
+    failure: crate::lexer::LexicalFailure,
+) -> CompileError {
+    let start = failure.offset.min(source.len());
+    let len = source[start..]
+        .chars()
+        .next()
+        .map(char::len_utf8)
+        .unwrap_or(1);
+    let label = if start == source.len() {
+        "token is incomplete at end of file"
+    } else {
+        "tokenization fails at this byte"
+    };
+
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0046", "source tokenization failed")
+            .with_primary_label(diagnostic_label_from_source_span(
+                diagnostic_path,
+                source,
+                start,
+                len,
+                label,
+            ))
+            .with_note(format!("source input path: {}", diagnostic_path.display()))
+            .with_note(format!("first lexical failure at byte {start}")),
+    )
+}
+
+/// Converts a lexer-driver error without losing a source-level failure carried
+/// through `anyhow`; non-language failures retain the generic execution diagnostic.
+pub(super) fn source_lexer_error_for_source(
+    diagnostic_path: &Path,
+    source: &str,
+    err: anyhow::Error,
+) -> CompileError {
+    if let Some(failure) = err.downcast_ref::<crate::lexer::LexicalFailure>() {
+        source_lexical_failure_for_source(diagnostic_path, source, *failure)
+    } else {
+        source_tokenization_failed_for_source(diagnostic_path, source, err)
+    }
+}
+
 pub(super) fn source_tokenization_failed_for_source_pack(
     diagnostic_files: &[DiagnosticSourceFile],
     _err: impl std::fmt::Display,
@@ -162,6 +212,67 @@ pub(super) fn source_tokenization_failed_for_source_pack(
             "could not tokenize this source file",
         )),
     )
+}
+
+/// Reports a source-pack lexical failure in the file containing its global byte.
+pub(super) fn source_lexical_failure_for_source_pack(
+    diagnostic_files: &[DiagnosticSourceFile],
+    failure: crate::lexer::LexicalFailure,
+) -> CompileError {
+    let diagnostic = Diagnostic::error("LNC0046", "source tokenization failed")
+        .with_note(format!("source file count: {}", diagnostic_files.len()))
+        .with_note(format!(
+            "first lexical failure at source-pack byte {}",
+            failure.offset
+        ));
+
+    let Some(file) = diagnostic_files
+        .iter()
+        .find(|file| failure.offset < file.global_end)
+        .or_else(|| diagnostic_files.last())
+    else {
+        return CompileError::Diagnostic(diagnostic.with_primary_label(DiagnosticLabel::primary(
+            "<source>",
+            1,
+            1,
+            1,
+            None,
+            "tokenization fails here",
+        )));
+    };
+
+    let start = file.local_start_for_global(failure.offset);
+    let len = file.source[start..]
+        .chars()
+        .next()
+        .map(char::len_utf8)
+        .unwrap_or(1);
+    let label = if start == file.source.len() {
+        "token is incomplete at end of file"
+    } else {
+        "tokenization fails at this byte"
+    };
+    CompileError::Diagnostic(
+        diagnostic.with_primary_label(diagnostic_label_from_source_span(
+            &file.path,
+            &file.source,
+            start,
+            len,
+            label,
+        )),
+    )
+}
+
+/// Source-pack equivalent of `source_lexer_error_for_source`.
+pub(super) fn source_lexer_error_for_source_pack(
+    diagnostic_files: &[DiagnosticSourceFile],
+    err: anyhow::Error,
+) -> CompileError {
+    if let Some(failure) = err.downcast_ref::<crate::lexer::LexicalFailure>() {
+        source_lexical_failure_for_source_pack(diagnostic_files, *failure)
+    } else {
+        source_tokenization_failed_for_source_pack(diagnostic_files, err)
+    }
 }
 
 pub(super) struct StageExecutionFailure<'a> {
@@ -383,6 +494,55 @@ mod tests {
             }
             other => panic!("expected structured tokenization diagnostic, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn source_lexical_failure_labels_the_reported_byte() {
+        let source = "fn main() {\n  @\n}\n";
+        let offset = source.find('@').unwrap();
+        let err = source_lexical_failure_for_source(
+            Path::new("bad.lani"),
+            source,
+            crate::lexer::LexicalFailure { offset },
+        );
+
+        let CompileError::Diagnostic(diagnostic) = err else {
+            panic!("expected a structured lexical diagnostic");
+        };
+        let label = diagnostic.primary_label.unwrap();
+        assert_eq!(label.path, PathBuf::from("bad.lani"));
+        assert_eq!(label.byte_start, Some(offset));
+        assert_eq!(label.byte_end, Some(offset + 1));
+        assert_eq!(label.line, 2);
+        assert_eq!(label.column, 3);
+        assert_eq!(label.message, "tokenization fails at this byte");
+    }
+
+    #[test]
+    fn source_pack_lexical_failure_selects_the_containing_file() {
+        let paths = [
+            Some(PathBuf::from("first.lani")),
+            Some(PathBuf::from("second.lani")),
+        ];
+        let sources = ["module first;\n", "module second; @\n"];
+        let files = source_pack_diagnostic_files(&sources, Some(&paths));
+        let local_offset = sources[1].find('@').unwrap();
+        let global_offset = sources[0].len() + local_offset;
+        let err = source_lexical_failure_for_source_pack(
+            &files,
+            crate::lexer::LexicalFailure {
+                offset: global_offset,
+            },
+        );
+
+        let CompileError::Diagnostic(diagnostic) = err else {
+            panic!("expected a structured source-pack lexical diagnostic");
+        };
+        let label = diagnostic.primary_label.unwrap();
+        assert_eq!(label.path, PathBuf::from("second.lani"));
+        assert_eq!(label.byte_start, Some(local_offset));
+        assert_eq!(label.byte_end, Some(local_offset + 1));
+        assert_eq!(label.message, "tokenization fails at this byte");
     }
 
     #[test]

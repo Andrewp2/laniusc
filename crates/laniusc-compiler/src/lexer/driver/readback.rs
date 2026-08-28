@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use super::buffers;
 use crate::lexer::{
-    types::{GpuToken, Token},
+    types::{GpuToken, LexicalFailure, Token},
     util::{read_tokens_from_mapped, u32_from_first_4},
 };
 
@@ -13,15 +13,28 @@ pub(super) fn read_resident_tokens(
     bufs: &buffers::GpuBuffers,
 ) -> Result<Vec<Token>> {
     let count_readback = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("rb.lex.source_pack.count"),
-        size: 4,
+        label: Some("rb.lex.source_pack.metadata"),
+        size: 8,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut count_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("lex-source-pack-count-readback"),
     });
-    count_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &count_readback, 0, 4);
+    count_encoder.copy_buffer_to_buffer(
+        &bufs.token_count.buffer,
+        bufs.token_count.byte_offset,
+        &count_readback,
+        0,
+        4,
+    );
+    count_encoder.copy_buffer_to_buffer(
+        &bufs.lex_error_offset.buffer,
+        bufs.lex_error_offset.byte_offset,
+        &count_readback,
+        4,
+        4,
+    );
     crate::gpu::passes_core::submit_with_progress(
         queue,
         "lex.source-pack.count-readback",
@@ -37,8 +50,15 @@ pub(super) fn read_resident_tokens(
     );
     let count_bytes = count_slice.get_mapped_range();
     let token_count = u32_from_first_4(&count_bytes) as usize;
+    let raw_error = u32_from_first_4(&count_bytes[4..]);
     drop(count_bytes);
     count_readback.unmap();
+    if raw_error != 0 {
+        return Err(LexicalFailure {
+            offset: (u32::MAX - raw_error) as usize,
+        }
+        .into());
+    }
     if token_count == 0 {
         return Ok(Vec::new());
     }
@@ -53,7 +73,13 @@ pub(super) fn read_resident_tokens(
     let mut tokens_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("lex-source-pack-token-readback"),
     });
-    tokens_encoder.copy_buffer_to_buffer(&bufs.tokens_out, 0, &tokens_readback, 0, need_bytes);
+    tokens_encoder.copy_buffer_to_buffer(
+        &bufs.tokens_out.buffer,
+        bufs.tokens_out.byte_offset,
+        &tokens_readback,
+        0,
+        need_bytes,
+    );
     crate::gpu::passes_core::submit_with_progress(
         queue,
         "lex.source-pack.token-readback",

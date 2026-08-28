@@ -4,6 +4,22 @@ use encase::ShaderType;
 
 use crate::lexer::tables::tokens::TokenKind;
 
+/// A deterministic lexical failure reported by the GPU DFA.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LexicalFailure {
+    /// First source byte that cannot continue the committed token, or the
+    /// exclusive end offset when a committed token is incomplete at EOF.
+    pub offset: usize,
+}
+
+impl std::fmt::Display for LexicalFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "lexical error at byte {}", self.offset)
+    }
+}
+
+impl std::error::Error for LexicalFailure {}
+
 #[derive(Debug, Clone)]
 /// Host-readable token record produced by GPU readback.
 pub struct Token {

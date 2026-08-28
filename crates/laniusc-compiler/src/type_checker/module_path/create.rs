@@ -66,7 +66,6 @@ pub(in crate::type_checker) fn create_with_passes(
         extract_decl_record_flag_params,
         extract_decl_record_flag,
         scatter_paths,
-        path_dispatch_params,
         path_dispatch_args: path_dispatch_args_group,
         import_dispatch_params,
         import_dispatch_args: import_dispatch_args_group,
@@ -86,6 +85,7 @@ pub(in crate::type_checker) fn create_with_passes(
     )?;
     let ModuleIndex {
         scatter_module_records,
+        module_record_params,
         clear_module_lookup,
         build_module_keys,
         module_dispatch_params,
@@ -824,11 +824,11 @@ pub(in crate::type_checker) fn create_with_passes(
         _extract_module_record_flag_params: extract_module_record_flag_params,
         _extract_import_record_flag_params: extract_import_record_flag_params,
         _extract_decl_record_flag_params: extract_decl_record_flag_params,
-        _path_dispatch_params: path_dispatch_params,
         _path_prefix_dispatch_params: path_prefix_dispatch_params,
         _import_dispatch_params: import_dispatch_params,
         _import_visible_validate_dispatch_params: import_visible_validate_dispatch_params,
         _module_dispatch_params: module_dispatch_params,
+        _module_record_params: module_record_params,
         _module_lookup_params: module_lookup_params,
         _import_resolve_params: import_resolve_params,
         _qualified_path_resolve_params: [

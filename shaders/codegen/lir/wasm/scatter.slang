@@ -26,6 +26,7 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint TARGET_PAGE_ROWS = 65536u;
 static const uint WASM_SYNTHETIC_I32_TEMP = 0xfffffffeu;
 static const uint WASM_SYNTHETIC_F32_TEMP = 0xfffffffdu;
+static const uint WASM_SYNTHETIC_I32_ADDRESS_TEMP = 0xfffffffcu;
 
 uint scheduled_owner(uint target_row, uint semantic_count)
 {
@@ -164,6 +165,45 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : local_row == 2u ? WASM_LIR_OP_I32_ADD
                 : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_LOAD : WASM_LIR_OP_I32_LOAD;
             immediate = local_row == 0u ? 4u : 0u;
+        }
+    }
+    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_STORE &&
+             (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
+    {
+        bool call_index_base = operands.a < semantic_count &&
+            (opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL ||
+             opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL_SYMBOL);
+        uint value_temporary = core.type_id == TY_FLOAT
+            ? WASM_SYNTHETIC_F32_TEMP : WASM_SYNTHETIC_I32_TEMP;
+        if (call_index_base)
+        {
+            // The stack is `(index, aggregate, value)`: preserve both values,
+            // scale the index, restore the aggregate, and then restore the RHS.
+            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
+                : local_row == 1u ? WASM_LIR_OP_LOCAL_SET
+                : local_row == 2u ? WASM_LIR_OP_I32_CONST
+                : local_row == 3u ? WASM_LIR_OP_I32_MUL
+                : local_row == 4u ? WASM_LIR_OP_LOCAL_GET
+                : local_row == 5u ? WASM_LIR_OP_I32_ADD
+                : local_row == 6u ? WASM_LIR_OP_LOCAL_GET
+                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
+            immediate = local_row == 0u || local_row == 6u ? value_temporary
+                : local_row == 1u || local_row == 4u
+                ? WASM_SYNTHETIC_I32_ADDRESS_TEMP
+                : local_row == 2u ? 4u : 0u;
+        }
+        else
+        {
+            // The stack is `(aggregate, index, value)`. Wasm stores consume
+            // `(address, value)`, so preserve the RHS while forming the address.
+            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
+                : local_row == 1u ? WASM_LIR_OP_I32_CONST
+                : local_row == 2u ? WASM_LIR_OP_I32_MUL
+                : local_row == 3u ? WASM_LIR_OP_I32_ADD
+                : local_row == 4u ? WASM_LIR_OP_LOCAL_GET
+                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
+            immediate = local_row == 0u || local_row == 4u ? value_temporary
+                : local_row == 1u ? 4u : 0u;
         }
     }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&

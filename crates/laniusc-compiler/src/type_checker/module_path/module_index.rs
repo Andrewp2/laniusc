@@ -6,6 +6,7 @@ use super::{super::*, buffers::Buffers, inputs::CreateInputs, layout::Layout};
 /// validates the import graph before declaration lookup consumes it.
 pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) scatter_module_records: ComputeOperation,
+    pub(in crate::type_checker) module_record_params: LaniusBuffer<ModuleRecordScatterParams>,
     pub(in crate::type_checker) clear_module_lookup: ComputeOperation,
     pub(in crate::type_checker) build_module_keys: ComputeOperation,
     pub(in crate::type_checker) module_dispatch_params: LaniusBuffer<CountDispatchParams>,
@@ -43,11 +44,11 @@ pub(in crate::type_checker) fn create_module_index(
     let module_record_params = uniform_from_val(
         device,
         "type_check.modules.module_records.params",
-        &ModuleKeyRadixParams {
-            module_capacity: inputs.hir_node_capacity,
-            reserved: layout.module_capacity_u32,
-            n_blocks: layout.n_blocks,
-            key_step: 0,
+        &ModuleRecordScatterParams {
+            hir_node_capacity: inputs.hir_node_capacity,
+            token_capacity: inputs.token_capacity,
+            module_capacity: layout.module_capacity_u32,
+            reserved: 0,
         },
     );
     let mut module_record_resources = resources.clone();
@@ -114,7 +115,7 @@ pub(in crate::type_checker) fn create_module_index(
         1,
     )?;
 
-    let mut retained_params = Vec::with_capacity(5);
+    let retained_params = Vec::with_capacity(5);
 
     let validate_modules = ComputeOperation::indirect_spec(
         device,
@@ -266,10 +267,9 @@ pub(in crate::type_checker) fn create_module_index(
         &buffers.import_dispatch_args,
     )?;
 
-    retained_params.push(module_record_params);
-
     Ok(ModuleIndex {
         scatter_module_records,
+        module_record_params,
         clear_module_lookup,
         build_module_keys,
         module_dispatch_params,

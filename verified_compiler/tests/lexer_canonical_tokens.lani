@@ -1,0 +1,41 @@
+module lexer_canonical_tokens;
+
+import verified::canonical_tokens;
+import verified::token;
+
+fn main() -> i32 {
+    let source: [i32; 14] = [
+        108, 101, 116, 32, 108, 101, 116, 116, 101, 114, 32, 102, 110, 0,
+    ];
+    if (verified::canonical_tokens::keyword_kind(source, 0, 3)
+        != verified::token::LET) {
+        return 1;
+    }
+    if (verified::canonical_tokens::keyword_kind(source, 4, 10)
+        != verified::token::IDENTIFIER) {
+        return 2;
+    }
+    if (verified::canonical_tokens::keyword_kind(source, 11, 13)
+        != verified::token::FN) {
+        return 3;
+    }
+    if (!verified::canonical_tokens::is_trivia(verified::token::WHITESPACE)) {
+        return 4;
+    }
+    if (verified::canonical_tokens::is_trivia(verified::token::INTEGER)) {
+        return 5;
+    }
+
+    let range_source: [i32; 5] = [49, 46, 46, 61, 50];
+    let range_records: [i32; 12] = [
+        2, 0, 1,
+        182, 1, 3,
+        8, 3, 4,
+        2, 4, 5,
+    ];
+    let range_count: i32 = verified::canonical_tokens::canonicalize_in_place(
+        range_source, range_records, 4);
+    if (range_count != 4) { return 6; }
+    if (range_records[3] != verified::token::DOT_DOT_EQUAL) { return 7; }
+    return 0;
+}

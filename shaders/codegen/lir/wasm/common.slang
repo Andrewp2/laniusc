@@ -30,6 +30,13 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
         return call_index_base ? 6u : 4u;
+    // The semantic schedule leaves `(aggregate, index, value)` on the stack.
+    // Preserve the value while computing the byte address, then perform the
+    // typed store. A call-produced aggregate follows the already evaluated
+    // index, so that form also preserves the aggregate pointer.
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_STORE &&
+        (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
+        return call_index_base ? 8u : 6u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
         return 5u;

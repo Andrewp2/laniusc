@@ -296,24 +296,12 @@ pub(crate) fn token_of_state(s: S) -> Option<TokenKind> {
         OrOrDone => Some(TokenKind::OrOr),
         NotEqualDone => Some(TokenKind::NotEqual),
 
-        HexStart => Some(TokenKind::Int),
         Hex => Some(TokenKind::Int),
         Bin => Some(TokenKind::Int),
-        BinStart => Some(TokenKind::Int),
         Oct => Some(TokenKind::Int),
-        OctStart => Some(TokenKind::Int),
-        IntAfterUnderscore => Some(TokenKind::Int),
-        HexAfterUnderscore => Some(TokenKind::Int),
-        BinAfterUnderscore => Some(TokenKind::Int),
-        OctAfterUnderscore => Some(TokenKind::Int),
         FloatDot => Some(TokenKind::Float),
         FloatFrac => Some(TokenKind::Float),
         FloatExp => Some(TokenKind::Float),
-        FloatExpSign => Some(TokenKind::Float),
-        FloatFracAfterUnderscore => Some(TokenKind::Float),
-        FloatExpAfterUnderscore => Some(TokenKind::Float),
-        MaybeExpFromInt => Some(TokenKind::Int),
-        MaybeExpFromFloat => Some(TokenKind::Float),
 
         StringDone => Some(TokenKind::String),
         CharDone => Some(TokenKind::Char),
@@ -889,6 +877,27 @@ mod tests {
                     assert_eq!(TokenKind::from_u32(raw), None);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn committed_numeric_prefixes_and_separators_are_not_accepting_states() {
+        let dfa = StreamingDfa::new();
+        for state in [
+            S::HexStart,
+            S::BinStart,
+            S::OctStart,
+            S::IntAfterUnderscore,
+            S::HexAfterUnderscore,
+            S::BinAfterUnderscore,
+            S::OctAfterUnderscore,
+            S::FloatFracAfterUnderscore,
+            S::MaybeExpFromInt,
+            S::MaybeExpFromFloat,
+            S::FloatExpSign,
+            S::FloatExpAfterUnderscore,
+        ] {
+            assert_eq!(dfa.token_map[state.idx()], INVALID_TOKEN, "{state:?}");
         }
     }
 }

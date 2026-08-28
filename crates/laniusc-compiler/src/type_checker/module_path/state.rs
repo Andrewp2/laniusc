@@ -119,13 +119,13 @@ pub(in crate::type_checker) struct State {
         LaniusBuffer<RecordFamilyFlagParams>,
     pub(in crate::type_checker) _extract_decl_record_flag_params:
         LaniusBuffer<RecordFamilyFlagParams>,
-    pub(in crate::type_checker) _path_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) _path_prefix_dispatch_params:
         LaniusBuffer<PathPrefixDispatchParams>,
     pub(in crate::type_checker) _import_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) _import_visible_validate_dispatch_params:
         LaniusBuffer<CountPairMaxDispatchParams>,
     pub(in crate::type_checker) _module_dispatch_params: LaniusBuffer<CountDispatchParams>,
+    pub(in crate::type_checker) _module_record_params: LaniusBuffer<ModuleRecordScatterParams>,
     pub(in crate::type_checker) _module_lookup_params: LaniusBuffer<ModuleLookupParams>,
     pub(in crate::type_checker) _import_resolve_params: LaniusBuffer<ImportResolveParams>,
     pub(in crate::type_checker) _qualified_path_resolve_params:

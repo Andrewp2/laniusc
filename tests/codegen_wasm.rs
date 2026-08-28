@@ -2906,6 +2906,32 @@ fn main() {
 }
 
 #[test]
+fn wasm_executes_indexed_array_stores_inside_a_loop() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let values: [i32; 3] = [0, 0, 0];
+    let index: i32 = 0;
+    while (index < 3) {
+        values[index] = index + 10;
+        index += 1;
+    }
+    return values[0] + values[1] + values[2];
+}
+"#,
+    )
+    .expect("indexed array stores inside a loop should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM indexed array stores inside a loop",
+        "array_index_store_loop",
+        &wasm,
+    );
+    assert_eq!(status, 33);
+}
+
+#[test]
 fn wasm_executes_empty_array_value() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

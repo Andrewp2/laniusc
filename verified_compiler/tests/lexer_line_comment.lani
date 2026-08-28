@@ -1,0 +1,11 @@
+module app::main;
+
+import verified::lexer;
+
+fn main() -> i32 {
+    let source: [i32; 6] = [47, 47, 97, 98, 10, 0];
+    if (verified::lexer::scan_line_comment_end(source, 5, 0) != 4) {
+        return 1;
+    }
+    return 0;
+}

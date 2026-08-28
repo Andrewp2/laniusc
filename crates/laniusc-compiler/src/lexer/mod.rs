@@ -24,7 +24,7 @@ pub mod util;
 
 pub use driver::{GpuLexer, lex_on_gpu};
 pub(super) use types::LexParams;
-pub use types::{GpuToken, Token};
+pub use types::{GpuToken, LexicalFailure, Token};
 
 pub use crate::gpu::{debug::DebugBuffer, passes_core::Pass};
 

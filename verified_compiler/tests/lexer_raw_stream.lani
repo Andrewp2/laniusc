@@ -1,0 +1,43 @@
+module lexer_raw_stream;
+
+import verified::raw_lexer;
+import verified::token;
+
+fn main() -> i32 {
+    let source: [i32; 21] = [
+        97, 98, 99, 32, 49, 50, 46, 46, 51, 52, 32,
+        47, 47, 120, 10, 34, 111, 107, 34, 32, 64,
+    ];
+    let records: [i32; 63] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+
+    let result = verified::raw_lexer::lex_into(
+        source, 21, records, 21);
+    if (verified::raw_lexer::lex_status(result) != verified::raw_lexer::LEX_ERROR) {
+        return 1;
+    }
+    if (verified::raw_lexer::lex_token_count(result) != 10) { return 2; }
+    if (verified::raw_lexer::lex_error_offset(result) != 20) { return 3; }
+
+    if (records[0] != verified::token::IDENTIFIER || records[1] != 0 || records[2] != 3) {
+        return 4;
+    }
+    if (records[6] != verified::token::INTEGER || records[7] != 4 || records[8] != 6) {
+        return 5;
+    }
+    if (records[9] != verified::token::DOT_DOT || records[10] != 6 || records[11] != 8) {
+        return 6;
+    }
+    if (records[15] != verified::token::WHITESPACE) { return 7; }
+    if (records[18] != verified::token::LINE_COMMENT || records[20] != 14) { return 8; }
+    if (records[24] != verified::token::STRING || records[25] != 15 || records[26] != 19) {
+        return 9;
+    }
+    return 0;
+}

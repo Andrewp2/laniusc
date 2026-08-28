@@ -43,11 +43,8 @@ pub(in crate::type_checker) const PATHS_SCATTER: ReflectedComputeSpec = typechec
 pub(in crate::type_checker) const PATH_DISPATCH: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.path_dispatch_args",
     DispatchArguments,
-    "type_checker/count/dispatch_args"
-    ; resources [
-        typecheck_resource!("count_in" => "path_count_out", Read),
-        typecheck_resource!("dispatch_args" => "path_dispatch_args", Write),
-    ]
+    "type_checker/modules/01a_path_dispatch_args";
+    writes ["path_count_out", "path_dispatch_args"]
 );
 
 pub(in crate::type_checker) const PATH_SEGMENTS_COUNT: ReflectedComputeSpec = typecheck_operation!(

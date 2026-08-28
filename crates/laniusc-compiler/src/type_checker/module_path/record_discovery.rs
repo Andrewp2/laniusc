@@ -22,7 +22,6 @@ pub(in crate::type_checker) struct RecordDiscovery {
         LaniusBuffer<RecordFamilyFlagParams>,
     pub(in crate::type_checker) extract_decl_record_flag: ComputeOperation,
     pub(in crate::type_checker) scatter_paths: ComputeOperation,
-    pub(in crate::type_checker) path_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) path_dispatch_args: ComputeOperation,
     pub(in crate::type_checker) import_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) import_dispatch_args: ComputeOperation,
@@ -94,16 +93,8 @@ pub(in crate::type_checker) fn create_record_discovery(
     let hir_work = layout.n_blocks.saturating_mul(256).max(1);
     let scatter_paths =
         ComputeOperation::direct_spec(device, graph, resources, passes, PATHS_SCATTER, hir_work)?;
-    let (path_dispatch_params, path_dispatch_args) = create_count_dispatch(
-        device,
-        graph,
-        passes,
-        resources,
-        PATH_DISPATCH,
-        "type_check.modules.path_dispatch.params",
-        layout.record_capacity_u32,
-        1,
-    )?;
+    let path_dispatch_args =
+        ComputeOperation::direct_spec(device, graph, resources, passes, PATH_DISPATCH, 1)?;
     let (import_dispatch_params, import_dispatch_args) = create_count_dispatch(
         device,
         graph,
@@ -179,7 +170,6 @@ pub(in crate::type_checker) fn create_record_discovery(
         extract_decl_record_flag_params,
         extract_decl_record_flag,
         scatter_paths,
-        path_dispatch_params,
         path_dispatch_args,
         import_dispatch_params,
         import_dispatch_args,

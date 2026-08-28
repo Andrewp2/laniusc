@@ -47,10 +47,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     WasmObjectRelocationRow relocation;
     // Padded code-entry size (5), padded local-group count (5), semantic local
-    // declarations, and the two six-byte target-private temporaries precede
+    // declarations, and the three six-byte target-private temporaries precede
     // the instruction stream. The final +1 addresses the first LEB byte after
     // the call opcode.
-    relocation.body_byte_offset = wasm_code_entry_offset[function_id] + 22u +
+    relocation.body_byte_offset = wasm_code_entry_offset[function_id] + 28u +
         function.local_count * 6u + relative_instruction_byte + 1u;
     bool data = opt_ir_op(instruction) == SEMANTIC_LIR_OP_CONST_STRING;
     bool symbolic = opt_ir_op(instruction) == SEMANTIC_LIR_OP_CALL_SYMBOL;

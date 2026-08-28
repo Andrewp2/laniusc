@@ -617,6 +617,18 @@ static const uint LOWERING_DIAGNOSTIC_OPT_ACCESS_LOCAL_DEFINITIONS_VALIDATE = 26
 
 static const uint LOWERING_DIAGNOSTIC_OPT_SSA_TRIVIAL_BLOCK_ARGUMENT_VALIDATE = 27u;
 
+// Optimizer CFG construction diagnostics. These are first-writer identities:
+// once one pass reports a malformed graph, later validators retain the pass
+// that first made the invariant failure observable.
+static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_EDGE_SCATTER = 28u;
+static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_FUNCTION_REDUCE = 29u;
+static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_FUNCTION_FINALIZE = 30u;
+static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_REACHABILITY_SEED = 31u;
+static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_REACHABILITY_CLOSE = 32u;
+static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_REACHABILITY_VALIDATE = 33u;
+static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_DOMINATOR_VALIDATE = 34u;
+static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_REGION_VALIDATE_EDGES = 35u;
+
 // Diagnostic details either name a source token directly or a compact HIR
 // row whose token anchor must be read from compact HIR.
 static const uint LOWERING_DIAGNOSTIC_DETAIL_NONE = 0u;

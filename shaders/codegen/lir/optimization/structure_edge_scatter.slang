@@ -27,6 +27,10 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 
 void report_structure_failure(uint node)
 {
+    uint ignored;
+    InterlockedCompareExchange(lowering_status[0u].diagnostic_reason,
+        LOWERING_DIAGNOSTIC_NONE,
+        LOWERING_DIAGNOSTIC_OPT_STRUCTURE_EDGE_SCATTER, ignored);
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, node);

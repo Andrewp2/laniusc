@@ -31,10 +31,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // and expanded result value types.
     wasm_type_entry_length[function_id] = 11u + function.param_value_count + results;
     // Padded body size, padded local-group count, one six-byte declaration per
-    // semantic local, two target-private six-byte temporary declarations,
+    // semantic local, three target-private six-byte temporary declarations,
     // instruction bytes, the function-end opcode, and a non-void
     // `unreachable` fallthrough guard when a result is required.
-    wasm_code_entry_length[function_id] = 23u + function.local_count * 6u +
+    wasm_code_entry_length[function_id] = 29u + function.local_count * 6u +
         function.body_byte_count + results;
     if ((function.flags & WASM_MODULE_FUNCTION_ENTRYPOINT) != 0u)
     {

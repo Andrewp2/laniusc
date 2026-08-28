@@ -1,0 +1,72 @@
+module verified::number;
+
+import verified::digits;
+import verified::decimal;
+import verified::token_scan;
+
+// Numeric scanning is intentionally expressed without the production GPU
+// lexer's dot-range repair. An integer stops before `..`, so the symbol
+// scanner observes the range operator directly.
+// The caller establishes that `start` is in bounds and starts with a decimal
+// digit. Decimal, hexadecimal, binary, and octal integers are supported.
+pub fn scan_number(
+    source: [i32],
+    source_length: i32,
+    start: i32,
+) -> verified::token_scan::TokenScan {
+    if (source[start] == 48 && start + 1 < source_length) {
+        let prefix: i32 = source[start + 1];
+        let base: i32 = 0;
+        if (prefix == 120 || prefix == 88) {
+            base = 16;
+        } else {
+            if (prefix == 98 || prefix == 66) {
+                base = 2;
+            } else {
+                if (prefix == 111 || prefix == 79) {
+                    base = 8;
+                }
+            }
+        }
+        if (base != 0) {
+            let digits = verified::digits::scan_digit_run(
+                source, source_length, start + 2, base);
+            if (!verified::digits::digit_scan_succeeded(digits)) {
+                return verified::decimal::number_failure(
+                    verified::digits::digit_scan_error_offset(digits));
+            }
+            return verified::decimal::integer_scan(
+                verified::digits::digit_scan_end_offset(digits));
+        }
+    }
+
+    let integer = verified::digits::scan_digit_run(source, source_length, start, 10);
+    if (!verified::digits::digit_scan_succeeded(integer)) {
+        return verified::decimal::number_failure(
+            verified::digits::digit_scan_error_offset(integer));
+    }
+    return verified::decimal::finish_decimal(source, source_length,
+        verified::digits::digit_scan_end_offset(integer));
+}
+
+// The caller establishes that `start` points at `.` and the following byte is
+// a decimal digit. A lone dot remains punctuation and never reaches this path.
+pub fn scan_leading_dot_number(
+    source: [i32],
+    source_length: i32,
+    start: i32,
+) -> verified::token_scan::TokenScan {
+    let fraction = verified::digits::scan_digit_run(source, source_length, start + 1, 10);
+    if (!verified::digits::digit_scan_succeeded(fraction)) {
+        return verified::decimal::number_failure(
+            verified::digits::digit_scan_error_offset(fraction));
+    }
+    let fraction_end: i32 = verified::digits::digit_scan_end_offset(fraction);
+    if (fraction_end < source_length) {
+        let exponent: i32 = source[fraction_end];
+        if (exponent == 101 || exponent == 69) {
+            return verified::decimal::scan_exponent(source, source_length, fraction_end);
+        }
+    }
+    return verified::decimal::float_scan(fraction_end);
+}

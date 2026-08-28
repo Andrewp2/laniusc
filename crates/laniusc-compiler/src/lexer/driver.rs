@@ -23,7 +23,7 @@ use crate::{
     lexer::{
         passes::{LexerPasses, record_all_passes},
         tables::{compact::load_compact_tables_from_bytes, tokens::TokenKind},
-        types::{GpuToken, Token},
+        types::{GpuToken, LexicalFailure, Token},
         util::{read_tokens_from_mapped, readback_enabled, u32_from_first_4},
     },
 };
@@ -289,13 +289,26 @@ impl GpuLexer {
             }
 
             let readback_tokens_count = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rb_count"),
-                size: 4,
+                label: Some("rb_lexer_metadata"),
+                size: 8,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             });
 
-            enc.copy_buffer_to_buffer(&bufs.token_count, 0, &readback_tokens_count, 0, 4);
+            enc.copy_buffer_to_buffer(
+                &bufs.token_count.buffer,
+                bufs.token_count.byte_offset,
+                &readback_tokens_count,
+                0,
+                4,
+            );
+            enc.copy_buffer_to_buffer(
+                &bufs.lex_error_offset.buffer,
+                bufs.lex_error_offset.byte_offset,
+                &readback_tokens_count,
+                4,
+                4,
+            );
 
             if let Some(timer) = maybe_timer.as_mut() {
                 timer.stamp(&mut enc, "after copy count");
@@ -322,8 +335,15 @@ impl GpuLexer {
             );
             let count_bytes = readback_tokens_count.slice(..).get_mapped_range();
             let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
+            let raw_error = u32_from_first_4(&count_bytes[4..]);
             drop(count_bytes);
             readback_tokens_count.unmap();
+            if raw_error != 0 {
+                return Err(LexicalFailure {
+                    offset: (u32::MAX - raw_error) as usize,
+                }
+                .into());
+            }
             debug_assert!(
                 n == 0 || token_count_u32 <= (n as usize),
                 "token_count unexpectedly exceeds n (count={}, n={})",
@@ -391,8 +411,8 @@ impl GpuLexer {
             });
 
         encoder_two.copy_buffer_to_buffer(
-            &bufs.tokens_out,
-            0,
+            &bufs.tokens_out.buffer,
+            bufs.tokens_out.byte_offset,
             &readback_tokens_buffer,
             0,
             need_bytes,
@@ -983,8 +1003,15 @@ impl GpuLexer {
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
         bufs.parser_feature_flags_value = u32_from_first_4(&count_bytes[4..]);
+        let raw_error = u32_from_first_4(&count_bytes[8..]);
         drop(count_bytes);
         token_count_readback.unmap();
+        if raw_error != 0 {
+            return Err(LexicalFailure {
+                offset: (u32::MAX - raw_error) as usize,
+            }
+            .into());
+        }
         if let Some(stamps) = lex_timer
             .as_ref()
             .and_then(|timer| timer.try_read(&self.device))
@@ -1297,8 +1324,15 @@ impl GpuLexer {
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
         bufs.parser_feature_flags_value = u32_from_first_4(&count_bytes[4..]);
+        let raw_error = u32_from_first_4(&count_bytes[8..]);
         drop(count_bytes);
         token_count_readback.unmap();
+        if raw_error != 0 {
+            return Err(LexicalFailure {
+                offset: (u32::MAX - raw_error) as usize,
+            }
+            .into());
+        }
         if token_count > bufs.n {
             anyhow::bail!(
                 "lexer token count unexpectedly exceeds byte capacity: count={}, capacity={}",
@@ -1473,8 +1507,15 @@ impl GpuLexer {
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
         bufs.parser_feature_flags_value = u32_from_first_4(&count_bytes[4..]);
+        let raw_error = u32_from_first_4(&count_bytes[8..]);
         drop(count_bytes);
         token_count_readback.unmap();
+        if raw_error != 0 {
+            return Err(LexicalFailure {
+                offset: (u32::MAX - raw_error) as usize,
+            }
+            .into());
+        }
         if token_count > bufs.n {
             anyhow::bail!(
                 "lexer token count unexpectedly exceeds byte capacity: count={}, capacity={}",
@@ -1655,8 +1696,15 @@ impl GpuLexer {
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
         bufs.parser_feature_flags_value = u32_from_first_4(&count_bytes[4..]);
+        let raw_error = u32_from_first_4(&count_bytes[8..]);
         drop(count_bytes);
         token_count_readback.unmap();
+        if raw_error != 0 {
+            return Err(LexicalFailure {
+                offset: (u32::MAX - raw_error) as usize,
+            }
+            .into());
+        }
         if token_count > bufs.n {
             anyhow::bail!(
                 "lexer token count unexpectedly exceeds byte capacity: count={}, capacity={}",

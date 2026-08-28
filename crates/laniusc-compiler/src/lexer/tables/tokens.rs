@@ -255,6 +255,107 @@ define_token_kinds! {
     RangeInclusiveAssign,
 }
 
+impl TokenKind {
+    /// Returns the canonical lexer token represented by this parser-context
+    /// token. This is the compatibility relation used by parsers that validate
+    /// contextual token classifications against the original token stream.
+    pub fn canonical_lexer_kind(self) -> Self {
+        match self {
+            Self::LetIdent
+            | Self::ParamIdent
+            | Self::TypeIdent
+            | Self::MemberIdent
+            | Self::TypeAliasNameIdent
+            | Self::TraitNameIdent
+            | Self::GenericParamIdent
+            | Self::WhereIdent
+            | Self::BoundTypeIdent
+            | Self::RangeEndIdent
+            | Self::PathGenericIdent => Self::Ident,
+            Self::CallLParen
+            | Self::GroupLParen
+            | Self::ParamLParen
+            | Self::PatternLParen
+            | Self::EnumPayloadLParen => Self::LParen,
+            Self::CallRParen
+            | Self::GroupRParen
+            | Self::ParamRParen
+            | Self::PatternRParen
+            | Self::EnumPayloadRParen => Self::RParen,
+            Self::IndexLBracket | Self::ArrayLBracket | Self::TypeArrayLBracket => Self::LBracket,
+            Self::IndexRBracket | Self::ArrayRBracket | Self::TypeArrayRBracket => Self::RBracket,
+            Self::IfLBrace
+            | Self::MatchLBrace
+            | Self::ImplLBrace
+            | Self::TraitLBrace
+            | Self::StructLitLBrace
+            | Self::StructDeclLBrace
+            | Self::EnumLBrace
+            | Self::FnBlockLBrace
+            | Self::ImplFnBlockLBrace => Self::LBrace,
+            Self::IfRBrace
+            | Self::MatchRBrace
+            | Self::ImplRBrace
+            | Self::TraitRBrace
+            | Self::StructLitRBrace
+            | Self::StructDeclRBrace
+            | Self::EnumRBrace
+            | Self::FnBlockRBrace
+            | Self::ImplFnBlockRBrace => Self::RBrace,
+            Self::LetAssign
+            | Self::DeclAssign
+            | Self::TypeAliasAssign
+            | Self::ConstAssign
+            | Self::RangeInclusiveAssign => Self::Assign,
+            Self::TypeSemicolon
+            | Self::TraitMethodSemicolon
+            | Self::ImportSemicolon
+            | Self::ModuleSemicolon
+            | Self::ExternSemicolon
+            | Self::TypeAliasSemicolon
+            | Self::ConstSemicolon
+            | Self::LetSemicolon
+            | Self::ReturnSemicolon
+            | Self::ExprSemicolon
+            | Self::BreakSemicolon
+            | Self::ContinueSemicolon => Self::Semicolon,
+            Self::ArgComma
+            | Self::ArrayComma
+            | Self::ParamComma
+            | Self::TypeArgComma
+            | Self::GenericParamComma
+            | Self::EnumFieldComma
+            | Self::MatchArmComma
+            | Self::PatternComma
+            | Self::WhereComma
+            | Self::EnumVariantComma
+            | Self::StructFieldComma
+            | Self::StructLitComma
+            | Self::BoundTypeArgComma
+            | Self::PathTypeArgComma => Self::Comma,
+            Self::BoundColon | Self::TypeColon | Self::PathColon => Self::Colon,
+            Self::TypeArgLt | Self::GenericParamLt | Self::BoundTypeArgLt | Self::PathTypeArgLt => {
+                Self::Lt
+            }
+            Self::TypeArgGt | Self::GenericParamGt | Self::BoundTypeArgGt | Self::PathTypeArgGt => {
+                Self::Gt
+            }
+            Self::TypeAmpersand | Self::BoundTypeAmpersand => Self::Ampersand,
+            Self::PrefixPlus | Self::InfixPlus | Self::BoundPlus => Self::Plus,
+            Self::PrefixMinus | Self::InfixMinus => Self::Minus,
+            Self::PrefixInc | Self::PostfixInc => Self::Inc,
+            Self::PrefixDec | Self::PostfixDec => Self::Dec,
+            Self::ImplPub | Self::TraitPub => Self::Pub,
+            Self::ParamSelfValue | Self::ParamSelfRefValue => Self::SelfValue,
+            Self::ReturnArrow => Self::Arrow,
+            Self::ImplFor => Self::For,
+            Self::InherentImpl | Self::TraitImpl => Self::Impl,
+            Self::ImportString | Self::ExternAbiString => Self::String,
+            kind => kind,
+        }
+    }
+}
+
 impl core::convert::TryFrom<u32> for TokenKind {
     type Error = ();
     fn try_from(v: u32) -> Result<Self, ()> {
@@ -306,6 +407,29 @@ mod tests {
                     "grammar terminal '{terminal}' is not a TokenKind"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_contextual_kind_has_an_idempotent_raw_lexer_origin() {
+        let is_raw_kind = |kind: TokenKind| {
+            matches!(
+                kind as u32,
+                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189
+            )
+        };
+
+        for &kind in TokenKind::ALL {
+            let canonical = kind.canonical_lexer_kind();
+            assert!(
+                is_raw_kind(canonical),
+                "contextual token {kind:?} maps to non-lexer token {canonical:?}"
+            );
+            assert_eq!(
+                canonical.canonical_lexer_kind(),
+                canonical,
+                "canonical lexer origin must be idempotent for {kind:?}"
+            );
         }
     }
 

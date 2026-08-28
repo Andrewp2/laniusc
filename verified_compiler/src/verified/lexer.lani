@@ -1,0 +1,215 @@
+module verified::lexer;
+
+// The lexical categories used to select the scanner for the next raw token.
+// Trivia is classified here because raw-token scanning must consume it even
+// though the parser-facing token stream later filters it out.
+pub type StartClass = i32;
+
+pub const START_IDENTIFIER: StartClass = 1;
+pub const START_DECIMAL_NUMBER: StartClass = 2;
+pub const START_WHITESPACE: StartClass = 3;
+pub const START_SYMBOL: StartClass = 4;
+pub const START_STRING_LITERAL: StartClass = 5;
+pub const START_CHARACTER_LITERAL: StartClass = 6;
+pub const START_INVALID: StartClass = 7;
+
+pub fn is_identifier_start(byte: i32) -> bool {
+    return byte >= 97 && byte <= 122
+        || byte >= 65 && byte <= 90
+        || byte == 95;
+}
+
+pub fn is_identifier_continue(byte: i32) -> bool {
+    return is_identifier_start(byte) || is_decimal_digit(byte);
+}
+
+pub fn is_decimal_digit(byte: i32) -> bool {
+    return byte >= 48 && byte <= 57;
+}
+
+pub fn is_whitespace(byte: i32) -> bool {
+    return byte == 32 || byte == 9 || byte == 10 || byte == 13;
+}
+
+pub fn is_symbol_start(byte: i32) -> bool {
+    return byte == 40
+        || byte == 41
+        || byte == 43
+        || byte == 42
+        || byte == 61
+        || byte == 45
+        || byte == 47
+        || byte == 33
+        || byte == 91
+        || byte == 93
+        || byte == 123
+        || byte == 125
+        || byte == 60
+        || byte == 62
+        || byte == 38
+        || byte == 124
+        || byte == 37
+        || byte == 94
+        || byte == 126
+        || byte == 44
+        || byte == 59
+        || byte == 58
+        || byte == 63
+        || byte == 46;
+}
+
+pub fn classify_start(byte: i32) -> StartClass {
+    if (byte >= 97 && byte <= 122 || byte >= 65 && byte <= 90 || byte == 95) {
+        return START_IDENTIFIER;
+    } else {
+        if (byte >= 48 && byte <= 57) {
+            return START_DECIMAL_NUMBER;
+        } else {
+            if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+                return START_WHITESPACE;
+            } else {
+                if (byte == 34) {
+                    return START_STRING_LITERAL;
+                } else {
+                    if (byte == 39) {
+                        return START_CHARACTER_LITERAL;
+                    } else {
+                        if (byte == 40
+                            || byte == 41
+                            || byte == 43
+                            || byte == 42
+                            || byte == 61
+                            || byte == 45
+                            || byte == 47
+                            || byte == 33
+                            || byte == 91
+                            || byte == 93
+                            || byte == 123
+                            || byte == 125
+                            || byte == 60
+                            || byte == 62
+                            || byte == 38
+                            || byte == 124
+                            || byte == 37
+                            || byte == 94
+                            || byte == 126
+                            || byte == 44
+                            || byte == 59
+                            || byte == 58
+                            || byte == 63
+                            || byte == 46) {
+                            return START_SYMBOL;
+                        } else {
+                            return START_INVALID;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Returns the exclusive end of an identifier whose first byte is at `start`.
+// The caller establishes that `start` is in bounds and starts an identifier.
+pub fn scan_identifier_end(source: [i32], source_length: i32, start: i32) -> i32 {
+    let end: i32 = start + 1;
+    while (end < source_length && is_identifier_continue(source[end])) {
+        end += 1;
+    }
+    return end;
+}
+
+// Returns the exclusive end of a nonempty whitespace run beginning at
+// `start`. The caller establishes that the first byte is whitespace.
+pub fn scan_whitespace_end(source: [i32], source_length: i32, start: i32) -> i32 {
+    let end: i32 = start + 1;
+    while (end < source_length && is_whitespace(source[end])) {
+        end += 1;
+    }
+    return end;
+}
+
+pub struct ScanEnd {
+    success: bool,
+    end_offset: i32,
+    error_offset: i32,
+}
+
+pub fn scan_succeeded(result: ScanEnd) -> bool {
+    return result.success;
+}
+
+pub fn scan_end_offset(result: ScanEnd) -> i32 {
+    return result.end_offset;
+}
+
+pub fn scan_error_offset(result: ScanEnd) -> i32 {
+    return result.error_offset;
+}
+
+fn successful_scan(end_offset: i32) -> ScanEnd {
+    return ScanEnd { success: true, end_offset: end_offset, error_offset: 0 };
+}
+
+fn failed_scan(error_offset: i32) -> ScanEnd {
+    return ScanEnd { success: false, end_offset: 0, error_offset: error_offset };
+}
+
+// The opening quote at `start` has already been classified. A raw newline is
+// the first invalid byte; missing closing quotes fail at the EOF byte offset.
+fn scan_quoted_end(
+    source: [i32],
+    source_length: i32,
+    start: i32,
+    delimiter: i32,
+) -> ScanEnd {
+    let offset: i32 = start + 1;
+    let escaping: bool = false;
+    while (offset < source_length) {
+        let byte: i32 = source[offset];
+        if (escaping) {
+            escaping = false;
+            offset += 1;
+        } else {
+            if (byte == 10) {
+                return failed_scan(offset);
+            }
+            if (byte == delimiter) {
+                return successful_scan(offset + 1);
+            }
+            if (byte == 92) {
+                escaping = true;
+            }
+            offset += 1;
+        }
+    }
+    return failed_scan(source_length);
+}
+
+pub fn scan_string_end(source: [i32], source_length: i32, start: i32) -> ScanEnd {
+    return scan_quoted_end(source, source_length, start, 34);
+}
+
+pub fn scan_character_end(source: [i32], source_length: i32, start: i32) -> ScanEnd {
+    return scan_quoted_end(source, source_length, start, 39);
+}
+
+pub fn scan_line_comment_end(source: [i32], source_length: i32, start: i32) -> i32 {
+    let end: i32 = start + 2;
+    while (end < source_length && source[end] != 10) {
+        end += 1;
+    }
+    return end;
+}
+
+pub fn scan_block_comment_end(source: [i32], source_length: i32, start: i32) -> ScanEnd {
+    let offset: i32 = start + 2;
+    while (offset < source_length) {
+        if (source[offset] == 42 && offset + 1 < source_length && source[offset + 1] == 47) {
+            return successful_scan(offset + 2);
+        }
+        offset += 1;
+    }
+    return failed_scan(source_length);
+}
+

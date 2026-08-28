@@ -1,0 +1,43 @@
+module lexer_scan_one;
+
+import verified::raw_lexer;
+import verified::token;
+import verified::token_scan;
+
+fn main() -> i32 {
+    let source: [i32; 21] = [
+        97, 98, 99, 32, 49, 50, 46, 46, 51, 52, 32,
+        47, 47, 120, 10, 34, 111, 107, 34, 32, 64,
+    ];
+
+    let identifier = verified::raw_lexer::scan_one(source, 21, 0);
+    if (!verified::token_scan::succeeded(identifier)) { return 1; }
+    if (verified::token_scan::kind(identifier) != verified::token::IDENTIFIER) { return 2; }
+    if (verified::token_scan::end_offset(identifier) != 3) { return 3; }
+
+    let integer = verified::raw_lexer::scan_one(source, 21, 4);
+    if (verified::token_scan::kind(integer) != verified::token::INTEGER) { return 4; }
+    if (verified::token_scan::end_offset(integer) != 6) { return 5; }
+
+    let range = verified::raw_lexer::scan_one(source, 21, 6);
+    if (verified::token_scan::kind(range) != verified::token::DOT_DOT) { return 6; }
+    if (verified::token_scan::end_offset(range) != 8) { return 7; }
+
+    let comment = verified::raw_lexer::scan_one(source, 21, 11);
+    if (verified::token_scan::kind(comment) != verified::token::LINE_COMMENT) { return 8; }
+    if (verified::token_scan::end_offset(comment) != 14) { return 9; }
+
+    let string = verified::raw_lexer::scan_one(source, 21, 15);
+    if (verified::token_scan::kind(string) != verified::token::STRING) { return 10; }
+    if (verified::token_scan::end_offset(string) != 19) { return 11; }
+
+    let invalid = verified::raw_lexer::scan_one(source, 21, 20);
+    if (verified::token_scan::succeeded(invalid)) { return 12; }
+    if (verified::token_scan::error_offset(invalid) != 20) { return 13; }
+
+    let leading_dot: [i32; 2] = [46, 53];
+    let float = verified::raw_lexer::scan_one(leading_dot, 2, 0);
+    if (verified::token_scan::kind(float) != verified::token::FLOAT) { return 14; }
+    if (verified::token_scan::end_offset(float) != 2) { return 15; }
+    return 0;
+}

@@ -13,9 +13,9 @@ import scatter;
 struct Params
 {
     uint hir_node_capacity;
+    uint token_capacity;
     uint module_capacity;
-    uint n_blocks;
-    uint key_step;
+    uint reserved;
 };
 
 ConstantBuffer<Params> gParams;
@@ -62,7 +62,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirCore core = compact_hir_core[i];
     uint path_id = INVALID;
     for (uint token = core.token_start;
-         token < core.token_end && token < gParams.hir_node_capacity;
+         token < core.token_end && token < gParams.token_capacity;
          token += 1u)
     {
         uint candidate = path_id_by_owner_token[token];

@@ -3860,6 +3860,18 @@ fn main() {
 }
 
 #[test]
+fn module_identity_after_more_than_one_path_workgroup_is_preserved() {
+    let mut path_heavy_module = String::from("module support;\n");
+    for index in 0..300 {
+        path_heavy_module.push_str(&format!(
+            "fn helper_{index}(value: i32) -> i32 {{ return value; }}\n"
+        ));
+    }
+    let entry = "module entry;\nfn main() -> i32 { return 0; }\n";
+    assert_gpu_type_check_pack_accepts(&[path_heavy_module.as_str(), entry]);
+}
+
+#[test]
 fn type_checker_accepts_qualified_generic_type_associated_call() {
     assert_gpu_type_check_pack_accepts(&[
         include_str!("../stdlib/std/vec.lani"),

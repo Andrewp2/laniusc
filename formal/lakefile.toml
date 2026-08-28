@@ -4,3 +4,7 @@ defaultTargets = ["Lanius"]
 
 [[lean_lib]]
 name = "Lanius"
+
+[[lean_exe]]
+name = "lanius-check-extraction"
+root = "Lanius.Extraction.Main"

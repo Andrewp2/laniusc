@@ -49,6 +49,7 @@ struct LexerGraphResources {
     types_compact: ResourceId,
     all_index_compact: ResourceId,
     token_count: ResourceId,
+    lex_error_offset: ResourceId,
     parser_feature_flags: ResourceId,
     tokens_out: ResourceId,
     token_file_id: ResourceId,
@@ -103,6 +104,7 @@ impl LexerCompilerGraph {
         source_file_start_flags: &crate::gpu::buffers::LaniusBuffer<u32>,
         source_file_end_flags: &crate::gpu::buffers::LaniusBuffer<u32>,
         token_count: &crate::gpu::buffers::LaniusBuffer<u32>,
+        lex_error_offset: &crate::gpu::buffers::LaniusBuffer<u32>,
         parser_feature_flags: &crate::gpu::buffers::LaniusBuffer<u32>,
     ) -> Result<ClearBuffersOperation> {
         ClearBuffersOperation::new(
@@ -113,6 +115,7 @@ impl LexerCompilerGraph {
                 ("source_file_start_flags", source_file_start_flags.into()),
                 ("source_file_end_flags", source_file_end_flags.into()),
                 ("token_count", token_count.into()),
+                ("lex_error_offset", lex_error_offset.into()),
                 ("parser_feature_flags", parser_feature_flags.into()),
             ],
         )
@@ -121,9 +124,10 @@ impl LexerCompilerGraph {
     pub(in crate::lexer) fn count_readback_operations(
         &self,
         token_count: &crate::gpu::buffers::LaniusBuffer<u32>,
+        lex_error_offset: &crate::gpu::buffers::LaniusBuffer<u32>,
         parser_feature_flags: &crate::gpu::buffers::LaniusBuffer<u32>,
         readback: &crate::gpu::buffers::LaniusBuffer<u8>,
-    ) -> Result<[CopyBufferOperation; 2]> {
+    ) -> Result<[CopyBufferOperation; 3]> {
         Ok([
             CopyBufferOperation::new(
                 &self.materialized,
@@ -145,6 +149,17 @@ impl LexerCompilerGraph {
                 "token_count_readback",
                 readback,
                 4,
+                4,
+            )?,
+            CopyBufferOperation::new(
+                &self.materialized,
+                "lexer.error_offset.readback",
+                "lex_error_offset",
+                lex_error_offset,
+                0,
+                "token_count_readback",
+                readback,
+                8,
                 4,
             )?,
         ])
@@ -354,6 +369,13 @@ fn build_graph(
             ResourceClass::Output,
             4,
         )?,
+        lex_error_offset: storage(
+            &mut graph,
+            "lex_error_offset",
+            ResourceDomain::SourceBytes,
+            ResourceClass::Output,
+            4,
+        )?,
         parser_feature_flags: storage(
             &mut graph,
             "parser_feature_flags",
@@ -393,6 +415,7 @@ fn build_graph(
             PassAccess::write("source_file_start_flags", resources.source_file_start_flags),
             PassAccess::write("source_file_end_flags", resources.source_file_end_flags),
             PassAccess::write("token_count", resources.token_count),
+            PassAccess::write("lex_error_offset", resources.lex_error_offset),
             PassAccess::write("parser_feature_flags", resources.parser_feature_flags),
         ],
     })?;
@@ -492,6 +515,11 @@ fn build_graph(
                 Some(AccessMode::Write),
             ),
             ("tok_types", resources.tok_types, Some(AccessMode::Write)),
+            (
+                "lex_error_offset",
+                resources.lex_error_offset,
+                Some(AccessMode::ReadWrite),
+            ),
         ],
     )?;
     reflected_pass(
@@ -646,6 +674,14 @@ fn build_graph(
         CompilerPhase::Lex,
         "parser_feature_flags",
         resources.parser_feature_flags,
+        "token_count_readback",
+        resources.token_count_readback,
+    )?;
+    graph.add_buffer_copy_pass(
+        "lexer.error_offset.readback",
+        CompilerPhase::Lex,
+        "lex_error_offset",
+        resources.lex_error_offset,
         "token_count_readback",
         resources.token_count_readback,
     )?;

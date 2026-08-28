@@ -266,6 +266,20 @@ pub(in crate::type_checker) struct RecordFamilyFlagParams {
     pub(in crate::type_checker) reserved1: u32,
 }
 
+/// Domains used while scattering compact module declarations.
+///
+/// Module records are indexed by dense HIR rows, while locating their parsed
+/// path inspects the declaration's token span. Keeping both capacities named
+/// prevents token indices from being bounded by the smaller HIR domain.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct ModuleRecordScatterParams {
+    pub(in crate::type_checker) hir_node_capacity: u32,
+    pub(in crate::type_checker) token_capacity: u32,
+    pub(in crate::type_checker) module_capacity: u32,
+    pub(in crate::type_checker) reserved: u32,
+}
+
 /// Uniform shared by declaration-grouping and visible-declaration radix sorts.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]

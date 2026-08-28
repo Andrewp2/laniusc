@@ -1,0 +1,21 @@
+module app::main;
+
+import verified::lexer;
+
+fn main() -> i32 {
+    let source: [i32; 12] = [97, 98, 99, 95, 49, 50, 43, 116, 97, 105, 108, 0];
+    let first_end: i32 = verified::lexer::scan_identifier_end(source, 11, 0);
+    let second_end: i32 = verified::lexer::scan_identifier_end(source, 11, 7);
+    if (first_end != 6) {
+        return 1;
+    }
+    if (second_end != 11) {
+        return 2;
+    }
+    let whitespace: [i32; 6] = [32, 9, 10, 13, 97, 0];
+    let whitespace_end: i32 = verified::lexer::scan_whitespace_end(whitespace, 5, 0);
+    if (whitespace_end != 4) {
+        return 3;
+    }
+    return 0;
+}

@@ -5,7 +5,11 @@ edition = "2024"
 default-run = "laniusc"
 
 [workspace]
-members = ["crates/laniusc-compiler", "crates/laniusc-shaders"]
+members = [
+    "crates/laniusc-compiler",
+    "crates/laniusc-formal-export",
+    "crates/laniusc-shaders",
+]
 resolver = "3"
 
 [dependencies]

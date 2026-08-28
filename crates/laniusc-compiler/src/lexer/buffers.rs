@@ -26,7 +26,7 @@ pub struct GpuBuffers {
     /// below. Buffer identity and lifetime come from this graph.
     pub(in crate::lexer) compiler_graph: LexerCompilerGraph,
     job_initialize: ClearBuffersOperation,
-    count_readback: [CopyBufferOperation; 2],
+    count_readback: [CopyBufferOperation; 3],
     /// Current byte length, not including word-alignment padding.
     pub n: u32,
     /// Number of 256-byte DFA blocks for the current input.
@@ -73,6 +73,8 @@ pub struct GpuBuffers {
     pub all_index_compact: LaniusBuffer<u32>,
     /// Number of kept tokens produced by the current input.
     pub token_count: LaniusBuffer<u32>,
+    /// Inverted first lexical failure offset, or zero when the source is valid.
+    pub lex_error_offset: LaniusBuffer<u32>,
     /// Conservative parser-family flags collected by the GPU token builder.
     pub parser_feature_flags: LaniusBuffer<u32>,
     /// Reused host-visible count/feature boundary for capacity-stable jobs.
@@ -142,14 +144,14 @@ impl GpuBuffers {
         }
     }
 
-    /// Reads the token count and parser feature mask copied by
+    /// Reads the token count, parser feature mask, and lexical failure copied by
     /// `record_count_readback`. This is intentionally usable after a fused
     /// lexer/parser submission so warm jobs need no intermediate host wait.
-    pub(crate) fn read_recorded_count_and_features(
+    pub(crate) fn read_recorded_count_features_and_error(
         &self,
         device: &wgpu::Device,
         label: &str,
-    ) -> anyhow::Result<(u32, u32)> {
+    ) -> anyhow::Result<(u32, u32, Option<u32>)> {
         let slice = self.token_count_readback.buffer.slice(..);
         crate::gpu::passes_core::map_readback_for_progress(&slice, label);
         crate::gpu::passes_core::wait_for_map_progress(
@@ -158,15 +160,20 @@ impl GpuBuffers {
             wgpu::PollType::wait_indefinitely(),
         );
         let bytes = slice.get_mapped_range();
-        if bytes.len() < 8 {
-            anyhow::bail!("lexer metadata readback contained fewer than 8 bytes");
+        if bytes.len() < 12 {
+            anyhow::bail!("lexer metadata readback contained fewer than 12 bytes");
         }
         let token_count = u32::from_le_bytes(bytes[0..4].try_into().expect("four-byte slice"));
         let parser_feature_flags =
             u32::from_le_bytes(bytes[4..8].try_into().expect("four-byte slice"));
+        let raw_error = u32::from_le_bytes(bytes[8..12].try_into().expect("four-byte slice"));
         drop(bytes);
         self.token_count_readback.buffer.unmap();
-        Ok((token_count, parser_feature_flags))
+        Ok((
+            token_count,
+            parser_feature_flags,
+            (raw_error != 0).then_some(u32::MAX - raw_error),
+        ))
     }
 
     /// Allocates lexer buffers for a byte capacity and source-file capacity.
@@ -279,9 +286,10 @@ impl GpuBuffers {
         let all_index_compact: LaniusBuffer<u32> = compiler_graph.buffer("all_index_compact")?;
 
         let token_count: LaniusBuffer<u32> = compiler_graph.buffer("token_count")?;
+        let lex_error_offset: LaniusBuffer<u32> = compiler_graph.buffer("lex_error_offset")?;
         let parser_feature_flags: LaniusBuffer<u32> =
             compiler_graph.buffer("parser_feature_flags")?;
-        let token_count_readback = readback_bytes(device, "rb.lex.resident.token_count", 8, 8);
+        let token_count_readback = readback_bytes(device, "rb.lex.resident.metadata", 12, 12);
 
         let tokens_out: LaniusBuffer<super::GpuToken> = compiler_graph.buffer("tokens_out")?;
         let source_file_count = storage_rw_for_array::<u32>(device, "source_file_count", 1);
@@ -301,10 +309,12 @@ impl GpuBuffers {
             &source_file_start_flags,
             &source_file_end_flags,
             &token_count,
+            &lex_error_offset,
             &parser_feature_flags,
         )?;
         let count_readback = compiler_graph.count_readback_operations(
             &token_count,
+            &lex_error_offset,
             &parser_feature_flags,
             &token_count_readback,
         )?;
@@ -350,6 +360,7 @@ impl GpuBuffers {
             types_compact,
             all_index_compact,
             token_count,
+            lex_error_offset,
             parser_feature_flags,
             token_count_readback,
 

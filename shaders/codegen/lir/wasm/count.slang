@@ -29,7 +29,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint semantic_row = semantic_schedule_order[row];
     OptIrNodeCore core = opt_ir_core[semantic_row];
     OptIrNodeOperands operands = opt_ir_operands[semantic_row];
-    bool call_index_base = opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
+    bool call_index_base =
+        (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD ||
+         opt_ir_op(core) == SEMANTIC_LIR_OP_STORE) &&
         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u &&
         operands.a < count &&
         (opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL ||

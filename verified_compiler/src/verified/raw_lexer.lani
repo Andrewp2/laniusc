@@ -1,0 +1,176 @@
+module verified::raw_lexer;
+
+import verified::lexer;
+import verified::number;
+import verified::symbol;
+import verified::token;
+import verified::token_scan;
+
+pub const LEX_SUCCESS: i32 = 0;
+pub const LEX_ERROR: i32 = 1;
+pub const LEX_OUTPUT_FULL: i32 = 2;
+
+pub struct LexResult {
+    status: i32,
+    token_count: i32,
+    error_offset: i32,
+}
+
+pub fn lex_status(result: LexResult) -> i32 {
+    return result.status;
+}
+
+pub fn lex_token_count(result: LexResult) -> i32 {
+    return result.token_count;
+}
+
+pub fn lex_error_offset(result: LexResult) -> i32 {
+    return result.error_offset;
+}
+
+fn completed(token_count: i32) -> LexResult {
+    return LexResult {
+        status: LEX_SUCCESS,
+        token_count: token_count,
+        error_offset: 0,
+    };
+}
+
+fn lexical_failure(token_count: i32, error_offset: i32) -> LexResult {
+    return LexResult {
+        status: LEX_ERROR,
+        token_count: token_count,
+        error_offset: error_offset,
+    };
+}
+
+fn output_full(token_count: i32, source_offset: i32) -> LexResult {
+    return LexResult {
+        status: LEX_OUTPUT_FULL,
+        token_count: token_count,
+        error_offset: source_offset,
+    };
+}
+
+// Recognizes exactly one raw token beginning at `start`. Successful scans
+// always return an exclusive end greater than `start`; failures identify the
+// first byte required by the committed token form but not accepted by it.
+pub fn scan_one(
+    source: [i32],
+    source_length: i32,
+    start: i32,
+) -> verified::token_scan::TokenScan {
+    if (start >= source_length) {
+        return verified::token_scan::failed(start);
+    }
+
+    let byte: i32 = source[start];
+    let start_class: i32 = verified::lexer::classify_start(byte);
+    if (start_class == verified::lexer::START_IDENTIFIER) {
+        return verified::token_scan::successful(
+            verified::token::IDENTIFIER,
+            verified::lexer::scan_identifier_end(source, source_length, start),
+        );
+    }
+    if (start_class == verified::lexer::START_DECIMAL_NUMBER) {
+        return verified::number::scan_number(source, source_length, start);
+    }
+    if (start_class == verified::lexer::START_WHITESPACE) {
+        return verified::token_scan::successful(
+            verified::token::WHITESPACE,
+            verified::lexer::scan_whitespace_end(source, source_length, start),
+        );
+    }
+    if (start_class == verified::lexer::START_STRING_LITERAL) {
+        let quoted = verified::lexer::scan_string_end(source, source_length, start);
+        if (!verified::lexer::scan_succeeded(quoted)) {
+            return verified::token_scan::failed(
+                verified::lexer::scan_error_offset(quoted));
+        }
+        return verified::token_scan::successful(
+            verified::token::STRING,
+            verified::lexer::scan_end_offset(quoted),
+        );
+    }
+    if (start_class == verified::lexer::START_CHARACTER_LITERAL) {
+        let quoted = verified::lexer::scan_character_end(source, source_length, start);
+        if (!verified::lexer::scan_succeeded(quoted)) {
+            return verified::token_scan::failed(
+                verified::lexer::scan_error_offset(quoted));
+        }
+        return verified::token_scan::successful(
+            verified::token::CHARACTER,
+            verified::lexer::scan_end_offset(quoted),
+        );
+    }
+    if (start_class == verified::lexer::START_SYMBOL) {
+        if (byte == 46 && start + 1 < source_length) {
+            let following: i32 = source[start + 1];
+            if (verified::lexer::is_decimal_digit(following)) {
+                return verified::number::scan_leading_dot_number(
+                    source, source_length, start);
+            }
+        }
+
+        let matched = verified::symbol::match_symbol_head(
+            source, source_length, start);
+        let kind: i32 = verified::symbol::token_match_kind(matched);
+        if (kind == verified::token::LINE_COMMENT) {
+            return verified::token_scan::successful(
+                kind,
+                verified::lexer::scan_line_comment_end(source, source_length, start),
+            );
+        }
+        if (kind == verified::token::BLOCK_COMMENT) {
+            let comment = verified::lexer::scan_block_comment_end(
+                source, source_length, start);
+            if (!verified::lexer::scan_succeeded(comment)) {
+                return verified::token_scan::failed(
+                    verified::lexer::scan_error_offset(comment));
+            }
+            return verified::token_scan::successful(
+                kind,
+                verified::lexer::scan_end_offset(comment),
+            );
+        }
+        return verified::token_scan::successful(
+            kind,
+            start + verified::symbol::token_match_length(matched),
+        );
+    }
+    return verified::token_scan::failed(start);
+}
+
+// Writes the complete raw token stream into caller-owned storage. The source
+// length is always a sufficient output capacity because every token consumes
+// at least one byte. Returning the accepted prefix on failure makes the first
+// lexical failure observable without inventing a partial token.
+pub fn lex_into(
+    source: [i32],
+    source_length: i32,
+    output_records: [i32],
+    output_capacity: i32,
+) -> LexResult {
+    let offset: i32 = 0;
+    let token_count: i32 = 0;
+    while (offset < source_length) {
+        let scanned = scan_one(source, source_length, offset);
+        if (!verified::token_scan::succeeded(scanned)) {
+            return lexical_failure(
+                token_count,
+                verified::token_scan::error_offset(scanned),
+            );
+        }
+        if (token_count >= output_capacity) {
+            return output_full(token_count, offset);
+        }
+
+        let row: i32 = token_count * 3;
+        output_records[row] = verified::token_scan::kind(scanned);
+        output_records[row + 1] = offset;
+        output_records[row + 2] = verified::token_scan::end_offset(scanned);
+        offset = verified::token_scan::end_offset(scanned);
+        token_count += 1;
+    }
+    return completed(token_count);
+}

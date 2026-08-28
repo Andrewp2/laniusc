@@ -38,6 +38,10 @@ void report_capacity(uint required)
 
 void report_structure_failure(uint block)
 {
+    uint ignored;
+    InterlockedCompareExchange(lowering_status[0u].diagnostic_reason,
+        LOWERING_DIAGNOSTIC_NONE,
+        LOWERING_DIAGNOSTIC_OPT_STRUCTURE_REACHABILITY_CLOSE, ignored);
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, block);
