@@ -36,6 +36,9 @@ import Lanius.Dynamics
 import Lanius.ExecutionRules
 import Lanius.Properties
 import Lanius.Separation
+import Lanius.ProofIR
+import Lanius.ProofIRCore
+import Lanius.ProofIRCoreSimulation
 import Lanius.LoopVerification
 import Lanius.CallContracts
 import Lanius.Soundness
@@ -84,6 +87,7 @@ import Lanius.Extraction.VerifiedParserSymbolic
 import Lanius.Extraction.VerifiedParserBasics
 import Lanius.Extraction.VerifiedParserAccessors
 import Lanius.Extraction.VerifiedParserScan
+import Lanius.Extraction.VerifiedParserScanProofIR
 import Lanius.Extraction.VerifiedParserValidation
 import Lanius.Extraction.VerifiedParserResult
 import Lanius.Extraction.VerifiedParserRecognize
