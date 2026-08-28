@@ -386,6 +386,7 @@ tbody tr:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; 
   .fact + .fact { border-top: 1px solid var(--line); }
   .segmented { width: 100%; }
   .segmented button { flex: 1; padding-inline: 6px; }
+  .comparison-heading { align-items: stretch; flex-direction: column; }
   .result-intro, .section-break { align-items: start; flex-direction: column; }
   .result-intro { padding: 17px; }
   .result-intro h2 { font-size: 20px; }

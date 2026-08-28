@@ -35,7 +35,7 @@ const COMPILER_NAMES: Record<string, string> = {
 const CONFIGURATION_NAMES: Record<string, string> = {
   process_cold: 'pure cold',
   daemon_cold_workspace: 'daemon, cold workspace',
-  daemon_warm_workspace: 'daemon, preallocated workspace',
+  daemon_warm_workspace: 'preallocated',
   o0: '-O0',
   cuda: 'CUDA',
 };
@@ -46,6 +46,17 @@ export function formatMs(value: number): string {
   if (value < 1) return `${value.toFixed(3)} ms`;
   if (value < 1000) return `${value.toFixed(2)} ms`;
   return `${(value / 1000).toFixed(2)} s`;
+}
+
+export function formatComparisonMs(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  if (value === 0) return '0 ms';
+  const fractionDigits = value < 1 ? 3 : 2;
+  const minimumFractionDigits = Number.isInteger(value) ? 0 : fractionDigits;
+  return `${new Intl.NumberFormat('en', {
+    minimumFractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value)} ms`;
 }
 
 export function formatRate(value: number, unit: string): string {

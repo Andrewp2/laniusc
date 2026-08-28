@@ -20,7 +20,8 @@
   let containerWidth = $state(500);
   const layout = $derived.by(() => {
     const width = Math.max(680, containerWidth || 680);
-    const left = Math.min(280, Math.max(250, width * 0.3));
+    const longestLabelWidth = Math.max(...values.map((value) => value.name.length * 6.2), 0);
+    const left = Math.min(210, Math.max(140, longestLabelWidth + 18));
     const right = 90;
     const plotWidth = width - left - right;
     const numeric = values.map(({ value }) => Number(value)).filter(Number.isFinite);

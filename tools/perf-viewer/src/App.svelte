@@ -2,6 +2,7 @@
   import BarChart from './components/BarChart.svelte';
   import AnalysisSummary from './components/AnalysisSummary.svelte';
   import BenchmarkSummary from './components/BenchmarkSummary.svelte';
+  import CompilerRace from './components/CompilerRace.svelte';
   import ExecutionGraph from './components/ExecutionGraph.svelte';
   import Facts from './components/Facts.svelte';
   import Histogram from './components/Histogram.svelte';
@@ -14,12 +15,13 @@
   import { loadCatalog } from './lib/catalog';
   import { composeMeasurements, isComparisonCandidate, selectableResults } from './lib/comparison';
   import {
-    analysisCapabilities, formatMs, formatRecordedAt, hasMemoryData, hasPhaseData,
+    analysisCapabilities, formatComparisonMs, formatMs, formatRecordedAt, hasMemoryData, hasPhaseData,
     measurementColor, measurementLabel, resultLabel, resultOptionLabel,
   } from './lib/format';
   import type { PerformanceRun } from './lib/types';
 
   type WorkloadFilter = 'all' | PerformanceRun['workload']['kind'];
+  type ComparisonView = 'chart' | 'animation';
   const catalog = loadCatalog();
   const resultsNewestFirst = [...catalog.results].sort((left, right) =>
     recordedAt(right.document) - recordedAt(left.document) || left.path.localeCompare(right.path));
@@ -29,6 +31,7 @@
   let selectedIndex = $state(0);
   let analysisSelectedIndex = $state(firstAnalysisIndex(selectableEntries[0]?.document));
   let logarithmic = $state(true);
+  let comparisonView = $state<ComparisonView>('chart');
   let graphOpen = $state(false);
   const filteredEntries = $derived(selectableEntries.filter((candidate) =>
     workloadFilter === 'all' || candidate.document.workload.kind === workloadFilter));
@@ -119,13 +122,15 @@
           {/each}
         </select>
       </div>
-      <div class="toolbar-group scale-control">
-        <span class="control-label">Latency scale</span>
-        <div class="segmented">
-          <button class:active={logarithmic} aria-pressed={logarithmic} onclick={() => logarithmic = true}>Log</button>
-          <button class:active={!logarithmic} aria-pressed={!logarithmic} onclick={() => logarithmic = false}>Linear</button>
+      {#if comparisonView === 'chart'}
+        <div class="toolbar-group scale-control">
+          <span class="control-label">Latency scale</span>
+          <div class="segmented">
+            <button class:active={logarithmic} aria-pressed={logarithmic} onclick={() => logarithmic = true}>Log</button>
+            <button class:active={!logarithmic} aria-pressed={!logarithmic} onclick={() => logarithmic = false}>Linear</button>
+          </div>
         </div>
-      </div>
+      {/if}
     </section>
 
     <section class="result-intro panel">
@@ -148,13 +153,23 @@
 
     <div class="grid overview-grid">
       <section class="report-section span-12">
-        <div class="section-heading">
+        <div class="section-heading comparison-heading">
           <div><h2>Compile time</h2></div>
+          <div class="segmented" role="group" aria-label="Compile time view">
+            <button class:active={comparisonView === 'chart'} aria-pressed={comparisonView === 'chart'} onclick={() => comparisonView = 'chart'}>Chart</button>
+            <button class:active={comparisonView === 'animation'} aria-pressed={comparisonView === 'animation'} onclick={() => comparisonView = 'animation'}>Animation</button>
+          </div>
         </div>
         {#if !frozenBaselineCount}
           <p class="comparison-note" aria-live="polite">No retained external benchmark has the same workload identity. This chart contains only Lanius results.</p>
         {/if}
-        <BarChart values={latencyValues} unit="ms" {logarithmic} valueFormatter={formatMs} accessibleName="Compile time comparison" />
+        {#if comparisonView === 'chart'}
+          <BarChart values={latencyValues} unit="ms" {logarithmic} valueFormatter={formatComparisonMs} accessibleName="Compile time comparison" />
+        {:else}
+          {#key selectedPath}
+            <CompilerRace values={latencyValues} accessibleName="Animated compile time comparison using median wall time" />
+          {/key}
+        {/if}
       </section>
       <section class="report-section span-12">
         <div class="section-heading table-heading">
