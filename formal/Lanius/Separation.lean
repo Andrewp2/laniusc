@@ -1515,6 +1515,60 @@ theorem EvalTriple.setLocalFrom
     ⟨rightPostHeld.1, postHeld, destinationHeld⟩,
     rightEffect.trans assignmentEffect⟩
 
+/-- Pointwise form of `EvalTriple.setLocalFrom`.  The right-hand expression
+    may modify an arbitrary framed footprint; retaining ownership of the
+    destination local in its post-state is the only condition required before
+    the final singleton assignment. -/
+theorem evaluatesSetOwnedLocal
+    (id : VarId) (cell : CellId)
+    (ownedBefore : (Assertion.localPointsTo id cell (some current)).holds before)
+    (rightResult : Evaluates program before right value afterRight)
+    (rightWellFormed : StateWellFormed afterRight)
+    (ownedAfter :
+      (Assertion.localPointsTo id cell (some current)).holds afterRight)
+    (rightEffect : ModifiesOnly rightWrites before afterRight) :
+    ∃ after,
+      Evaluates program before (.assign .set (.local id) right) .unit after ∧
+      StateWellFormed after ∧
+      (Assertion.localPointsTo id cell (some value)).holds after ∧
+      ModifiesOnly (CellSet.union rightWrites (CellSet.singleton cell))
+        before after ∧
+      ModifiesOnly (CellSet.singleton cell) afterRight after := by
+  let after : State :=
+    { afterRight with cells := replaceCell afterRight.cells cell value }
+  have assigned : afterRight.assignCell cell value = some after := by
+    simp [State.assignCell, ownedAfter.2, after]
+  have placeBase : evalPlace 1 program before (.local id) =
+      .done { root := cell, projections := [], value := some current }
+        before := by
+    rw [Lanius.Semantics.evalPlace.eq_def]
+    simp [ownedBefore.1, ownedBefore.2]
+  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
+  let fuel := max 1 rightFuel
+  have placeAtFuel := evalPlace_done_at_larger_fuel
+    (Nat.le_max_left 1 rightFuel) placeBase
+  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
+    (Nat.le_max_right 1 rightFuel) rightAtFuel
+  have writeResult : writeResolvedPlace afterRight
+      { root := cell, projections := [], value := some current } value =
+      .ok after := by
+    simp [writeResolvedPlace, assigned]
+  have execution : Evaluates program before
+      (.assign .set (.local id) right) .unit after := by
+    refine ⟨fuel + 1, ?_⟩
+    rw [Lanius.Semantics.evalExpr.eq_def]
+    simp only
+    rw [placeAtFuel]
+    simp only
+    rw [rightAtCommonFuel]
+    simp only [evalAssignValue, assignOpBinary?]
+    rw [writeResult]
+  have assignmentEffect := assignCell_effect assigned
+  exact ⟨after, execution,
+    assignCell_preserves_well_formed rightWellFormed assigned,
+    assignCell_localPointsTo ownedAfter assigned,
+    rightEffect.trans assignmentEffect, assignmentEffect⟩
+
 /-- Execute an effectful right-hand side followed by assignment to an owned
     local when the right-hand side itself is store-pure.  This pointwise rule
     is useful inside loop simulations, where the surrounding invariant is
@@ -1562,6 +1616,127 @@ theorem evaluatesSetOwnedLocalFromEmpty
     simp only
     rw [rightAtCommonFuel]
     simp only [evalAssignValue, assignOpBinary?]
+    rw [writeResult]
+  have assignmentEffect := assignCell_effect assigned
+  have completeEffect : ModifiesOnly (CellSet.singleton cell) before after := by
+    have writesEqual :
+        CellSet.union CellSet.empty (CellSet.singleton cell) =
+          CellSet.singleton cell := by
+      funext queried
+      simp [CellSet.union, CellSet.empty]
+    have combined := rightEffect.trans assignmentEffect
+    rw [writesEqual] at combined
+    exact combined
+  exact ⟨after, execution,
+    assignCell_preserves_well_formed rightWellFormed assigned,
+    assignCell_localPointsTo afterOwned assigned, completeEffect⟩
+
+/-- Effectful pointwise compound assignment.  It composes the complete RHS
+    footprint with the destination-cell write while retaining the framed
+    ownership supplied by the RHS post-state. -/
+theorem evaluatesUpdateOwnedLocal
+    (id : VarId) (cell : CellId) (operation : AssignOp)
+    (ownedBefore : (Assertion.localPointsTo id cell (some current)).holds before)
+    (rightResult : Evaluates program before right rightValue afterRight)
+    (rightWellFormed : StateWellFormed afterRight)
+    (ownedAfter :
+      (Assertion.localPointsTo id cell (some current)).holds afterRight)
+    (rightEffect : ModifiesOnly rightWrites before afterRight)
+    (updated : evalAssignValue program.target operation (some current)
+      rightValue = .ok result) :
+    ∃ after,
+      Evaluates program before (.assign operation (.local id) right) .unit after ∧
+      StateWellFormed after ∧
+      (Assertion.localPointsTo id cell (some result)).holds after ∧
+      ModifiesOnly (CellSet.union rightWrites (CellSet.singleton cell))
+        before after ∧
+      ModifiesOnly (CellSet.singleton cell) afterRight after := by
+  let after : State :=
+    { afterRight with cells := replaceCell afterRight.cells cell result }
+  have assigned : afterRight.assignCell cell result = some after := by
+    simp [State.assignCell, ownedAfter.2, after]
+  have placeBase : evalPlace 1 program before (.local id) =
+      .done { root := cell, projections := [], value := some current }
+        before := by
+    rw [Lanius.Semantics.evalPlace.eq_def]
+    simp [ownedBefore.1, ownedBefore.2]
+  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
+  let fuel := max 1 rightFuel
+  have placeAtFuel := evalPlace_done_at_larger_fuel
+    (Nat.le_max_left 1 rightFuel) placeBase
+  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
+    (Nat.le_max_right 1 rightFuel) rightAtFuel
+  have writeResult : writeResolvedPlace afterRight
+      { root := cell, projections := [], value := some current } result =
+      .ok after := by
+    simp [writeResolvedPlace, assigned]
+  have execution : Evaluates program before
+      (.assign operation (.local id) right) .unit after := by
+    refine ⟨fuel + 1, ?_⟩
+    rw [Lanius.Semantics.evalExpr.eq_def]
+    simp only
+    rw [placeAtFuel]
+    simp only
+    rw [rightAtCommonFuel]
+    simp only
+    rw [updated]
+    simp only
+    rw [writeResult]
+  have assignmentEffect := assignCell_effect assigned
+  exact ⟨after, execution,
+    assignCell_preserves_well_formed rightWellFormed assigned,
+    assignCell_localPointsTo ownedAfter assigned,
+    rightEffect.trans assignmentEffect, assignmentEffect⟩
+
+/-- General compound-assignment rule for an owned initialized local.  The
+    caller proves the pure value operation once; separation logic handles the
+    physical local cell, framing, and exact singleton write footprint. -/
+theorem evaluatesUpdateOwnedLocalFromEmpty
+    (id : VarId) (cell : CellId) (operation : AssignOp)
+    (beforeWellFormed : StateWellFormed before)
+    (owned : (Assertion.localPointsTo id cell (some current)).holds before)
+    (rightResult : Evaluates program before right rightValue afterRight)
+    (rightWellFormed : StateWellFormed afterRight)
+    (rightEffect : ModifiesOnly CellSet.empty before afterRight)
+    (updated : evalAssignValue program.target operation (some current)
+      rightValue = .ok result) :
+    ∃ after,
+      Evaluates program before (.assign operation (.local id) right) .unit after ∧
+      StateWellFormed after ∧
+      (Assertion.localPointsTo id cell (some result)).holds after ∧
+      ModifiesOnly (CellSet.singleton cell) before after := by
+  have afterOwned := rightEffect.empty_preserves_assertion beforeWellFormed
+    (Assertion.localPointsTo id cell (some current)) owned
+  let after : State :=
+    { afterRight with cells := replaceCell afterRight.cells cell result }
+  have assigned : afterRight.assignCell cell result = some after := by
+    simp [State.assignCell, afterOwned.2, after]
+  have placeBase : evalPlace 1 program before (.local id) =
+      .done { root := cell, projections := [], value := some current }
+        before := by
+    rw [Lanius.Semantics.evalPlace.eq_def]
+    simp [owned.1, owned.2]
+  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
+  let fuel := max 1 rightFuel
+  have placeAtFuel := evalPlace_done_at_larger_fuel
+    (Nat.le_max_left 1 rightFuel) placeBase
+  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
+    (Nat.le_max_right 1 rightFuel) rightAtFuel
+  have writeResult : writeResolvedPlace afterRight
+      { root := cell, projections := [], value := some current } result =
+      .ok after := by
+    simp [writeResolvedPlace, assigned]
+  have execution : Evaluates program before
+      (.assign operation (.local id) right) .unit after := by
+    refine ⟨fuel + 1, ?_⟩
+    rw [Lanius.Semantics.evalExpr.eq_def]
+    simp only
+    rw [placeAtFuel]
+    simp only
+    rw [rightAtCommonFuel]
+    simp only
+    rw [updated]
+    simp only
     rw [writeResult]
   have assignmentEffect := assignCell_effect assigned
   have completeEffect : ModifiesOnly (CellSet.singleton cell) before after := by
@@ -1680,9 +1855,99 @@ theorem executesIncrementOwnedI32Local
       (executesSkip program after),
     afterWellFormed, afterOwned, effect⟩
 
-/-- Effect-aware assignment through a zero-based `i32` slice. Address and
-    value expressions may execute read-only helper calls; the only visible
-    mutation is the slice backing cell itself. -/
+/-- General indexed-slice assignment with effectful index and RHS terms.
+    Both expression footprints are composed before the final backing-cell
+    write; callers retain the assignment-only effect for framing the resulting
+    abstract world and active locals. -/
+theorem evaluatesSetSignedI32SliceIndex
+    (program : Program) (before afterIndex afterRight : State)
+    (indexValues rightValues : List Int)
+    (sliceId : VarId) (indexExpression right : Expr)
+    (cell : CellId) (index : Nat) (replacement : Int)
+    (sameLength : indexValues.length = rightValues.length)
+    (inBounds : index < rightValues.length)
+    (sliceLocal : before.local? sliceId = some
+      (.slice (.scalar (.signed .i32)) cell [] 0 rightValues.length))
+    (indexResult : Evaluates program before indexExpression
+      (.signed .i32 (Int.ofNat index)) afterIndex)
+    (indexEffect : ModifiesOnly indexWrites before afterIndex)
+    (rightResult : Evaluates program afterIndex right
+      (.signed .i32 replacement) afterRight)
+    (rightWellFormed : StateWellFormed afterRight)
+    (rightEffect : ModifiesOnly rightWrites afterIndex afterRight)
+    (backingAtIndex : afterIndex.cellEntry? cell = some {
+      id := cell
+      value := some (.array (signedI32Values indexValues))
+    })
+    (backingAtRight : afterRight.cellEntry? cell = some {
+      id := cell
+      value := some (.array (signedI32Values rightValues))
+    }) :
+    ∃ after,
+      Evaluates program before
+        (.assign .set (.index (.local sliceId) indexExpression) right)
+        .unit after ∧
+      StateWellFormed after ∧
+      after.cellEntry? cell = some {
+        id := cell
+        value := some (.array
+          (signedI32Values (setI32Value rightValues index replacement)))
+      } ∧
+      ModifiesOnly (CellSet.union indexWrites
+        (CellSet.union rightWrites (CellSet.singleton cell))) before after ∧
+      ModifiesOnly (CellSet.singleton cell) afterRight after := by
+  have indexInBounds : index < indexValues.length := by
+    omega
+  obtain ⟨placeFuel, placeResult⟩ := evaluatesSignedI32SlicePlace program
+    before afterIndex indexValues sliceId indexExpression cell index
+    indexInBounds (by simpa [sameLength] using sliceLocal) indexResult
+    backingAtIndex
+  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
+  let updated := setI32Value rightValues index replacement
+  let after : State := { afterRight with
+    cells := replaceCell afterRight.cells cell
+      (.array (signedI32Values updated)) }
+  have assigned : afterRight.assignCell cell
+      (.array (signedI32Values updated)) = some after := by
+    simp [State.assignCell, backingAtRight, after]
+  have valueAt : (signedI32Values rightValues)[index]? =
+      some (.signed .i32 (rightValues.get ⟨index, inBounds⟩)) := by
+    simp [signedI32Values, inBounds]
+  have written : writeResolvedPlace afterRight {
+      root := cell
+      projections := [.index index]
+      value := some (.signed .i32 (indexValues.get ⟨index, indexInBounds⟩))
+    } (.signed .i32 replacement) = .ok after := by
+    simp [writeResolvedPlace, backingAtRight, replaceProjectedValue, valueAt,
+      setValue_signedI32Values, updated, assigned]
+  let fuel := max placeFuel rightFuel
+  have placeAtFuel := evalPlace_done_at_larger_fuel
+    (Nat.le_max_left placeFuel rightFuel) placeResult
+  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
+    (Nat.le_max_right placeFuel rightFuel) rightAtFuel
+  have execution : Evaluates program before
+      (.assign .set (.index (.local sliceId) indexExpression) right)
+      .unit after := by
+    refine ⟨fuel + 1, ?_⟩
+    rw [Lanius.Semantics.evalExpr.eq_def]
+    simp only
+    rw [placeAtFuel]
+    simp only
+    rw [rightAtCommonFuel]
+    simp only [evalAssignValue, assignOpBinary?]
+    rw [written]
+  have afterBacking : after.cellEntry? cell = some {
+      id := cell
+      value := some (.array (signedI32Values updated))
+    } := assignCell_finds_assigned assigned
+  have assignmentEffect := assignCell_effect assigned
+  have completeEffect : ModifiesOnly (CellSet.union indexWrites
+      (CellSet.union rightWrites (CellSet.singleton cell))) before after :=
+    indexEffect.trans (rightEffect.trans assignmentEffect)
+  exact ⟨after, execution,
+    assignCell_preserves_well_formed rightWellFormed assigned,
+    by simpa [updated] using afterBacking, completeEffect, assignmentEffect⟩
+
 theorem evaluatesSetSignedI32SliceIndexFromEmpty
     (program : Program) (before afterIndex afterRight : State)
     (values : List Int) (sliceId : VarId) (indexExpression right : Expr)

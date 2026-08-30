@@ -47,6 +47,48 @@ theorem ArgumentsEvaluateTo.singleton
   exact ArgumentsEvaluateTo.cons argument
     (ArgumentsEvaluateTo.nil program finalState)
 
+/-- Recover the left-to-right head and tail transitions hidden by the
+    fuel-independent argument-list relation. -/
+theorem ArgumentsEvaluateTo.uncons
+    (evaluated : ArgumentsEvaluateTo program state
+      (expression :: expressions) (value :: values) finalState) :
+    ∃ afterHead,
+      Evaluates program state expression value afterHead ∧
+      ArgumentsEvaluateTo program afterHead expressions values finalState := by
+  obtain ⟨fuel, evaluated⟩ := evaluated
+  cases fuel with
+  | zero => simp [evalExprs] at evaluated
+  | succ fuel =>
+      cases headResult : evalExpr fuel program state expression with
+      | done headValue afterHead =>
+          cases tailResult : evalExprs fuel program afterHead expressions with
+          | done tailValues afterTail =>
+              simp [evalExprs, headResult, tailResult] at evaluated
+              obtain ⟨⟨rfl, rfl⟩, rfl⟩ := evaluated
+              exact ⟨afterHead, ⟨fuel, headResult⟩, ⟨fuel, tailResult⟩⟩
+          | trapped reason afterTail =>
+              simp [evalExprs, headResult, tailResult] at evaluated
+          | exited code afterTail =>
+              simp [evalExprs, headResult, tailResult] at evaluated
+          | outOfFuel =>
+              simp [evalExprs, headResult, tailResult] at evaluated
+      | trapped reason afterHead =>
+          simp [evalExprs, headResult] at evaluated
+      | exited code afterHead =>
+          simp [evalExprs, headResult] at evaluated
+      | outOfFuel =>
+          simp [evalExprs, headResult] at evaluated
+
+theorem ArgumentsEvaluateTo.nil_finalState
+    (evaluated : ArgumentsEvaluateTo program state [] [] finalState) :
+    finalState = state := by
+  obtain ⟨fuel, evaluated⟩ := evaluated
+  cases fuel with
+  | zero => simp [evalExprs] at evaluated
+  | succ fuel =>
+      have same : state = finalState := by simpa [evalExprs] using evaluated
+      exact same.symm
+
 /-- Separation-logic contract for left-to-right argument evaluation. It is the
     list analogue of `EvalTriple`; the final assertion and write footprint are
     available to the callee contract. -/

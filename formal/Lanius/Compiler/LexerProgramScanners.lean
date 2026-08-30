@@ -1,6 +1,7 @@
 import Lanius.Compiler.LexerProgram
 import Lanius.ExecutionRules
 import Lanius.Fuel
+import Lanius.FunctionalViewCoreStatefulSimulation
 import Lanius.Properties
 
 namespace Lanius.Compiler.Lexer.Program
@@ -1878,6 +1879,36 @@ theorem ScannerState.afterCursorAssignment
       invariant.cursorLocalId
   · exact assignCell_finds_assigned assigned
 
+/-- Reconstruct the scanner invariant after a separation-framed command that
+    may update only the cursor cell.  FunctionalView loop proofs use this once
+    at loop exit instead of re-proving preservation of every scanner local on
+    every iteration. -/
+theorem ScannerState.afterCursorEffect
+    (nextCursor : Nat)
+    (invariant : ScannerState before source start cursor)
+    (afterWellFormed : StateWellFormed after)
+    (effect : Lanius.Separation.ModifiesOnly
+      (Lanius.Separation.CellSet.singleton 4) before after)
+    (cursorCell : after.cellEntry? 4 = some {
+      id := 4, value := some (.signed .i32 (Int.ofNat nextCursor)) }) :
+    ScannerState after source start nextCursor := by
+  constructor
+  · exact afterWellFormed
+  · exact Nat.le_trans invariant.nextCell effect.nextCell
+  · exact effect.preserves_entry invariant.wellFormed invariant.sourceCell
+      (by simp [Lanius.Separation.CellSet.singleton])
+  · exact (effect.preserves_cellId 0).trans invariant.sourceLocalId
+  · exact effect.preserves_entry invariant.wellFormed invariant.sourceLocalCell
+      (by simp [Lanius.Separation.CellSet.singleton])
+  · exact (effect.preserves_cellId 1).trans invariant.limitLocalId
+  · exact effect.preserves_entry invariant.wellFormed invariant.limitLocalCell
+      (by simp [Lanius.Separation.CellSet.singleton])
+  · exact (effect.preserves_cellId 2).trans invariant.startLocalId
+  · exact effect.preserves_entry invariant.wellFormed invariant.startLocalCell
+      (by simp [Lanius.Separation.CellSet.singleton])
+  · exact (effect.preserves_cellId 3).trans invariant.cursorLocalId
+  · exact cursorCell
+
 theorem ScannerState.execCursorIncrement
     (invariant : ScannerState state source start cursor)
     (program : Program)
@@ -2101,39 +2132,348 @@ theorem evalScannerCondition_out_of_bounds
   rw [evalExpr, left]
   simp [outOfBounds]
 
-theorem evalLineCommentCondition_in_bounds
-    (invariant : ScannerState state source start cursor)
-    (inBounds : cursor < source.length) :
-    evalExpr 14 lexerProgram state lineCommentCondition =
-      .done (.boolean ((source.get ⟨cursor, inBounds⟩).val != 10)) state := by
-  have left := evalLocalLessLocal (program := lexerProgram)
-    state cursor source.length 3 1
-    invariant.cursorLocal invariant.limitLocal
-  have rightBase := evalSourceIndexNotNewline state source cursor inBounds
-    invariant.sourceLocal invariant.cursorLocal invariant.sourceCell
-  have right := evalExpr_done_at_larger_fuel (program := lexerProgram)
-    (by decide : 11 ≤ 13) rightBase
-  have combined := andExpr_executes left right
-  have inBoundsBoolean : decide (cursor < source.length) = true := by
-    simp [inBounds]
-  rw [inBoundsBoolean] at combined
-  simpa [lineCommentCondition] using combined
+namespace LineCommentFunctional
 
-theorem evalLineCommentCondition_out_of_bounds
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
+open Lanius.FunctionalView.Core.Stateful
+open Lanius.FunctionalView.Stateful
+open Lanius.FunctionalView.Stateful.Loop
+
+private abbrev T := Term signature 3
+private abbrev C := Command signature actions 3
+
+private def sourceIntegers (source : List Byte) : List Int :=
+  source.map fun byte => Int.ofNat byte.val
+
+@[simp] private theorem sourceIntegers_length :
+    (sourceIntegers source).length = source.length := by
+  simp [sourceIntegers]
+
+@[simp] private theorem sourceIntegers_values :
+    signedI32Values (sourceIntegers source) = sourceValues source := by
+  simp [sourceIntegers, sourceValues, signedI32Values]
+
+private def layout : Layout 3 :=
+  Layout.push (pairLayout 0 3) 1
+
+private def sourceTerm : T := reference ⟨0, by omega⟩
+private def cursorTerm : T := reference ⟨1, by omega⟩
+private def boundTerm : T := reference ⟨2, by omega⟩
+private def oneTerm : T := literal (.signed .i32 1)
+private def newlineTerm : T := literal (.signed .i32 10)
+
+private def beforeEnd : T :=
+  apply (.binary .less i32Type i32Type (.scalar .bool))
+    [cursorTerm, boundTerm]
+
+private def currentByte : T :=
+  apply (.index (.slice i32Type) i32Type i32Type)
+    [sourceTerm, cursorTerm]
+
+private def notNewline : T :=
+  apply (.binary .notEqual i32Type i32Type (.scalar .bool))
+    [currentByte, newlineTerm]
+
+private def condition : T := logicalAnd beforeEnd notNewline
+
+private def body : C :=
+  .updateLocal .add ⟨1, by omega⟩ oneTerm
+
+private def loop : C := .whileLoop condition body
+
+private theorem loop_toCore :
+    Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter layout 4 loop =
+      .whileLoop lineCommentCondition (incrementLocal 3 1) := by
+  rfl
+
+private def runtime (source : List Byte) (cursor : Nat) :
+    Runtime (Lanius.FunctionalView.Core.ReadOnly.machine lexerProgram) 3 :=
+  (World.singleton 0 (sourceIntegers source),
+    (pairEnvironment
+      (.slice i32Type 0 [] 0 source.length)
+      (.signed .i32 (Int.ofNat cursor))).push
+        (.signed .i32 (Int.ofNat source.length)))
+
+private def accepts (source : List Byte) (cursor : Nat) : Bool :=
+  (source[cursor]?.map fun byte => byte.val != 10).getD false
+
+private theorem condition_in_bounds
+    (cursor : Nat) (inBounds : cursor < source.length) :
+    Term.evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.machine lexerProgram)
+      (runtime source cursor).world (runtime source cursor).environment
+      condition = .ok (.boolean (accepts source cursor),
+        (runtime source cursor).world) := by
+  have evaluated : Term.evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.machine lexerProgram)
+      (runtime source cursor).world (runtime source cursor).environment
+      condition = .ok (.boolean (decide (Int.ofNat
+        (source.get ⟨cursor, inBounds⟩).val ≠ Int.ofNat 10)),
+        (runtime source cursor).world) := by
+    simp only [condition, Lanius.FunctionalView.Core.logicalAnd, beforeEnd,
+      notNewline, currentByte, sourceTerm, cursorTerm, boundTerm, newlineTerm,
+      Lanius.FunctionalView.Core.apply, Lanius.FunctionalView.Core.reference,
+      Lanius.FunctionalView.Core.literal, runtime, Runtime.world,
+      Runtime.environment]
+    apply Term.evaluate_logicalAnd_true
+      (afterLeft := World.singleton 0 (sourceIntegers source))
+    · have left := Term.evaluate_i32_less (program := lexerProgram)
+        (world := World.singleton 0 (sourceIntegers source))
+        (environment := (pairEnvironment
+          (.slice i32Type 0 [] 0 source.length)
+          (.signed .i32 (Int.ofNat cursor))).push
+            (.signed .i32 (Int.ofNat source.length)))
+        (leftType := i32Type) (rightType := i32Type)
+        (outputType := .scalar .bool)
+        (left := .reference (.slot ⟨1, by omega⟩))
+        (right := .reference (.slot ⟨2, by omega⟩))
+        (leftValue := cursor) (rightValue := source.length)
+        (by rfl) (by rfl)
+      simpa [inBounds] using left
+    · apply Term.evaluate_i32_notEqual_int
+      · apply Term.evaluate_i32_index_as
+          (cell := 0) (values := sourceIntegers source)
+          (position := cursor)
+          (expected := Int.ofNat
+            (source.get ⟨cursor, inBounds⟩).val)
+        · apply Term.evaluate_slot
+          simp [Lanius.FunctionalView.Env.push, pairEnvironment, i32Type]
+        · apply Term.evaluate_slot
+          simp [Lanius.FunctionalView.Env.push, pairEnvironment]
+        · exact World.singleton_finds
+        · simp [sourceIntegers]
+        · simpa [sourceIntegers] using inBounds
+      · rfl
+  rw [decide_intOfNat_notEqual] at evaluated
+  simpa [accepts, List.getElem?_eq_getElem inBounds] using evaluated
+
+private theorem condition_out_of_bounds
+    (cursor : Nat) (outOfBounds : ¬ cursor < source.length) :
+    Term.evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.machine lexerProgram)
+      (runtime source cursor).world (runtime source cursor).environment condition =
+      .ok (.boolean false, (runtime source cursor).world) := by
+  have leftResult : Term.evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.machine lexerProgram)
+      (runtime source cursor).world (runtime source cursor).environment beforeEnd =
+      .ok (.boolean false, (runtime source cursor).world) := by
+    have evaluated := Term.evaluate_i32_less (program := lexerProgram)
+      (world := (runtime source cursor).world)
+      (environment := (runtime source cursor).environment)
+      (leftType := i32Type) (rightType := i32Type)
+      (outputType := (.scalar .bool))
+      (left := cursorTerm) (right := boundTerm)
+      (leftValue := cursor) (rightValue := source.length)
+      (by rfl) (by rfl)
+    simpa [beforeEnd, Lanius.FunctionalView.Core.apply, runtime,
+      outOfBounds] using evaluated
+  exact Term.evaluate_logicalAnd_false leftResult
+
+private theorem incrementResult
+    (cursor : Nat) (sourceBound : source.length ≤ 2147483647)
+    (inBounds : cursor < source.length) :
+    evalAssignValue lexerProgram.target .add
+      (some ((runtime source cursor).environment ⟨1, by omega⟩))
+      (.signed .i32 1) =
+      .ok (.signed .i32 (Int.ofNat (cursor + 1))) := by
+  have cursorValue : (runtime source cursor).environment ⟨1, by omega⟩ =
+      .signed .i32 (Int.ofNat cursor) := by
+    change ((pairEnvironment
+      (.slice i32Type 0 [] 0 source.length)
+      (.signed .i32 (Int.ofNat cursor))).push
+        (.signed .i32 (Int.ofNat source.length))) ⟨1, by omega⟩ = _
+    simp [Lanius.FunctionalView.Env.push, pairEnvironment]
+  have addition : Int.ofNat cursor + 1 = Int.ofNat (cursor + 1) := by
+    simp
+  have incrementBound : cursor + 1 ≤ 2147483647 :=
+    Nat.le_trans (Nat.succ_le_of_lt inBounds) sourceBound
+  have wrapped := wrapSigned_i32_ofNat (cursor + 1) incrementBound
+  rw [cursorValue]
+  simp only [evalAssignValue, assignOpBinary?, evalBinaryValue,
+    beq_self_eq_true, if_true, evalSignedBinary]
+  rw [addition, wrapped]
+
+private theorem body_evaluates
+    (cursor : Nat) (sourceBound : source.length ≤ 2147483647)
+    (inBounds : cursor < source.length) :
+    Command.Evaluates
+      (Lanius.FunctionalView.Core.ReadOnly.machine lexerProgram)
+      (Lanius.FunctionalView.Core.Stateful.machine lexerProgram)
+      (runtime source cursor).world (runtime source cursor).environment body .next
+      (runtime source (cursor + 1)).world
+      (runtime source (cursor + 1)).environment := by
+  have oneResult : Term.evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.machine lexerProgram)
+      (runtime source cursor).world (runtime source cursor).environment oneTerm =
+      .ok (.signed .i32 1, (runtime source cursor).world) := by
+    rfl
+  have advanceWorld : (runtime source (cursor + 1)).world =
+      (runtime source cursor).world := by
+    rfl
+  have advanceEnvironment : (runtime source (cursor + 1)).environment =
+      Lanius.FunctionalView.Stateful.Env.set (runtime source cursor).environment
+        ⟨1, by omega⟩
+        (.signed .i32 (Int.ofNat (cursor + 1))) := by
+    funext index
+    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 := by
+      omega
+    rcases cases with zero | one | two
+    · have indexEq : index = ⟨0, by omega⟩ := Fin.ext zero
+      rw [indexEq]
+      simp [runtime, Runtime.environment,
+        Lanius.FunctionalView.Env.push, pairEnvironment,
+        Lanius.FunctionalView.Stateful.Env.set]
+    · have indexEq : index = ⟨1, by omega⟩ := Fin.ext one
+      rw [indexEq]
+      simp [runtime, Runtime.environment,
+        Lanius.FunctionalView.Env.push,
+        Lanius.FunctionalView.Stateful.Env.set]
+    · have indexEq : index = ⟨2, by omega⟩ := Fin.ext two
+      rw [indexEq]
+      simp [runtime, Runtime.environment,
+        Lanius.FunctionalView.Env.push,
+        Lanius.FunctionalView.Stateful.Env.set]
+  rw [advanceWorld, advanceEnvironment]
+  exact Command.Evaluates.updateLocal oneResult (by
+    simpa only [Lanius.FunctionalView.Core.Stateful.machine,
+      Lanius.FunctionalView.Core.Stateful.machineWith] using
+      incrementResult cursor sourceBound inBounds)
+
+private theorem inBounds_of_condition_true
+    (cursor : Nat)
+    (conditionTrue : Term.evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.machine lexerProgram)
+      (runtime source cursor).world (runtime source cursor).environment condition =
+      .ok (.boolean true, (runtime source cursor).world)) :
+    cursor < source.length := by
+  by_cases inBounds : cursor < source.length
+  · exact inBounds
+  · have conditionFalse := condition_out_of_bounds (source := source) cursor inBounds
+    have impossible := conditionFalse.symm.trans conditionTrue
+    simp at impossible
+
+private theorem scanRecurrence : CursorScan.Recurrence source.length
+    (accepts source)
+    (scanAcceptedFrom (fun byte => byte.val != 10) source) := by
+  constructor
+  · exact scanAcceptedFrom_out_of_bounds _ source
+  · intro cursor inBounds rejected
+    apply scanAcceptedFrom_rejected _ source cursor inBounds
+    simpa [accepts, List.getElem?_eq_getElem inBounds] using rejected
+  · intro cursor inBounds accepted
+    apply scanAcceptedFrom_accepted _ source cursor inBounds
+    simpa [accepts, List.getElem?_eq_getElem inBounds] using accepted
+
+private theorem scanSpec
+    (sourceBound : source.length ≤ 2147483647) : CursorScan.Spec
+      (Lanius.FunctionalView.Core.ReadOnly.machine lexerProgram)
+      (Lanius.FunctionalView.Core.Stateful.machine lexerProgram)
+      condition LineCommentFunctional.body (runtime source) source.length
+      (accepts source) := {
+  conditionInBounds := condition_in_bounds
+  conditionOutOfBounds := condition_out_of_bounds
+  body := fun cursor inBounds _ => body_evaluates cursor sourceBound inBounds
+}
+
+private theorem bodySound
+    (sourceBound : source.length ≤ 2147483647)
+    (localCells : Fin 3 → CellId) :
+    ConfigBodySoundWithin lexerProgram layout localCells condition
+      LineCommentFunctional.body actionAdapter 4
+      (Lanius.Separation.CellSet.singleton (localCells ⟨1, by omega⟩))
+      Nat (runtime source) := by
+  apply updateLocalConfigBodySoundWithin
+    (right := fun _ => .signed .i32 1)
+    (result := fun cursor => .signed .i32 (Int.ofNat (cursor + 1)))
+  · intro _ _
+    rfl
+  · intro cursor conditionTrue
+    have inBounds := inBounds_of_condition_true cursor conditionTrue
+    exact incrementResult cursor sourceBound inBounds
+
+private theorem executeLoop
     (invariant : ScannerState state source start cursor)
-    (outOfBounds : ¬ cursor < source.length) :
-    evalExpr 14 lexerProgram state lineCommentCondition =
-      .done (.boolean false) state := by
-  have leftBase := evalLocalLessLocal (program := lexerProgram)
-    state cursor source.length 3 1
-    invariant.cursorLocal invariant.limitLocal
-  have left := evalExpr_done_at_larger_fuel (program := lexerProgram)
-    (by decide : 13 ≤ 13) leftBase
-  unfold lineCommentCondition andExpr
-  rw [Lanius.Semantics.evalExpr.eq_def]
-  simp only
-  rw [left]
-  simp [outOfBounds]
+    (sourceBound : source.length ≤ 2147483647) :
+    ∃ finalState,
+      Executes lexerProgram state
+        (.whileLoop lineCommentCondition (incrementLocal 3 1))
+        .next finalState ∧
+      ScannerState finalState source start
+        (scanAcceptedFrom (fun byte => byte.val != 10) source cursor) := by
+  have cursorOwned :
+      (Lanius.Separation.Assertion.localPointsTo 3 4
+        (some (.signed .i32 (Int.ofNat cursor)))).holds state :=
+    ⟨invariant.cursorLocalId, invariant.cursorLocalCell⟩
+  have sharedSeparate : Lanius.Separation.CellSet.Disjoint
+      (Lanius.Separation.localCellFootprint state
+        (fun id => id = 0 ∨ id = 1))
+      (Lanius.Separation.CellSet.union
+        (Lanius.Separation.CellSet.singleton 0)
+        (Lanius.Separation.CellSet.singleton 4)) := by
+    intro cell member written
+    obtain ⟨id, localId, found⟩ := member
+    rcases localId with rfl | rfl <;>
+      rcases written with written | written <;>
+      simp only [Lanius.Separation.CellSet.singleton] at written <;>
+      subst cell <;>
+      simp [invariant.sourceLocalId, invariant.limitLocalId] at found
+  let boundedView := SliceCursorBoundRepresentation.ofState
+    (sliceId := 0) (cursorId := 3) (boundId := 1)
+    (sliceCell := 0) (cursorCell := 4)
+    (sliceValues := sourceIntegers source)
+    (cursorValue := .signed .i32 (Int.ofNat cursor))
+    (boundValue := .signed .i32 (Int.ofNat source.length))
+    (state := state)
+    invariant.wellFormed
+    (by simpa [i32Type, sourceIntegers_length] using invariant.sourceLocal)
+    (by simpa [sourceIntegers_values] using invariant.sourceCell)
+    cursorOwned (by simpa using invariant.limitLocal) sharedSeparate
+    (by decide) (by simp)
+  let localCells : Fin 3 → CellId :=
+    pushCells (pairCells boundedView.sliceLocalCell 4)
+      boundedView.boundLocalCell
+  have represented : Representation layout localCells (runtime source cursor).world
+      (runtime source cursor).environment state := by
+    simpa [layout, localCells, runtime, sourceIntegers_length,
+      i32Type, Runtime.world, Runtime.environment] using boundedView.represented
+  let assembled := CursorScan.run (scanSpec sourceBound) scanRecurrence cursor
+  rcases assembled with ⟨completion, abstractAfter, trace, result⟩
+  cases result.completionEq
+  let abstractSimulation := trace.simulatesWithin
+    (bodySound sourceBound localCells) represented invariant.wellFormed
+  have simulation : SimulatesWithin lexerProgram layout localCells
+      (runtime source cursor).world (runtime source cursor).environment
+      state loop .next (runtime source result.finalCursor).world
+      (runtime source result.finalCursor).environment
+      actionAdapter 4 (Lanius.Separation.CellSet.singleton 4) := by
+    rw [← result.afterEq]
+    simpa [loop, localCells, pushCells, pairCells] using abstractSimulation
+  let finalState := Classical.choose simulation
+  have simulationFacts := Classical.choose_spec simulation
+  have loopExecution := simulationFacts.1
+  have finalWellFormed := simulationFacts.2.1
+  have finalRepresented := simulationFacts.2.2.1
+  have effect := simulationFacts.2.2.2
+  have finalCursorCell : finalState.cellEntry? 4 = some {
+      id := 4,
+      value := some (.signed .i32 (Int.ofNat result.finalCursor)) } := by
+    have owned := finalRepresented.localOwned ⟨1, by omega⟩
+    simpa [finalState, localCells, runtime, Runtime.environment,
+      Lanius.FunctionalView.Env.push, pairEnvironment, pushCells, pairCells]
+      using owned.2
+  have finalInvariant : ScannerState finalState source start
+      result.finalCursor :=
+    invariant.afterCursorEffect result.finalCursor finalWellFormed effect
+      finalCursorCell
+  refine ⟨finalState, ?_, ?_⟩
+  · simpa [finalState, loop_toCore,
+      Lanius.FunctionalView.Core.Stateful.toCoreCompletion] using loopExecution
+  · rw [result.finalEq] at finalInvariant
+    exact finalInvariant
+
+end LineCommentFunctional
 
 theorem executesScannerLoop
     (semantics : ScannerPredicateSemantics program predicate accept)
@@ -2214,55 +2554,7 @@ theorem executesLineCommentLoop
         .next finalState ∧
       ScannerState finalState source start
         (scanAcceptedFrom (fun byte => byte.val != 10) source cursor) := by
-  by_cases inBounds : cursor < source.length
-  · let byte := source.get ⟨cursor, inBounds⟩
-    have conditionBase := evalLineCommentCondition_in_bounds invariant inBounds
-    by_cases accepted : (byte.val != 10) = true
-    · have acceptedSource :
-          ((source.get ⟨cursor, inBounds⟩).val != 10) = true := by
-        simpa [byte] using accepted
-      rw [acceptedSource] at conditionBase
-      have conditionExec :
-          Evaluates lexerProgram state lineCommentCondition (.boolean true) state :=
-        ⟨14, conditionBase⟩
-      have incrementBound : cursor + 1 ≤ 2147483647 :=
-        Nat.le_trans (Nat.succ_le_of_lt inBounds) sourceBound
-      let next := incrementedCursorState state cursor
-      have bodyExec :
-          Executes lexerProgram state (incrementLocal 3 1) .next next := by
-        exact ⟨11, by simpa [incrementLocal] using
-          invariant.execCursorIncrement lexerProgram incrementBound⟩
-      have nextInvariant := invariant.afterCursorAssignment
-      obtain ⟨finalState, restExec, finalInvariant⟩ :=
-        executesLineCommentLoop nextInvariant sourceBound
-      refine ⟨finalState,
-        executesWhileTrue conditionExec bodyExec restExec, ?_⟩
-      rw [scanAcceptedFrom_accepted (fun byte => byte.val != 10)
-        source cursor inBounds acceptedSource]
-      exact finalInvariant
-    · have rejected : (byte.val != 10) = false :=
-        Bool.eq_false_iff.mpr accepted
-      have rejectedSource :
-          ((source.get ⟨cursor, inBounds⟩).val != 10) = false := by
-        simpa [byte] using rejected
-      rw [rejectedSource] at conditionBase
-      have conditionExec :
-          Evaluates lexerProgram state lineCommentCondition (.boolean false) state :=
-        ⟨14, conditionBase⟩
-      refine ⟨state, executesWhileFalse conditionExec, ?_⟩
-      rw [scanAcceptedFrom_rejected (fun byte => byte.val != 10)
-        source cursor inBounds rejectedSource]
-      exact invariant
-  · have conditionBase := evalLineCommentCondition_out_of_bounds invariant inBounds
-    have conditionExec :
-        Evaluates lexerProgram state lineCommentCondition (.boolean false) state :=
-      ⟨14, conditionBase⟩
-    refine ⟨state, executesWhileFalse conditionExec, ?_⟩
-    rw [scanAcceptedFrom_out_of_bounds (fun byte => byte.val != 10)
-      source cursor inBounds]
-    exact invariant
-termination_by source.length - cursor
-decreasing_by omega
+  exact LineCommentFunctional.executeLoop invariant sourceBound
 
 def scannerParameterState (source : List Byte) (start : Nat) : State :=
   (sourceState source).bindLocals

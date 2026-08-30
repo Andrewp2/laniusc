@@ -3,6 +3,7 @@ import Lanius.Extraction.ArtifactQuote
 import Lanius.Extraction.StatementNormalization
 import Lanius.Compiler.LexerProgramNumbers
 import Lanius.CallContracts
+import Lanius.FunctionalViewCoreReadOnly
 
 namespace Lanius.Extraction
 
@@ -630,7 +631,7 @@ def extractedIdentifierPredicateSemantics :
 
 /-- Execution of the exact scanner body emitted from `lexer.lani`. The generic
     loop proof is instantiated with the extracted predicate implementation;
-    normalization is then transported back to the raw lowered statement tree. -/
+    normalization is then transported back to the raw Core statement tree. -/
 theorem extracted_scanWhitespaceEndBody_executes
     (source : List Byte) (start : Nat)
     (sourceBound : source.length ≤ 2147483647)
@@ -1135,66 +1136,6 @@ theorem extracted_isDigitForBaseBody_normalizes :
     extractedDecimalDigitValue
   rfl
 
-private theorem evalI32LocalGreaterEqualLiteral_in_program
-    (program : Program) (state : State) (id : VarId) (value literal : Int)
-    (found : state.local? id = some (.signed .i32 value)) :
-    evalExpr 3 program state
-      (.binary .greaterEqual (.local id) (i32Literal literal)) =
-      .done (.boolean (decide (value ≥ literal))) state := by
-  have leftResult := evalLocal_of_local 1 program state id
-    (.signed .i32 value) found
-  have rightResult : evalExpr 2 program state (i32Literal literal) =
-      .done (.signed .i32 literal) state := by rfl
-  rw [Lanius.Semantics.evalExpr.eq_def]
-  simp only
-  rw [leftResult]
-  simp only
-  rw [rightResult]
-  rfl
-
-private theorem evalI32LocalLessEqualLiteral_in_program
-    (program : Program) (state : State) (id : VarId) (value literal : Int)
-    (found : state.local? id = some (.signed .i32 value)) :
-    evalExpr 3 program state
-      (.binary .lessEqual (.local id) (i32Literal literal)) =
-      .done (.boolean (decide (value ≤ literal))) state := by
-  have leftResult := evalLocal_of_local 1 program state id
-    (.signed .i32 value) found
-  have rightResult : evalExpr 2 program state (i32Literal literal) =
-      .done (.signed .i32 literal) state := by rfl
-  rw [Lanius.Semantics.evalExpr.eq_def]
-  simp only
-  rw [leftResult]
-  simp only
-  rw [rightResult]
-  rfl
-
-private theorem evalI32LocalSubtractNat_in_program
-    (program : Program) (state : State) (id value amount : Nat)
-    (found : state.local? id = some (.signed .i32 value))
-    (amountLe : amount ≤ value)
-    (bounded : value - amount ≤ 2147483647) :
-    evalExpr 4 program state
-      (.binary .subtract (.local id) (i32Literal amount)) =
-      .done (.signed .i32 (Int.ofNat (value - amount))) state := by
-  have leftResult := evalLocal_of_local 2 program state id
-    (.signed .i32 value) found
-  have rightResult : evalExpr 3 program state (i32Literal amount) =
-      .done (.signed .i32 amount) state := by rfl
-  have wrapped := Lanius.Compiler.Lexer.Program.wrapSigned_i32_ofNat_at_target
-    program.target (value - amount) bounded
-  rw [Lanius.Semantics.evalExpr.eq_def]
-  simp only
-  rw [leftResult]
-  simp only
-  rw [rightResult]
-  simp only [evalBinaryValue, beq_self_eq_true, if_true, evalSignedBinary]
-  rw [← Int.ofNat_sub amountLe]
-  exact congrArg
-    (fun result =>
-      (Outcome.done (Value.signed SignedIntTy.i32 result) state : Outcome Value))
-    wrapped
-
 private theorem decideAnd_eq_false_of_not'
     {left right : Prop} [Decidable left] [Decidable right]
     (notBoth : ¬ (left ∧ right)) :
@@ -1204,101 +1145,176 @@ private theorem decideAnd_eq_false_of_not'
   have decided := Bool.and_eq_true_iff.mp bothTrue
   exact notBoth ⟨of_decide_eq_true decided.1, of_decide_eq_true decided.2⟩
 
-private theorem digitByteInRange_executes_in_program
-    (program : Program) (state : State) (wellFormed : StateWellFormed state)
-    (byte : Byte) (base lower upper : Nat) :
-    evalExpr 4 program (twoI32CalleeState state byte.val base)
-      (digitByteInRange lower upper) =
-      .done (.boolean (decide (lower ≤ byte.val) &&
-        decide (byte.val ≤ upper)))
-        (twoI32CalleeState state byte.val base) := by
-  let callee := twoI32CalleeState state byte.val base
-  have byteLocal := twoI32CalleeState_left state wellFormed byte.val base
-  have lowerResult := evalI32LocalGreaterEqualLiteral_in_program
-    program callee 0 byte.val lower byteLocal
-  have upperResult := evalI32LocalLessEqualLiteral_in_program
-    program callee 0 byte.val upper byteLocal
-  have lowerEq : decide ((byte.val : Int) ≥ (lower : Int)) =
-      decide (lower ≤ byte.val) := by
-    simpa using intOfNat_le_decide lower byte.val
-  have upperEq : decide ((byte.val : Int) ≤ (upper : Int)) =
-      decide (byte.val ≤ upper) := by
-    simpa using intOfNat_le_decide byte.val upper
-  rw [lowerEq] at lowerResult
-  rw [upperEq] at upperResult
-  rw [Lanius.Semantics.evalExpr.eq_def]
-  simp only [digitByteInRange, andExpr]
-  rw [lowerResult]
-  cases decide (lower ≤ byte.val) <;> simp [upperResult] <;> rfl
+namespace DigitBaseProof
 
-private theorem decimalDigitValue_executes_in_program
-    (program : Program) (state : State) (wellFormed : StateWellFormed state)
-    (byte : Byte) (base lower : Nat) (lowerLe : lower ≤ byte.val) :
-    evalExpr 5 program (twoI32CalleeState state byte.val base)
-      (.binary .less
-        (.binary .subtract (.local 0) (i32Literal lower)) (.local 1)) =
-      .done (.boolean (decide (byte.val - lower < base)))
-        (twoI32CalleeState state byte.val base) := by
-  let callee := twoI32CalleeState state byte.val base
-  have byteLocal := twoI32CalleeState_left state wellFormed byte.val base
-  have baseLocal := twoI32CalleeState_right state wellFormed byte.val base
-  have subResult := evalI32LocalSubtractNat_in_program program callee 0
-    byte.val lower byteLocal lowerLe (by omega)
-  have baseResult := evalLocal_of_local 3 program callee 1
-    (.signed .i32 base) baseLocal
-  rw [Lanius.Semantics.evalExpr.eq_def]
-  simp only
-  rw [subResult]
-  simp only
-  rw [baseResult]
-  simp only [evalBinaryValue, beq_self_eq_true, if_true, evalSignedBinary]
-  exact congrArg
-    (fun result => (Outcome.done (Value.boolean result) callee : Outcome Value))
-    (intOfNat_lt_decide (byte.val - lower) base)
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
 
-private theorem adjustedDigitValue_executes_in_program
-    (program : Program) (state : State) (wellFormed : StateWellFormed state)
-    (byte : Byte) (base lower adjustment : Nat)
-    (lowerLe : lower ≤ byte.val)
-    (bounded : byte.val - lower + adjustment ≤ 2147483647) :
-    evalExpr 6 program (twoI32CalleeState state byte.val base)
-      (digitValueLessBase lower adjustment) =
-      .done (.boolean (decide (byte.val - lower + adjustment < base)))
-        (twoI32CalleeState state byte.val base) := by
-  let callee := twoI32CalleeState state byte.val base
-  have byteLocal := twoI32CalleeState_left state wellFormed byte.val base
-  have baseLocal := twoI32CalleeState_right state wellFormed byte.val base
-  have subResult := evalI32LocalSubtractNat_in_program program callee 0
-    byte.val lower byteLocal lowerLe (by omega)
-  have adjustmentResult : evalExpr 4 program callee (i32Literal adjustment) =
-      .done (.signed .i32 adjustment) callee := by rfl
-  have wrapped := Lanius.Compiler.Lexer.Program.wrapSigned_i32_ofNat_at_target
-    program.target
-    (byte.val - lower + adjustment) bounded
-  have addResult : evalExpr 5 program callee
-      (.binary .add
-        (.binary .subtract (.local 0) (i32Literal lower))
-        (i32Literal adjustment)) =
-      .done (.signed .i32 (Int.ofNat (byte.val - lower + adjustment)))
-        callee := by
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [subResult]
-    simp only
-    rw [adjustmentResult]
-    simp only [evalBinaryValue, beq_self_eq_true, if_true, evalSignedBinary]
-    simpa using wrapped
-  have baseResult := evalLocal_of_local 4 program callee 1
-    (.signed .i32 base) baseLocal
-  rw [Lanius.Semantics.evalExpr.eq_def]
-  simp only [digitValueLessBase]
-  rw [addResult]
-  simp only
-  rw [baseResult]
-  simp only [evalBinaryValue, beq_self_eq_true, if_true, evalSignedBinary]
-  exact congrArg
-    (fun result => (Outcome.done (Value.boolean result) callee : Outcome Value))
-    (intOfNat_lt_decide (byte.val - lower + adjustment) base)
+private abbrev T := Term signature 2
+private abbrev B := Block signature 2
+private def slot (index : Fin 2) : T := reference index
+private def i32 (value : Int) : T := literal (.signed .i32 value)
+private def binary (operation : BinaryOp) (left right : T)
+    (result : Ty) : T :=
+  apply (.binary operation i32Type i32Type result) [left, right]
+private def conjunction (left right : T) : T :=
+  Lanius.FunctionalView.Core.logicalAnd left right
+
+private def inRange (lower upper : Int) : T :=
+  conjunction
+    (binary .greaterEqual (slot 0) (i32 lower) (.scalar .bool))
+    (binary .lessEqual (slot 0) (i32 upper) (.scalar .bool))
+
+private def decimalValue : T :=
+  binary .less (binary .subtract (slot 0) (i32 48) i32Type) (slot 1)
+    (.scalar .bool)
+
+private def adjustedValue (lower adjustment : Int) : T :=
+  binary .less
+    (binary .add (binary .subtract (slot 0) (i32 lower) i32Type)
+      (i32 adjustment) i32Type)
+    (slot 1) (.scalar .bool)
+
+def body : B :=
+  .sequence
+    (.ifThenElse (inRange 48 57) (.returnValue (some decimalValue)) .skip)
+    (.sequence
+      (.ifThenElse (inRange 97 102)
+        (.returnValue (some (adjustedValue 97 10))) .skip)
+      (.sequence
+        (.ifThenElse (inRange 65 70)
+          (.returnValue (some (adjustedValue 65 10))) .skip)
+        (.returnValue (some (literal (.boolean false))))))
+
+def world : World := { i32Slice? := fun _ => none }
+
+def environment (byte base : Nat) : Env 2
+  | ⟨0, _⟩ => .signed .i32 (Int.ofNat byte)
+  | ⟨1, _⟩ => .signed .i32 (Int.ofNat base)
+
+theorem body_toCore_exactly :
+    toCoreStmt (identityLayout (arity := 2)) 2 body =
+      extractedIsDigitForBaseNormalizedBody := by
+  rfl
+
+private theorem inRange_evaluates (byte lower upper base : Nat) :
+    Term.evaluate (machine verifiedFrontendDigitsCore) world
+        (environment byte base) (inRange lower upper) =
+      .ok (.boolean
+        (decide (lower ≤ byte) && decide (byte ≤ upper)), world) := by
+  simpa [Int.ofNat_le] using (show
+    Term.evaluate (machine verifiedFrontendDigitsCore) world
+        (environment byte base) (inRange lower upper) =
+      .ok (.boolean
+        (decide ((Int.ofNat lower) ≤ Int.ofNat byte) &&
+          decide (Int.ofNat byte ≤ Int.ofNat upper)), world) by
+    simp only [inRange, conjunction, binary, slot, i32,
+      Lanius.FunctionalView.Core.apply, Lanius.FunctionalView.Core.reference,
+      Lanius.FunctionalView.Core.literal]
+    functional_eval)
+
+private theorem decimalValue_evaluates (byte base : Nat)
+    (lower : 48 ≤ byte) (bounded : byte - 48 ≤ 2147483647) :
+    Term.evaluate (machine verifiedFrontendDigitsCore) world
+        (environment byte base) decimalValue =
+      .ok (.boolean (decide (byte - 48 < base)), world) := by
+  simp only [decimalValue, binary, slot, i32,
+    Lanius.FunctionalView.Core.apply, Lanius.FunctionalView.Core.reference,
+    Lanius.FunctionalView.Core.literal]
+  functional_eval
+
+private theorem adjustedValue_evaluates (byte base lower adjustment : Nat)
+    (lowerBound : lower ≤ byte)
+    (bounded : byte - lower + adjustment ≤ 2147483647) :
+    Term.evaluate (machine verifiedFrontendDigitsCore) world
+        (environment byte base) (adjustedValue lower adjustment) =
+      .ok (.boolean (decide (byte - lower + adjustment < base)), world) := by
+  simp only [adjustedValue, binary, slot, i32,
+    Lanius.FunctionalView.Core.apply, Lanius.FunctionalView.Core.reference,
+    Lanius.FunctionalView.Core.literal]
+  functional_eval
+
+theorem body_evaluates (byte : Byte) (base : Nat) :
+    Block.evaluate (machine verifiedFrontendDigitsCore) world
+        (environment byte.val base) body =
+      .done (.returned (some (.boolean (isDigitForBase byte base)))) world := by
+  have decimalCondition := inRange_evaluates byte.val 48 57 base
+  by_cases decimal : 48 ≤ byte.val ∧ byte.val ≤ 57
+  · have condition : Term.evaluate (machine verifiedFrontendDigitsCore) world
+        (environment byte.val base) (inRange 48 57) =
+        .ok (.boolean true, world) := by
+      simpa [decimal.1, decimal.2] using decimalCondition
+    have value := decimalValue_evaluates byte.val base decimal.1 (by omega)
+    simp [isDigitForBase, decimal.1, decimal.2]
+    rw [body]
+    apply Block.evaluate_sequence_returned
+    apply Block.evaluate_if_true condition
+    exact Block.evaluate_returnValue value
+  · have decimalFalse :
+        (decide (48 ≤ byte.val) && decide (byte.val ≤ 57)) = false :=
+      decideAnd_eq_false_of_not' decimal
+    have condition : Term.evaluate (machine verifiedFrontendDigitsCore) world
+        (environment byte.val base) (inRange 48 57) =
+        .ok (.boolean false, world) := by
+      simpa [decimalFalse] using decimalCondition
+    have lowercaseCondition := inRange_evaluates byte.val 97 102 base
+    by_cases lowercase : 97 ≤ byte.val ∧ byte.val ≤ 102
+    · have lowerTrue : Term.evaluate (machine verifiedFrontendDigitsCore) world
+          (environment byte.val base) (inRange 97 102) =
+          .ok (.boolean true, world) := by
+        simpa [lowercase.1, lowercase.2] using lowercaseCondition
+      have value := adjustedValue_evaluates byte.val base 97 10 lowercase.1
+        (by omega)
+      simp [isDigitForBase, decimal, lowercase.1, lowercase.2]
+      rw [body]
+      apply Block.evaluate_sequence_next
+      · exact Block.evaluate_if_false condition (Block.evaluate_skip _ _ _)
+      apply Block.evaluate_sequence_returned
+      apply Block.evaluate_if_true lowerTrue
+      exact Block.evaluate_returnValue value
+    · have lowercaseFalse :
+          (decide (97 ≤ byte.val) && decide (byte.val ≤ 102)) = false :=
+        decideAnd_eq_false_of_not' lowercase
+      have lowerFalse : Term.evaluate (machine verifiedFrontendDigitsCore) world
+          (environment byte.val base) (inRange 97 102) =
+          .ok (.boolean false, world) := by
+        simpa [lowercaseFalse] using lowercaseCondition
+      have uppercaseCondition := inRange_evaluates byte.val 65 70 base
+      by_cases uppercase : 65 ≤ byte.val ∧ byte.val ≤ 70
+      · have upperTrue : Term.evaluate (machine verifiedFrontendDigitsCore)
+            world (environment byte.val base) (inRange 65 70) =
+            .ok (.boolean true, world) := by
+          simpa [uppercase.1, uppercase.2] using uppercaseCondition
+        have value := adjustedValue_evaluates byte.val base 65 10 uppercase.1
+          (by omega)
+        simp [isDigitForBase, decimal, lowercase, uppercase.1, uppercase.2]
+        rw [body]
+        apply Block.evaluate_sequence_next
+        · exact Block.evaluate_if_false condition (Block.evaluate_skip _ _ _)
+        apply Block.evaluate_sequence_next
+        · exact Block.evaluate_if_false lowerFalse (Block.evaluate_skip _ _ _)
+        apply Block.evaluate_sequence_returned
+        apply Block.evaluate_if_true upperTrue
+        exact Block.evaluate_returnValue value
+      · have uppercaseFalse :
+            (decide (65 ≤ byte.val) && decide (byte.val ≤ 70)) = false :=
+          decideAnd_eq_false_of_not' uppercase
+        have upperFalse : Term.evaluate (machine verifiedFrontendDigitsCore)
+            world (environment byte.val base) (inRange 65 70) =
+            .ok (.boolean false, world) := by
+          simpa [uppercaseFalse] using uppercaseCondition
+        simp [isDigitForBase, decimal, lowercase, uppercase]
+        rw [body]
+        apply Block.evaluate_sequence_next
+        · exact Block.evaluate_if_false condition (Block.evaluate_skip _ _ _)
+        apply Block.evaluate_sequence_next
+        · exact Block.evaluate_if_false lowerFalse (Block.evaluate_skip _ _ _)
+        apply Block.evaluate_sequence_next
+        · exact Block.evaluate_if_false upperFalse (Block.evaluate_skip _ _ _)
+        rfl
+
+end DigitBaseProof
 
 private theorem extracted_isDigitForBaseNormalizedBody_executes
     (state : State) (wellFormed : StateWellFormed state)
@@ -1309,112 +1325,31 @@ private theorem extracted_isDigitForBaseNormalizedBody_executes
       (.returned (some (.boolean (isDigitForBase byte base))))
       (twoI32CalleeState state byte.val base) := by
   let callee := twoI32CalleeState state byte.val base
-  have decimalCondition := digitByteInRange_executes_in_program
-    verifiedFrontendDigitsCore state wellFormed byte base 48 57
-  have lowercaseCondition := digitByteInRange_executes_in_program
-    verifiedFrontendDigitsCore state wellFormed byte base 97 102
-  have uppercaseCondition := digitByteInRange_executes_in_program
-    verifiedFrontendDigitsCore state wellFormed byte base 65 70
-  by_cases decimal : 48 ≤ byte.val ∧ byte.val ≤ 57
-  · have condition : Evaluates verifiedFrontendDigitsCore callee
-        (digitByteInRange 48 57) (.boolean true) callee :=
-      ⟨4, by simpa [callee, decimal.1, decimal.2] using decimalCondition⟩
-    have valueResult := decimalDigitValue_executes_in_program
-      verifiedFrontendDigitsCore state wellFormed byte base 48 decimal.1
-    have returned := executesReturnValue (⟨5, by
-      simpa [extractedDecimalDigitValue] using valueResult⟩)
-    have first := executesIfTrue
-      (elseBranch := .skip) condition returned
-    have execution := executesSequenceReturned
-      (second :=
-        .sequence
-          (.ifThenElse (digitByteInRange 97 102)
-            (.returnValue (some (digitValueLessBase 97 10))) .skip)
-          (.sequence
-            (.ifThenElse (digitByteInRange 65 70)
-              (.returnValue (some (digitValueLessBase 65 10))) .skip)
-            (.returnValue (some (.value (.boolean false)))))) first
-    simpa [extractedIsDigitForBaseNormalizedBody, extractedDecimalDigitValue,
-      isDigitForBase,
-      decimal.1, decimal.2, callee] using execution
-  · have decimalFalse :
-        (decide (48 ≤ byte.val) && decide (byte.val ≤ 57)) = false :=
-      decideAnd_eq_false_of_not' decimal
-    rw [decimalFalse] at decimalCondition
-    have condition : Evaluates verifiedFrontendDigitsCore callee
-        (digitByteInRange 48 57) (.boolean false) callee :=
-      ⟨4, by simpa [callee] using decimalCondition⟩
-    have first := executesIfFalse (thenBranch :=
-      .returnValue (some extractedDecimalDigitValue)) condition
-      (executesSkip verifiedFrontendDigitsCore callee)
-    by_cases lowercase : 97 ≤ byte.val ∧ byte.val ≤ 102
-    · have lowerCondition : Evaluates verifiedFrontendDigitsCore callee
-          (digitByteInRange 97 102) (.boolean true) callee :=
-        ⟨4, by simpa [callee, lowercase.1, lowercase.2] using
-          lowercaseCondition⟩
-      have valueResult := adjustedDigitValue_executes_in_program
-        verifiedFrontendDigitsCore state wellFormed byte base 97 10 lowercase.1
-        (by omega)
-      have returned := executesReturnValue ⟨6, valueResult⟩
-      have lowerIf := executesIfTrue (elseBranch := .skip)
-        lowerCondition returned
-      have tail := executesSequenceReturned
-        (second :=
-          .sequence
-            (.ifThenElse (digitByteInRange 65 70)
-              (.returnValue (some (digitValueLessBase 65 10))) .skip)
-            (.returnValue (some (.value (.boolean false))))) lowerIf
-      have execution := executesSequence first tail
-      simpa [extractedIsDigitForBaseNormalizedBody, isDigitForBase, decimal,
-        extractedDecimalDigitValue, lowercase.1, lowercase.2, callee] using execution
-    · have lowercaseFalse :
-          (decide (97 ≤ byte.val) && decide (byte.val ≤ 102)) = false :=
-        decideAnd_eq_false_of_not' lowercase
-      rw [lowercaseFalse] at lowercaseCondition
-      have lowerCondition : Evaluates verifiedFrontendDigitsCore callee
-          (digitByteInRange 97 102) (.boolean false) callee :=
-        ⟨4, by simpa [callee] using lowercaseCondition⟩
-      have lowerIf := executesIfFalse
-        (thenBranch := .returnValue (some (digitValueLessBase 97 10)))
-        lowerCondition (executesSkip verifiedFrontendDigitsCore callee)
-      by_cases uppercase : 65 ≤ byte.val ∧ byte.val ≤ 70
-      · have upperCondition : Evaluates verifiedFrontendDigitsCore callee
-            (digitByteInRange 65 70) (.boolean true) callee :=
-          ⟨4, by simpa [callee, uppercase.1, uppercase.2] using
-            uppercaseCondition⟩
-        have valueResult := adjustedDigitValue_executes_in_program
-          verifiedFrontendDigitsCore state wellFormed byte base 65 10 uppercase.1
-          (by omega)
-        have returned := executesReturnValue ⟨6, valueResult⟩
-        have upperIf := executesIfTrue (elseBranch := .skip)
-          upperCondition returned
-        have upperTail := executesSequenceReturned
-          (second := .returnValue (some (.value (.boolean false)))) upperIf
-        have lowerTail := executesSequence lowerIf upperTail
-        have execution := executesSequence first lowerTail
-        simpa [extractedIsDigitForBaseNormalizedBody, isDigitForBase, decimal,
-          extractedDecimalDigitValue, lowercase, uppercase.1, uppercase.2,
-          callee] using execution
-      · have uppercaseFalse :
-            (decide (65 ≤ byte.val) && decide (byte.val ≤ 70)) = false :=
-          decideAnd_eq_false_of_not' uppercase
-        rw [uppercaseFalse] at uppercaseCondition
-        have upperCondition : Evaluates verifiedFrontendDigitsCore callee
-            (digitByteInRange 65 70) (.boolean false) callee :=
-          ⟨4, by simpa [callee] using uppercaseCondition⟩
-        have upperIf := executesIfFalse
-          (thenBranch := .returnValue (some (digitValueLessBase 65 10)))
-          upperCondition (executesSkip verifiedFrontendDigitsCore callee)
-        have returnedFalse := executesReturnValue
-          (program := verifiedFrontendDigitsCore) (state := callee)
-          (⟨1, rfl⟩ : Evaluates verifiedFrontendDigitsCore callee
-            (.value (.boolean false)) (.boolean false) callee)
-        have upperTail := executesSequence upperIf returnedFalse
-        have lowerTail := executesSequence lowerIf upperTail
-        have execution := executesSequence first lowerTail
-        simpa [extractedIsDigitForBaseNormalizedBody, isDigitForBase, decimal,
-          extractedDecimalDigitValue, lowercase, uppercase, callee] using execution
-
+  have environmentMatches : Lanius.FunctionalView.Core.EnvironmentMatches
+      (Lanius.FunctionalView.Core.identityLayout (arity := 2))
+      (DigitBaseProof.environment byte.val base) callee := by
+    intro index
+    refine Fin.cases ?_
+      (fun second => Fin.cases ?_ (fun impossible => Fin.elim0 impossible)
+        second) index
+    · simpa [callee, DigitBaseProof.environment,
+        Lanius.FunctionalView.Core.identityLayout] using
+        twoI32CalleeState_left state wellFormed byte.val base
+    · simpa [callee, DigitBaseProof.environment,
+        Lanius.FunctionalView.Core.identityLayout] using
+        twoI32CalleeState_right state wellFormed byte.val base
+  have represented :
+      Lanius.FunctionalView.Core.ReadOnly.World.Represents DigitBaseProof.world
+        callee := by
+    intro _ _ found
+    simp [DigitBaseProof.world] at found
+  have sound := Lanius.FunctionalView.Core.block_executes_without_locals
+    (nextLocal := 2)
+    (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedFrontendDigitsCore)
+    represented environmentMatches (by rfl)
+    (DigitBaseProof.body_evaluates byte base)
+  rw [DigitBaseProof.body_toCore_exactly] at sound
+  simpa [callee, Lanius.FunctionalView.Core.toCoreCompletion] using sound.1
 /-- The raw source-derived predicate body executes in an arbitrary
     well-formed caller store. This is the framed form needed by callers inside
     `scan_digit_run`, unlike the finite empty-state validation below. -/

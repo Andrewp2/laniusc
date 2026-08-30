@@ -1,5 +1,6 @@
 import Lanius.Extraction.VerifiedParserSymbolic
 import Lanius.CallContracts
+import Lanius.FunctionalViewCoreReadOnly
 
 namespace Lanius.Extraction.ParserBasics
 
@@ -113,159 +114,79 @@ theorem parserRangeValidValue_eq_true_iff
     simp [parserRangeValidValue, offsetLower, countLower, offsetUpper,
       countUpper, wrapped]
 
-private theorem evaluatesRangeOffsetLowerBound
-    (state : State) (offset : Int)
-    (offsetLocal : state.local? verifiedParserRangeValidOffset.coreId =
-      some (.signed .i32 offset)) :
-    Evaluates verifiedParserCore state
-      (.binary .greaterEqual verifiedParserRangeValidOffset.expr (.constant 6))
-      (.boolean (decide (offset ≥ 17))) state := by
-  have left : Evaluates verifiedParserCore state
-      verifiedParserRangeValidOffset.expr
-      (.signed .i32 offset) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state
-      verifiedParserRangeValidOffset.coreId
-      (.signed .i32 offset) offsetLocal⟩
-  have right : Evaluates verifiedParserCore state (.constant 6)
-      (.signed .i32 17) state :=
-    evaluatesConstant verifiedParser_range_valid_constant
-  apply evaluatesEagerBinary (by decide) (by decide) left right
-  simp [evalBinaryValue, evalSignedBinary]
+namespace Proof
 
-private theorem evaluatesRangeCountLowerBound
-    (state : State) (count : Int)
-    (countLocal : state.local? verifiedParserRangeValidCount.coreId =
-      some (.signed .i32 count)) :
-    Evaluates verifiedParserCore state
-      (.binary .greaterEqual verifiedParserRangeValidCount.expr
-        (.value (.signed .i32 0)))
-      (.boolean (decide (count ≥ 0))) state := by
-  have left : Evaluates verifiedParserCore state
-      verifiedParserRangeValidCount.expr
-      (.signed .i32 count) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state
-      verifiedParserRangeValidCount.coreId
-      (.signed .i32 count) countLocal⟩
-  have right : Evaluates verifiedParserCore state
-      (.value (.signed .i32 0)) (.signed .i32 0) state := ⟨1, rfl⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
-  simp [evalBinaryValue, evalSignedBinary]
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
 
-private theorem evaluatesRangeOffsetUpperBound
-    (state : State) (offset length : Int)
-    (offsetLocal : state.local? verifiedParserRangeValidOffset.coreId =
-      some (.signed .i32 offset))
-    (lengthLocal : state.local? verifiedParserRangeValidLength.coreId =
-      some (.signed .i32 length)) :
-    Evaluates verifiedParserCore state
-      (.binary .lessEqual verifiedParserRangeValidOffset.expr
-        verifiedParserRangeValidLength.expr)
-      (.boolean (decide (offset ≤ length))) state := by
-  have left : Evaluates verifiedParserCore state
-      verifiedParserRangeValidOffset.expr
-      (.signed .i32 offset) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state
-      verifiedParserRangeValidOffset.coreId
-      (.signed .i32 offset) offsetLocal⟩
-  have right : Evaluates verifiedParserCore state
-      verifiedParserRangeValidLength.expr
-      (.signed .i32 length) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state
-      verifiedParserRangeValidLength.coreId
-      (.signed .i32 length) lengthLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
-  simp [evalBinaryValue, evalSignedBinary]
+private abbrev RangeTerm := Term signature 3
+private abbrev RangeBlock := Block signature 3
 
-private theorem evaluatesRangeRemaining
-    (state : State) (offset length : Int)
-    (offsetLocal : state.local? verifiedParserRangeValidOffset.coreId =
-      some (.signed .i32 offset))
-    (lengthLocal : state.local? verifiedParserRangeValidLength.coreId =
-      some (.signed .i32 length)) :
-    Evaluates verifiedParserCore state
-      (.binary .subtract verifiedParserRangeValidLength.expr
-        verifiedParserRangeValidOffset.expr)
-      (.signed .i32
-        (wrapSigned verifiedParserCore.target .i32 (length - offset))) state := by
-  have left : Evaluates verifiedParserCore state
-      verifiedParserRangeValidLength.expr
-      (.signed .i32 length) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state
-      verifiedParserRangeValidLength.coreId
-      (.signed .i32 length) lengthLocal⟩
-  have right : Evaluates verifiedParserCore state
-      verifiedParserRangeValidOffset.expr
-      (.signed .i32 offset) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state
-      verifiedParserRangeValidOffset.coreId
-      (.signed .i32 offset) offsetLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
-  simp [evalBinaryValue, evalSignedBinary]
+private def slot (index : Fin 3) : RangeTerm := reference index
+private def i32 (value : Int) : RangeTerm := literal (.signed .i32 value)
+private def constant (id : ConstantId) : RangeTerm :=
+  apply (.constant id parserI32Type) []
+private def binary (operation : BinaryOp) (left right : RangeTerm)
+    (result : Ty := parserBoolType) : RangeTerm :=
+  apply (.binary operation parserI32Type parserI32Type result) [left, right]
+private def conjunction (left right : RangeTerm) : RangeTerm :=
+  Lanius.FunctionalView.Core.logicalAnd left right
 
-private theorem evaluatesRangeCountUpperBound
-    (state : State) (offset count length : Int)
-    (offsetLocal : state.local? verifiedParserRangeValidOffset.coreId =
-      some (.signed .i32 offset))
-    (countLocal : state.local? verifiedParserRangeValidCount.coreId =
-      some (.signed .i32 count))
-    (lengthLocal : state.local? verifiedParserRangeValidLength.coreId =
-      some (.signed .i32 length)) :
-    Evaluates verifiedParserCore state
-      (.binary .lessEqual verifiedParserRangeValidCount.expr
-        (.binary .subtract verifiedParserRangeValidLength.expr
-          verifiedParserRangeValidOffset.expr))
-      (.boolean (decide (count ≤
-        wrapSigned verifiedParserCore.target .i32 (length - offset)))) state := by
-  have left : Evaluates verifiedParserCore state
-      verifiedParserRangeValidCount.expr
-      (.signed .i32 count) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state
-      verifiedParserRangeValidCount.coreId
-      (.signed .i32 count) countLocal⟩
-  have right := evaluatesRangeRemaining state offset length offsetLocal
-    lengthLocal
-  apply evaluatesEagerBinary (by decide) (by decide) left right
-  simp [evalBinaryValue, evalSignedBinary]
+def rangeValid : RangeTerm :=
+  conjunction
+    (conjunction
+      (conjunction
+        (binary .greaterEqual (slot 0) (constant 6))
+        (binary .greaterEqual (slot 1) (i32 0)))
+      (binary .lessEqual (slot 0) (slot 2)))
+    (binary .lessEqual (slot 1)
+      (binary .subtract (slot 2) (slot 0) parserI32Type))
 
-theorem parserRangeValidExpr_evaluates
-    (state : State) (offset count length : Int)
-    (offsetLocal : state.local? verifiedParserRangeValidOffset.coreId =
-      some (.signed .i32 offset))
-    (countLocal : state.local? verifiedParserRangeValidCount.coreId =
-      some (.signed .i32 count))
-    (lengthLocal : state.local? verifiedParserRangeValidLength.coreId =
-      some (.signed .i32 length)) :
-    Evaluates verifiedParserCore state parserRangeValidExpr
-      (.boolean (parserRangeValidValue verifiedParserCore.target
-        offset count length)) state := by
-  have offsetLower := evaluatesRangeOffsetLowerBound state offset offsetLocal
-  have countLower := evaluatesRangeCountLowerBound state count countLocal
-  have offsetUpper := evaluatesRangeOffsetUpperBound state offset length
-    offsetLocal lengthLocal
-  have countUpper := evaluatesRangeCountUpperBound state offset count length
-    offsetLocal countLocal lengthLocal
-  have first := evaluatesPureLogicalAnd offsetLower countLower
-  have second := evaluatesPureLogicalAnd first offsetUpper
-  have third := evaluatesPureLogicalAnd second countUpper
-  simpa [parserRangeValidExpr, parserRangeValidValue] using third
+def body : RangeBlock :=
+  .sequence (.returnValue (some rangeValid)) .skip
 
-theorem extractedParserRangeValidBody_executes
-    (state : State) (offset count length : Int)
-    (offsetLocal : state.local? verifiedParserRangeValidOffset.coreId =
-      some (.signed .i32 offset))
-    (countLocal : state.local? verifiedParserRangeValidCount.coreId =
-      some (.signed .i32 count))
-    (lengthLocal : state.local? verifiedParserRangeValidLength.coreId =
-      some (.signed .i32 length)) :
-    Executes verifiedParserCore state extractedParserRangeValidBody
-      (.returned (some (.boolean
-        (parserRangeValidValue verifiedParserCore.target offset count length))))
-      state := by
-  rw [extractedParserRangeValidBody_eq]
-  apply executesSequenceReturned
-  apply executesReturnValue
-  exact parserRangeValidExpr_evaluates state offset count length offsetLocal
-    countLocal lengthLocal
+def environment (offset count length : Int) : Env 3
+  | ⟨0, _⟩ => .signed .i32 offset
+  | ⟨1, _⟩ => .signed .i32 count
+  | ⟨2, _⟩ => .signed .i32 length
+
+def world : World := { i32Slice? := fun _ => none }
+
+theorem rangeValid_toCore_exactly :
+    toCoreExpr (identityLayout (arity := 3)) rangeValid =
+      parserRangeValidExpr := by
+  rw [parserRangeValidExpr_core_slots]
+  rfl
+
+theorem body_toCore_exactly :
+    toCoreStmt (identityLayout (arity := 3)) 3 body =
+      parserRangeValidBody := by
+  simp [body, parserRangeValidBody, toCoreStmt, rangeValid_toCore_exactly]
+
+theorem rangeValid_evaluates (offset count length : Int) :
+    Term.evaluate (machine verifiedParserCore) world
+        (environment offset count length)
+        rangeValid =
+      .ok (.boolean (parserRangeValidValue verifiedParserCore.target
+        offset count length), world) := by
+  have constantFound := verifiedParser_range_valid_constant
+  simp only [rangeValid, conjunction, binary, constant, slot, i32,
+    Lanius.FunctionalView.Core.apply, Lanius.FunctionalView.Core.reference,
+    Lanius.FunctionalView.Core.literal]
+  functional_eval
+
+theorem body_evaluates (offset count length : Int) :
+    Block.evaluate (machine verifiedParserCore) world
+        (environment offset count length) body =
+      .done (.returned (some (.boolean
+        (parserRangeValidValue verifiedParserCore.target
+          offset count length)))) world := by
+  apply Block.evaluate_sequence_returned
+  apply Block.evaluate_returnValue
+  exact rangeValid_evaluates offset count length
+
+end Proof
 
 def parserRangeValidBindings (offset count length : Int) :
     List (VarId × Value) := [
@@ -273,45 +194,30 @@ def parserRangeValidBindings (offset count length : Int) :
   (verifiedParserRangeValidCount.coreId, .signed .i32 count),
   (verifiedParserRangeValidLength.coreId, .signed .i32 length)]
 
+theorem Proof.parameterBindings_eq (offset count length : Int) :
+    Lanius.FunctionalView.Core.parameterBindings
+        (Proof.environment offset count length) =
+      parserRangeValidBindings offset count length := by
+  have offsetId : verifiedParserRangeValidOffset.coreId = 0 := by
+    native_decide
+  have countId : verifiedParserRangeValidCount.coreId = 1 := by
+    native_decide
+  have lengthId : verifiedParserRangeValidLength.coreId = 2 := by
+    native_decide
+  apply List.ext_getElem
+  · simp [parserRangeValidBindings]
+  · intro index leftBound rightBound
+    have alternatives : index = 0 ∨ index = 1 ∨ index = 2 := by
+      simp [parserRangeValidBindings] at rightBound
+      omega
+    rcases alternatives with rfl | rfl | rfl <;>
+      simp [Lanius.FunctionalView.Core.parameterBindings_getElem,
+        parserRangeValidBindings, Proof.environment,
+        offsetId, countId, lengthId]
+
 def parserRangeValidCallee
     (caller : State) (offset count length : Int) : State :=
   enterCall caller (parserRangeValidBindings offset count length)
-
-private theorem parserRangeValidCallee_offset
-    (wellFormed : StateWellFormed caller) :
-    (parserRangeValidCallee caller offset count length).local?
-        verifiedParserRangeValidOffset.coreId =
-      some (.signed .i32 offset) := by
-  simpa [parserRangeValidCallee, parserRangeValidBindings] using
-    (enterCall_local_of_binding caller [] [
-      (verifiedParserRangeValidCount.coreId, .signed .i32 count),
-      (verifiedParserRangeValidLength.coreId, .signed .i32 length)]
-      verifiedParserRangeValidOffset.coreId (.signed .i32 offset)
-      wellFormed (by simp))
-
-private theorem parserRangeValidCallee_count
-    (wellFormed : StateWellFormed caller) :
-    (parserRangeValidCallee caller offset count length).local?
-        verifiedParserRangeValidCount.coreId =
-      some (.signed .i32 count) := by
-  simpa [parserRangeValidCallee, parserRangeValidBindings] using
-    (enterCall_local_of_binding caller [
-      (verifiedParserRangeValidOffset.coreId, .signed .i32 offset)] [
-      (verifiedParserRangeValidLength.coreId, .signed .i32 length)]
-      verifiedParserRangeValidCount.coreId (.signed .i32 count)
-      wellFormed (by simp))
-
-private theorem parserRangeValidCallee_length
-    (wellFormed : StateWellFormed caller) :
-    (parserRangeValidCallee caller offset count length).local?
-        verifiedParserRangeValidLength.coreId =
-      some (.signed .i32 length) := by
-  simpa [parserRangeValidCallee, parserRangeValidBindings] using
-    (enterCall_local_of_binding caller [
-      (verifiedParserRangeValidOffset.coreId, .signed .i32 offset),
-      (verifiedParserRangeValidCount.coreId, .signed .i32 count)] []
-      verifiedParserRangeValidLength.coreId (.signed .i32 length)
-      wellFormed (by simp))
 
 theorem verifiedParserCore_finds_rangeValid :
     verifiedParserCore.function? extractedParserRangeValidFunction.id =
@@ -345,11 +251,26 @@ theorem extractedParserRangeValidCall_evaluates
       (.returned (some (.boolean
         (parserRangeValidValue verifiedParserCore.target offset count length))))
       callee := by
-    rw [← extractedParserRangeValidBody_eq]
-    exact extractedParserRangeValidBody_executes callee offset count length
-      (parserRangeValidCallee_offset afterArgumentsWellFormed)
-      (parserRangeValidCallee_count afterArgumentsWellFormed)
-      (parserRangeValidCallee_length afterArgumentsWellFormed)
+    have environmentMatches :
+        Lanius.FunctionalView.Core.EnvironmentMatches
+          (Lanius.FunctionalView.Core.identityLayout (arity := 3))
+          (Proof.environment offset count length) callee := by
+      simpa [callee, parserRangeValidCallee,
+        Proof.parameterBindings_eq] using
+        (Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
+          (environment := Proof.environment offset count length)
+          afterArgumentsWellFormed)
+    have represented : Lanius.FunctionalView.Core.ReadOnly.World.Represents
+        Proof.world callee := by
+      intro _ _ found
+      simp [Proof.world] at found
+    have sound := Lanius.FunctionalView.Core.block_executes_without_locals
+      (nextLocal := 3)
+      (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
+      represented environmentMatches (by rfl)
+      (Proof.body_evaluates offset count length)
+    rw [Proof.body_toCore_exactly] at sound
+    simpa [Lanius.FunctionalView.Core.toCoreCompletion] using sound.1
   have evaluation : Evaluates verifiedParserCore before
       (.call extractedParserRangeValidFunction.id arguments)
       (.boolean (parserRangeValidValue verifiedParserCore.target

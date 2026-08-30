@@ -1,4 +1,6 @@
-import Lanius.Extraction.VerifiedParserRecognizeLoops
+import Lanius.Extraction.Parser.Recognize.ChartClear
+import Lanius.Extraction.Parser.Recognize.Initial.Continuation
+import Lanius.Extraction.VerifiedParserRecognizeFunctionalView
 
 namespace Lanius.Extraction.ParserRecognize
 
@@ -17,6 +19,9 @@ open Lanius.Extraction.ParserResult
 open Lanius.Extraction.ParserScan
 open Lanius.Extraction.ParserFind
 open Lanius.SymbolicCore
+open Lanius.Typing
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.Stateful.Reification
 
 def parserRecognizeInputGuard : Stmt :=
   match parserRecognizeAfterGrammarGuard with
@@ -121,57 +126,462 @@ theorem extractedParserRecognize_chart_index_statement_shape :
           parserRecognizeSeedSetupStatement) := by
   rfl
 
-/-- The recognizer's signed-range guard is false for every caller state
-    described by a checked workspace layout. -/
-theorem RecognizerResources.input_guard_evaluates_false
-    (resources : RecognizerResources grammarLayout grammar words tokens
-      workspaceLayout workspaceValues grammarCell tokensCell workspaceCell
-      runtime) :
-    Evaluates verifiedParserCore runtime
-      (.binary .logicalOr
+/-! ## Artifact-derived FunctionalView for recognizer setup -/
+
+/-- Values live before the packed grammar header and start-row bindings are
+    introduced.  The nine following source locals extend this layout exactly
+    to the sixteen-value initial-continuation environment. -/
+def recognizerSeedSetupLayout : Layout 7 := fun index =>
+  [0, 2, 3, 4, 6, 8, 9].get index
+
+def recognizerSeedSetupContext : Context :=
+  let c0 := Context.empty.bind 0 (.slice parserI32Type)
+  let c1 := c0.bind 2 (.slice parserI32Type)
+  let c2 := c1.bind 3 parserI32Type
+  let c3 := c2.bind 4 (.slice parserI32Type)
+  let c4 := c3.bind 6 parserI32Type
+  let c5 := c4.bind 8 parserI32Type
+  c5.bind 9 parserI32Type
+
+private def recognizerSeedSetupReification? :=
+  reifyCommand? verifiedParserCore (.structure 0) recognizerSeedSetupContext
+    false recognizerSeedSetupLayout 11 parserRecognizeSeedSetupStatement
+
+private theorem recognizerSeedSetupReification_exists :
+    recognizerSeedSetupReification?.isSome := by
+  native_decide
+
+/-- The complete nested setup statement mechanically recovered from the
+    checked `parser.lani::recognize` body. -/
+def recognizerSeedSetupCommand :=
+  recognizerSeedSetupReification?.get recognizerSeedSetupReification_exists
+    |>.command
+
+theorem recognizerSeedSetupCommand_toCore_exactly :
+    Lanius.FunctionalView.Core.Stateful.toCoreStmt
+      Lanius.FunctionalView.Core.Stateful.actionAdapter
+      recognizerSeedSetupLayout 11 recognizerSeedSetupCommand =
+      parserRecognizeSeedSetupStatement :=
+  (recognizerSeedSetupReification?.get
+    recognizerSeedSetupReification_exists).toCoreExactly
+
+private def setupSlot {arity : Nat} (index : Fin arity) :
+    Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
+  .reference (.slot index)
+
+private def setupLiteral {arity : Nat} (value : Int) :
+    Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
+  .reference (.literal (.signed .i32 value))
+
+private def setupConstant {arity : Nat} (id : ConstantId) :
+    Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
+  .apply (.constant id parserI32Type) []
+
+private def setupAdd {arity : Nat}
+    (left right : Lanius.FunctionalView.Term
+      Lanius.FunctionalView.Core.signature arity) :
+    Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
+  .apply (.binary .add parserI32Type parserI32Type parserI32Type) [left, right]
+
+private def setupIndex {arity : Nat}
+    (base index : Lanius.FunctionalView.Term
+      Lanius.FunctionalView.Core.signature arity) :
+    Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
+  .apply (.index (.slice parserI32Type) parserI32Type parserI32Type)
+    [base, index]
+
+private def setupHeader {arity : Nat} (id : ConstantId) (first : 0 < arity) :
+    Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
+  setupIndex (setupSlot ⟨0, first⟩) (setupConstant id)
+
+private def recognizerExpectedSeedSetupCommand :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 7 :=
+  .letValue parserI32Type (setupHeader 8 (by omega))
+    (.letValue parserI32Type (setupHeader 11 (by omega))
+      (.letValue parserI32Type (setupHeader 20 (by omega))
+        (.letValue parserI32Type (setupHeader 21 (by omega))
+          (.letValue parserI32Type (setupHeader 22 (by omega))
+            (.letValue parserI32Type
+              (setupIndex (setupSlot ⟨0, by omega⟩)
+                (setupAdd (setupSlot ⟨9, by omega⟩)
+                  (setupSlot ⟨8, by omega⟩)))
+              (.letValue parserI32Type
+                (setupIndex (setupSlot ⟨0, by omega⟩)
+                  (setupAdd (setupSlot ⟨10, by omega⟩)
+                    (setupSlot ⟨8, by omega⟩)))
+                (.letValue parserI32Type (setupLiteral 0)
+                  (.letValue parserI32Type (setupLiteral 0)
+                    initialContinuationCommand))))))))
+
+private theorem recognizerSeedSetupCommand_shape :
+    recognizerSeedSetupCommand = recognizerExpectedSeedSetupCommand := by
+  apply parserFunctionalCommandMatches_sound
+  native_decide
+
+/-- Functional values live before local 11 is bound. -/
+def recognizerSeedSetupEnvironment
+    (words : List Int) (tokens : List Nat) (workspaceValues : List Int)
+    (grammarCell tokensCell workspaceCell : CellId)
+    (workspaceLayout : WorkspaceLayout) : Lanius.FunctionalView.Env 7 :=
+  fun slot => [
+    parserGrammarValue words grammarCell,
+    parserTokensValue tokens tokensCell,
+    .signed .i32 (Int.ofNat tokens.length),
+    workspaceValue workspaceValues workspaceCell,
+    .signed .i32 (Int.ofNat (finalPosition workspaceLayout.tokenCount)),
+    .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)),
+    .signed .i32 (Int.ofNat workspaceLayout.capacity)].get slot
+
+private theorem setupTerm_evaluates_of_readOnly
+    {arity : Nat}
+    {world afterWorld : Lanius.FunctionalView.Core.ReadOnly.World}
+    {environment : Lanius.FunctionalView.Env arity}
+    {value : Value}
+    (term : Lanius.FunctionalView.Term
+      Lanius.FunctionalView.Core.signature arity)
+    (free : Lanius.FunctionalView.Core.Effectful.termCallFree term = true)
+    (evaluated : Lanius.FunctionalView.Term.evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
+      world environment term = .ok (value, afterWorld)) :
+    Lanius.FunctionalView.Term.evaluate
+      (positionTermMachine workspaceLayout grammar words tokens grammarCell
+        tokensCell)
+      world environment term = .ok (value, afterWorld) := by
+  let calls := RecognizerStateCallRegistry.calls workspaceLayout grammar words
+    tokens grammarCell tokensCell
+  have agreement :=
+    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
+      (program := verifiedParserCore) (calls := calls)
+      (world := world) (environment := environment) term free
+  exact agreement.trans evaluated
+
+private theorem setupHeader_evaluates
+    {arity : Nat} (first : 0 < arity)
+    (environment : Lanius.FunctionalView.Env arity)
+    (grammarValue : environment ⟨0, first⟩ =
+      parserGrammarValue words grammarCell)
+    (constantFound : verifiedParserCore.constant? constantId = some {
+      id := constantId
+      type := parserI32Type
+      value := .signed .i32 (Int.ofNat headerIndex)
+    })
+    (header : HeaderWord words headerIndex value) :
+    Lanius.FunctionalView.Term.evaluate
+      (positionTermMachine workspaceLayout grammar words tokens grammarCell
+        tokensCell)
+      (stateWorld words tokens workspaceValues grammarCell tokensCell
+        workspaceCell)
+      environment (setupHeader constantId first) =
+      .ok (.signed .i32 (Int.ofNat value),
+        stateWorld words tokens workspaceValues grammarCell tokensCell
+          workspaceCell) := by
+  apply setupTerm_evaluates_of_readOnly
+    (grammar := grammar) (tokens := tokens) (tokensCell := tokensCell)
+    (free := by rfl)
+  have baseResult : Lanius.FunctionalView.Term.evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
+      (stateWorld words tokens workspaceValues grammarCell tokensCell
+        workspaceCell)
+      environment (setupSlot ⟨0, first⟩) =
+      .ok (parserGrammarValue words grammarCell,
+        stateWorld words tokens workspaceValues grammarCell tokensCell
+          workspaceCell) := by
+    simp [setupSlot, Lanius.FunctionalView.Term.evaluate,
+      Lanius.FunctionalView.Ref.evaluate, grammarValue]
+  have constantResult :=
+    Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_constant
+      (program := verifiedParserCore)
+      (world := stateWorld words tokens workspaceValues grammarCell tokensCell
+        workspaceCell)
+      (environment := environment) (type := parserI32Type) constantFound
+  have indexResult : Lanius.FunctionalView.Term.evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
+      (stateWorld words tokens workspaceValues grammarCell tokensCell
+        workspaceCell)
+      environment (setupConstant constantId) =
+      .ok (.signed .i32 (Int.ofNat headerIndex),
+        stateWorld words tokens workspaceValues grammarCell tokensCell
+          workspaceCell) := by
+    simpa [setupConstant] using constantResult
+  simpa [setupHeader, setupIndex, parserGrammarValue, parserI32Type] using
+    Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_i32_index_as
+      (program := verifiedParserCore) baseResult indexResult
+      (stateWorld_finds_grammar (words := words) (tokens := tokens)
+        (workspaceValues := workspaceValues) (grammarCell := grammarCell)
+        (tokensCell := tokensCell) (workspaceCell := workspaceCell))
+      header.index_in_bounds header.get
+
+namespace InputGuardProof
+
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
+
+private abbrev T := Term signature 2
+private abbrev B := Block signature 2
+
+def layout : Layout 2
+  | ⟨0, _⟩ => 3
+  | ⟨1, _⟩ => 5
+
+def environment (tokensLength workspaceLength : Nat) : Env 2
+  | ⟨0, _⟩ => .signed .i32 (Int.ofNat tokensLength)
+  | ⟨1, _⟩ => .signed .i32 (Int.ofNat workspaceLength)
+
+def world : World := { i32Slice? := fun _ => none }
+
+private def slot (index : Fin 2) : T := reference index
+private def i32 (value : Int) : T := literal (.signed .i32 value)
+private def binary (operation : BinaryOp) (left right : T)
+    (result : Ty := .scalar .bool) : T :=
+  apply (.binary operation parserI32Type parserI32Type result) [left, right]
+private def disjunction (left right : T) : T := logicalOr left right
+
+def tokenNegative : T := binary .less (slot 0) (i32 0)
+def tokenTooLarge : T := binary .greater (slot 0) (i32 536870911)
+def workspaceNegative : T := binary .less (slot 1) (i32 0)
+
+def condition : T :=
+  disjunction (disjunction tokenNegative tokenTooLarge) workspaceNegative
+
+private def badResult : T :=
+  apply (.call extractedParserParseResultFunction.id
+      [parserI32Type, parserI32Type, parserI32Type, parserI32Type]
+      (.structure 0)) [
+    apply (.constant 4 parserI32Type) [],
+    i32 0,
+    apply (.unary .negate parserI32Type parserI32Type) [i32 1],
+    i32 0]
+
+private def badBranch : B :=
+  .sequence (.returnValue (some badResult)) .skip
+
+def block : B :=
+  .ifThenElse condition badBranch .skip
+
+private theorem badBranch_toCore_exactly :
+    toCoreStmt layout 6 badBranch = parserRecognizeBadInputBranch := by
+  rfl
+
+private theorem condition_toCore_exactly :
+    toCoreExpr layout condition =
+      .binary .logicalOr
         (.binary .logicalOr
           (.binary .less (.local 3) (.value (.signed .i32 0)))
           (.binary .greater (.local 3)
             (.value (.signed .i32 536870911))))
-        (.binary .less (.local 5) (.value (.signed .i32 0))))
-      (.boolean false) runtime := by
-  have tokenResult : Evaluates verifiedParserCore runtime (.local 3)
-      (.signed .i32 (Int.ofNat tokens.length)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 3 _
-      resources.tokenCountLocal⟩
-  have workspaceResult : Evaluates verifiedParserCore runtime (.local 5)
-      (.signed .i32 (Int.ofNat workspaceValues.length)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 5 _
-      resources.workspaceLengthLocal⟩
-  have zero : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
-  have maximum : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 536870911)) (.signed .i32 536870911) runtime :=
-    ⟨1, rfl⟩
-  have tokenNonnegative : Evaluates verifiedParserCore runtime
-      (.binary .less (.local 3) (.value (.signed .i32 0)))
-      (.boolean false) runtime := by
-    apply evaluatesEagerBinary (by decide) (by decide) tokenResult zero
-    simp [evalBinaryValue, evalSignedBinary]
+        (.binary .less (.local 5) (.value (.signed .i32 0))) := by
+  rfl
+
+theorem block_toCore_exactly :
+    toCoreStmt layout 6 block = parserRecognizeInputGuard := by
+  rw [extractedParserRecognize_input_guard_shape]
+  simp only [block, toCoreStmt]
+  rw [condition_toCore_exactly, badBranch_toCore_exactly]
+
+theorem environment_matches
+    (resources : RecognizerResources grammarLayout grammar words tokens
+      workspaceLayout workspaceValues grammarCell tokensCell workspaceCell
+      runtime) : EnvironmentMatches layout
+        (environment tokens.length workspaceValues.length) runtime := by
+  rintro ⟨index, bound⟩
+  have choices : index = 0 ∨ index = 1 := by omega
+  rcases choices with rfl | rfl
+  · simpa [layout, environment] using resources.tokenCountLocal
+  · simpa [layout, environment] using resources.workspaceLengthLocal
+
+theorem evaluates
+    (resources : RecognizerResources grammarLayout grammar words tokens
+      workspaceLayout workspaceValues grammarCell tokensCell workspaceCell
+      runtime) :
+    Block.evaluate (machine verifiedParserCore) world
+        (environment tokens.length workspaceValues.length) block =
+      .done .next world := by
   have tokenBound : tokens.length ≤ maxTokenCount := by
     rw [← resources.workspaceTokenCount]
     exact workspaceLayout.tokenBound
   have intTokenBound : Int.ofNat tokens.length ≤ 536870911 := by
     rw [show (536870911 : Int) = Int.ofNat 536870911 by rfl]
     exact Int.ofNat_le.mpr (by simpa [maxTokenCount] using tokenBound)
-  have tokenWithinMaximum : Evaluates verifiedParserCore runtime
-      (.binary .greater (.local 3) (.value (.signed .i32 536870911)))
-      (.boolean false) runtime := by
-    apply evaluatesEagerBinary (by decide) (by decide) tokenResult maximum
-    simp [evalBinaryValue, evalSignedBinary]
-    exact intTokenBound
-  have workspaceNonnegative : Evaluates verifiedParserCore runtime
-      (.binary .less (.local 5) (.value (.signed .i32 0)))
-      (.boolean false) runtime := by
-    apply evaluatesEagerBinary (by decide) (by decide) workspaceResult zero
-    simp [evalBinaryValue, evalSignedBinary]
-  have first := evaluatesPureLogicalOr tokenNonnegative tokenWithinMaximum
-  exact evaluatesPureLogicalOr first workspaceNonnegative
+  have conditionResult : Term.evaluate (machine verifiedParserCore) world
+      (environment tokens.length workspaceValues.length) condition =
+        .ok (.boolean false, world) := by
+    have tokenNonnegative : Term.evaluate (machine verifiedParserCore) world
+        (environment tokens.length workspaceValues.length) tokenNegative =
+          .ok (.boolean false, world) := by
+      have evaluated := Term.evaluate_i32_less_int
+        (program := verifiedParserCore) (world := world)
+        (environment := environment tokens.length workspaceValues.length)
+        (left := slot 0) (right := i32 0)
+        (leftValue := Int.ofNat tokens.length) (rightValue := 0)
+        (leftType := parserI32Type) (rightType := parserI32Type)
+        (outputType := .scalar .bool)
+        (by rfl) (by rfl)
+      have decided : decide (Int.ofNat tokens.length < 0) = false := by
+        simp
+      rw [decided] at evaluated
+      simpa [tokenNegative, binary,
+        Lanius.FunctionalView.Core.apply] using evaluated
+    have tokenWithinMaximum : Term.evaluate (machine verifiedParserCore) world
+        (environment tokens.length workspaceValues.length) tokenTooLarge =
+          .ok (.boolean false, world) := by
+      have notGreater : ¬ Int.ofNat tokens.length > 536870911 := by omega
+      have evaluated := Term.evaluate_i32_greater_int
+        (program := verifiedParserCore) (world := world)
+        (environment := environment tokens.length workspaceValues.length)
+        (left := slot 0) (right := i32 536870911)
+        (leftValue := Int.ofNat tokens.length) (rightValue := 536870911)
+        (leftType := parserI32Type) (rightType := parserI32Type)
+        (outputType := .scalar .bool)
+        (by rfl) (by rfl)
+      have decided : decide (Int.ofNat tokens.length > 536870911) = false := by
+        exact decide_eq_false notGreater
+      rw [decided] at evaluated
+      simpa [tokenTooLarge, binary,
+        Lanius.FunctionalView.Core.apply] using evaluated
+    have workspaceNonnegative : Term.evaluate (machine verifiedParserCore) world
+        (environment tokens.length workspaceValues.length) workspaceNegative =
+          .ok (.boolean false, world) := by
+      have evaluated := Term.evaluate_i32_less_int
+        (program := verifiedParserCore) (world := world)
+        (environment := environment tokens.length workspaceValues.length)
+        (left := slot 1) (right := i32 0)
+        (leftValue := Int.ofNat workspaceValues.length) (rightValue := 0)
+        (leftType := parserI32Type) (rightType := parserI32Type)
+        (outputType := .scalar .bool)
+        (by rfl) (by rfl)
+      have decided : decide (Int.ofNat workspaceValues.length < 0) = false := by
+        simp
+      rw [decided] at evaluated
+      simpa [workspaceNegative, binary,
+        Lanius.FunctionalView.Core.apply] using evaluated
+    have first := Term.evaluate_logicalOr_bool tokenNonnegative
+      tokenWithinMaximum
+    have all := Term.evaluate_logicalOr_bool first workspaceNonnegative
+    simpa [condition, disjunction,
+      Lanius.FunctionalView.Core.logicalOr] using all
+  simp [block, Block.evaluate, conditionResult]
+
+end InputGuardProof
+
+namespace WorkspaceGuardProof
+
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
+
+private abbrev T := Term signature 2
+private abbrev B := Block signature 2
+
+def layout : Layout 2
+  | ⟨0, _⟩ => 5
+  | ⟨1, _⟩ => 8
+
+def environment (workspaceLength stateBase : Nat) : Env 2
+  | ⟨0, _⟩ => .signed .i32 (Int.ofNat workspaceLength)
+  | ⟨1, _⟩ => .signed .i32 (Int.ofNat stateBase)
+
+def world : World := { i32Slice? := fun _ => none }
+
+private def slot (index : Fin 2) : T := reference index
+private def i32 (value : Int) : T := literal (.signed .i32 value)
+private def less (left right : T) : T :=
+  apply (.binary .less parserI32Type parserI32Type (.scalar .bool))
+    [left, right]
+
+def condition : T := less (slot 0) (slot 1)
+
+private def fullResult : T :=
+  apply (.call extractedParserParseResultFunction.id
+      [parserI32Type, parserI32Type, parserI32Type, parserI32Type]
+      (.structure 0)) [
+    apply (.constant 2 parserI32Type) [],
+    i32 0,
+    apply (.unary .negate parserI32Type parserI32Type) [i32 1],
+    i32 0]
+
+private def fullBranch : B :=
+  .sequence (.returnValue (some fullResult)) .skip
+
+def block : B :=
+  .ifThenElse condition fullBranch .skip
+
+private theorem condition_toCore_exactly :
+    toCoreExpr layout condition =
+      .binary .less (.local 5) (.local 8) := by
+  rfl
+
+private theorem fullBranch_toCore_exactly :
+    toCoreStmt layout 9 fullBranch = parserRecognizeBadWorkspaceBranch := by
+  rfl
+
+theorem block_toCore_exactly :
+    toCoreStmt layout 9 block = parserRecognizeWorkspaceGuard := by
+  rw [extractedParserRecognize_workspace_guard_shape]
+  simp only [block, toCoreStmt]
+  rw [condition_toCore_exactly, fullBranch_toCore_exactly]
+
+theorem environment_matches
+    (workspaceLength stateBaseValue : Nat)
+    (workspaceLocal : state.local? 5 =
+      some (.signed .i32 (Int.ofNat workspaceLength)))
+    (stateBaseLocal : state.local? 8 =
+      some (.signed .i32 (Int.ofNat stateBaseValue))) :
+    EnvironmentMatches layout
+      (environment workspaceLength stateBaseValue) state := by
+  rintro ⟨index, bound⟩
+  have choices : index = 0 ∨ index = 1 := by omega
+  rcases choices with rfl | rfl
+  · simpa [layout, environment] using workspaceLocal
+  · simpa [layout, environment] using stateBaseLocal
+
+theorem evaluates (workspaceLength stateBaseValue : Nat)
+    (baseFits : stateBaseValue ≤ workspaceLength) :
+    Block.evaluate (machine verifiedParserCore) world
+        (environment workspaceLength stateBaseValue) block =
+      .done .next world := by
+  have conditionResult : Term.evaluate (machine verifiedParserCore) world
+      (environment workspaceLength stateBaseValue) condition =
+        .ok (.boolean false, world) := by
+    have evaluated := Term.evaluate_i32_less
+      (program := verifiedParserCore) (world := world)
+      (environment := environment workspaceLength stateBaseValue)
+      (left := slot 0) (right := slot 1)
+      (leftValue := workspaceLength) (rightValue := stateBaseValue)
+      (leftType := parserI32Type) (rightType := parserI32Type)
+      (outputType := .scalar .bool)
+      (by rfl) (by rfl)
+    have notLess : ¬ workspaceLength < stateBaseValue := by omega
+    have decided : decide (workspaceLength < stateBaseValue) = false :=
+      decide_eq_false notLess
+    rw [decided] at evaluated
+    simpa [condition, less, Lanius.FunctionalView.Core.apply] using evaluated
+  simp [block, Block.evaluate, conditionResult]
+
+theorem executes
+    (workspaceLength stateBaseValue : Nat)
+    (workspaceLocal : state.local? 5 =
+      some (.signed .i32 (Int.ofNat workspaceLength)))
+    (stateBaseLocal : state.local? 8 =
+      some (.signed .i32 (Int.ofNat stateBaseValue)))
+    (baseFits : stateBaseValue ≤ workspaceLength) :
+    Executes verifiedParserCore state parserRecognizeWorkspaceGuard .next state := by
+  have represented : World.Represents world state := by
+    intro _ _ found
+    simp [world] at found
+  have sound := Lanius.FunctionalView.Core.block_executes_without_locals
+    (nextLocal := 9)
+    (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
+    represented
+    (environment_matches workspaceLength stateBaseValue workspaceLocal
+      stateBaseLocal) (by rfl)
+    (evaluates workspaceLength stateBaseValue baseFits)
+  rw [block_toCore_exactly] at sound
+  simpa [Lanius.FunctionalView.Core.toCoreCompletion] using sound.1
+
+end WorkspaceGuardProof
 
 theorem RecognizerResources.input_guard_executes
     (resources : RecognizerResources grammarLayout grammar words tokens
@@ -179,9 +589,17 @@ theorem RecognizerResources.input_guard_executes
       runtime) :
     Executes verifiedParserCore runtime parserRecognizeInputGuard .next
       runtime := by
-  rw [extractedParserRecognize_input_guard_shape]
-  exact executesIfFalse resources.input_guard_evaluates_false
-    (executesSkip verifiedParserCore runtime)
+  have represented : Lanius.FunctionalView.Core.ReadOnly.World.Represents
+      InputGuardProof.world runtime := by
+    intro _ _ found
+    simp [InputGuardProof.world] at found
+  have sound := Lanius.FunctionalView.Core.block_executes_without_locals
+    (nextLocal := 6)
+    (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
+    represented (InputGuardProof.environment_matches resources) (by rfl)
+    (InputGuardProof.evaluates resources)
+  rw [InputGuardProof.block_toCore_exactly] at sound
+  simpa [Lanius.FunctionalView.Core.toCoreCompletion] using sound.1
 
 /-- Function-entry resources add the one ownership fact that cannot be
     reconstructed from representation values alone: the caller's six local
@@ -1472,16 +1890,11 @@ noncomputable def executeRecognizerAfterGrammarGuard
   have workspaceLengthEvaluation : Evaluates verifiedParserCore r8 (.local 5)
       (.signed .i32 (Int.ofNat workspaceLayout.workspaceLength)) r8 :=
     ⟨1, evalLocal_of_local 1 verifiedParserCore r8 5 _ workspaceLengthAt8⟩
-  have workspaceGuardCondition : Evaluates verifiedParserCore r8
-      (.binary .less (.local 5) (.local 8)) (.boolean false) r8 := by
-    apply evaluatesEagerBinary (by decide) (by decide)
-      workspaceLengthEvaluation stateBaseLocalEvaluation
-    simp [evalBinaryValue, evalSignedBinary, workspaceLayout.baseFits]
   have workspaceGuardExecution : Executes verifiedParserCore r8
       parserRecognizeWorkspaceGuard .next r8 := by
-    rw [extractedParserRecognize_workspace_guard_shape]
-    exact executesIfFalse workspaceGuardCondition
-      (executesSkip verifiedParserCore r8)
+    exact WorkspaceGuardProof.executes workspaceLayout.workspaceLength
+      (stateBase workspaceLayout.tokenCount) workspaceLengthAt8 stateBaseLocal
+      workspaceLayout.baseFits
   have suffixBound : workspaceLayout.workspaceLength -
       stateBase workspaceLayout.tokenCount ≤ 2147483647 := by
     exact Nat.le_trans (Nat.sub_le _ _) workspaceLayout.workspaceI32
@@ -1666,7 +2079,7 @@ noncomputable def executeRecognizer
       workspaceValues grammarCell tokensCell workspaceCell before := by
   let validation := entry.grammar_validation_invariant
   have guardResult :=
-    parserRecognizeGrammarGuard_executes before entry.resources.grammarLocal
+    GrammarGuardBlock.executes_valid before entry.resources.grammarLocal
       entry.resources.grammarLengthLocal validation entry.resources.wellFormed
   let afterGuard := Classical.choose guardResult
   have guardFacts := Classical.choose_spec guardResult
@@ -1764,6 +2177,22 @@ theorem RecognizerExecution.returns_result
       (.returned (some execution.outcome.resultValue)) execution.after := by
   rw [← execution.outcome.completion_eq_returned]
   exact execution.execution
+
+/-- The existing semantic recognizer execution is already execution of the
+    complete mechanically recovered FunctionalView command after lowering.
+    This is the migration bridge: subsequent loop proofs replace structural
+    fragments without changing the source artifact or public result theorem. -/
+theorem RecognizerExecution.executes_view_lowering
+    (execution : RecognizerExecution grammarLayout grammar words tokens
+      workspaceLayout workspaceValues grammarCell tokensCell workspaceCell
+      before) :
+    Executes verifiedParserCore before
+      (Lanius.FunctionalView.Core.Stateful.toCoreStmt
+        Lanius.FunctionalView.Core.Stateful.actionAdapter
+        parserRecognizeParameterLayout 6 parserRecognizeView.command)
+      (.returned (some execution.outcome.resultValue)) execution.after := by
+  rw [parserRecognizeView_toCore_exactly]
+  exact execution.returns_result
 
 def parserRecognizeValues
     (words : List Int) (tokens : List Nat) (workspaceValues : List Int)

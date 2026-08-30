@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedParserScan
+import Lanius.Extraction.VerifiedParserScanFunctionalView
 import Lanius.Extraction.VerifiedParserValidation
 import Lanius.Extraction.VerifiedParserAppend
 import Lanius.Extraction.VerifiedParserResult
@@ -589,72 +589,6 @@ theorem extractedParserRecognize_initial_loop_body_shape :
             (.binary .add (.local 15) (.local 16)) (.local 19)))
         parserRecognizeInitialAppendStatement := by
   rfl
-
-/-- The exact validator call at recognizer entry returns true for every
-    semantically encoded grammar accepted by the verified invariant. -/
-theorem parserRecognizeGrammarValidCall_accepts_encoded
-    (state : State)
-    (grammarLocal : state.local? 0 =
-      some (parserGrammarValue words grammarCell))
-    (grammarLengthLocal : state.local? 1 =
-      some (.signed .i32 (Int.ofNat words.length)))
-    (invariant : GrammarValidationInvariant layout grammar words grammarCell
-      (parserGrammarValidCallee state words grammarCell))
-    (stateWellFormed : StateWellFormed state) :
-    ∃ after,
-      Evaluates verifiedParserCore state parserRecognizeGrammarValidCall
-        (.boolean true) after ∧
-      ModifiesOnly CellSet.empty state after ∧
-      StateWellFormed after := by
-  have grammarResult : Evaluates verifiedParserCore state (.local 0)
-      (parserGrammarValue words grammarCell) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 0 _ grammarLocal⟩
-  have lengthResult : Evaluates verifiedParserCore state (.local 1)
-      (.signed .i32 (Int.ofNat words.length)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 1 _
-      grammarLengthLocal⟩
-  have arguments : ArgumentsEvaluateTo verifiedParserCore state
-      parserRecognizeGrammarValidArguments [
-        parserGrammarValue words grammarCell,
-        .signed .i32 (Int.ofNat words.length)] state :=
-    ArgumentsEvaluateTo.cons grammarResult
-      (ArgumentsEvaluateTo.singleton lengthResult)
-  simpa [parserRecognizeGrammarValidCall] using
-    extractedParserGrammarValidCall_accepts_encoded state state
-      parserRecognizeGrammarValidArguments arguments invariant stateWellFormed
-
-/-- Consequently, the artifact's initial bad-grammar branch falls through to
-    the recognizer proper.  The state is the validator call's restored caller
-    state, not an assumed no-op state. -/
-theorem parserRecognizeGrammarGuard_executes
-    (state : State)
-    (grammarLocal : state.local? 0 =
-      some (parserGrammarValue words grammarCell))
-    (grammarLengthLocal : state.local? 1 =
-      some (.signed .i32 (Int.ofNat words.length)))
-    (invariant : GrammarValidationInvariant layout grammar words grammarCell
-      (parserGrammarValidCallee state words grammarCell))
-    (stateWellFormed : StateWellFormed state) :
-    ∃ after,
-      Executes verifiedParserCore state parserRecognizeGrammarGuard
-        .next after ∧
-      ModifiesOnly CellSet.empty state after ∧
-      StateWellFormed after := by
-  obtain ⟨after, call, effect, afterWellFormed⟩ :=
-    parserRecognizeGrammarValidCall_accepts_encoded state grammarLocal
-      grammarLengthLocal invariant stateWellFormed
-  have condition : Evaluates verifiedParserCore state
-      (.unary .logicalNot parserRecognizeGrammarValidCall)
-      (.boolean false) after := by
-    apply evaluatesUnary call
-    simp [evalUnaryValue]
-  refine ⟨after, ?_, effect, afterWellFormed⟩
-  have guard : Executes verifiedParserCore state
-      (.ifThenElse (.unary .logicalNot parserRecognizeGrammarValidCall)
-    parserRecognizeBadGrammarBranch .skip) .next after :=
-    executesIfFalse condition (executesSkip verifiedParserCore after)
-  rw [extractedParserRecognize_grammar_guard_shape]
-  exact guard
 
 /-- Semantic bridge for the exact call expression found above.  A future
     whole-recognizer loop invariant only has to establish the five call-site
@@ -1596,6 +1530,17 @@ structure RecognizerSeededAppendResult
     (beforeFrame : RecognizerAppendFrame grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell before position) where
+  argumentsState : State
+  argumentsEvaluation : ArgumentsEvaluateTo verifiedParserCore before
+    (recognizerAppendArguments positionExpr seedExpr) [
+      workspaceValue workspaceValues workspaceCell,
+      .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)),
+      .signed .i32 (Int.ofNat workspaceLayout.capacity),
+      .signed .i32 (Int.ofNat position), stateSeedValue seed,
+      .signed .i32 (Int.ofNat workspace.states.length)] argumentsState
+  argumentsInvariant : RecognizerInvariant grammarLayout grammar words tokens
+    workspaceLayout workspace workspaceValues grammarCell tokensCell
+    workspaceCell argumentsState
   after : State
   evaluation : Evaluates verifiedParserCore before
     (recognizerAppendCall positionExpr seedExpr)
@@ -1684,6 +1629,9 @@ noncomputable def RecognizerAppendFrame.evaluate_seeded_append
       exact frame.stateCountBackingDistinct.2.2
         (member.symm.trans written))
   exact {
+    argumentsState := afterSeed
+    argumentsEvaluation := argumentsResult
+    argumentsInvariant := afterSeedInvariant
     after := appended.after
     evaluation := by
       simpa [recognizerAppendCall] using appended.evaluation
@@ -2488,6 +2436,20 @@ structure RecognizerTerminalAppendResult
       words tokens workspaceLayout workspace workspaceValues grammarCell
       tokensCell workspaceCell stateCountCell before position semanticKind
       nextPosition production dot origin stateId) where
+  argumentsState : State
+  argumentsEvaluation : ArgumentsEvaluateTo verifiedParserCore before
+    parserRecognizeTerminalAppendArguments [
+      workspaceValue workspaceValues workspaceCell,
+      .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)),
+      .signed .i32 (Int.ofNat workspaceLayout.capacity),
+      .signed .i32 (Int.ofNat nextPosition),
+      stateSeedValue
+        (recognizerTerminalSeed production dot origin stateId position
+          semanticKind),
+      .signed .i32 (Int.ofNat workspace.states.length)] argumentsState
+  argumentsInvariant : RecognizerInvariant grammarLayout grammar words tokens
+    workspaceLayout workspace workspaceValues grammarCell tokensCell
+    workspaceCell argumentsState
   after : State
   evaluation : Evaluates verifiedParserCore before
     parserRecognizeTerminalAppendCall
@@ -2556,6 +2518,11 @@ noncomputable def RecognizerTerminalAppendInvariant.evaluate_append
     nextPositionResult
     seedEvaluation seedEffect (by simpa [afterSeed] using seedContract.2.2)
   exact {
+    argumentsState := appended.argumentsState
+    argumentsEvaluation := by
+      simpa [parserRecognizeTerminalAppendArguments, recognizerAppendArguments,
+        seed] using appended.argumentsEvaluation
+    argumentsInvariant := appended.argumentsInvariant
     after := appended.after
     evaluation := by
       simpa [parserRecognizeTerminalAppendCall,
@@ -4889,168 +4856,6 @@ def RecognizerInitialConfig.measure
       workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
       indexCell first count) : Nat :=
   count - config.index
-
-abbrev RecognizerInitialResult
-    (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
-    (words : List Int) (tokens : List Nat)
-    (workspaceLayout : WorkspaceLayout)
-    (grammarCell tokensCell workspaceCell stateCountCell indexCell : CellId)
-    (first count : Nat) :
-    RecognizerInitialConfig grammarLayout grammar words tokens workspaceLayout
-      grammarCell tokensCell workspaceCell stateCountCell indexCell first count →
-      Completion → State → Prop :=
-  fun config completion after =>
-    RecognizerInitialLoopOutcome grammarLayout grammar words tokens
-      workspaceLayout config.workspace grammarCell tokensCell workspaceCell stateCountCell
-      indexCell first count after completion
-
-/-- One local decision for the initial-seeding loop.  The common loop driver
-    owns recursion and semantic `while` assembly; this function only decides
-    whether the next append advances, returns capacity-full, or exits. -/
-noncomputable def RecognizerInitialConfig.decide
-    (config : RecognizerInitialConfig grammarLayout grammar words tokens
-      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
-      indexCell first count) :
-    LoopVerification.Decision verifiedParserCore
-      (.binary .less (.local 19) (.local 17))
-      parserRecognizeInitialLoopBody
-      (recognizerInitialWrites workspaceCell stateCountCell indexCell)
-      (RecognizerInitialConfig grammarLayout grammar words tokens
-        workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
-        indexCell first count)
-      RecognizerInitialConfig.runtime RecognizerInitialConfig.measure
-      (RecognizerInitialResult grammarLayout grammar words tokens
-        workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
-        indexCell first count) config := by
-  by_cases done : config.index = count
-  · apply LoopVerification.Decision.exit
-    exact {
-      completion := .next
-      after := config.runtime
-      edge := {
-        semantic := .conditionFalse
-          (config.invariant.condition_false (by omega))
-        effect := ModifiesOnly.reflAny
-          (recognizerInitialWrites workspaceCell stateCountCell indexCell)
-          config.runtime
-      }
-      result := .completed config.workspace config.workspaceValues
-        config.runtime (.refl config.workspace)
-        (by simpa [done] using config.invariant)
-    }
-  · have indexBound : config.index < count := by
-      have := config.invariant.indexLe
-      omega
-    let rowBound : first + config.index < grammar.lhsProductions.length := by
-      have := config.invariant.rowRange
-      omega
-    let production := grammar.lhsProductions.get
-      ⟨first + config.index, rowBound⟩
-    let logical := appendLogical workspaceLayout.capacity 0
-      (recognizerInitialSeed production) config.workspace
-    cases statusEq : logical.1.status with
-    | ok =>
-        have statusOk : (appendLogical workspaceLayout.capacity 0
-            (recognizerInitialSeed production) config.workspace).1.status =
-            .ok := by
-          simpa [logical]
-        let step := config.invariant.execute_ok_step indexBound (by
-          simpa [production, rowBound] using statusOk)
-        let next : RecognizerInitialConfig grammarLayout grammar words tokens
-            workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
-            indexCell first count := {
-          workspace := (appendLogical workspaceLayout.capacity 0
-            (recognizerInitialSeed production) config.workspace).2
-          workspaceValues := appendResultValues workspaceLayout config.workspace
-            0 (recognizerInitialSeed production) config.workspaceValues
-          runtime := step.after
-          index := config.index + 1
-          invariant := by
-            simpa [production, rowBound] using step.invariant
-        }
-        apply LoopVerification.Decision.next next
-        · exact {
-            semantic := .next (config.invariant.condition_true indexBound)
-              step.execution
-            effect := by
-              simpa [recognizerInitialWrites] using step.effect
-          }
-        · simp only [WellFoundedRelation.rel,
-            RecognizerInitialConfig.measure, next]
-          change sizeOf (count - (config.index + 1)) <
-            sizeOf (count - config.index)
-          simpa using Nat.sub_lt_sub_left indexBound (Nat.lt_succ_self _)
-        · intro completion after outcome
-          exact outcome.prepend_growth
-            (WorkspaceAppendClosure.single workspaceLayout.capacity 0
-              (recognizerInitialSeed production) config.workspace)
-    | full =>
-        have statusFull : (appendLogical workspaceLayout.capacity 0
-            (recognizerInitialSeed production) config.workspace).1.status =
-            .full := by
-          simpa [logical]
-        let step := config.invariant.execute_full_step indexBound (by
-          simpa [production, rowBound] using statusFull)
-        let stateCount := (appendLogical workspaceLayout.capacity 0
-          (recognizerInitialSeed production) config.workspace).1.stateCount
-        apply LoopVerification.Decision.exit
-        exact {
-          completion := .returned (some
-            (parseResultValue 2 (Int.ofNat stateCount) (-1) 0))
-          after := step.after
-          edge := {
-            semantic := .returned (config.invariant.condition_true indexBound)
-              (by
-                simpa [stateCount, production, rowBound] using step.execution)
-            effect := by
-              exact step.effect.weaken (by
-                intro cell member
-                exact Or.inl member)
-          }
-          result := .full config.workspace config.workspaceValues step.after
-            (.refl config.workspace) step.invariant stateCount step.wellFormed
-        }
-
-/-- Total execution of the exact extracted start-production seeding loop.
-    It either consumes the complete row and re-establishes the loop invariant
-    at `index = count`, or propagates the exact capacity result from the first
-    full append.  Recursion is provided by the common well-founded driver. -/
-noncomputable def RecognizerInitialLoopInvariant.execute_loop
-    (invariant : RecognizerInitialLoopInvariant grammarLayout grammar words
-      tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell stateCountCell indexCell runtime first count index) :
-    RecognizerInitialLoopExecution grammarLayout grammar words tokens
-      workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell stateCountCell indexCell runtime first count index
-      invariant := by
-  let initial : RecognizerInitialConfig grammarLayout grammar words tokens
-      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
-      indexCell first count := {
-    workspace := workspace
-    workspaceValues := workspaceValues
-    runtime := runtime
-    index := index
-    invariant := invariant
-  }
-  let assembled := LoopVerification.run verifiedParserCore
-    (.binary .less (.local 19) (.local 17)) parserRecognizeInitialLoopBody
-    (recognizerInitialWrites workspaceCell stateCountCell indexCell)
-    (RecognizerInitialConfig grammarLayout grammar words tokens workspaceLayout
-      grammarCell tokensCell workspaceCell stateCountCell indexCell first count)
-    RecognizerInitialConfig.runtime RecognizerInitialConfig.measure
-    (RecognizerInitialResult grammarLayout grammar words tokens workspaceLayout
-      grammarCell tokensCell workspaceCell stateCountCell indexCell first count)
-    RecognizerInitialConfig.decide initial
-  exact {
-    after := assembled.after
-    completion := assembled.completion
-    execution := by
-      rw [extractedParserRecognize_initial_loop_shape]
-      exact assembled.trace.executes
-    effect := by
-      simpa [recognizerInitialWrites] using assembled.trace.modifiesOnly
-    outcome := assembled.result
-  }
 
 theorem RecognizerTerminalInvariant.scan_entry
     (invariant : RecognizerTerminalInvariant grammarLayout grammar words tokens

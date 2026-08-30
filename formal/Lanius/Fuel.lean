@@ -1325,6 +1325,45 @@ theorem execStmt_done_at_larger_fuel
   rw [Nat.sub_add_cancel enough] at stable
   exact stable.trans result
 
+/-- Successful structural expression evaluation is functional even when two
+    proofs use different fuel witnesses.  Both observations are replayed at
+    their common maximum before executable determinism is applied. -/
+theorem evaluates_deterministic
+    (left : Evaluates program state expression leftValue leftState)
+    (right : Evaluates program state expression rightValue rightState) :
+    leftValue = rightValue ∧ leftState = rightState := by
+  obtain ⟨leftFuel, leftResult⟩ := left
+  obtain ⟨rightFuel, rightResult⟩ := right
+  let common := max leftFuel rightFuel
+  have leftCommon : evalExpr common program state expression =
+      .done leftValue leftState :=
+    evalExpr_done_at_larger_fuel (Nat.le_max_left _ _) leftResult
+  have rightCommon : evalExpr common program state expression =
+      .done rightValue rightState :=
+    evalExpr_done_at_larger_fuel (Nat.le_max_right _ _) rightResult
+  have same := leftCommon.symm.trans rightCommon
+  injection same with valueEq stateEq
+  exact ⟨valueEq, stateEq⟩
+
+/-- Successful structural statement execution is likewise functional across
+    independently chosen fuel witnesses. -/
+theorem executes_deterministic
+    (left : Executes program state statement leftCompletion leftState)
+    (right : Executes program state statement rightCompletion rightState) :
+    leftCompletion = rightCompletion ∧ leftState = rightState := by
+  obtain ⟨leftFuel, leftResult⟩ := left
+  obtain ⟨rightFuel, rightResult⟩ := right
+  let common := max leftFuel rightFuel
+  have leftCommon : execStmt common program state statement =
+      .done leftCompletion leftState :=
+    execStmt_done_at_larger_fuel (Nat.le_max_left _ _) leftResult
+  have rightCommon : execStmt common program state statement =
+      .done rightCompletion rightState :=
+    execStmt_done_at_larger_fuel (Nat.le_max_right _ _) rightResult
+  have same := leftCommon.symm.trans rightCommon
+  injection same with completionEq stateEq
+  exact ⟨completionEq, stateEq⟩
+
 /-- A whole-program observation is terminal exactly when it is a return,
     explicit exit, or trap. Fuel exhaustion is not an observation of the
     language program. -/

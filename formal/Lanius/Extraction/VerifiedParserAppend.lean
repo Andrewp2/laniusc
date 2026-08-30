@@ -1,4 +1,5 @@
 import Lanius.Extraction.VerifiedParserFind
+import Lanius.FunctionalViewCoreReadOnly
 
 namespace Lanius.Extraction.ParserAppend
 
@@ -112,6 +113,66 @@ theorem verifiedParserCore_finds_stateSeed :
     extractedParserStateSeedWire
   rfl
 
+namespace StateSeedProof
+
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
+
+def world : World := { i32Slice? := fun _ => none }
+
+def environment (seed : StateSeed) : Env 7
+  | ⟨0, _⟩ => .signed .i32 (Int.ofNat seed.production)
+  | ⟨1, _⟩ => .signed .i32 (Int.ofNat seed.dot)
+  | ⟨2, _⟩ => .signed .i32 (Int.ofNat seed.origin)
+  | ⟨3, _⟩ => .signed .i32 (previousValue seed.previous)
+  | ⟨4, _⟩ => .signed .i32 (childTag seed.child)
+  | ⟨5, _⟩ => .signed .i32 (childPayload seed.child)
+  | ⟨6, _⟩ => .signed .i32 (childKind seed.child)
+
+theorem parameterBindings_eq (seed : StateSeed) :
+    Lanius.FunctionalView.Core.parameterBindings (environment seed) =
+      parserStateSeedBindings seed := by
+  apply List.ext_getElem
+  · simp [parserStateSeedBindings]
+  · intro index leftBound rightBound
+    have alternatives : index = 0 ∨ index = 1 ∨ index = 2 ∨ index = 3 ∨
+        index = 4 ∨ index = 5 ∨ index = 6 := by
+      simp [parserStateSeedBindings] at rightBound
+      omega
+    rcases alternatives with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [Lanius.FunctionalView.Core.parameterBindings_getElem,
+        parserStateSeedBindings, environment]
+
+private def resultTerm : Term Lanius.FunctionalView.Core.signature 7 :=
+  .apply (.structValue 1 (List.replicate 7 parserI32Type)) [
+    .reference (.slot ⟨0, by omega⟩),
+    .reference (.slot ⟨1, by omega⟩),
+    .reference (.slot ⟨2, by omega⟩),
+    .reference (.slot ⟨3, by omega⟩),
+    .reference (.slot ⟨4, by omega⟩),
+    .reference (.slot ⟨5, by omega⟩),
+    .reference (.slot ⟨6, by omega⟩)]
+
+def body : Block Lanius.FunctionalView.Core.signature 7 :=
+  .sequence (.returnValue (some resultTerm)) .skip
+
+theorem body_toCore_exactly :
+    toCoreStmt (identityLayout (arity := 7)) 7 body =
+      parserStateSeedBody := by
+  rfl
+
+theorem evaluates (seed : StateSeed) :
+    Block.evaluate (machine verifiedParserCore) world (environment seed) body =
+      .done (.returned (some (stateSeedValue seed))) world := by
+  rfl
+
+theorem world_represents (state : State) : World.Represents world state := by
+  intro _ _ found
+  simp [world] at found
+
+end StateSeedProof
+
 /-- Store-pure contract for the extracted seven-field `state_seed`
     constructor. This is shared by every `append_state` site in the
     recognizer, rather than reproving its fresh call-local allocations in each
@@ -137,126 +198,24 @@ theorem extractedParserStateSeedCall_contract
       parserStateSeedBindings] using
       (enterCall_preserves_wellFormed
         (bindings := bindings) afterArgumentsWellFormed)
-  have local0 : Evaluates verifiedParserCore callee (.local 0)
-      (.signed .i32 (Int.ofNat seed.production)) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 0 _ (by
-      simpa [callee, parserStateSeedCallee, bindings,
-        parserStateSeedBindings, parserStateSeedArgumentsValues] using
-        (enterCall_local_of_binding afterArguments [] [
-          (1, .signed .i32 (Int.ofNat seed.dot)),
-          (2, .signed .i32 (Int.ofNat seed.origin)),
-          (3, .signed .i32 (previousValue seed.previous)),
-          (4, .signed .i32 (childTag seed.child)),
-          (5, .signed .i32 (childPayload seed.child)),
-          (6, .signed .i32 (childKind seed.child))]
-          0 (.signed .i32 (Int.ofNat seed.production))
-          afterArgumentsWellFormed (by simp)))⟩
-  have local1 : Evaluates verifiedParserCore callee (.local 1)
-      (.signed .i32 (Int.ofNat seed.dot)) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 1 _ (by
-      simpa [callee, parserStateSeedCallee, bindings,
-        parserStateSeedBindings, parserStateSeedArgumentsValues] using
-        (enterCall_local_of_binding afterArguments [
-          (0, .signed .i32 (Int.ofNat seed.production))] [
-          (2, .signed .i32 (Int.ofNat seed.origin)),
-          (3, .signed .i32 (previousValue seed.previous)),
-          (4, .signed .i32 (childTag seed.child)),
-          (5, .signed .i32 (childPayload seed.child)),
-          (6, .signed .i32 (childKind seed.child))]
-          1 (.signed .i32 (Int.ofNat seed.dot))
-          afterArgumentsWellFormed (by simp)))⟩
-  have local2 : Evaluates verifiedParserCore callee (.local 2)
-      (.signed .i32 (Int.ofNat seed.origin)) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 2 _ (by
-      simpa [callee, parserStateSeedCallee, bindings,
-        parserStateSeedBindings, parserStateSeedArgumentsValues] using
-        (enterCall_local_of_binding afterArguments [
-          (0, .signed .i32 (Int.ofNat seed.production)),
-          (1, .signed .i32 (Int.ofNat seed.dot))] [
-          (3, .signed .i32 (previousValue seed.previous)),
-          (4, .signed .i32 (childTag seed.child)),
-          (5, .signed .i32 (childPayload seed.child)),
-          (6, .signed .i32 (childKind seed.child))]
-          2 (.signed .i32 (Int.ofNat seed.origin))
-          afterArgumentsWellFormed (by simp)))⟩
-  have local3 : Evaluates verifiedParserCore callee (.local 3)
-      (.signed .i32 (previousValue seed.previous)) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 3 _ (by
-      simpa [callee, parserStateSeedCallee, bindings,
-        parserStateSeedBindings, parserStateSeedArgumentsValues] using
-        (enterCall_local_of_binding afterArguments [
-          (0, .signed .i32 (Int.ofNat seed.production)),
-          (1, .signed .i32 (Int.ofNat seed.dot)),
-          (2, .signed .i32 (Int.ofNat seed.origin))] [
-          (4, .signed .i32 (childTag seed.child)),
-          (5, .signed .i32 (childPayload seed.child)),
-          (6, .signed .i32 (childKind seed.child))]
-          3 (.signed .i32 (previousValue seed.previous))
-          afterArgumentsWellFormed (by simp)))⟩
-  have local4 : Evaluates verifiedParserCore callee (.local 4)
-      (.signed .i32 (childTag seed.child)) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 4 _ (by
-      simpa [callee, parserStateSeedCallee, bindings,
-        parserStateSeedBindings, parserStateSeedArgumentsValues] using
-        (enterCall_local_of_binding afterArguments [
-          (0, .signed .i32 (Int.ofNat seed.production)),
-          (1, .signed .i32 (Int.ofNat seed.dot)),
-          (2, .signed .i32 (Int.ofNat seed.origin)),
-          (3, .signed .i32 (previousValue seed.previous))] [
-          (5, .signed .i32 (childPayload seed.child)),
-          (6, .signed .i32 (childKind seed.child))]
-          4 (.signed .i32 (childTag seed.child))
-          afterArgumentsWellFormed (by simp)))⟩
-  have local5 : Evaluates verifiedParserCore callee (.local 5)
-      (.signed .i32 (childPayload seed.child)) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 5 _ (by
-      simpa [callee, parserStateSeedCallee, bindings,
-        parserStateSeedBindings, parserStateSeedArgumentsValues] using
-        (enterCall_local_of_binding afterArguments [
-          (0, .signed .i32 (Int.ofNat seed.production)),
-          (1, .signed .i32 (Int.ofNat seed.dot)),
-          (2, .signed .i32 (Int.ofNat seed.origin)),
-          (3, .signed .i32 (previousValue seed.previous)),
-          (4, .signed .i32 (childTag seed.child))] [
-          (6, .signed .i32 (childKind seed.child))]
-          5 (.signed .i32 (childPayload seed.child))
-          afterArgumentsWellFormed (by simp)))⟩
-  have local6 : Evaluates verifiedParserCore callee (.local 6)
-      (.signed .i32 (childKind seed.child)) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 6 _ (by
-      simpa [callee, parserStateSeedCallee, bindings,
-        parserStateSeedBindings, parserStateSeedArgumentsValues] using
-        (enterCall_local_of_binding afterArguments [
-          (0, .signed .i32 (Int.ofNat seed.production)),
-          (1, .signed .i32 (Int.ofNat seed.dot)),
-          (2, .signed .i32 (Int.ofNat seed.origin)),
-          (3, .signed .i32 (previousValue seed.previous)),
-          (4, .signed .i32 (childTag seed.child)),
-          (5, .signed .i32 (childPayload seed.child))] []
-          6 (.signed .i32 (childKind seed.child))
-          afterArgumentsWellFormed (by simp)))⟩
-  have fields : ArgumentsEvaluateTo verifiedParserCore callee
-      [.local 0, .local 1, .local 2, .local 3, .local 4, .local 5, .local 6]
-      (parserStateSeedArgumentsValues seed)
-      callee := by
-    simpa [parserStateSeedArgumentsValues] using
-      ArgumentsEvaluateTo.cons local0
-        (ArgumentsEvaluateTo.cons local1
-          (ArgumentsEvaluateTo.cons local2
-            (ArgumentsEvaluateTo.cons local3
-              (ArgumentsEvaluateTo.cons local4
-                (ArgumentsEvaluateTo.cons local5
-                  (ArgumentsEvaluateTo.singleton local6))))))
-  have constructed : Evaluates verifiedParserCore callee parserStateSeedExpr
-      (stateSeedValue seed) callee := by
-    simpa [parserStateSeedExpr, stateSeedValue,
-      parserStateSeedArgumentsValues] using
-      (evaluatesStructValue (typeId := 1) fields)
-  have bodyResult : Executes verifiedParserCore callee parserStateSeedBody
-      (.returned (some (stateSeedValue seed))) callee := by
-    simpa [parserStateSeedBody] using
-      (executesSequenceReturned (second := Stmt.skip)
-        (executesReturnValue constructed))
+  have environmentMatches :
+      Lanius.FunctionalView.Core.EnvironmentMatches
+        (Lanius.FunctionalView.Core.identityLayout (arity := 7))
+        (StateSeedProof.environment seed) callee := by
+    simpa [callee, parserStateSeedCallee, bindings,
+      StateSeedProof.parameterBindings_eq] using
+      (Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
+        (environment := StateSeedProof.environment seed)
+        afterArgumentsWellFormed)
+  have functionalBodyResult : Executes verifiedParserCore callee
+      parserStateSeedBody (.returned (some (stateSeedValue seed))) callee := by
+    have sound := Lanius.FunctionalView.Core.block_executes_without_locals
+      (nextLocal := 7)
+      (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
+      (StateSeedProof.world_represents callee) environmentMatches (by rfl)
+      (StateSeedProof.evaluates seed)
+    rw [StateSeedProof.body_toCore_exactly] at sound
+    exact sound.1
   have evaluation : Evaluates verifiedParserCore before
       (.call extractedParserStateSeedFunction.id arguments)
       (stateSeedValue seed) after := by
@@ -267,7 +226,7 @@ theorem extractedParserStateSeedCall_contract
     · exact extractedParserStateSeed_function_shape.2.2.2.1
     · simpa [after, callee, parserStateSeedCallee, bindings,
         parserStateSeedBindings, parserStateSeedArgumentsValues] using
-        bodyResult
+        functionalBodyResult
   have entered : StoreEffect CellSet.empty afterArguments callee := by
     simpa [callee, parserStateSeedCallee, bindings,
       parserStateSeedBindings] using enterCall_effect afterArguments bindings
@@ -351,6 +310,51 @@ theorem verifiedParserCore_finds_appendResult :
   unfold verifiedParserCore extractedParserAppendResultFunction
     extractedParserAppendResultWire
   rfl
+
+namespace AppendResultProof
+
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
+
+def world : World := { i32Slice? := fun _ => none }
+
+def environment
+    (status stateId stateCount : Int) (inserted : Bool) : Env 4
+  | ⟨0, _⟩ => .signed .i32 status
+  | ⟨1, _⟩ => .signed .i32 stateId
+  | ⟨2, _⟩ => .signed .i32 stateCount
+  | ⟨3, _⟩ => .boolean inserted
+
+private def resultTerm : Term Lanius.FunctionalView.Core.signature 4 :=
+  .apply (.structValue 2 [
+      parserI32Type, parserI32Type, parserI32Type, .scalar .bool]) [
+    .reference (.slot ⟨0, by omega⟩),
+    .reference (.slot ⟨1, by omega⟩),
+    .reference (.slot ⟨2, by omega⟩),
+    .reference (.slot ⟨3, by omega⟩)]
+
+def body : Block Lanius.FunctionalView.Core.signature 4 :=
+  .sequence (.returnValue (some resultTerm)) .skip
+
+theorem body_toCore_exactly :
+    toCoreStmt (identityLayout (arity := 4)) 4 body =
+      parserAppendResultBody := by
+  rfl
+
+theorem evaluates
+    (status stateId stateCount : Int) (inserted : Bool) :
+    Block.evaluate (machine verifiedParserCore) world
+        (environment status stateId stateCount inserted) body =
+      .done (.returned (some
+        (appendResultValue status stateId stateCount inserted))) world := by
+  rfl
+
+theorem world_represents (state : State) : World.Represents world state := by
+  intro _ _ found
+  simp [world] at found
+
+end AppendResultProof
 
 theorem extractedParserAppendState_function_signature :
     extractedParserAppendStateFunction.id = 13 ∧
@@ -1487,6 +1491,21 @@ def parserAppendResultBindings
   (2, .signed .i32 stateCount),
   (3, .boolean inserted)]
 
+theorem AppendResultProof.parameterBindings_eq
+    (status stateId stateCount : Int) (inserted : Bool) :
+    Lanius.FunctionalView.Core.parameterBindings
+        (AppendResultProof.environment status stateId stateCount inserted) =
+      parserAppendResultBindings status stateId stateCount inserted := by
+  apply List.ext_getElem
+  · simp [parserAppendResultBindings]
+  · intro index leftBound rightBound
+    have alternatives : index = 0 ∨ index = 1 ∨ index = 2 ∨ index = 3 := by
+      simp [parserAppendResultBindings] at rightBound
+      omega
+    rcases alternatives with rfl | rfl | rfl | rfl <;>
+      simp [Lanius.FunctionalView.Core.parameterBindings_getElem,
+        parserAppendResultBindings, AppendResultProof.environment]
+
 def parserAppendResultCallee
     (caller : State) (status stateId stateCount : Int) (inserted : Bool) :
     State :=
@@ -1498,44 +1517,6 @@ theorem parserAppendResultCallee_wellFormed
     StateWellFormed
       (parserAppendResultCallee caller status stateId stateCount inserted) :=
   enterCall_preserves_wellFormed wellFormed
-
-private theorem parserAppendResultCallee_local0
-    (wellFormed : StateWellFormed caller) :
-    (parserAppendResultCallee caller status stateId stateCount inserted).local? 0 =
-      some (.signed .i32 status) := by
-  simpa [parserAppendResultCallee, parserAppendResultBindings] using
-    (enterCall_local_of_binding caller [] [
-        (1, .signed .i32 stateId), (2, .signed .i32 stateCount),
-        (3, .boolean inserted)] 0 (.signed .i32 status) wellFormed (by simp))
-
-private theorem parserAppendResultCallee_local1
-    (wellFormed : StateWellFormed caller) :
-    (parserAppendResultCallee caller status stateId stateCount inserted).local? 1 =
-      some (.signed .i32 stateId) := by
-  simpa [parserAppendResultCallee, parserAppendResultBindings] using
-    (enterCall_local_of_binding caller [(0, .signed .i32 status)] [
-        (2, .signed .i32 stateCount), (3, .boolean inserted)]
-      1 (.signed .i32 stateId) wellFormed (by simp))
-
-private theorem parserAppendResultCallee_local2
-    (wellFormed : StateWellFormed caller) :
-    (parserAppendResultCallee caller status stateId stateCount inserted).local? 2 =
-      some (.signed .i32 stateCount) := by
-  simpa [parserAppendResultCallee, parserAppendResultBindings] using
-    (enterCall_local_of_binding caller [
-        (0, .signed .i32 status), (1, .signed .i32 stateId)] [
-        (3, .boolean inserted)] 2 (.signed .i32 stateCount) wellFormed
-      (by simp))
-
-private theorem parserAppendResultCallee_local3
-    (wellFormed : StateWellFormed caller) :
-    (parserAppendResultCallee caller status stateId stateCount inserted).local? 3 =
-      some (.boolean inserted) := by
-  simpa [parserAppendResultCallee, parserAppendResultBindings] using
-    (enterCall_local_of_binding caller [
-        (0, .signed .i32 status), (1, .signed .i32 stateId),
-        (2, .signed .i32 stateCount)] [] 3 (.boolean inserted) wellFormed
-      (by simp))
 
 /-- Full source-call contract for the extracted `append_result` constructor.
     This helper is used by all three semantic branches of `append_state`. -/
@@ -1554,45 +1535,27 @@ theorem extractedParserAppendResultCall_evaluates
           inserted)) := by
   let callee := parserAppendResultCallee afterArguments status stateId
     stateCount inserted
-  have local0 : Evaluates verifiedParserCore callee (.local 0)
-      (.signed .i32 status) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 0
-      (.signed .i32 status)
-      (parserAppendResultCallee_local0 afterArgumentsWellFormed)⟩
-  have local1 : Evaluates verifiedParserCore callee (.local 1)
-      (.signed .i32 stateId) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 1
-      (.signed .i32 stateId)
-      (parserAppendResultCallee_local1 afterArgumentsWellFormed)⟩
-  have local2 : Evaluates verifiedParserCore callee (.local 2)
-      (.signed .i32 stateCount) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 2
-      (.signed .i32 stateCount)
-      (parserAppendResultCallee_local2 afterArgumentsWellFormed)⟩
-  have local3 : Evaluates verifiedParserCore callee (.local 3)
-      (.boolean inserted) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 3
-      (.boolean inserted)
-      (parserAppendResultCallee_local3 afterArgumentsWellFormed)⟩
-  have fields : ArgumentsEvaluateTo verifiedParserCore callee
-      [.local 0, .local 1, .local 2, .local 3]
-      [.signed .i32 status, .signed .i32 stateId,
-        .signed .i32 stateCount, .boolean inserted] callee :=
-    ArgumentsEvaluateTo.cons local0
-      (ArgumentsEvaluateTo.cons local1
-        (ArgumentsEvaluateTo.cons local2
-          (ArgumentsEvaluateTo.singleton local3)))
-  have constructed : Evaluates verifiedParserCore callee
-      parserAppendResultExpr
-      (appendResultValue status stateId stateCount inserted) callee := by
-    simpa [parserAppendResultExpr, appendResultValue] using
-      (evaluatesStructValue (typeId := 2) fields)
   have bodyResult : Executes verifiedParserCore callee parserAppendResultBody
       (.returned (some
         (appendResultValue status stateId stateCount inserted))) callee := by
-    simpa [parserAppendResultBody] using
-      (executesSequenceReturned (second := Stmt.skip)
-        (executesReturnValue constructed))
+    have environmentMatches :
+        Lanius.FunctionalView.Core.EnvironmentMatches
+          (Lanius.FunctionalView.Core.identityLayout (arity := 4))
+          (AppendResultProof.environment status stateId stateCount inserted)
+          callee := by
+      simpa [callee, parserAppendResultCallee, parserAppendResultBindings,
+        AppendResultProof.parameterBindings_eq] using
+        (Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
+          (environment := AppendResultProof.environment status stateId
+            stateCount inserted)
+          afterArgumentsWellFormed)
+    have sound := Lanius.FunctionalView.Core.block_executes_without_locals
+      (nextLocal := 4)
+      (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
+      (AppendResultProof.world_represents callee) environmentMatches (by rfl)
+      (AppendResultProof.evaluates status stateId stateCount inserted)
+    rw [AppendResultProof.body_toCore_exactly] at sound
+    exact sound.1
   apply evaluatesCallReturned (body := parserAppendResultBody)
     argumentsResult verifiedParserCore_finds_appendResult
   · rw [extractedParserAppendResult_function_shape.2.1]

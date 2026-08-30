@@ -1,17 +1,17 @@
-import Lanius.ProofIR
+import Lanius.FunctionalView
 
-namespace Lanius.ProofIR.Core
+namespace Lanius.FunctionalView.Core
 
 open Lanius
 open Lanius.Core
-open Lanius.ProofIR
+open Lanius.FunctionalView
 
 /-! # Structural Core adapter
 
 The operation records retain resolved operand and result types for intrinsic
-Proof IR typing. Lowering erases those witnesses and emits ordinary Core
-expressions. Local allocation is a backend concern: Proof IR references are
-`Fin` indices, while `lowerBlock` assigns consecutive Core local IDs beginning
+Functional View typing. Conversion erases those witnesses and reconstructs ordinary
+Core expressions. Local allocation is a Core-representation concern: Functional View references are
+`Fin` indices, while `toCoreStmt` assigns consecutive Core local IDs beginning
 at a caller-selected fresh base.
 -/
 
@@ -20,8 +20,10 @@ inductive Operation where
   | unary (operation : UnaryOp) (input output : Ty)
   | binary (operation : BinaryOp) (left right output : Ty)
   | index (base index element : Ty)
+  | structValue (typeId : TypeId) (fields : List Ty)
   | field (base : Ty) (field : FieldId) (result : Ty)
   | constant (id : ConstantId) (type : Ty)
+  | call (function : FunctionId) (arguments : List Ty) (result : Ty)
 deriving DecidableEq, Repr
 
 def Operation.operandTypes : Operation → List Ty
@@ -29,19 +31,24 @@ def Operation.operandTypes : Operation → List Ty
   | .unary _ input _ => [input]
   | .binary _ left right _ => [left, right]
   | Operation.index base indexType _ => [base, indexType]
+  | .structValue _ fields => fields
   | .field base _ _ => [base]
   | .constant _ _ => []
+  | .call _ arguments _ => arguments
 
 def Operation.resultType : Operation → Ty
   | .cast _ target => .scalar target
   | .unary _ _ output => output
   | .binary _ _ _ output => output
   | Operation.index _ _ element => element
+  | .structValue typeId _ => .structure typeId
   | .field _ _ result => result
   | .constant _ type => type
+  | .call _ _ result => result
 
 def Operation.effect : Operation → EffectClass
   | Operation.index _ _ _ | .constant _ _ => .read
+  | .call _ _ _ => .external
   | _ => .pure
 
 def signature : Signature := {
@@ -60,33 +67,39 @@ def Layout.push (layout : Layout arity) (id : VarId) : Layout (arity + 1) :=
     else
       id
 
-def lowerRef (layout : Layout arity) : Ref arity → Expr
+def refToCoreExpr (layout : Layout arity) : Ref arity → Expr
   | .slot index => .local (layout index)
   | .literal value => .value value
 
-def Operation.lower : Operation → List Expr → Expr
+def Operation.toCoreExpr : Operation → List Expr → Expr
   | .cast _ target, [operand] => .cast target operand
   | .unary operation _ _, [operand] => .unary operation operand
   | .binary operation _ _ _, [left, right] => .binary operation left right
   | Operation.index _ _ _, [base, indexExpression] =>
       .index base indexExpression
+  | .structValue typeId _, fields => .structValue typeId fields
   | .field _ fieldId _, [base] => .field base fieldId
   | .constant id _, [] => .constant id
+  | .call function _ _, arguments => .call function arguments
   | _, _ => .value .unit
 
 mutual
 
-  def lowerTerm (layout : Layout arity) :
+  def toCoreExpr (layout : Layout arity) :
       Term signature arity → Expr
-    | .reference reference => lowerRef layout reference
+    | .reference reference => refToCoreExpr layout reference
     | .apply operation arguments =>
-        operation.lower (lowerTerms layout arguments)
+        operation.toCoreExpr (toCoreExprs layout arguments)
+    | .logicalAnd left right =>
+        .binary .logicalAnd (toCoreExpr layout left) (toCoreExpr layout right)
+    | .logicalOr left right =>
+        .binary .logicalOr (toCoreExpr layout left) (toCoreExpr layout right)
 
-  def lowerTerms (layout : Layout arity) :
+  def toCoreExprs (layout : Layout arity) :
       List (Term signature arity) → List Expr
     | [] => []
     | argument :: arguments =>
-        lowerTerm layout argument :: lowerTerms layout arguments
+        toCoreExpr layout argument :: toCoreExprs layout arguments
 
 end
 
@@ -99,24 +112,24 @@ def localCapacity : Block signature arity → Nat
   | .ifThenElse _ thenBranch elseBranch =>
       max (localCapacity thenBranch) (localCapacity elseBranch)
 
-/-- Deterministic lowering. `nextLocal` must be fresh relative to the supplied
+/-- Deterministic conversion back to Core. `nextLocal` must be fresh relative to the supplied
     layout; the simulation theorem states that condition explicitly. -/
-def lowerBlock (layout : Layout arity) (nextLocal : VarId) :
+def toCoreStmt (layout : Layout arity) (nextLocal : VarId) :
     Block signature arity → Stmt
   | .skip => .skip
   | .sequence first second =>
-      .sequence (lowerBlock layout nextLocal first)
-        (lowerBlock layout (nextLocal + localCapacity first) second)
+      .sequence (toCoreStmt layout nextLocal first)
+        (toCoreStmt layout (nextLocal + localCapacity first) second)
   | .letValue type initializer body =>
-      .letLocal nextLocal type (lowerTerm layout initializer)
-        (lowerBlock (Layout.push layout nextLocal) (nextLocal + 1) body)
+      .letLocal nextLocal type (toCoreExpr layout initializer)
+        (toCoreStmt (Layout.push layout nextLocal) (nextLocal + 1) body)
   | .ifThenElse condition thenBranch elseBranch =>
-      .ifThenElse (lowerTerm layout condition)
-        (lowerBlock layout nextLocal thenBranch)
-        (lowerBlock layout nextLocal elseBranch)
+      .ifThenElse (toCoreExpr layout condition)
+        (toCoreStmt layout nextLocal thenBranch)
+        (toCoreStmt layout nextLocal elseBranch)
   | .returnValue none => .returnValue none
   | .returnValue (some value) =>
-      .returnValue (some (lowerTerm layout value))
+      .returnValue (some (toCoreExpr layout value))
 
 def identityLayout : Layout arity := fun index => index.val
 
@@ -130,4 +143,10 @@ def apply (operation : Operation)
     (arguments : List (Term signature arity)) : Term signature arity :=
   .apply operation arguments
 
-end Lanius.ProofIR.Core
+def logicalAnd (left right : Term signature arity) : Term signature arity :=
+  .logicalAnd left right
+
+def logicalOr (left right : Term signature arity) : Term signature arity :=
+  .logicalOr left right
+
+end Lanius.FunctionalView.Core

@@ -489,6 +489,20 @@ theorem evaluatesUnary
   simp only
   rw [operationResult]
 
+/-- Compose an effectful operand with a successful scalar cast. -/
+theorem evaluatesCast
+    (operandResult : Evaluates program before operand operandValue afterOperand)
+    (operationResult :
+      evalScalarCast program.target target operandValue = .ok result) :
+    Evaluates program before (.cast target operand) result afterOperand := by
+  obtain ⟨fuel, operandResult⟩ := operandResult
+  refine ⟨fuel + 1, ?_⟩
+  rw [evalExpr.eq_def]
+  simp only
+  rw [operandResult]
+  simp only
+  rw [operationResult]
+
 /-- Nonnegative mathematical indices in the signed i32 domain are unchanged
     by the dynamic semantics' machine-integer normalization.  This is shared
     by extracted lexer, parser, and later compiler-phase proofs. -/
@@ -635,6 +649,26 @@ theorem wrapSigned_i32_neg_one (target : Target) :
 
 def signedI32Values (values : List Int) : List Value :=
   values.map fun value => .signed .i32 value
+
+theorem signedI32Values_injective : Function.Injective signedI32Values := by
+  intro left right same
+  induction left generalizing right with
+  | nil =>
+      cases right with
+      | nil => rfl
+      | cons head tail => simp [signedI32Values] at same
+  | cons head tail induction =>
+      cases right with
+      | nil => simp [signedI32Values] at same
+      | cons rightHead rightTail =>
+          have pair : head = rightHead ∧
+              signedI32Values tail = signedI32Values rightTail := by
+            simpa [signedI32Values] using same
+          have headEq : head = rightHead := pair.1
+          have tailEq : tail = rightTail := induction pair.2
+          subst rightHead
+          subst rightTail
+          rfl
 
 def setI32Value (values : List Int) (index : Nat) (value : Int) : List Int :=
   values.set index value

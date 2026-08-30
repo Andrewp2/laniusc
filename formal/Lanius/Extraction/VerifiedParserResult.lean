@@ -1,4 +1,7 @@
 import Lanius.Extraction.VerifiedParserAppend
+import Lanius.FunctionalViewCoreEffectful
+import Lanius.FunctionalViewCoreEffectfulStateful
+import Lanius.FunctionalViewCoreReadOnly
 
 namespace Lanius.Extraction.ParserResult
 
@@ -73,44 +76,113 @@ theorem verifiedParserCore_finds_parseResult :
     extractedParserParseResultWire
   rfl
 
-private theorem parserParseResultCallee_local0
-    (wellFormed : StateWellFormed caller) :
-    (parserParseResultCallee caller status stateCount rootState
-      errorPosition).local? 0 = some (.signed .i32 status) := by
-  simpa [parserParseResultCallee, parserParseResultBindings] using
-    (enterCall_local_of_binding caller [] [
-      (1, .signed .i32 stateCount), (2, .signed .i32 rootState),
-      (3, .signed .i32 errorPosition)] 0 (.signed .i32 status)
-      wellFormed (by simp))
+namespace ParseResultProof
 
-private theorem parserParseResultCallee_local1
-    (wellFormed : StateWellFormed caller) :
-    (parserParseResultCallee caller status stateCount rootState
-      errorPosition).local? 1 = some (.signed .i32 stateCount) := by
-  simpa [parserParseResultCallee, parserParseResultBindings] using
-    (enterCall_local_of_binding caller [(0, .signed .i32 status)] [
-      (2, .signed .i32 rootState), (3, .signed .i32 errorPosition)]
-      1 (.signed .i32 stateCount) wellFormed (by simp))
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
 
-private theorem parserParseResultCallee_local2
-    (wellFormed : StateWellFormed caller) :
-    (parserParseResultCallee caller status stateCount rootState
-      errorPosition).local? 2 = some (.signed .i32 rootState) := by
-  simpa [parserParseResultCallee, parserParseResultBindings] using
-    (enterCall_local_of_binding caller [
-      (0, .signed .i32 status), (1, .signed .i32 stateCount)] [
-      (3, .signed .i32 errorPosition)] 2 (.signed .i32 rootState)
-      wellFormed (by simp))
+def world : World := { i32Slice? := fun _ => none }
 
-private theorem parserParseResultCallee_local3
-    (wellFormed : StateWellFormed caller) :
-    (parserParseResultCallee caller status stateCount rootState
-      errorPosition).local? 3 = some (.signed .i32 errorPosition) := by
-  simpa [parserParseResultCallee, parserParseResultBindings] using
-    (enterCall_local_of_binding caller [
-      (0, .signed .i32 status), (1, .signed .i32 stateCount),
-      (2, .signed .i32 rootState)] [] 3 (.signed .i32 errorPosition)
-      wellFormed (by simp))
+def environment
+    (status stateCount rootState errorPosition : Int) : Env 4
+  | ⟨0, _⟩ => .signed .i32 status
+  | ⟨1, _⟩ => .signed .i32 stateCount
+  | ⟨2, _⟩ => .signed .i32 rootState
+  | ⟨3, _⟩ => .signed .i32 errorPosition
+
+theorem parameterBindings_eq
+    (status stateCount rootState errorPosition : Int) :
+    Lanius.FunctionalView.Core.parameterBindings
+        (environment status stateCount rootState errorPosition) =
+      parserParseResultBindings status stateCount rootState errorPosition := by
+  apply List.ext_getElem
+  · simp [parserParseResultBindings]
+  · intro index leftBound rightBound
+    have alternatives : index = 0 ∨ index = 1 ∨ index = 2 ∨ index = 3 := by
+      simp [parserParseResultBindings] at rightBound
+      omega
+    rcases alternatives with rfl | rfl | rfl | rfl <;>
+      simp [Lanius.FunctionalView.Core.parameterBindings_getElem,
+        parserParseResultBindings, environment]
+
+private def resultTerm : Term Lanius.FunctionalView.Core.signature 4 :=
+  .apply (.structValue 0
+      [parserI32Type, parserI32Type, parserI32Type, parserI32Type]) [
+    .reference (.slot ⟨0, by omega⟩),
+    .reference (.slot ⟨1, by omega⟩),
+    .reference (.slot ⟨2, by omega⟩),
+    .reference (.slot ⟨3, by omega⟩)]
+
+def body : Block Lanius.FunctionalView.Core.signature 4 :=
+  .sequence (.returnValue (some resultTerm)) .skip
+
+theorem localCapacity_eq_zero :
+    Lanius.FunctionalView.Core.localCapacity body = 0 := by rfl
+
+/-- The functional constructor translates exactly to the body decoded from
+    the checked `parser.lani` artifact. -/
+theorem body_toCore_exactly :
+    toCoreStmt (identityLayout (arity := 4)) 4 body =
+      parserParseResultBody := by
+  rfl
+
+theorem evaluates (status stateCount rootState errorPosition : Int) :
+    Block.evaluate (machine verifiedParserCore) world
+        (environment status stateCount rootState errorPosition) body =
+      .done (.returned (some
+        (parseResultValue status stateCount rootState errorPosition))) world := by
+  rfl
+
+theorem world_represents (state : State) : World.Represents world state := by
+  intro _ _ found
+  simp [world] at found
+
+end ParseResultProof
+
+namespace ParseResultCallProof
+
+open Lanius.FunctionalView.Core.ReadOnly
+open Lanius.FunctionalView.Core.Effectful
+
+/-- Functional semantics for the checked `parse_result` source function.
+    This entry is intentionally separate from the generic effectful simulator:
+    parser functions are registered here, while FunctionalView itself remains
+    independent of any one source program. -/
+def calls : CallModel where
+  evaluate := fun world function values =>
+    if function = extractedParserParseResultFunction.id then
+      match values with
+      | [.signed .i32 status, .signed .i32 stateCount,
+          .signed .i32 rootState, .signed .i32 errorPosition] =>
+          .ok (parseResultValue status stateCount rootState errorPosition,
+            world)
+      | _ => .error .typeMismatch
+    else
+      .error .invalidPointer
+
+theorem calls_success
+    (evaluated : calls.evaluate world function values =
+      .ok (value, afterWorld)) :
+    ∃ status stateCount rootState errorPosition,
+      function = extractedParserParseResultFunction.id ∧
+      values = [
+        .signed .i32 status, .signed .i32 stateCount,
+        .signed .i32 rootState, .signed .i32 errorPosition] ∧
+      value = parseResultValue status stateCount rootState errorPosition ∧
+      afterWorld = world := by
+  simp only [calls] at evaluated
+  split at evaluated
+  next same =>
+    split at evaluated
+    next status stateCount rootState errorPosition =>
+      obtain ⟨rfl, rfl⟩ := evaluated
+      exact ⟨status, stateCount, rootState,
+        errorPosition, same, rfl, rfl, rfl⟩
+    next => contradiction
+  next different => simp at evaluated
+
+end ParseResultCallProof
 
 /-- Store-pure contract for the extracted four-field `parse_result`
     constructor. Every recognizer exit uses this one checked constructor. -/
@@ -139,41 +211,29 @@ theorem extractedParserParseResultCall_contract
       parserParseResultBindings] using
       (enterCall_preserves_wellFormed
         (bindings := bindings) afterArgumentsWellFormed)
-  have local0 : Evaluates verifiedParserCore callee (.local 0)
-      (.signed .i32 status) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 0 _
-      (parserParseResultCallee_local0 afterArgumentsWellFormed)⟩
-  have local1 : Evaluates verifiedParserCore callee (.local 1)
-      (.signed .i32 stateCount) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 1 _
-      (parserParseResultCallee_local1 afterArgumentsWellFormed)⟩
-  have local2 : Evaluates verifiedParserCore callee (.local 2)
-      (.signed .i32 rootState) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 2 _
-      (parserParseResultCallee_local2 afterArgumentsWellFormed)⟩
-  have local3 : Evaluates verifiedParserCore callee (.local 3)
-      (.signed .i32 errorPosition) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 3 _
-      (parserParseResultCallee_local3 afterArgumentsWellFormed)⟩
-  have fields : ArgumentsEvaluateTo verifiedParserCore callee
-      [.local 0, .local 1, .local 2, .local 3]
-      [.signed .i32 status, .signed .i32 stateCount,
-        .signed .i32 rootState, .signed .i32 errorPosition] callee :=
-    ArgumentsEvaluateTo.cons local0
-      (ArgumentsEvaluateTo.cons local1
-        (ArgumentsEvaluateTo.cons local2
-          (ArgumentsEvaluateTo.singleton local3)))
-  have constructed : Evaluates verifiedParserCore callee parserParseResultExpr
-      (parseResultValue status stateCount rootState errorPosition) callee := by
-    simpa [parserParseResultExpr, parseResultValue] using
-      (evaluatesStructValue (typeId := 0) fields)
   have bodyResult : Executes verifiedParserCore callee parserParseResultBody
       (.returned (some
         (parseResultValue status stateCount rootState errorPosition)))
       callee := by
-    simpa [parserParseResultBody] using
-      (executesSequenceReturned (second := Stmt.skip)
-        (executesReturnValue constructed))
+    have environmentMatches :
+        Lanius.FunctionalView.Core.EnvironmentMatches
+          (Lanius.FunctionalView.Core.identityLayout (arity := 4))
+          (ParseResultProof.environment status stateCount rootState
+            errorPosition) callee := by
+      simpa [callee, parserParseResultCallee, parserParseResultBindings,
+        ParseResultProof.parameterBindings_eq] using
+        (Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
+          (environment := ParseResultProof.environment status stateCount
+            rootState errorPosition)
+          afterArgumentsWellFormed)
+    have sound := Lanius.FunctionalView.Core.block_executes_without_locals
+      (nextLocal := 4)
+      (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
+      (ParseResultProof.world_represents callee) environmentMatches
+      ParseResultProof.localCapacity_eq_zero
+      (ParseResultProof.evaluates status stateCount rootState errorPosition)
+    rw [ParseResultProof.body_toCore_exactly] at sound
+    exact sound.1
   have evaluation : Evaluates verifiedParserCore before
       (.call extractedParserParseResultFunction.id arguments)
       (parseResultValue status stateCount rootState errorPosition) after := by
@@ -192,6 +252,95 @@ theorem extractedParserParseResultCall_contract
   have afterWellFormed : StateWellFormed after :=
     entered.restoreLocals_wellFormed afterArgumentsWellFormed calleeWellFormed
   exact ⟨evaluation, effect, afterWellFormed⟩
+
+namespace ParseResultCallProof
+
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
+open Lanius.FunctionalView.Core.Effectful
+
+/-- The functional call entry is not an assumption: every successful model
+    evaluation is discharged by the contract for the source-extracted Core
+    function. Argument effects are retained, while the constructor call
+    itself has an empty caller-visible write footprint. -/
+theorem soundness : CallSoundness verifiedParserCore calls := by
+  constructor
+  intro arity layout environment beforeWorld afterWorld before afterArguments
+    function arguments values value argumentWrites afterArgumentsWellFormed
+    represented environmentMatches argumentsExecution argumentsEffect
+    evaluated
+  obtain ⟨status, stateCount, rootState, errorPosition, functionEq,
+    valuesEq, valueEq, worldEq⟩ := calls_success evaluated
+  subst function
+  subst values
+  subst value
+  subst afterWorld
+  obtain ⟨callExecution, callEffect, afterWellFormed⟩ :=
+    extractedParserParseResultCall_contract before afterArguments
+      (toCoreExprs layout arguments) status stateCount rootState errorPosition
+      afterArgumentsWellFormed argumentsExecution
+  have afterRepresented : World.Represents beforeWorld
+      (restoreLocals afterArguments
+        (parserParseResultCallee afterArguments status stateCount rootState
+          errorPosition)) := by
+    intro cell contents found
+    obtain ⟨backing, allocated⟩ := represented cell contents found
+    exact ⟨callEffect.empty_preserves_entry afterArgumentsWellFormed backing,
+      Nat.lt_of_lt_of_le allocated callEffect.nextCell⟩
+  have afterMatches : EnvironmentMatches layout environment
+      (restoreLocals afterArguments
+        (parserParseResultCallee afterArguments status stateCount rootState
+          errorPosition)) :=
+    environmentMatches.preserve afterArgumentsWellFormed callEffect
+  exact ⟨_, CellSet.union argumentWrites CellSet.empty, callExecution,
+    afterWellFormed, afterRepresented, afterMatches,
+    argumentsEffect.trans callEffect⟩
+
+/-- Separation-preserving form of `soundness`, suitable for mutable parser
+    commands whose expressions may invoke `parse_result`. -/
+theorem statefulSoundness :
+    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
+      verifiedParserCore calls := by
+  constructor
+  · intro arity layout localCell beforeWorld afterWorld environment before
+      afterArguments function arguments values value argumentWrites
+      afterArgumentsWellFormed represented argumentsExecution argumentsEffect
+      evaluated
+    obtain ⟨status, stateCount, rootState, errorPosition, functionEq,
+      valuesEq, valueEq, worldEq⟩ := calls_success evaluated
+    subst function
+    subst values
+    subst value
+    subst afterWorld
+    obtain ⟨callExecution, callEffect, afterWellFormed⟩ :=
+      extractedParserParseResultCall_contract before afterArguments
+        (toCoreExprs layout arguments) status stateCount rootState errorPosition
+        afterArgumentsWellFormed argumentsExecution
+    let after := restoreLocals afterArguments
+      (parserParseResultCallee afterArguments status stateCount rootState
+        errorPosition)
+    have afterRepresented :
+        Lanius.FunctionalView.Core.Stateful.Representation layout localCell
+          beforeWorld environment after := {
+      worldOwned := callEffect.empty_preserves_assertion
+        afterArgumentsWellFormed (World.owns beforeWorld)
+        represented.worldOwned
+      localOwned := fun index => callEffect.empty_preserves_assertion
+        afterArgumentsWellFormed
+        (Assertion.localPointsTo (layout index) (localCell index)
+          (some (environment index))) (represented.localOwned index)
+      localCellsInjective := represented.localCellsInjective
+      worldLocalsDisjoint := represented.worldLocalsDisjoint
+    }
+    exact ⟨after, CellSet.union argumentWrites CellSet.empty, callExecution,
+      afterWellFormed, afterRepresented, argumentsEffect.trans callEffect⟩
+  · intro beforeWorld afterWorld function values value evaluated cell
+    obtain ⟨status, stateCount, rootState, errorPosition, functionEq,
+      valuesEq, valueEq, worldEq⟩ := calls_success evaluated
+    subst afterWorld
+    rfl
+
+end ParseResultCallProof
 
 def parserAppendOrFullBindings
     (appended : AppendOutcome) (errorPosition : Int) :
@@ -235,6 +384,83 @@ theorem verifiedParser_parse_output_full_constant :
     } := by
   rfl
 
+namespace AppendOrFullProof
+
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
+open Lanius.FunctionalView.Core.Effectful
+
+def world : World := { i32Slice? := fun _ => none }
+
+def environment (appended : AppendOutcome) (errorPosition : Int) : Env 2
+  | ⟨0, _⟩ => appendOutcomeValue appended
+  | ⟨1, _⟩ => .signed .i32 errorPosition
+
+theorem parameterBindings_eq
+    (appended : AppendOutcome) (errorPosition : Int) :
+    Lanius.FunctionalView.Core.parameterBindings
+        (environment appended errorPosition) =
+      parserAppendOrFullBindings appended errorPosition := by
+  apply List.ext_getElem
+  · simp [parserAppendOrFullBindings]
+  · intro index leftBound rightBound
+    have alternatives : index = 0 ∨ index = 1 := by
+      simp [parserAppendOrFullBindings] at rightBound
+      omega
+    rcases alternatives with rfl | rfl <;>
+      simp [Lanius.FunctionalView.Core.parameterBindings_getElem,
+        parserAppendOrFullBindings, environment]
+
+def resultArguments : List (Term Lanius.FunctionalView.Core.signature 2) := [
+  .apply (.constant 2 parserI32Type) [],
+  .apply (.field (.structure 2) 2 parserI32Type) [
+    .reference (.slot ⟨0, by omega⟩)],
+  .apply (.unary .negate parserI32Type parserI32Type) [
+    .reference (.literal (.signed .i32 1))],
+  .reference (.slot ⟨1, by omega⟩)]
+
+def resultTerm : Term Lanius.FunctionalView.Core.signature 2 :=
+  .apply (.call extractedParserParseResultFunction.id [
+      parserI32Type, parserI32Type, parserI32Type, parserI32Type]
+    (.structure 0)) resultArguments
+
+def body : Block Lanius.FunctionalView.Core.signature 2 :=
+  .sequence (.returnValue (some resultTerm)) .skip
+
+/-- The proof view is an exact re-expression of the checked source body. -/
+theorem body_toCore_exactly :
+    toCoreStmt (identityLayout (arity := 2)) 2 body =
+      parserAppendOrFullBody := by
+  rfl
+
+theorem arguments_evaluate (appended : AppendOutcome) (errorPosition : Int) :
+    evaluateTerms (ReadOnly.machine verifiedParserCore) world
+        (environment appended errorPosition) resultArguments =
+      .ok ([
+        .signed .i32 2,
+        .signed .i32 (Int.ofNat appended.stateCount),
+        .signed .i32 (-1),
+        .signed .i32 errorPosition], world) := by
+  rfl
+
+/-- At the functional level the exact source body returns the modeled
+    four-field diagnostic. The separate call-soundness theorem connects this
+    successful model step to the source-extracted `parse_result` body. -/
+theorem evaluates (appended : AppendOutcome) (errorPosition : Int) :
+    Block.evaluate
+        (Effectful.machine verifiedParserCore ParseResultCallProof.calls)
+        world (environment appended errorPosition) body =
+      .done (.returned (some (parseResultValue 2
+        (Int.ofNat appended.stateCount) (-1) errorPosition))) world := by
+  rfl
+
+theorem world_represents (state : State) : World.Represents world state := by
+  intro _ _ found
+  simp [world] at found
+
+end AppendOrFullProof
+
 /-- The extracted `append_or_full` helper is store-pure and returns the exact
     output-capacity diagnostic while retaining the append state count. -/
 theorem extractedParserAppendOrFullCall_contract
@@ -258,40 +484,32 @@ theorem extractedParserAppendOrFullCall_contract
       parserAppendOrFullBindings] using
       (enterCall_preserves_wellFormed
         (bindings := bindings) afterArgumentsWellFormed)
-  have local0 : Evaluates verifiedParserCore callee (.local 0)
-      (appendOutcomeValue appended) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 0 _ (by
-      simpa [callee, parserAppendOrFullCallee, bindings,
-        parserAppendOrFullBindings] using
-        (enterCall_local_of_binding afterArguments [] [
-          (1, .signed .i32 errorPosition)] 0 (appendOutcomeValue appended)
-          afterArgumentsWellFormed (by simp)))⟩
-  have countField : Evaluates verifiedParserCore callee
-      (.field (.local 0) 2)
-      (.signed .i32 (Int.ofNat appended.stateCount)) callee := by
-    apply evaluatesStructureField local0
-    simp [appendOutcomeValue, appendResultValue]
-  have fullConstant : Evaluates verifiedParserCore callee (.constant 2)
-      (.signed .i32 2) callee :=
-    evaluatesConstant verifiedParser_parse_output_full_constant
-  have negativeOne := evaluatesParserAppendNegativeOne callee
-  have errorLocal : Evaluates verifiedParserCore callee (.local 1)
-      (.signed .i32 errorPosition) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 1 _ (by
-      simpa [callee, parserAppendOrFullCallee, bindings,
-        parserAppendOrFullBindings] using
-        (enterCall_local_of_binding afterArguments [
-          (0, appendOutcomeValue appended)] [] 1
-          (.signed .i32 errorPosition) afterArgumentsWellFormed (by simp)))⟩
+  have environmentMatches :
+      Lanius.FunctionalView.Core.EnvironmentMatches
+        (Lanius.FunctionalView.Core.identityLayout (arity := 2))
+        (AppendOrFullProof.environment appended errorPosition) callee := by
+    simpa [callee, parserAppendOrFullCallee, parserAppendOrFullBindings,
+      AppendOrFullProof.parameterBindings_eq] using
+      (Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
+        (environment := AppendOrFullProof.environment appended errorPosition)
+        afterArgumentsWellFormed)
+  have functionalArguments :=
+    Lanius.FunctionalView.Core.terms_evaluate
+      (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
+      (AppendOrFullProof.world_represents callee) environmentMatches
+      (AppendOrFullProof.arguments_evaluate appended errorPosition)
   have resultArguments : ArgumentsEvaluateTo verifiedParserCore callee
       [.constant 2, .field (.local 0) 2,
         .unary .negate (.value (.signed .i32 1)), .local 1]
       [.signed .i32 2, .signed .i32 (Int.ofNat appended.stateCount),
-        .signed .i32 (-1), .signed .i32 errorPosition] callee :=
-    ArgumentsEvaluateTo.cons fullConstant
-      (ArgumentsEvaluateTo.cons countField
-        (ArgumentsEvaluateTo.cons negativeOne
-          (ArgumentsEvaluateTo.singleton errorLocal)))
+        .signed .i32 (-1), .signed .i32 errorPosition] callee := by
+    simpa [AppendOrFullProof.resultArguments,
+      Lanius.FunctionalView.Core.toCoreExprs,
+      Lanius.FunctionalView.Core.toCoreExpr,
+      Lanius.FunctionalView.Core.refToCoreExpr,
+      Lanius.FunctionalView.Core.Operation.toCoreExpr,
+      Lanius.FunctionalView.Core.identityLayout] using
+      functionalArguments.1.toArgumentsEvaluateTo
   let afterResult := restoreLocals callee
     (parserParseResultCallee callee 2 (Int.ofNat appended.stateCount) (-1)
       errorPosition)
