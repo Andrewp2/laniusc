@@ -233,89 +233,6 @@ def callsFor (function : FunctionId) (field : Lanius.FieldId) : CallModel where
     else
       .error .invalidPointer
 
-private theorem callsFor_success
-    (evaluated : (callsFor expectedFunction field).evaluate world function
-      values = .ok (value, afterWorld)) :
-    ∃ fields,
-      function = expectedFunction ∧
-      values = [.structure 2 fields] ∧
-      fields[field]? = some value ∧
-      afterWorld = world := by
-  simp only [callsFor] at evaluated
-  split at evaluated
-  next functionEq =>
-    split at evaluated
-    next fields =>
-      split at evaluated
-      next found =>
-        obtain ⟨rfl, rfl⟩ := evaluated
-        exact ⟨fields, functionEq, rfl, found, rfl⟩
-      next => contradiction
-    next => contradiction
-  next => contradiction
-
-private theorem callSoundnessFor
-    (function : Function) (body : Stmt) (field : Lanius.FieldId)
-    (foundFunction : verifiedFrontendDigitsCore.function? function.id =
-      some function)
-    (parameters : function.parameters = [(0, resultType)])
-    (functionBody : function.body = some body)
-    (bodyShape : body = accessorBody field) :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
-      verifiedFrontendDigitsCore (callsFor function.id field) := by
-  constructor
-  · intro arity layout localCell beforeWorld afterWorld callerEnvironment
-      before afterArguments calledFunction arguments values value argumentWrites
-      afterArgumentsWellFormed represented argumentsExecution argumentsEffect
-      evaluated
-    obtain ⟨fields, functionEq, valuesEq, fieldFound, worldEq⟩ :=
-      callsFor_success (expectedFunction := function.id) (field := field)
-        evaluated
-    subst calledFunction
-    subst values
-    subst afterWorld
-    let callee := enterCall afterArguments (accessorBindings fields)
-    let after := accessorCallState afterArguments fields
-    have callExecution : Evaluates verifiedFrontendDigitsCore before
-        (.call function.id (toCoreExprs layout arguments)) value after := by
-      exact accessorCall_evaluates function body field before afterArguments
-        (toCoreExprs layout arguments) fields value foundFunction parameters
-        functionBody bodyShape fieldFound afterArgumentsWellFormed
-        argumentsExecution
-    have entered : StoreEffect CellSet.empty afterArguments callee := by
-      simpa [callee] using
-        enterCall_effect afterArguments (accessorBindings fields)
-    have calleeWellFormed : StateWellFormed callee := by
-      simpa [callee] using
-        (enterCall_preserves_wellFormed
-          (bindings := accessorBindings fields) afterArgumentsWellFormed)
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after, accessorCallState, callee] using entered.restoreLocals
-    have afterWellFormed : StateWellFormed after := by
-      simpa [after, accessorCallState, callee] using
-        entered.restoreLocals_wellFormed afterArgumentsWellFormed
-          calleeWellFormed
-    have afterRepresented : Representation layout localCell beforeWorld
-        callerEnvironment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns beforeWorld)
-        represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed
-        (Assertion.localPointsTo (layout index) (localCell index)
-          (some (callerEnvironment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint
-    }
-    exact ⟨after, CellSet.union argumentWrites CellSet.empty, callExecution,
-      afterWellFormed, afterRepresented, argumentsEffect.trans callEffect⟩
-  · intro beforeWorld afterWorld calledFunction values value evaluated cell
-    obtain ⟨fields, functionEq, valuesEq, fieldFound, worldEq⟩ :=
-      callsFor_success (expectedFunction := function.id) (field := field)
-        evaluated
-    exact congrArg (fun currentWorld : World =>
-      (currentWorld.i32Slice? cell).map List.length) worldEq
-
 def digitScanSucceededCalls : CallModel :=
   callsFor Digits.digitScanSucceededFunction.id 0
 
@@ -345,32 +262,5 @@ theorem digitScanErrorOffsetCalls_at_result :
         [resultValue success endOffset errorOffset] =
       .ok (.signed .i32 errorOffset, worldValue) := by
   rfl
-
-theorem digitScanSucceededCall_soundness :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
-      verifiedFrontendDigitsCore digitScanSucceededCalls := by
-  exact callSoundnessFor Digits.digitScanSucceededFunction
-    Digits.digitScanSucceededBody 0
-    verifiedFrontendDigitsCore_finds_digitScanSucceeded
-    digitScanSucceededFunction_parameters digitScanSucceededFunction_body
-    digitScanSucceededBody_eq
-
-theorem digitScanEndOffsetCall_soundness :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
-      verifiedFrontendDigitsCore digitScanEndOffsetCalls := by
-  exact callSoundnessFor Digits.digitScanEndOffsetFunction
-    Digits.digitScanEndOffsetBody 1
-    verifiedFrontendDigitsCore_finds_digitScanEndOffset
-    digitScanEndOffsetFunction_parameters digitScanEndOffsetFunction_body
-    digitScanEndOffsetBody_eq
-
-theorem digitScanErrorOffsetCall_soundness :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
-      verifiedFrontendDigitsCore digitScanErrorOffsetCalls := by
-  exact callSoundnessFor Digits.digitScanErrorOffsetFunction
-    Digits.digitScanErrorOffsetBody 2
-    verifiedFrontendDigitsCore_finds_digitScanErrorOffset
-    digitScanErrorOffsetFunction_parameters digitScanErrorOffsetFunction_body
-    digitScanErrorOffsetBody_eq
 
 end Lanius.Extraction.Lexer.DigitAccessorContracts

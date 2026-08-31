@@ -272,14 +272,9 @@ private abbrev C (arity : Nat) := Command signature actions arity
 private def quotedSource : T 6 := reference ⟨0, by omega⟩
 private def quotedBound : T 6 := reference ⟨1, by omega⟩
 private def quotedOffset : T 6 := reference ⟨4, by omega⟩
-private def quotedEscaping : T 6 := reference ⟨5, by omega⟩
 
 private def quotedLiteral (value : Nat) : T 6 :=
   literal (.signed .i32 (Int.ofNat value))
-
-private def quotedIncrementedOffset : T 6 :=
-  apply (.binary .add i32Type i32Type i32Type)
-    [quotedOffset, quotedLiteral 1]
 
 private def quotedBeforeEnd : T 6 :=
   apply (.binary .less i32Type i32Type (.scalar .bool))

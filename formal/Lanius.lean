@@ -116,6 +116,7 @@ import Lanius.Extraction.VerifiedParserRecognizeSetup
 import Lanius.Extraction.VerifiedParserRecognizeFunctionalView
 import Lanius.Extraction.VerifiedParserSoundness
 import Lanius.Extraction.Parser.FunctionalViewCoverage
+import Lanius.Extraction.VerifiedFrontendFunctionalViewCoverage
 import Lanius.Compiler.ParserWorkspace
 import Lanius.Compiler.ParserGrammar
 import Lanius.Compiler.ParserLanguage

@@ -155,30 +155,6 @@ private theorem addCursor_evaluates
     (leftType := i32Type) (rightType := i32Type) (outputType := i32Type)
     cursor amount bound
 
-private theorem sourceAt_evaluates
-    (source : List Byte) (start cursor index : Nat)
-    (inBounds : index < source.length) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment
-        (sourceAt (literal (.signed .i32 (Int.ofNat index)))) =
-      .ok (.signed .i32 (Int.ofNat (source.get ⟨index, inBounds⟩).val),
-        (runtime source start cursor).world) := by
-  unfold sourceAt apply
-  apply Term.evaluate_apply2 (by rfl) (by rfl)
-  change ReadOnly.evaluateOperation verifiedFrontendLexerCore (world source)
-    (.index (.slice i32Type) i32Type i32Type)
-    [.slice i32Type 0 [] 0 source.length,
-      .signed .i32 (Int.ofNat index)] =
-    .ok (.signed .i32 (Int.ofNat (source.get ⟨index, inBounds⟩).val),
-      world source)
-  have evaluated := ReadOnly.evaluateOperation_i32_index
-    (program := verifiedFrontendLexerCore) (world := world source)
-    (baseType := .slice i32Type) (indexType := i32Type)
-    (elementType := i32Type) (cell := 0)
-    (values := sourceIntegers source) (position := index)
-    World.singleton_finds (by simpa [sourceIntegers] using inBounds)
-  simpa [sourceIntegers, i32Type] using evaluated
-
 private theorem currentByte_evaluates
     (source : List Byte) (start cursor : Nat)
     (inBounds : cursor < source.length) :
