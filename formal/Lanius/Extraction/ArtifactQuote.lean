@@ -70,6 +70,7 @@ elab "artifact_field% " json:term ", " field:ident : term => do
   | "schema_version" => pure (toExpr artifact.schema_version)
   | "sources" => pure (toExpr artifact.sources)
   | "tokens" => pure (toExpr artifact.tokens)
+  | "raw_tokens" => pure (toExpr artifact.raw_tokens)
   | "semantic_token_kinds" => pure (toExpr artifact.semantic_token_kinds)
   | "parse_nodes" => pure (toExpr artifact.parse_nodes)
   | "parse_root" => pure (toExpr artifact.parse_root)
@@ -130,7 +131,57 @@ elab "artifact_pack_unit% " json:term ", " path:term : term => do
   let some artifact := pack.units.find? fun artifact =>
       artifact.sources.any fun source => source.path == expectedPath
     | throwError "artifact pack has no unit for source {expectedPath}"
-  pure (toExpr artifact)
+  -- Large raw traces are quoted separately at the one boundary that needs
+  -- them.  Keeping them out of ordinary unit constants prevents unrelated
+  -- function/body projections from inheriting thousands of token rows.
+  pure (toExpr { artifact with raw_tokens := none })
+
+/-- Quote only a unit's optional complete raw-token trace. -/
+elab "artifact_pack_raw_tokens% " json:term ", " path:term : term => do
+  let expectedPath ← elabStringLiteral path
+  let pack ← elabArtifactPackLiteral json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  pure (toExpr artifact.raw_tokens)
+
+/-- Quote one field of a named pack unit.  Large checked units are assembled
+from opaque field constants so reducing one checker projection never unfolds
+the unit's unrelated parse, Surface, evidence, or Core tables. -/
+elab "artifact_pack_unit_field% " json:term ", " path:term ", " field:ident : term => do
+  let expectedPath ← elabStringLiteral path
+  let pack ← elabArtifactPackLiteral json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  match field.getId.toString with
+  | "schema_version" => pure (toExpr artifact.schema_version)
+  | "sources" => pure (toExpr artifact.sources)
+  | "tokens" => pure (toExpr artifact.tokens)
+  | "raw_tokens" => pure (toExpr artifact.raw_tokens)
+  | "semantic_token_kinds" => pure (toExpr artifact.semantic_token_kinds)
+  | "parse_nodes" => pure (toExpr artifact.parse_nodes)
+  | "parse_root" => pure (toExpr artifact.parse_root)
+  | "surface" => pure (toExpr artifact.surface)
+  | "resolutions" => pure (toExpr artifact.resolutions)
+  | "types" => pure (toExpr artifact.types)
+  | "core_program" => pure (toExpr artifact.core_program)
+  | "lowering" => pure (toExpr artifact.lowering)
+  | name => throwError "artifact pack unit has no quotable field {name}"
+
+/-- Quote a checked parse-node slice from one named pack unit. -/
+elab "artifact_pack_unit_parse_nodes% " json:term ", " path:term ", "
+    start:term ", " count:term : term => do
+  let expectedPath ← elabStringLiteral path
+  let start ← elabNatLiteral start
+  let count ← elabNatLiteral count
+  let pack ← elabArtifactPackLiteral json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  unless start + count ≤ artifact.parse_nodes.length do
+    throwError "parse-node slice [{start}, {start + count}) exceeds table length {artifact.parse_nodes.length}"
+  pure (toExpr (artifact.parse_nodes.drop start |>.take count))
 
 /-- Quote one Core function from a source unit by its reconstructed source
     declaration name. The elaborator rejects missing/duplicate names and a

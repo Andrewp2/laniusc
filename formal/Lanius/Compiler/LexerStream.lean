@@ -143,7 +143,7 @@ theorem scanSymbol_token_advances
 
 /-- Total one-token dispatcher. EOF is not a token; calling at EOF returns a
     failure at EOF, while the stream driver treats EOF as successful completion. -/
-def scanOne (source : List Byte) (start : Nat) : OneTokenResult :=
+def scanOneAt (source : List Byte) (start : Nat) : OneTokenResult :=
   match source[start]? with
   | none => .failure start
   | some first =>
@@ -162,18 +162,18 @@ def scanOne (source : List Byte) (start : Nat) : OneTokenResult :=
       | .symbol => scanSymbol source start
       | .invalid => .failure start
 
-theorem scanOne_deterministic
+theorem scanOneAt_deterministic
     (source : List Byte) (start : Nat) {left right : OneTokenResult}
-    (leftResult : scanOne source start = left)
-    (rightResult : scanOne source start = right) :
+    (leftResult : scanOneAt source start = left)
+    (rightResult : scanOneAt source start = right) :
     left = right := by
   exact leftResult.symm.trans rightResult
 
-theorem scanOne_token_advances
+theorem scanOneAt_token_advances
     {source : List Byte} {start : Nat} {token : RawToken}
-    (result : scanOne source start = .token token) :
+    (result : scanOneAt source start = .token token) :
     start < token.finish := by
-  unfold scanOne at result
+  unfold scanOneAt at result
   cases firstAt : source[start]? with
   | none => simp [firstAt] at result
   | some first =>
@@ -231,6 +231,89 @@ theorem scanOne_token_advances
           simp only [startClass] at result
           exact scanSymbol_token_advances result
       | invalid => simp [startClass] at result
+
+theorem scanOneAt_token_before_end
+    {source : List Byte} {start : Nat} {token : RawToken}
+    (result : scanOneAt source start = .token token) :
+    start < source.length := by
+  by_cases beforeEnd : start < source.length
+  · exact beforeEnd
+  · have missing : source[start]? = none := List.getElem?_eq_none (by omega)
+    unfold scanOneAt at result
+    simp [missing] at result
+
+theorem scanOneAt_token_start
+    {source : List Byte} {start : Nat} {token : RawToken}
+    (scanned : scanOneAt source start = .token token) :
+    token.start = start := by
+  unfold scanOneAt at scanned
+  split at scanned
+  · contradiction
+  · split at scanned <;>
+      simp_all [tokenFromNumber, tokenFromDelimited, scanSymbol,
+        scanFixedSymbol] <;>
+      repeat' first | split at scanned | contradiction | cases scanned | rfl
+
+def RawToken.shift (offset : Nat) (token : RawToken) : RawToken := {
+  kind := token.kind
+  start := offset + token.start
+  finish := offset + token.finish
+}
+
+def OneTokenResult.shift (offset : Nat) : OneTokenResult → OneTokenResult
+  | OneTokenResult.token value =>
+      OneTokenResult.token (RawToken.shift offset value)
+  | OneTokenResult.failure errorOffset =>
+      OneTokenResult.failure (offset + errorOffset)
+
+/-- Suffix-based dispatcher.  Scanning starts at zero in `source.drop start`,
+then offsets the resulting span.  This is extensionally the same scanner
+algorithm, but repeated stream scans no longer traverse the source prefix for
+every token. -/
+def scanOne (source : List Byte) (start : Nat) : OneTokenResult :=
+  (scanOneAt (source.drop start) 0).shift start
+
+theorem scanOne_deterministic
+    (source : List Byte) (start : Nat) {left right : OneTokenResult}
+    (leftResult : scanOne source start = left)
+    (rightResult : scanOne source start = right) :
+    left = right := by
+  exact leftResult.symm.trans rightResult
+
+theorem scanOne_token_advances
+    {source : List Byte} {start : Nat} {token : RawToken}
+    (result : scanOne source start = .token token) :
+    start < token.finish := by
+  unfold scanOne at result
+  cases relativeFound : scanOneAt (source.drop start) 0 with
+  | failure error =>
+      rw [relativeFound] at result
+      simp [OneTokenResult.shift] at result
+  | token relative =>
+      rw [relativeFound] at result
+      simp [OneTokenResult.shift] at result
+      subst token
+      have advances : 0 < relative.finish :=
+        scanOneAt_token_advances relativeFound
+      simp [RawToken.shift]
+      omega
+
+theorem scanOne_token_start
+    {source : List Byte} {start : Nat} {token : RawToken}
+    (result : scanOne source start = .token token) :
+    token.start = start := by
+  unfold scanOne at result
+  cases relativeFound : scanOneAt (source.drop start) 0 with
+  | failure error =>
+      rw [relativeFound] at result
+      simp [OneTokenResult.shift] at result
+  | token relative =>
+      rw [relativeFound] at result
+      simp [OneTokenResult.shift] at result
+      subst token
+      have relativeStart : relative.start = 0 :=
+        scanOneAt_token_start relativeFound
+      simp [RawToken.shift, relativeStart]
 
 inductive RawLexResult where
   | success (tokens : List RawToken)

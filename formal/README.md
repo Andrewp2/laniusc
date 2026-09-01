@@ -4,6 +4,11 @@ This directory contains the mechanized language model for Lanius. It is an
 engineering specification for the language, not a claim that the current
 Rust/Slang compiler has been verified.
 
+[`PROOF_ARCHITECTURE.md`](PROOF_ARCHITECTURE.md) proposes the relational
+specification and weakest-precondition pilot for reducing the cost of proving
+compiler code written in Lanius. It is a pilot design, not part of the settled
+language semantics recorded here.
+
 The model deliberately separates four levels:
 
 1. `Lanius.Surface` describes the source constructs accepted by Lanius.
@@ -132,6 +137,25 @@ cd formal
 ./check-current-sources.sh
 lake build
 ```
+
+The relational compiler-proof pilot has two explicit assurance gates:
+
+```sh
+./check-assurance.sh fast
+./check-assurance.sh kernel-clean
+```
+
+The fast profile records `#print axioms` for both public scanner theorems and
+allowlists only the isolated complete checked-pack `native_decide`
+certificate. The kernel-clean profile accepts no native axiom and contains an
+exact proof-producing replacement split into evidence, semantics, and global
+resolution phases. It is intentionally separate from normal builds: a
+10m27s bounded run did not finish, although it produced no proof failure;
+evidence stayed near 1.7 GiB while semantics grew to roughly 10 GiB. Direct
+`decide +kernel` was rejected after reaching 27 GiB RSS plus 17 GiB swap.
+Until the checker is decomposed more finely, the fast profile is the practical
+CI gate and the kernel-clean profile is a resource-intensive audit target. See
+`PROOF_ARCHITECTURE.md` for the pilot boundary and acceptance checklist.
 
 ## Current boundary
 

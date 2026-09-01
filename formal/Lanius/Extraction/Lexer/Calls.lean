@@ -2,6 +2,8 @@ import Lanius.Extraction.FrontendProgramExtensions
 import Lanius.Extraction.Lexer.Predicates
 import Lanius.Extraction.Lexer.ScanEnd
 import Lanius.Extraction.Lexer.Scanners
+import Lanius.Extraction.Lexer.Relational.IdentifierEndStructure
+import Lanius.Relational.WP
 import Lanius.Extraction.Lexer.LineComment
 import Lanius.Extraction.Lexer.BlockComment
 import Lanius.Extraction.Lexer.QuotedWrappers
@@ -993,7 +995,7 @@ private theorem scannerCondition_in_bounds
             [scannerCursorTerm, scannerBoundTerm]) :=
         Effectful.Term.evaluate_eq_readOnly_of_callFree
           (program := verifiedFrontendCore)
-          (calls := predicateCalls predicate accept) _ (by native_decide)
+          (calls := predicateCalls predicate accept) _ (by decide +kernel)
       _ = _ := by
         have evaluated := ReadOnly.Term.evaluate_i32_less
           (program := verifiedFrontendCore) (world := sourceWorld source)
@@ -1023,7 +1025,7 @@ private theorem scannerCondition_in_bounds
             [scannerSourceTerm, scannerCursorTerm]) :=
         Effectful.Term.evaluate_eq_readOnly_of_callFree
           (program := verifiedFrontendCore)
-          (calls := predicateCalls predicate accept) _ (by native_decide)
+          (calls := predicateCalls predicate accept) _ (by decide +kernel)
       _ = _ := by
         apply ReadOnly.Term.evaluate_i32_index_as
           (cell := 0) (values := sourceIntegers source) (position := cursor)
@@ -1064,7 +1066,7 @@ private theorem scannerCondition_out_of_bounds
           [scannerCursorTerm, scannerBoundTerm]) :=
       Effectful.Term.evaluate_eq_readOnly_of_callFree
         (program := verifiedFrontendCore)
-        (calls := predicateCalls predicate accept) _ (by native_decide)
+        (calls := predicateCalls predicate accept) _ (by decide +kernel)
     _ = _ := by
       have evaluated := ReadOnly.Term.evaluate_i32_less
         (program := verifiedFrontendCore) (world := sourceWorld source)
@@ -1168,12 +1170,126 @@ private theorem scannerSpec (predicate : FunctionId) (accept : Byte → Bool)
   body := fun cursor inBounds _ => scannerBody_evaluates predicate accept source
     start cursor sourceBound inBounds }
 
+/-- Structural partial-correctness proof for the scanner command. The loop is
+discharged by `Relational.Command.cursorScan`; no complete loop trace or
+termination argument is used here. -/
+private theorem scannerCommand_wp
+    (predicate : FunctionId) (accept : Byte → Bool)
+    (source : List Byte) (start : Nat)
+    (sourceBound : source.length ≤ 2147483647)
+    (startInBounds : start < source.length) :
+    Lanius.Relational.Command.WP
+      (Effectful.machine verifiedFrontendCore (predicateCalls predicate accept))
+      (Stateful.machineWith verifiedFrontendCore
+        (Effectful.evaluateOperation verifiedFrontendCore
+          (predicateCalls predicate accept)))
+      (scannerCommand predicate)
+      (fun completion afterWorld _afterEnvironment =>
+        completion = .returned (some (.signed .i32 (Int.ofNat
+          (Program.scanAcceptedFrom accept source (start + 1))))) ∧
+        afterWorld = sourceWorld source)
+      (sourceWorld source) (scannerParameterEnvironment source start) := by
+  let initial := start + 1
+  have initialBound : initial ≤ 2147483647 :=
+    Nat.le_trans (Nat.succ_le_of_lt startInBounds) sourceBound
+  have initializerResult : Term.evaluate
+      (Effectful.machine verifiedFrontendCore (predicateCalls predicate accept))
+      (sourceWorld source) (scannerParameterEnvironment source start)
+      (apply (.binary .add Program.i32Type Program.i32Type Program.i32Type)
+        [reference ⟨2, by omega⟩, literal (.signed .i32 1)]) =
+      .ok (.signed .i32 (Int.ofNat initial), sourceWorld source) := by
+    calc
+      _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
+          (sourceWorld source) (scannerParameterEnvironment source start)
+          (apply (.binary .add Program.i32Type Program.i32Type Program.i32Type)
+            [reference ⟨2, by omega⟩, literal (.signed .i32 1)]) :=
+        Effectful.Term.evaluate_eq_readOnly_of_callFree
+          (program := verifiedFrontendCore)
+          (calls := predicateCalls predicate accept) _ (by rfl)
+      _ = _ := by
+        have evaluated := ReadOnly.Term.evaluate_i32_add
+          (program := verifiedFrontendCore) (world := sourceWorld source)
+          (environment := scannerParameterEnvironment source start)
+          (leftType := Program.i32Type) (rightType := Program.i32Type)
+          (outputType := Program.i32Type)
+          (left := reference ⟨2, by omega⟩)
+          (right := literal (.signed .i32 1))
+          (leftValue := start) (rightValue := 1) (by rfl) (by rfl)
+          initialBound
+        have addition : Int.ofNat (start + 1) = Int.ofNat initial := by
+          simp [initial]
+        rw [addition] at evaluated
+        exact evaluated
+  have pushed : (scannerParameterEnvironment source start).push
+      (.signed .i32 (Int.ofNat initial)) =
+      scannerLoopEnvironment source start initial := by
+    funext index
+    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
+        index.val = 3 := by omega
+    rcases cases with zero | one | two | three
+    · have same : index = ⟨0, by omega⟩ := Fin.ext zero
+      rw [same]
+      rfl
+    · have same : index = ⟨1, by omega⟩ := Fin.ext one
+      rw [same]
+      rfl
+    · have same : index = ⟨2, by omega⟩ := Fin.ext two
+      rw [same]
+      rfl
+    · have same : index = ⟨3, by omega⟩ := Fin.ext three
+      rw [same]
+      rfl
+  apply Lanius.Relational.Command.letValue
+  intro value initializedWorld evaluated
+  have same := evaluated.symm.trans initializerResult
+  injection same with pairEq
+  have valueEq := congrArg Prod.fst pairEq
+  have worldEq := congrArg Prod.snd pairEq
+  change value = .signed .i32 (Int.ofNat initial) at valueEq
+  change initializedWorld = sourceWorld source at worldEq
+  subst value
+  subst initializedWorld
+  rw [pushed]
+  apply Lanius.Relational.Command.sequence
+  intro completion loopWorld loopEnvironment loopEvaluated
+  have loopWP := Lanius.Relational.Command.cursorScan
+    (scannerSpec predicate accept source start sourceBound)
+    (scannerRecurrence source accept) initial
+  obtain ⟨completionEq, loopWorldEq, loopEnvironmentEq⟩ :=
+    loopWP completion loopWorld loopEnvironment loopEvaluated
+  subst completion
+  subst loopWorld
+  subst loopEnvironment
+  apply Lanius.Relational.Command.sequence
+  apply Lanius.Relational.Command.returnSome
+  intro result returnWorld returnEvaluated
+  have cursorResult : Term.evaluate
+      (Effectful.machine verifiedFrontendCore (predicateCalls predicate accept))
+      (scannerRuntime predicate accept source start
+        (Program.scanAcceptedFrom accept source initial)).world
+      (scannerRuntime predicate accept source start
+        (Program.scanAcceptedFrom accept source initial)).environment
+      scannerCursorTerm =
+      .ok (.signed .i32 (Int.ofNat
+        (Program.scanAcceptedFrom accept source initial)),
+        (sourceWorld source)) := by rfl
+  have same := returnEvaluated.symm.trans cursorResult
+  injection same with pairEq
+  have resultEq := congrArg Prod.fst pairEq
+  have worldEq := congrArg Prod.snd pairEq
+  change result = .signed .i32 (Int.ofNat
+    (Program.scanAcceptedFrom accept source initial)) at resultEq
+  change returnWorld = sourceWorld source at worldEq
+  subst result
+  subst returnWorld
+  exact ⟨rfl, rfl⟩
+
 private theorem scannerCommand_evaluates
     (predicate : FunctionId) (accept : Byte → Bool)
     (source : List Byte) (start : Nat)
     (sourceBound : source.length ≤ 2147483647)
     (startInBounds : start < source.length) :
-    ∃ afterWorld afterEnvironment,
+    ∃ afterEnvironment,
       Command.Evaluates
         (Effectful.machine verifiedFrontendCore
           (predicateCalls predicate accept))
@@ -1185,7 +1301,7 @@ private theorem scannerCommand_evaluates
         (scannerCommand predicate)
         (.returned (some (.signed .i32
           (Int.ofNat (Program.scanAcceptedFrom accept source (start + 1))))))
-        afterWorld afterEnvironment := by
+        (sourceWorld source) afterEnvironment := by
   let initial := start + 1
   have initialBound : initial ≤ 2147483647 :=
     Nat.le_trans (Nat.succ_le_of_lt startInBounds) sourceBound
@@ -1269,9 +1385,129 @@ private theorem scannerCommand_evaluates
     (type := Program.i32Type) initializerResult (by
       rw [pushed]
       simpa [scannerRuntime, Runtime.world, Runtime.environment] using bodyResult)
-  exact ⟨sourceWorld source,
-    Env.pop (scannerLoopEnvironment source start finish),
+  exact ⟨Env.pop (scannerLoopEnvironment source start finish),
     by simpa [scannerCommand, initial, finish] using whole⟩
+
+/-- Exact recovered identifier-scanner command semantics retained as the
+constructive migration witness. The structural relational WP must eventually
+replace this theorem as a premise of the pilot. -/
+def identifierEnvironment (source : List Byte) (start : Nat) : Env 3 :=
+  scannerParameterEnvironment source start
+
+private theorem identifierCommand_eq_view :
+    scannerCommand isIdentifierContinueFunction.id =
+      Scanners.scanIdentifierEndView.command := by
+  rw [Lanius.Extraction.Lexer.Relational.IdentifierEnd.Structure.recovered]
+  exact Lanius.FunctionalView.Stateful.Pattern.exact_of_matches
+    (pattern :=
+      Lanius.Extraction.Lexer.Relational.IdentifierEnd.Structure.pattern
+        isIdentifierContinueFunction.id)
+    (by decide +kernel)
+
+theorem identifierView_evaluates
+    (source : List Byte) (start : Nat)
+    (sourceBound : source.length ≤ 2147483647)
+    (startInBounds : start < source.length) :
+    ∃ afterEnvironment,
+      Command.Evaluates
+        (Effectful.machine verifiedFrontendCore identifierPredicateCalls)
+        (Stateful.machineWith verifiedFrontendCore
+          (Effectful.evaluateOperation verifiedFrontendCore
+            identifierPredicateCalls))
+        (sourceWorld source) (identifierEnvironment source start)
+        Scanners.scanIdentifierEndView.command
+        (.returned (some (.signed .i32
+          (Int.ofNat (scanIdentifierEnd source start)))))
+        (sourceWorld source) afterEnvironment := by
+  obtain ⟨afterEnvironment, evaluated⟩ :=
+    scannerCommand_evaluates isIdentifierContinueFunction.id
+      isIdentifierContinue source start sourceBound startInBounds
+  refine ⟨afterEnvironment, ?_⟩
+  simpa [identifierEnvironment, identifierPredicateCalls,
+    identifierCommand_eq_view, Program.scanAcceptedFrom,
+    Lanius.Compiler.Lexer.scanIdentifierEnd] using
+    evaluated
+
+theorem identifierView_wp
+    (source : List Byte) (start : Nat)
+    (sourceBound : source.length ≤ 2147483647)
+    (startInBounds : start < source.length) :
+    Lanius.Relational.Command.WP
+      (Effectful.machine verifiedFrontendCore identifierPredicateCalls)
+      (Stateful.machineWith verifiedFrontendCore
+        (Effectful.evaluateOperation verifiedFrontendCore
+          identifierPredicateCalls))
+      Scanners.scanIdentifierEndView.command
+      (fun completion afterWorld _afterEnvironment =>
+        completion = .returned (some (.signed .i32
+          (Int.ofNat (scanIdentifierEnd source start)))) ∧
+        afterWorld = sourceWorld source)
+      (sourceWorld source) (identifierEnvironment source start) := by
+  rw [← identifierCommand_eq_view]
+  simpa [identifierEnvironment, identifierPredicateCalls,
+    Program.scanAcceptedFrom, Lanius.Compiler.Lexer.scanIdentifierEnd] using
+    scannerCommand_wp isIdentifierContinueFunction.id isIdentifierContinue
+      source start sourceBound startInBounds
+
+/-- Proof-facing parameter environment for the recovered whitespace scanner.
+The private concrete scanner machinery remains an implementation detail. -/
+def whitespaceEnvironment (source : List Byte) (start : Nat) : Env 3 :=
+  scannerParameterEnvironment source start
+
+private theorem whitespaceCommand_eq_view :
+    scannerCommand isWhitespaceFunction.id =
+      Scanners.scanWhitespaceEndView.command := by
+  rw [Lanius.Extraction.Lexer.Relational.IdentifierEnd.Structure.whitespaceRecovered]
+  exact Lanius.FunctionalView.Stateful.Pattern.exact_of_matches
+    (pattern :=
+      Lanius.Extraction.Lexer.Relational.IdentifierEnd.Structure.pattern
+        isWhitespaceFunction.id)
+    (by decide +kernel)
+
+theorem whitespaceView_evaluates
+    (source : List Byte) (start : Nat)
+    (sourceBound : source.length ≤ 2147483647)
+    (startInBounds : start < source.length) :
+    ∃ afterEnvironment,
+      Command.Evaluates
+        (Effectful.machine verifiedFrontendCore whitespacePredicateCalls)
+        (Stateful.machineWith verifiedFrontendCore
+          (Effectful.evaluateOperation verifiedFrontendCore
+            whitespacePredicateCalls))
+        (sourceWorld source) (whitespaceEnvironment source start)
+        Scanners.scanWhitespaceEndView.command
+        (.returned (some (.signed .i32
+          (Int.ofNat (scanWhitespaceEnd source start)))))
+        (sourceWorld source) afterEnvironment := by
+  obtain ⟨afterEnvironment, evaluated⟩ :=
+    scannerCommand_evaluates isWhitespaceFunction.id
+      isWhitespace source start sourceBound startInBounds
+  refine ⟨afterEnvironment, ?_⟩
+  simpa [whitespaceEnvironment, whitespacePredicateCalls,
+    whitespaceCommand_eq_view, Program.scanAcceptedFrom,
+    Lanius.Compiler.Lexer.scanWhitespaceEnd] using
+    evaluated
+
+theorem whitespaceView_wp
+    (source : List Byte) (start : Nat)
+    (sourceBound : source.length ≤ 2147483647)
+    (startInBounds : start < source.length) :
+    Lanius.Relational.Command.WP
+      (Effectful.machine verifiedFrontendCore whitespacePredicateCalls)
+      (Stateful.machineWith verifiedFrontendCore
+        (Effectful.evaluateOperation verifiedFrontendCore
+          whitespacePredicateCalls))
+      Scanners.scanWhitespaceEndView.command
+      (fun completion afterWorld _afterEnvironment =>
+        completion = .returned (some (.signed .i32
+          (Int.ofNat (scanWhitespaceEnd source start)))) ∧
+        afterWorld = sourceWorld source)
+      (sourceWorld source) (whitespaceEnvironment source start) := by
+  rw [← whitespaceCommand_eq_view]
+  simpa [whitespaceEnvironment, whitespacePredicateCalls,
+    Program.scanAcceptedFrom, Lanius.Compiler.Lexer.scanWhitespaceEnd] using
+    scannerCommand_wp isWhitespaceFunction.id isWhitespace source start
+      sourceBound startInBounds
 
 private theorem scannerCalls_success
     (evaluated : (scannerCalls source expectedFunction requiresOpening
@@ -1370,8 +1606,8 @@ private theorem basicScannerFramePreservingSoundness
   have calleeWellFormed : StateWellFormed callee := by
     simpa [callee, bindings] using
       enterCall_preserves_wellFormed afterArgumentsWellFormed
-  obtain ⟨afterFunctionalWorld, afterFunctionalEnvironment,
-      functionalEvaluation⟩ := scannerCommand_evaluates predicate accept source
+  obtain ⟨afterFunctionalEnvironment, functionalEvaluation⟩ :=
+    scannerCommand_evaluates predicate accept source
         start sourceBound startInBounds
   let operations := FreshSimulation.operationSoundness verifiedFrontendCore
     (predicateCalls predicate accept) predicateSound

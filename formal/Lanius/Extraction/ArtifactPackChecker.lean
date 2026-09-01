@@ -33,6 +33,34 @@ def checkUnitSurfaces :
         pure ⟨.cons (checkSurfaceArtifact_sound accepted) checkedTail.proof⟩
       else none
 
+/-- Reusable data returned by the single-reconstruction surface checker for
+every pack unit. -/
+inductive CheckedUnitSurfaces : (artifacts : List Artifact) → Type where
+  | nil : CheckedUnitSurfaces []
+  | cons
+      (head : CheckedSurfaceArtifact artifact)
+      (tail : CheckedUnitSurfaces artifacts) :
+      CheckedUnitSurfaces (artifact :: artifacts)
+
+theorem CheckedUnitSurfaces.valid :
+    {artifacts : List Artifact} → CheckedUnitSurfaces artifacts →
+      UnitsSurfaceValid artifacts
+  | [], .nil => .nil
+  | _ :: _, .cons head tail => .cons head.valid tail.valid
+
+def CheckedUnitSurfaces.nodeCounts :
+    {artifacts : List Artifact} → CheckedUnitSurfaces artifacts → List Nat
+  | [], .nil => []
+  | _ :: _, .cons head tail => head.claims.nodes.length :: tail.nodeCounts
+
+def checkUnitSurfacesCached :
+    (artifacts : List Artifact) → Option (CheckedUnitSurfaces artifacts)
+  | [] => some .nil
+  | head :: tail => do
+      let checkedHead ← checkSurfaceArtifactCached? head
+      let checkedTail ← checkUnitSurfacesCached tail
+      pure (.cons checkedHead checkedTail)
+
 def appendCorePrograms? (left right : CoreProgram) : Option CoreProgram := do
   if sameTarget : left.target == right.target then
     pure {
@@ -57,6 +85,7 @@ def mergeCorePrograms? : List Artifact → Option CoreProgram
 
 structure CheckedArtifactPack (pack : ArtifactPack) where
   schema : pack.schema_version = schemaVersion
+  surfaceData : CheckedUnitSurfaces pack.units
   surfaces : UnitsSurfaceValid pack.units
   wire : CoreProgram
   merged : mergeCorePrograms? pack.units = some wire
@@ -68,7 +97,7 @@ structure CheckedArtifactPack (pack : ArtifactPack) where
 
 def checkArtifactPack? (pack : ArtifactPack) : Option (CheckedArtifactPack pack) := do
   if schema : pack.schema_version = schemaVersion then
-    let surfaces ← checkUnitSurfaces pack.units
+    let surfaceData ← checkUnitSurfacesCached pack.units
     match merged : mergeCorePrograms? pack.units with
     | none => none
     | some wire => do
@@ -78,7 +107,8 @@ def checkArtifactPack? (pack : ArtifactPack) : Option (CheckedArtifactPack pack)
             let typed ← CoreTyping.checkProgram program
             pure {
               schema
-              surfaces := surfaces.proof
+              surfaceData
+              surfaces := surfaceData.valid
               wire
               merged
               nodeIdsDense := coreNodeIdsDense_sound dense

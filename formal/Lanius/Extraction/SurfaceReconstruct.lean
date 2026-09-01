@@ -1,5 +1,5 @@
 import Lanius.Extraction.SurfaceDecode
-import Lanius.Extraction.TokenChecker
+import Lanius.Extraction.ParseChecker
 
 namespace Lanius.Extraction
 
@@ -28,7 +28,28 @@ def splitLast : List α → Option (List α × α)
       pure (head :: initial, last)
 
 def artifactNode? (artifact : Artifact) (nodeId : ParseNodeId) : Option ParseNode :=
-  artifact.parse_nodes[nodeId]?
+  match artifact.parse_node_chunks with
+  | none => artifact.parse_nodes[nodeId]?
+  | some chunks => chunkLookup chunks nodeId
+
+/-- The optional chunk table is a computational cache, never an independent
+    parse-tree claim. -/
+def parseNodeChunksMatch (artifact : Artifact) : Bool :=
+  match artifact.parse_node_chunks with
+  | none => true
+  | some chunks => chunks.flatten == artifact.parse_nodes
+
+theorem parseNodeChunksMatch_sound {artifact : Artifact}
+    (accepted : parseNodeChunksMatch artifact = true) :
+    match artifact.parse_node_chunks with
+    | none => True
+    | some chunks => chunks.flatten = artifact.parse_nodes := by
+  unfold parseNodeChunksMatch at accepted
+  cases chunksFound : artifact.parse_node_chunks with
+  | none => trivial
+  | some chunks =>
+      simp only [chunksFound] at accepted
+      exact eq_of_beq accepted
 
 def artifactProduction? (artifact : Artifact) (nodeId : ParseNodeId) : Option Nat := do
   pure (← artifactNode? artifact nodeId).production

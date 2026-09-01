@@ -147,6 +147,8 @@ pub struct ExtractionArtifact {
     pub schema_version: u32,
     pub sources: Vec<SourceFile>,
     pub tokens: Vec<Token>,
+    #[serde(default)]
+    pub raw_tokens: Vec<Token>,
     pub semantic_token_kinds: Vec<u32>,
     pub parse_nodes: Vec<ParseNode>,
     pub parse_root: Option<ParseNodeId>,
@@ -158,11 +160,16 @@ pub struct ExtractionArtifact {
 }
 
 impl ExtractionArtifact {
-    pub fn token_only(sources: Vec<SourceFile>, tokens: Vec<Token>) -> Self {
+    pub fn token_only(
+        sources: Vec<SourceFile>,
+        raw_tokens: Vec<Token>,
+        tokens: Vec<Token>,
+    ) -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
             sources,
             tokens,
+            raw_tokens,
             semantic_token_kinds: Vec::new(),
             parse_nodes: Vec::new(),
             parse_root: None,

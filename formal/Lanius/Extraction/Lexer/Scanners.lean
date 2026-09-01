@@ -150,12 +150,12 @@ private def scanner4Reification? (function : Function) (body : Stmt) :=
 theorem scanIdentifierEndReification_exists :
     (scanner3Reification? scanIdentifierEndFunction
       scanIdentifierEndBody).isSome := by
-  native_decide
+  decide +kernel
 
 theorem scanWhitespaceEndReification_exists :
     (scanner3Reification? scanWhitespaceEndFunction
       scanWhitespaceEndBody).isSome := by
-  native_decide
+  decide +kernel
 
 theorem scanQuotedEndReification_exists :
     (scanner4Reification? scanQuotedEndFunction scanQuotedEndBody).isSome := by

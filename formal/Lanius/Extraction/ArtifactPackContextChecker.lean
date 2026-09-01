@@ -63,6 +63,35 @@ def decodePackUnitsFrom :
 def decodePackUnits? (pack : ArtifactPack) : Option (DecodedPackUnits pack.units) :=
   decodePackUnitsFrom 0 pack.units
 
+/-- Decode pack-unit metadata from the exact reconstructed Surface values
+already returned by `checkArtifactPack?`. -/
+def decodePackUnitsFromCached :
+    (nextModule : ModuleId) → (artifacts : List Artifact) →
+      ArtifactPackChecker.CheckedUnitSurfaces artifacts →
+      Option (DecodedPackUnits artifacts)
+  | _, [], .nil => some ⟨[], rfl⟩
+  | nextModule, artifact :: tail, .cons checkedSurface checkedTail =>
+      match moduleFound : declaredModulePath? checkedSurface.surface with
+      | none => none
+      | some modulePath =>
+          match coreFound : artifact.core_program.map CoreDecode.program with
+          | none => none
+          | some core => do
+              let rest ← decodePackUnitsFromCached (nextModule + 1) tail checkedTail
+              pure {
+                units := {
+                  artifact
+                  moduleId := nextModule
+                  modulePath
+                  surface := checkedSurface.surface
+                  surfaceDecoded := checkedSurface.surfaceFound
+                  moduleDeclared := moduleFound
+                  core
+                  coreDecoded := coreFound
+                } :: rest.units
+                artifactsMatch := by simp [rest.artifactsMatch]
+              }
+
 def ProgramUnit.module (unit : ProgramUnit) : Names.Module := {
   id := unit.moduleId
   path := unit.modulePath
@@ -290,7 +319,7 @@ structure CheckedArtifactPackSemantics (pack : ArtifactPack) where
 def checkArtifactPackSemantics? (pack : ArtifactPack) :
     Option (CheckedArtifactPackSemantics pack) := do
   let structural ← ArtifactPackChecker.checkArtifactPack? pack
-  let decoded ← decodePackUnits? pack
+  let decoded ← decodePackUnitsFromCached 0 pack.units structural.surfaceData
   let context ← buildPackContext? decoded.units
   let checked ← checkUnits context decoded.units
   pure ⟨structural, decoded, context, checked.proof⟩

@@ -117,6 +117,10 @@ import Lanius.Extraction.VerifiedParserRecognizeFunctionalView
 import Lanius.Extraction.VerifiedParserSoundness
 import Lanius.Extraction.Parser.FunctionalViewCoverage
 import Lanius.Extraction.VerifiedFrontendFunctionalViewCoverage
+import Lanius.Relational
+import Lanius.Extraction.Lexer.Relational.IdentifierEnd
+import Lanius.Extraction.Lexer.Relational.WhitespaceEnd
+import Lanius.Extraction.Lexer.Relational.ScannerWP
 import Lanius.Compiler.ParserWorkspace
 import Lanius.Compiler.ParserGrammar
 import Lanius.Compiler.ParserLanguage

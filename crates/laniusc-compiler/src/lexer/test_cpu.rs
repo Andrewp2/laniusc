@@ -167,7 +167,7 @@ fn slice_dbg(src: &[u8], i: usize) -> (usize, String) {
     (lo, s)
 }
 
-fn lex_raw_kept(input: &str) -> Result<Vec<TestCpuToken>, String> {
+fn lex_raw_all(input: &str) -> Result<Vec<TestCpuToken>, String> {
     let bytes = input.as_bytes();
     let n = bytes.len();
 
@@ -203,13 +203,11 @@ fn lex_raw_kept(input: &str) -> Result<Vec<TestCpuToken>, String> {
         if next.emit {
             let kind_u32 = dfa.token_map[state];
             let kind = decode_dfa_token(kind_u32, state, i)?;
-            if keep_kind(kind) {
-                out.push(TestCpuToken {
-                    kind,
-                    start: tok_start,
-                    len: i - tok_start,
-                });
-            }
+            out.push(TestCpuToken {
+                kind,
+                start: tok_start,
+                len: i - tok_start,
+            });
             // The emitting edge already transitions as if we consumed `b`,
             // so the next token starts at `i`.
             tok_start = i;
@@ -222,13 +220,11 @@ fn lex_raw_kept(input: &str) -> Result<Vec<TestCpuToken>, String> {
     let end_kind_u32 = dfa.token_map[state];
     if end_kind_u32 != INVALID_TOKEN {
         let kind = decode_dfa_token(end_kind_u32, state, n)?;
-        if keep_kind(kind) {
-            out.push(TestCpuToken {
-                kind,
-                start: tok_start,
-                len: n - tok_start,
-            });
-        }
+        out.push(TestCpuToken {
+            kind,
+            start: tok_start,
+            len: n - tok_start,
+        });
         return Ok(out);
     }
 
@@ -243,12 +239,21 @@ fn lex_raw_kept(input: &str) -> Result<Vec<TestCpuToken>, String> {
     ))
 }
 
+/// Complete pre-canonicalization token trace, including trivia.  Formal
+/// extraction exports this only as untrusted evidence; Lean checks every step.
+pub fn lex_raw_on_test_cpu(input: &str) -> Result<Vec<TestCpuToken>, String> {
+    let bytes = input.as_bytes();
+    let mut out = lex_raw_all(input)?;
+    repair_numeric_dotdot_ranges(&mut out, bytes);
+    Ok(out)
+}
+
 /// Deterministic test CPU oracle for GPU lexer readback.
 /// Returns kept DFA tokens with lexer-owned keyword retags applied.
 pub fn lex_on_test_cpu(input: &str) -> Result<Vec<TestCpuToken>, String> {
     let bytes = input.as_bytes();
-    let mut out = lex_raw_kept(input)?;
-    repair_numeric_dotdot_ranges(&mut out, bytes);
+    let mut out = lex_raw_on_test_cpu(input)?;
+    out.retain(|token| keep_kind(token.kind));
     retag_inclusive_dotdot_ranges(&mut out);
     retag_keywords_in_place(&mut out, bytes);
     Ok(out)

@@ -1,5 +1,5 @@
 import Lanius.Extraction.GlobalResolutionEvidenceChecker
-import Lanius.Extraction.VerifiedFrontendPack
+import Lanius.Extraction.VerifiedFrontendPackNative
 
 namespace Lanius.Extraction
 

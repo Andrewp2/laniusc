@@ -11,7 +11,7 @@ set_option maxHeartbeats 2000000
 theorem verifiedFrontendCore_extends_verifiedFrontendLexerCore :
     verifiedFrontendLexerCore.RuntimeExtends verifiedFrontendCore := by
   constructor
-  · native_decide
+  · decide +kernel
   · intro id declaration found
     change List.find? (fun row => row.id == id)
       verifiedFrontendLexerCore.constants = some declaration at found

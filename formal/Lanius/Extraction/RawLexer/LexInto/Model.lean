@@ -65,13 +65,7 @@ theorem scanOne_token_start
     {source : List Byte} {offset : Nat} {token : RawToken}
     (scanned : scanOne source offset = .token token) :
     token.start = offset := by
-  unfold scanOne at scanned
-  split at scanned
-  · contradiction
-  · split at scanned <;>
-      simp_all [tokenFromNumber, tokenFromDelimited, scanSymbol,
-        scanFixedSymbol] <;>
-      repeat' first | split at scanned | contradiction | cases scanned | rfl
+  exact Lanius.Compiler.Lexer.scanOne_token_start scanned
 
 def emittedTokens : Outcome → List RawToken
   | .completed tokens

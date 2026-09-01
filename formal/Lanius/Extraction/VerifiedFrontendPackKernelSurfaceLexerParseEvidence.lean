@@ -1,0 +1,43 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerRoot
+import Lanius.Extraction.SurfaceReconstruct
+
+namespace Lanius.Extraction
+
+set_option maxRecDepth 100000
+
+theorem verifiedFrontendLexerParseValidKernel :
+    ParseArtifactValid verifiedFrontendLexerArtifact :=
+  ⟨checkTokenArtifact_sound verifiedFrontendLexer_token_checked_kernel,
+    verifiedFrontendLexer_semantic_kinds_checked_kernel,
+    checkNodesFrom_sound verifiedFrontendLexer_parse_nodes_checked_kernel,
+    verifiedFrontendLexerParseRootKernel,
+    verifiedFrontendLexerParseRootKernel_eq,
+    rootShapeValid_sound verifiedFrontendLexer_root_shape_checked_kernel⟩
+
+theorem verifiedFrontendLexer_parse_checked_kernel :
+    checkParseArtifact verifiedFrontendLexerArtifact = true := by
+  unfold checkParseArtifact
+  rw [verifiedFrontendLexer_token_checked_kernel]
+  rw [verifiedFrontendLexer_semantic_kinds_checked_kernel]
+  rw [verifiedFrontendLexer_parse_nodes_checked_kernel]
+  rw [verifiedFrontendLexerParseRootKernel_eq]
+  exact verifiedFrontendLexer_root_shape_checked_kernel
+
+theorem verifiedFrontendLexer_parse_node_chunks_valid_kernel :
+    match verifiedFrontendLexerArtifact.parse_node_chunks with
+    | none => True
+    | some chunks => chunks.flatten = verifiedFrontendLexerArtifact.parse_nodes := by
+  rfl
+
+theorem verifiedFrontendLexer_parse_node_chunks_match_kernel :
+    parseNodeChunksMatch verifiedFrontendLexerArtifact = true := by
+  have chunksEqual :
+      verifiedFrontendLexerNodeChunks.flatten =
+        verifiedFrontendLexerArtifact.parse_nodes := by
+    exact verifiedFrontendLexer_parse_node_chunks_valid_kernel
+  unfold parseNodeChunksMatch
+  simp only [verifiedFrontendLexerArtifact]
+  rw [chunksEqual]
+  exact beq_self_eq_true verifiedFrontendLexerArtifact.parse_nodes
+
+end Lanius.Extraction

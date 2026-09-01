@@ -115,10 +115,72 @@ def checkUnitEvidence (surfaceNodeCounts : List Nat) :
           checkedTail.proof⟩
       else none
 
-def collectSurfaceNodeCounts? (artifacts : List Artifact) : Option (List Nat) :=
-  artifacts.mapM fun artifact => do
-    let claims ← collectSurfaceClaims artifact
-    pure claims.nodes.length
+/-! The complete pack checker has already reconstructed and validated every
+Surface unit while building its semantic certificate.  These cached variants
+reuse those exact dependent results.  Their propositions deliberately remain
+the original public validity predicates, so this is only an evaluation
+improvement, not a weakening of the certificate boundary. -/
+
+def checkUnitEvidenceStructureCached
+    (surfaceNodeCounts : List Nat)
+    (unitIndex : Nat)
+    (artifact : Artifact)
+    (checked : CheckedSurfaceArtifact artifact) : Bool :=
+  match artifact.core_program with
+  | some _ =>
+      surfaceNodeCounts[unitIndex]? == some checked.claims.nodes.length &&
+      resolutionRowsInUnits unitIndex surfaceNodeCounts artifact.resolutions &&
+      typeRowsInSurface checked.claims.nodes.length artifact.types &&
+      loweringRowsInSurface checked.claims.nodes.length artifact.lowering &&
+      indexedReferencesEarlier (·.premises) artifact.types &&
+      indexedReferencesEarlier (·.premises) artifact.lowering &&
+      typedLoweringRowsHaveTypeEvidence artifact.types artifact.lowering &&
+      typeRowsHaveLoweringEvidence artifact.lowering artifact.types
+  | none => false
+
+theorem checkUnitEvidenceStructureCached_sound
+    {checked : CheckedSurfaceArtifact artifact}
+    (accepted : checkUnitEvidenceStructureCached surfaceNodeCounts unitIndex
+      artifact checked = true) :
+    UnitEvidenceValid surfaceNodeCounts unitIndex artifact := by
+  unfold checkUnitEvidenceStructureCached at accepted
+  cases programFound : artifact.core_program with
+  | none => simp [programFound] at accepted
+  | some program =>
+      simp only [programFound, Bool.and_eq_true] at accepted
+      refine ⟨checked.claims, program, checked.claimsFound, programFound, ?_⟩
+      simpa only [beq_iff_eq, and_assoc] using accepted
+
+def checkUnitEvidenceCached (surfaceNodeCounts : List Nat) :
+    (unitIndex : Nat) → (artifacts : List Artifact) →
+      ArtifactPackChecker.CheckedUnitSurfaces artifacts →
+      Option (Evidence (UnitsEvidenceValid surfaceNodeCounts unitIndex artifacts))
+  | unitIndex, [], .nil => some ⟨.nil unitIndex⟩
+  | unitIndex, head :: tail, .cons checkedHead checkedTail => do
+      if accepted : checkUnitEvidenceStructureCached surfaceNodeCounts unitIndex
+          head checkedHead = true then
+        let checkedTailEvidence ← checkUnitEvidenceCached surfaceNodeCounts
+          (unitIndex + 1) tail checkedTail
+        pure ⟨.cons (checkUnitEvidenceStructureCached_sound accepted)
+          checkedTailEvidence.proof⟩
+      else none
+
+def collectSurfaceNodeCounts? : List Artifact → Option (List Nat)
+  | [] => some []
+  | artifact :: artifacts => do
+      let claims ← collectSurfaceClaims artifact
+      let counts ← collectSurfaceNodeCounts? artifacts
+      pure (claims.nodes.length :: counts)
+
+theorem collectSurfaceNodeCountsCached
+    {artifacts : List Artifact}
+    (checked : ArtifactPackChecker.CheckedUnitSurfaces artifacts) :
+    collectSurfaceNodeCounts? artifacts = some checked.nodeCounts := by
+  induction checked with
+  | nil => rfl
+  | cons head tail ih =>
+      simp [collectSurfaceNodeCounts?, head.claimsFound, ih,
+        ArtifactPackChecker.CheckedUnitSurfaces.nodeCounts]
 
 def packLoweringCoreNodeIds (pack : ArtifactPack) : List CoreNodeId :=
   pack.units.flatMap fun artifact => artifact.lowering.map (·.core_node)
@@ -150,6 +212,19 @@ def checkPackEvidence? (pack : ArtifactPack) :
               wire, merged, covered⟩⟩
           else none
 
+def checkPackEvidenceCached? (pack : ArtifactPack)
+    (surfaceData : ArtifactPackChecker.CheckedUnitSurfaces pack.units) :
+    Option (Evidence (PackEvidenceValid pack)) := do
+  let surfaceNodeCounts := surfaceData.nodeCounts
+  let units ← checkUnitEvidenceCached surfaceNodeCounts 0 pack.units surfaceData
+  match merged : ArtifactPackChecker.mergeCorePrograms? pack.units with
+  | none => none
+  | some wire =>
+      if covered : packLoweringCoversCore pack wire = true then
+        pure ⟨⟨surfaceNodeCounts, collectSurfaceNodeCountsCached surfaceData,
+          units.proof, wire, merged, covered⟩⟩
+      else none
+
 structure CheckedPack (pack : ArtifactPack) where
   semantics :
     ArtifactPackContextChecker.CheckedArtifactPackSemantics pack
@@ -158,8 +233,8 @@ structure CheckedPack (pack : ArtifactPack) where
     GlobalResolutionEvidenceChecker.CheckedPackResolution pack semantics.context
 
 def checkPack? (pack : ArtifactPack) : Option (CheckedPack pack) := do
-  let evidence ← checkPackEvidence? pack
   let semantics ← ArtifactPackContextChecker.checkArtifactPackSemantics? pack
+  let evidence ← checkPackEvidenceCached? pack semantics.structural.surfaceData
   let scopedResolution ←
     GlobalResolutionEvidenceChecker.checkPackResolution? pack semantics.context
   pure ⟨semantics, evidence.proof, scopedResolution⟩

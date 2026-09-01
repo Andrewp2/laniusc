@@ -453,7 +453,7 @@ mod tests {
     #[test]
     fn parses_real_verified_lexer_source_without_context_special_cases() {
         let source = include_bytes!("../../../verified_compiler/src/verified/digits.lani").to_vec();
-        let (_, tokens) = extract_tokens("digits.lani".into(), source).unwrap();
+        let (_, _, tokens) = extract_tokens("digits.lani".into(), source).unwrap();
         let parsed = parse_tokens(&tokens).unwrap();
 
         assert_eq!(parsed.semantic_token_kinds.len(), tokens.len());

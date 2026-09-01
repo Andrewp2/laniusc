@@ -1,0 +1,93 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings0
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings1
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings2
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings3
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings4
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings5
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings6
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings7
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings8
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings9
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings10
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings11
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings12
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings13
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings14
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings15
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings16
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings17
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings18
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings19
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings20
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings21
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings22
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings23
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings24
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings25
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings26
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings27
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings28
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings29
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings30
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings31
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings32
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsSpellings33
+
+namespace Lanius.Extraction
+
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+set_option cbv.maxSteps 100000000
+set_option cbv.warning false
+
+theorem verifiedFrontendLexer_claims_spellings_fast_kernel :
+    verifiedFrontendLexerClaimsQuoted.spellings.all
+      verifiedFrontendLexerSpellingClaimValidFast = true := by
+  rw [verifiedFrontendLexer_spelling_claims_chunks_kernel]
+  simp only [List.all_append, verifiedFrontendLexer_claims_spellings_0_kernel,
+    verifiedFrontendLexer_claims_spellings_1_kernel,
+    verifiedFrontendLexer_claims_spellings_2_kernel,
+    verifiedFrontendLexer_claims_spellings_3_kernel,
+    verifiedFrontendLexer_claims_spellings_4_kernel,
+    verifiedFrontendLexer_claims_spellings_5_kernel,
+    verifiedFrontendLexer_claims_spellings_6_kernel,
+    verifiedFrontendLexer_claims_spellings_7_kernel,
+    verifiedFrontendLexer_claims_spellings_8_kernel,
+    verifiedFrontendLexer_claims_spellings_9_kernel,
+    verifiedFrontendLexer_claims_spellings_10_kernel,
+    verifiedFrontendLexer_claims_spellings_11_kernel,
+    verifiedFrontendLexer_claims_spellings_12_kernel,
+    verifiedFrontendLexer_claims_spellings_13_kernel,
+    verifiedFrontendLexer_claims_spellings_14_kernel,
+    verifiedFrontendLexer_claims_spellings_15_kernel,
+    verifiedFrontendLexer_claims_spellings_16_kernel,
+    verifiedFrontendLexer_claims_spellings_17_kernel,
+    verifiedFrontendLexer_claims_spellings_18_kernel,
+    verifiedFrontendLexer_claims_spellings_19_kernel,
+    verifiedFrontendLexer_claims_spellings_20_kernel,
+    verifiedFrontendLexer_claims_spellings_21_kernel,
+    verifiedFrontendLexer_claims_spellings_22_kernel,
+    verifiedFrontendLexer_claims_spellings_23_kernel,
+    verifiedFrontendLexer_claims_spellings_24_kernel,
+    verifiedFrontendLexer_claims_spellings_25_kernel,
+    verifiedFrontendLexer_claims_spellings_26_kernel,
+    verifiedFrontendLexer_claims_spellings_27_kernel,
+    verifiedFrontendLexer_claims_spellings_28_kernel,
+    verifiedFrontendLexer_claims_spellings_29_kernel,
+    verifiedFrontendLexer_claims_spellings_30_kernel,
+    verifiedFrontendLexer_claims_spellings_31_kernel,
+    verifiedFrontendLexer_claims_spellings_32_kernel,
+    verifiedFrontendLexer_claims_spellings_33_kernel,
+    Bool.and_self]
+
+theorem verifiedFrontendLexer_claims_spellings_kernel :
+    verifiedFrontendLexerClaimsKernel.spellings.all
+      (spellingClaimValidCached verifiedFrontendLexerArtifact) = true := by
+  rw [verifiedFrontendLexerClaimsKernel_eq_quoted]
+  rw [List.all_eq_true]
+  intro claim member
+  exact verifiedFrontendLexerSpellingClaimValidFast_sound claim
+    ((List.all_eq_true.mp verifiedFrontendLexer_claims_spellings_fast_kernel)
+      claim member)
+
+end Lanius.Extraction

@@ -553,8 +553,15 @@ structure Artifact where
   schema_version : Nat
   sources : List SourceFile
   tokens : List Token
+  /-- Untrusted complete lexer trace, including trivia.  The token checker
+      validates every step before using it to certify the canonical stream. -/
+  raw_tokens : Option (List Token) := none
   semantic_token_kinds : List Nat
   parse_nodes : List ParseNode
+  /-- Optional bounded chunks for kernel-efficient random access.  Surface
+      checking accepts them only when their flattening is exactly
+      `parse_nodes`; exporters need not provide this cache. -/
+  parse_node_chunks : Option (List (List ParseNode)) := none
   parse_root : Option ParseNodeId
   surface : Option SurfaceFile
   resolutions : List ResolutionEvidence
@@ -575,8 +582,10 @@ def Artifact.empty : Artifact := {
   schema_version := schemaVersion
   sources := []
   tokens := []
+  raw_tokens := none
   semantic_token_kinds := []
   parse_nodes := []
+  parse_node_chunks := none
   parse_root := none
   surface := none
   resolutions := []

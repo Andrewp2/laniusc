@@ -16,9 +16,9 @@ use anyhow::{Context, Result};
 use artifact::{ExtractionArtifact, ExtractionArtifactPack, SCHEMA_VERSION};
 
 fn extract_bytes(path: String, bytes: Vec<u8>) -> Result<ExtractionArtifact> {
-    let (source, tokens) = lexer::extract_tokens(path, bytes)?;
+    let (source, raw_tokens, tokens) = lexer::extract_tokens(path, bytes)?;
     let parsed = parser::parse_tokens(&tokens)?;
-    let mut artifact = ExtractionArtifact::token_only(vec![source], tokens);
+    let mut artifact = ExtractionArtifact::token_only(vec![source], raw_tokens, tokens);
     artifact.semantic_token_kinds = parsed.semantic_token_kinds;
     artifact.parse_nodes = parsed.nodes;
     artifact.parse_root = Some(parsed.root);
