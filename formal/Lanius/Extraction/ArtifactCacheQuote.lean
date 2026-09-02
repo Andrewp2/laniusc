@@ -1,5 +1,5 @@
 import Lanius.Extraction.ArtifactQuote
-import Lanius.Extraction.SurfaceChecker
+import Lanius.Data.SeqTree
 import Lean.Meta.LitValues
 
 open Lean Elab Term
@@ -31,45 +31,26 @@ private def cacheElabPack (stx : Syntax) : TermElabM ArtifactPack := do
 private def checkedByte (value : Nat) : Option (Fin 256) :=
   if inRange : value < 256 then some ⟨value, inRange⟩ else none
 
-private partial def buildChunkTree (leafSize : Nat) (values : List α) :
-    ChunkTree α :=
+private partial def buildSeqTree (leafSize : Nat) (values : List α) :
+    Lanius.Data.SeqTree α :=
   if values.length ≤ leafSize || values.length ≤ 1 then .leaf values else
   let leftLength := values.length / 2
-  .branch leftLength
-    (buildChunkTree leafSize (values.take leftLength))
-    (buildChunkTree leafSize (values.drop leftLength))
+  let left := buildSeqTree leafSize (values.take leftLength)
+  let right := buildSeqTree leafSize (values.drop leftLength)
+  .branch values.length (Nat.max left.height right.height + 1) left right
 
-elab "artifact_pack_unit_tokens% " json:term ", " path:term ", "
-    start:term ", " count:term : term => do
-  let expectedPath ← cacheElabStringLiteral path
-  let start ← cacheElabNatLiteral start
-  let count ← cacheElabNatLiteral count
-  let pack ← cacheElabPack json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
-  unless start + count ≤ artifact.tokens.length do
-    throwError "token slice exceeds table length"
-  pure (toExpr (artifact.tokens.drop start |>.take count))
-
-elab "artifact_pack_unit_source_bytes% " json:term ", " path:term ", "
-    sourceIndex:term ", " start:term ", " count:term : term => do
-  let expectedPath ← cacheElabStringLiteral path
-  let sourceIndex ← cacheElabNatLiteral sourceIndex
-  let start ← cacheElabNatLiteral start
-  let count ← cacheElabNatLiteral count
-  let pack ← cacheElabPack json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
-  let some source := artifact.sources[sourceIndex]?
-    | throwError "source index is absent in unit {expectedPath}"
-  unless start + count ≤ source.bytes.length do
-    throwError "source-byte slice exceeds source length"
-  let values := source.bytes.drop start |>.take count
-  let some bytes := values.mapM checkedByte
-    | throwError "source-byte slice contains an out-of-range value"
-  pure (toExpr bytes)
+def buildParentTables (artifact : Artifact) :
+    List (Option ParseNodeId) × List (Option ParseNodeId) := Id.run do
+  let mut nodeParents := Array.replicate artifact.parse_nodes.length none
+  let mut tokenParents := Array.replicate artifact.tokens.length none
+  for (node, parentId) in artifact.parse_nodes.zipIdx do
+    for child in node.children do
+      match child with
+      | .node childId =>
+          nodeParents := nodeParents.setIfInBounds childId (some parentId)
+      | .token tokenId =>
+          tokenParents := tokenParents.setIfInBounds tokenId (some parentId)
+  return (nodeParents.toList, tokenParents.toList)
 
 elab "artifact_pack_unit_token_tree% " json:term ", " path:term ", "
     leafSize:term : term => do
@@ -79,7 +60,45 @@ elab "artifact_pack_unit_token_tree% " json:term ", " path:term ", "
   let some artifact := pack.units.find? fun artifact =>
       artifact.sources.any fun source => source.path == expectedPath
     | throwError "artifact pack has no unit for source {expectedPath}"
-  pure (toExpr (buildChunkTree leafSize artifact.tokens))
+  pure (toExpr (buildSeqTree leafSize artifact.tokens))
+
+elab "artifact_pack_unit_semantic_kind_tree% " json:term ", " path:term ", "
+    leafSize:term : term => do
+  let expectedPath ← cacheElabStringLiteral path
+  let leafSize ← cacheElabNatLiteral leafSize
+  let pack ← cacheElabPack json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  pure (toExpr (buildSeqTree leafSize artifact.semantic_token_kinds))
+
+elab "artifact_pack_unit_parse_node_tree% " json:term ", " path:term ", "
+    leafSize:term : term => do
+  let expectedPath ← cacheElabStringLiteral path
+  let leafSize ← cacheElabNatLiteral leafSize
+  let pack ← cacheElabPack json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  pure (toExpr (buildSeqTree leafSize artifact.parse_nodes))
+
+/-- Quote one balanced range of a unit's parse-node cache.  Large cache trees
+are compiled from independently emitted subtrees and joined with checked
+branch metadata, avoiding a monolithic generated-data module. -/
+elab "artifact_pack_unit_parse_node_tree_range% " json:term ", " path:term ", "
+    start:term ", " count:term ", " leafSize:term : term => do
+  let expectedPath ← cacheElabStringLiteral path
+  let start ← cacheElabNatLiteral start
+  let count ← cacheElabNatLiteral count
+  let leafSize ← cacheElabNatLiteral leafSize
+  let pack ← cacheElabPack json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  unless start + count ≤ artifact.parse_nodes.length do
+    throwError "parse-node tree range exceeds unit {expectedPath}"
+  pure (toExpr (buildSeqTree leafSize
+    (artifact.parse_nodes.drop start |>.take count)))
 
 elab "artifact_pack_unit_source_byte_tree% " json:term ", " path:term ", "
     sourceIndex:term ", " leafSize:term : term => do
@@ -94,6 +113,25 @@ elab "artifact_pack_unit_source_byte_tree% " json:term ", " path:term ", "
     | throwError "source index is absent in unit {expectedPath}"
   let some bytes := source.bytes.mapM checkedByte
     | throwError "source contains an out-of-range byte"
-  pure (toExpr (buildChunkTree leafSize bytes))
+  pure (toExpr (buildSeqTree leafSize bytes))
+
+/-- Quotes all three balanced artifact-view trees in one pass. -/
+elab "artifact_pack_unit_cache_trees% " json:term ", " path:term ", "
+    sourceIndex:term ", " leafSize:term : term => do
+  let expectedPath ← cacheElabStringLiteral path
+  let sourceIndex ← cacheElabNatLiteral sourceIndex
+  let leafSize ← cacheElabNatLiteral leafSize
+  let pack ← cacheElabPack json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  let some source := artifact.sources[sourceIndex]?
+    | throwError "source index is absent in unit {expectedPath}"
+  let some bytes := source.bytes.mapM checkedByte
+    | throwError "source contains an out-of-range byte"
+  pure (toExpr (
+    buildSeqTree leafSize artifact.parse_nodes,
+    buildSeqTree leafSize artifact.tokens,
+    buildSeqTree leafSize bytes))
 
 end Lanius.Extraction

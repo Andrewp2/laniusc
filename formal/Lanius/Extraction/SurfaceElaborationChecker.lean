@@ -200,6 +200,15 @@ def symbolsUnique? (environment : Names.Environment) :
     some ⟨symbolsUniqueBool_sound accepted⟩
   else none
 
+/-- Reuse a context's already-checked symbol uniqueness when available.
+Pack context construction installs this certificate once; ad-hoc contexts
+retain the proof-producing checker as a conservative fallback. -/
+def contextSymbolsUnique? (context : Context) :
+    Option (Evidence (Names.SymbolsAreUnique context.names)) :=
+  match context.symbolsAreUnique with
+  | some cached => some ⟨cached.proof⟩
+  | none => symbolsUnique? context.names
+
 structure LocalGlobalSymbol
     (environment : Names.Environment) (moduleId : ModuleId)
     (lookupNamespace : Names.LookupNamespace) (name : Surface.Name) where
@@ -261,7 +270,7 @@ def resolveSameModuleGlobal? (context : Context)
   | some name => do
       let selected ← findLocalGlobalSymbol? context.names context.currentModule
         lookupNamespace name
-      let unique ← symbolsUnique? context.names
+      let unique ← contextSymbolsUnique? context
       let formed := referenceFromSurfacePath_unqualified lookupNamespace unqualified
       let namesResolved : Names.Resolves context.names context.currentModule
           (.unqualified lookupNamespace name) selected.symbol := by
@@ -408,6 +417,13 @@ def modulesUniquePaths? (environment : Names.Environment) :
   if accepted : modulesUniquePathsBool environment.modules = true then
     some ⟨modulesUniquePathsBool_sound accepted⟩
   else none
+
+/-- Reuse a context's already-checked module-path uniqueness when available. -/
+def contextModulesUniquePaths? (context : Context) :
+    Option (Evidence (Names.ModulesHaveUniquePaths context.names)) :=
+  match context.modulesHaveUniquePaths with
+  | some cached => some ⟨cached.proof⟩
+  | none => modulesUniquePaths? context.names
 
 def noLocalGlobalSymbol? (environment : Names.Environment)
     (moduleId : ModuleId) (lookupNamespace : Names.LookupNamespace)
@@ -564,7 +580,7 @@ def resolveGlobal? (context : Context)
       match localFound : findLocalGlobalSymbol? context.names context.currentModule
         referenceNamespace name with
       | some selected => do
-          let unique ← symbolsUnique? context.names
+          let unique ← contextSymbolsUnique? context
           let namesResolved : Names.Resolves context.names context.currentModule
               (.unqualified referenceNamespace name) selected.symbol := by
             constructor
@@ -601,10 +617,10 @@ def resolveGlobal? (context : Context)
           else none
   | some (.qualified referenceNamespace modulePath name) => do
       let selectedModule ← findModuleByPath? context.names modulePath
-      let modulesUnique ← modulesUniquePaths? context.names
+      let modulesUnique ← contextModulesUniquePaths? context
       let selected ← findLocalGlobalSymbol? context.names selectedModule.module.id
         referenceNamespace name
-      let symbolsUnique ← symbolsUnique? context.names
+      let symbolsUnique ← contextSymbolsUnique? context
       let candidateEvidence : Evidence
           (Names.Candidate context.names context.currentModule
             (.qualified referenceNamespace modulePath name) selected.symbol) ←

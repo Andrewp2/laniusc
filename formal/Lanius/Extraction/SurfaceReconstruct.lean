@@ -15,6 +15,52 @@ have a smaller ID than its parent.
 
 abbrev SurfaceBuild (α : Type) := StateT SurfaceNodeId Option α
 
+/-- Primitive reads used by reconstruction.  The grammar-directed algorithm
+below is parametric in this interface, so list and checked-tree execution share
+one implementation. -/
+@[ext] class ArtifactAccess where
+  node? : Artifact → ParseNodeId → Option ParseNode
+  token? : Artifact → TokenId → Option Token
+  primarySourceRange? : Artifact → Nat → Nat → Option (List (Fin 256))
+
+@[instance_reducible] def ArtifactAccess.canonical : ArtifactAccess where
+  node? := fun artifact nodeId => artifact.parse_nodes[nodeId]?
+  token? := fun artifact tokenId => artifact.tokens[tokenId]?
+  primarySourceRange? := fun artifact start count => do
+    let source ← artifact.sources[0]?
+    let bytes ← decodeBytes source.bytes
+    pure ((bytes.drop start).take count)
+
+instance : ArtifactAccess := ArtifactAccess.canonical
+
+@[instance_reducible] def ArtifactAccess.canonicalFor
+    (artifact : Artifact) : ArtifactAccess where
+  node? := fun _ nodeId => artifact.parse_nodes[nodeId]?
+  token? := fun _ tokenId => artifact.tokens[tokenId]?
+  primarySourceRange? := fun _ start count => do
+    let source ← artifact.sources[0]?
+    let bytes ← decodeBytes source.bytes
+    pure ((bytes.drop start).take count)
+
+@[instance_reducible] def ArtifactAccess.ofView {artifact : Artifact}
+    (view : ArtifactView artifact) : ArtifactAccess where
+  node? := fun _ nodeId => view.node? nodeId
+  token? := fun _ tokenId => view.token? tokenId
+  primarySourceRange? := fun _ start count => view.primarySourceRange start count
+
+theorem ArtifactAccess.ofView_eq_canonicalFor {artifact : Artifact}
+    (view : ArtifactView artifact) :
+    ArtifactAccess.ofView view = ArtifactAccess.canonicalFor artifact := by
+  apply ArtifactAccess.ext
+  · funext _ nodeId
+    exact view.node?_eq nodeId
+  · funext _ tokenId
+    exact view.token?_eq tokenId
+  · funext _ start count
+    exact view.primarySourceRange_eq start count
+
+variable [ArtifactAccess]
+
 def freshSurfaceNodeId : SurfaceBuild SurfaceNodeId := do
   let id ← get
   set (id + 1)
@@ -28,28 +74,7 @@ def splitLast : List α → Option (List α × α)
       pure (head :: initial, last)
 
 def artifactNode? (artifact : Artifact) (nodeId : ParseNodeId) : Option ParseNode :=
-  match artifact.parse_node_chunks with
-  | none => artifact.parse_nodes[nodeId]?
-  | some chunks => chunkLookup chunks nodeId
-
-/-- The optional chunk table is a computational cache, never an independent
-    parse-tree claim. -/
-def parseNodeChunksMatch (artifact : Artifact) : Bool :=
-  match artifact.parse_node_chunks with
-  | none => true
-  | some chunks => chunks.flatten == artifact.parse_nodes
-
-theorem parseNodeChunksMatch_sound {artifact : Artifact}
-    (accepted : parseNodeChunksMatch artifact = true) :
-    match artifact.parse_node_chunks with
-    | none => True
-    | some chunks => chunks.flatten = artifact.parse_nodes := by
-  unfold parseNodeChunksMatch at accepted
-  cases chunksFound : artifact.parse_node_chunks with
-  | none => trivial
-  | some chunks =>
-      simp only [chunksFound] at accepted
-      exact eq_of_beq accepted
+  ArtifactAccess.node? artifact nodeId
 
 def artifactProduction? (artifact : Artifact) (nodeId : ParseNodeId) : Option Nat := do
   pure (← artifactNode? artifact nodeId).production
@@ -73,11 +98,10 @@ def artifactExpectProduction
   if (← artifactProduction? artifact nodeId) = production then some () else none
 
 def artifactTokenText? (artifact : Artifact) (tokenId : TokenId) : Option String := do
-  let source ← artifact.sources[0]?
-  let token ← artifact.tokens[tokenId]?
+  let _source ← artifact.sources[0]?
+  let token ← ArtifactAccess.token? artifact tokenId
   if token.span.file != 0 || token.span.start > token.span.finish then none else
-  let bytes ← decodeBytes source.bytes
-  let tokenBytes := (bytes.drop token.span.start).take
+  let tokenBytes ← ArtifactAccess.primarySourceRange? artifact token.span.start
     (token.span.finish - token.span.start)
   String.fromUTF8? (tokenBytes.map (fun byte => UInt8.ofNat byte.val)).toByteArray
 
@@ -1008,11 +1032,27 @@ def reconstructFile
     value := { items }
   }
 
-def reconstructArtifactSurface (artifact : Artifact) : Option SurfaceFile := do
+def reconstructArtifactSurfaceWithAccess
+    (artifact : Artifact) : Option SurfaceFile := do
   let root ← artifact.parse_root
   let (surface, _) ← (reconstructFile
     (artifact.parse_nodes.length + 1) artifact root).run 0
   pure surface
+
+def reconstructArtifactSurface (artifact : Artifact) : Option SurfaceFile :=
+  @reconstructArtifactSurfaceWithAccess (ArtifactAccess.canonicalFor artifact)
+    artifact
+
+def reconstructArtifactSurfaceView (artifact : Artifact)
+    (view : ArtifactView artifact) : Option SurfaceFile :=
+  @reconstructArtifactSurfaceWithAccess (ArtifactAccess.ofView view) artifact
+
+omit [ArtifactAccess] in theorem reconstructArtifactSurfaceView_eq (artifact : Artifact)
+    (view : ArtifactView artifact) :
+    reconstructArtifactSurfaceView artifact view =
+      reconstructArtifactSurface artifact := by
+  unfold reconstructArtifactSurfaceView reconstructArtifactSurface
+  rw [ArtifactAccess.ofView_eq_canonicalFor view]
 
 /-- The formal Surface program exposed to later checkers is decoded from
     Lean's reconstruction, never directly from the untrusted proposal. -/

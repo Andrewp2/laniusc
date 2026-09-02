@@ -1,0 +1,11 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceCanonicalTokensClaims
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceCanonicalTokensView
+import Lanius.Extraction.VerifiedFrontendUnitCanonicalTokensOrigins
+import Lanius.Extraction.KernelSurfacePhases
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+theorem verifiedFrontendCanonicalTokens_claims_equal_kernel :
+    (verifiedFrontendCanonicalTokensOrigins).claims = verifiedFrontendCanonicalTokensClaimsKernel := by
+  rfl
+end Lanius.Extraction

@@ -1,0 +1,8 @@
+import Lanius.Extraction.VerifiedFrontendUnitRawLexerCacheSemantic
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+theorem verifiedFrontendRawLexer_semantic_tree_represents_kernel :
+    verifiedFrontendRawLexerSemanticKindTree.Represents verifiedFrontendRawLexerArtifact.semantic_token_kinds := by
+  with_unfolding_all rfl
+end Lanius.Extraction

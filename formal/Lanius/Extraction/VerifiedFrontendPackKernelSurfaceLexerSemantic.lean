@@ -11,6 +11,6 @@ set_option cbv.warning false
 theorem verifiedFrontendLexer_semantic_kinds_checked_kernel :
     semanticKindsValid laniusGrammar verifiedFrontendLexerArtifact.tokens
       verifiedFrontendLexerArtifact.semantic_token_kinds = true := by
-  cbv
+  with_unfolding_all rfl
 
 end Lanius.Extraction

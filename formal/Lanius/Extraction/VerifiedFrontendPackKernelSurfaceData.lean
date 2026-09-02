@@ -1,4 +1,14 @@
+import Lanius.Extraction.VerifiedFrontendPack
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexer
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceTokenScan
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceDigits
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceToken
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceCanonicalTokens
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceDecimal
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceNumber
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceSymbol
 import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceRawLexer
+import Lanius.Extraction.ArtifactPackChecker
 
 namespace Lanius.Extraction
 
@@ -14,25 +24,8 @@ def verifiedFrontendPackSurfaceDataKernel :
     (.cons verifiedFrontendSymbolSurfaceKernel
     (.cons verifiedFrontendRawLexerSurfaceKernel .nil))))))))
 
-theorem verifiedFrontendPackSurfaceDataKernel_eq :
-    ArtifactPackChecker.checkUnitSurfacesCached verifiedFrontendPack.units =
-      some verifiedFrontendPackSurfaceDataKernel := by
-  simp only [verifiedFrontendPack, ArtifactPackChecker.checkUnitSurfacesCached]
-  rw [verifiedFrontendLexerSurfaceKernel_eq]
-  rw [verifiedFrontendTokenScanSurfaceKernel_eq]
-  rw [verifiedFrontendDigitsSurfaceKernel_eq]
-  rw [verifiedFrontendTokenSurfaceKernel_eq]
-  rw [verifiedFrontendCanonicalTokensSurfaceKernel_eq]
-  rw [verifiedFrontendDecimalSurfaceKernel_eq]
-  rw [verifiedFrontendNumberSurfaceKernel_eq]
-  rw [verifiedFrontendSymbolSurfaceKernel_eq]
-  rw [verifiedFrontendRawLexerSurfaceKernel_eq]
-  rfl
-
 theorem verifiedFrontendPack_surface_data_checked_kernel :
-    (ArtifactPackChecker.checkUnitSurfacesCached
-      verifiedFrontendPack.units).isSome = true := by
-  rw [verifiedFrontendPackSurfaceDataKernel_eq]
-  rfl
+    ArtifactPackChecker.UnitsSurfaceValid verifiedFrontendPack.units :=
+  verifiedFrontendPackSurfaceDataKernel.valid
 
 end Lanius.Extraction

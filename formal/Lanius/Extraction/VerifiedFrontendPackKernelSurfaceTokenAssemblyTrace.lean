@@ -1,0 +1,25 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceTokenClaims
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceTokenOriginsTrace
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceTokenDecode
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+def verifiedFrontendTokenReconstructionKernel : ProvenanceSurfaceReconstruction := {
+  reconstructed := verifiedFrontendTokenReconstructedKernel
+  claims := verifiedFrontendTokenClaimsKernel
+  origins := verifiedFrontendTokenOrigins
+}
+theorem verifiedFrontendToken_reconstruction_found_kernel :
+    reconstructArtifactSurfaceWithProvenanceView verifiedFrontendTokenArtifact verifiedFrontendTokenView
+      verifiedFrontendTokenOrigins = some verifiedFrontendTokenReconstructionKernel :=
+  reconstructArtifactSurfaceWithProvenanceView_of_components verifiedFrontendTokenView
+    verifiedFrontendTokenOrigins verifiedFrontendTokenReconstructedKernel verifiedFrontendTokenClaimsKernel
+    verifiedFrontendToken_reconstructed_found_kernel verifiedFrontendToken_claims_found_kernel
+def verifiedFrontendTokenSurfaceKernel : CheckedSurfaceArtifact verifiedFrontendTokenArtifact :=
+  CheckedSurfaceArtifact.ofOriginsWithParse verifiedFrontendTokenView verifiedFrontendTokenOrigins
+    verifiedFrontendTokenParseValidTraceKernel verifiedFrontendTokenReconstructionKernel
+    verifiedFrontendToken_reconstruction_found_kernel verifiedFrontendTokenDecodedSurfaceKernel
+    verifiedFrontendToken_decoded_surface_found_kernel verifiedFrontendToken_claims_equal_kernel
+    verifiedFrontendToken_origins_checked_kernel
+theorem verifiedFrontendToken_surface_checked_kernel : SurfaceArtifactValid verifiedFrontendTokenArtifact :=
+  CheckedSurfaceArtifact.valid verifiedFrontendTokenSurfaceKernel
+end Lanius.Extraction

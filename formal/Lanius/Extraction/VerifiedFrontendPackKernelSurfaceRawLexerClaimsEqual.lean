@@ -1,0 +1,11 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceRawLexerClaims
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceRawLexerView
+import Lanius.Extraction.VerifiedFrontendUnitRawLexerOrigins
+import Lanius.Extraction.KernelSurfacePhases
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+theorem verifiedFrontendRawLexer_claims_equal_kernel :
+    (verifiedFrontendRawLexerOrigins).claims = verifiedFrontendRawLexerClaimsKernel := by
+  rfl
+end Lanius.Extraction

@@ -1,0 +1,9 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceSymbolParseChunkAssembly
+
+namespace Lanius.Extraction
+
+theorem verifiedFrontendSymbolParseValidTraceKernel :
+    ParseArtifactValid verifiedFrontendSymbolArtifact :=
+  verifiedFrontendSymbolParseValidChunkKernel
+
+end Lanius.Extraction

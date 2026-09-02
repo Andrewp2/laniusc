@@ -1,0 +1,10 @@
+import Lanius.Extraction.VerifiedFrontendUnitSymbol
+import Lanius.Extraction.ParseChunks
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+kernel_parse_root verifiedFrontendSymbol_root_trace_present_kernel,
+  verifiedFrontendSymbolRootTraceKernel,
+  verifiedFrontendSymbol_root_trace_found_kernel,
+  verifiedFrontendSymbol_root_trace_shape_kernel for verifiedFrontendSymbolArtifact
+end Lanius.Extraction

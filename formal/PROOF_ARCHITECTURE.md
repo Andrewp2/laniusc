@@ -1,9 +1,95 @@
 # Proof architecture for verified compiler code
 
-Status: scanner pilot implemented; kernel-clean checker reduction remains an
-engineering follow-up  
+Status: scanner pilot implemented; kernel-clean context, semantics, and
+evidence aggregation are practical; global resolution remains an engineering
+follow-up
 Scope: compiler code written in Lanius  
 First pilot: `verified::lexer::scan_identifier_end`
+
+## Frontend certificate infrastructure checkpoint (September 1, 2026)
+
+### Reduction-performance checkpoint (September 2, 2026)
+
+The normal public and incremental target is approximately three seconds, not
+thirty seconds. Cold regeneration of every leaf certificate is measured
+separately and is not allowed to leak into downstream proof rebuilds.
+
+The semantic context now has a materialized finite-table representation tied
+by kernel equalities to the original proof-producing builder. Module names,
+symbols, imports, nominal headers, aliases, fields, constructors, constants,
+function schemes, and function instances are concrete data; cached uniqueness
+proofs remain opaque. Struct and function-table equality is checked in unit
+shards and assembled structurally. Semantic body checking is likewise checked
+per unit and assembled without rerunning any unit checker.
+
+Focused rebuild measurements on the development host are:
+
+- public context: 0.94 s;
+- checked semantic units aggregate: 1.00 s;
+- checked semantics assembly: 1.01 s;
+- artifact evidence units aggregate: 1.01 s;
+- artifact evidence assembly: 1.03 s.
+
+Cold leaf certificates remain uneven. The largest measured context/function
+and artifact-evidence shards take tens of seconds; CanonicalTokens evidence
+takes about 106 s and 11.2 GiB. These costs are now isolated behind `.olean`
+boundaries. They still identify real algorithmic work: declaration collection,
+qualified type grounding, ordered-reference validation, and lowering coverage
+must consume checked indexed views rather than repeatedly scan embedded lists.
+
+The complete kernel-clean pack is not yet a three-second build because global
+resolution still uses one monolithic proof-producing reduction. Its next
+migration should mirror the completed phases: certify each source unit against
+the materialized context, assemble `CheckedPackUnits` structurally, and keep
+the public `CheckedPackResolution` module as an opaque sub-three-second
+wrapper. A clean rebuild of every leaf certificate is intentionally a distinct
+performance metric.
+
+The frontend Surface-certificate path now has one indexed-artifact boundary.
+The serialized `Artifact` keeps canonical lists as semantic authority;
+`ArtifactCache` is a derived sidecar containing parse-node, token, and decoded
+source-byte trees. `ArtifactView` accepts a sidecar only after proving that its
+trees represent the canonical lists. Parse checking, reconstruction, token-text
+comparison, and production Surface validation consume that view rather than
+choosing among checker-specific lookup representations.
+
+The generic tree is `Lanius.Data.SeqTree`. Its checked invariant covers cached
+subtree sizes and heights, bounded leaves, nonempty branches, and a one-level
+height-balance bound. Lookup correctness is proved once against `flatten`.
+Structural range traversal descends to the first intersecting leaf and walks
+adjacent subtrees; `rangeEq` streams the expected bytes across leaves without
+materializing the selected source slice. Spelling coverage is an ordered exact
+comparison, so missing, duplicate, or out-of-order claims are rejected in one
+linear scan.
+
+Surface reconstruction has a separate provenance result. Each node or spelling
+claim is paired with a compact sequence of child slots. Parent tables may be
+used outside the trusted boundary to propose those paths, but they are not
+stored in the checked view and carry no authority. The kernel validates every
+direct node and token edge against `ArtifactView`, then transports the resulting
+evidence to the canonical `SurfaceClaimsMatch` predicate. Repeated recursive
+`parseNodeContainsNode` and `parseNodeContainsToken` searches are no longer on
+the production certificate path.
+
+The kernel certificate is split at semantic phase boundaries for each source
+unit:
+
+```text
+checked parse view
+        -> reconstructed Surface
+        -> collected claims
+        -> checked compact origins
+        -> public CheckedSurfaceArtifact
+```
+
+These `.olean` boundaries control peak reduction memory without exposing
+evaluator-cell semantics. The largest unit, `canonical_tokens.lani`, builds as
+five such phases; the full lexer uses the same origin checker rather than its
+former family of parent-range and spelling shards. The migration removed the
+semantic `parse_node_chunks` field, all chunk/uniform-chunk lookup forks, stored
+parent-tree certificates, spelling-cache experiments, and the exact/fast/
+compact reconstruction-cell module families. Public validity statements still
+refer only to the canonical artifact and canonical declarative predicates.
 
 Implementation checkpoint (August 31, 2026): the scanner pilot is implemented
 end to end. The repository contains the checked-program facade,

@@ -1,0 +1,20 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerClaimsBase
+import Lanius.Extraction.VerifiedFrontendUnitLexerOrigins
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+set_option cbv.maxSteps 100000000
+set_option cbv.warning false
+
+kernel_surface_origins verifiedFrontendLexer_origin_claims_equal_kernel,
+  verifiedFrontendLexer_origin_ids_dense_kernel,
+  verifiedFrontendLexer_node_origins_checked_kernel,
+  verifiedFrontendLexer_spelling_origins_checked_kernel,
+  verifiedFrontendLexer_origin_coverage_checked_kernel,
+  verifiedFrontendLexer_origins_checked_kernel for
+  verifiedFrontendLexerArtifact, verifiedFrontendLexerView,
+  verifiedFrontendLexerOrigins, verifiedFrontendLexerClaimsKernel
+
+end Lanius.Extraction

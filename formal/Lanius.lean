@@ -68,7 +68,9 @@ import Lanius.Compiler.LexerCanonical
 import Lanius.Compiler.LexerProgram
 import Lanius.Compiler.LexerProgramScanners
 import Lanius.Compiler.LexerProgramNumbers
+import Lanius.Data.SeqTree
 import Lanius.Extraction.Artifact
+import Lanius.Extraction.ArtifactView
 import Lanius.Extraction.TokenChecker
 import Lanius.Extraction.Grammar
 import Lanius.Extraction.GeneratedGrammar
@@ -76,6 +78,8 @@ import Lanius.Extraction.ParseChecker
 import Lanius.Extraction.SurfaceDecode
 import Lanius.Extraction.SurfaceChecker
 import Lanius.Extraction.SurfaceReconstruct
+import Lanius.Extraction.SurfaceReconstructProvenance
+import Lanius.Extraction.SurfaceCheckerProvenance
 import Lanius.Extraction.ScopedSurface
 import Lanius.Extraction.ResolutionEvidenceChecker
 import Lanius.Extraction.GlobalResolutionEvidenceChecker

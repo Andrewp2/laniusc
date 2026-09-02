@@ -84,7 +84,10 @@ def decodePackUnitsFromCached :
                   moduleId := nextModule
                   modulePath
                   surface := checkedSurface.surface
-                  surfaceDecoded := checkedSurface.surfaceFound
+                  surfaceDecoded := by
+                    rw [← decodeReconstructedSurfaceView_eq artifact
+                      checkedSurface.view]
+                    exact checkedSurface.surfaceFound
                   moduleDeclared := moduleFound
                   core
                   coreDecoded := coreFound
@@ -247,6 +250,44 @@ def packItemsSupported (units : List ProgramUnit) : Bool :=
       | .importPath _ => false
       | _ => true)
 
+/-- Complete context construction after target, names, and name-integrity
+certificates have been established. Keeping this phase behind a named boundary
+lets generated pack proofs compose cached certificates without re-expanding the
+dependent context record at every later phase. -/
+def finishPackContext (typeContext : Context)
+    (allocations : List UnitAllocation) : Option Context := do
+  let details ← buildPackStructDetails typeContext allocations
+  let declarationContext : Context := {
+    typeContext with
+    fields := details.fields
+    structConstructors := details.constructors
+  }
+  let constants ← buildPackConstants declarationContext allocations
+  let constantContext : Context := { declarationContext with constants }
+  let functions ← buildPackFunctions constantContext allocations
+  pure {
+    constantContext with
+    functions := functions.schemes
+    functionInstances := functions.instances
+  }
+
+/-- Enter the post-name phase with explicit integrity certificates. -/
+def finishCertifiedPackContext (target : Target) (names : Names.Environment)
+    (headers : PackHeaders) (allocations : List UnitAllocation)
+    (modulePathsUnique : Evidence (Names.ModulesHaveUniquePaths names))
+    (symbolsUnique : Evidence (Names.SymbolsAreUnique names)) : Option Context :=
+  finishPackContext {
+    target
+    names
+    modulesHaveUniquePaths := some ⟨modulePathsUnique.proof⟩
+    symbolsAreUnique := some ⟨symbolsUnique.proof⟩
+    currentModule := 0
+    monomorphization := monomorphizationFrom headers.nominalInstances
+    nominalSchemes := headers.nominalSchemes
+    nominalInstances := headers.nominalInstances
+    typeAliases := headers.typeAliases
+  } allocations
+
 def buildPackContext? (units : List ProgramUnit) : Option Context := do
   if packItemsSupported units then
     let target ← commonTarget? units
@@ -258,31 +299,10 @@ def buildPackContext? (units : List ProgramUnit) : Option Context := do
       symbols := headers.symbols
       imports
     }
-    let _modulePathsUnique ← modulesUniquePaths? names
-    let _symbolsUnique ← symbolsUnique? names
-    let typeContext : Context := {
-      target
-      names
-      currentModule := 0
-      monomorphization := monomorphizationFrom headers.nominalInstances
-      nominalSchemes := headers.nominalSchemes
-      nominalInstances := headers.nominalInstances
-      typeAliases := headers.typeAliases
-    }
-    let details ← buildPackStructDetails typeContext allocations
-    let declarationContext : Context := {
-      typeContext with
-      fields := details.fields
-      structConstructors := details.constructors
-    }
-    let constants ← buildPackConstants declarationContext allocations
-    let constantContext : Context := { declarationContext with constants }
-    let functions ← buildPackFunctions constantContext allocations
-    pure {
-      constantContext with
-      functions := functions.schemes
-      functionInstances := functions.instances
-    }
+    let modulePathsUnique ← modulesUniquePaths? names
+    let symbolsUnique ← symbolsUnique? names
+    finishCertifiedPackContext target names headers allocations
+      modulePathsUnique symbolsUnique
   else none
 
 structure CheckedUnit (context : Context) (unit : ProgramUnit) where
@@ -298,17 +318,31 @@ inductive UnitsChecked (context : Context) : List ProgramUnit → Prop where
       (tail : UnitsChecked context units) :
       UnitsChecked context (unit :: units)
 
+def checkUnit? (context : Context) (unit : ProgramUnit) :
+    Option (Evidence (CheckedUnit context unit)) := do
+  let localContext := context.forModule unit.moduleId
+  let constants ← ArtifactContextChecker.checkConstants localContext
+    (collectConstants unit.surface.items) unit.core.constants
+  let functions ← ArtifactContextChecker.checkFunctions localContext
+    (collectFunctions unit.surface.items) unit.core.functions
+  pure ⟨⟨constants.proof, functions.proof⟩⟩
+
 def checkUnits (context : Context) :
     (units : List ProgramUnit) → Option (Evidence (UnitsChecked context units))
   | [] => some ⟨.nil⟩
   | unit :: tail => do
-      let localContext := context.forModule unit.moduleId
-      let constants ← ArtifactContextChecker.checkConstants localContext
-        (collectConstants unit.surface.items) unit.core.constants
-      let functions ← ArtifactContextChecker.checkFunctions localContext
-        (collectFunctions unit.surface.items) unit.core.functions
+      let checked ← checkUnit? context unit
       let rest ← checkUnits context tail
-      pure ⟨.cons ⟨constants.proof, functions.proof⟩ rest.proof⟩
+      pure ⟨.cons checked.proof rest.proof⟩
+
+theorem checkUnits_cons_of
+    (headFound : checkUnit? context unit = some checked)
+    (tailFound : checkUnits context units = some tail) :
+    checkUnits context (unit :: units) =
+      some ⟨UnitsChecked.cons checked.proof tail.proof⟩ := by
+  simp only [checkUnits, headFound, tailFound, Option.bind_eq_bind,
+    Option.bind_some]
+  rfl
 
 structure CheckedArtifactPackSemantics (pack : ArtifactPack) where
   structural : ArtifactPackChecker.CheckedArtifactPack pack

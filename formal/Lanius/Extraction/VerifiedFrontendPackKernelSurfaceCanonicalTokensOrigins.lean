@@ -1,0 +1,21 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceCanonicalTokensClaims
+import Lanius.Extraction.VerifiedFrontendPackOrigins
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+set_option cbv.maxSteps 100000000
+set_option cbv.warning false
+
+kernel_surface_origins
+  verifiedFrontendCanonicalTokens_origin_claims_equal_kernel,
+  verifiedFrontendCanonicalTokens_origin_ids_dense_kernel,
+  verifiedFrontendCanonicalTokens_node_origins_checked_kernel,
+  verifiedFrontendCanonicalTokens_spelling_origins_checked_kernel,
+  verifiedFrontendCanonicalTokens_origin_coverage_checked_kernel,
+  verifiedFrontendCanonicalTokens_origins_checked_kernel for
+  verifiedFrontendCanonicalTokensArtifact, verifiedFrontendCanonicalTokensView,
+  verifiedFrontendCanonicalTokensOrigins, verifiedFrontendCanonicalTokensClaims
+
+end Lanius.Extraction

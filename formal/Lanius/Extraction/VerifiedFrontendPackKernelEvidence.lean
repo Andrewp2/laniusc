@@ -1,29 +1,19 @@
-import Lanius.Extraction.VerifiedFrontendPackKernelSemantics
+import Lanius.Extraction.VerifiedFrontendPackKernelEvidenceCoverage
 
 namespace Lanius.Extraction
 
-set_option maxRecDepth 100000
-set_option maxHeartbeats 0
-set_option cbv.warning false
-set_option cbv.maxSteps 100000000
+def verifiedFrontendPackEvidenceKernel :
+    CompleteChecker.Evidence
+      (CompleteChecker.PackEvidenceValid verifiedFrontendPack) :=
+  ⟨⟨verifiedFrontendPackSurfaceNodeCountsKernel,
+    verifiedFrontendPack_surface_node_counts_found_kernel,
+    verifiedFrontendPackUnitsEvidenceValidKernel,
+    verifiedFrontendPackWireKernel,
+    verifiedFrontendPackWireKernel_eq,
+    verifiedFrontendPack_lowering_covers_core_kernel⟩⟩
 
-theorem verifiedFrontendPack_evidence_checked_kernel :
-    (CompleteChecker.checkPackEvidenceCached? verifiedFrontendPack
-      verifiedFrontendPackSemanticsKernel.structural.surfaceData).isSome = true := by
-  cbv
-
-def verifiedFrontendPackEvidenceKernel :=
-  (CompleteChecker.checkPackEvidenceCached? verifiedFrontendPack
-    verifiedFrontendPackSemanticsKernel.structural.surfaceData).get
-      verifiedFrontendPack_evidence_checked_kernel
-
-theorem verifiedFrontendPackEvidenceKernel_eq :
-    CompleteChecker.checkPackEvidenceCached? verifiedFrontendPack
-        verifiedFrontendPackSemanticsKernel.structural.surfaceData =
-      some verifiedFrontendPackEvidenceKernel := by
-  generalize found : CompleteChecker.checkPackEvidenceCached?
-    verifiedFrontendPack
-    verifiedFrontendPackSemanticsKernel.structural.surfaceData = result
-  cases result <;> simp_all [verifiedFrontendPackEvidenceKernel]
+theorem verifiedFrontendPack_evidence_valid_kernel :
+    CompleteChecker.PackEvidenceValid verifiedFrontendPack :=
+  verifiedFrontendPackEvidenceKernel.proof
 
 end Lanius.Extraction

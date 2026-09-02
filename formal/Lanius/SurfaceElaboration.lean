@@ -5,6 +5,11 @@ namespace Lanius.SurfaceElaboration
 
 open Lanius
 
+/-- A proof stored as ordinary data so verified contexts can cache global
+invariants without moving propositions out of `Prop`. -/
+structure ProofCache (property : Prop) : Type where
+  proof : property
+
 /-- Lexical bindings are ordered from innermost to outermost. The relation
     below therefore gives shadowing a structural, rather than procedural,
     definition. -/
@@ -105,6 +110,8 @@ structure VariantConstructorScheme where
 structure Context where
   target : Core.Target := .x86_64
   names : Names.Environment
+  modulesHaveUniquePaths : Option (ProofCache (Names.ModulesHaveUniquePaths names)) := none
+  symbolsAreUnique : Option (ProofCache (Names.SymbolsAreUnique names)) := none
   currentModule : ModuleId
   monomorphization : Static.Monomorphization
   implementations : List Static.ImplScheme := []

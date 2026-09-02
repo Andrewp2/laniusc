@@ -1,4 +1,5 @@
 import Lanius.Extraction.VerifiedFrontendPackKernelSemantics
+import Lanius.Extraction.GlobalResolutionEvidenceChecker
 
 namespace Lanius.Extraction
 

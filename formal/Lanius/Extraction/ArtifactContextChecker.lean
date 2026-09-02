@@ -244,6 +244,15 @@ inductive ConstantsChecked (context : Context) :
       (tail : ConstantsChecked context surfaceTail coreTail) :
       ConstantsChecked context (surfaceHead :: surfaceTail) (coreHead :: coreTail)
 
+theorem ConstantsChecked.append
+    (left : ConstantsChecked context surfaceLeft coreLeft)
+    (right : ConstantsChecked context surfaceRight coreRight) :
+    ConstantsChecked context (surfaceLeft ++ surfaceRight)
+      (coreLeft ++ coreRight) := by
+  induction left with
+  | nil => exact right
+  | cons head _ induction => exact .cons head induction
+
 def checkConstants (context : Context) :
     (surface : List SourceConstant) → (core : List Core.Constant) →
       Option (Evidence (ConstantsChecked context surface core))
@@ -357,6 +366,15 @@ inductive FunctionsChecked (context : Context) :
       (head : CheckedFunctionBody context surfaceHead coreHead)
       (tail : FunctionsChecked context surfaceTail coreTail) :
       FunctionsChecked context (surfaceHead :: surfaceTail) (coreHead :: coreTail)
+
+theorem FunctionsChecked.append
+    (left : FunctionsChecked context surfaceLeft coreLeft)
+    (right : FunctionsChecked context surfaceRight coreRight) :
+    FunctionsChecked context (surfaceLeft ++ surfaceRight)
+      (coreLeft ++ coreRight) := by
+  induction left with
+  | nil => exact right
+  | cons head _ induction => exact .cons head induction
 
 def checkFunctions (context : Context) :
     (surface : List Surface.Function) → (core : List Core.Function) →

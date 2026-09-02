@@ -38,6 +38,64 @@ def checkRawTokenTraceFrom : List Byte → Nat → List RawToken → Bool
 def checkRawTokenTrace (source : List Byte) (tokens : List RawToken) : Bool :=
   checkRawTokenTraceFrom source 0 tokens
 
+/-- Prefix scanner used to split large raw-token certificates.  Unlike
+`checkRawTokenTraceFrom`, it returns the unconsumed suffix instead of requiring
+the segment to reach end-of-file. -/
+def scanRawTokenSegment : List Byte → Nat → List RawToken →
+    Option (List Byte × Nat)
+  | remaining, offset, [] => some (remaining, offset)
+  | remaining, offset, token :: tokens =>
+      match scanOneAt remaining 0 with
+      | .failure _ => none
+      | .token relative =>
+          if relative.shift offset == token then
+            scanRawTokenSegment (remaining.drop relative.finish)
+              (offset + relative.finish) tokens
+          else none
+
+theorem scanRawTokenSegment_append (remaining : List Byte) (offset : Nat)
+    (left right : List RawToken) :
+    scanRawTokenSegment remaining offset (left ++ right) =
+      match scanRawTokenSegment remaining offset left with
+      | none => none
+      | some (nextRemaining, nextOffset) =>
+          scanRawTokenSegment nextRemaining nextOffset right := by
+  induction left generalizing remaining offset with
+  | nil => rfl
+  | cons token tokens inductionHypothesis =>
+      simp only [List.cons_append, scanRawTokenSegment]
+      cases scanned : scanOneAt remaining 0 with
+      | failure error => simp only [scanned]
+      | token relative =>
+          simp only [scanned]
+          cases matched : (relative.shift offset == token) with
+          | false => simp only [matched, Bool.false_eq_true, ↓reduceIte]
+          | true =>
+              simp only [matched, ↓reduceIte]
+              exact inductionHypothesis _ _
+
+theorem checkRawTokenTraceFrom_eq_segment
+    (remaining : List Byte) (offset : Nat) (tokens : List RawToken) :
+    checkRawTokenTraceFrom remaining offset tokens =
+      match scanRawTokenSegment remaining offset tokens with
+      | some (nextRemaining, _) => nextRemaining.isEmpty
+      | none => false := by
+  induction tokens generalizing remaining offset with
+  | nil => rfl
+  | cons token tokens inductionHypothesis =>
+      simp only [checkRawTokenTraceFrom, scanRawTokenSegment]
+      cases scanned : scanOneAt remaining 0 with
+      | failure error => simp only [scanned]
+      | token relative =>
+          simp only [scanned]
+          cases matched : (relative.shift offset == token) with
+          | false =>
+              simp only [matched, Bool.false_and, Bool.false_eq_true,
+                ↓reduceIte]
+          | true =>
+              simp only [matched, Bool.true_and, ↓reduceIte]
+              exact inductionHypothesis _ _
+
 theorem checkRawTokenTraceFrom_sound
     (remainingEquals : remaining = source.drop offset)
     (accepted : checkRawTokenTraceFrom remaining offset tokens = true) :
@@ -172,6 +230,65 @@ def checkTokenArtifact (artifact : Artifact) : Bool :=
     | some source, none, some tokens => lexCanonical source == .success tokens
     | _, _, _ => false
 
+/-! Independent raw-trace certificate phases.  Generated artifacts carry a
+complete raw trace, so source decoding, raw scanning, and canonical retagging
+can be reduced in separate modules and checked in parallel. -/
+
+def checkTokenArtifactTraceHeader (artifact : Artifact) : Bool :=
+  artifact.schema_version == schemaVersion &&
+    match decodeSingleSource artifact.sources, artifact.raw_tokens,
+        decodeTokens artifact.tokens with
+    | some _, some rawRows, some _ => (decodeTokens rawRows).isSome
+    | _, _, _ => false
+
+def checkTokenArtifactRawTrace (artifact : Artifact) : Bool :=
+  match decodeSingleSource artifact.sources, artifact.raw_tokens with
+  | some source, some rawRows =>
+      match decodeTokens rawRows with
+      | some rawTokens => checkRawTokenTrace source rawTokens
+      | none => false
+  | _, _ => false
+
+def checkTokenArtifactCanonicalTrace (artifact : Artifact) : Bool :=
+  match decodeSingleSource artifact.sources, artifact.raw_tokens,
+      decodeTokens artifact.tokens with
+  | some source, some rawRows, some tokens =>
+      match decodeTokens rawRows with
+      | some rawTokens =>
+          canonicalizeTokensFromTrace source rawTokens == tokens
+      | none => false
+  | _, _, _ => false
+
+theorem checkTokenArtifact_of_trace_phases {artifact : Artifact}
+    (header : checkTokenArtifactTraceHeader artifact = true)
+    (raw : checkTokenArtifactRawTrace artifact = true)
+    (canonical : checkTokenArtifactCanonicalTrace artifact = true) :
+    checkTokenArtifact artifact = true := by
+  unfold checkTokenArtifactTraceHeader at header
+  simp only [Bool.and_eq_true, beq_iff_eq] at header
+  rcases header with ⟨version, header⟩
+  cases sourceFound : decodeSingleSource artifact.sources with
+  | none => simp [sourceFound] at header
+  | some source =>
+      cases rawRowsFound : artifact.raw_tokens with
+      | none => simp [sourceFound, rawRowsFound] at header
+      | some rawRows =>
+          cases tokensFound : decodeTokens artifact.tokens with
+          | none => simp [sourceFound, rawRowsFound, tokensFound] at header
+          | some tokens =>
+              cases rawTokensFound : decodeTokens rawRows with
+              | none =>
+                  simp [sourceFound, rawRowsFound, tokensFound,
+                    rawTokensFound] at header
+              | some rawTokens =>
+                  unfold checkTokenArtifactRawTrace at raw
+                  unfold checkTokenArtifactCanonicalTrace at canonical
+                  simp only [sourceFound, rawRowsFound, tokensFound,
+                    rawTokensFound] at raw canonical
+                  unfold checkTokenArtifact
+                  simp [version, sourceFound, rawRowsFound, tokensFound,
+                    rawTokensFound, raw, canonical]
+
 theorem checkTokenArtifact_sound {artifact : Artifact}
     (accepted : checkTokenArtifact artifact = true) :
     TokenArtifactValid artifact := by
@@ -212,7 +329,6 @@ private def emptyArtifact (sourceBytes : List Nat) (tokens : List Token) : Artif
     raw_tokens := none
     semantic_token_kinds := []
     parse_nodes := []
-    parse_node_chunks := none
     parse_root := none
     surface := none
     resolutions := []

@@ -57,12 +57,12 @@ def checkUnitSurfacesCached :
     (artifacts : List Artifact) → Option (CheckedUnitSurfaces artifacts)
   | [] => some .nil
   | head :: tail => do
-      let checkedHead ← checkSurfaceArtifactCached? head
+      let checkedHead ← checkSurfaceArtifact? head
       let checkedTail ← checkUnitSurfacesCached tail
       pure (.cons checkedHead checkedTail)
 
 def appendCorePrograms? (left right : CoreProgram) : Option CoreProgram := do
-  if sameTarget : left.target == right.target then
+  if _sameTarget : left.target == right.target then
     pure {
       target := left.target
       structures := left.structures ++ right.structures

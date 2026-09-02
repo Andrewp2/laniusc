@@ -1,0 +1,7 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceRawLexerReconstructionTrace
+namespace Lanius.Extraction
+def verifiedFrontendRawLexerReconstructedKernel : SurfaceFile := verifiedFrontendRawLexerReconstructedTraceKernel
+theorem verifiedFrontendRawLexer_reconstructed_found_kernel :
+    reconstructArtifactSurfaceView verifiedFrontendRawLexerArtifact verifiedFrontendRawLexerView =
+      some verifiedFrontendRawLexerReconstructedKernel := verifiedFrontendRawLexer_reconstructed_trace_kernel
+end Lanius.Extraction

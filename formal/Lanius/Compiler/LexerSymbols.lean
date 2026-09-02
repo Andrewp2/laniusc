@@ -271,7 +271,7 @@ theorem symbolRules_spelling_length_pos
     0 < rule.spelling.length := by
   have allNonempty :
       symbolRules.all (fun candidate => decide (0 < candidate.spelling.length)) = true := by
-    native_decide
+    decide
   have selected := List.all_eq_true.mp allNonempty rule member
   exact of_decide_eq_true selected
 

@@ -1,0 +1,9 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceDecimalParseView
+import Lanius.Extraction.ParseChunks
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_parse_nodes_cached_chunk verifiedFrontendDecimal_nodes_0_trace_checked_kernel,
+  verifiedFrontendDecimal_nodes_0_trace_length_kernel for
+  verifiedFrontendDecimalArtifact, verifiedFrontendDecimalParseView, 0, 1000
+end Lanius.Extraction

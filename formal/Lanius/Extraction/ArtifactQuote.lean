@@ -136,6 +136,17 @@ elab "artifact_pack_unit% " json:term ", " path:term : term => do
   -- function/body projections from inheriting thousands of token rows.
   pure (toExpr { artifact with raw_tokens := none })
 
+/-- Quote one complete source unit from a pack.  This is used by independently
+compiled unit modules: keeping the module boundary per source prevents a proof
+about one unit from loading every artifact in the pack. -/
+elab "artifact_pack_unit_full% " json:term ", " path:term : term => do
+  let expectedPath ← elabStringLiteral path
+  let pack ← elabArtifactPackLiteral json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  pure (toExpr artifact)
+
 /-- Quote only a unit's optional complete raw-token trace. -/
 elab "artifact_pack_raw_tokens% " json:term ", " path:term : term => do
   let expectedPath ← elabStringLiteral path

@@ -9,7 +9,7 @@ set_option cbv.warning false
 
 theorem verifiedFrontendLexer_proposed_present_kernel :
     verifiedFrontendLexerArtifact.surface.isSome = true := by
-  cbv
+  with_unfolding_all rfl
 
 def verifiedFrontendLexerProposedKernel :=
   verifiedFrontendLexerArtifact.surface.get
@@ -20,8 +20,5 @@ theorem verifiedFrontendLexerProposedKernel_eq :
       some verifiedFrontendLexerProposedKernel := by
   generalize found : verifiedFrontendLexerArtifact.surface = result
   cases result <;> simp_all [verifiedFrontendLexerProposedKernel]
-
-def verifiedFrontendLexerProposedItemsKernel : List SurfaceItem :=
-  verifiedFrontendLexerProposedKernel.value.items
 
 end Lanius.Extraction

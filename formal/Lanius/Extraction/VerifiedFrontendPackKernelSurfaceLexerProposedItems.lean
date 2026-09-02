@@ -2,45 +2,20 @@ import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerReconstructBase
 
 namespace Lanius.Extraction
 
-set_option maxRecDepth 100000
-set_option maxHeartbeats 0
-set_option cbv.warning false
+def verifiedFrontendLexerProposedItemsKernel : List SurfaceItem :=
+  verifiedFrontendLexerProposedKernel.value.items
 
-theorem verifiedFrontendLexer_proposed_items_length_kernel :
+private instance : Inhabited SurfaceItem := ⟨{
+  id := 0
+  parse_node := 0
+  value := .import_path { id := 0, parse_node := 0, value := { segments := [] } }
+}⟩
+
+def verifiedFrontendLexerProposedItemKernel (index : Nat) : SurfaceItem :=
+  verifiedFrontendLexerProposedItemsKernel[index]!
+
+theorem verifiedFrontendLexerProposedItemsKernel_length :
     verifiedFrontendLexerProposedItemsKernel.length = 28 := by
-  cbv
-
-def verifiedFrontendLexerProposedItemKernel (index : Fin 28) : SurfaceItem :=
-  verifiedFrontendLexerProposedItemsKernel.get
-    (Fin.cast verifiedFrontendLexer_proposed_items_length_kernel.symm index)
-
-abbrev verifiedFrontendLexerProposedItem0Kernel := verifiedFrontendLexerProposedItemKernel 0
-abbrev verifiedFrontendLexerProposedItem1Kernel := verifiedFrontendLexerProposedItemKernel 1
-abbrev verifiedFrontendLexerProposedItem2Kernel := verifiedFrontendLexerProposedItemKernel 2
-abbrev verifiedFrontendLexerProposedItem3Kernel := verifiedFrontendLexerProposedItemKernel 3
-abbrev verifiedFrontendLexerProposedItem4Kernel := verifiedFrontendLexerProposedItemKernel 4
-abbrev verifiedFrontendLexerProposedItem5Kernel := verifiedFrontendLexerProposedItemKernel 5
-abbrev verifiedFrontendLexerProposedItem6Kernel := verifiedFrontendLexerProposedItemKernel 6
-abbrev verifiedFrontendLexerProposedItem7Kernel := verifiedFrontendLexerProposedItemKernel 7
-abbrev verifiedFrontendLexerProposedItem8Kernel := verifiedFrontendLexerProposedItemKernel 8
-abbrev verifiedFrontendLexerProposedItem9Kernel := verifiedFrontendLexerProposedItemKernel 9
-abbrev verifiedFrontendLexerProposedItem10Kernel := verifiedFrontendLexerProposedItemKernel 10
-abbrev verifiedFrontendLexerProposedItem11Kernel := verifiedFrontendLexerProposedItemKernel 11
-abbrev verifiedFrontendLexerProposedItem12Kernel := verifiedFrontendLexerProposedItemKernel 12
-abbrev verifiedFrontendLexerProposedItem13Kernel := verifiedFrontendLexerProposedItemKernel 13
-abbrev verifiedFrontendLexerProposedItem14Kernel := verifiedFrontendLexerProposedItemKernel 14
-abbrev verifiedFrontendLexerProposedItem15Kernel := verifiedFrontendLexerProposedItemKernel 15
-abbrev verifiedFrontendLexerProposedItem16Kernel := verifiedFrontendLexerProposedItemKernel 16
-abbrev verifiedFrontendLexerProposedItem17Kernel := verifiedFrontendLexerProposedItemKernel 17
-abbrev verifiedFrontendLexerProposedItem18Kernel := verifiedFrontendLexerProposedItemKernel 18
-abbrev verifiedFrontendLexerProposedItem19Kernel := verifiedFrontendLexerProposedItemKernel 19
-abbrev verifiedFrontendLexerProposedItem20Kernel := verifiedFrontendLexerProposedItemKernel 20
-abbrev verifiedFrontendLexerProposedItem21Kernel := verifiedFrontendLexerProposedItemKernel 21
-abbrev verifiedFrontendLexerProposedItem22Kernel := verifiedFrontendLexerProposedItemKernel 22
-abbrev verifiedFrontendLexerProposedItem23Kernel := verifiedFrontendLexerProposedItemKernel 23
-abbrev verifiedFrontendLexerProposedItem24Kernel := verifiedFrontendLexerProposedItemKernel 24
-abbrev verifiedFrontendLexerProposedItem25Kernel := verifiedFrontendLexerProposedItemKernel 25
-abbrev verifiedFrontendLexerProposedItem26Kernel := verifiedFrontendLexerProposedItemKernel 26
-abbrev verifiedFrontendLexerProposedItem27Kernel := verifiedFrontendLexerProposedItemKernel 27
+  with_unfolding_all rfl
 
 end Lanius.Extraction

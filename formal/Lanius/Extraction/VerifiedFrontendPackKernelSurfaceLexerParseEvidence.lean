@@ -1,4 +1,6 @@
 import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerRoot
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerParse
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerSemantic
 import Lanius.Extraction.SurfaceReconstruct
 
 namespace Lanius.Extraction
@@ -23,21 +25,10 @@ theorem verifiedFrontendLexer_parse_checked_kernel :
   rw [verifiedFrontendLexerParseRootKernel_eq]
   exact verifiedFrontendLexer_root_shape_checked_kernel
 
-theorem verifiedFrontendLexer_parse_node_chunks_valid_kernel :
-    match verifiedFrontendLexerArtifact.parse_node_chunks with
-    | none => True
-    | some chunks => chunks.flatten = verifiedFrontendLexerArtifact.parse_nodes := by
-  rfl
-
-theorem verifiedFrontendLexer_parse_node_chunks_match_kernel :
-    parseNodeChunksMatch verifiedFrontendLexerArtifact = true := by
-  have chunksEqual :
-      verifiedFrontendLexerNodeChunks.flatten =
-        verifiedFrontendLexerArtifact.parse_nodes := by
-    exact verifiedFrontendLexer_parse_node_chunks_valid_kernel
-  unfold parseNodeChunksMatch
-  simp only [verifiedFrontendLexerArtifact]
-  rw [chunksEqual]
-  exact beq_self_eq_true verifiedFrontendLexerArtifact.parse_nodes
+theorem verifiedFrontendLexer_parse_view_checked_kernel :
+    checkParseArtifactView verifiedFrontendLexerArtifact
+      verifiedFrontendLexerView = true := by
+  rw [checkParseArtifactView_eq]
+  exact verifiedFrontendLexer_parse_checked_kernel
 
 end Lanius.Extraction

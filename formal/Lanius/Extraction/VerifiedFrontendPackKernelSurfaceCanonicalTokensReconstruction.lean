@@ -1,0 +1,7 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceCanonicalTokensReconstructionTrace
+namespace Lanius.Extraction
+def verifiedFrontendCanonicalTokensReconstructedKernel : SurfaceFile := verifiedFrontendCanonicalTokensReconstructedTraceKernel
+theorem verifiedFrontendCanonicalTokens_reconstructed_found_kernel :
+    reconstructArtifactSurfaceView verifiedFrontendCanonicalTokensArtifact verifiedFrontendCanonicalTokensView =
+      some verifiedFrontendCanonicalTokensReconstructedKernel := verifiedFrontendCanonicalTokens_reconstructed_trace_kernel
+end Lanius.Extraction

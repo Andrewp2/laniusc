@@ -1,0 +1,8 @@
+import Lanius.Extraction.VerifiedFrontendUnitCanonicalTokensCache
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+theorem verifiedFrontendCanonicalTokens_parse_tree_represents_kernel :
+    verifiedFrontendCanonicalTokensParseNodeTree.Represents verifiedFrontendCanonicalTokensArtifact.parse_nodes := by
+  with_unfolding_all rfl
+end Lanius.Extraction

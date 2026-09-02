@@ -1,0 +1,9 @@
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceTokenParseView
+import Lanius.Extraction.ParseChunks
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_parse_nodes_cached_chunk verifiedFrontendToken_nodes_0_trace_checked_kernel,
+  verifiedFrontendToken_nodes_0_trace_length_kernel for
+  verifiedFrontendTokenArtifact, verifiedFrontendTokenParseView, 0, 1000
+end Lanius.Extraction

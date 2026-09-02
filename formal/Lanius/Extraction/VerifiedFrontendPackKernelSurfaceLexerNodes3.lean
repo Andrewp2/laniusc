@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerNodes2
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerParseView
 
 namespace Lanius.Extraction
 
@@ -8,14 +8,13 @@ set_option cbv.maxSteps 100000000
 set_option cbv.warning false
 
 theorem verifiedFrontendLexer_parse_nodes_3_checked_kernel :
-    checkNodesFromChunks laniusGrammar
-      verifiedFrontendLexerArtifact.semantic_token_kinds
-      verifiedFrontendLexerNodeChunks 3000
+    checkNodesFromParseView laniusGrammar verifiedFrontendLexerArtifact
+      verifiedFrontendLexerParseView 3000
       verifiedFrontendLexerParseNodes3 = true := by
-  cbv
+  with_unfolding_all rfl
 
 theorem verifiedFrontendLexer_parse_nodes_3_length_kernel :
     verifiedFrontendLexerParseNodes3.length = 1000 := by
-  cbv
+  with_unfolding_all rfl
 
 end Lanius.Extraction

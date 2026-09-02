@@ -1,5 +1,5 @@
-import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerReconstruct
-import Lanius.Extraction.SurfaceChecker
+import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceLexerReconstructView
+import Lanius.Extraction.SurfaceCheckerProvenance
 
 namespace Lanius.Extraction
 
@@ -8,10 +8,18 @@ set_option maxHeartbeats 0
 set_option cbv.maxSteps 100000000
 set_option cbv.warning false
 
+def verifiedFrontendLexerReconstructedKernel : SurfaceFile :=
+  verifiedFrontendLexerProposedKernel
+
+theorem verifiedFrontendLexerReconstructedKernel_eq :
+    reconstructArtifactSurfaceView verifiedFrontendLexerArtifact
+      verifiedFrontendLexerView = some verifiedFrontendLexerReconstructedKernel :=
+  verifiedFrontendLexer_reconstructed_view_kernel
+
 theorem verifiedFrontendLexer_claims_present_kernel :
     (collectSurfaceClaimsFrom verifiedFrontendLexerArtifact
       verifiedFrontendLexerReconstructedKernel).isSome = true := by
-  cbv
+  with_unfolding_all rfl
 
 def verifiedFrontendLexerClaimsKernel :=
   (collectSurfaceClaimsFrom verifiedFrontendLexerArtifact
@@ -27,16 +35,16 @@ theorem verifiedFrontendLexerClaimsFromKernel_eq :
   cases result <;> simp_all [verifiedFrontendLexerClaimsKernel]
 
 theorem verifiedFrontendLexerClaimsKernel_eq :
-    collectSurfaceClaims verifiedFrontendLexerArtifact =
-      some verifiedFrontendLexerClaimsKernel := by
-  unfold collectSurfaceClaims
+    collectSurfaceClaimsView verifiedFrontendLexerArtifact
+        verifiedFrontendLexerView = some verifiedFrontendLexerClaimsKernel := by
+  unfold collectSurfaceClaimsView
   rw [verifiedFrontendLexerReconstructedKernel_eq]
   exact verifiedFrontendLexerClaimsFromKernel_eq
 
 theorem verifiedFrontendLexer_surface_present_kernel :
     (decodeSurfaceFile (verifiedFrontendLexerArtifact.parse_nodes.length + 1)
       verifiedFrontendLexerReconstructedKernel).isSome = true := by
-  cbv
+  with_unfolding_all rfl
 
 def verifiedFrontendLexerSurfaceFileKernel :=
   (decodeSurfaceFile (verifiedFrontendLexerArtifact.parse_nodes.length + 1)
@@ -53,9 +61,9 @@ theorem verifiedFrontendLexerSurfaceFileFromKernel_eq :
   cases result <;> simp_all [verifiedFrontendLexerSurfaceFileKernel]
 
 theorem verifiedFrontendLexerSurfaceFileKernel_eq :
-    decodeReconstructedSurface verifiedFrontendLexerArtifact =
-      some verifiedFrontendLexerSurfaceFileKernel := by
-  unfold decodeReconstructedSurface
+    decodeReconstructedSurfaceView verifiedFrontendLexerArtifact
+      verifiedFrontendLexerView = some verifiedFrontendLexerSurfaceFileKernel := by
+  unfold decodeReconstructedSurfaceView
   rw [verifiedFrontendLexerReconstructedKernel_eq]
   exact verifiedFrontendLexerSurfaceFileFromKernel_eq
 
