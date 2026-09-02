@@ -30,12 +30,18 @@ Focused rebuild measurements on the development host are:
 - artifact evidence units aggregate: 1.01 s;
 - artifact evidence assembly: 1.03 s.
 
-Cold leaf certificates remain uneven. The largest measured context/function
-and artifact-evidence shards take tens of seconds; CanonicalTokens evidence
-takes about 106 s and 11.2 GiB. These costs are now isolated behind `.olean`
-boundaries. They still identify real algorithmic work: declaration collection,
+Cold leaf certificates remain uneven. The two quadratic cross-table evidence
+checks now build balanced `TreeSet` indexes and are generically proved equal to
+their list-based specifications. This first reduced CanonicalTokens evidence
+from about 106 s and 11.2 GiB to 25.0 s and 5.7 GiB; the Lexer shard fell from
+35.7 s to 15.1 s and Symbol from 34.3 s to 13.5 s. CanonicalTokens now also has
+literal materialized type/lowering indexes, each tied to the canonical lists by
+its own kernel equality certificate. Its hot evidence assembly is 1.01 s; the
+remainder, type-lookup, and lowering-lookup leaves are 4.6 s, 2.6 s, and 2.9 s.
+The two cold index-authenticity leaves remain about 10 s each, so clean
+regeneration remains a separate optimization target. Declaration collection,
 qualified type grounding, ordered-reference validation, and lowering coverage
-must consume checked indexed views rather than repeatedly scan embedded lists.
+have similar opportunities.
 
 The complete kernel-clean pack is not yet a three-second build because global
 resolution still uses one monolithic proof-producing reduction. Its next

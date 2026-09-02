@@ -61,8 +61,8 @@ def checkUnitEvidenceStructure
       loweringRowsInSurface claims.nodes.length artifact.lowering &&
       indexedReferencesEarlier (·.premises) artifact.types &&
       indexedReferencesEarlier (·.premises) artifact.lowering &&
-      typedLoweringRowsHaveTypeEvidence artifact.types artifact.lowering &&
-      typeRowsHaveLoweringEvidence artifact.lowering artifact.types
+      typedLoweringRowsHaveTypeEvidenceIndexed artifact.types artifact.lowering &&
+      typeRowsHaveLoweringEvidenceIndexed artifact.lowering artifact.types
   | _, _ => false
 
 def UnitEvidenceValid
@@ -93,7 +93,9 @@ theorem checkUnitEvidenceStructure_sound
       | some program =>
           simp only [claimsFound, programFound, Bool.and_eq_true] at accepted
           refine ⟨claims, program, claimsFound, programFound, ?_⟩
-          simpa only [beq_iff_eq, and_assoc] using accepted
+          simpa only [beq_iff_eq, and_assoc,
+            typedLoweringRowsHaveTypeEvidenceIndexed_eq,
+            typeRowsHaveLoweringEvidenceIndexed_eq] using accepted
 
 inductive UnitsEvidenceValid
     (surfaceNodeCounts : List Nat) : Nat → List Artifact → Prop where
@@ -121,6 +123,12 @@ reuse those exact dependent results.  Their propositions deliberately remain
 the original public validity predicates, so this is only an evaluation
 improvement, not a weakening of the certificate boundary. -/
 
+theorem checkedSurfaceClaimsFound {artifact : Artifact}
+    (checked : CheckedSurfaceArtifact artifact) :
+    collectSurfaceClaims artifact = some checked.claims := by
+  rw [← collectSurfaceClaimsView_eq artifact checked.view]
+  exact checked.claimsFound
+
 def checkUnitEvidenceStructureCached
     (surfaceNodeCounts : List Nat)
     (unitIndex : Nat)
@@ -134,8 +142,34 @@ def checkUnitEvidenceStructureCached
       loweringRowsInSurface checked.claims.nodes.length artifact.lowering &&
       indexedReferencesEarlier (·.premises) artifact.types &&
       indexedReferencesEarlier (·.premises) artifact.lowering &&
-      typedLoweringRowsHaveTypeEvidence artifact.types artifact.lowering &&
-      typeRowsHaveLoweringEvidence artifact.lowering artifact.types
+      typedLoweringRowsHaveTypeEvidenceIndexed artifact.types artifact.lowering &&
+      typeRowsHaveLoweringEvidenceIndexed artifact.lowering artifact.types
+  | none => false
+
+def checkUnitEvidenceStructureCachedBase
+    (surfaceNodeCounts : List Nat)
+    (unitIndex : Nat)
+    (artifact : Artifact)
+    (checked : CheckedSurfaceArtifact artifact) : Bool :=
+  surfaceNodeCounts[unitIndex]? == some checked.claims.nodes.length &&
+  resolutionRowsInUnits unitIndex surfaceNodeCounts artifact.resolutions &&
+  typeRowsInSurface checked.claims.nodes.length artifact.types &&
+  loweringRowsInSurface checked.claims.nodes.length artifact.lowering &&
+  indexedReferencesEarlier (·.premises) artifact.types &&
+  indexedReferencesEarlier (·.premises) artifact.lowering
+
+def checkUnitEvidenceStructureMaterialized
+    (surfaceNodeCounts : List Nat)
+    (unitIndex : Nat)
+    (artifact : Artifact)
+    (checked : CheckedSurfaceArtifact artifact)
+    (indexes : EvidenceNodeIndexes artifact.types artifact.lowering) : Bool :=
+  match artifact.core_program with
+  | some _ =>
+      checkUnitEvidenceStructureCachedBase surfaceNodeCounts unitIndex artifact checked &&
+      typedLoweringRowsHaveTypeEvidenceMaterialized indexes.typeNodes
+        artifact.lowering &&
+      typeRowsHaveLoweringEvidenceMaterialized indexes.loweringNodes artifact.types
   | none => false
 
 theorem checkUnitEvidenceStructureCached_sound
@@ -148,8 +182,29 @@ theorem checkUnitEvidenceStructureCached_sound
   | none => simp [programFound] at accepted
   | some program =>
       simp only [programFound, Bool.and_eq_true] at accepted
-      refine ⟨checked.claims, program, checked.claimsFound, programFound, ?_⟩
-      simpa only [beq_iff_eq, and_assoc] using accepted
+      refine ⟨checked.claims, program, checkedSurfaceClaimsFound checked,
+        programFound, ?_⟩
+      simpa only [beq_iff_eq, and_assoc,
+        typedLoweringRowsHaveTypeEvidenceIndexed_eq,
+        typeRowsHaveLoweringEvidenceIndexed_eq] using accepted
+
+theorem checkUnitEvidenceStructureMaterialized_sound
+    {checked : CheckedSurfaceArtifact artifact}
+    {indexes : EvidenceNodeIndexes artifact.types artifact.lowering}
+    (accepted : checkUnitEvidenceStructureMaterialized surfaceNodeCounts unitIndex
+      artifact checked indexes = true) :
+    UnitEvidenceValid surfaceNodeCounts unitIndex artifact := by
+  unfold checkUnitEvidenceStructureMaterialized at accepted
+  cases programFound : artifact.core_program with
+  | none => simp [programFound] at accepted
+  | some program =>
+      simp only [programFound, checkUnitEvidenceStructureCachedBase,
+        Bool.and_eq_true] at accepted
+      refine ⟨checked.claims, program, checkedSurfaceClaimsFound checked,
+        programFound, ?_⟩
+      simpa only [beq_iff_eq, and_assoc,
+        typedLoweringRowsHaveTypeEvidenceMaterialized_eq indexes,
+        typeRowsHaveLoweringEvidenceMaterialized_eq indexes] using accepted
 
 def checkUnitEvidenceCached (surfaceNodeCounts : List Nat) :
     (unitIndex : Nat) → (artifacts : List Artifact) →
@@ -179,7 +234,7 @@ theorem collectSurfaceNodeCountsCached
   induction checked with
   | nil => rfl
   | cons head tail ih =>
-      simp [collectSurfaceNodeCounts?, head.claimsFound, ih,
+      simp [collectSurfaceNodeCounts?, checkedSurfaceClaimsFound head, ih,
         ArtifactPackChecker.CheckedUnitSurfaces.nodeCounts]
 
 def packLoweringCoreNodeIds (pack : ArtifactPack) : List CoreNodeId :=
