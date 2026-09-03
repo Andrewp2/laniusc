@@ -1,4 +1,6 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Reconstruction.Assembly
+import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Reconstruction
+
+/-! Decoded surface construction and presence certificate. -/
 namespace Lanius.Extraction
 set_option maxRecDepth 500000
 set_option maxHeartbeats 0

@@ -50,6 +50,27 @@ separate; the largest measured leaf is 3.1 s. Declaration collection,
 qualified type grounding, ordered-reference validation, and lowering coverage
 have similar opportunities.
 
+Proof-module sharding is measured rather than inferred from theorem count or
+source size. The September 3 TokenScan pilot replaced 26 mostly one-theorem
+modules with nine semantic modules plus four internal reduction shards: one
+raw-token shard and three balanced parse-node shards. Focused cold times were
+2.19 s for the view, 3.09 s and 2.11 s for token checking and assembly, 1.04 s
+for parse metadata, 2.48--2.50 s for each node shard, 0.97 s for parse
+assembly, about 4.1--4.6 s for each of reconstruction, claims, and decoding,
+2.4 s for origins, and under 1.0 s for final assembly. The remaining material
+over-three-second modules are dominated by a single kernel reduction or
+certificate constructor. Splitting those declarations into wrapper files
+would increase the module count without reducing the atomic check. They are
+checker-performance work, not file-sharding work.
+
+Accordingly, generated data may retain numbered chunks when quotation size or
+elaboration memory requires them. Authored certificate modules instead group a
+coherent semantic phase up to the measured budget. A phase is split only when
+two independently reusable or independently expensive checks cross that
+budget; an atomic check that crosses it remains a named phase until its checker
+is improved. This prevents the three-second target from degenerating into one
+theorem per file.
+
 The corresponding source layout follows those ownership boundaries. Generic
 checker and quotation code live under `Lanius/Extraction/Evidence/`; all
 generated frontend and parser modules live under

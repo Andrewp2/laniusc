@@ -1,5 +1,7 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Parse.Trace
+import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Parse.Nodes
 import Lanius.Extraction.KernelSurfacePhases
+
+/-! Surface reconstruction from the verified parse artifact. -/
 namespace Lanius.Extraction
 set_option maxRecDepth 500000
 set_option maxHeartbeats 0
