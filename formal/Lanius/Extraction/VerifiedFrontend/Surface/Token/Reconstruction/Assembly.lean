@@ -1,0 +1,9 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Token.Parse.Trace
+import Lanius.Extraction.KernelSurfacePhases
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_surface_reconstruction verifiedFrontendToken_reconstructed_present_kernel,
+  verifiedFrontendTokenReconstructedKernel, verifiedFrontendToken_reconstructed_found_kernel for
+  verifiedFrontendTokenArtifact, verifiedFrontendTokenView
+end Lanius.Extraction

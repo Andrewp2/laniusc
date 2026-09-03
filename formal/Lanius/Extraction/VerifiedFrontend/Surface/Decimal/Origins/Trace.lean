@@ -1,0 +1,12 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Claims.Equal
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Origins.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Origins.Spellings
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Coverage
+namespace Lanius.Extraction
+theorem verifiedFrontendDecimal_origins_checked_kernel :
+    (verifiedFrontendDecimalOrigins).valid verifiedFrontendDecimalArtifact verifiedFrontendDecimalView = true :=
+  SurfaceOrigins.valid_of_components verifiedFrontendDecimalView verifiedFrontendDecimalOrigins
+    verifiedFrontendDecimal_ids_dense_kernel verifiedFrontendDecimal_origin_nodes_checked_kernel
+    verifiedFrontendDecimal_origin_spellings_checked_kernel verifiedFrontendDecimal_coverage_checked_kernel
+end Lanius.Extraction

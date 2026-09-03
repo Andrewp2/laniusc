@@ -1,0 +1,25 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Claims.Assembly
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Origins.Trace
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Decode.Assembly
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+def verifiedFrontendSymbolReconstructionKernel : ProvenanceSurfaceReconstruction := {
+  reconstructed := verifiedFrontendSymbolReconstructedKernel
+  claims := verifiedFrontendSymbolClaimsKernel
+  origins := verifiedFrontendSymbolOrigins
+}
+theorem verifiedFrontendSymbol_reconstruction_found_kernel :
+    reconstructArtifactSurfaceWithProvenanceView verifiedFrontendSymbolArtifact verifiedFrontendSymbolView
+      verifiedFrontendSymbolOrigins = some verifiedFrontendSymbolReconstructionKernel :=
+  reconstructArtifactSurfaceWithProvenanceView_of_components verifiedFrontendSymbolView
+    verifiedFrontendSymbolOrigins verifiedFrontendSymbolReconstructedKernel verifiedFrontendSymbolClaimsKernel
+    verifiedFrontendSymbol_reconstructed_found_kernel verifiedFrontendSymbol_claims_found_kernel
+def verifiedFrontendSymbolSurfaceKernel : CheckedSurfaceArtifact verifiedFrontendSymbolArtifact :=
+  CheckedSurfaceArtifact.ofOriginsWithParse verifiedFrontendSymbolView verifiedFrontendSymbolOrigins
+    verifiedFrontendSymbolParseValidTraceKernel verifiedFrontendSymbolReconstructionKernel
+    verifiedFrontendSymbol_reconstruction_found_kernel verifiedFrontendSymbolDecodedSurfaceKernel
+    verifiedFrontendSymbol_decoded_surface_found_kernel verifiedFrontendSymbol_claims_equal_kernel
+    verifiedFrontendSymbol_origins_checked_kernel
+theorem verifiedFrontendSymbol_surface_checked_kernel : SurfaceArtifactValid verifiedFrontendSymbolArtifact :=
+  CheckedSurfaceArtifact.valid verifiedFrontendSymbolSurfaceKernel
+end Lanius.Extraction

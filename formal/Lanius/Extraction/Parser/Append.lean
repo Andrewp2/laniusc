@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedParserAppend
+import Lanius.Extraction.VerifiedFrontend.Parser.Append
 import Lanius.FunctionalViewCoreStatefulReification
 
 namespace Lanius.Extraction.Parser.Append

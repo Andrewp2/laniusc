@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontendPack
+import Lanius.Extraction.VerifiedFrontend.Pack
 import Lanius.Extraction.ArtifactQuote
 import Lanius.Extraction.ArtifactPackChecker
 import Lanius.Extraction.StatementNormalization

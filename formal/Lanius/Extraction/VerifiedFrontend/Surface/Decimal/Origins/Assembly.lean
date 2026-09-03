@@ -1,0 +1,20 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Claims.Assembly
+import Lanius.Extraction.VerifiedFrontend.Origins
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+set_option cbv.maxSteps 100000000
+set_option cbv.warning false
+
+kernel_surface_origins verifiedFrontendDecimal_origin_claims_equal_kernel,
+  verifiedFrontendDecimal_origin_ids_dense_kernel,
+  verifiedFrontendDecimal_node_origins_checked_kernel,
+  verifiedFrontendDecimal_spelling_origins_checked_kernel,
+  verifiedFrontendDecimal_origin_coverage_checked_kernel,
+  verifiedFrontendDecimal_origins_checked_kernel for
+  verifiedFrontendDecimalArtifact, verifiedFrontendDecimalView,
+  verifiedFrontendDecimalOrigins, verifiedFrontendDecimalClaims
+
+end Lanius.Extraction

@@ -1,0 +1,12 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Claims.Equal
+import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Origins.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Origins.Spellings
+import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Coverage
+namespace Lanius.Extraction
+theorem verifiedFrontendTokenScan_origins_checked_kernel :
+    (verifiedFrontendTokenScanOrigins).valid verifiedFrontendTokenScanArtifact verifiedFrontendTokenScanView = true :=
+  SurfaceOrigins.valid_of_components verifiedFrontendTokenScanView verifiedFrontendTokenScanOrigins
+    verifiedFrontendTokenScan_ids_dense_kernel verifiedFrontendTokenScan_origin_nodes_checked_kernel
+    verifiedFrontendTokenScan_origin_spellings_checked_kernel verifiedFrontendTokenScan_coverage_checked_kernel
+end Lanius.Extraction

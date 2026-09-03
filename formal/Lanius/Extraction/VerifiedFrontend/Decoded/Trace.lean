@@ -1,0 +1,346 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Data
+import Lanius.Extraction.ArtifactPackContextChunks
+import Lanius.Extraction.VerifiedFrontend.Decoded.Unit0
+import Lanius.Extraction.VerifiedFrontend.Decoded.Unit1
+import Lanius.Extraction.VerifiedFrontend.Decoded.Unit2
+import Lanius.Extraction.VerifiedFrontend.Decoded.Unit3
+import Lanius.Extraction.VerifiedFrontend.Decoded.Unit4
+import Lanius.Extraction.VerifiedFrontend.Decoded.Unit5
+import Lanius.Extraction.VerifiedFrontend.Decoded.Unit6
+import Lanius.Extraction.VerifiedFrontend.Decoded.Unit7
+import Lanius.Extraction.VerifiedFrontend.Decoded.Unit8
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+
+def verifiedFrontendPackArtifactsTail9Kernel : List Artifact := []
+def verifiedFrontendPackSurfacesTail9Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail9Kernel := .nil
+def verifiedFrontendPackArtifactsTail8Kernel : List Artifact :=
+  verifiedFrontendRawLexerArtifact :: verifiedFrontendPackArtifactsTail9Kernel
+def verifiedFrontendPackSurfacesTail8Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail8Kernel :=
+  .cons verifiedFrontendRawLexerSurfaceKernel verifiedFrontendPackSurfacesTail9Kernel
+def verifiedFrontendPackArtifactsTail7Kernel : List Artifact :=
+  verifiedFrontendSymbolArtifact :: verifiedFrontendPackArtifactsTail8Kernel
+def verifiedFrontendPackSurfacesTail7Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail7Kernel :=
+  .cons verifiedFrontendSymbolSurfaceKernel verifiedFrontendPackSurfacesTail8Kernel
+def verifiedFrontendPackArtifactsTail6Kernel : List Artifact :=
+  verifiedFrontendNumberArtifact :: verifiedFrontendPackArtifactsTail7Kernel
+def verifiedFrontendPackSurfacesTail6Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail6Kernel :=
+  .cons verifiedFrontendNumberSurfaceKernel verifiedFrontendPackSurfacesTail7Kernel
+def verifiedFrontendPackArtifactsTail5Kernel : List Artifact :=
+  verifiedFrontendDecimalArtifact :: verifiedFrontendPackArtifactsTail6Kernel
+def verifiedFrontendPackSurfacesTail5Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail5Kernel :=
+  .cons verifiedFrontendDecimalSurfaceKernel verifiedFrontendPackSurfacesTail6Kernel
+def verifiedFrontendPackArtifactsTail4Kernel : List Artifact :=
+  verifiedFrontendCanonicalTokensArtifact :: verifiedFrontendPackArtifactsTail5Kernel
+def verifiedFrontendPackSurfacesTail4Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail4Kernel :=
+  .cons verifiedFrontendCanonicalTokensSurfaceKernel verifiedFrontendPackSurfacesTail5Kernel
+def verifiedFrontendPackArtifactsTail3Kernel : List Artifact :=
+  verifiedFrontendTokenArtifact :: verifiedFrontendPackArtifactsTail4Kernel
+def verifiedFrontendPackSurfacesTail3Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail3Kernel :=
+  .cons verifiedFrontendTokenSurfaceKernel verifiedFrontendPackSurfacesTail4Kernel
+def verifiedFrontendPackArtifactsTail2Kernel : List Artifact :=
+  verifiedFrontendDigitsArtifact :: verifiedFrontendPackArtifactsTail3Kernel
+def verifiedFrontendPackSurfacesTail2Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail2Kernel :=
+  .cons verifiedFrontendDigitsSurfaceKernel verifiedFrontendPackSurfacesTail3Kernel
+def verifiedFrontendPackArtifactsTail1Kernel : List Artifact :=
+  verifiedFrontendTokenScanArtifact :: verifiedFrontendPackArtifactsTail2Kernel
+def verifiedFrontendPackSurfacesTail1Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail1Kernel :=
+  .cons verifiedFrontendTokenScanSurfaceKernel verifiedFrontendPackSurfacesTail2Kernel
+def verifiedFrontendPackArtifactsTail0Kernel : List Artifact :=
+  verifiedFrontendLexerArtifact :: verifiedFrontendPackArtifactsTail1Kernel
+def verifiedFrontendPackSurfacesTail0Kernel :
+    ArtifactPackChecker.CheckedUnitSurfaces verifiedFrontendPackArtifactsTail0Kernel :=
+  .cons verifiedFrontendLexerSurfaceKernel verifiedFrontendPackSurfacesTail1Kernel
+def verifiedFrontendPackDecodedTail9Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail9Kernel :=
+  ⟨[], rfl⟩
+theorem verifiedFrontendPack_decoded_tail9_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 9
+      verifiedFrontendPackArtifactsTail9Kernel verifiedFrontendPackSurfacesTail9Kernel =
+        some verifiedFrontendPackDecodedTail9Kernel := by
+  rfl
+theorem verifiedFrontendPack_decoded_tail9_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 9
+      verifiedFrontendPackArtifactsTail9Kernel
+      verifiedFrontendPackSurfacesTail9Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail9_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedTail8Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail8Kernel :=
+  ArtifactPackContextChecker.DecodedPackUnits.prepend 8 verifiedFrontendRawLexerArtifact
+    verifiedFrontendPackArtifactsTail9Kernel verifiedFrontendRawLexerSurfaceKernel
+    verifiedFrontendRawLexerModulePathKernel verifiedFrontendRawLexer_checked_module_path_found_kernel
+    verifiedFrontendRawLexerCoreProgramKernel verifiedFrontendRawLexer_core_program_found_kernel
+    verifiedFrontendPackDecodedTail9Kernel
+theorem verifiedFrontendPack_decoded_tail8_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 8
+      verifiedFrontendPackArtifactsTail8Kernel verifiedFrontendPackSurfacesTail8Kernel =
+        some verifiedFrontendPackDecodedTail8Kernel := by
+  unfold verifiedFrontendPackArtifactsTail8Kernel verifiedFrontendPackSurfacesTail8Kernel
+    verifiedFrontendPackDecodedTail8Kernel
+  exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
+    8 verifiedFrontendRawLexerArtifact verifiedFrontendPackArtifactsTail9Kernel
+    verifiedFrontendRawLexerSurfaceKernel verifiedFrontendPackSurfacesTail9Kernel
+    verifiedFrontendRawLexerModulePathKernel verifiedFrontendRawLexer_checked_module_path_found_kernel
+    verifiedFrontendRawLexerCoreProgramKernel verifiedFrontendRawLexer_core_program_found_kernel
+    verifiedFrontendPackDecodedTail9Kernel
+    verifiedFrontendPack_decoded_tail9_found_kernel
+theorem verifiedFrontendPack_decoded_tail8_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 8
+      verifiedFrontendPackArtifactsTail8Kernel
+      verifiedFrontendPackSurfacesTail8Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail8_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedTail7Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail7Kernel :=
+  ArtifactPackContextChecker.DecodedPackUnits.prepend 7 verifiedFrontendSymbolArtifact
+    verifiedFrontendPackArtifactsTail8Kernel verifiedFrontendSymbolSurfaceKernel
+    verifiedFrontendSymbolModulePathKernel verifiedFrontendSymbol_checked_module_path_found_kernel
+    verifiedFrontendSymbolCoreProgramKernel verifiedFrontendSymbol_core_program_found_kernel
+    verifiedFrontendPackDecodedTail8Kernel
+theorem verifiedFrontendPack_decoded_tail7_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 7
+      verifiedFrontendPackArtifactsTail7Kernel verifiedFrontendPackSurfacesTail7Kernel =
+        some verifiedFrontendPackDecodedTail7Kernel := by
+  unfold verifiedFrontendPackArtifactsTail7Kernel verifiedFrontendPackSurfacesTail7Kernel
+    verifiedFrontendPackDecodedTail7Kernel
+  exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
+    7 verifiedFrontendSymbolArtifact verifiedFrontendPackArtifactsTail8Kernel
+    verifiedFrontendSymbolSurfaceKernel verifiedFrontendPackSurfacesTail8Kernel
+    verifiedFrontendSymbolModulePathKernel verifiedFrontendSymbol_checked_module_path_found_kernel
+    verifiedFrontendSymbolCoreProgramKernel verifiedFrontendSymbol_core_program_found_kernel
+    verifiedFrontendPackDecodedTail8Kernel
+    verifiedFrontendPack_decoded_tail8_found_kernel
+theorem verifiedFrontendPack_decoded_tail7_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 7
+      verifiedFrontendPackArtifactsTail7Kernel
+      verifiedFrontendPackSurfacesTail7Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail7_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedTail6Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail6Kernel :=
+  ArtifactPackContextChecker.DecodedPackUnits.prepend 6 verifiedFrontendNumberArtifact
+    verifiedFrontendPackArtifactsTail7Kernel verifiedFrontendNumberSurfaceKernel
+    verifiedFrontendNumberModulePathKernel verifiedFrontendNumber_checked_module_path_found_kernel
+    verifiedFrontendNumberCoreProgramKernel verifiedFrontendNumber_core_program_found_kernel
+    verifiedFrontendPackDecodedTail7Kernel
+theorem verifiedFrontendPack_decoded_tail6_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 6
+      verifiedFrontendPackArtifactsTail6Kernel verifiedFrontendPackSurfacesTail6Kernel =
+        some verifiedFrontendPackDecodedTail6Kernel := by
+  unfold verifiedFrontendPackArtifactsTail6Kernel verifiedFrontendPackSurfacesTail6Kernel
+    verifiedFrontendPackDecodedTail6Kernel
+  exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
+    6 verifiedFrontendNumberArtifact verifiedFrontendPackArtifactsTail7Kernel
+    verifiedFrontendNumberSurfaceKernel verifiedFrontendPackSurfacesTail7Kernel
+    verifiedFrontendNumberModulePathKernel verifiedFrontendNumber_checked_module_path_found_kernel
+    verifiedFrontendNumberCoreProgramKernel verifiedFrontendNumber_core_program_found_kernel
+    verifiedFrontendPackDecodedTail7Kernel
+    verifiedFrontendPack_decoded_tail7_found_kernel
+theorem verifiedFrontendPack_decoded_tail6_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 6
+      verifiedFrontendPackArtifactsTail6Kernel
+      verifiedFrontendPackSurfacesTail6Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail6_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedTail5Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail5Kernel :=
+  ArtifactPackContextChecker.DecodedPackUnits.prepend 5 verifiedFrontendDecimalArtifact
+    verifiedFrontendPackArtifactsTail6Kernel verifiedFrontendDecimalSurfaceKernel
+    verifiedFrontendDecimalModulePathKernel verifiedFrontendDecimal_checked_module_path_found_kernel
+    verifiedFrontendDecimalCoreProgramKernel verifiedFrontendDecimal_core_program_found_kernel
+    verifiedFrontendPackDecodedTail6Kernel
+theorem verifiedFrontendPack_decoded_tail5_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 5
+      verifiedFrontendPackArtifactsTail5Kernel verifiedFrontendPackSurfacesTail5Kernel =
+        some verifiedFrontendPackDecodedTail5Kernel := by
+  unfold verifiedFrontendPackArtifactsTail5Kernel verifiedFrontendPackSurfacesTail5Kernel
+    verifiedFrontendPackDecodedTail5Kernel
+  exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
+    5 verifiedFrontendDecimalArtifact verifiedFrontendPackArtifactsTail6Kernel
+    verifiedFrontendDecimalSurfaceKernel verifiedFrontendPackSurfacesTail6Kernel
+    verifiedFrontendDecimalModulePathKernel verifiedFrontendDecimal_checked_module_path_found_kernel
+    verifiedFrontendDecimalCoreProgramKernel verifiedFrontendDecimal_core_program_found_kernel
+    verifiedFrontendPackDecodedTail6Kernel
+    verifiedFrontendPack_decoded_tail6_found_kernel
+theorem verifiedFrontendPack_decoded_tail5_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 5
+      verifiedFrontendPackArtifactsTail5Kernel
+      verifiedFrontendPackSurfacesTail5Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail5_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedTail4Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail4Kernel :=
+  ArtifactPackContextChecker.DecodedPackUnits.prepend 4 verifiedFrontendCanonicalTokensArtifact
+    verifiedFrontendPackArtifactsTail5Kernel verifiedFrontendCanonicalTokensSurfaceKernel
+    verifiedFrontendCanonicalTokensModulePathKernel verifiedFrontendCanonicalTokens_checked_module_path_found_kernel
+    verifiedFrontendCanonicalTokensCoreProgramKernel verifiedFrontendCanonicalTokens_core_program_found_kernel
+    verifiedFrontendPackDecodedTail5Kernel
+theorem verifiedFrontendPack_decoded_tail4_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 4
+      verifiedFrontendPackArtifactsTail4Kernel verifiedFrontendPackSurfacesTail4Kernel =
+        some verifiedFrontendPackDecodedTail4Kernel := by
+  unfold verifiedFrontendPackArtifactsTail4Kernel verifiedFrontendPackSurfacesTail4Kernel
+    verifiedFrontendPackDecodedTail4Kernel
+  exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
+    4 verifiedFrontendCanonicalTokensArtifact verifiedFrontendPackArtifactsTail5Kernel
+    verifiedFrontendCanonicalTokensSurfaceKernel verifiedFrontendPackSurfacesTail5Kernel
+    verifiedFrontendCanonicalTokensModulePathKernel verifiedFrontendCanonicalTokens_checked_module_path_found_kernel
+    verifiedFrontendCanonicalTokensCoreProgramKernel verifiedFrontendCanonicalTokens_core_program_found_kernel
+    verifiedFrontendPackDecodedTail5Kernel
+    verifiedFrontendPack_decoded_tail5_found_kernel
+theorem verifiedFrontendPack_decoded_tail4_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 4
+      verifiedFrontendPackArtifactsTail4Kernel
+      verifiedFrontendPackSurfacesTail4Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail4_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedTail3Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail3Kernel :=
+  ArtifactPackContextChecker.DecodedPackUnits.prepend 3 verifiedFrontendTokenArtifact
+    verifiedFrontendPackArtifactsTail4Kernel verifiedFrontendTokenSurfaceKernel
+    verifiedFrontendTokenModulePathKernel verifiedFrontendToken_checked_module_path_found_kernel
+    verifiedFrontendTokenCoreProgramKernel verifiedFrontendToken_core_program_found_kernel
+    verifiedFrontendPackDecodedTail4Kernel
+theorem verifiedFrontendPack_decoded_tail3_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 3
+      verifiedFrontendPackArtifactsTail3Kernel verifiedFrontendPackSurfacesTail3Kernel =
+        some verifiedFrontendPackDecodedTail3Kernel := by
+  unfold verifiedFrontendPackArtifactsTail3Kernel verifiedFrontendPackSurfacesTail3Kernel
+    verifiedFrontendPackDecodedTail3Kernel
+  exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
+    3 verifiedFrontendTokenArtifact verifiedFrontendPackArtifactsTail4Kernel
+    verifiedFrontendTokenSurfaceKernel verifiedFrontendPackSurfacesTail4Kernel
+    verifiedFrontendTokenModulePathKernel verifiedFrontendToken_checked_module_path_found_kernel
+    verifiedFrontendTokenCoreProgramKernel verifiedFrontendToken_core_program_found_kernel
+    verifiedFrontendPackDecodedTail4Kernel
+    verifiedFrontendPack_decoded_tail4_found_kernel
+theorem verifiedFrontendPack_decoded_tail3_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 3
+      verifiedFrontendPackArtifactsTail3Kernel
+      verifiedFrontendPackSurfacesTail3Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail3_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedTail2Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail2Kernel :=
+  ArtifactPackContextChecker.DecodedPackUnits.prepend 2 verifiedFrontendDigitsArtifact
+    verifiedFrontendPackArtifactsTail3Kernel verifiedFrontendDigitsSurfaceKernel
+    verifiedFrontendDigitsModulePathKernel verifiedFrontendDigits_checked_module_path_found_kernel
+    verifiedFrontendDigitsCoreProgramKernel verifiedFrontendDigits_core_program_found_kernel
+    verifiedFrontendPackDecodedTail3Kernel
+theorem verifiedFrontendPack_decoded_tail2_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 2
+      verifiedFrontendPackArtifactsTail2Kernel verifiedFrontendPackSurfacesTail2Kernel =
+        some verifiedFrontendPackDecodedTail2Kernel := by
+  unfold verifiedFrontendPackArtifactsTail2Kernel verifiedFrontendPackSurfacesTail2Kernel
+    verifiedFrontendPackDecodedTail2Kernel
+  exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
+    2 verifiedFrontendDigitsArtifact verifiedFrontendPackArtifactsTail3Kernel
+    verifiedFrontendDigitsSurfaceKernel verifiedFrontendPackSurfacesTail3Kernel
+    verifiedFrontendDigitsModulePathKernel verifiedFrontendDigits_checked_module_path_found_kernel
+    verifiedFrontendDigitsCoreProgramKernel verifiedFrontendDigits_core_program_found_kernel
+    verifiedFrontendPackDecodedTail3Kernel
+    verifiedFrontendPack_decoded_tail3_found_kernel
+theorem verifiedFrontendPack_decoded_tail2_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 2
+      verifiedFrontendPackArtifactsTail2Kernel
+      verifiedFrontendPackSurfacesTail2Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail2_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedTail1Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail1Kernel :=
+  ArtifactPackContextChecker.DecodedPackUnits.prepend 1 verifiedFrontendTokenScanArtifact
+    verifiedFrontendPackArtifactsTail2Kernel verifiedFrontendTokenScanSurfaceKernel
+    verifiedFrontendTokenScanModulePathKernel verifiedFrontendTokenScan_checked_module_path_found_kernel
+    verifiedFrontendTokenScanCoreProgramKernel verifiedFrontendTokenScan_core_program_found_kernel
+    verifiedFrontendPackDecodedTail2Kernel
+theorem verifiedFrontendPack_decoded_tail1_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 1
+      verifiedFrontendPackArtifactsTail1Kernel verifiedFrontendPackSurfacesTail1Kernel =
+        some verifiedFrontendPackDecodedTail1Kernel := by
+  unfold verifiedFrontendPackArtifactsTail1Kernel verifiedFrontendPackSurfacesTail1Kernel
+    verifiedFrontendPackDecodedTail1Kernel
+  exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
+    1 verifiedFrontendTokenScanArtifact verifiedFrontendPackArtifactsTail2Kernel
+    verifiedFrontendTokenScanSurfaceKernel verifiedFrontendPackSurfacesTail2Kernel
+    verifiedFrontendTokenScanModulePathKernel verifiedFrontendTokenScan_checked_module_path_found_kernel
+    verifiedFrontendTokenScanCoreProgramKernel verifiedFrontendTokenScan_core_program_found_kernel
+    verifiedFrontendPackDecodedTail2Kernel
+    verifiedFrontendPack_decoded_tail2_found_kernel
+theorem verifiedFrontendPack_decoded_tail1_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 1
+      verifiedFrontendPackArtifactsTail1Kernel
+      verifiedFrontendPackSurfacesTail1Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail1_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedTail0Kernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail0Kernel :=
+  ArtifactPackContextChecker.DecodedPackUnits.prepend 0 verifiedFrontendLexerArtifact
+    verifiedFrontendPackArtifactsTail1Kernel verifiedFrontendLexerSurfaceKernel
+    verifiedFrontendLexerModulePathKernel verifiedFrontendLexer_checked_module_path_found_kernel
+    verifiedFrontendLexerCoreProgramKernel verifiedFrontendLexer_core_program_found_kernel
+    verifiedFrontendPackDecodedTail1Kernel
+theorem verifiedFrontendPack_decoded_tail0_found_kernel :
+    ArtifactPackContextChecker.decodePackUnitsFromCached 0
+      verifiedFrontendPackArtifactsTail0Kernel verifiedFrontendPackSurfacesTail0Kernel =
+        some verifiedFrontendPackDecodedTail0Kernel := by
+  unfold verifiedFrontendPackArtifactsTail0Kernel verifiedFrontendPackSurfacesTail0Kernel
+    verifiedFrontendPackDecodedTail0Kernel
+  exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
+    0 verifiedFrontendLexerArtifact verifiedFrontendPackArtifactsTail1Kernel
+    verifiedFrontendLexerSurfaceKernel verifiedFrontendPackSurfacesTail1Kernel
+    verifiedFrontendLexerModulePathKernel verifiedFrontendLexer_checked_module_path_found_kernel
+    verifiedFrontendLexerCoreProgramKernel verifiedFrontendLexer_core_program_found_kernel
+    verifiedFrontendPackDecodedTail1Kernel
+    verifiedFrontendPack_decoded_tail1_found_kernel
+theorem verifiedFrontendPack_decoded_tail0_present_kernel :
+    (ArtifactPackContextChecker.decodePackUnitsFromCached 0
+      verifiedFrontendPackArtifactsTail0Kernel
+      verifiedFrontendPackSurfacesTail0Kernel).isSome = true := by
+  rw [verifiedFrontendPack_decoded_tail0_found_kernel]
+  rfl
+def verifiedFrontendPackDecodedExplicitKernel :
+    ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail0Kernel := {
+  units := [verifiedFrontendLexerProgramUnitKernel, verifiedFrontendTokenScanProgramUnitKernel, verifiedFrontendDigitsProgramUnitKernel, verifiedFrontendTokenProgramUnitKernel, verifiedFrontendCanonicalTokensProgramUnitKernel, verifiedFrontendDecimalProgramUnitKernel, verifiedFrontendNumberProgramUnitKernel, verifiedFrontendSymbolProgramUnitKernel, verifiedFrontendRawLexerProgramUnitKernel]
+  artifactsMatch := rfl
+}
+theorem verifiedFrontendPack_decoded_tail0_explicit_kernel :
+    verifiedFrontendPackDecodedTail0Kernel = verifiedFrontendPackDecodedExplicitKernel := by
+  unfold verifiedFrontendPackDecodedTail0Kernel verifiedFrontendPackDecodedTail1Kernel
+    verifiedFrontendPackDecodedTail2Kernel verifiedFrontendPackDecodedTail3Kernel
+    verifiedFrontendPackDecodedTail4Kernel verifiedFrontendPackDecodedTail5Kernel
+    verifiedFrontendPackDecodedTail6Kernel verifiedFrontendPackDecodedTail7Kernel
+    verifiedFrontendPackDecodedTail8Kernel verifiedFrontendPackDecodedTail9Kernel
+    verifiedFrontendPackArtifactsTail0Kernel verifiedFrontendPackArtifactsTail1Kernel
+    verifiedFrontendPackArtifactsTail2Kernel verifiedFrontendPackArtifactsTail3Kernel
+    verifiedFrontendPackArtifactsTail4Kernel verifiedFrontendPackArtifactsTail5Kernel
+    verifiedFrontendPackArtifactsTail6Kernel verifiedFrontendPackArtifactsTail7Kernel
+    verifiedFrontendPackArtifactsTail8Kernel verifiedFrontendPackArtifactsTail9Kernel
+    ArtifactPackContextChecker.DecodedPackUnits.prepend
+    verifiedFrontendPackDecodedExplicitKernel
+    verifiedFrontendLexerProgramUnitKernel verifiedFrontendTokenScanProgramUnitKernel
+    verifiedFrontendDigitsProgramUnitKernel verifiedFrontendTokenProgramUnitKernel
+    verifiedFrontendCanonicalTokensProgramUnitKernel verifiedFrontendDecimalProgramUnitKernel
+    verifiedFrontendNumberProgramUnitKernel verifiedFrontendSymbolProgramUnitKernel
+    verifiedFrontendRawLexerProgramUnitKernel
+  cases verifiedFrontendLexer_checked_surface_value_kernel
+  cases verifiedFrontendTokenScan_checked_surface_value_kernel
+  cases verifiedFrontendDigits_checked_surface_value_kernel
+  cases verifiedFrontendToken_checked_surface_value_kernel
+  cases verifiedFrontendCanonicalTokens_checked_surface_value_kernel
+  cases verifiedFrontendDecimal_checked_surface_value_kernel
+  cases verifiedFrontendNumber_checked_surface_value_kernel
+  cases verifiedFrontendSymbol_checked_surface_value_kernel
+  cases verifiedFrontendRawLexer_checked_surface_value_kernel
+  rfl
+
+end Lanius.Extraction

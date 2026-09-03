@@ -1,0 +1,25 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.ParseWell
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.ParseRep
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.TokenWell
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.TokenRep
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.SourceWell
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.SourceRep
+
+namespace Lanius.Extraction
+def verifiedFrontendCanonicalTokensView :
+    ArtifactView verifiedFrontendCanonicalTokensArtifact := {
+  cache := verifiedFrontendCanonicalTokensCache
+  parseNodesWellFormed :=
+    verifiedFrontendCanonicalTokens_parse_tree_well_formed_kernel
+  parseNodesRepresent :=
+    verifiedFrontendCanonicalTokens_parse_tree_represents_kernel
+  tokensWellFormed :=
+    verifiedFrontendCanonicalTokens_token_tree_well_formed_kernel
+  tokensRepresent :=
+    verifiedFrontendCanonicalTokens_token_tree_represents_kernel
+  sourceBytesWellFormed :=
+    verifiedFrontendCanonicalTokens_source_tree_well_formed_kernel
+  sourceBytesRepresent :=
+    verifiedFrontendCanonicalTokens_source_tree_represents_kernel
+}
+end Lanius.Extraction

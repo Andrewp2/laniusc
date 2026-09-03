@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedParserProgram
+import Lanius.Extraction.VerifiedFrontend.Parser.Program
 
 namespace Lanius.Compiler.Parser
 

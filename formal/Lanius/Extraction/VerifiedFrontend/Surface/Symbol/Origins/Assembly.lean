@@ -1,0 +1,20 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Claims.Assembly
+import Lanius.Extraction.VerifiedFrontend.Origins
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+set_option cbv.maxSteps 100000000
+set_option cbv.warning false
+
+kernel_surface_origins verifiedFrontendSymbol_origin_claims_equal_kernel,
+  verifiedFrontendSymbol_origin_ids_dense_kernel,
+  verifiedFrontendSymbol_node_origins_checked_kernel,
+  verifiedFrontendSymbol_spelling_origins_checked_kernel,
+  verifiedFrontendSymbol_origin_coverage_checked_kernel,
+  verifiedFrontendSymbol_origins_checked_kernel for
+  verifiedFrontendSymbolArtifact, verifiedFrontendSymbolView,
+  verifiedFrontendSymbolOrigins, verifiedFrontendSymbolClaims
+
+end Lanius.Extraction

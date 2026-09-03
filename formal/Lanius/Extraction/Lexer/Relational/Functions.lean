@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontendCheckedProgram
+import Lanius.Extraction.VerifiedFrontend.CheckedProgram
 import Lanius.Extraction.Lexer.Scanners
 import Lanius.Extraction.Lexer.Functions
 

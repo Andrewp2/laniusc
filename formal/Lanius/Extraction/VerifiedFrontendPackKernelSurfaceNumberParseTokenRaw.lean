@@ -1,7 +1,0 @@
-import Lanius.Extraction.VerifiedFrontendUnitNumber
-import Lanius.Extraction.ParseChunks
-namespace Lanius.Extraction
-set_option maxRecDepth 500000
-set_option maxHeartbeats 0
-kernel_parse_token_raw verifiedFrontendNumber_token_raw_trace_checked_kernel for verifiedFrontendNumberArtifact
-end Lanius.Extraction

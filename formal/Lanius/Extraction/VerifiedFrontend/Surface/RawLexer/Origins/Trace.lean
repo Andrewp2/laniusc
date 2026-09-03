@@ -1,0 +1,12 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Claims.Equal
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Origins.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Origins.Spellings
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Coverage
+namespace Lanius.Extraction
+theorem verifiedFrontendRawLexer_origins_checked_kernel :
+    (verifiedFrontendRawLexerOrigins).valid verifiedFrontendRawLexerArtifact verifiedFrontendRawLexerView = true :=
+  SurfaceOrigins.valid_of_components verifiedFrontendRawLexerView verifiedFrontendRawLexerOrigins
+    verifiedFrontendRawLexer_ids_dense_kernel verifiedFrontendRawLexer_origin_nodes_checked_kernel
+    verifiedFrontendRawLexer_origin_spellings_checked_kernel verifiedFrontendRawLexer_coverage_checked_kernel
+end Lanius.Extraction

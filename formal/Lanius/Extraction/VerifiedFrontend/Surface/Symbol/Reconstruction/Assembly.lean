@@ -1,0 +1,7 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Reconstruction.Trace
+namespace Lanius.Extraction
+def verifiedFrontendSymbolReconstructedKernel : SurfaceFile := verifiedFrontendSymbolReconstructedTraceKernel
+theorem verifiedFrontendSymbol_reconstructed_found_kernel :
+    reconstructArtifactSurfaceView verifiedFrontendSymbolArtifact verifiedFrontendSymbolView =
+      some verifiedFrontendSymbolReconstructedKernel := verifiedFrontendSymbol_reconstructed_trace_kernel
+end Lanius.Extraction

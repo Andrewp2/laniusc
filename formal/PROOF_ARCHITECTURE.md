@@ -30,18 +30,38 @@ Focused rebuild measurements on the development host are:
 - artifact evidence units aggregate: 1.01 s;
 - artifact evidence assembly: 1.03 s.
 
-Cold leaf certificates remain uneven. The two quadratic cross-table evidence
-checks now build balanced `TreeSet` indexes and are generically proved equal to
-their list-based specifications. This first reduced CanonicalTokens evidence
-from about 106 s and 11.2 GiB to 25.0 s and 5.7 GiB; the Lexer shard fell from
-35.7 s to 15.1 s and Symbol from 34.3 s to 13.5 s. CanonicalTokens now also has
-literal materialized type/lowering indexes, each tied to the canonical lists by
-its own kernel equality certificate. Its hot evidence assembly is 1.01 s; the
-remainder, type-lookup, and lowering-lookup leaves are 4.6 s, 2.6 s, and 2.9 s.
-The two cold index-authenticity leaves remain about 10 s each, so clean
-regeneration remains a separate optimization target. Declaration collection,
+The two quadratic cross-table evidence checks retain balanced `TreeSet`
+implementations as a simple runtime fallback, but generated certificates no
+longer authenticate global sets. Their untrusted sidecars now carry balanced
+canonical type/lowering tables and one direct witness-row index for each
+required relationship. The kernel checks each proposed row with a bounded
+`SeqTree` lookup; generic soundness theorems transport successful local lookups
+back to the original list-membership specifications. Bad indexes or malformed
+trees therefore fail without enlarging the trusted boundary.
+
+This removes the roughly 10 s CanonicalTokens index-authenticity leaves. Its
+type/lowering tree authenticity leaves are now under 0.9 s, direct witness
+leaves are about 3.0 s each, and final assembly is 0.9--1.0 s. The same path is
+used for Lexer, Digits, Decimal, Number, Symbol, and RawLexer. Lexer fell from a
+15.1 s monolith to a 3.0 s largest shard; Symbol's largest shard is 2.8 s and
+RawLexer's is 2.6 s. The tiny TokenScan and empty Token unit retain the simpler
+indexed fallback. CanonicalTokens' remaining local invariant leaves are
+separate; the largest measured leaf is 3.1 s. Declaration collection,
 qualified type grounding, ordered-reference validation, and lowering coverage
 have similar opportunities.
+
+The corresponding source layout follows those ownership boundaries. Generic
+checker and quotation code live under `Lanius/Extraction/Evidence/`; all
+generated frontend and parser modules live under
+`Lanius/Extraction/VerifiedFrontend/`. Its first-level directories separate
+artifact quotation, surface certificates, parser certificates, semantic
+context, typing, decoding, resolution, assembly, and evidence. Unit-specific
+modules are nested below the phase that owns them, while aggregate entry points
+remain at the `VerifiedFrontend/` root. The `CanonicalTokens/Data/` subtree
+separates quoted sidecar data from kernel certificates. Numbered generated
+shards use valid `ChunkN` module names rather than anonymous numeric path
+segments. This keeps `Lanius/Extraction/` itself limited to the handwritten
+shared infrastructure and legacy public entry points.
 
 The complete kernel-clean pack is not yet a three-second build because global
 resolution still uses one monolithic proof-producing reduction. Its next

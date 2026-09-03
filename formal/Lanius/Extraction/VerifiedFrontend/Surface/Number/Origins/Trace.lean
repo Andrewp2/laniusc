@@ -1,0 +1,12 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.Claims.Equal
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.Origins.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.Origins.Spellings
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.Coverage
+namespace Lanius.Extraction
+theorem verifiedFrontendNumber_origins_checked_kernel :
+    verifiedFrontendNumberOrigins.valid verifiedFrontendNumberArtifact verifiedFrontendNumberView = true :=
+  SurfaceOrigins.valid_of_components verifiedFrontendNumberView verifiedFrontendNumberOrigins
+    verifiedFrontendNumber_ids_dense_kernel verifiedFrontendNumber_origin_nodes_checked_kernel
+    verifiedFrontendNumber_origin_spellings_checked_kernel verifiedFrontendNumber_coverage_checked_kernel
+end Lanius.Extraction

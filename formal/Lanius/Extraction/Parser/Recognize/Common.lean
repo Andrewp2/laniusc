@@ -1,5 +1,5 @@
-import Lanius.Extraction.VerifiedParserRecognize
-import Lanius.Extraction.VerifiedParserRecognizeFunctionalView
+import Lanius.Extraction.VerifiedFrontend.Parser.Recognize
+import Lanius.Extraction.VerifiedFrontend.Parser.RecognizeFunctionalView
 import Lanius.FunctionalViewCoreStatefulRenaming
 import Lanius.FunctionalViewCoreStatefulCallRefinement
 import Lanius.FunctionalViewCoreStatefulReification

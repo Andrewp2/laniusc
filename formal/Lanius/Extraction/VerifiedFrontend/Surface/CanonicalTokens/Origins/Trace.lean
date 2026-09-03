@@ -1,0 +1,12 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Claims.Equal
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Origins.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Origins.Spellings
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Coverage
+namespace Lanius.Extraction
+theorem verifiedFrontendCanonicalTokens_origins_checked_kernel :
+    (verifiedFrontendCanonicalTokensOrigins).valid verifiedFrontendCanonicalTokensArtifact verifiedFrontendCanonicalTokensView = true :=
+  SurfaceOrigins.valid_of_components verifiedFrontendCanonicalTokensView verifiedFrontendCanonicalTokensOrigins
+    verifiedFrontendCanonicalTokens_ids_dense_kernel verifiedFrontendCanonicalTokens_origin_nodes_checked_kernel
+    verifiedFrontendCanonicalTokens_origin_spellings_checked_kernel verifiedFrontendCanonicalTokens_coverage_checked_kernel
+end Lanius.Extraction

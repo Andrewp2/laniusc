@@ -1,0 +1,9 @@
+import Lanius.Extraction.VerifiedFrontend.Artifact.RawLexer.Artifact
+import Lanius.Extraction.ParseChunks
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_parse_root verifiedFrontendRawLexer_root_trace_present_kernel,
+  verifiedFrontendRawLexerRootTraceKernel, verifiedFrontendRawLexer_root_trace_found_kernel,
+  verifiedFrontendRawLexer_root_trace_shape_kernel for verifiedFrontendRawLexerArtifact
+end Lanius.Extraction

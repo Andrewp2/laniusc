@@ -1,0 +1,13 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Parse.Trace
+import Lanius.Extraction.SurfaceReconstruct
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+theorem verifiedFrontendRawLexer_proposed_present_kernel : verifiedFrontendRawLexerArtifact.surface.isSome = true := by
+  with_unfolding_all rfl
+def verifiedFrontendRawLexerProposedKernel : SurfaceFile :=
+  verifiedFrontendRawLexerArtifact.surface.get verifiedFrontendRawLexer_proposed_present_kernel
+theorem verifiedFrontendRawLexer_proposed_found_kernel :
+    verifiedFrontendRawLexerArtifact.surface = some verifiedFrontendRawLexerProposedKernel :=
+  parseOptionEqSomeGet verifiedFrontendRawLexer_proposed_present_kernel
+end Lanius.Extraction

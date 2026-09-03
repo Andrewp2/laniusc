@@ -1,0 +1,12 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Parse.TokenHeader
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Parse.TokenRaw
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Parse.TokenCanonical
+
+namespace Lanius.Extraction
+theorem verifiedFrontendCanonicalTokens_token_trace_checked_kernel :
+    checkTokenArtifact verifiedFrontendCanonicalTokensArtifact = true :=
+  checkTokenArtifact_of_trace_phases
+    verifiedFrontendCanonicalTokens_token_header_trace_checked_kernel
+    verifiedFrontendCanonicalTokens_token_raw_trace_checked_kernel
+    verifiedFrontendCanonicalTokens_token_canonical_trace_checked_kernel
+end Lanius.Extraction

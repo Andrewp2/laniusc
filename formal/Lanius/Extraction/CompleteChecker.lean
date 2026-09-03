@@ -1,5 +1,5 @@
 import Lanius.Extraction.ArtifactPackContextChecker
-import Lanius.Extraction.EvidenceStructureChecker
+import Lanius.Extraction.Evidence.StructureChecker
 import Lanius.Extraction.GlobalResolutionEvidenceChecker
 
 namespace Lanius.Extraction.CompleteChecker
@@ -158,19 +158,15 @@ def checkUnitEvidenceStructureCachedBase
   indexedReferencesEarlier (·.premises) artifact.types &&
   indexedReferencesEarlier (·.premises) artifact.lowering
 
-def checkUnitEvidenceStructureMaterialized
+def checkUnitEvidenceStructureWitnessed
     (surfaceNodeCounts : List Nat)
     (unitIndex : Nat)
     (artifact : Artifact)
     (checked : CheckedSurfaceArtifact artifact)
-    (indexes : EvidenceNodeIndexes artifact.types artifact.lowering) : Bool :=
-  match artifact.core_program with
-  | some _ =>
-      checkUnitEvidenceStructureCachedBase surfaceNodeCounts unitIndex artifact checked &&
-      typedLoweringRowsHaveTypeEvidenceMaterialized indexes.typeNodes
-        artifact.lowering &&
-      typeRowsHaveLoweringEvidenceMaterialized indexes.loweringNodes artifact.types
-  | none => false
+    (witnesses : EvidenceWitnessView artifact) : Bool :=
+  artifact.core_program.isSome &&
+    checkUnitEvidenceStructureCachedBase surfaceNodeCounts unitIndex artifact checked &&
+    checkEvidenceWitnesses witnesses
 
 theorem checkUnitEvidenceStructureCached_sound
     {checked : CheckedSurfaceArtifact artifact}
@@ -188,23 +184,24 @@ theorem checkUnitEvidenceStructureCached_sound
         typedLoweringRowsHaveTypeEvidenceIndexed_eq,
         typeRowsHaveLoweringEvidenceIndexed_eq] using accepted
 
-theorem checkUnitEvidenceStructureMaterialized_sound
+theorem checkUnitEvidenceStructureWitnessed_sound
     {checked : CheckedSurfaceArtifact artifact}
-    {indexes : EvidenceNodeIndexes artifact.types artifact.lowering}
-    (accepted : checkUnitEvidenceStructureMaterialized surfaceNodeCounts unitIndex
-      artifact checked indexes = true) :
+    {witnesses : EvidenceWitnessView artifact}
+    (accepted : checkUnitEvidenceStructureWitnessed surfaceNodeCounts unitIndex
+      artifact checked witnesses = true) :
     UnitEvidenceValid surfaceNodeCounts unitIndex artifact := by
-  unfold checkUnitEvidenceStructureMaterialized at accepted
+  unfold checkUnitEvidenceStructureWitnessed at accepted
   cases programFound : artifact.core_program with
   | none => simp [programFound] at accepted
   | some program =>
-      simp only [programFound, checkUnitEvidenceStructureCachedBase,
-        Bool.and_eq_true] at accepted
+      simp only [programFound, Option.isSome, Bool.and_eq_true] at accepted
+      have witnessSound := checkEvidenceWitnesses_sound witnesses accepted.2
+      unfold checkUnitEvidenceStructureCachedBase at accepted
+      simp only [Bool.and_eq_true] at accepted
       refine ⟨checked.claims, program, checkedSurfaceClaimsFound checked,
         programFound, ?_⟩
-      simpa only [beq_iff_eq, and_assoc,
-        typedLoweringRowsHaveTypeEvidenceMaterialized_eq indexes,
-        typeRowsHaveLoweringEvidenceMaterialized_eq indexes] using accepted
+      simpa only [beq_iff_eq, and_assoc] using
+        And.intro accepted.1.2 witnessSound
 
 def checkUnitEvidenceCached (surfaceNodeCounts : List Nat) :
     (unitIndex : Nat) → (artifacts : List Artifact) →

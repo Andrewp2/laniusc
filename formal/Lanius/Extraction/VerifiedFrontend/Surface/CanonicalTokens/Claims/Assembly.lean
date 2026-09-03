@@ -1,0 +1,13 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Claims.Trace
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Reconstruction.Assembly
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+def verifiedFrontendCanonicalTokensClaimsKernel : SurfaceClaims :=
+  verifiedFrontendCanonicalTokensClaimsTraceKernel
+theorem verifiedFrontendCanonicalTokens_claims_found_kernel :
+    collectSurfaceClaimsFrom verifiedFrontendCanonicalTokensArtifact verifiedFrontendCanonicalTokensReconstructedKernel =
+      some verifiedFrontendCanonicalTokensClaimsKernel := by
+  unfold verifiedFrontendCanonicalTokensReconstructedKernel
+    verifiedFrontendCanonicalTokensClaimsKernel
+  exact verifiedFrontendCanonicalTokens_claims_trace_found_kernel
+end Lanius.Extraction

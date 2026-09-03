@@ -1,0 +1,12 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Claims.Equal
+import Lanius.Extraction.VerifiedFrontend.Surface.Digits.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Origins.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Origins.Spellings
+import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Coverage
+namespace Lanius.Extraction
+theorem verifiedFrontendDigits_origins_checked_kernel :
+    (verifiedFrontendDigitsOrigins).valid verifiedFrontendDigitsArtifact verifiedFrontendDigitsView = true :=
+  SurfaceOrigins.valid_of_components verifiedFrontendDigitsView verifiedFrontendDigitsOrigins
+    verifiedFrontendDigits_ids_dense_kernel verifiedFrontendDigits_origin_nodes_checked_kernel
+    verifiedFrontendDigits_origin_spellings_checked_kernel verifiedFrontendDigits_coverage_checked_kernel
+end Lanius.Extraction

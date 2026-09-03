@@ -2,7 +2,7 @@ import Lanius.Extraction.ArtifactContextChecker
 import Lanius.Extraction.ParseChecker
 import Lanius.Extraction.CoreChecker
 import Lanius.Extraction.CoreTypingChecker
-import Lanius.Extraction.EvidenceStructureChecker
+import Lanius.Extraction.Evidence.StructureChecker
 import Lanius.Extraction.SurfaceElaborationChecker
 import Lanius.Extraction.SurfaceChecker
 import Lanius.Extraction.SurfaceReconstruct

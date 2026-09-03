@@ -1,9 +1,0 @@
-import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceRawLexerParseView
-import Lanius.Extraction.ParseChunks
-namespace Lanius.Extraction
-set_option maxRecDepth 500000
-set_option maxHeartbeats 0
-kernel_parse_nodes_cached_chunk verifiedFrontendRawLexer_nodes_5_trace_checked_kernel,
-  verifiedFrontendRawLexer_nodes_5_trace_length_kernel for
-  verifiedFrontendRawLexerArtifact, verifiedFrontendRawLexerParseView, 5000, 967
-end Lanius.Extraction

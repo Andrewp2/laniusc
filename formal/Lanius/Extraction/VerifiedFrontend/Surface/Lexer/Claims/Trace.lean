@@ -1,0 +1,13 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Reconstruction.Trace
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+
+kernel_surface_claims verifiedFrontendLexer_claims_trace_present_kernel,
+  verifiedFrontendLexerClaimsTraceKernel,
+  verifiedFrontendLexer_claims_trace_found_kernel for
+  verifiedFrontendLexerArtifact, verifiedFrontendLexerReconstructedTraceKernel
+
+end Lanius.Extraction

@@ -1,4 +1,0 @@
-import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceNumberAssemblyTrace
-
-namespace Lanius.Extraction
-end Lanius.Extraction

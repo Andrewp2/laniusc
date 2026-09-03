@@ -1,0 +1,12 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Claims.Trace
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Reconstruction.Assembly
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+def verifiedFrontendRawLexerClaimsKernel : SurfaceClaims :=
+  verifiedFrontendRawLexerClaimsTraceKernel
+theorem verifiedFrontendRawLexer_claims_found_kernel :
+    collectSurfaceClaimsFrom verifiedFrontendRawLexerArtifact verifiedFrontendRawLexerReconstructedKernel =
+      some verifiedFrontendRawLexerClaimsKernel := by
+  unfold verifiedFrontendRawLexerReconstructedKernel verifiedFrontendRawLexerClaimsKernel
+  exact verifiedFrontendRawLexer_claims_trace_found_kernel
+end Lanius.Extraction

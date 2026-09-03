@@ -1,5 +1,5 @@
 import Lanius.Extraction.CoreTypingChecker
-import Lanius.Extraction.EvidenceStructureChecker
+import Lanius.Extraction.Evidence.StructureChecker
 import Lanius.Extraction.CompleteChecker
 import Lean.Data.Json.Parser
 

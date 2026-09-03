@@ -1,0 +1,12 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Claims.Equal
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Origins.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Origins.Spellings
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Coverage
+namespace Lanius.Extraction
+theorem verifiedFrontendSymbol_origins_checked_kernel :
+    (verifiedFrontendSymbolOrigins).valid verifiedFrontendSymbolArtifact verifiedFrontendSymbolView = true :=
+  SurfaceOrigins.valid_of_components verifiedFrontendSymbolView verifiedFrontendSymbolOrigins
+    verifiedFrontendSymbol_ids_dense_kernel verifiedFrontendSymbol_origin_nodes_checked_kernel
+    verifiedFrontendSymbol_origin_spellings_checked_kernel verifiedFrontendSymbol_coverage_checked_kernel
+end Lanius.Extraction

@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedParserResult
+import Lanius.Extraction.VerifiedFrontend.Parser.Result
 import Lanius.FunctionalViewCoreReification
 
 namespace Lanius.Extraction.Parser.ResultAccessors

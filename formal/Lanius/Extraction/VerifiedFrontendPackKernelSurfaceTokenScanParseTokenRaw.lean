@@ -1,7 +1,0 @@
-import Lanius.Extraction.VerifiedFrontendUnitTokenScan
-import Lanius.Extraction.ParseChunks
-namespace Lanius.Extraction
-set_option maxRecDepth 500000
-set_option maxHeartbeats 0
-kernel_parse_token_raw verifiedFrontendTokenScan_token_raw_trace_checked_kernel for verifiedFrontendTokenScanArtifact
-end Lanius.Extraction

@@ -1,4 +1,0 @@
-import Lanius.Extraction.VerifiedFrontendPackKernelSurfaceCanonicalTokensAssemblyTrace
-
-namespace Lanius.Extraction
-end Lanius.Extraction

@@ -1,9 +1,0 @@
-import Lanius.Extraction.VerifiedFrontendUnitDigits
-import Lanius.Extraction.ParseChunks
-namespace Lanius.Extraction
-set_option maxRecDepth 500000
-set_option maxHeartbeats 0
-kernel_parse_root verifiedFrontendDigits_root_trace_present_kernel,
-  verifiedFrontendDigitsRootTraceKernel, verifiedFrontendDigits_root_trace_found_kernel,
-  verifiedFrontendDigits_root_trace_shape_kernel for verifiedFrontendDigitsArtifact
-end Lanius.Extraction

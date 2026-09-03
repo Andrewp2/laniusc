@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontendPackKernel
+import Lanius.Extraction.VerifiedFrontend.Kernel
 
 /-! # Kernel-clean certificate profile
 
