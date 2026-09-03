@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Parse.View
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Parse.View.Assembly
 
 namespace Lanius.Extraction
 

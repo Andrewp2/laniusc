@@ -1,13 +1,13 @@
 import Lanius.Extraction.Parser.ResultAccessors
 import Lanius.Extraction.Parser.Constructors
-import Lanius.Extraction.VerifiedFrontend.Parser.RangeFunctionalView
-import Lanius.Extraction.VerifiedFrontend.Parser.ValidationFunctionalView
-import Lanius.Extraction.VerifiedFrontend.Parser.ReadsFunctionalView
-import Lanius.Extraction.VerifiedFrontend.Parser.FindFunctionalView
+import Lanius.Extraction.VerifiedFrontend.Parser.FunctionalView.Range
+import Lanius.Extraction.VerifiedFrontend.Parser.FunctionalView.Validation
+import Lanius.Extraction.VerifiedFrontend.Parser.FunctionalView.Reads
+import Lanius.Extraction.VerifiedFrontend.Parser.FunctionalView.Find
 import Lanius.Extraction.Parser.Append
-import Lanius.Extraction.VerifiedFrontend.Parser.AccessorsFunctionalView
-import Lanius.Extraction.VerifiedFrontend.Parser.ScanFunctionalView
-import Lanius.Extraction.VerifiedFrontend.Parser.RecognizeFunctionalView
+import Lanius.Extraction.VerifiedFrontend.Parser.FunctionalView.Accessors
+import Lanius.Extraction.VerifiedFrontend.Parser.FunctionalView.Scan
+import Lanius.Extraction.VerifiedFrontend.Parser.FunctionalView.Recognize
 import Lanius.Extraction.VerifiedFrontend.Parser.Soundness
 
 namespace Lanius.Extraction.Parser.FunctionalViewCoverage

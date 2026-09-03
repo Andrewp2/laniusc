@@ -1,9 +1,9 @@
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.NodeCount
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.ResolutionRows
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.TypeRows
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.TypePremises
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.LoweringRows
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.LoweringPremises
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Nodes.Count
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Rows.Resolution
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Rows.Type
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Premises.Type
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Rows.Lowering
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Premises.Lowering
 
 namespace Lanius.Extraction
 

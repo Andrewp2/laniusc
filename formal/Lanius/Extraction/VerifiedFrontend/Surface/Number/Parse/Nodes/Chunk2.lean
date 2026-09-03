@@ -1,0 +1,9 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.Parse.View.Assembly
+import Lanius.Extraction.ParseChunks
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_parse_nodes_cached_chunk verifiedFrontendNumber_nodes_2_trace_checked_kernel,
+  verifiedFrontendNumber_nodes_2_trace_length_kernel for
+  verifiedFrontendNumberArtifact, verifiedFrontendNumberParseView, 2000, 730
+end Lanius.Extraction

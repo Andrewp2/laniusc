@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.ProposedItems
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Reconstruction.ProposedItems
 import Lanius.Extraction.SurfaceChecker
 import Lanius.Extraction.ParseChunks
 namespace Lanius.Extraction

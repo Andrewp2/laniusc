@@ -1,8 +1,8 @@
 import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Data.Cache
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.TypeTreeWell
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.TypeTreeRep
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.LoweringTreeWell
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.LoweringTreeRep
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.TypeTree.WellFormed
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.TypeTree.Representation
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.LoweringTree.WellFormed
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.LoweringTree.Representation
 
 namespace Lanius.Extraction
 

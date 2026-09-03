@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Context.Materialized.ConstantCertificate
+import Lanius.Extraction.VerifiedFrontend.Context.Materialized.Constant.Certificate
 import Lanius.Extraction.ArtifactPackContextPhaseChunks
 
 namespace Lanius.Extraction

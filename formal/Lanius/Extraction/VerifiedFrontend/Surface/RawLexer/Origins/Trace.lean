@@ -1,5 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Claims.Equal
-import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Ids.Dense
 import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Origins.Nodes
 import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Origins.Spellings
 import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Coverage

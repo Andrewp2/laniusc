@@ -1,5 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Claims.Equal
-import Lanius.Extraction.VerifiedFrontend.Surface.Digits.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Ids.Dense
 import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Origins.Nodes
 import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Origins.Spellings
 import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Coverage

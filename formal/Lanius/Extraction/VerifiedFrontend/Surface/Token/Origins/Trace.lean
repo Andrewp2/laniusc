@@ -1,5 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Surface.Token.Claims.Equal
-import Lanius.Extraction.VerifiedFrontend.Surface.Token.IdsDense
+import Lanius.Extraction.VerifiedFrontend.Surface.Token.Ids.Dense
 import Lanius.Extraction.VerifiedFrontend.Surface.Token.Origins.Nodes
 import Lanius.Extraction.VerifiedFrontend.Surface.Token.Origins.Spellings
 import Lanius.Extraction.VerifiedFrontend.Surface.Token.Coverage

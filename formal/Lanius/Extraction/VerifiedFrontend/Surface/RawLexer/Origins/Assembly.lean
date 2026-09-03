@@ -1,5 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Claims.Assembly
-import Lanius.Extraction.VerifiedFrontend.Origins
+import Lanius.Extraction.VerifiedFrontend.Artifact.RawLexer.Origins
 import Lanius.Extraction.KernelSurfacePhases
 
 namespace Lanius.Extraction

@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.ProposedItems
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Reconstruction.ProposedItems
 import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.View.Assembly
 namespace Lanius.Extraction
 set_option maxRecDepth 100000

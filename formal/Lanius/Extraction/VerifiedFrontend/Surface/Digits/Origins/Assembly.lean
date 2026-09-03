@@ -1,5 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Claims.Assembly
-import Lanius.Extraction.VerifiedFrontend.Origins
+import Lanius.Extraction.VerifiedFrontend.Artifact.Digits.Origins
 
 namespace Lanius.Extraction
 set_option maxRecDepth 100000

@@ -1,9 +1,0 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Parse.View
-import Lanius.Extraction.ParseChunks
-namespace Lanius.Extraction
-set_option maxRecDepth 100000
-set_option maxHeartbeats 0
-kernel_parse_nodes_cached_chunk verifiedFrontendSymbol_nodes_0_trace_checked_kernel,
-  verifiedFrontendSymbol_nodes_0_trace_length_kernel for
-  verifiedFrontendSymbolArtifact, verifiedFrontendSymbolParseView, 0, 1500
-end Lanius.Extraction

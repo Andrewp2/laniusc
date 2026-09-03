@@ -1,7 +1,7 @@
 import Lanius.Extraction.VerifiedFrontend.Surface.Data
 import Lanius.Extraction.VerifiedFrontend.Assembly.Dense
 import Lanius.Extraction.VerifiedFrontend.Assembly.Canonical
-import Lanius.Extraction.VerifiedFrontend.Typing.Assembly
+import Lanius.Extraction.VerifiedFrontend.Typing.Trace
 import Lanius.Extraction.CoreChecker
 
 namespace Lanius.Extraction

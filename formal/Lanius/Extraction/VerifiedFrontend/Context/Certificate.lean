@@ -1,6 +1,6 @@
 import Lanius.Extraction.VerifiedFrontend.Context.Supported.Assembly
 import Lanius.Extraction.VerifiedFrontend.Context.Functions.Assembly
-import Lanius.Extraction.VerifiedFrontend.Context.Materialized.FinalCertificate
+import Lanius.Extraction.VerifiedFrontend.Context.Materialized.Final.Certificate
 
 namespace Lanius.Extraction
 

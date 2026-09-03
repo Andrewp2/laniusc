@@ -1,5 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Evidence.Lexer.Base
-import Lanius.Extraction.VerifiedFrontend.Evidence.Lexer.Witnesses
+import Lanius.Extraction.VerifiedFrontend.Evidence.Lexer.Witnesses.Assembly
 
 namespace Lanius.Extraction
 

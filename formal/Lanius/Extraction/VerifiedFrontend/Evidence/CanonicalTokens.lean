@@ -1,6 +1,6 @@
 import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Base
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.CorePresent
-import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Witnesses
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Core.Present
+import Lanius.Extraction.VerifiedFrontend.Evidence.CanonicalTokens.Witnesses.Assembly
 
 namespace Lanius.Extraction
 

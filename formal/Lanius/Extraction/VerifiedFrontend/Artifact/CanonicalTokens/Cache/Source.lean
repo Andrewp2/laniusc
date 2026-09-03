@@ -1,5 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Artifact
-import Lanius.Extraction.VerifiedFrontend.Artifact.CacheBase
+import Lanius.Extraction.VerifiedFrontend.Artifact.Cache.Base
 namespace Lanius.Extraction
 set_option maxRecDepth 500000
 def verifiedFrontendCanonicalTokensSourceByteTree : Lanius.Data.SeqTree (Fin 256) :=

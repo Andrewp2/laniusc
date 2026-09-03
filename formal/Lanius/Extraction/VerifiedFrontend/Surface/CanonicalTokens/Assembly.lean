@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.AssemblyTrace
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Assembly.Trace
 
 namespace Lanius.Extraction
 end Lanius.Extraction

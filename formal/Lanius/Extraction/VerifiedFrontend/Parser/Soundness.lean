@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Parser.RecognizeSetup
+import Lanius.Extraction.VerifiedFrontend.Parser.Recognize.Setup
 
 namespace Lanius.Extraction.ParserRecognize
 

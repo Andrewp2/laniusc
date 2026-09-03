@@ -1,9 +1,0 @@
-import Lanius.Extraction.VerifiedFrontend.Artifact.Lexer.Cache.Assembly
-import Lanius.Extraction.VerifiedFrontend.Artifact.TokenScan.Cache.Assembly
-import Lanius.Extraction.VerifiedFrontend.Artifact.Digits.Cache.Assembly
-import Lanius.Extraction.VerifiedFrontend.Artifact.Token.Cache.Assembly
-import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Cache.Assembly
-import Lanius.Extraction.VerifiedFrontend.Artifact.Decimal.Cache.Assembly
-import Lanius.Extraction.VerifiedFrontend.Artifact.Number.Cache.Assembly
-import Lanius.Extraction.VerifiedFrontend.Artifact.Symbol.Cache.Assembly
-import Lanius.Extraction.VerifiedFrontend.Artifact.RawLexer.Cache.Assembly

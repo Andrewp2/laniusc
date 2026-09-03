@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Number.Parse.ChunkAssembly
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.Parse.Nodes.Assembly
 
 namespace Lanius.Extraction
 

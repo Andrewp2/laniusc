@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.ProposedItems
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Reconstruction.ProposedItems
 import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.Assembly
 namespace Lanius.Extraction
 set_option maxRecDepth 500000

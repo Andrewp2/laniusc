@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.ProposedItems
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.Reconstruction.ProposedItems
 import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.Assembly
 namespace Lanius.Extraction
 set_option maxRecDepth 500000

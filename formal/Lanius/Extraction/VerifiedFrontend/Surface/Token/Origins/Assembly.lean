@@ -1,5 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Surface.Token.Claims.Assembly
-import Lanius.Extraction.VerifiedFrontend.Origins
+import Lanius.Extraction.VerifiedFrontend.Artifact.Token.Origins
 import Lanius.Extraction.KernelSurfacePhases
 
 namespace Lanius.Extraction

@@ -1,5 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Artifact.RawLexer.Artifact
-import Lanius.Extraction.VerifiedFrontend.Artifact.CacheBase
+import Lanius.Extraction.VerifiedFrontend.Artifact.Cache.Base
 namespace Lanius.Extraction
 set_option maxRecDepth 100000
 def verifiedFrontendRawLexerCache : ArtifactCache := artifactCacheOfTrees

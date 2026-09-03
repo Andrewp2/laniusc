@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.AssemblyTrace
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Assembly.Trace
 
 namespace Lanius.Extraction
 

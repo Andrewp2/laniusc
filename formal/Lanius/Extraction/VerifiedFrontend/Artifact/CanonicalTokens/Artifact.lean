@@ -1,13 +1,13 @@
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Sources
-import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Tokens
-import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.RawTokens
-import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.SemanticTokenKinds
+import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Tokens.Canonical
+import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Tokens.Raw
+import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Tokens.SemanticKinds
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.ParseNodes.Assembly
-import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.ParseRoot
+import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Parse.Root
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Surface
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Resolutions
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Types
-import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.CoreProgram
+import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Core.Program
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Lowering
 
 namespace Lanius.Extraction

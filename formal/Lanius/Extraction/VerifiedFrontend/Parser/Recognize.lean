@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Parser.ScanFunctionalView
+import Lanius.Extraction.VerifiedFrontend.Parser.FunctionalView.Scan
 import Lanius.Extraction.VerifiedFrontend.Parser.Validation
 import Lanius.Extraction.VerifiedFrontend.Parser.Append
 import Lanius.Extraction.VerifiedFrontend.Parser.Result

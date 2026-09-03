@@ -1,9 +1,0 @@
-import Lanius.Extraction.VerifiedFrontend.Artifact.Lexer.Origins
-import Lanius.Extraction.VerifiedFrontend.Artifact.TokenScan.Origins
-import Lanius.Extraction.VerifiedFrontend.Artifact.Digits.Origins
-import Lanius.Extraction.VerifiedFrontend.Artifact.Token.Origins
-import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Origins
-import Lanius.Extraction.VerifiedFrontend.Artifact.Decimal.Origins
-import Lanius.Extraction.VerifiedFrontend.Artifact.Number.Origins
-import Lanius.Extraction.VerifiedFrontend.Artifact.Symbol.Origins
-import Lanius.Extraction.VerifiedFrontend.Artifact.RawLexer.Origins

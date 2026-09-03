@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Cache.Parse
+import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Cache.Parse.Assembly
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Cache.Token
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Cache.Source
 

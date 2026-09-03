@@ -1,6 +1,6 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Parse.TokenHeader
-import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Parse.TokenRaw
-import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Parse.TokenCanonical
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Parse.Token.Header
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Parse.Token.Raw
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Parse.Token.Canonical
 
 namespace Lanius.Extraction
 

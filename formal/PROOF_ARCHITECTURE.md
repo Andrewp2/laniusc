@@ -60,8 +60,15 @@ modules are nested below the phase that owns them, while aggregate entry points
 remain at the `VerifiedFrontend/` root. The `CanonicalTokens/Data/` subtree
 separates quoted sidecar data from kernel certificates. Numbered generated
 shards use valid `ChunkN` module names rather than anonymous numeric path
-segments. This keeps `Lanius/Extraction/` itself limited to the handwritten
-shared infrastructure and legacy public entry points.
+segments. Module paths, rather than concatenated basenames, carry ownership and
+phase information: for example, parser functional views live under
+`Parser/FunctionalView/`, witness variants under `Evidence/<Unit>/Witnesses/`,
+and parse-node shards under `Surface/<Unit>/Parse/Nodes/`. Relocations are hard
+migrations: the defining contents move, all consumers import the new module,
+and no forwarding modules preserve old paths. Import-only files are reserved
+for genuine multi-module public aggregates, not compatibility aliases. This
+keeps `Lanius/Extraction/` itself limited to the handwritten shared
+infrastructure and legacy public entry points.
 
 The complete kernel-clean pack is not yet a three-second build because global
 resolution still uses one monolithic proof-producing reduction. Its next

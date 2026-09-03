@@ -1,9 +1,9 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.ParseWell
-import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.ParseRep
-import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.TokenWell
-import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.TokenRep
-import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.SourceWell
-import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.SourceRep
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.Parse.WellFormed
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.Parse.Representation
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.Token.WellFormed
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.Token.Representation
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.Source.WellFormed
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.Source.Representation
 
 namespace Lanius.Extraction
 def verifiedFrontendCanonicalTokensView :

@@ -7,7 +7,7 @@ import Lanius.Extraction.VerifiedFrontend.Assembly.Units.Unit5
 import Lanius.Extraction.VerifiedFrontend.Assembly.Units.Unit6
 import Lanius.Extraction.VerifiedFrontend.Assembly.Units.Unit7
 import Lanius.Extraction.VerifiedFrontend.Assembly.Units.Unit8
-import Lanius.Extraction.VerifiedFrontend.Context.Assembly
+import Lanius.Extraction.VerifiedFrontend.Context.Certificate
 
 namespace Lanius.Extraction
 

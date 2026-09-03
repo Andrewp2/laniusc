@@ -1,9 +1,9 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.ParseWell
-import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.ParseRep
-import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.TokenWell
-import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.TokenRep
-import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.SourceWell
-import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.SourceRep
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.Parse.WellFormed
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.Parse.Representation
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.Token.WellFormed
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.Token.Representation
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.Source.WellFormed
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.Source.Representation
 
 namespace Lanius.Extraction
 def verifiedFrontendSymbolView : ArtifactView verifiedFrontendSymbolArtifact := {
