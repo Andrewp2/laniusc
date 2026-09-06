@@ -789,17 +789,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "laniusc-formal-export"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "laniusc-compiler",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "laniusc-shaders"
 version = "0.1.0"
 dependencies = [

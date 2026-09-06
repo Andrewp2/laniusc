@@ -79,7 +79,9 @@ incomplete.
   serializes ordered parse nodes.
 - All bootstrap artifacts used by this plan are x86-64 Linux ELF executables.
   Historical Wasm recognizer tests are not part of the bootstrap or trust path.
-- `crates/laniusc-formal-export` currently performs extraction in Rust.
+- The former Rust `laniusc-formal-export` extractor has been removed. Its
+  Lanius replacement is not yet complete, so no external exporter currently
+  satisfies this plan's extraction boundary.
 - `stdlib/std/fs.lani` and `stdlib/std/io.lani` declare host interfaces. Their
   actual bootstrap bindings and proof contracts must be checked; declarations
   or capability constants are not sufficient evidence of executable support.

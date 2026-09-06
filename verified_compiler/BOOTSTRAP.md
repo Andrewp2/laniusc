@@ -1,4 +1,11 @@
-# Bootstrap syntax extraction
+# Historical bootstrap syntax extraction
+
+> **Historical record:** the Rust CPU exporter and the Python bootstrap,
+> rendering, and pack-check launchers described by this document have been
+> removed. The next supported workflow must be a checked-in Lanius extractor
+> entrypoint that emits its complete proof input directly. Commands below were
+> removed rather than leaving a stale path that silently reintroduced a second
+> extractor outside Lanius.
 
 This workflow targets an untrusted GPU-compiled x86-64 Linux ELF executable.
 The Lanius lexer, parser, derivation materializer, and syntax emitter run natively;
@@ -33,24 +40,13 @@ It does **not** yet extract complete Surface/Core semantics, prove the extractor
 algorithm correct for arbitrary supported inputs, or produce code through a
 verified Lanius x86 backend. See `PLAN.md` for the full goal.
 
-## Run
+## Retired workflow
 
-From the repository root, build the x86-64 extractor with enough parser
-workspace for its largest source unit, extract the exact manifest closure, and
-write independently compilable Lean modules:
-
-```sh
-python3 verified_compiler/bootstrap.py --scale 64 --workspace-words 4194304 --output-dir target/lanius-extractor-pack
-python3 verified_compiler/run.py --bootstrap-manifest target/lanius-extractor-pack/bootstrap.json --module-pack target/lanius-extractor-pack/extractor target/lanius-extractor-pack/modules-final
-```
-
-Build the shared checker, then check each unit in bounded phase-local Lean
-processes and assemble the pack theorem:
-
-```sh
-cd formal && lake build Lanius.Extraction.ParseChunks && cd ..
-python3 verified_compiler/check_pack.py target/lanius-extractor-pack/modules-final
-```
+There is currently no supported bootstrap command. The former workflow was
+removed because Python generated the Lanius entrypoint, interpreted and
+rewrote the emitted artifact, and generated program-specific Lean proofs. A
+replacement must keep those responsibilities in checked-in Lanius code or in
+general Lean infrastructure before this document gains a new runnable section.
 
 The generated file keeps one artifact definition. Separate theorems check its
 tokens, semantic token assignments, parse nodes, and root. The node tactic checks
@@ -82,7 +78,7 @@ default 200,000 heartbeat limit stopped during elaboration after 20 seconds. A
 retry with 2,000,000 heartbeats remained CPU-bound without diagnostics for
 1,539 seconds and used roughly 7--8 GiB RSS before it was manually stopped.
 
-The launcher now presents that same logical artifact as balanced `SeqTree`
+The retired launcher presented that same logical artifact as balanced `SeqTree`
 tables with 64-node leaves. Each leaf is checked independently; checked branch
 theorems compose the leaves, and the singular `Artifact` uses the authenticated
 tree's flattening rather than comparing a second copy of the node list. On
@@ -101,7 +97,7 @@ not source-closure extraction or the extractor's general correctness proof.
 The x86 extractor now accepts every source path in one invocation, reuses one
 initialized grammar and workspace, and emits one logical `ArtifactPack`. The
 bootstrap manifest records an ordered 24-file closure with a hash for every
-source and an aggregate closure digest. `run.py` authenticates those hashes and
+source and an aggregate closure digest. The retired launcher authenticated those hashes and
 the exact x86 executable before executing it. The import resolver that produced
 the closure list is still untrusted bootstrap metadata; proving closure
 completeness inside Lean remains part of extractor correctness.
@@ -134,7 +130,7 @@ theorem reports only `propext`, `Classical.choice`, and `Quot.sound`, with no
 0.12 seconds. That warm result is cache reuse, not the milestone-7 fresh-program
 certificate target.
 
-## Boundaries and limits
+## Historical boundaries and limits
 
 - `bootstrap.py` substitutes fixed grammar data and buffer capacities into the
   Lanius entry template, then invokes the GPU compiler. It does not parse or

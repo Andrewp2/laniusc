@@ -7,7 +7,6 @@ default-run = "laniusc"
 [workspace]
 members = [
     "crates/laniusc-compiler",
-    "crates/laniusc-formal-export",
     "crates/laniusc-shaders",
 ]
 resolver = "3"

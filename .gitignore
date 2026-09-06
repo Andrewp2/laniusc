@@ -8,6 +8,9 @@ __pycache__/
 node_modules/
 **/.lake/
 tools/perf-viewer/public/performance-data.js
+/.ruff_cache/
+/tmp/
+/formal/Lanius/Extraction/Artifacts/
 
 # Generated benchmark workspaces and derived indexes. Canonical, reviewable
 # measurements live in benchmark_artifacts/performance/*.json.
