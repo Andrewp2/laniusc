@@ -188,12 +188,30 @@ structure SurfaceParameter where
   type_expression : SurfaceTypeExpr
 deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
 
+inductive SurfaceGenericParameter where
+  | type_parameter
+      (id : SurfaceNodeId) (parse_node : ParseNodeId) (name : SpelledName)
+  | const_parameter
+      (id : SurfaceNodeId) (parse_node : ParseNodeId) (name : SpelledName)
+      (type_expression : SurfaceTypeExpr)
+deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
+
 structure SurfaceFunction where
   name : SpelledName
   is_public : Bool
+  generic_parameters : List SurfaceGenericParameter := []
   parameters : List SurfaceParameter
   return_type : Option SurfaceTypeExpr
   body : List SurfaceStmt
+deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
+
+structure SurfaceExternFunction where
+  name : SpelledName
+  is_public : Bool
+  generic_parameters : List SurfaceGenericParameter := []
+  abi : Option SpelledName
+  parameters : List SurfaceParameter
+  return_type : Option SurfaceTypeExpr
 deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
 
 structure SurfaceStructField where
@@ -213,6 +231,7 @@ inductive SurfaceItemValue where
   | module (path : SurfacePath)
   | import_path (path : SurfacePath)
   | function (function : SurfaceFunction)
+  | extern_function (function : SurfaceExternFunction)
   | constant
       (name : SpelledName) (is_public : Bool)
       (type_expression : SurfaceTypeExpr) (value : SurfaceExpr)

@@ -129,8 +129,30 @@ uint parallel_register_location(uint row, uint position, uint total)
     OptIrNodeCore core = opt_ir_core[row];
     uint op = opt_ir_op(core);
     if (!produces_scalar_value(op)) return INVALID;
+    // Aggregate values are represented by an address, even when their payload
+    // is returned in RAX/RDX.  That address must remain stable while the
+    // aggregate's individual words are loaded.  Treating a CALL's dynamic
+    // result as an ordinary scalar lets the first load overwrite RAX and makes
+    // the second load dereference field zero as a pointer.
+    if (x86_semantic_type_is_aggregate(core)) return INVALID;
     uint last = x86_last_use_by_semantic[row];
     if (last <= position) return INVALID;
+
+    // CALL_ARG rows are expanded only after allocation and perform a parallel
+    // assignment into the six SysV argument registers. Keeping an argument in
+    // one of those registers can make an earlier assignment overwrite a later
+    // source (for example r8 -> r9 after another value has been loaded into
+    // r8). Give every value whose final consumer is a call a stack home so the
+    // generated assignments all read stable sources. This is the simple,
+    // deterministic parallel-copy contract; a future allocator may coalesce
+    // provably non-conflicting argument moves without weakening it.
+    if (last < total)
+    {
+        uint consumer = semantic_schedule_order[last];
+        if (consumer < total &&
+            semantic_lir_is_call(opt_ir_op(opt_ir_core[consumer])))
+            return INVALID;
+    }
 
     if (last == position + 1u && last < total)
     {
@@ -172,15 +194,17 @@ uint aggregate_copy_word_count(uint row, uint total, uint function_total)
     OptIrNodeOperands operands = opt_ir_operands[row];
     uint op = opt_ir_op(core);
     if ((op != SEMANTIC_LIR_OP_VALUE_SET && op != SEMANTIC_LIR_OP_STORE) ||
-        !x86_semantic_type_is_aggregate(core) || operands.b >= total)
+        operands.b >= total)
         return 0u;
     OptIrNodeCore value_core = opt_ir_core[operands.b];
     OptIrNodeOperands value_operands = opt_ir_operands[operands.b];
     uint call_words = opt_ir_op(value_core) == SEMANTIC_LIR_OP_CALL &&
         value_operands.a < function_total
             ? semantic_lir_functions[value_operands.a].result_word_count : 0u;
-    return max(max(core.value_word_count, call_words),
+    uint value_words = max(call_words,
         x86_aggregate_value_word_count(value_core, value_operands));
+    return x86_semantic_type_is_aggregate(core) || value_words != 0u
+        ? max(core.value_word_count, value_words) : 0u;
 }
 
 uint aggregate_new_word_count(OptIrNodeCore core,
@@ -214,6 +238,9 @@ uint spill_word_count(uint row, uint total, uint function_total)
         (op == SEMANTIC_LIR_OP_VALUE_GET &&
          core.type_id == SEMANTIC_LIR_TY_STRING))
         return 2u;
+    if (op == SEMANTIC_LIR_OP_VALUE_GET &&
+        (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u)
+        return 2u;
     if (op == SEMANTIC_LIR_OP_CALL)
     {
         uint words = operands.a < function_total
@@ -226,7 +253,11 @@ uint spill_word_count(uint row, uint total, uint function_total)
         return operands.a == HOST_SERVICE_I32_TO_F32 ||
             x86_runtime_service_has_result(operands.a) ? 1u : 0u;
     if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC)
-        return operands.a == INTRINSIC_I32_ARRAY_DATA_PTR ? 1u : 0u;
+        return (operands.a == INTRINSIC_I32_ARRAY_DATA_PTR ||
+                operands.a == INTRINSIC_I32_SLICE_DATA_PTR ||
+                operands.a == INTRINSIC_STRING_DATA_PTR) ? 1u :
+            operands.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS ?
+                3u : 0u;
     return produces_scalar_value(op) ? 1u : 0u;
 }
 

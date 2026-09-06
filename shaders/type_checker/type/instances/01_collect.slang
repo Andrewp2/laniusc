@@ -46,7 +46,7 @@ static const uint HIR_TYPE_FORM_PATH = 1u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TY_UNKNOWN = 0u;
-static const uint LANGUAGE_SYMBOL_COUNT = 68u;
+static const uint LANGUAGE_SYMBOL_COUNT = 71u;
 
 uint linear_thread_id(uint3 dtid)
 {

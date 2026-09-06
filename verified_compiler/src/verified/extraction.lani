@@ -1,0 +1,110 @@
+module verified::extraction;
+
+import verified::raw_lexer;
+import verified::canonical_tokens;
+import verified::parser;
+import verified::parse_tree;
+
+pub const EXTRACT_SUCCESS: i32 = 0;
+pub const EXTRACT_BAD_INPUT: i32 = 1;
+pub const EXTRACT_LEX: i32 = 2;
+pub const EXTRACT_TOKEN_STORAGE: i32 = 3;
+pub const EXTRACT_PARSE: i32 = 4;
+pub const EXTRACT_TREE: i32 = 5;
+
+pub struct SyntaxResult {
+    stage: i32,
+    detail: i32,
+    raw_count: i32,
+    token_count: i32,
+    node_count: i32,
+    tree_words: i32,
+    error_position: i32,
+}
+pub fn extraction_stage(value: SyntaxResult) -> i32 { return value.stage; }
+pub fn extraction_detail(value: SyntaxResult) -> i32 { return value.detail; }
+pub fn raw_count(value: SyntaxResult) -> i32 { return value.raw_count; }
+pub fn token_count(value: SyntaxResult) -> i32 { return value.token_count; }
+pub fn node_count(value: SyntaxResult) -> i32 { return value.node_count; }
+pub fn tree_words(value: SyntaxResult) -> i32 { return value.tree_words; }
+pub fn error_position(value: SyntaxResult) -> i32 { return value.error_position; }
+fn result(stage: i32, detail: i32, raw: i32, tokens: i32,
+    nodes: i32, words: i32, position: i32,) -> SyntaxResult {
+    return SyntaxResult { stage: stage, detail: detail, raw_count: raw,
+        token_count: tokens, node_count: nodes, tree_words: words, error_position: position };
+}
+
+// Extract syntax evidence using only the Lanius frontend. All lengths below
+// are in i32 words except source_length, which counts source bytes held in
+// i32 slots. Buffers must be disjoint and lengths must match actual storage.
+// Preserve raw rows; canonicalization compacts a separate copy. Tree records
+// retain per-terminal semantic kinds, including virtual split-token uses.
+// Only EXTRACT_SUCCESS authorizes consuming the full output as a certificate.
+// This stage does not yet reconstruct Surface syntax or lower to Core.
+pub fn extract_syntax(source:[i32], source_length: i32,
+    grammar:[i32], grammar_length: i32, raw:[i32], raw_length: i32,
+    canonical:[i32], canonical_length: i32, kinds:[i32], kinds_length: i32,
+    workspace:[i32], workspace_length: i32, records:[i32], records_length: i32,
+    offsets:[i32], offsets_length: i32, depth_limit: i32,) -> SyntaxResult {
+    if (source_length <= -1) {
+        return result(EXTRACT_BAD_INPUT, 1, 0, 0, 0, 0, 0);
+    }
+    if (grammar_length <= -1) {
+        return result(EXTRACT_BAD_INPUT, 2, 0, 0, 0, 0, 0);
+    }
+    if (raw_length <= -1) {
+        return result(EXTRACT_BAD_INPUT, 3, 0, 0, 0, 0, 0);
+    }
+    if (canonical_length <= -1) {
+        return result(EXTRACT_BAD_INPUT, 4, 0, 0, 0, 0, 0);
+    }
+    if (kinds_length <= -1) {
+        return result(EXTRACT_BAD_INPUT, 5, 0, 0, 0, 0, 0);
+    }
+    if (workspace_length <= -1) {
+        return result(EXTRACT_BAD_INPUT, 6, 0, 0, 0, 0, 0);
+    }
+    if (records_length <= -1) {
+        return result(EXTRACT_BAD_INPUT, 7, 0, 0, 0, 0, 0);
+    }
+    if (offsets_length <= -1) {
+        return result(EXTRACT_BAD_INPUT, 8, 0, 0, 0, 0, 0);
+    }
+    let lexed = verified::raw_lexer::lex_into(source, source_length, raw, raw_length / 3);
+    let raw_count: i32 = verified::raw_lexer::lex_token_count(lexed);
+    if (verified::raw_lexer::lex_status(lexed) != verified::raw_lexer::LEX_SUCCESS) {
+        return result(EXTRACT_LEX, verified::raw_lexer::lex_status(lexed), raw_count,
+            0, 0, 0, verified::raw_lexer::lex_error_offset(lexed));
+    }
+    if (!(raw_count <= canonical_length / 3)) {
+        return result(EXTRACT_TOKEN_STORAGE, 0, raw_count, 0, 0, 0, 0);
+    }
+    let word: i32 = 0;
+    while (word != raw_count * 3) {
+        canonical[word] = raw[word];
+        word += 1;
+    }
+    let token_count: i32 = verified::canonical_tokens::canonicalize_in_place(source, canonical, raw_count);
+    if (!(token_count <= kinds_length)) {
+        return result(EXTRACT_TOKEN_STORAGE, 1, raw_count, token_count, 0, 0, 0);
+    }
+    let token: i32 = 0;
+    while (token != token_count) {
+        kinds[token] = canonical[token * 3];
+        token += 1;
+    }
+    let parsed = verified::parser::recognize(grammar, grammar_length, kinds,
+        token_count, workspace, workspace_length);
+    if (verified::parser::parse_status(parsed) != verified::parser::PARSE_SUCCESS) {
+        return result(EXTRACT_PARSE, verified::parser::parse_status(parsed), raw_count,
+            token_count, 0, 0, verified::parser::parse_error_position(parsed));
+    }
+    let tree = verified::parse_tree::materialize(parsed, workspace, workspace_length,
+        token_count, records, records_length, offsets, offsets_length, depth_limit);
+    let stage: i32 = EXTRACT_SUCCESS;
+    if (verified::parse_tree::tree_status(tree) != verified::parse_tree::TREE_SUCCESS) {
+        stage = EXTRACT_TREE;
+    }
+    return result(stage, verified::parse_tree::tree_status(tree), raw_count, token_count,
+        verified::parse_tree::tree_node_count(tree), verified::parse_tree::tree_words_used(tree), 0);
+}

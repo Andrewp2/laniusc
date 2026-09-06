@@ -1,4 +1,6 @@
 import Lanius.Extraction.SurfaceCheckerProvenance
+import Lanius.Extraction.KernelReduction
+import Lanius.Extraction.Reconstruction.Validated
 
 namespace Lanius.Extraction
 
@@ -6,31 +8,49 @@ theorem option_eq_some_get {value : Option α} (present : value.isSome = true) :
     value = some (value.get present) := by
   cases value <;> simp_all
 
+/-- Transport the cached fuel calculation without reducing a concrete node
+list during assembly of the original public decoding certificate. -/
+theorem decodeSurfaceFile_of_nodeCount (view : ArtifactView artifact)
+    (reconstructed : SurfaceFile) (surface : Lanius.Surface.File)
+    (found : decodeSurfaceFile (view.nodeCount + 1) reconstructed = some surface) :
+    decodeSurfaceFile (artifact.parse_nodes.length + 1) reconstructed = some surface := by
+  rwa [view.nodeCount_eq] at found
+
 syntax "kernel_surface_parse " ident " for " term ", " term : command
 
 macro_rules
   | `(kernel_surface_parse $parseChecked:ident for $artifact:term, $view:term) =>
       `(theorem $parseChecked :
           checkParseArtifactView $artifact $view = true := by
-            with_unfolding_all rfl)
+            kernel_rfl)
 
-syntax "kernel_surface_reconstruction " ident ", " ident ", " ident
-  " for " term ", " term : command
+syntax "kernel_surface_reconstruction " ident ", " ident ", " ident ", " ident
+  " for " term ", " term ", " term : command
 
 macro_rules
   | `(kernel_surface_reconstruction $reconstructedPresent:ident,
-        $reconstructed:ident, $reconstructedFound:ident for
-        $artifact:term, $view:term) =>
+        $reconstructed:ident, $reconstructedFound:ident, $nodesChecked:ident for
+        $artifact:term, $view:term, $parseView:term) =>
       `(section
-        theorem $reconstructedPresent :
-            (reconstructArtifactSurfaceView $artifact $view).isSome = true := by
-          with_unfolding_all rfl
         def $reconstructed : SurfaceFile :=
-          (reconstructArtifactSurfaceView $artifact $view).get $reconstructedPresent
+          ($artifact).surface.get (by kernel_rfl)
+        private theorem validatedAccepted :
+            Reconstruction.Validated.checkedView laniusGrammar $parseView =
+              some $reconstructed := by
+          kernel_rfl
+        theorem $nodesChecked :
+            checkNodesFromParseView laniusGrammar $artifact $parseView 0
+              ($artifact).parse_nodes = true :=
+          (Reconstruction.Validated.checkedView_sound laniusGrammar $parseView
+            $reconstructed validatedAccepted).1
         theorem $reconstructedFound :
             reconstructArtifactSurfaceView $artifact $view =
-              some $reconstructed := by
-          exact option_eq_some_get $reconstructedPresent
+              some $reconstructed :=
+          (Reconstruction.Validated.checkedView_sound laniusGrammar $parseView
+            $reconstructed validatedAccepted).2
+        theorem $reconstructedPresent :
+            (reconstructArtifactSurfaceView $artifact $view).isSome = true := by
+          exact congrArg Option.isSome $reconstructedFound
         end)
 
 syntax "kernel_surface_parse_reconstruction " ident ", " ident ", " ident ", " ident
@@ -43,10 +63,10 @@ macro_rules
       `(section
         theorem $parseChecked :
             checkParseArtifactView $artifact $view = true := by
-          with_unfolding_all rfl
+          kernel_rfl
         theorem $reconstructedPresent :
             (reconstructArtifactSurfaceView $artifact $view).isSome = true := by
-          with_unfolding_all rfl
+          kernel_rfl
         def $reconstructed : SurfaceFile :=
           (reconstructArtifactSurfaceView $artifact $view).get $reconstructedPresent
         theorem $reconstructedFound :
@@ -63,7 +83,7 @@ macro_rules
       `(section
         theorem $claimsPresent :
             (collectSurfaceClaimsFrom $artifact $reconstructed).isSome = true := by
-          with_unfolding_all rfl
+          kernel_rfl
         def $claims : SurfaceClaims :=
           (collectSurfaceClaimsFrom $artifact $reconstructed).get $claimsPresent
         theorem $claimsFound :
@@ -81,22 +101,22 @@ macro_rules
         $claims:term) =>
       `(section
         theorem $claimsEqual : ($origins).claims = $claims := by
-          with_unfolding_all rfl
+          kernel_rfl
         theorem $idsDense :
             ($origins).claims.nodes.map (·.id) ==
               List.range ($origins).claims.nodes.length := by
-          with_unfolding_all rfl
+          kernel_rfl
         theorem $nodesChecked :
             nodeOriginPathsValid $artifact $view ($origins).claims.nodes
               ($origins).nodePaths = true := by
-          with_unfolding_all rfl
+          kernel_rfl
         theorem $spellingsChecked :
             spellingOriginPathsValid $artifact $view ($origins).claims.spellings
               ($origins).spellingPaths = true := by
-          with_unfolding_all rfl
+          kernel_rfl
         theorem $coverageChecked :
             spellingCoverageValid $artifact ($origins).claims = true := by
-          with_unfolding_all rfl
+          kernel_rfl
         theorem $checked : ($origins).valid $artifact $view = true := by
           exact SurfaceOrigins.valid_of_components $view $origins $idsDense
             $nodesChecked $spellingsChecked $coverageChecked
@@ -125,16 +145,19 @@ macro_rules
           exact reconstructArtifactSurfaceWithProvenanceView_of_components
             $view $origins $reconstructed $claims $reconstructedFound $claimsFound
         theorem $surfacePresent :
-            (decodeSurfaceFile ($artifact).parse_nodes.length.succ
+            (decodeSurfaceFile (($view).nodeCount + 1)
               $reconstructed).isSome = true := by
-          with_unfolding_all rfl
+          kernel_rfl
         def $surface :=
-          (decodeSurfaceFile ($artifact).parse_nodes.length.succ
+          (decodeSurfaceFile (($view).nodeCount + 1)
             $reconstructed).get $surfacePresent
+        -- Match the helper and ofOrigins fuel syntax: using length.succ here
+        -- causes expensive conversion of the concrete artifact during assembly.
         theorem $surfaceFound :
-            decodeSurfaceFile ($artifact).parse_nodes.length.succ $reconstructed =
+            decodeSurfaceFile (($artifact).parse_nodes.length + 1) $reconstructed =
               some $surface := by
-          exact option_eq_some_get $surfacePresent
+          exact decodeSurfaceFile_of_nodeCount $view $reconstructed $surface
+            (option_eq_some_get $surfacePresent)
         def $checked : CheckedSurfaceArtifact $artifact :=
           CheckedSurfaceArtifact.ofOrigins $view $origins $parseChecked
             $reconstruction $reconstructionFound $surface $surfaceFound
@@ -157,7 +180,7 @@ macro_rules
         theorem $present :
             (checkSurfaceArtifactOriginsView? $artifact $view $origins).isSome =
               true := by
-          with_unfolding_all rfl
+          kernel_rfl
         def $checked : CheckedSurfaceArtifact $artifact :=
           (checkSurfaceArtifactOriginsView? $artifact $view $origins).get $present
         theorem $valid : SurfaceArtifactValid $artifact :=
@@ -175,7 +198,7 @@ macro_rules
         theorem $present :
             (checkSurfaceArtifactOriginsViewOfParse? $artifact $view $origins
               $parseValid).isSome = true := by
-          with_unfolding_all rfl
+          kernel_rfl
         def $checked : CheckedSurfaceArtifact $artifact :=
           (checkSurfaceArtifactOriginsViewOfParse? $artifact $view $origins
             $parseValid).get $present

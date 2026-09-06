@@ -1,0 +1,13 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+
+kernel_surface_reconstruction verifiedFrontendCanonicalTokens_reconstructed_present_kernel,
+  verifiedFrontendCanonicalTokensReconstructedKernel, verifiedFrontendCanonicalTokens_reconstructed_found_kernel,
+  verifiedFrontendCanonicalTokens_validated_nodes_kernel for
+  verifiedFrontendCanonicalTokensArtifact, verifiedFrontendCanonicalTokensView, verifiedFrontendCanonicalTokensParseView
+
+end Lanius.Extraction

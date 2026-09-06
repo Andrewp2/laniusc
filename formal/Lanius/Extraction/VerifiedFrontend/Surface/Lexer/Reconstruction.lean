@@ -1,0 +1,13 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.View
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+
+kernel_surface_reconstruction verifiedFrontendLexer_reconstructed_present_kernel,
+  verifiedFrontendLexerReconstructedKernel, verifiedFrontendLexer_reconstructed_found_kernel,
+  verifiedFrontendLexer_validated_nodes_kernel for
+  verifiedFrontendLexerArtifact, verifiedFrontendLexerView, verifiedFrontendLexerParseView
+
+end Lanius.Extraction

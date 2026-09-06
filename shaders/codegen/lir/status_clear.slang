@@ -16,5 +16,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     status.diagnostic_reason = LOWERING_DIAGNOSTIC_NONE;
     status.diagnostic_detail_kind = LOWERING_DIAGNOSTIC_DETAIL_NONE;
     status.diagnostic_detail = 0xffffffffu;
+    status.first_unsupported_target_op = 0xffffffffu;
     lowering_status[0u] = status;
 }

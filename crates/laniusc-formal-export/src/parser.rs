@@ -386,6 +386,72 @@ pub fn parse_tokens(tokens: &[Token]) -> Result<ParseExtraction> {
     parse_with_tables(tokens, &tables)
 }
 
+/// Immutable grammar data for the Lanius recognizer's version-1 word layout.
+/// This prepares language-definition data; it does not parse a user program.
+pub fn packed_lanius_grammar() -> Result<Vec<i32>> {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(PARSE_TABLES).map_err(|message| anyhow!(message))?;
+    let lhs = production_lhs(&tables)?;
+    let by_lhs = productions_by_lhs(&tables, &lhs);
+    let mut words = vec![0u32; 17];
+    words[0] = 1;
+    words[1] = tables.n_kinds;
+    words[2] = tables.n_productions;
+    words[3] = tables.n_nonterminals;
+    words[4] = tables.start_nonterminal;
+    words[5] = TokenKind::Shr as u32;
+    words[6] = TokenKind::Gt as u32;
+    let mut append = |header: usize, values: Vec<u32>| -> Result<()> {
+        words[header] = u32::try_from(words.len())?;
+        words.extend(values);
+        Ok(())
+    };
+    let canonical = std::iter::once(0)
+        .chain(
+            TokenKind::ALL
+                .iter()
+                .map(|kind| kind.canonical_lexer_kind() as u32),
+        )
+        .collect::<Vec<_>>();
+    ensure!(
+        canonical.len() == tables.n_kinds as usize,
+        "canonical kind count mismatch"
+    );
+    append(7, canonical)?;
+    append(8, lhs)?;
+    let mut offsets = Vec::new();
+    let mut lengths = Vec::new();
+    let mut symbols = Vec::new();
+    for production in 0..tables.n_productions {
+        offsets.push(u32::try_from(symbols.len())?);
+        let rhs = production_rhs(&tables, production)?;
+        lengths.push(u32::try_from(rhs.len())?);
+        symbols.extend_from_slice(rhs);
+    }
+    let symbol_count = u32::try_from(symbols.len())?;
+    append(9, offsets)?;
+    append(10, lengths)?;
+    append(11, symbols)?;
+    let mut starts = Vec::new();
+    let mut counts = Vec::new();
+    let mut productions = Vec::new();
+    for row in by_lhs {
+        starts.push(u32::try_from(productions.len())?);
+        counts.push(u32::try_from(row.len())?);
+        productions.extend(row);
+    }
+    let listed_count = u32::try_from(productions.len())?;
+    append(13, starts)?;
+    append(14, counts)?;
+    append(15, productions)?;
+    words[12] = symbol_count;
+    words[16] = listed_count;
+    words
+        .into_iter()
+        .map(|word| i32::try_from(word).context("grammar word exceeds i32"))
+        .collect()
+}
+
 /// Renders the immutable production table as reviewed Lean source. The
 /// generated file is part of the formal language definition; this untrusted
 /// generator is only a convenience for producing a diff when the grammar
@@ -448,6 +514,45 @@ pub fn render_lean_grammar() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn packed_grammar_preserves_every_production_and_group() {
+        let words = packed_lanius_grammar().unwrap();
+        let checked_in: Vec<i32> =
+            serde_json::from_str(include_str!("../../../verified_compiler/data/grammar.json"))
+                .unwrap();
+        assert_eq!(
+            words, checked_in,
+            "regenerate the bootstrap grammar after table changes"
+        );
+        let tables = PrecomputedParseTables::load_bin_bytes(PARSE_TABLES).unwrap();
+        let lhs = production_lhs(&tables).unwrap();
+        let grouped = productions_by_lhs(&tables, &lhs);
+        assert_eq!(words[0], 1);
+        assert_eq!(words[1], tables.n_kinds as i32);
+        assert_eq!(words[4], tables.start_nonterminal as i32);
+        for p in 0..tables.n_productions as usize {
+            assert_eq!(words[words[8] as usize + p], lhs[p] as i32);
+            let offset = words[words[9] as usize + p] as usize;
+            let count = words[words[10] as usize + p] as usize;
+            let start = words[11] as usize + offset;
+            let expected = production_rhs(&tables, p as u32)
+                .unwrap()
+                .iter()
+                .map(|x| *x as i32)
+                .collect::<Vec<_>>();
+            assert_eq!(&words[start..start + count], expected);
+        }
+        for (nt, expected) in grouped.iter().enumerate() {
+            let offset = words[words[13] as usize + nt] as usize;
+            let count = words[words[14] as usize + nt] as usize;
+            let start = words[15] as usize + offset;
+            assert_eq!(
+                &words[start..start + count],
+                expected.iter().map(|x| *x as i32).collect::<Vec<_>>()
+            );
+        }
+    }
     use crate::lexer::extract_tokens;
 
     #[test]

@@ -1,4 +1,6 @@
+import Lanius.Extraction.KernelReduction
 import Lanius.Extraction.VerifiedFrontend.Artifact.TokenScan.Cache.Assembly
+import Lanius.Extraction.VerifiedFrontend.Artifact.TokenScan.Artifact
 import Lanius.Extraction.VerifiedFrontend.Artifact.TokenScan.Cache.Semantic
 import Lanius.Extraction.ParseChecker
 
@@ -15,7 +17,9 @@ set_option cbv.warning false
 theorem verifiedFrontendTokenScan_cache_checked_kernel :
     verifiedFrontendTokenScanCache.matches
       verifiedFrontendTokenScanArtifact = true := by
-  with_unfolding_all rfl
+  apply ArtifactCache.matches_of_sharedNodes
+  · rfl
+  · kernel_rfl
 def verifiedFrontendTokenScanView :
     ArtifactView verifiedFrontendTokenScanArtifact := {
   cache := verifiedFrontendTokenScanCache
@@ -48,7 +52,7 @@ set_option maxHeartbeats 0
 theorem verifiedFrontendTokenScan_semantic_tree_well_formed_kernel :
     verifiedFrontendTokenScanSemanticKindTree.WellFormed 64 := by
   apply Lanius.Data.SeqTree.wellFormed_sound
-  with_unfolding_all rfl
+  kernel_rfl
 end Lanius.Extraction
 
 /-! Semantic-kind tree representation. -/
@@ -57,7 +61,7 @@ set_option maxRecDepth 500000
 set_option maxHeartbeats 0
 theorem verifiedFrontendTokenScan_semantic_tree_represents_kernel :
     verifiedFrontendTokenScanSemanticKindTree.Represents verifiedFrontendTokenScanArtifact.semantic_token_kinds := by
-  with_unfolding_all rfl
+  kernel_rfl
 end Lanius.Extraction
 
 /-! Parse view. -/

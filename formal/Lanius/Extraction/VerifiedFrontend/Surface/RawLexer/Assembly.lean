@@ -1,4 +1,27 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Assembly.Trace
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Parse.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Claims
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Origins
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Decode
 
 namespace Lanius.Extraction
+set_option maxRecDepth 500000
+def verifiedFrontendRawLexerReconstructionKernel : ProvenanceSurfaceReconstruction := {
+  reconstructed := verifiedFrontendRawLexerReconstructedKernel
+  claims := verifiedFrontendRawLexerClaimsKernel
+  origins := verifiedFrontendRawLexerOrigins
+}
+theorem verifiedFrontendRawLexer_reconstruction_found_kernel :
+    reconstructArtifactSurfaceWithProvenanceView verifiedFrontendRawLexerArtifact verifiedFrontendRawLexerView
+      verifiedFrontendRawLexerOrigins = some verifiedFrontendRawLexerReconstructionKernel :=
+  reconstructArtifactSurfaceWithProvenanceView_of_components verifiedFrontendRawLexerView
+    verifiedFrontendRawLexerOrigins verifiedFrontendRawLexerReconstructedKernel verifiedFrontendRawLexerClaimsKernel
+    verifiedFrontendRawLexer_reconstructed_found_kernel verifiedFrontendRawLexer_claims_found_kernel
+def verifiedFrontendRawLexerSurfaceKernel : CheckedSurfaceArtifact verifiedFrontendRawLexerArtifact :=
+  CheckedSurfaceArtifact.ofOriginsWithParse verifiedFrontendRawLexerView verifiedFrontendRawLexerOrigins
+    verifiedFrontendRawLexerParseValidTraceKernel verifiedFrontendRawLexerReconstructionKernel
+    verifiedFrontendRawLexer_reconstruction_found_kernel verifiedFrontendRawLexerDecodedSurfaceKernel
+    verifiedFrontendRawLexer_decoded_surface_found_kernel verifiedFrontendRawLexer_claims_equal_kernel
+    verifiedFrontendRawLexer_origins_checked_kernel
+theorem verifiedFrontendRawLexer_surface_checked_kernel : SurfaceArtifactValid verifiedFrontendRawLexerArtifact :=
+  CheckedSurfaceArtifact.valid verifiedFrontendRawLexerSurfaceKernel
 end Lanius.Extraction

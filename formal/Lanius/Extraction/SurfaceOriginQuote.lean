@@ -16,7 +16,7 @@ private def originElabStringLiteral (stx : Syntax) : TermElabM String := do
 
 private def originElabPack (stx : Syntax) : TermElabM ArtifactPack := do
   let encoded ← originElabStringLiteral stx
-  match Json.parse encoded >>= fromJson? with
+  match ← decodeArtifactPackInput encoded with
   | .ok pack => pure pack
   | .error message => throwError "invalid extraction artifact pack: {message}"
 

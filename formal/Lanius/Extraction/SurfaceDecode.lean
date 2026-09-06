@@ -174,13 +174,34 @@ def decodeSurfaceParameter (fuel : Nat)
   pure (.named parameter.name.text
     (← decodeSurfaceTypeExpr fuel parameter.type_expression))
 
+def decodeSurfaceGenericParameter
+    (fuel : Nat) : SurfaceGenericParameter → Option Surface.GenericParameter
+  | .type_parameter _ _ name =>
+      some (.type { name := name.text })
+  | .const_parameter _ _ name type => do
+      pure (.const { name := name.text, type := ← decodeSurfaceTypeExpr fuel type })
+
 def decodeSurfaceFunction (fuel : Nat) (function : SurfaceFunction) : Option Surface.Function := do
   pure {
     name := function.name.text
     isPublic := function.is_public
+    genericParameters := ← function.generic_parameters.mapM
+      (decodeSurfaceGenericParameter fuel)
     parameters := ← function.parameters.mapM (decodeSurfaceParameter fuel)
     returnType := ← function.return_type.mapM (decodeSurfaceTypeExpr fuel)
     body := ← decodeSurfaceStmts fuel function.body
+  }
+
+def decodeSurfaceExternFunction
+    (fuel : Nat) (function : SurfaceExternFunction) : Option Surface.ExternFunction := do
+  pure {
+    name := function.name.text
+    isPublic := function.is_public
+    abi := ← function.abi.mapM fun abi => SurfaceSyntax.stringLiteralValue? abi.text
+    genericParameters := ← function.generic_parameters.mapM
+      (decodeSurfaceGenericParameter fuel)
+    parameters := ← function.parameters.mapM (decodeSurfaceParameter fuel)
+    returnType := ← function.return_type.mapM (decodeSurfaceTypeExpr fuel)
   }
 
 def decodeSurfaceStructField (fuel : Nat)
@@ -202,12 +223,42 @@ def decodeSurfaceItem (fuel : Nat) (item : SurfaceItem) : Option Surface.Item :=
   | .module path => .module <$> decodeSurfacePath fuel path
   | .import_path path => .importPath <$> decodeSurfacePath fuel path
   | .function function => .function <$> decodeSurfaceFunction fuel function
+  | .extern_function function =>
+      .externFunction <$> decodeSurfaceExternFunction fuel function
   | .constant name isPublic type value =>
       pure (.constant name.text isPublic
         (← decodeSurfaceTypeExpr fuel type) (← decodeSurfaceExpr fuel value))
   | .type_alias name isPublic target =>
       pure (.typeAlias name.text isPublic [] [] (← decodeSurfaceTypeExpr fuel target))
   | .structure declaration => .structure <$> decodeSurfaceStruct fuel declaration
+
+/-- Successful decoding composes across independently checked item ranges.
+This is the assembly law for generated decoding certificates; the kernel only
+reduces `decodeSurfaceItem` inside bounded leaves. -/
+theorem decodeSurfaceItems_append_of
+    (fuel : Nat) (left right : List SurfaceItem)
+    (decodedLeft decodedRight : List Surface.Item)
+    (leftFound : left.mapM (decodeSurfaceItem fuel) = some decodedLeft)
+    (rightFound : right.mapM (decodeSurfaceItem fuel) = some decodedRight) :
+    (left ++ right).mapM (decodeSurfaceItem fuel) =
+      some (decodedLeft ++ decodedRight) := by
+  induction left generalizing decodedLeft with
+  | nil =>
+      simp at leftFound
+      subst decodedLeft
+      simpa using rightFound
+  | cons head tail inductionHypothesis =>
+      simp only [List.mapM_cons] at leftFound ⊢
+      cases headFound : decodeSurfaceItem fuel head with
+      | none => simp [headFound] at leftFound
+      | some decodedHead =>
+          cases tailFound : tail.mapM (decodeSurfaceItem fuel) with
+          | none => simp [headFound, tailFound] at leftFound
+          | some decodedTail =>
+              simp [headFound, tailFound] at leftFound
+              subst decodedLeft
+              simp [List.mapM_cons, headFound,
+                inductionHypothesis decodedTail tailFound]
 
 def decodeSurfaceFile (fuel : Nat) (file : SurfaceFile) : Option Surface.File := do
   pure { items := ← file.value.items.mapM (decodeSurfaceItem fuel) }

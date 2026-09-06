@@ -1,3 +1,4 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.View
 import Lanius.Extraction.VerifiedFrontend.Artifact.TokenScan.Artifact
 import Lanius.Extraction.ParseChunks
 
@@ -17,5 +18,5 @@ set_option maxRecDepth 500000
 set_option maxHeartbeats 0
 kernel_parse_root verifiedFrontendTokenScan_root_trace_present_kernel,
   verifiedFrontendTokenScanRootTraceKernel, verifiedFrontendTokenScan_root_trace_found_kernel,
-  verifiedFrontendTokenScan_root_trace_shape_kernel for verifiedFrontendTokenScanArtifact
+  verifiedFrontendTokenScan_root_trace_shape_kernel for verifiedFrontendTokenScanArtifact, verifiedFrontendTokenScanView
 end Lanius.Extraction

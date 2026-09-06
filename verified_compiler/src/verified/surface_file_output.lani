@@ -1,0 +1,121 @@
+module verified::surface_file_output;
+import verified::output;
+import verified::surface_tree;
+import verified::surface_item_output;
+import verified::parser;
+
+pub struct EmitResult {
+    position: i32,
+    next_id: i32,
+}
+
+pub fn emit_position(value: EmitResult) -> i32 { return value.position; }
+pub fn emit_next_id(value: EmitResult) -> i32 { return value.next_id; }
+
+fn result(position: i32, next_id: i32) -> EmitResult {
+    return EmitResult { position: position, next_id: next_id };
+}
+
+fn failed(next_id: i32) -> EmitResult { return result(-1, next_id); }
+
+fn node_child(records:[i32], records_length: i32, offsets:[i32],
+    node_count: i32, node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, records_length, offsets,
+        node_count, node, index, verified::parser::CHILD_STATE, 0);
+}
+
+fn variable(node: i32, output:[i32], capacity: i32, position: i32) -> i32 {
+    let next: i32 = verified::output::byte(output, capacity, position, 105);
+    return verified::output::natural(output, capacity, next, node);
+}
+
+fn items(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
+    node: i32, expression_arena:[i32], expression_arena_length: i32,
+    type_arena:[i32], type_arena_length: i32, depth: i32, output:[i32],
+    capacity: i32, state: EmitResult) -> EmitResult {
+    if (state.position <= -1 || depth <= 0) { return failed(state.next_id); }
+    let next: i32 = verified::output::byte(output, capacity, state.position, 91);
+    let current_node: i32 = node;
+    let remaining: i32 = depth;
+    let first: bool = true;
+    let current: EmitResult = result(next, state.next_id);
+    while (remaining != 0) {
+        remaining -= 1;
+        let offset: i32 = verified::surface_tree::record(records,
+            records_length, offsets, node_count, current_node);
+        if (offset <= -1) { return failed(current.next_id); }
+        if (records[offset] == 2) {
+            next = verified::output::byte(output, capacity, current.position, 93);
+            if (next <= -1) { return failed(current.next_id); }
+            return result(next, current.next_id);
+        }
+        if (records[offset] != 1) { return failed(current.next_id); }
+        if (!first) {
+            next = verified::output::byte(output, capacity, current.position, 44);
+            current = result(next, current.next_id);
+        }
+        let emitted = verified::surface_item_output::emit(source, source_length,
+            tokens, token_count, records, records_length, offsets, node_count,
+            node_child(records, records_length, offsets, node_count,
+                current_node, 0), expression_arena, expression_arena_length,
+            type_arena, type_arena_length, depth - 1, current.next_id, output,
+            capacity, current.position);
+        if (verified::surface_item_output::emit_position(emitted) <= -1) {
+            return failed(verified::surface_item_output::emit_next_id(emitted));
+        }
+        current = result(verified::surface_item_output::emit_position(emitted),
+            verified::surface_item_output::emit_next_id(emitted));
+        first = false;
+        current_node = node_child(records, records_length, offsets, node_count,
+            current_node, 1);
+    }
+    return failed(current.next_id);
+}
+
+// Emit one complete SurfaceFile for the item forms accepted by item_output.
+pub fn emit(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
+    root: i32, expression_arena:[i32], expression_arena_length: i32,
+    type_arena:[i32], type_arena_length: i32, depth: i32, first_id: i32,
+    output:[i32], capacity: i32, position: i32) -> EmitResult {
+    if (first_id <= -1 || depth <= 0) { return failed(first_id); }
+    let root_offset: i32 = verified::surface_tree::record(records,
+        records_length, offsets, node_count, root);
+    if (root_offset <= -1 || records[root_offset] != 0) {
+        return failed(first_id);
+    }
+    let binding: [i32; 6] = [40,108,101,116,32,105];
+    let item_type: [i32; 41] = [32,58,32,76,105,115,116,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,73,116,101,109,32,58,61,32];
+    let separator: [i32; 2] = [59,32];
+    let value_start: [i32; 13] = [44,123,32,105,116,101,109,115,32,58,61,32,105];
+    let value_end: [i32; 2] = [32,125];
+    let opening: [i32; 3] = [226,159,168];
+    let closing: [i32; 3] = [226,159,169];
+    let next: i32 = verified::output::bytes(output, capacity, position,
+        binding, 6);
+    next = verified::output::natural(output, capacity, next, root);
+    next = verified::output::bytes(output, capacity, next, item_type, 41);
+    let current: EmitResult = items(source, source_length, tokens, token_count,
+        records, records_length, offsets, node_count,
+        node_child(records, records_length, offsets, node_count, root, 0),
+        expression_arena, expression_arena_length, type_arena,
+        type_arena_length, depth - 1, output, capacity,
+        result(next, first_id));
+    if (current.position <= -1 || current.next_id >= 2147483647) {
+        return failed(current.next_id);
+    }
+    next = verified::output::bytes(output, capacity, current.position,
+        separator, 2);
+    next = verified::output::bytes(output, capacity, next, opening, 3);
+    next = verified::output::natural(output, capacity, next, current.next_id);
+    next = verified::output::byte(output, capacity, next, 44);
+    next = verified::output::natural(output, capacity, next, root);
+    next = verified::output::bytes(output, capacity, next, value_start, 13);
+    next = verified::output::natural(output, capacity, next, root);
+    next = verified::output::bytes(output, capacity, next, value_end, 2);
+    next = verified::output::bytes(output, capacity, next, closing, 3);
+    next = verified::output::byte(output, capacity, next, 41);
+    if (next <= -1) { return failed(current.next_id); }
+    return result(next, current.next_id + 1);
+}

@@ -472,6 +472,12 @@ static const uint HOST_SERVICE_READ_STDIN = 51u;
 // IR_OPCODE
 static const uint INTRINSIC_I32_ARRAY_DATA_PTR = 3u;
 // IR_OPCODE
+static const uint INTRINSIC_I32_SLICE_FROM_RAW_PARTS = 4u;
+// IR_OPCODE
+static const uint INTRINSIC_I32_SLICE_DATA_PTR = 5u;
+// IR_OPCODE
+static const uint INTRINSIC_STRING_DATA_PTR = 6u;
+// IR_OPCODE
 static const uint HOST_SERVICE_FILL_SECURE_BYTES = 53u;
 // IR_OPCODE
 static const uint HOST_SERVICE_REMOVE_FILE = 54u;
@@ -525,6 +531,12 @@ static const uint SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_CALL = 256u;
 static const uint SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_TRAP = 512u;
 // IR_OPCODE
 static const uint SEMANTIC_LIR_FLAG_UNSUPPORTED_MATCH_CONTEXT = 1024u;
+// The value is an array view represented as `(data pointer, element count)`.
+// Fixed arrays carry a constant count at call boundaries; slices load and
+// forward the count from their second declaration component.
+static const uint SEMANTIC_LIR_FLAG_ARRAY_PAIR = 2048u;
+
+static const uint SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME = 0xfffffffeu;
 
 // Canonical type-reference tags shared with checked semantic artifacts.
 static const uint SEMANTIC_TYPE_REF_INVALID = 0u;
@@ -628,6 +640,18 @@ static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_REACHABILITY_CLOSE = 32u;
 static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_REACHABILITY_VALIDATE = 33u;
 static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_DOMINATOR_VALIDATE = 34u;
 static const uint LOWERING_DIAGNOSTIC_OPT_STRUCTURE_REGION_VALIDATE_EDGES = 35u;
+// A target-LIR row was materialized but has no x86 encoding yet.
+static const uint LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION = 36u;
+// A direct semantic call reached x86 lowering without a resolved callee.
+static const uint LOWERING_DIAGNOSTIC_X86_CALL_TARGET = 37u;
+// A checked aggregate call reached x86 lowering without an ABI word count.
+static const uint LOWERING_DIAGNOSTIC_X86_AGGREGATE_RESULT_LAYOUT = 38u;
+// The call site has a checked aggregate width, but the callee function record
+// lost it before ABI lowering.
+static const uint LOWERING_DIAGNOSTIC_X86_CALLEE_RESULT_LAYOUT = 39u;
+static const uint LOWERING_DIAGNOSTIC_X86_INSTANCE_RESULT_LAYOUT = 40u;
+static const uint LOWERING_DIAGNOSTIC_X86_NOMINAL_RESULT_LAYOUT = 41u;
+static const uint LOWERING_DIAGNOSTIC_X86_LEGACY_RESULT_LAYOUT = 42u;
 
 // Diagnostic details either name a source token directly or a compact HIR
 // row whose token anchor must be read from compact HIR.
@@ -717,6 +741,10 @@ static const uint X86_LIR_OP_FIELD_STORE = 41u;
 // is a frame-resident row owned by the surrounding STORE_LOCAL expansion.
 // IR_OPCODE
 static const uint X86_LIR_OP_AGGREGATE_COPY_WORD = 42u;
+// Materialize the native (data pointer, element length) slice pair from the
+// first two SysV argument registers.
+// IR_OPCODE
+static const uint X86_LIR_OP_INTRINSIC_SLICE_FROM_RAW_PARTS = 43u;
 // Compiler intrinsic lowered to the native runtime's shared signed-decimal
 // printer. Its argument arrives through the ordinary CALL_ARG ABI rows.
 // IR_OPCODE
@@ -937,6 +965,15 @@ static const uint X86_LIR_METADATA_IMMEDIATE = 0x08000000u;
 // deliberately explicit: concrete aggregate type IDs may share their low byte
 // with a primitive type tag and must never be classified by truncation.
 static const uint X86_LIR_METADATA_STRING_PAIR = 0x04000000u;
+// Native array views use the same two-word shape as slices: pointer then
+// element count. These bits distinguish the pair and its length component.
+static const uint X86_LIR_METADATA_ARRAY_PAIR = 0x02000000u;
+static const uint X86_LIR_METADATA_ARRAY_LEN = 0x01000000u;
+// Native `[i32; N]` storage uses the language's raw-view representation:
+// tightly packed little-endian dwords in increasing-address element order.
+// The semantic aggregate width remains word-based so existing frame and ABI
+// bounds stay conservative while the target owns the concrete byte layout.
+static const uint X86_LIR_METADATA_PACKED_I32_ARRAY = 0x00800000u;
 
 // Semantic AGGREGATE_NEW metadata. The high bit distinguishes tagged enums;
 // the remaining bits contain the checked variant ordinal.
@@ -1021,6 +1058,7 @@ struct SemanticLirCallArg
     uint value_instruction;
     uint ordinal;
     uint value_metadata;
+    uint array_length;
 };
 
 struct SemanticLirAggregateElement
@@ -1045,6 +1083,7 @@ struct TargetSemanticPage
 static const uint SEMANTIC_LIR_VALUE_TYPE_MASK = 0x00ffffffu;
 static const uint SEMANTIC_LIR_VALUE_AGGREGATE = 1u << 24u;
 static const uint SEMANTIC_LIR_VALUE_STRING = 1u << 25u;
+static const uint SEMANTIC_LIR_VALUE_ARRAY_PAIR = 1u << 26u;
 
 uint semantic_lir_value_metadata(uint type_id, uint type_ref_tag,
                                  uint type_ref_payload)
@@ -1094,6 +1133,7 @@ struct SemanticLirParam
     uint declaration_id;
     uint ordinal;
     uint type_id;
+    uint value_metadata;
 };
 
 struct SemanticLirLocal
@@ -1122,6 +1162,10 @@ struct LoweringStatus
     uint diagnostic_reason;
     uint diagnostic_detail_kind;
     uint diagnostic_detail;
+    // First target-LIR opcode whose row could not be validated or encoded.
+    // This is diagnostic evidence only; source attribution remains in the HIR
+    // and OptIR fields above.
+    uint first_unsupported_target_op;
 };
 
 // Capacity-packed lexicographic target scheduling key. Fields are encoded in
@@ -1178,6 +1222,7 @@ struct X86LirLocations
     uint a;
     uint b;
     uint c;
+    uint length;
 };
 
 struct X86SelectInfo

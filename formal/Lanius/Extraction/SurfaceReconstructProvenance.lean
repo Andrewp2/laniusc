@@ -249,41 +249,46 @@ theorem reconstructArtifactSurfaceWithProvenanceView_of_components
     claimsFound]
 
 def SurfaceNodeOrigin.valid (artifact : Artifact)
-    (view : ArtifactView artifact) (origin : SurfaceNodeOrigin) : Bool :=
-  match view.node? origin.claim.parseNode with
-  | none => false
-  | some node =>
-      origin.claim.allowedProductions.contains node.production &&
-        match origin.claim.containingParseNode, origin.path with
+    (view : ArtifactView artifact) : SurfaceNodeOrigin → Bool
+  -- Expose shared lookup inputs once instead of reducing nested projections
+  -- separately at each use during kernel checking.
+  | ⟨⟨_, parseNode, containing, allowed⟩, path⟩ =>
+    match view.node? parseNode with
+    | none => false
+    | some node =>
+      allowed.contains node.production &&
+        match containing, path with
         | none, none => true
-        | some root, some path =>
-            path.root == root && path.target == origin.claim.parseNode &&
-              path.valid view
+        | some root, some ⟨pathRoot, edges, target⟩ =>
+            pathRoot == root && target == parseNode &&
+              (followNodePath view pathRoot edges == some target)
         | _, _ => false
 
 theorem SurfaceNodeOrigin.valid_sound {artifact : Artifact}
     (view : ArtifactView artifact) {origin : SurfaceNodeOrigin}
     (accepted : origin.valid artifact view = true) :
     SurfaceNodeClaimMatches artifact origin.claim := by
+  rcases origin with ⟨⟨id, parseNode, containing, allowed⟩, path⟩
   unfold SurfaceNodeOrigin.valid at accepted
-  cases found : view.node? origin.claim.parseNode with
+  cases found : view.node? parseNode with
   | none => simp [found] at accepted
   | some node =>
       simp only [found, Bool.and_eq_true] at accepted
       refine ⟨node, by simpa [view.node?_eq] using found, ?_, ?_⟩
       · exact of_decide_eq_true
           (by simpa only [List.contains_eq_mem] using accepted.1)
-      · cases container : origin.claim.containingParseNode with
+      · cases container : containing with
         | none => trivial
         | some root =>
-            cases pathFound : origin.path with
+            cases pathFound : path with
             | none => simp [container, pathFound] at accepted
             | some path =>
+                rcases path with ⟨pathRoot, edges, target⟩
                 simp only [container, pathFound, Bool.and_eq_true] at accepted
-                have rootEqual : path.root = root := eq_of_beq accepted.2.1.1
-                have targetEqual : path.target = origin.claim.parseNode :=
+                have rootEqual : pathRoot = root := eq_of_beq accepted.2.1.1
+                have targetEqual : target = parseNode :=
                   eq_of_beq accepted.2.1.2
-                have evidence := path.valid_sound view accepted.2.2
+                have evidence := followNodePath_sound view (eq_of_beq accepted.2.2)
                 simpa [rootEqual, targetEqual] using evidence
 
 def SurfaceSpellingOrigin.valid (artifact : Artifact)
@@ -369,6 +374,31 @@ def spellingOriginPathsValid (artifact : Artifact)
       SurfaceSpellingOrigin.valid artifact view { claim, path } &&
         spellingOriginPathsValid artifact view claims paths
   | _, _ => false
+
+theorem spellingOriginPathsValid_append (artifact : Artifact)
+    (view : ArtifactView artifact) (leftClaims rightClaims : List SpellingClaim)
+    (leftPaths rightPaths : List ParseTokenPath)
+    (sameLength : leftClaims.length = leftPaths.length) :
+    spellingOriginPathsValid artifact view (leftClaims ++ rightClaims)
+        (leftPaths ++ rightPaths) =
+      (spellingOriginPathsValid artifact view leftClaims leftPaths &&
+        spellingOriginPathsValid artifact view rightClaims rightPaths) := by
+  induction leftClaims generalizing leftPaths with
+  | nil =>
+      have : leftPaths = [] := List.eq_nil_of_length_eq_zero sameLength.symm
+      subst leftPaths
+      rfl
+  | cons claim claims inductionHypothesis =>
+      cases leftPaths with
+      | nil => simp at sameLength
+      | cons path paths =>
+          simp only [List.length_cons] at sameLength
+          have tailLength : claims.length = paths.length :=
+            Nat.add_right_cancel sameLength
+          simp only [List.cons_append, spellingOriginPathsValid]
+          rw [inductionHypothesis paths tailLength]
+          cases SurfaceSpellingOrigin.valid artifact view { claim, path } <;>
+            simp
 
 theorem spellingOriginPathsValid_sound {artifact : Artifact}
     (view : ArtifactView artifact) {claims : List SpellingClaim}

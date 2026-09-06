@@ -1,0 +1,33 @@
+module verified::surface_literal;
+import verified::surface_tree;
+import verified::surface_atoms;
+import verified::parser;
+import verified::output;
+
+// Extract one literal primary into a located SurfaceExpr. Successful output
+// consumes exactly one Surface ID, matching reconstructPrimary/Tree.locate.
+// On failure the caller must discard output and must not advance its ID state.
+pub fn emit(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
+    node: i32, surface_id: i32, output:[i32], capacity: i32, position: i32) -> i32 {
+    if (surface_id <= -1 || surface_id >= 2147483647) { return -1; }
+    let offset: i32 = verified::surface_tree::record(records, records_length, offsets, node_count, node);
+    if (offset <= -1) { return -1; }
+    let production: i32 = records[offset];
+    if (!(production >= 175 && production <= 178) && production != 185 && production != 186) { return -1; }
+    if (records[offset + 3] != 1) { return -1; }
+    let token: i32 = verified::surface_tree::child(records, records_length, offsets,
+        node_count, node, 0, verified::parser::CHILD_TOKEN, token_count);
+    if (token <= -1) { return -1; }
+    let opening: [i32; 3] = [226,159,168];
+    let closing: [i32; 3] = [226,159,169];
+    let literal: [i32; 10] = [44,46,108,105,116,101,114,97,108,32];
+    let next: i32 = verified::output::bytes(output, capacity, position, opening, 3);
+    next = verified::output::natural(output, capacity, next, surface_id);
+    next = verified::output::byte(output, capacity, next, 44);
+    next = verified::output::natural(output, capacity, next, node);
+    next = verified::output::bytes(output, capacity, next, literal, 10);
+    next = verified::surface_atoms::literal(production, source, source_length, tokens,
+        token_count, token, output, capacity, next);
+    return verified::output::bytes(output, capacity, next, closing, 3);
+}

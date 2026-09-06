@@ -8,6 +8,7 @@ struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reser
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<uint> semantic_function_prefix;
 StructuredBuffer<uint> semantic_param_type_by_row;
@@ -43,5 +44,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     result.declaration_id = source.name_token;
     result.ordinal = source.ordinal;
     result.type_id = semantic_param_type_by_row[row];
+    uint type_form = source.type_node < gParams.n_hir_nodes
+        ? compact_hir_payload[source.type_node].a : 0u;
+    result.value_metadata = result.type_id |
+        (type_form == 2u || type_form == 3u
+            ? SEMANTIC_LIR_VALUE_ARRAY_PAIR : 0u);
     semantic_lir_params[row] = result;
 }

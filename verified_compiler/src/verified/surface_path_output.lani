@@ -1,0 +1,232 @@
+module verified::surface_path_output;
+import verified::output;
+import verified::surface_tree;
+import verified::surface_atoms;
+import verified::surface_type;
+import verified::surface_type_output;
+import verified::parser;
+
+pub struct EmitResult {
+    position: i32,
+    next_id: i32,
+}
+
+pub fn emit_position(value: EmitResult) -> i32 { return value.position; }
+pub fn emit_next_id(value: EmitResult) -> i32 { return value.next_id; }
+
+fn result(position: i32, next_id: i32) -> EmitResult {
+    return EmitResult { position: position, next_id: next_id };
+}
+
+fn failed(next_id: i32) -> EmitResult { return result(-1, next_id); }
+
+fn node_child(records:[i32], records_length: i32, offsets:[i32],
+    node_count: i32, node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, records_length, offsets,
+        node_count, node, index, verified::parser::CHILD_STATE, 0);
+}
+
+fn variable(prefix: i32, node: i32, output:[i32], capacity: i32,
+    position: i32) -> i32 {
+    let next: i32 = verified::output::byte(output, capacity, position, prefix);
+    return verified::output::natural(output, capacity, next, node);
+}
+
+fn type_term(source:[i32], source_length: i32, tokens:[i32],
+    token_count: i32, records:[i32], records_length: i32, offsets:[i32],
+    node_count: i32, node: i32, type_arena:[i32],
+    type_arena_length: i32, depth: i32, output:[i32], capacity: i32,
+    state: EmitResult) -> EmitResult {
+    let root: i32 = verified::surface_type::extract(records, records_length,
+        offsets, node_count, token_count, node, type_arena,
+        type_arena_length, depth);
+    if (root <= -1 || type_arena[0] <= 0
+        || type_arena[0] > 2147483647 - state.next_id) {
+        return failed(state.next_id);
+    }
+    let next: i32 = verified::surface_type_output::emit(source,
+        source_length, tokens, token_count, type_arena, type_arena_length,
+        root, state.next_id, output, capacity, state.position);
+    if (next <= -1) { return failed(state.next_id); }
+    return result(next, state.next_id + type_arena[0]);
+}
+
+fn arguments(source:[i32], source_length: i32, tokens:[i32],
+    token_count: i32, records:[i32], records_length: i32, offsets:[i32],
+    node_count: i32, segment: i32, type_arena:[i32],
+    type_arena_length: i32, depth: i32, output:[i32], capacity: i32,
+    state: EmitResult) -> EmitResult {
+    if (state.position <= -1 || depth <= 0) { return failed(state.next_id); }
+    let offset: i32 = verified::surface_tree::record(records, records_length,
+        offsets, node_count, segment);
+    if (offset <= -1) { return failed(state.next_id); }
+    let next: i32 = verified::output::byte(output, capacity, state.position, 91);
+    if (records[offset] == 48) {
+        next = verified::output::byte(output, capacity, next, 93);
+        if (next <= -1) { return failed(state.next_id); }
+        return result(next, state.next_id);
+    }
+    if (records[offset] != 49) { return failed(state.next_id); }
+    let current: EmitResult = type_term(source, source_length, tokens,
+        token_count, records, records_length, offsets, node_count,
+        node_child(records, records_length, offsets, node_count, segment, 2),
+        type_arena, type_arena_length, depth - 1, output, capacity,
+        result(next, state.next_id));
+    let tail: i32 = node_child(records, records_length, offsets, node_count,
+        segment, 3);
+    let remaining: i32 = depth;
+    while (remaining != 0) {
+        remaining -= 1;
+        let tail_offset: i32 = verified::surface_tree::record(records,
+            records_length, offsets, node_count, tail);
+        if (tail_offset <= -1) { return failed(current.next_id); }
+        if (records[tail_offset] == 53) {
+            next = verified::output::byte(output, capacity, current.position, 93);
+            if (next <= -1) { return failed(current.next_id); }
+            return result(next, current.next_id);
+        }
+        if (records[tail_offset] != 52) { return failed(current.next_id); }
+        let after: i32 = node_child(records, records_length, offsets,
+            node_count, tail, 1);
+        let after_offset: i32 = verified::surface_tree::record(records,
+            records_length, offsets, node_count, after);
+        if (after_offset <= -1) { return failed(current.next_id); }
+        if (records[after_offset] == 55) {
+            next = verified::output::byte(output, capacity, current.position, 93);
+            if (next <= -1) { return failed(current.next_id); }
+            return result(next, current.next_id);
+        }
+        if (records[after_offset] != 54) { return failed(current.next_id); }
+        next = verified::output::byte(output, capacity, current.position, 44);
+        current = type_term(source, source_length, tokens, token_count,
+            records, records_length, offsets, node_count,
+            node_child(records, records_length, offsets, node_count, after, 0),
+            type_arena, type_arena_length, depth - 1, output, capacity,
+            result(next, current.next_id));
+        if (current.position <= -1) { return current; }
+        tail = node_child(records, records_length, offsets, node_count, after, 1);
+    }
+    return failed(current.next_id);
+}
+
+fn segment(source:[i32], source_length: i32, tokens:[i32],
+    token_count: i32, records:[i32], records_length: i32, offsets:[i32],
+    node_count: i32, node: i32, type_arena:[i32],
+    type_arena_length: i32, depth: i32, output:[i32], capacity: i32,
+    state: EmitResult) -> EmitResult {
+    if (state.position <= -1 || depth <= 0) { return failed(state.next_id); }
+    let binding: [i32; 6] = [40,108,101,116,32,97];
+    let argument_type: [i32; 45] = [32,58,32,76,105,115,116,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,84,121,112,101,69,120,112,114,32,58,61,32];
+    let separator: [i32; 2] = [59,32];
+    let opening: [i32; 3] = [226,159,168];
+    let closing: [i32; 3] = [226,159,169];
+    let next: i32 = verified::output::bytes(output, capacity,
+        state.position, binding, 6);
+    next = verified::output::natural(output, capacity, next, node);
+    next = verified::output::bytes(output, capacity, next, argument_type, 45);
+    let current: EmitResult = arguments(source, source_length, tokens,
+        token_count, records, records_length, offsets, node_count, node,
+        type_arena, type_arena_length, depth - 1, output, capacity,
+        result(next, state.next_id));
+    if (current.position <= -1 || current.next_id >= 2147483647) {
+        return failed(current.next_id);
+    }
+    next = verified::output::bytes(output, capacity, current.position,
+        separator, 2);
+    next = verified::output::bytes(output, capacity, next, opening, 3);
+    next = verified::output::natural(output, capacity, next, current.next_id);
+    next = verified::output::byte(output, capacity, next, 44);
+    next = verified::output::natural(output, capacity, next, node);
+    next = verified::output::byte(output, capacity, next, 44);
+    let name_token: i32 = verified::surface_tree::child(records,
+        records_length, offsets, node_count, node, 0,
+        verified::parser::CHILD_TOKEN, token_count);
+    next = verified::surface_atoms::name(source, source_length, tokens,
+        token_count, name_token, output, capacity, next);
+    next = verified::output::byte(output, capacity, next, 44);
+    next = variable(97, node, output, capacity, next);
+    next = verified::output::bytes(output, capacity, next, closing, 3);
+    next = verified::output::byte(output, capacity, next, 41);
+    if (next <= -1) { return failed(current.next_id); }
+    return result(next, current.next_id + 1);
+}
+
+fn segments(source:[i32], source_length: i32, tokens:[i32],
+    token_count: i32, records:[i32], records_length: i32, offsets:[i32],
+    node_count: i32, node: i32, type_arena:[i32],
+    type_arena_length: i32, depth: i32, output:[i32], capacity: i32,
+    state: EmitResult) -> EmitResult {
+    if (state.position <= -1 || depth <= 0) { return failed(state.next_id); }
+    let offset: i32 = verified::surface_tree::record(records, records_length,
+        offsets, node_count, node);
+    if (offset <= -1 || records[offset] != 47) { return failed(state.next_id); }
+    let next: i32 = verified::output::byte(output, capacity, state.position, 91);
+    let current: EmitResult = segment(source, source_length, tokens,
+        token_count, records, records_length, offsets, node_count,
+        node_child(records, records_length, offsets, node_count, node, 0),
+        type_arena, type_arena_length, depth - 1, output, capacity,
+        result(next, state.next_id));
+    let tail: i32 = node_child(records, records_length, offsets, node_count,
+        node, 1);
+    let remaining: i32 = depth;
+    while (remaining != 0) {
+        remaining -= 1;
+        let tail_offset: i32 = verified::surface_tree::record(records,
+            records_length, offsets, node_count, tail);
+        if (tail_offset <= -1) { return failed(current.next_id); }
+        if (records[tail_offset] == 51) {
+            next = verified::output::byte(output, capacity, current.position, 93);
+            if (next <= -1) { return failed(current.next_id); }
+            return result(next, current.next_id);
+        }
+        if (records[tail_offset] != 50) { return failed(current.next_id); }
+        next = verified::output::byte(output, capacity, current.position, 44);
+        current = segment(source, source_length, tokens, token_count,
+            records, records_length, offsets, node_count,
+            node_child(records, records_length, offsets, node_count, tail, 2),
+            type_arena, type_arena_length, depth - 1, output, capacity,
+            result(next, current.next_id));
+        if (current.position <= -1) { return current; }
+        tail = node_child(records, records_length, offsets, node_count, tail, 3);
+    }
+    return failed(current.next_id);
+}
+
+// Emit a standalone SurfacePath in Lean reconstruction allocation order.
+pub fn emit(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
+    node: i32, type_arena:[i32], type_arena_length: i32, depth: i32,
+    first_id: i32, output:[i32], capacity: i32, position: i32) -> EmitResult {
+    if (first_id <= -1 || depth <= 0) { return failed(first_id); }
+    let binding: [i32; 6] = [40,108,101,116,32,115];
+    let segment_type: [i32; 48] = [32,58,32,76,105,115,116,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,80,97,116,104,83,101,103,109,101,110,116,32,58,61,32];
+    let separator: [i32; 2] = [59,32];
+    let value_start: [i32; 16] = [44,123,32,115,101,103,109,101,110,116,115,32,58,61,32,115];
+    let value_end: [i32; 2] = [32,125];
+    let opening: [i32; 3] = [226,159,168];
+    let closing: [i32; 3] = [226,159,169];
+    let next: i32 = verified::output::bytes(output, capacity, position,
+        binding, 6);
+    next = verified::output::natural(output, capacity, next, node);
+    next = verified::output::bytes(output, capacity, next, segment_type, 48);
+    let current: EmitResult = segments(source, source_length, tokens,
+        token_count, records, records_length, offsets, node_count, node,
+        type_arena, type_arena_length, depth - 1, output, capacity,
+        result(next, first_id));
+    if (current.position <= -1 || current.next_id >= 2147483647) {
+        return failed(current.next_id);
+    }
+    next = verified::output::bytes(output, capacity, current.position,
+        separator, 2);
+    next = verified::output::bytes(output, capacity, next, opening, 3);
+    next = verified::output::natural(output, capacity, next, current.next_id);
+    next = verified::output::byte(output, capacity, next, 44);
+    next = verified::output::natural(output, capacity, next, node);
+    next = verified::output::bytes(output, capacity, next, value_start, 16);
+    next = verified::output::natural(output, capacity, next, node);
+    next = verified::output::bytes(output, capacity, next, value_end, 2);
+    next = verified::output::bytes(output, capacity, next, closing, 3);
+    next = verified::output::byte(output, capacity, next, 41);
+    if (next <= -1) { return failed(current.next_id); }
+    return result(next, current.next_id + 1);
+}

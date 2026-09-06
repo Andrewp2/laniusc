@@ -19,6 +19,9 @@ fn lexer_tokenizes_known_dot_frontiers() {
         let lexer = GpuLexer::new().await.expect("create GPU lexer");
 
         for (source, expected) in [
+            ("// 165..170 and 179..184\nx", vec![(TokenKind::Ident, "x")]),
+            ("/* 0..1 */ x", vec![(TokenKind::Ident, "x")]),
+            ("\"0..1\"", vec![(TokenKind::String, "\"0..1\"")]),
             (
                 "point.x",
                 vec![
@@ -161,7 +164,7 @@ fn dot_frontier_source() -> impl Strategy<Value = String> {
 }
 
 fn dot_frontier_line() -> impl Strategy<Value = String> {
-    (
+    let code = (
         dot_frontier_left(),
         small_gap(),
         dot_frontier_separator(),
@@ -170,7 +173,12 @@ fn dot_frontier_line() -> impl Strategy<Value = String> {
     )
         .prop_map(|(left, before, sep, after, right)| {
             format!("{left}{before}{sep}{after}{right}\n")
-        })
+        });
+    prop_oneof![
+        4 => code,
+        1 => select(vec!["// 165..170 and 179..184\n", "/* 0..1 */\n", "\"0..1\"\n"])
+            .prop_map(str::to_owned),
+    ]
 }
 
 fn dot_frontier_left() -> impl Strategy<Value = &'static str> {

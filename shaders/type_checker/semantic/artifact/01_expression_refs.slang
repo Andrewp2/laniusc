@@ -198,6 +198,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // struct literals: scalar type-code windows cannot encode an
             // unbounded global token index without overlap.
             explicit_aggregate_decl = resolved_path_decl_token(node);
+            if (!valid_token(explicit_aggregate_decl))
+                explicit_aggregate_decl = name_decl_token(token);
+            if (!valid_token(explicit_aggregate_decl) &&
+                valid_hir(hir_payload.b))
+            {
+                // Compact HIR may put the nominal name/path in the type
+                // wrapper's canonical value child.  Resolve that child
+                // directly; reading this pass's output would introduce an
+                // order dependency between parallel HIR lanes.
+                uint value_token = type_head_token(hir_payload.b);
+                explicit_aggregate_decl = name_decl_token(value_token);
+            }
         }
         else if ((core.kind == HIR_LET_STMT || core.kind == HIR_STMT) &&
                  (hir_payload.a == HIR_STMT_LET ||
@@ -213,16 +225,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     semantic_expr_ref_tag_by_hir[node] = tag;
     semantic_expr_ref_payload_by_hir[node] = payload;
-    semantic_aggregate_decl_token_by_hir[node] =
-        valid_token(explicit_aggregate_decl) ? explicit_aggregate_decl
-        : tag == TYPE_REF_INSTANCE && valid_token(payload)
+    // Layout follows the canonical checked reference, not the spelling that
+    // appeared in source.  In particular, a return written as the alias
+    // `Scan` must retain the declaration identity of its normalized target
+    // `TokenScan`; preferring resolved_path_decl_token here reintroduced the
+    // alias declaration and erased the aggregate ABI width.
+    uint canonical_aggregate_decl =
+        tag == TYPE_REF_INSTANCE && valid_token(payload)
             ? type_instance_decl_token[payload]
-            : tag == TYPE_REF_SCALAR && payload >= TY_STRUCT_BASE &&
+        : tag == TYPE_REF_SCALAR && payload >= TY_STRUCT_BASE &&
                 payload < TY_ENUM_BASE && valid_token(payload - TY_STRUCT_BASE)
                 ? payload - TY_STRUCT_BASE
-            : tag == TYPE_REF_SCALAR && payload >= TY_ENUM_BASE &&
+        : tag == TYPE_REF_SCALAR && payload >= TY_ENUM_BASE &&
                 valid_token(payload - TY_ENUM_BASE)
                 ? payload - TY_ENUM_BASE : INVALID;
+    semantic_aggregate_decl_token_by_hir[node] =
+        valid_token(canonical_aggregate_decl) ? canonical_aggregate_decl
+        : explicit_aggregate_decl;
     semantic_aggregate_word_count_by_hir[node] =
         valid_hir(node) && compact_hir_core[node].kind == HIR_CALL_EXPR
             ? semantic_aggregate_word_count_by_hir[node]

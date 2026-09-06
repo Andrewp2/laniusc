@@ -435,25 +435,25 @@ pub(in crate::type_checker) const RADIX_U8_BUCKET_COUNT: u32 = 256;
 /// Exact-name hash slots allocated per 256-row source-name block, per table half.
 pub(in crate::type_checker) const NAME_HASH_TABLE_ROWS_PER_BLOCK: u32 = 257;
 /// Number of builtin symbols materialized before user names are resolved.
-pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 68;
+pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 71;
 /// Concatenated builtin symbol spelling table.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_BYTES: &[u8] =
-    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstrprint_i32_open_read_pathopen_write_pathread_i32write_textwrite_i32write_bytewrite_newlineclose_filei32_to_f32exitsecure_u32allocdeallocargcarg_lenarg_readunix_secondscurrent_dir_readvar_countvar_key_lenvar_key_readvar_lenvar_readclosereadwriteopen_readopen_writeopen_appendwrite_stdoutwrite_stderrread_stdini32_array_data_ptrfill_secure_bytesremove_filecreate_dirremove_dirrenamemonotonic_readsystem_readsleep_ms_i32reallocalloc_failedcorerangeRangeRangeInclusiveptr";
+    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstrprint_i32_open_read_pathopen_write_pathread_i32write_textwrite_i32write_bytewrite_newlineclose_filei32_to_f32exitsecure_u32allocdeallocargcarg_lenarg_readunix_secondscurrent_dir_readvar_countvar_key_lenvar_key_readvar_lenvar_readclosereadwriteopen_readopen_writeopen_appendwrite_stdoutwrite_stderrread_stdini32_array_data_ptrfill_secure_bytesremove_filecreate_dirremove_dirrenamemonotonic_readsystem_readsleep_ms_i32reallocalloc_failedcorerangeRangeRangeInclusiveptri32_slice_from_raw_partsi32_slice_data_ptrstring_data_ptr";
 /// Start offsets into `LANGUAGE_SYMBOL_BYTES` for each builtin symbol.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_STARTS: &[u32] = &[
     0, 4, 10, 15, 19, 21, 24, 27, 30, 35, 37, 40, 43, 46, 51, 54, 57, 61, 64, 73, 74, 88, 103, 111,
     121, 130, 140, 153, 163, 173, 177, 187, 192, 199, 203, 210, 218, 230, 246, 255, 266, 278, 285,
     293, 298, 302, 307, 316, 326, 337, 349, 361, 371, 389, 406, 417, 427, 437, 443, 457, 468, 480,
-    487, 499, 503, 508, 513, 527,
+    487, 499, 503, 508, 513, 527, 530, 554, 572,
 ];
 /// Byte lengths for each builtin symbol spelling.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_LENS: &[u32] = &[
     4, 6, 5, 4, 2, 3, 3, 3, 5, 2, 3, 3, 3, 5, 3, 3, 4, 3, 9, 1, 14, 15, 8, 10, 9, 10, 13, 10, 10,
     4, 10, 5, 7, 4, 7, 8, 12, 16, 9, 11, 12, 7, 8, 5, 4, 5, 9, 10, 11, 12, 12, 10, 18, 17, 11, 10,
-    10, 6, 14, 11, 12, 7, 12, 4, 5, 5, 14, 3,
+    10, 6, 14, 11, 12, 7, 12, 4, 5, 5, 14, 3, 24, 18, 15,
 ];
 /// Number of language declarations materialized from builtin symbols.
-pub(in crate::type_checker) const LANGUAGE_DECL_COUNT: u32 = 21;
+pub(in crate::type_checker) const LANGUAGE_DECL_COUNT: u32 = 24;
 const LANGUAGE_DECL_KIND_ENTRYPOINT: u32 = 1;
 const LANGUAGE_DECL_KIND_INTRINSIC: u32 = 2;
 const LANGUAGE_DECL_KIND_PRIMITIVE_TYPE: u32 = 3;
@@ -464,33 +464,41 @@ const LANGUAGE_DECL_TAG_ASSERT: u32 = 2;
 /// Intrinsic tags describe compiler semantics; they are deliberately
 /// independent from the host-service symbol slots below.
 const LANGUAGE_DECL_TAG_I32_ARRAY_DATA_PTR: u32 = 3;
+/// Unsafe compiler intrinsic constructing the native pointer-and-length slice
+/// representation from caller-provided storage.
+const LANGUAGE_DECL_TAG_I32_SLICE_FROM_RAW_PARTS: u32 = 4;
+const LANGUAGE_DECL_TAG_I32_SLICE_DATA_PTR: u32 = 5;
+const LANGUAGE_DECL_TAG_STRING_DATA_PTR: u32 = 6;
 /// Builtin symbol slots that become materialized language declarations.
 pub(in crate::type_checker) const LANGUAGE_DECL_SYMBOL_SLOTS: &[u32] = &[
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 52, 67,
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 52, 67, 68, 69, 70,
 ];
 /// Declaration kind table parallel to `LANGUAGE_DECL_SYMBOL_SLOTS`.
 pub(in crate::type_checker) const LANGUAGE_DECL_KINDS: &[u32] = &[
-    LANGUAGE_DECL_KIND_ENTRYPOINT,
-    LANGUAGE_DECL_KIND_INTRINSIC,
-    LANGUAGE_DECL_KIND_INTRINSIC,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
-    LANGUAGE_DECL_KIND_INTRINSIC,
-    LANGUAGE_DECL_KIND_INTRINSIC,
-    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE,
+    LANGUAGE_DECL_KIND_ENTRYPOINT,     // main
+    LANGUAGE_DECL_KIND_INTRINSIC,      // assert
+    LANGUAGE_DECL_KIND_INTRINSIC,      // print
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // bool
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // i8
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // i16
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // i32
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // i64
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // isize
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // u8
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // u16
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // u32
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // u64
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // usize
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // f32
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // f64
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // char
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // str
+    LANGUAGE_DECL_KIND_INTRINSIC,      // print_i32
+    LANGUAGE_DECL_KIND_INTRINSIC,      // i32_array_data_ptr
+    LANGUAGE_DECL_KIND_PRIMITIVE_TYPE, // ptr
+    LANGUAGE_DECL_KIND_INTRINSIC,      // i32_slice_from_raw_parts
+    LANGUAGE_DECL_KIND_INTRINSIC,      // i32_slice_data_ptr
+    LANGUAGE_DECL_KIND_INTRINSIC,      // string_data_ptr
 ];
 /// Declaration tag table parallel to `LANGUAGE_DECL_SYMBOL_SLOTS`.
 pub(in crate::type_checker) const LANGUAGE_DECL_TAGS: &[u32] = &[
@@ -515,6 +523,9 @@ pub(in crate::type_checker) const LANGUAGE_DECL_TAGS: &[u32] = &[
     LANGUAGE_DECL_TAG_PRINT,
     LANGUAGE_DECL_TAG_I32_ARRAY_DATA_PTR,
     8, // ptr
+    LANGUAGE_DECL_TAG_I32_SLICE_FROM_RAW_PARTS,
+    LANGUAGE_DECL_TAG_I32_SLICE_DATA_PTR,
+    LANGUAGE_DECL_TAG_STRING_DATA_PTR,
 ];
 /// Returns the byte width and byte-step count for stable declaration grouping.
 ///

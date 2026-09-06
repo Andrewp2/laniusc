@@ -104,6 +104,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     locations.a = X86_LOCATION_INVALID;
     locations.b = X86_LOCATION_INVALID;
     locations.c = X86_LOCATION_INVALID;
+    locations.length = X86_LOCATION_INVALID;
     if (semantic_row < gParams.semantic_capacity &&
         core.result_or_target != INVALID && core.op != X86_LIR_OP_SELECT_STORE)
     {
@@ -154,7 +155,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
             locations.a = X86_LOCATION_INVALID;
-        else if ((operands.metadata & X86_LIR_METADATA_STRING_LEN) != 0u)
+        else if ((operands.metadata &
+            (X86_LIR_METADATA_STRING_LEN | X86_LIR_METADATA_ARRAY_LEN)) != 0u)
         {
             uint string_start = value_location(operands.a);
             locations.a = string_start != INVALID &&
@@ -173,6 +175,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         locations.a = value_location(operands.a);
         locations.b = value_location(operands.b);
+        if (core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+        {
+            uint pair_start = value_location(operands.a);
+            locations.length = pair_start != INVALID &&
+                (pair_start & X86_LOCATION_REGISTER) == 0u
+                    ? stack_location(pair_start + 1u) : X86_LOCATION_INVALID;
+        }
     }
     else if (core.op == X86_LIR_OP_FIELD_LOAD)
         locations.a = value_location(operands.a);
@@ -181,6 +190,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         locations.a = value_location(operands.a);
         locations.b = value_location(operands.b);
         locations.c = value_location(operands.c);
+        if (core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+        {
+            uint pair_start = value_location(operands.a);
+            locations.length = pair_start != INVALID &&
+                (pair_start & X86_LOCATION_REGISTER) == 0u
+                    ? stack_location(pair_start + 1u) : X86_LOCATION_INVALID;
+        }
     }
     else if (core.op == X86_LIR_OP_FIELD_STORE)
     {

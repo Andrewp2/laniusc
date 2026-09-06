@@ -1,0 +1,202 @@
+module app::main;
+import verified::extraction;
+import verified::token;
+import verified::parser;
+import verified::parse_output;
+import verified::output;
+import verified::source_output;
+import verified::semantic_tokens;
+import verified::artifact_output;
+
+fn main() -> i32 {
+    // One-production grammar: Start -> identifier. This tests composition
+    // using actual source bytes and lexical tags, not host-generated tokens.
+    let grammar: [i32; 25] = [
+        1, 1, 1, 1, 0, 99, 13, 17, 18, 19, 20, 21, 1, 22, 23, 24, 1,
+        1, 0, 0, 1, 0, 0, 1, 0,
+    ];
+    let source: [i32; 2] = [97, 32];
+    let raw: [i32; 6] = [0, 0, 0, 0, 0, 0];
+    let canonical: [i32; 6] = [0, 0, 0, 0, 0, 0];
+    let kinds: [i32; 2] = [0, 0];
+    let workspace: [i32; 40] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    let records: [i32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
+    let offsets: [i32; 2] = [0, 0];
+    let extracted = verified::extraction::extract_syntax(source, 2, grammar, 25,
+        raw, 6, canonical, 6, kinds, 2, workspace, 32, records, 8, offsets, 2, 8);
+    if (verified::extraction::extraction_stage(extracted) != verified::extraction::EXTRACT_SUCCESS
+        || verified::extraction::raw_count(extracted) != 2
+        || verified::extraction::token_count(extracted) != 1
+        || verified::extraction::node_count(extracted) != 1
+        || verified::extraction::tree_words(extracted) != 7) { return 1; }
+    if (raw[3] != verified::token::WHITESPACE || raw[4] != 1 || raw[5] != 2
+        || canonical[0] != verified::token::IDENTIFIER || canonical[1] != 0
+        || canonical[2] != 1 || kinds[0] != verified::token::IDENTIFIER
+        || records[0] != 0 || records[1] != 0 || records[2] != 2
+        || records[3] != 1 || records[4] != verified::parser::CHILD_TOKEN
+        || records[5] != 0 || records[6] != 0) { return 2; }
+    let emitted: [i32; 32] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    // UTF-8 bytes of [⟨0,0,0,2,[.token 0]⟩], a typed Lean parse-node list.
+    let expected: [i32; 26] = [91,226,159,168,48,44,48,44,48,44,50,44,91,
+        46,116,111,107,101,110,32,48,93,226,159,169,93];
+    let written: i32 = verified::parse_output::emit_nodes(grammar, 25, records, 8,
+        offsets, 1, 1, emitted, 26, 0);
+    if (written != 26) { return 11; }
+    let byte: i32 = 0;
+    while (byte != 26) {
+        if (emitted[byte] != expected[byte]) { return 12; }
+        byte += 1;
+    }
+    if (verified::parse_output::emit_nodes(grammar, 25, records, 8,
+        offsets, 1, 1, emitted, 25, 0) != -1) { return 13; }
+    records[5] = 1;
+    if (verified::parse_output::emit_nodes(grammar, 25, records, 8,
+        offsets, 1, 1, emitted, 32, 0) != -1) { return 14; }
+    records[5] = 0;
+    if (verified::output::natural(emitted, 32, 0, 2147483647) != 10
+        || emitted[0] != 50 || emitted[9] != 55
+        || verified::output::natural(emitted, 9, 0, 2147483647) != -1
+        || verified::output::natural(emitted, 32, 0, -1) != -1
+        || verified::output::byte(emitted, 32, -1, 65) != -1) { return 15; }
+
+    let source_bytes: [i32; 64] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let expected_tokens: [i32; 41] = [91,226,159,168,49,44,226,159,168,48,44,48,44,49,226,159,169,226,159,169,44,226,159,168,51,44,226,159,168,48,44,49,44,50,226,159,169,226,159,169,93];
+    if (verified::source_output::emit_bytes(source, 2, source_bytes, 64, 0) != 7
+        || source_bytes[0] != 91 || source_bytes[1] != 57 || source_bytes[2] != 55
+        || source_bytes[3] != 44 || source_bytes[4] != 51 || source_bytes[5] != 50
+        || source_bytes[6] != 93) { return 16; }
+    let token_bytes = verified::source_output::emit_tokens(raw, 6, 2, 2, 0,
+        source_bytes, 64, 0);
+    if (token_bytes != 41) { return 17; }
+    let check_byte: i32 = 0;
+    while (check_byte != token_bytes) {
+        if (source_bytes[check_byte] != expected_tokens[check_byte]) { return 18; }
+        check_byte += 1;
+    }
+    if (verified::source_output::emit_tokens(raw, 6, 2, 2, 0,
+        source_bytes, 40, 0) != -1) { return 19; }
+    raw[5] = 3;
+    if (verified::source_output::emit_tokens(raw, 6, 2, 2, 0,
+        source_bytes, 64, 0) != -1) { return 20; }
+    raw[5] = 2;
+    source[0] = 256;
+    if (verified::source_output::emit_bytes(source, 2, source_bytes, 64, 0) != -1) { return 21; }
+    source[0] = 97;
+    if (verified::source_output::emit_bytes(source, 0, source_bytes, 64, 3) != 5
+        || source_bytes[3] != 91 || source_bytes[4] != 93) { return 22; }
+
+    let semantic: [i32; 4] = [0, 0, 0, 0];
+    if (verified::semantic_tokens::collect(grammar, 25, kinds, 1, records, 8,
+        offsets, 1, semantic, 4) != 0 || semantic[0] != 0 || semantic[1] != -1) { return 23; }
+    if (verified::semantic_tokens::collect(grammar, 25, kinds, 1, records, 8,
+        offsets, 1, semantic, 1) != -2) { return 24; }
+
+    let path: [i32; 1] = [120];
+    let artifact_bytes: [i32; 1024] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let expected_artifact: [i32; 349] = [123,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,65,114,116,105,102,97,99,116,46,101,109,112,116,121,32,119,105,116,104,32,115,111,117,114,99,101,115,32,58,61,32,91,123,32,112,97,116,104,32,58,61,32,83,116,114,105,110,103,46,102,114,111,109,85,84,70,56,33,32,40,66,121,116,101,65,114,114,97,121,46,109,107,32,40,40,91,49,50,48,93,58,32,76,105,115,116,32,78,97,116,41,46,116,111,65,114,114,97,121,46,109,97,112,32,85,73,110,116,56,46,111,102,78,97,116,41,41,44,32,98,121,116,101,115,32,58,61,32,91,57,55,44,51,50,93,32,125,93,44,32,114,97,119,95,116,111,107,101,110,115,32,58,61,32,115,111,109,101,32,91,226,159,168,49,44,226,159,168,48,44,48,44,49,226,159,169,226,159,169,44,226,159,168,51,44,226,159,168,48,44,49,44,50,226,159,169,226,159,169,93,44,32,116,111,107,101,110,115,32,58,61,32,91,226,159,168,49,44,226,159,168,48,44,48,44,49,226,159,169,226,159,169,93,44,32,115,101,109,97,110,116,105,99,95,116,111,107,101,110,95,107,105,110,100,115,32,58,61,32,91,48,93,44,32,112,97,114,115,101,95,110,111,100,101,115,32,58,61,32,91,226,159,168,48,44,48,44,48,44,50,44,91,46,116,111,107,101,110,32,48,93,226,159,169,93,44,32,112,97,114,115,101,95,114,111,111,116,32,58,61,32,115,111,109,101,32,48,32,125];
+    let artifact_length: i32 = verified::artifact_output::emit_syntax(path, 1, source, 2,
+        grammar, 25, raw, 6, 2, canonical, 6, 1, semantic, 4,
+        records, 8, offsets, 1, artifact_bytes, 1024);
+    if (artifact_length != 349) { return 32; }
+    let artifact_index: i32 = 0;
+    while (artifact_index != artifact_length) {
+        if (artifact_bytes[artifact_index] != expected_artifact[artifact_index]) { return 33; }
+        artifact_index += 1;
+    }
+    if (verified::artifact_output::emit_syntax(path, 1, source, 2,
+        grammar, 25, raw, 6, 2, canonical, 6, 1, semantic, 4,
+        records, 8, offsets, 1, artifact_bytes, 348) != -1) { return 34; }
+    let no_space = verified::extraction::extract_syntax(source, 2, grammar, 25,
+        raw, 3, canonical, 6, kinds, 2, workspace, 32, records, 8, offsets, 2, 8);
+    if (verified::extraction::extraction_stage(no_space) != verified::extraction::EXTRACT_LEX) {
+        return 3;
+    }
+    let no_canonical = verified::extraction::extract_syntax(source, 2, grammar, 25,
+        raw, 6, canonical, 3, kinds, 2, workspace, 32, records, 8, offsets, 2, 8);
+    if (verified::extraction::extraction_stage(no_canonical) != verified::extraction::EXTRACT_TOKEN_STORAGE) {
+        return 4;
+    }
+    let invalid: [i32; 1] = [96];
+    let bad_lex = verified::extraction::extract_syntax(invalid, 1, grammar, 25,
+        raw, 6, canonical, 6, kinds, 2, workspace, 32, records, 8, offsets, 2, 8);
+    if (verified::extraction::extraction_stage(bad_lex) != verified::extraction::EXTRACT_LEX
+        || verified::extraction::error_position(bad_lex) != 0) { return 5; }
+    let number: [i32; 1] = [49];
+    let rejected = verified::extraction::extract_syntax(number, 1, grammar, 25,
+        raw, 6, canonical, 6, kinds, 2, workspace, 32, records, 8, offsets, 2, 8);
+    if (verified::extraction::extraction_stage(rejected) != verified::extraction::EXTRACT_PARSE
+        || verified::extraction::extraction_detail(rejected) != verified::parser::PARSE_REJECTED) {
+        return 6;
+    }
+    let no_tree = verified::extraction::extract_syntax(source, 2, grammar, 25,
+        raw, 6, canonical, 6, kinds, 2, workspace, 32, records, 6, offsets, 2, 8);
+    if (verified::extraction::extraction_stage(no_tree) != verified::extraction::EXTRACT_TREE) {
+        return 7;
+    }
+    // Keyword retagging must happen between raw emission and parsing.
+    let keyword: [i32; 2] = [102, 110];
+    grammar[17] = verified::token::FN;
+    let retagged = verified::extraction::extract_syntax(keyword, 2, grammar, 25,
+        raw, 6, canonical, 6, kinds, 2, workspace, 32, records, 8, offsets, 2, 8);
+    if (verified::extraction::extraction_stage(retagged) != verified::extraction::EXTRACT_SUCCESS
+        || raw[0] != verified::token::IDENTIFIER || canonical[0] != verified::token::FN
+        || kinds[0] != verified::token::FN) { return 8; }
+    let no_kinds = verified::extraction::extract_syntax(keyword, 2, grammar, 25,
+        raw, 6, canonical, 6, kinds, 0, workspace, 32, records, 8, offsets, 2, 8);
+    if (verified::extraction::extraction_stage(no_kinds) != verified::extraction::EXTRACT_TOKEN_STORAGE
+        || verified::extraction::extraction_detail(no_kinds) != 1) { return 9; }
+    let split_grammar: [i32; 26] = [
+        1, 1, 1, 1, 0, 44, 13, 17, 18, 19, 20, 21, 2, 23, 24, 25, 1,
+        13, 0, 0, 2, 0, 0, 0, 1, 0,
+    ];
+    let split_source: [i32; 2] = [62, 62];
+    let split_records: [i32; 10] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let split = verified::extraction::extract_syntax(split_source, 2, split_grammar, 26,
+        raw, 6, canonical, 6, kinds, 2, workspace, 40, split_records, 10, offsets, 2, 8);
+    if (verified::extraction::extraction_stage(split) != verified::extraction::EXTRACT_SUCCESS
+        || verified::extraction::token_count(split) != 1
+        || canonical[0] != verified::token::SHIFT_RIGHT || canonical[2] != 2
+        || split_records[3] != 2 || split_records[5] != 0 || split_records[8] != 0
+        || split_records[6] != 0 || split_records[9] != 0) { return 10; }
+    if (verified::semantic_tokens::collect(split_grammar, 26, kinds, 1,
+        split_records, 10, offsets, 1, semantic, 4) != 0
+        || semantic[0] != 0 || semantic[1] != 0) { return 25; }
+    split_records[3] = 1;
+    split_records[2] = 1;
+    if (verified::semantic_tokens::collect(split_grammar, 26, kinds, 1,
+        split_records, 10, offsets, 1, semantic, 4) != -1) { return 26; }
+    // Outer semantic kind 1 is visited first (in the child node); the inner
+    // kind 0 lives in its parent. Position parity must recover [0,1].
+    let nested_grammar: [i32; 19] = [
+        1, 2, 0, 0, 0, 44, 13, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 13,
+    ];
+    let nested_records: [i32; 17] = [
+        0, 1, 2, 1, 1, 0, 1,
+        0, 0, 2, 2, 1, 0, 0, 2, 0, -1,
+    ];
+    offsets[0] = 0;
+    offsets[1] = 7;
+    if (verified::semantic_tokens::collect(nested_grammar, 19, kinds, 1,
+        nested_records, 17, offsets, 2, semantic, 4) != 0
+        || semantic[0] != 0 || semantic[1] != 1) { return 27; }
+    let packed: [i32; 23] = [91,40,50,49,52,55,52,56,51,54,52,56,43,48,43,49,42,51,50,55,54,56,41];
+    let packed_length: i32 = verified::semantic_tokens::emit(semantic, 4, 1, source_bytes, 64, 0);
+    if (packed_length != 24 || source_bytes[23] != 93) { return 28; }
+    let packed_index: i32 = 0;
+    while (packed_index != 23) {
+        if (source_bytes[packed_index] != packed[packed_index]) { return 29; }
+        packed_index += 1;
+    }
+    if (verified::semantic_tokens::emit(semantic, 4, 1, source_bytes, 23, 0) != -1) { return 30; }
+    semantic[1] = -1;
+    if (verified::semantic_tokens::emit(semantic, 4, 1, source_bytes, 64, 0) != 3
+        || source_bytes[0] != 91 || source_bytes[1] != 48 || source_bytes[2] != 93) { return 31; }
+    return 0;
+}

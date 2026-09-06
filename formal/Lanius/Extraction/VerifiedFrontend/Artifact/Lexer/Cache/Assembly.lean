@@ -1,5 +1,8 @@
-import Lanius.Extraction.VerifiedFrontend.Artifact.Lexer.Artifact
 import Lanius.Extraction.VerifiedFrontend.Artifact.Cache.Base
+
+-- Closed-term hoisting is expensive for these large constructor quotations.
+-- Keep executable code and kernel checking, but skip that compiler optimization.
+set_option compiler.extract_closed false
 
 namespace Lanius.Extraction
 set_option maxRecDepth 100000

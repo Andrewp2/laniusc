@@ -1,0 +1,1 @@
+pub extern "lanius_test" fn read(value: i32) -> i32;

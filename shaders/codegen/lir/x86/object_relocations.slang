@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.x86.location_common;
 import gpu_index;
 
 struct Params { uint target_capacity; uint function_capacity; uint artifact_capacity; uint reserved; };
@@ -12,6 +13,7 @@ StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> semantic_to_target_start;
+StructuredBuffer<X86LirLocations> target_lir_locations;
 StructuredBuffer<uint> target_function_count;
 StructuredBuffer<TargetLirFunction> target_functions;
 StructuredBuffer<uint> target_function_index_by_semantic;
@@ -67,7 +69,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint instruction_bytes = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
         ? (aggregate_symbol
             ? aggregate_words > 2u ? 19u : 19u + aggregate_words * 7u
-            : 11u) : 17u;
+            : 11u)
+        // STRING_ADDR is the first target row of a semantic string constant.
+        // Its destination-dependent spill is not a fixed 17 bytes. Using the
+        // exact row width keeps the ABS32 relocation after any prologue and at
+        // the movabs immediate rather than overwriting saved-register stores.
+        : 10u + x86_move64_from_fixed_bytes(
+            0u, target_lir_locations[target_row].result);
     uint footer_bytes = target_row + 1u == function.instruction_start + function.instruction_count
         ? 4u : 0u;
     uint row_bytes = target_byte_length[target_row];

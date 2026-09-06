@@ -30,7 +30,7 @@ RWStructuredBuffer<uint> hir_visible_decl_source_by_token;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint LANGUAGE_SYMBOL_COUNT = 68u;
+static const uint LANGUAGE_SYMBOL_COUNT = 71u;
 
 static const uint HIR_STMT = 7u;
 static const uint HIR_PARAM = 4u;

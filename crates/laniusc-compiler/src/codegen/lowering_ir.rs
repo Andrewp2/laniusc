@@ -491,6 +491,8 @@ pub struct SemanticLirCallArg {
     pub value_instruction: u32,
     pub ordinal: u32,
     pub value_metadata: u32,
+    /// Fixed element count, or the runtime-length sentinel for a slice.
+    pub array_length: u32,
 }
 
 /// One variable-length aggregate member. Array elements and named struct
@@ -549,6 +551,8 @@ pub struct SemanticLirParam {
     pub declaration_id: u32,
     pub ordinal: u32,
     pub type_id: u32,
+    /// Target-independent value representation flags (notably array pairs).
+    pub value_metadata: u32,
 }
 
 #[repr(C)]
@@ -582,6 +586,7 @@ pub struct LoweringStatus {
     pub diagnostic_reason: u32,
     pub diagnostic_detail_kind: u32,
     pub diagnostic_detail: u32,
+    pub first_unsupported_target_op: u32,
 }
 
 pub(crate) const LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_PARAMETERS: u32 = 1;
@@ -597,6 +602,13 @@ pub(crate) const LOWERING_DIAGNOSTIC_X86_DYNAMIC_ARRAY_INDEX: u32 = 10;
 pub(crate) const LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_CALL: u32 = 11;
 pub(crate) const LOWERING_DIAGNOSTIC_X86_SHORT_CIRCUIT_TRAP: u32 = 12;
 pub(crate) const LOWERING_DIAGNOSTIC_X86_MATCH_EXPRESSION: u32 = 13;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION: u32 = 36;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_CALL_TARGET: u32 = 37;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_AGGREGATE_RESULT_LAYOUT: u32 = 38;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_CALLEE_RESULT_LAYOUT: u32 = 39;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_INSTANCE_RESULT_LAYOUT: u32 = 40;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_NOMINAL_RESULT_LAYOUT: u32 = 41;
+pub(crate) const LOWERING_DIAGNOSTIC_X86_LEGACY_RESULT_LAYOUT: u32 = 42;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_TOKEN: u32 = 1;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_HIR: u32 = 2;
 
@@ -642,6 +654,8 @@ pub struct X86LirLocations {
     pub a: u32,
     pub b: u32,
     pub c: u32,
+    /// Runtime slice-length home for an indexed load/store, when applicable.
+    pub length: u32,
 }
 
 #[repr(C)]
@@ -2256,6 +2270,7 @@ fn build_lowering_compiler_graph(
         accesses: vec![
             PassAccess::read("compact_param_count", hir_param_count),
             PassAccess::read("compact_params", hir_params),
+            PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
             PassAccess::read("semantic_function_prefix", semantic_function_prefix),
             PassAccess::read("semantic_param_type_by_row", checked_param_types),
@@ -2622,7 +2637,11 @@ fn build_lowering_compiler_graph(
         accesses: vec![
             PassAccess::read("compact_call_arg_count", hir_call_arg_count),
             PassAccess::read("compact_call_args", hir_call_args),
+            PassAccess::read("compact_hir_core", hir_core),
+            PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("semantic_call_receiver", semantic_call_receivers),
+            PassAccess::read("semantic_call_target", semantic_call_targets),
+            PassAccess::read("semantic_call_kind", semantic_call_kinds),
             PassAccess::read(
                 "semantic_call_arg_count_by_hir",
                 semantic_call_arg_counts_by_hir,
@@ -2634,8 +2653,16 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_expr_type", semantic_types),
             PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
             PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
+            PassAccess::read("semantic_array_length", semantic_array_lengths),
+            PassAccess::read(
+                "semantic_aggregate_word_count",
+                semantic_aggregate_word_counts,
+            ),
             PassAccess::read("semantic_lir_count", semantic_counts),
             PassAccess::read("semantic_lir_offset", semantic_offsets),
+            PassAccess::read("semantic_lir_core", semantic_core),
+            PassAccess::read("semantic_lir_functions", semantic_functions),
+            PassAccess::read("semantic_lir_params", semantic_params),
             PassAccess::write("semantic_lir_call_args", semantic_call_args),
         ],
     })?;
@@ -8428,6 +8455,41 @@ fn build_lowering_compiler_graph(
             ],
         })?;
         graph.add_pass(PassDesc {
+            name: "lir.x86.packed.emit",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: target_domain,
+            accesses: vec![
+                PassAccess::read("target_lir_total", target_total),
+                PassAccess::read("target_lir_core", target_core),
+                PassAccess::read(
+                    "target_lir_operands",
+                    target_operands.expect("x86 operand resource"),
+                ),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read("target_function_count", function_count),
+                PassAccess::read("target_functions", functions),
+                PassAccess::read(
+                    "target_function_index_by_semantic",
+                    function_index_by_semantic,
+                ),
+                PassAccess::read("semantic_lir_function_total", semantic_function_total),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::read("semantic_lir_params", semantic_params),
+                PassAccess::read(
+                    "x86_decl_location_by_token",
+                    x86_decl_location_by_token.expect("x86 declaration location resource"),
+                ),
+                PassAccess::read(
+                    "x86_saved_gpr_mask_by_function",
+                    x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
+                ),
+                PassAccess::read("target_lir_locations", x86_target_locations.unwrap()),
+                PassAccess::read("target_byte_offset", byte_offsets),
+                PassAccess::read("x86_artifact_layout", x86.layout),
+                PassAccess::write("artifact_bytes", x86.artifact_bytes),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
             name: "lir.x86.emit",
             phase: CompilerPhase::Artifact,
             dispatch_domain: target_domain,
@@ -8671,6 +8733,7 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("opt_ir_source_hir", opt_source_hir),
                 PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 PassAccess::read("semantic_to_target_start", semantic_to_target_start),
+                PassAccess::read("target_lir_locations", x86_target_locations.unwrap()),
                 PassAccess::read("target_function_count", function_count),
                 PassAccess::read("target_functions", functions),
                 PassAccess::read(
@@ -9463,14 +9526,14 @@ mod tests {
         assert_eq!(std::mem::size_of::<SemanticLirCore>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirOperands>(), 16);
         assert_eq!(std::mem::size_of::<SemanticLirFunction>(), 52);
-        assert_eq!(std::mem::size_of::<SemanticLirParam>(), 16);
+        assert_eq!(std::mem::size_of::<SemanticLirParam>(), 20);
         assert_eq!(std::mem::size_of::<SemanticLirLocal>(), 16);
-        assert_eq!(std::mem::size_of::<LoweringStatus>(), 36);
+        assert_eq!(std::mem::size_of::<LoweringStatus>(), 40);
         assert_eq!(std::mem::size_of::<TargetScheduleKey>(), 12);
         assert_eq!(std::mem::size_of::<TargetLirFunction>(), 16);
         assert_eq!(std::mem::size_of::<X86LirCore>(), 16);
         assert_eq!(std::mem::size_of::<X86LirOperands>(), 16);
-        assert_eq!(std::mem::size_of::<X86LirLocations>(), 16);
+        assert_eq!(std::mem::size_of::<X86LirLocations>(), 20);
         assert_eq!(std::mem::size_of::<X86SelectInfo>(), 16);
         assert_eq!(std::mem::size_of::<X86DeclarationAnalysis>(), 16);
         assert_eq!(std::mem::size_of::<X86FunctionRegisterAnalysis>(), 16);
@@ -10753,6 +10816,7 @@ mod tests {
             ),
             ("lir.x86.artifact.layout", "codegen/lir/x86/artifact_layout"),
             ("lir.x86.artifact.clear", "codegen/lir/x86/artifact_clear"),
+            ("lir.x86.packed.emit", "codegen/lir/x86/packed_emit"),
             ("lir.x86.emit", "codegen/lir/x86/emit"),
             ("lir.x86.runtime.emit", "codegen/lir/x86/runtime_emit"),
             (

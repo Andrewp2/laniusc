@@ -1,0 +1,305 @@
+module verified::surface_function_output;
+import verified::output;
+import verified::surface_tree;
+import verified::surface_atoms;
+import verified::surface_type;
+import verified::surface_type_output;
+import verified::surface_stmt_output;
+import verified::parser;
+
+pub struct EmitResult {
+    position: i32,
+    next_id: i32,
+}
+
+pub fn emit_position(value: EmitResult) -> i32 { return value.position; }
+pub fn emit_next_id(value: EmitResult) -> i32 { return value.next_id; }
+
+fn result(position: i32, next_id: i32) -> EmitResult {
+    return EmitResult { position: position, next_id: next_id };
+}
+
+fn failed(next_id: i32) -> EmitResult { return result(-1, next_id); }
+
+fn node_child(records:[i32], records_length: i32, offsets:[i32],
+    node_count: i32, node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, records_length, offsets,
+        node_count, node, index, verified::parser::CHILD_STATE, 0);
+}
+
+fn parameter(source:[i32], source_length: i32, tokens:[i32],
+    token_count: i32, records:[i32], records_length: i32, offsets:[i32],
+    node_count: i32, node: i32, type_arena:[i32],
+    type_arena_length: i32, depth: i32, output:[i32], capacity: i32,
+    state: EmitResult) -> EmitResult {
+    if (state.position <= -1 || depth <= 0) { return failed(state.next_id); }
+    let offset: i32 = verified::surface_tree::record(records, records_length,
+        offsets, node_count, node);
+    if (offset <= -1 || records[offset] != 62) { return failed(state.next_id); }
+    let type_node: i32 = node_child(records, records_length, offsets,
+        node_count, node, 2);
+    let root: i32 = verified::surface_type::extract(records, records_length,
+        offsets, node_count, token_count, type_node, type_arena,
+        type_arena_length, depth - 1);
+    if (root <= -1 || type_arena[0] <= 0
+        || type_arena[0] >= 2147483647 - state.next_id) {
+        return failed(state.next_id);
+    }
+    let opening: [i32; 3] = [226,159,168];
+    let closing: [i32; 3] = [226,159,169];
+    let next: i32 = verified::output::bytes(output, capacity,
+        state.position, opening, 3);
+    next = verified::output::natural(output, capacity, next,
+        state.next_id + type_arena[0]);
+    next = verified::output::byte(output, capacity, next, 44);
+    next = verified::output::natural(output, capacity, next, node);
+    next = verified::output::byte(output, capacity, next, 44);
+    let name_token: i32 = verified::surface_tree::child(records,
+        records_length, offsets, node_count, node, 0,
+        verified::parser::CHILD_TOKEN, token_count);
+    next = verified::surface_atoms::name(source, source_length, tokens,
+        token_count, name_token, output, capacity, next);
+    next = verified::output::byte(output, capacity, next, 44);
+    next = verified::surface_type_output::emit(source, source_length, tokens,
+        token_count, type_arena, type_arena_length, root, state.next_id,
+        output, capacity, next);
+    next = verified::output::bytes(output, capacity, next, closing, 3);
+    if (next <= -1) { return failed(state.next_id); }
+    return result(next, state.next_id + type_arena[0] + 1);
+}
+
+pub fn emit_parameters(source:[i32], source_length: i32, tokens:[i32],
+    token_count: i32, records:[i32], records_length: i32, offsets:[i32],
+    node_count: i32, node: i32, type_arena:[i32],
+    type_arena_length: i32, depth: i32, output:[i32], capacity: i32,
+    state: EmitResult) -> EmitResult {
+    if (state.position <= -1 || depth <= 0) { return failed(state.next_id); }
+    let offset: i32 = verified::surface_tree::record(records, records_length,
+        offsets, node_count, node);
+    if (offset <= -1) { return failed(state.next_id); }
+    let next: i32 = verified::output::byte(output, capacity, state.position, 91);
+    if (records[offset] == 60) {
+        next = verified::output::byte(output, capacity, next, 93);
+        if (next <= -1) { return failed(state.next_id); }
+        return result(next, state.next_id);
+    }
+    if (records[offset] != 61) { return failed(state.next_id); }
+    let current: EmitResult = parameter(source, source_length, tokens,
+        token_count, records, records_length, offsets, node_count,
+        node_child(records, records_length, offsets, node_count, node, 0),
+        type_arena, type_arena_length, depth - 1, output, capacity,
+        result(next, state.next_id));
+    let tail: i32 = node_child(records, records_length, offsets, node_count,
+        node, 1);
+    let remaining: i32 = depth;
+    while (remaining != 0) {
+        remaining -= 1;
+        let tail_offset: i32 = verified::surface_tree::record(records,
+            records_length, offsets, node_count, tail);
+        if (tail_offset <= -1) { return failed(current.next_id); }
+        if (records[tail_offset] == 68) {
+            next = verified::output::byte(output, capacity, current.position, 93);
+            if (next <= -1) { return failed(current.next_id); }
+            return result(next, current.next_id);
+        }
+        if (records[tail_offset] != 67) { return failed(current.next_id); }
+        let after: i32 = node_child(records, records_length, offsets,
+            node_count, tail, 1);
+        let after_offset: i32 = verified::surface_tree::record(records,
+            records_length, offsets, node_count, after);
+        if (after_offset <= -1) { return failed(current.next_id); }
+        if (records[after_offset] == 289) {
+            next = verified::output::byte(output, capacity, current.position, 93);
+            if (next <= -1) { return failed(current.next_id); }
+            return result(next, current.next_id);
+        }
+        if (records[after_offset] != 288) { return failed(current.next_id); }
+        next = verified::output::byte(output, capacity, current.position, 44);
+        current = parameter(source, source_length, tokens, token_count,
+            records, records_length, offsets, node_count,
+            node_child(records, records_length, offsets, node_count, after, 0),
+            type_arena, type_arena_length, depth - 1, output, capacity,
+            result(next, current.next_id));
+        if (current.position <= -1) { return current; }
+        tail = node_child(records, records_length, offsets, node_count,
+            after, 1);
+    }
+    return failed(current.next_id);
+}
+
+// Emit the exact nongeneric function reconstructed by Lean. Generic and where
+// clauses fail closed until their located Surface representation is added.
+pub fn emit(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
+    node: i32, is_public: bool, expression_arena:[i32],
+    expression_arena_length: i32, type_arena:[i32],
+    type_arena_length: i32, depth: i32, first_id: i32, output:[i32],
+    capacity: i32, position: i32) -> EmitResult {
+    if (first_id <= -1 || depth <= 0) { return failed(first_id); }
+    let offset: i32 = verified::surface_tree::record(records, records_length,
+        offsets, node_count, node);
+    if (offset <= -1 || records[offset] != 11) { return failed(first_id); }
+    let generic_node: i32 = node_child(records, records_length, offsets,
+        node_count, node, 2);
+    let generic_offset: i32 = verified::surface_tree::record(records,
+        records_length, offsets, node_count, generic_node);
+    let where_node: i32 = node_child(records, records_length, offsets,
+        node_count, node, 7);
+    let where_offset: i32 = verified::surface_tree::record(records,
+        records_length, offsets, node_count, where_node);
+    if (generic_offset <= -1
+        || where_offset <= -1 || records[where_offset] != 36) {
+        return failed(first_id);
+    }
+    let name_start: [i32; 10] = [123,32,110,97,109,101,32,58,61,32];
+    let public_start: [i32; 15] = [44,32,105,115,95,112,117,98,108,105,99,32,58,61,32];
+    let generic_start: [i32; 24] = [44,32,103,101,110,101,114,105,99,95,112,97,114,97,109,101,116,101,114,115,32,58,61,32];
+    let parameters_start: [i32; 16] = [44,32,112,97,114,97,109,101,116,101,114,115,32,58,61,32];
+    let return_start: [i32; 17] = [44,32,114,101,116,117,114,110,95,116,121,112,101,32,58,61,32];
+    let body_start: [i32; 10] = [44,32,98,111,100,121,32,58,61,32];
+    let record_end: [i32; 2] = [32,125];
+    let yes: [i32; 4] = [116,114,117,101];
+    let no: [i32; 5] = [102,97,108,115,101];
+    let none: [i32; 4] = [110,111,110,101];
+    let some: [i32; 6] = [40,115,111,109,101,32];
+    let next: i32 = verified::output::bytes(output, capacity, position,
+        name_start, 10);
+    let name_token: i32 = verified::surface_tree::child(records,
+        records_length, offsets, node_count, node, 1,
+        verified::parser::CHILD_TOKEN, token_count);
+    next = verified::surface_atoms::name(source, source_length, tokens,
+        token_count, name_token, output, capacity, next);
+    next = verified::output::bytes(output, capacity, next, public_start, 15);
+    if (is_public) { next = verified::output::bytes(output, capacity, next, yes, 4); }
+    else { next = verified::output::bytes(output, capacity, next, no, 5); }
+    next = verified::output::bytes(output, capacity, next, generic_start, 24);
+    let generic_next_id: i32 = first_id;
+    if (records[generic_offset] == 232) {
+        next = verified::output::byte(output, capacity, next, 91);
+        next = verified::output::byte(output, capacity, next, 93);
+    } else {
+        if (records[generic_offset] != 233) { return failed(generic_next_id); }
+        let generic_parameter: i32 = node_child(records, records_length,
+            offsets, node_count, generic_node, 1);
+        let generic_tail: i32 = node_child(records, records_length, offsets,
+            node_count, generic_node, 2);
+        let generic_tail_offset: i32 = verified::surface_tree::record(records,
+            records_length, offsets, node_count, generic_tail);
+        let generic_parameter_offset: i32 = verified::surface_tree::record(
+            records, records_length, offsets, node_count, generic_parameter);
+        if (generic_tail_offset <= -1 || records[generic_tail_offset] != 254
+            || generic_parameter_offset <= -1) {
+            return failed(generic_next_id);
+        }
+        next = verified::output::byte(output, capacity, next, 91);
+        if (records[generic_parameter_offset] == 234) {
+            let type_parameter: [i32; 17] = [40,46,116,121,112,101,95,112,97,114,97,109,101,116,101,114,32];
+            let bound: i32 = node_child(records, records_length, offsets,
+                node_count, generic_parameter, 1);
+            let bound_offset: i32 = verified::surface_tree::record(records,
+                records_length, offsets, node_count, bound);
+            if (bound_offset <= -1 || records[bound_offset] != 237) {
+                return failed(generic_next_id);
+            }
+            next = verified::output::bytes(output, capacity, next,
+                type_parameter, 17);
+            next = verified::output::natural(output, capacity, next,
+                generic_next_id);
+            next = verified::output::byte(output, capacity, next, 32);
+            next = verified::output::natural(output, capacity, next,
+                generic_parameter);
+            next = verified::output::byte(output, capacity, next, 32);
+            let generic_name: i32 = verified::surface_tree::child(records,
+                records_length, offsets, node_count, generic_parameter, 0,
+                verified::parser::CHILD_TOKEN, token_count);
+            next = verified::surface_atoms::name(source, source_length, tokens,
+                token_count, generic_name, output, capacity, next);
+            next = verified::output::byte(output, capacity, next, 41);
+            generic_next_id += 1;
+        } else {
+            if (records[generic_parameter_offset] != 235) {
+                return failed(generic_next_id);
+            }
+            let generic_type: i32 = node_child(records, records_length,
+                offsets, node_count, generic_parameter, 3);
+            let generic_root: i32 = verified::surface_type::extract(records,
+                records_length, offsets, node_count, token_count, generic_type,
+                type_arena, type_arena_length, depth - 1);
+            if (generic_root <= -1 || type_arena[0] <= 0
+                || type_arena[0] > 2147483647 - generic_next_id) {
+                return failed(generic_next_id);
+            }
+            let const_parameter: [i32; 18] = [40,46,99,111,110,115,116,95,112,97,114,97,109,101,116,101,114,32];
+            let parameter_id: i32 = generic_next_id + type_arena[0];
+            next = verified::output::bytes(output, capacity, next,
+                const_parameter, 18);
+            next = verified::output::natural(output, capacity, next,
+                parameter_id);
+            next = verified::output::byte(output, capacity, next, 32);
+            next = verified::output::natural(output, capacity, next,
+                generic_parameter);
+            next = verified::output::byte(output, capacity, next, 32);
+            let generic_name: i32 = verified::surface_tree::child(records,
+                records_length, offsets, node_count, generic_parameter, 1,
+                verified::parser::CHILD_TOKEN, token_count);
+            next = verified::surface_atoms::name(source, source_length, tokens,
+                token_count, generic_name, output, capacity, next);
+            next = verified::output::byte(output, capacity, next, 32);
+            next = verified::surface_type_output::emit(source, source_length,
+                tokens, token_count, type_arena, type_arena_length,
+                generic_root, generic_next_id, output, capacity, next);
+            next = verified::output::byte(output, capacity, next, 41);
+            generic_next_id = parameter_id + 1;
+        }
+        next = verified::output::byte(output, capacity, next, 93);
+    }
+    if (next <= -1) { return failed(generic_next_id); }
+    next = verified::output::bytes(output, capacity, next,
+        parameters_start, 16);
+    let current: EmitResult = emit_parameters(source, source_length, tokens,
+        token_count, records, records_length, offsets, node_count,
+        node_child(records, records_length, offsets, node_count, node, 4),
+        type_arena, type_arena_length, depth - 1, output, capacity,
+        result(next, generic_next_id));
+    if (current.position <= -1) { return current; }
+    next = verified::output::bytes(output, capacity, current.position,
+        return_start, 17);
+    let return_node: i32 = node_child(records, records_length, offsets,
+        node_count, node, 6);
+    let return_offset: i32 = verified::surface_tree::record(records,
+        records_length, offsets, node_count, return_node);
+    if (return_offset <= -1) { return failed(current.next_id); }
+    if (records[return_offset] == 34) {
+        next = verified::output::bytes(output, capacity, next, some, 6);
+        let type_node: i32 = node_child(records, records_length, offsets,
+            node_count, return_node, 1);
+        let root: i32 = verified::surface_type::extract(records,
+            records_length, offsets, node_count, token_count, type_node,
+            type_arena, type_arena_length, depth - 1);
+        if (root <= -1 || type_arena[0] <= 0
+            || type_arena[0] > 2147483647 - current.next_id) {
+            return failed(current.next_id);
+        }
+        next = verified::surface_type_output::emit(source, source_length,
+            tokens, token_count, type_arena, type_arena_length, root,
+            current.next_id, output, capacity, next);
+        next = verified::output::byte(output, capacity, next, 41);
+        current = result(next, current.next_id + type_arena[0]);
+    } else {
+        if (records[return_offset] != 35) { return failed(current.next_id); }
+        next = verified::output::bytes(output, capacity, next, none, 4);
+        current = result(next, current.next_id);
+    }
+    next = verified::output::bytes(output, capacity, current.position,
+        body_start, 10);
+    let body = verified::surface_stmt_output::emit_block(source, source_length,
+        tokens, token_count, records, records_length, offsets, node_count,
+        node_child(records, records_length, offsets, node_count, node, 8),
+        expression_arena, expression_arena_length, type_arena,
+        type_arena_length, depth - 1, current.next_id, output, capacity, next);
+    next = verified::surface_stmt_output::emit_position(body);
+    let final_id: i32 = verified::surface_stmt_output::emit_next_id(body);
+    next = verified::output::bytes(output, capacity, next, record_end, 2);
+    if (next <= -1) { return failed(final_id); }
+    return result(next, final_id);
+}

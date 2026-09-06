@@ -1,4 +1,27 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Assembly.Trace
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Parse.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Claims
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Origins
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.Decode
 
 namespace Lanius.Extraction
+set_option maxRecDepth 500000
+def verifiedFrontendDecimalReconstructionKernel : ProvenanceSurfaceReconstruction := {
+  reconstructed := verifiedFrontendDecimalReconstructedKernel
+  claims := verifiedFrontendDecimalClaimsKernel
+  origins := verifiedFrontendDecimalOrigins
+}
+theorem verifiedFrontendDecimal_reconstruction_found_kernel :
+    reconstructArtifactSurfaceWithProvenanceView verifiedFrontendDecimalArtifact verifiedFrontendDecimalView
+      verifiedFrontendDecimalOrigins = some verifiedFrontendDecimalReconstructionKernel :=
+  reconstructArtifactSurfaceWithProvenanceView_of_components verifiedFrontendDecimalView
+    verifiedFrontendDecimalOrigins verifiedFrontendDecimalReconstructedKernel verifiedFrontendDecimalClaimsKernel
+    verifiedFrontendDecimal_reconstructed_found_kernel verifiedFrontendDecimal_claims_found_kernel
+def verifiedFrontendDecimalSurfaceKernel : CheckedSurfaceArtifact verifiedFrontendDecimalArtifact :=
+  CheckedSurfaceArtifact.ofOriginsWithParse verifiedFrontendDecimalView verifiedFrontendDecimalOrigins
+    verifiedFrontendDecimalParseValidTraceKernel verifiedFrontendDecimalReconstructionKernel
+    verifiedFrontendDecimal_reconstruction_found_kernel verifiedFrontendDecimalDecodedSurfaceKernel
+    verifiedFrontendDecimal_decoded_surface_found_kernel verifiedFrontendDecimal_claims_equal_kernel
+    verifiedFrontendDecimal_origins_checked_kernel
+theorem verifiedFrontendDecimal_surface_checked_kernel : SurfaceArtifactValid verifiedFrontendDecimalArtifact :=
+  CheckedSurfaceArtifact.valid verifiedFrontendDecimalSurfaceKernel
 end Lanius.Extraction

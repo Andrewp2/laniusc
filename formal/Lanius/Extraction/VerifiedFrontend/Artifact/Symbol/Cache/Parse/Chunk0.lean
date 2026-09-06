@@ -1,4 +1,3 @@
-import Lanius.Extraction.VerifiedFrontend.Artifact.Symbol.Artifact
 import Lanius.Extraction.VerifiedFrontend.Artifact.Cache.Base
 namespace Lanius.Extraction
 set_option maxRecDepth 100000

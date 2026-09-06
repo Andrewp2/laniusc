@@ -1,0 +1,56 @@
+module verified::source_output;
+
+import verified::output;
+
+// Emit an exact List Nat representation of the input bytes. No UTF-8
+// decoding or newline normalization is performed on the source itself.
+pub fn emit_bytes(source:[i32], source_length: i32, output:[i32],
+    capacity: i32, position: i32,) -> i32 {
+    if (source_length <= -1) { return -1; }
+    let next: i32 = verified::output::byte(output, capacity, position, 91);
+    let index: i32 = 0;
+    while (index != source_length) {
+        let value: i32 = source[index];
+        if (value <= -1 || value >= 256) { return -1; }
+        if (index != 0) { next = verified::output::byte(output, capacity, next, 44); }
+        next = verified::output::natural(output, capacity, next, value);
+        if (next == -1) { return -1; }
+        index += 1;
+    }
+    return verified::output::byte(output, capacity, next, 93);
+}
+
+// Emit List Lanius.Extraction.Token for either raw or canonical rows.
+// Span bounds are checked here; lexical correctness remains the lexer's
+// responsibility and is not established by serialization.
+pub fn emit_tokens(rows:[i32], rows_length: i32, token_count: i32,
+    source_length: i32, file_id: i32, output:[i32], capacity: i32,
+    position: i32,) -> i32 {
+    if (rows_length <= -1 || token_count <= -1 || source_length <= -1
+        || file_id <= -1 || !(token_count <= rows_length / 3)) { return -1; }
+    let opening: [i32; 3] = [226, 159, 168];
+    let closing: [i32; 3] = [226, 159, 169];
+    let next: i32 = verified::output::byte(output, capacity, position, 91);
+    let token: i32 = 0;
+    while (token != token_count) {
+        let row: i32 = token * 3;
+        let start: i32 = rows[row + 1];
+        let finish: i32 = rows[row + 2];
+        if (start <= -1 || !(start <= finish) || !(finish <= source_length)) { return -1; }
+        if (token != 0) { next = verified::output::byte(output, capacity, next, 44); }
+        next = verified::output::bytes(output, capacity, next, opening, 3);
+        next = verified::output::natural(output, capacity, next, rows[row]);
+        next = verified::output::byte(output, capacity, next, 44);
+        next = verified::output::bytes(output, capacity, next, opening, 3);
+        next = verified::output::natural(output, capacity, next, file_id);
+        next = verified::output::byte(output, capacity, next, 44);
+        next = verified::output::natural(output, capacity, next, start);
+        next = verified::output::byte(output, capacity, next, 44);
+        next = verified::output::natural(output, capacity, next, finish);
+        next = verified::output::bytes(output, capacity, next, closing, 3);
+        next = verified::output::bytes(output, capacity, next, closing, 3);
+        if (next == -1) { return -1; }
+        token += 1;
+    }
+    return verified::output::byte(output, capacity, next, 93);
+}

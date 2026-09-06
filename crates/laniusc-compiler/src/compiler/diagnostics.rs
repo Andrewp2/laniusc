@@ -824,7 +824,7 @@ pub const UNSUPPORTED_FEATURE_DIAGNOSTICS: &[UnsupportedFeatureDiagnosticInfo] =
         code: "LNC0017",
         boundary: "x86 backend",
         summary: "the program reached a native-codegen construct outside the current x86 lowering slice and is rejected instead of emitting a partial instruction prefix",
-        next_step: "use `laniusc check` for diagnostics-only validation or `--emit=wasm` until this construct is covered by x86 lowering",
+        next_step: "use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering",
     },
     UnsupportedFeatureDiagnosticInfo {
         code: "LNC0022",
@@ -5000,7 +5000,7 @@ mod tests {
                 "LNC0017",
                 "x86 backend",
                 "the program reached a native-codegen construct outside the current x86 lowering slice and is rejected instead of emitting a partial instruction prefix",
-                "use `laniusc check` for diagnostics-only validation or `--emit=wasm` until this construct is covered by x86 lowering",
+                "use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering",
             ),
             (
                 "LNC0022",

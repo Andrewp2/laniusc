@@ -134,8 +134,15 @@ uint semantic_lir_compound_assignment_op(uint assign_op)
     return SEMANTIC_LIR_OP_INVALID;
 }
 
+bool semantic_lir_is_short_circuit(HirCore core, HirPayload payload)
+{
+    return (core.kind == HIR_BINARY_EXPR || core.kind == HIR_EXPR) &&
+        (payload.a == HIR_EXPR_AND || payload.a == HIR_EXPR_OR);
+}
+
 uint semantic_lir_row_count(HirCore core, HirPayload payload)
 {
+    if (semantic_lir_is_short_circuit(core, payload)) return 6u;
     if (core.kind == HIR_CONST_ITEM) return 1u;
     if (semantic_lir_is_if(core, payload))
         return payload.d == LIR_INVALID ? 2u : 3u;
@@ -165,6 +172,15 @@ uint semantic_lir_row_count(HirCore core, HirPayload payload)
 uint semantic_lir_local_op(HirCore core, HirPayload payload, uint local_row,
                            uint row_count)
 {
+    if (semantic_lir_is_short_circuit(core, payload))
+    {
+        if (local_row == 0u || local_row == 3u) return SEMANTIC_LIR_OP_VALUE_SET;
+        if (local_row == 1u) return payload.a == HIR_EXPR_OR
+            ? SEMANTIC_LIR_OP_LOGICAL_NOT : SEMANTIC_LIR_OP_VALUE_GET;
+        if (local_row == 2u) return SEMANTIC_LIR_OP_IF_BEGIN;
+        if (local_row == 4u) return SEMANTIC_LIR_OP_CONTROL_END;
+        return SEMANTIC_LIR_OP_VALUE_GET;
+    }
     if (core.kind == HIR_MATCH_EXPR)
     {
         if (local_row + 1u == row_count) return SEMANTIC_LIR_OP_VALUE_GET;

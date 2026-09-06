@@ -24,7 +24,7 @@ private def cacheElabNatLiteral (stx : Syntax) : TermElabM Nat := do
 
 private def cacheElabPack (stx : Syntax) : TermElabM ArtifactPack := do
   let encoded ← cacheElabStringLiteral stx
-  match Json.parse encoded >>= fromJson? with
+  match ← decodeArtifactPackInput encoded with
   | .ok pack => pure pack
   | .error message => throwError "invalid extraction artifact pack: {message}"
 

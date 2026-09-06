@@ -1,5 +1,6 @@
 import Lanius.Extraction.SurfaceDecode
 import Lanius.Extraction.ParseChecker
+import Lanius.Extraction.Reconstruction.References
 
 namespace Lanius.Extraction
 
@@ -15,50 +16,6 @@ have a smaller ID than its parent.
 
 abbrev SurfaceBuild (α : Type) := StateT SurfaceNodeId Option α
 
-/-- Primitive reads used by reconstruction.  The grammar-directed algorithm
-below is parametric in this interface, so list and checked-tree execution share
-one implementation. -/
-@[ext] class ArtifactAccess where
-  node? : Artifact → ParseNodeId → Option ParseNode
-  token? : Artifact → TokenId → Option Token
-  primarySourceRange? : Artifact → Nat → Nat → Option (List (Fin 256))
-
-@[instance_reducible] def ArtifactAccess.canonical : ArtifactAccess where
-  node? := fun artifact nodeId => artifact.parse_nodes[nodeId]?
-  token? := fun artifact tokenId => artifact.tokens[tokenId]?
-  primarySourceRange? := fun artifact start count => do
-    let source ← artifact.sources[0]?
-    let bytes ← decodeBytes source.bytes
-    pure ((bytes.drop start).take count)
-
-instance : ArtifactAccess := ArtifactAccess.canonical
-
-@[instance_reducible] def ArtifactAccess.canonicalFor
-    (artifact : Artifact) : ArtifactAccess where
-  node? := fun _ nodeId => artifact.parse_nodes[nodeId]?
-  token? := fun _ tokenId => artifact.tokens[tokenId]?
-  primarySourceRange? := fun _ start count => do
-    let source ← artifact.sources[0]?
-    let bytes ← decodeBytes source.bytes
-    pure ((bytes.drop start).take count)
-
-@[instance_reducible] def ArtifactAccess.ofView {artifact : Artifact}
-    (view : ArtifactView artifact) : ArtifactAccess where
-  node? := fun _ nodeId => view.node? nodeId
-  token? := fun _ tokenId => view.token? tokenId
-  primarySourceRange? := fun _ start count => view.primarySourceRange start count
-
-theorem ArtifactAccess.ofView_eq_canonicalFor {artifact : Artifact}
-    (view : ArtifactView artifact) :
-    ArtifactAccess.ofView view = ArtifactAccess.canonicalFor artifact := by
-  apply ArtifactAccess.ext
-  · funext _ nodeId
-    exact view.node?_eq nodeId
-  · funext _ tokenId
-    exact view.token?_eq tokenId
-  · funext _ start count
-    exact view.primarySourceRange_eq start count
-
 variable [ArtifactAccess]
 
 def freshSurfaceNodeId : SurfaceBuild SurfaceNodeId := do
@@ -73,28 +30,29 @@ def splitLast : List α → Option (List α × α)
       let (initial, last) ← splitLast tail
       pure (head :: initial, last)
 
-def artifactNode? (artifact : Artifact) (nodeId : ParseNodeId) : Option ParseNode :=
-  ArtifactAccess.node? artifact nodeId
+section References
 
-def artifactProduction? (artifact : Artifact) (nodeId : ParseNodeId) : Option Nat := do
+variable {Ref : Type} [ParseReference Ref]
+
+def artifactNode? (artifact : Artifact) (nodeId : Ref) : Option ParseNode :=
+  ParseReference.node? artifact nodeId
+
+def artifactProduction? (artifact : Artifact) (nodeId : Ref) : Option Nat := do
   pure (← artifactNode? artifact nodeId).production
 
 def artifactChildNode?
-    (artifact : Artifact) (nodeId : ParseNodeId) (index : Nat) : Option ParseNodeId := do
-  let child ← (← artifactNode? artifact nodeId).children[index]?
-  match child with
-  | .node child => some child
-  | .token _ => none
+    (artifact : Artifact) (nodeId : Ref) (index : Nat) : Option Ref :=
+  ParseReference.child? artifact nodeId index
 
 def artifactChildToken?
-    (artifact : Artifact) (nodeId : ParseNodeId) (index : Nat) : Option TokenId := do
+    (artifact : Artifact) (nodeId : Ref) (index : Nat) : Option TokenId := do
   let child ← (← artifactNode? artifact nodeId).children[index]?
   match child with
   | .token token => some token
   | .node _ => none
 
 def artifactExpectProduction
-    (artifact : Artifact) (nodeId : ParseNodeId) (production : Nat) : Option Unit := do
+    (artifact : Artifact) (nodeId : Ref) (production : Nat) : Option Unit := do
   if (← artifactProduction? artifact nodeId) = production then some () else none
 
 def artifactTokenText? (artifact : Artifact) (tokenId : TokenId) : Option String := do
@@ -106,12 +64,12 @@ def artifactTokenText? (artifact : Artifact) (tokenId : TokenId) : Option String
   String.fromUTF8? (tokenBytes.map (fun byte => UInt8.ofNat byte.val)).toByteArray
 
 def reconstructName
-    (artifact : Artifact) (nodeId : ParseNodeId) (child : Nat) : Option SpelledName := do
+    (artifact : Artifact) (nodeId : Ref) (child : Nat) : Option SpelledName := do
   let token ← artifactChildToken? artifact nodeId child
   pure { token, text := ← artifactTokenText? artifact token }
 
 def reconstructArrayLength
-    (artifact : Artifact) (nodeId : ParseNodeId) : Option SurfaceArrayLength := do
+    (artifact : Artifact) (nodeId : Ref) : Option SurfaceArrayLength := do
   match ← artifactProduction? artifact nodeId with
   | 286 =>
       let token ← artifactChildToken? artifact nodeId 0
@@ -121,7 +79,7 @@ def reconstructArrayLength
 
 mutual
   def reconstructPathSegment :
-      Nat → Artifact → ParseNodeId → SurfaceBuild SurfacePathSegment
+      Nat → Artifact → Ref → SurfaceBuild SurfacePathSegment
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         let (name, arguments) ← match ← artifactProduction? artifact nodeId with
@@ -135,12 +93,12 @@ mutual
           | _ => failure
         pure {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           name
           arguments
         }
 
-  def reconstructPath : Nat → Artifact → ParseNodeId → SurfaceBuild SurfacePath
+  def reconstructPath : Nat → Artifact → Ref → SurfaceBuild SurfacePath
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         artifactExpectProduction artifact nodeId 47
@@ -150,12 +108,12 @@ mutual
           (← artifactChildNode? artifact nodeId 1)
         pure {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           value := { segments := first :: rest }
         }
 
   def reconstructPathTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfacePathSegment)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfacePathSegment)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -169,7 +127,7 @@ mutual
         | _ => failure
 
   def reconstructPathTypeArgTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceTypeExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceTypeExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -180,7 +138,7 @@ mutual
         | _ => failure
 
   def reconstructPathTypeArgTailAfterComma :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceTypeExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceTypeExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -194,7 +152,7 @@ mutual
         | _ => failure
 
   def reconstructTypeExpr :
-      Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceTypeExpr
+      Nat → Artifact → Ref → SurfaceBuild SurfaceTypeExpr
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         let value ← match ← artifactProduction? artifact nodeId with
@@ -219,7 +177,7 @@ mutual
               }
               let path : SurfacePath := {
                 id := ← freshSurfaceNodeId
-                parse_node := nodeId
+                parse_node := ParseReference.id nodeId
                 value := { segments := segments ++ [lastSegment] }
               }
               pure (.path path)
@@ -239,31 +197,31 @@ mutual
           | _ => failure
         pure {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           value
         }
 
   def reconstructTypePath :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List (ParseNodeId × SpelledName))
+      Nat → Artifact → Ref → SurfaceBuild (List (ParseNodeId × SpelledName))
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         artifactExpectProduction artifact nodeId 56
         let firstNode ← artifactChildNode? artifact nodeId 0
         artifactExpectProduction artifact firstNode 57
-        let first := (firstNode, ← reconstructName artifact firstNode 0)
+        let first := (ParseReference.id firstNode, ← reconstructName artifact firstNode 0)
         let rest ← reconstructTypePathTail fuel artifact
           (← artifactChildNode? artifact nodeId 1)
         pure (first :: rest)
 
   def reconstructTypePathTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List (ParseNodeId × SpelledName))
+      Nat → Artifact → Ref → SurfaceBuild (List (ParseNodeId × SpelledName))
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
         | 58 =>
             let segment ← artifactChildNode? artifact nodeId 2
             artifactExpectProduction artifact segment 57
-            let entry := (segment, ← reconstructName artifact segment 0)
+            let entry := (ParseReference.id segment, ← reconstructName artifact segment 0)
             let rest ← reconstructTypePathTail fuel artifact
               (← artifactChildNode? artifact nodeId 3)
             pure (entry :: rest)
@@ -271,7 +229,7 @@ mutual
         | _ => failure
 
   def reconstructTypeArgsOpt :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceTypeExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceTypeExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -285,7 +243,7 @@ mutual
         | _ => failure
 
   def reconstructTypeArgTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceTypeExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceTypeExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -296,7 +254,7 @@ mutual
         | _ => failure
 
   def reconstructTypeArgTailAfterComma :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceTypeExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceTypeExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -395,7 +353,7 @@ def reconstructUnaryOperator : Nat → Option SurfaceUnaryOp
   | _ => none
 
 def reconstructTokenLiteral
-    (artifact : Artifact) (nodeId : ParseNodeId)
+    (artifact : Artifact) (nodeId : Ref)
     (production : Nat) : Option SurfaceLiteral := do
   let token ← artifactChildToken? artifact nodeId 0
   let text ← artifactTokenText? artifact token
@@ -407,14 +365,14 @@ def reconstructTokenLiteral
   | _ => none
 
 mutual
-  def reconstructExpr : Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceExpr
+  def reconstructExpr : Nat → Artifact → Ref → SurfaceBuild SurfaceExpr
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         artifactExpectProduction artifact nodeId 104
         reconstructAssign fuel artifact
           (← artifactChildNode? artifact nodeId 0)
 
-  def reconstructAssign : Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceExpr
+  def reconstructAssign : Nat → Artifact → Ref → SurfaceBuild SurfaceExpr
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         artifactExpectProduction artifact nodeId 105
@@ -430,12 +388,12 @@ mutual
               (← artifactChildNode? artifact tail 1)
             pure {
               id := ← freshSurfaceNodeId
-              parse_node := tail
+              parse_node := ParseReference.id tail
               value := .assign operator left right
             }
 
   def reconstructBinaryLayer :
-      Nat → Artifact → ParseNodeId → ReconstructBinaryLayer → SurfaceBuild SurfaceExpr
+      Nat → Artifact → Ref → ReconstructBinaryLayer → SurfaceBuild SurfaceExpr
     | 0, _, _, _ => failure
     | fuel + 1, artifact, nodeId, layer => do
         artifactExpectProduction artifact nodeId layer.headProduction
@@ -447,7 +405,7 @@ mutual
           (← artifactChildNode? artifact nodeId 1) left
 
   def reconstructBinaryTail :
-      Nat → Artifact → ReconstructBinaryLayer → ParseNodeId → SurfaceExpr →
+      Nat → Artifact → ReconstructBinaryLayer → Ref → SurfaceExpr →
         SurfaceBuild SurfaceExpr
     | 0, _, _, _, _ => failure
     | fuel + 1, artifact, layer, nodeId, left => do
@@ -460,13 +418,13 @@ mutual
           | none => reconstructUnary fuel artifact rightNode
         let result : SurfaceExpr := {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           value := .binary operator left right
         }
         reconstructBinaryTail fuel artifact layer
           (← artifactChildNode? artifact nodeId 2) result
 
-  def reconstructUnary : Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceExpr
+  def reconstructUnary : Nat → Artifact → Ref → SurfaceBuild SurfaceExpr
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         let production ← artifactProduction? artifact nodeId
@@ -476,7 +434,7 @@ mutual
               (← artifactChildNode? artifact nodeId 1)
             pure {
               id := ← freshSurfaceNodeId
-              parse_node := nodeId
+              parse_node := ParseReference.id nodeId
               value := .unary operator operand
             }
         | none =>
@@ -485,7 +443,7 @@ mutual
                 (← artifactChildNode? artifact nodeId 0)
             else failure
 
-  def reconstructPostfix : Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceExpr
+  def reconstructPostfix : Nat → Artifact → Ref → SurfaceBuild SurfaceExpr
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         artifactExpectProduction artifact nodeId 160
@@ -495,7 +453,7 @@ mutual
           (← artifactChildNode? artifact nodeId 1) base
 
   def reconstructPostfixTail :
-      Nat → Artifact → ParseNodeId → SurfaceExpr → SurfaceBuild SurfaceExpr
+      Nat → Artifact → Ref → SurfaceExpr → SurfaceBuild SurfaceExpr
     | 0, _, _, _ => failure
     | fuel + 1, artifact, nodeId, base => do
         match ← artifactProduction? artifact nodeId with
@@ -504,7 +462,7 @@ mutual
               (← artifactChildNode? artifact nodeId 1)
             let result : SurfaceExpr := {
               id := ← freshSurfaceNodeId
-              parse_node := nodeId
+              parse_node := ParseReference.id nodeId
               value := .call base arguments
             }
             reconstructPostfixTail fuel artifact
@@ -514,7 +472,7 @@ mutual
               (← artifactChildNode? artifact nodeId 1)
             let result : SurfaceExpr := {
               id := ← freshSurfaceNodeId
-              parse_node := nodeId
+              parse_node := ParseReference.id nodeId
               value := .index base index
             }
             reconstructPostfixTail fuel artifact
@@ -522,7 +480,7 @@ mutual
         | 163 =>
             let result : SurfaceExpr := {
               id := ← freshSurfaceNodeId
-              parse_node := nodeId
+              parse_node := ParseReference.id nodeId
               value := .member base (← reconstructName artifact nodeId 1)
             }
             reconstructPostfixTail fuel artifact
@@ -531,7 +489,7 @@ mutual
         | _ => failure
 
   def reconstructArguments :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -545,7 +503,7 @@ mutual
         | _ => failure
 
   def reconstructArgumentTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -556,7 +514,7 @@ mutual
         | _ => failure
 
   def reconstructArgumentTailAfterComma :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -569,7 +527,7 @@ mutual
         | 170 => pure []
         | _ => failure
 
-  def reconstructPrimary : Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceExpr
+  def reconstructPrimary : Nat → Artifact → Ref → SurfaceBuild SurfaceExpr
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         let production ← artifactProduction? artifact nodeId
@@ -595,12 +553,12 @@ mutual
           | _ => pure (.literal (← reconstructTokenLiteral artifact nodeId production))
         pure {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           value
         }
 
   def reconstructArrayElements :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -614,7 +572,7 @@ mutual
         | _ => failure
 
   def reconstructArrayElementTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -625,7 +583,7 @@ mutual
         | _ => failure
 
   def reconstructArrayElementTailAfterComma :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceExpr)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -639,7 +597,7 @@ mutual
         | _ => failure
 
   def reconstructStructLiteralFields :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceStructFieldValue)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceStructFieldValue)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -653,7 +611,7 @@ mutual
         | _ => failure
 
   def reconstructStructLiteralField :
-      Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceStructFieldValue
+      Nat → Artifact → Ref → SurfaceBuild SurfaceStructFieldValue
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         artifactExpectProduction artifact nodeId 278
@@ -662,13 +620,13 @@ mutual
           (← artifactChildNode? artifact nodeId 2)
         pure {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           name
           value
         }
 
   def reconstructStructLiteralFieldTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceStructFieldValue)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceStructFieldValue)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -679,7 +637,7 @@ mutual
         | _ => failure
 
   def reconstructStructLiteralFieldTailAfterComma :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceStructFieldValue)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceStructFieldValue)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -695,7 +653,7 @@ end
 
 mutual
   def reconstructStatements :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceStmt)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceStmt)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -709,7 +667,7 @@ mutual
         | _ => failure
 
   def reconstructStatement :
-      Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceStmt
+      Nat → Artifact → Ref → SurfaceBuild SurfaceStmt
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         let value ← match ← artifactProduction? artifact nodeId with
@@ -745,12 +703,12 @@ mutual
           | _ => failure
         pure {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           value
         }
 
   def reconstructOptionalType :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (Option SurfaceTypeExpr)
+      Nat → Artifact → Ref → SurfaceBuild (Option SurfaceTypeExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -760,7 +718,7 @@ mutual
         | _ => failure
 
   def reconstructOptionalInitializer :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (Option SurfaceExpr)
+      Nat → Artifact → Ref → SurfaceBuild (Option SurfaceExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -770,7 +728,7 @@ mutual
         | _ => failure
 
   def reconstructOptionalReturn :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (Option SurfaceExpr)
+      Nat → Artifact → Ref → SurfaceBuild (Option SurfaceExpr)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -780,7 +738,7 @@ mutual
         | _ => failure
 
   def reconstructElseTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceStmt)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceStmt)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -791,7 +749,7 @@ mutual
         | _ => failure
 
   def reconstructBlock :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceStmt)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceStmt)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -803,7 +761,7 @@ end
 
 mutual
   def reconstructParameters :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceParameter)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceParameter)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -817,7 +775,7 @@ mutual
         | _ => failure
 
   def reconstructParameter :
-      Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceParameter
+      Nat → Artifact → Ref → SurfaceBuild SurfaceParameter
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         artifactExpectProduction artifact nodeId 62
@@ -826,13 +784,13 @@ mutual
           (← artifactChildNode? artifact nodeId 2)
         pure {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           name
           type_expression := typeExpression
         }
 
   def reconstructParameterTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceParameter)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceParameter)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -843,7 +801,7 @@ mutual
         | _ => failure
 
   def reconstructParameterTailAfterComma :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceParameter)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceParameter)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -857,13 +815,73 @@ mutual
         | _ => failure
 end
 
+mutual
+  def reconstructGenericParameters :
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceGenericParameter)
+    | 0, _, _ => failure
+    | fuel + 1, artifact, nodeId => do
+        match ← artifactProduction? artifact nodeId with
+        | 232 => pure []
+        | 233 =>
+            let first ← reconstructGenericParameter fuel artifact
+              (← artifactChildNode? artifact nodeId 1)
+            let rest ← reconstructGenericParameterTail fuel artifact
+              (← artifactChildNode? artifact nodeId 2)
+            pure (first :: rest)
+        | _ => failure
+
+  def reconstructGenericParameter :
+      Nat → Artifact → Ref → SurfaceBuild SurfaceGenericParameter
+    | 0, _, _ => failure
+    | fuel + 1, artifact, nodeId => do
+        match ← artifactProduction? artifact nodeId with
+        | 234 =>
+            artifactExpectProduction artifact
+              (← artifactChildNode? artifact nodeId 1) 237
+            pure (.type_parameter (← freshSurfaceNodeId)
+              (ParseReference.id nodeId) (← reconstructName artifact nodeId 0))
+        | 235 =>
+            let typeExpression ← reconstructTypeExpr fuel artifact
+              (← artifactChildNode? artifact nodeId 3)
+            pure (.const_parameter (← freshSurfaceNodeId)
+              (ParseReference.id nodeId) (← reconstructName artifact nodeId 1)
+              typeExpression)
+        | _ => failure
+
+  def reconstructGenericParameterTail :
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceGenericParameter)
+    | 0, _, _ => failure
+    | fuel + 1, artifact, nodeId => do
+        match ← artifactProduction? artifact nodeId with
+        | 253 => do
+            reconstructGenericParameterTailAfterComma fuel artifact
+              (← artifactChildNode? artifact nodeId 1)
+        | 254 => pure []
+        | _ => failure
+
+  def reconstructGenericParameterTailAfterComma :
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceGenericParameter)
+    | 0, _, _ => failure
+    | fuel + 1, artifact, nodeId => do
+        match ← artifactProduction? artifact nodeId with
+        | 255 =>
+            let first ← reconstructGenericParameter fuel artifact
+              (← artifactChildNode? artifact nodeId 0)
+            let rest ← reconstructGenericParameterTail fuel artifact
+              (← artifactChildNode? artifact nodeId 1)
+            pure (first :: rest)
+        | 256 => pure []
+        | _ => failure
+end
+
 def reconstructFunction
-    (fuel : Nat) (artifact : Artifact) (nodeId : ParseNodeId)
+    (fuel : Nat) (artifact : Artifact) (nodeId : Ref)
     (isPublic : Bool) : SurfaceBuild SurfaceFunction := do
   artifactExpectProduction artifact nodeId 11
-  artifactExpectProduction artifact (← artifactChildNode? artifact nodeId 2) 232
   artifactExpectProduction artifact (← artifactChildNode? artifact nodeId 7) 36
   let name ← reconstructName artifact nodeId 1
+  let genericParameters ← reconstructGenericParameters fuel artifact
+    (← artifactChildNode? artifact nodeId 2)
   let parameters ← reconstructParameters fuel artifact
     (← artifactChildNode? artifact nodeId 4)
   let returnNode ← artifactChildNode? artifact nodeId 6
@@ -877,14 +895,43 @@ def reconstructFunction
   pure {
     name
     is_public := isPublic
+    generic_parameters := genericParameters
     parameters
     return_type := returnType
     body
   }
 
+def reconstructExternFunction
+    (fuel : Nat) (artifact : Artifact) (nodeId : Ref)
+    (isPublic : Bool) : SurfaceBuild SurfaceExternFunction := do
+  artifactExpectProduction artifact nodeId 15
+  artifactExpectProduction artifact (← artifactChildNode? artifact nodeId 9) 36
+  let abiNode ← artifactChildNode? artifact nodeId 1
+  let abi ← match ← artifactProduction? artifact abiNode with
+    | 32 => pure (some (← reconstructName artifact abiNode 0))
+    | 33 => pure none
+    | _ => failure
+  let parameters ← reconstructParameters fuel artifact
+    (← artifactChildNode? artifact nodeId 6)
+  let returnNode ← artifactChildNode? artifact nodeId 8
+  let returnType ← match ← artifactProduction? artifact returnNode with
+    | 34 => pure (some (← reconstructTypeExpr fuel artifact
+        (← artifactChildNode? artifact returnNode 1)))
+    | 35 => pure none
+    | _ => failure
+  pure {
+    name := ← reconstructName artifact nodeId 3
+    is_public := isPublic
+    generic_parameters := ← reconstructGenericParameters fuel artifact
+      (← artifactChildNode? artifact nodeId 4)
+    abi
+    parameters
+    return_type := returnType
+  }
+
 mutual
   def reconstructStructFields :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceStructField)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceStructField)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -898,7 +945,7 @@ mutual
         | _ => failure
 
   def reconstructStructField :
-      Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceStructField
+      Nat → Artifact → Ref → SurfaceBuild SurfaceStructField
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         artifactExpectProduction artifact nodeId 261
@@ -907,13 +954,13 @@ mutual
           (← artifactChildNode? artifact nodeId 2)
         pure {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           name
           type_expression := typeExpression
         }
 
   def reconstructStructFieldTail :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceStructField)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceStructField)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -924,7 +971,7 @@ mutual
         | _ => failure
 
   def reconstructStructFieldTailAfterComma :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceStructField)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceStructField)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -939,7 +986,7 @@ mutual
 end
 
 def reconstructStruct
-    (fuel : Nat) (artifact : Artifact) (nodeId : ParseNodeId)
+    (fuel : Nat) (artifact : Artifact) (nodeId : Ref)
     (isPublic : Bool) : SurfaceBuild SurfaceStruct := do
   artifactExpectProduction artifact nodeId 258
   artifactExpectProduction artifact (← artifactChildNode? artifact nodeId 2) 232
@@ -952,7 +999,7 @@ def reconstructStruct
   }
 
 mutual
-  def reconstructItem : Nat → Artifact → ParseNodeId → SurfaceBuild SurfaceItem
+  def reconstructItem : Nat → Artifact → Ref → SurfaceBuild SurfaceItem
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         let (isPublic, productionNode, production) ←
@@ -966,6 +1013,8 @@ mutual
         let value ← match production with
           | 4 | 266 => pure (.function
               (← reconstructFunction fuel artifact productionNode isPublic))
+          | 5 | 267 => pure (.extern_function
+              (← reconstructExternFunction fuel artifact productionNode isPublic))
           | 6 =>
               artifactExpectProduction artifact productionNode 43
               let tail ← artifactChildNode? artifact productionNode 1
@@ -1001,12 +1050,12 @@ mutual
           | _ => failure
         pure {
           id := ← freshSurfaceNodeId
-          parse_node := nodeId
+          parse_node := ParseReference.id nodeId
           value
         }
 
   def reconstructItems :
-      Nat → Artifact → ParseNodeId → SurfaceBuild (List SurfaceItem)
+      Nat → Artifact → Ref → SurfaceBuild (List SurfaceItem)
     | 0, _, _ => failure
     | fuel + 1, artifact, nodeId => do
         match ← artifactProduction? artifact nodeId with
@@ -1022,15 +1071,17 @@ end
 
 def reconstructFile
     (fuel : Nat) (artifact : Artifact)
-    (root : ParseNodeId) : SurfaceBuild SurfaceFile := do
+    (root : Ref) : SurfaceBuild SurfaceFile := do
   artifactExpectProduction artifact root 0
   let items ← reconstructItems fuel artifact
     (← artifactChildNode? artifact root 0)
   pure {
     id := ← freshSurfaceNodeId
-    parse_node := root
+    parse_node := ParseReference.id root
     value := { items }
   }
+
+end References
 
 def reconstructArtifactSurfaceWithAccess
     (artifact : Artifact) : Option SurfaceFile := do

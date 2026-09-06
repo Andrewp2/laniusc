@@ -1,0 +1,88 @@
+module verified::artifact_output;
+import verified::output;
+import verified::source_output;
+import verified::semantic_tokens;
+import verified::parse_output;
+import verified::surface_file_output;
+
+// Emit a single-file syntax Artifact, not a Surface/Core semantic embedding.
+// The caller supplies successful extraction prefixes and collected assignments.
+// Paths must be valid UTF-8 bytes; their encoding is decoded by Lean.
+// Partial output must be discarded on failure.
+fn emit_syntax_fields(path:[i32], path_length: i32, source:[i32], source_length: i32,
+    grammar:[i32], grammar_length: i32,
+    raw:[i32], raw_length: i32, raw_count: i32,
+    tokens:[i32], tokens_length: i32, token_count: i32,
+    semantic:[i32], semantic_length: i32,
+    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
+    output:[i32], capacity: i32,) -> i32 {
+    if (node_count <= 0) { return -1; }
+    let header: [i32; 95] = [123,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,65,114,116,105,102,97,99,116,46,101,109,112,116,121,32,119,105,116,104,32,115,111,117,114,99,101,115,32,58,61,32,91,123,32,112,97,116,104,32,58,61,32,83,116,114,105,110,103,46,102,114,111,109,85,84,70,56,33,32,40,66,121,116,101,65,114,114,97,121,46,109,107,32,40,40];
+    let path_end: [i32; 48] = [58,32,76,105,115,116,32,78,97,116,41,46,116,111,65,114,114,97,121,46,109,97,112,32,85,73,110,116,56,46,111,102,78,97,116,41,41,44,32,98,121,116,101,115,32,58,61,32];
+    let raw_start: [i32; 24] = [32,125,93,44,32,114,97,119,95,116,111,107,101,110,115,32,58,61,32,115,111,109,101,32];
+    let tokens_start: [i32; 12] = [44,32,116,111,107,101,110,115,32,58,61,32];
+    let semantic_start: [i32; 26] = [44,32,115,101,109,97,110,116,105,99,95,116,111,107,101,110,95,107,105,110,100,115,32,58,61,32];
+    let nodes_start: [i32; 17] = [44,32,112,97,114,115,101,95,110,111,100,101,115,32,58,61,32];
+    let root_start: [i32; 21] = [44,32,112,97,114,115,101,95,114,111,111,116,32,58,61,32,115,111,109,101,32];
+    let next: i32 = 0;
+    next = verified::output::bytes(output, capacity, next, header, 95);
+    next = verified::source_output::emit_bytes(path, path_length, output, capacity, next);
+    next = verified::output::bytes(output, capacity, next, path_end, 48);
+    next = verified::source_output::emit_bytes(source, source_length, output, capacity, next);
+    next = verified::output::bytes(output, capacity, next, raw_start, 24);
+    next = verified::source_output::emit_tokens(raw, raw_length, raw_count, source_length, 0, output, capacity, next);
+    next = verified::output::bytes(output, capacity, next, tokens_start, 12);
+    next = verified::source_output::emit_tokens(tokens, tokens_length, token_count, source_length, 0, output, capacity, next);
+    next = verified::output::bytes(output, capacity, next, semantic_start, 26);
+    next = verified::semantic_tokens::emit(semantic, semantic_length, token_count, output, capacity, next);
+    next = verified::output::bytes(output, capacity, next, nodes_start, 17);
+    next = verified::parse_output::emit_nodes(grammar, grammar_length, records, records_length,
+        offsets, node_count, token_count, output, capacity, next);
+    next = verified::output::bytes(output, capacity, next, root_start, 21);
+    next = verified::output::natural(output, capacity, next, node_count - 1);
+    return next;
+}
+
+pub fn emit_syntax(path:[i32], path_length: i32, source:[i32], source_length: i32,
+    grammar:[i32], grammar_length: i32,
+    raw:[i32], raw_length: i32, raw_count: i32,
+    tokens:[i32], tokens_length: i32, token_count: i32,
+    semantic:[i32], semantic_length: i32,
+    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
+    output:[i32], capacity: i32,) -> i32 {
+    let next: i32 = emit_syntax_fields(path, path_length, source,
+        source_length, grammar, grammar_length, raw, raw_length, raw_count,
+        tokens, tokens_length, token_count, semantic, semantic_length,
+        records, records_length, offsets, node_count, output, capacity);
+    let end: [i32; 2] = [32,125];
+    return verified::output::bytes(output, capacity, next, end, 2);
+}
+
+// Emit one artifact containing both syntax evidence and the Surface proposal.
+// The Surface term is computed directly from the already-materialized parse
+// tree and can be independently reconstructed by Lean from the syntax fields.
+pub fn emit_surface(path:[i32], path_length: i32, source:[i32], source_length: i32,
+    grammar:[i32], grammar_length: i32,
+    raw:[i32], raw_length: i32, raw_count: i32,
+    tokens:[i32], tokens_length: i32, token_count: i32,
+    semantic:[i32], semantic_length: i32,
+    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
+    expression_arena:[i32], expression_arena_length: i32,
+    type_arena:[i32], type_arena_length: i32, depth: i32,
+    output:[i32], capacity: i32,) -> i32 {
+    let next: i32 = emit_syntax_fields(path, path_length, source,
+        source_length, grammar, grammar_length, raw, raw_length, raw_count,
+        tokens, tokens_length, token_count, semantic, semantic_length,
+        records, records_length, offsets, node_count, output, capacity);
+    let surface_start: [i32; 19] = [44,32,115,117,114,102,97,99,101,32,58,61,32,40,115,111,109,101,32];
+    next = verified::output::bytes(output, capacity, next, surface_start, 19);
+    let surface = verified::surface_file_output::emit(source, source_length,
+        tokens, token_count, records, records_length, offsets, node_count,
+        node_count - 1, expression_arena, expression_arena_length, type_arena,
+        type_arena_length, depth, 0, output, capacity, next);
+    next = verified::surface_file_output::emit_position(surface);
+    if (next <= -1) { return -1; }
+    next = verified::output::byte(output, capacity, next, 41);
+    let end: [i32; 2] = [32,125];
+    return verified::output::bytes(output, capacity, next, end, 2);
+}

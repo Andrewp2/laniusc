@@ -85,11 +85,30 @@ theorem size_eq_length (tree : SeqTree α) {leafCapacity : Nat}
       rw [sizeOk, leftIH leftOk, rightIH rightOk]
       simp
 
-def lookup : SeqTree α → Nat → Option α
+private def lookupImpl : SeqTree α → Nat → Option α
   | .leaf values, index => values[index]?
   | .branch _ _ left right, index =>
-      if index < left.size then left.lookup index
-      else right.lookup (index - left.size)
+      if index < left.size then lookupImpl left index
+      else lookupImpl right (index - left.size)
+
+/-- Explicit recursion for kernel reduction. The proved compiler rewrite below
+uses the executable recursive implementation without changing lookup results. -/
+noncomputable def lookup (tree : SeqTree α) (index : Nat) : Option α :=
+  SeqTree.rec (motive := fun _ => Nat → Option α)
+    (fun values index => values[index]?)
+    (fun _ _ left _ lookupLeft lookupRight index =>
+      if index < left.size then lookupLeft index
+      else lookupRight (index - left.size)) tree index
+
+@[csimp] private theorem lookup_eq_lookupImpl : @lookup = @lookupImpl := by
+  funext α tree index
+  induction tree generalizing index with
+  | leaf values => rfl
+  | branch size height left right ihL ihR =>
+    change (if index < left.size then lookup left index
+      else lookup right (index - left.size)) = _
+    rw [ihL, ihR]
+    rfl
 
 theorem lookup_eq_flatten (tree : SeqTree α) {leafCapacity : Nat}
     (wellFormed : tree.WellFormed leafCapacity) (index : Nat) :
@@ -99,7 +118,8 @@ theorem lookup_eq_flatten (tree : SeqTree α) {leafCapacity : Nat}
   | branch cachedSize cachedHeight left right leftIH rightIH =>
       rcases wellFormed with
         ⟨_, _, leftOk, rightOk, _, _, _, _⟩
-      unfold lookup flatten
+      change (if index < left.size then left.lookup index
+        else right.lookup (index - left.size)) = (left.flatten ++ right.flatten)[index]?
       rw [left.size_eq_length leftOk]
       by_cases inLeft : index < left.flatten.length
       · rw [if_pos inLeft, leftIH leftOk]

@@ -2,7 +2,7 @@ import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Sources
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Tokens.Canonical
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Tokens.Raw
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Tokens.SemanticKinds
-import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.ParseNodes.Assembly
+import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Cache.Parse.Assembly
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Parse.Root
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Surface
 import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Resolutions
@@ -17,7 +17,8 @@ def verifiedFrontendCanonicalTokensArtifact : Artifact := {
   tokens := verifiedFrontendCanonicalTokensTokens
   raw_tokens := verifiedFrontendCanonicalTokensRawTokens
   semantic_token_kinds := verifiedFrontendCanonicalTokensSemanticTokenKinds
-  parse_nodes := verifiedFrontendCanonicalTokensParseNodes
+  -- The artifact and lookup view share one quoted node table.
+  parse_nodes := verifiedFrontendCanonicalTokensParseNodeTree.flatten
   parse_root := verifiedFrontendCanonicalTokensParseRoot
   surface := verifiedFrontendCanonicalTokensSurface
   resolutions := verifiedFrontendCanonicalTokensResolutions

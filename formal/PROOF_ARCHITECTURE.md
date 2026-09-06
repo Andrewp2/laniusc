@@ -8,6 +8,128 @@ First pilot: `verified::lexer::scan_identifier_end`
 
 ## Frontend certificate infrastructure checkpoint (September 1, 2026)
 
+### Fresh-check scope and postorder validation (September 4, 2026)
+
+The current performance goal counts every program-specific artifact, cache,
+and proof module fresh, with only reusable shared infrastructure prebuilt.
+The small incremental-module timings below are historical measurements, not
+the end-to-end time for that goal. `PERFORMANCE_PROFILE.md` records full runs.
+
+Parse-node validation now uses `ParsePostorder.lean`. It scans the original
+node list once, takes completed child nodes from a stack in grammar order,
+checks their identities and spans, and pushes the parent. This removes global
+node-index lookups during this phase. Semantic-token lookups still use the
+authenticated view. A shared kernel-checked soundness theorem proves that
+acceptance implies the original `checkNodesFromParseView` result; no new
+assumption or native-evaluation axiom is introduced.
+
+The stack invariant ties every entry's ID and node to the original artifact.
+The remaining-list invariant ties each upcoming node to its original index.
+These invariants are proved generically, not authenticated by a second
+program-specific trace. The postorder checker may reject DAG layouts accepted
+by the general checker, but all nine current frontend units pass.
+
+Each unit now has one node-validation module. The 43 old node-check chunk
+files and their composition proofs are removed, without forwarding modules.
+That checkpoint had 306 program-specific modules.
+
+### Checked-reference reconstruction (September 4, 2026)
+
+Reconstruction now follows checked child references instead of repeatedly
+looking up parse-node IDs. `Reconstruction/References.lean` defines indexed and
+checked-tree interpretations. `SurfaceReconstruct.lean` contains the single
+grammar implementation; both interpretations still emit ordinary parse-node
+IDs in the same Surface types.
+
+`Reconstruction/Transport.lean` proves exact agreement for every reconstruction
+function, for arbitrary fuel and state counters, when primitive navigation
+agrees. `Reconstruction/Checked.lean` links the artifact's original node list,
+selects its declared root, and transports a successful linked reconstruction
+to the existing `reconstructArtifactSurfaceView` contract. Failed linking does
+not imply indexed failure and cannot produce an acceptance certificate.
+
+All nine units now use this shared entry point. The four formerly sharded
+units each have one reconstruction certificate; 43 reconstruction shard files
+and their obsolete composition helper are removed without forwarding files.
+The complete frontend dependency graph now has 263 program-specific modules.
+The soundness theorem's axiom audit contains only `propext`, `Classical.choice`,
+and `Quot.sound`. Full fresh-check measurements remain in `PERFORMANCE_PROFILE.md`.
+
+Artifact, cache-tree, and origin quotation also share a process-local decoded
+pack cache. It starts empty, retains one successful input, and compares the
+complete input string before reuse. This caches only untrusted JSON decoding;
+quoted constructor terms, executable-code generation, and kernel certificates
+are still processed normally. No program-specific result becomes shared
+prebuilt infrastructure.
+
+Raw-token validation now checks each unit's whole raw trace directly. The
+Symbol and CanonicalTokens split chains no longer provide a needed memory
+boundary; their 16 intermediate files are removed. The predicate and scanner
+are unchanged. Eight units use `kernel_parse_token_raw`; the small TokenScan
+unit retains its whole combined token check.
+That checkpoint had 247 program-specific modules.
+
+Origin checking now reduces each unit's complete `SurfaceOrigins.valid`
+predicate in one certificate. This preserves dense IDs, node ancestry and
+production constraints, exact spelling and token ancestry, and spelling
+coverage. Lexer also retains its independently checked claims-equality
+obligation in the same module. The other units already check claims equality
+in their claims modules. No new origin algorithm or trust assumption is used.
+
+The eight split origin chains, including Lexer's four remaining node-origin
+chunks, are removed without forwarding imports: 37 fewer files. All nine
+units now have one origin-checking module. The full fresh graph contains 210
+program-specific modules and passed in 504.457 seconds, versus 522.790 seconds
+before consolidation. Peak RSS increased from 8.34 to 8.85 GiB. The final
+aggregate theorem still uses only `propext`, `Classical.choice`, and `Quot.sound`.
+
+CanonicalTokens now shares the parse-node data between its artifact and lookup
+view. The artifact's node list is the quoted tree's `flatten`; that tree is
+still generated fresh as program-specific data, and its metadata invariants
+are still checked. The representation proof is reflexive, rather than a
+second reduction comparing duplicated node literals. Exact equality with the
+previous artifact was checked without axioms before migration. The eleven
+duplicate list quotations and their assembly module are removed. This
+checkpoint applied only to CanonicalTokens.
+
+The fresh graph now has 198 modules and passed in 485.476 seconds with the
+same final theorem and axiom audit, using 8.41 GiB peak RSS. This run also
+includes removal of seven unused Lexer node-slice declarations. See
+`PERFORMANCE_PROFILE.md` for the comparison and its limits.
+
+All nine units now share parse-node data between artifact and view.
+`artifact_pack_unit_reusing_nodes%` quotes the other fields once and embeds
+an explicit node-list expression without evaluating Lean code. All eight
+newly migrated artifacts passed exact kernel equality and native comparisons
+of every field against their JSON inputs.
+
+For compact caches, `ArtifactCache.matches_of_sharedNodes` derives the original
+full cache-check result from a representation proof plus the remaining checks.
+It avoids comparing the shared list against itself, but still checks metadata,
+tokens, and source bytes. Focused tests demonstrate that its representation
+premise is necessary and reject corrupted remaining fields.
+
+The full extension passed in 484.393 seconds at 8.53 GiB peak RSS: effectively
+unchanged from 485.476 seconds. Quotation and view checking improved, but other
+checking costs increased. The representation is implemented and verified;
+a meaningful overall speedup from this extension has not yet been demonstrated.
+
+Reconstruction and decoding now obtain their fuel from `ArtifactView.nodeCount`,
+the authenticated tree size. `nodeCount_eq` proves this is exactly the original
+list length. `Reconstruction.checkedView_eq` proves full functional agreement
+with the original length-based computation, including failures. A symbolic
+decoding lemma transports each result back to the original public certificate
+statement without counting the concrete node list during proof assembly.
+All nine units use this path. The fresh check passed in 474.821 seconds with
+198 modules and the same final axiom audit; peak RSS was 8.36 GiB.
+
+Root-shape checking now uses the authenticated view's indexed node lookup and
+cached node/token counts. `rootShapeValidView_eq` proves exact equivalence to
+the original list-based Boolean, including missing roots and the requirement
+that the root be the final node. All nine units still publish certificates
+for the original predicate. The fresh check passed in 469.157 seconds with
+198 modules and the standard axiom audit; peak RSS was 8.63 GiB.
+
 ### Reduction-performance checkpoint (September 2, 2026)
 
 The normal public and incremental target is approximately three seconds, not
@@ -51,17 +173,64 @@ qualified type grounding, ordered-reference validation, and lowering coverage
 have similar opportunities.
 
 Proof-module sharding is measured rather than inferred from theorem count or
-source size. The September 3 TokenScan pilot replaced 26 mostly one-theorem
-modules with nine semantic modules plus four internal reduction shards: one
-raw-token shard and three balanced parse-node shards. Focused cold times were
-2.19 s for the view, 3.09 s and 2.11 s for token checking and assembly, 1.04 s
-for parse metadata, 2.48--2.50 s for each node shard, 0.97 s for parse
-assembly, about 4.1--4.6 s for each of reconstruction, claims, and decoding,
-2.4 s for origins, and under 1.0 s for final assembly. The remaining material
-over-three-second modules are dominated by a single kernel reduction or
-certificate constructor. Splitting those declarations into wrapper files
-would increase the module count without reducing the atomic check. They are
-checker-performance work, not file-sharding work.
+source size. Lean 4.33's `decide +kernel` reduces a closed decision problem once
+in the kernel. It introduces no native-evaluation axiom and is substantially
+faster than `with_unfolding_all rfl` for the generated Surface checks. The
+initial September 3 TokenScan migration used one module per semantic phase: token
+validation 1.0 s, all 651 parse nodes 2.6 s, reconstruction 2.3 s, decoding
+2.3 s, claims 2.6 s, origins 1.7 s, and final assembly under 1.0 s. This
+removed its raw-token reduction module and all three parse-node chunk modules.
+
+The September 4 pass addresses two distinct costs. `kernel_rfl` checks a
+closed `Eq.refl` proof through Lean's ordinary kernel and caches the resulting
+auxiliary theorem, following the mechanism used by `decide +kernel`. It also
+works for exact Surface-tree equalities without a `DecidableEq` instance.
+This avoids performing the same large reduction in both the elaborator and
+the kernel. Negative tests require the tactic to reject false equalities.
+
+Reconstructed output is now the quoted `artifact.surface` value, with a kernel
+equality proving that grammar-directed reconstruction returns exactly that
+value. Previously, five units defined their reconstructed output as
+`(reconstructArtifactSurfaceView artifact view).get proof`. Inspecting that
+definition in claims or decoding reran reconstruction; an opaque success
+proof did not cache its data. Materializing the output reduced Token's claims
+and decoding modules from roughly 20 s and 18 s to 1.3 s and 1.1 s in the first
+focused build. TokenScan's corresponding modules dropped below one second.
+
+The complete Surface rebuild confirmed Token's claims at 0.95 s and decoding
+at 0.85 s. Whole-phase experiments for claims and decoding together took
+2.73 s for CanonicalTokens, 1.76 s for Symbol, and 1.75 s for RawLexer, including
+Lean startup and imports. Their 62 per-item claims/decoding modules have been
+removed; each unit now checks those phases directly in `Claims.lean` and
+`Decode.lean`. This reduces the Surface subtree from 329 to 267 Lean files,
+without forwarding modules or weakened checks.
+
+After consolidation, production claims/decoding module build times were
+2.4/1.7 s for CanonicalTokens, 1.8/1.1 s for Symbol, and 1.7/1.2 s for
+RawLexer. The sequential validation passed all 386 remaining local dependencies
+of the test and Surface targets. The aggregate theorem's axiom audit reports
+only `propext`, `Classical.choice`, and `Quot.sound`; the tactic's closed-tree
+test theorem has no axioms.
+
+Reconstruction remains the largest measured bottleneck: CanonicalTokens has
+a 20 s item check and 26 s assembly, Symbol a 22 s item and 23 s assembly,
+and Lexer about 20 s assembly. Making Lexer's assembly arguments explicit did
+not improve that time and was not retained. These remaining costs are not
+hidden by the faster downstream phase measurements.
+
+These are phase measurements, not a three-second complete frontend rebuild.
+The largest recursive checks still need work. A separate grammar-tree lookup
+experiment changed a whole Token parse check from 8.5 s to 8.1 s and was not
+retained. Native evaluation completes representative large checks in about
+0.9 s, but adds a compiler-trust axiom and remains outside the kernel-clean
+default.
+
+Run `python3 formal/check-surface.py` from the repository root to rebuild the
+Surface aggregate in dependency order with one Lean process at a time. The
+helper reuses Lake's cache. `lake -Kjobs=1` does not constrain build concurrency
+in this project; it only sets an unused package configuration value. For normal
+cached use, the direct target remains
+`lake build Lanius.Extraction.VerifiedFrontend.Surface.Data` from `formal/`.
 
 Accordingly, generated data may retain numbered chunks when quotation size or
 elaboration memory requires them. Authored certificate modules instead group a

@@ -1,0 +1,7 @@
+pub fn identity<T>(value: T) -> T {
+    return value;
+}
+
+pub fn array_data<const N: usize>(values: [i32; N]) -> ptr {
+    return 0;
+}

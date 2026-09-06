@@ -505,6 +505,29 @@ def rootShapeValid
       root.position_start = 0 &&
       root.position_end = tokenCount * 2
 
+/-- The same root-shape condition using authenticated lookup and counts. -/
+def rootShapeValidView (grammar : Grammar) (view : ArtifactView artifact)
+    (rootId : Nat) : Bool :=
+  match view.node? rootId with
+  | none => false
+  | some root =>
+      rootId + 1 = view.nodeCount &&
+      root.nonterminal = grammar.start_nonterminal &&
+      root.position_start = 0 &&
+      root.position_end = view.tokenCount * 2
+
+theorem rootShapeValidView_eq (grammar : Grammar) (view : ArtifactView artifact)
+    (rootId : Nat) :
+    rootShapeValidView grammar view rootId =
+      rootShapeValid grammar artifact.tokens.length artifact.parse_nodes rootId := by
+  unfold rootShapeValidView rootShapeValid
+  rw [view.node?_eq, view.nodeCount_eq, view.tokenCount_eq]
+
+theorem rootShapeValid_of_view (grammar : Grammar) (view : ArtifactView artifact)
+    (rootId : Nat) (accepted : rootShapeValidView grammar view rootId = true) :
+    rootShapeValid grammar artifact.tokens.length artifact.parse_nodes rootId = true := by
+  simpa only [rootShapeValidView_eq] using accepted
+
 inductive ChildrenMatch
     (grammar : Grammar)
     (semanticKinds : List Nat)
@@ -684,6 +707,19 @@ def checkParseArtifact (artifact : Artifact) : Bool :=
   | none => false
   | some rootId =>
       rootShapeValid laniusGrammar artifact.tokens.length artifact.parse_nodes rootId
+
+theorem checkParseArtifact_of_checks (artifact : Artifact) (rootId : Nat)
+    (tokensAccepted : checkTokenArtifact artifact = true)
+    (semanticAccepted : semanticKindsValid laniusGrammar artifact.tokens
+      artifact.semantic_token_kinds = true)
+    (nodesAccepted : checkNodesFrom laniusGrammar artifact.semantic_token_kinds
+      artifact.parse_nodes 0 artifact.parse_nodes = true)
+    (rootFound : artifact.parse_root = some rootId)
+    (rootAccepted : rootShapeValid laniusGrammar artifact.tokens.length
+      artifact.parse_nodes rootId = true) :
+    checkParseArtifact artifact = true := by
+  simp only [checkParseArtifact, tokensAccepted, semanticAccepted, nodesAccepted,
+    rootFound, rootAccepted, Bool.and_self]
 
 def checkParseArtifactView (artifact : Artifact) (view : ArtifactView artifact) : Bool :=
   checkTokenArtifact artifact &&

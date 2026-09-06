@@ -50,6 +50,36 @@ def collectMany (collect : α → Option SurfaceClaims) : List α → Option Sur
   | head :: tail => do
       pure ((← collect head) <+> (← collectMany collect tail))
 
+/-- `collectMany` is a list homomorphism into `SurfaceClaims` whenever both
+input ranges collect successfully.  Generated certificates use this theorem
+to authenticate bounded item ranges independently and assemble the canonical
+whole-file claim stream without reducing the collector again. -/
+theorem collectMany_append_of
+    (collect : α → Option SurfaceClaims) (left right : List α)
+    (leftClaims rightClaims : SurfaceClaims)
+    (leftFound : collectMany collect left = some leftClaims)
+    (rightFound : collectMany collect right = some rightClaims) :
+    collectMany collect (left ++ right) =
+      some (leftClaims <+> rightClaims) := by
+  induction left generalizing leftClaims with
+  | nil =>
+      simp [collectMany] at leftFound
+      subst leftClaims
+      simpa [SurfaceClaims.append] using rightFound
+  | cons head tail inductionHypothesis =>
+      unfold collectMany at leftFound ⊢
+      cases headFound : collect head with
+      | none => simp [headFound] at leftFound
+      | some headClaims =>
+          cases tailFound : collectMany collect tail with
+          | none => simp [headFound, tailFound] at leftFound
+          | some tailClaims =>
+              simp [headFound, tailFound] at leftFound
+              subst leftClaims
+              simp [headFound,
+                inductionHypothesis tailClaims tailFound,
+                SurfaceClaims.append, List.append_assoc]
+
 mutual
   def collectPathSegmentClaimsWithFuel :
       Nat → ParseNodeId → List Nat → SurfacePathSegment → Option SurfaceClaims
@@ -245,15 +275,41 @@ def collectParameterClaimsWithFuel
   pure (children <+>
     SurfaceClaims.node parameter.id parameter.parse_node (some parent) [62])
 
+def collectGenericParameterClaimsWithFuel
+    (fuel : Nat) (parent : ParseNodeId) :
+    SurfaceGenericParameter → Option SurfaceClaims
+  | .type_parameter id parseNode name =>
+      pure (SurfaceClaims.name parseNode name <+>
+        SurfaceClaims.node id parseNode (some parent) [234])
+  | .const_parameter id parseNode name type => do
+      pure (SurfaceClaims.name parseNode name <+>
+        (← collectTypeClaimsWithFuel fuel parseNode type) <+>
+        SurfaceClaims.node id parseNode (some parent) [235])
+
 def collectFunctionClaimsWithFuel
     (fuel : Nat) (owner : ParseNodeId)
     (function : SurfaceFunction) : Option SurfaceClaims := do
+  let genericClaims ← collectMany
+    (collectGenericParameterClaimsWithFuel fuel owner) function.generic_parameters
   let parameterClaims ← collectMany
     (collectParameterClaimsWithFuel fuel owner) function.parameters
   let returnClaims ← function.return_type.mapM (collectTypeClaimsWithFuel fuel owner)
   let bodyClaims ← collectStmtsClaimsWithFuel fuel owner function.body
-  pure (SurfaceClaims.name owner function.name <+> parameterClaims <+>
+  pure (SurfaceClaims.name owner function.name <+> genericClaims <+> parameterClaims <+>
     returnClaims.getD {} <+> bodyClaims)
+
+def collectExternFunctionClaimsWithFuel
+    (fuel : Nat) (owner : ParseNodeId)
+    (function : SurfaceExternFunction) : Option SurfaceClaims := do
+  let genericClaims ← collectMany
+    (collectGenericParameterClaimsWithFuel fuel owner) function.generic_parameters
+  let parameterClaims ← collectMany
+    (collectParameterClaimsWithFuel fuel owner) function.parameters
+  let returnClaims ← function.return_type.mapM (collectTypeClaimsWithFuel fuel owner)
+  let abiClaims := function.abi.map
+    (fun abi => SurfaceClaims.name owner abi) |>.getD {}
+  pure (SurfaceClaims.name owner function.name <+> abiClaims <+> genericClaims <+>
+    parameterClaims <+> returnClaims.getD {})
 
 def collectStructFieldClaimsWithFuel
     (fuel : Nat) (parent : ParseNodeId)
@@ -275,6 +331,8 @@ def itemProductions : SurfaceItemValue → Bool → List Nat
   | .import_path _, _ => [6]
   | .function _, true => [3]
   | .function _, false => [4]
+  | .extern_function _, true => [3]
+  | .extern_function _, false => [5]
   | .constant _ _ _ _, true => [3]
   | .constant _ _ _ _, false => [207]
   | .type_alias _ _ _, true => [3]
@@ -293,6 +351,9 @@ def collectItemClaimsWithFuel
     | .function function =>
         pure (← collectFunctionClaimsWithFuel fuel item.parse_node function,
           function.is_public)
+    | .extern_function function =>
+        pure (← collectExternFunctionClaimsWithFuel fuel item.parse_node function,
+          function.is_public)
     | .constant name isPublic type value =>
         pure (SurfaceClaims.name item.parse_node name <+>
           (← collectTypeClaimsWithFuel fuel item.parse_node type) <+>
@@ -306,6 +367,18 @@ def collectItemClaimsWithFuel
   pure (children <+>
     SurfaceClaims.node item.id item.parse_node (some parent)
       (itemProductions item.value isPublic))
+
+/-- Specialization used by Surface claim certificates. -/
+theorem collectItemClaimsRanges_of
+    (fuel parent : Nat) (left right : List SurfaceItem)
+    (leftClaims rightClaims : SurfaceClaims)
+    (leftFound : collectMany (collectItemClaimsWithFuel fuel parent) left =
+      some leftClaims)
+    (rightFound : collectMany (collectItemClaimsWithFuel fuel parent) right =
+      some rightClaims) :
+    collectMany (collectItemClaimsWithFuel fuel parent) (left ++ right) =
+      some (leftClaims <+> rightClaims) :=
+  collectMany_append_of _ left right leftClaims rightClaims leftFound rightFound
 
 def collectSurfaceClaimsFrom
     (artifact : Artifact) (surface : SurfaceFile) : Option SurfaceClaims := do

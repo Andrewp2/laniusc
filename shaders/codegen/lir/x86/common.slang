@@ -19,8 +19,17 @@ bool x86_semantic_type_is_aggregate(OptIrNodeCore core)
 uint x86_aggregate_value_word_count(OptIrNodeCore core,
                                     OptIrNodeOperands operands)
 {
-    return opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW
-        ? max(core.value_word_count, operands.b) : core.value_word_count;
+    uint op = opt_ir_op(core);
+    if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
+        return max(core.value_word_count, operands.b);
+    // Intrinsics do not have a SemanticLirFunction row from which the x86
+    // lowering can recover an aggregate result width. Keep their value-shape
+    // contract here so every aggregate consumer (counting, scattering, local
+    // copies, and returns) sees the same pointer-and-length pair.
+    if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+        operands.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS)
+        return 2u;
+    return core.value_word_count;
 }
 
 static const uint X86_LIR_TY_FLOAT = 5u;
@@ -226,6 +235,9 @@ uint x86_lir_count(OptIrNodeCore core, OptIrNodeOperands operands)
         (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET &&
          core.type_id == SEMANTIC_LIR_TY_STRING))
         return 2u;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET &&
+        (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u)
+        return 2u;
     return opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW
         ? 1u + core.value_word_count
         : 1u;
@@ -234,6 +246,12 @@ uint x86_lir_count(OptIrNodeCore core, OptIrNodeOperands operands)
 uint x86_abi_type_width(uint type_id)
 {
     return type_id == SEMANTIC_LIR_TY_STRING ? 2u : 1u;
+}
+
+uint x86_abi_param_width(SemanticLirParam param)
+{
+    return (param.value_metadata & SEMANTIC_LIR_VALUE_ARRAY_PAIR) != 0u
+        ? 2u : x86_abi_type_width(param.type_id);
 }
 
 // Declarations use a fixed two-word home. This keeps component locations a

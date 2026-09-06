@@ -39,4 +39,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     InterlockedMin(lowering_status[0u].first_unsupported_hir, source_hir);
     InterlockedMin(lowering_status[0u].first_unsupported_semantic_row, semantic_row);
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, opt_row);
+    InterlockedMin(lowering_status[0u].first_unsupported_target_op,
+        target_lir_core[page_row].op);
+    // Preserve a more specific diagnostic published by an earlier validation
+    // pass. Generic unsupported rows still need a source-addressable reason so
+    // the CLI can identify the missing backend operation instead of reporting
+    // an opaque compiler gap.
+    uint prior_reason;
+    InterlockedCompareExchange(
+        lowering_status[0u].diagnostic_reason,
+        LOWERING_DIAGNOSTIC_NONE,
+        LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION,
+        prior_reason);
+    if (prior_reason == LOWERING_DIAGNOSTIC_NONE)
+    {
+        lowering_status[0u].diagnostic_detail_kind =
+            LOWERING_DIAGNOSTIC_DETAIL_HIR;
+        lowering_status[0u].diagnostic_detail = source_hir;
+    }
 }

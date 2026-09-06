@@ -1,0 +1,32 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Reconstruction
+import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Parse.Token
+import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Parse.Metadata
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+theorem verifiedFrontendDigits_nodes_cached_trace_checked_kernel :
+    checkNodesFromParseView laniusGrammar verifiedFrontendDigitsArtifact verifiedFrontendDigitsParseView 0
+      verifiedFrontendDigitsArtifact.parse_nodes = true := by
+  exact verifiedFrontendDigits_validated_nodes_kernel
+
+theorem verifiedFrontendDigits_nodes_trace_checked_kernel :
+    checkNodesFromView laniusGrammar verifiedFrontendDigitsArtifact verifiedFrontendDigitsView 0
+      verifiedFrontendDigitsArtifact.parse_nodes = true := by
+  change checkNodesFromView laniusGrammar verifiedFrontendDigitsArtifact
+    verifiedFrontendDigitsParseView.artifactView 0 verifiedFrontendDigitsArtifact.parse_nodes = true
+  rw [← checkNodesFromParseView_eq laniusGrammar verifiedFrontendDigitsArtifact verifiedFrontendDigitsParseView]
+  exact verifiedFrontendDigits_nodes_cached_trace_checked_kernel
+
+theorem verifiedFrontendDigitsParseValidTraceKernel : ParseArtifactValid verifiedFrontendDigitsArtifact :=
+  parseArtifactValid_of_view_checks verifiedFrontendDigitsArtifact verifiedFrontendDigitsView
+    verifiedFrontendDigitsRootTraceKernel verifiedFrontendDigits_token_trace_checked_kernel
+    verifiedFrontendDigits_semantic_trace_checked_kernel verifiedFrontendDigits_nodes_trace_checked_kernel
+    verifiedFrontendDigits_root_trace_found_kernel verifiedFrontendDigits_root_trace_shape_kernel
+end Lanius.Extraction
+
+namespace Lanius.Extraction
+
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+
+end Lanius.Extraction

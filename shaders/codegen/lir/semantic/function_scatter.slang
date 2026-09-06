@@ -206,6 +206,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             result.result_type = ref_payload;
     }
     result.result_word_count = semantic_function_result_word_count_by_hir[hir];
+    // The type checker has already followed aliases and published the
+    // canonical aggregate width on the return type node.  Prefer that source
+    // before reconstructing a declaration locally: the surface token may name
+    // a type alias rather than the struct/enum declaration that owns layout.
+    if (result.result_word_count == 0u && return_type_node < hir_count)
+        result.result_word_count =
+            semantic_aggregate_word_count_by_hir[return_type_node];
     if (result.result_word_count == 0u && result_decl_hir < hir_count &&
         compact_hir_core[result_decl_hir].kind == HIR_STRUCT_ITEM)
         result.result_word_count = semantic_struct_word_count_by_hir[result_decl_hir];
@@ -213,12 +220,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         compact_hir_core[result_decl_hir].kind == HIR_ENUM_ITEM)
         result.result_word_count = local_enum_word_count(result_decl_hir, hir_count);
     if (result.result_word_count == 0u && result_decl_hir >= hir_count &&
-        result.result_type >= TY_STRUCT_BASE && result.result_type < TY_ENUM_BASE)
+        result.result_type >= TY_STRUCT_BASE)
     {
+        // Legacy nominal codes are base + global token.  The historical
+        // struct/enum numeric windows overlap once a source pack has more than
+        // 2K tokens, so validate the candidate against the authoritative
+        // token-to-HIR relation instead of rejecting it by range.
         uint name_token = result.result_type - TY_STRUCT_BASE;
         uint struct_hir = valid_token(name_token)
             ? semantic_aggregate_hir_by_name_token[name_token] : LIR_INVALID;
-        if (struct_hir < hir_count)
+        if (struct_hir < hir_count &&
+            compact_hir_core[struct_hir].kind == HIR_STRUCT_ITEM)
             result.result_word_count = semantic_struct_word_count_by_hir[struct_hir];
     }
     if (result.result_word_count == 0u && result_decl_hir >= hir_count &&

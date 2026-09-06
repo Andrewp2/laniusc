@@ -41,11 +41,12 @@ impl std::fmt::Display for LoweringFailure {
         let status = self.status;
         write!(
             formatter,
-            "GPU lowering failed (flags=0x{:x}, semantic row={}, OptIR row={}, source HIR={}, required capacity={}, available capacity={}, diagnostic reason={}, diagnostic detail kind={}, diagnostic detail={})",
+            "GPU lowering failed (flags=0x{:x}, semantic row={}, OptIR row={}, source HIR={}, target opcode={}, required capacity={}, available capacity={}, diagnostic reason={}, diagnostic detail kind={}, diagnostic detail={})",
             status.flags,
             status.first_unsupported_semantic_row,
             status.first_unsupported_opt_row,
             status.first_unsupported_hir,
+            status.first_unsupported_target_op,
             status.required_capacity,
             status.available_capacity,
             status.diagnostic_reason,
@@ -639,6 +640,7 @@ impl GpuLoweringPipeline {
             diagnostic_reason: word(6),
             diagnostic_detail_kind: word(7),
             diagnostic_detail: word(8),
+            first_unsupported_target_op: word(9),
         };
         drop(mapped);
         self.status_readback.unmap();

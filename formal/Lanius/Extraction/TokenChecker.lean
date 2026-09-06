@@ -12,18 +12,29 @@ def decodeByte (value : Nat) : Option Byte :=
 def decodeBytes (values : List Nat) : Option (List Byte) :=
   values.mapM decodeByte
 
+theorem decodeBytes_append (left right : List Nat) :
+    decodeBytes (left ++ right) =
+      match decodeBytes left, decodeBytes right with
+      | some decodedLeft, some decodedRight =>
+          some (decodedLeft ++ decodedRight)
+      | _, _ => none := by
+  simp only [decodeBytes, List.mapM_append]
+  cases List.mapM decodeByte left <;> cases List.mapM decodeByte right <;> rfl
+
 def decodeSingleSource : List SourceFile → Option (List Byte)
   | [source] => decodeBytes source.bytes
   | _ => none
 
-def decodeToken (token : Token) : Option RawToken := do
-  if token.span.file != 0 then none else
-  if token.span.start > token.span.finish then none else
-  let kind ← TokenKind.ofGpuCode token.kind
-  pure ⟨kind, token.span.start, token.span.finish⟩
+def decodeToken : Token → Option RawToken
+  | ⟨code, ⟨file, start, finish⟩⟩ => do
+    if file != 0 then none else
+    if start > finish then none else
+    let kind ← TokenKind.ofGpuCode code
+    pure ⟨kind, start, finish⟩
 
 def decodeTokens (tokens : List Token) : Option (List RawToken) :=
   tokens.mapM decodeToken
+
 
 def checkRawTokenTraceFrom : List Byte → Nat → List RawToken → Bool
   | remaining, _, [] => remaining.isEmpty
@@ -73,6 +84,7 @@ theorem scanRawTokenSegment_append (remaining : List Byte) (offset : Nat)
           | true =>
               simp only [matched, ↓reduceIte]
               exact inductionHypothesis _ _
+
 
 theorem checkRawTokenTraceFrom_eq_segment
     (remaining : List Byte) (offset : Nat) (tokens : List RawToken) :
@@ -160,6 +172,7 @@ def filterRetagTokensFromTrace :
       else { token with kind :=
         canonicalKindFromRemaining remaining width token } :: tail
 
+
 def canonicalizeTokensFromTrace
     (source : List Byte) (tokens : List RawToken) : List RawToken :=
   retagInclusiveRanges (filterRetagTokensFromTrace source 0 tokens)
@@ -216,6 +229,7 @@ def TokenArtifactValid (artifact : Artifact) : Prop :=
     decodeTokens artifact.tokens = some tokens ∧
     lexCanonical source = .success tokens
 
+
 /-- Executable checker for the source/token portion of an extraction artifact. -/
 def checkTokenArtifact (artifact : Artifact) : Bool :=
   if artifact.schema_version != schemaVersion then false
@@ -230,64 +244,6 @@ def checkTokenArtifact (artifact : Artifact) : Bool :=
     | some source, none, some tokens => lexCanonical source == .success tokens
     | _, _, _ => false
 
-/-! Independent raw-trace certificate phases.  Generated artifacts carry a
-complete raw trace, so source decoding, raw scanning, and canonical retagging
-can be reduced in separate modules and checked in parallel. -/
-
-def checkTokenArtifactTraceHeader (artifact : Artifact) : Bool :=
-  artifact.schema_version == schemaVersion &&
-    match decodeSingleSource artifact.sources, artifact.raw_tokens,
-        decodeTokens artifact.tokens with
-    | some _, some rawRows, some _ => (decodeTokens rawRows).isSome
-    | _, _, _ => false
-
-def checkTokenArtifactRawTrace (artifact : Artifact) : Bool :=
-  match decodeSingleSource artifact.sources, artifact.raw_tokens with
-  | some source, some rawRows =>
-      match decodeTokens rawRows with
-      | some rawTokens => checkRawTokenTrace source rawTokens
-      | none => false
-  | _, _ => false
-
-def checkTokenArtifactCanonicalTrace (artifact : Artifact) : Bool :=
-  match decodeSingleSource artifact.sources, artifact.raw_tokens,
-      decodeTokens artifact.tokens with
-  | some source, some rawRows, some tokens =>
-      match decodeTokens rawRows with
-      | some rawTokens =>
-          canonicalizeTokensFromTrace source rawTokens == tokens
-      | none => false
-  | _, _, _ => false
-
-theorem checkTokenArtifact_of_trace_phases {artifact : Artifact}
-    (header : checkTokenArtifactTraceHeader artifact = true)
-    (raw : checkTokenArtifactRawTrace artifact = true)
-    (canonical : checkTokenArtifactCanonicalTrace artifact = true) :
-    checkTokenArtifact artifact = true := by
-  unfold checkTokenArtifactTraceHeader at header
-  simp only [Bool.and_eq_true, beq_iff_eq] at header
-  rcases header with ⟨version, header⟩
-  cases sourceFound : decodeSingleSource artifact.sources with
-  | none => simp [sourceFound] at header
-  | some source =>
-      cases rawRowsFound : artifact.raw_tokens with
-      | none => simp [sourceFound, rawRowsFound] at header
-      | some rawRows =>
-          cases tokensFound : decodeTokens artifact.tokens with
-          | none => simp [sourceFound, rawRowsFound, tokensFound] at header
-          | some tokens =>
-              cases rawTokensFound : decodeTokens rawRows with
-              | none =>
-                  simp [sourceFound, rawRowsFound, tokensFound,
-                    rawTokensFound] at header
-              | some rawTokens =>
-                  unfold checkTokenArtifactRawTrace at raw
-                  unfold checkTokenArtifactCanonicalTrace at canonical
-                  simp only [sourceFound, rawRowsFound, tokensFound,
-                    rawTokensFound] at raw canonical
-                  unfold checkTokenArtifact
-                  simp [version, sourceFound, rawRowsFound, tokensFound,
-                    rawTokensFound, raw, canonical]
 
 theorem checkTokenArtifact_sound {artifact : Artifact}
     (accepted : checkTokenArtifact artifact = true) :

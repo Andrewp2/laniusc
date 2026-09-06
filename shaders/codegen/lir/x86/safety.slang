@@ -23,7 +23,10 @@ uint x86_safety_guard_bytes(X86LirCore core, X86LirOperands operands,
 {
     if ((core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_STORE) &&
         core.local_ordinal != 0xffffffffu)
-        return x86_move32_to_fixed_bytes(locations.b, 1u) + 20u;
+        return x86_move32_to_fixed_bytes(locations.b, 1u) +
+            (core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME
+                ? x86_move32_to_fixed_bytes(locations.length, 0u) + 16u
+                : 20u);
     if (x86_safety_shift(core, operands))
         return x86_move32_to_fixed_bytes(locations.c, 1u) + 17u;
     if (x86_safety_integer_division(core, operands))

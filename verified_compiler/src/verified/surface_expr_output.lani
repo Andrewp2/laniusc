@@ -1,0 +1,347 @@
+module verified::surface_expr_output;
+import verified::output;
+import verified::surface_literal;
+import verified::surface_atoms;
+
+fn operator(production: i32, output:[i32], capacity: i32, position: i32) -> i32 {
+    if (production == 156) {
+        let text: [i32; 10] = [46,112,111,115,105,116,105,118,101,32];
+        return verified::output::bytes(output, capacity, position, text, 10);
+    }
+    if (production == 157) {
+        let text: [i32; 10] = [46,110,101,103,97,116,105,118,101,32];
+        return verified::output::bytes(output, capacity, position, text, 10);
+    }
+    if (production == 158) {
+        let text: [i32; 13] = [46,108,111,103,105,99,97,108,95,110,111,116,32];
+        return verified::output::bytes(output, capacity, position, text, 13);
+    }
+    if (production == 119) {
+        let text: [i32; 12] = [46,108,111,103,105,99,97,108,95,111,114,32];
+        return verified::output::bytes(output, capacity, position, text, 12);
+    }
+    if (production == 122) {
+        let text: [i32; 13] = [46,108,111,103,105,99,97,108,95,97,110,100,32];
+        return verified::output::bytes(output, capacity, position, text, 13);
+    }
+    if (production == 125) {
+        let text: [i32; 8] = [46,98,105,116,95,111,114,32];
+        return verified::output::bytes(output, capacity, position, text, 8);
+    }
+    if (production == 128) {
+        let text: [i32; 9] = [46,98,105,116,95,120,111,114,32];
+        return verified::output::bytes(output, capacity, position, text, 9);
+    }
+    if (production == 131) {
+        let text: [i32; 9] = [46,98,105,116,95,97,110,100,32];
+        return verified::output::bytes(output, capacity, position, text, 9);
+    }
+    if (production == 134) {
+        let text: [i32; 7] = [46,101,113,117,97,108,32];
+        return verified::output::bytes(output, capacity, position, text, 7);
+    }
+    if (production == 135) {
+        let text: [i32; 11] = [46,110,111,116,95,101,113,117,97,108,32];
+        return verified::output::bytes(output, capacity, position, text, 11);
+    }
+    if (production == 138) {
+        let text: [i32; 6] = [46,108,101,115,115,32];
+        return verified::output::bytes(output, capacity, position, text, 6);
+    }
+    if (production == 139) {
+        let text: [i32; 9] = [46,103,114,101,97,116,101,114,32];
+        return verified::output::bytes(output, capacity, position, text, 9);
+    }
+    if (production == 140) {
+        let text: [i32; 12] = [46,108,101,115,115,95,101,113,117,97,108,32];
+        return verified::output::bytes(output, capacity, position, text, 12);
+    }
+    if (production == 141) {
+        let text: [i32; 15] = [46,103,114,101,97,116,101,114,95,101,113,117,97,108,32];
+        return verified::output::bytes(output, capacity, position, text, 15);
+    }
+    if (production == 144) {
+        let text: [i32; 12] = [46,115,104,105,102,116,95,108,101,102,116,32];
+        return verified::output::bytes(output, capacity, position, text, 12);
+    }
+    if (production == 145) {
+        let text: [i32; 13] = [46,115,104,105,102,116,95,114,105,103,104,116,32];
+        return verified::output::bytes(output, capacity, position, text, 13);
+    }
+    if (production == 148) {
+        let text: [i32; 5] = [46,97,100,100,32];
+        return verified::output::bytes(output, capacity, position, text, 5);
+    }
+    if (production == 149) {
+        let text: [i32; 10] = [46,115,117,98,116,114,97,99,116,32];
+        return verified::output::bytes(output, capacity, position, text, 10);
+    }
+    if (production == 152) {
+        let text: [i32; 10] = [46,109,117,108,116,105,112,108,121,32];
+        return verified::output::bytes(output, capacity, position, text, 10);
+    }
+    if (production == 153) {
+        let text: [i32; 8] = [46,100,105,118,105,100,101,32];
+        return verified::output::bytes(output, capacity, position, text, 8);
+    }
+    if (production == 154) {
+        let text: [i32; 11] = [46,114,101,109,97,105,110,100,101,114,32];
+        return verified::output::bytes(output, capacity, position, text, 11);
+    }
+    if (production == 106) {
+        let text: [i32; 5] = [46,115,101,116,32];
+        return verified::output::bytes(output, capacity, position, text, 5);
+    }
+    if (production == 107) {
+        let text: [i32; 5] = [46,97,100,100,32];
+        return verified::output::bytes(output, capacity, position, text, 5);
+    }
+    if (production == 108) {
+        let text: [i32; 10] = [46,115,117,98,116,114,97,99,116,32];
+        return verified::output::bytes(output, capacity, position, text, 10);
+    }
+    if (production == 109) {
+        let text: [i32; 10] = [46,109,117,108,116,105,112,108,121,32];
+        return verified::output::bytes(output, capacity, position, text, 10);
+    }
+    if (production == 110) {
+        let text: [i32; 8] = [46,100,105,118,105,100,101,32];
+        return verified::output::bytes(output, capacity, position, text, 8);
+    }
+    if (production == 111) {
+        let text: [i32; 11] = [46,114,101,109,97,105,110,100,101,114,32];
+        return verified::output::bytes(output, capacity, position, text, 11);
+    }
+    if (production == 112) {
+        let text: [i32; 9] = [46,98,105,116,95,120,111,114,32];
+        return verified::output::bytes(output, capacity, position, text, 9);
+    }
+    if (production == 113) {
+        let text: [i32; 12] = [46,115,104,105,102,116,95,108,101,102,116,32];
+        return verified::output::bytes(output, capacity, position, text, 12);
+    }
+    if (production == 114) {
+        let text: [i32; 13] = [46,115,104,105,102,116,95,114,105,103,104,116,32];
+        return verified::output::bytes(output, capacity, position, text, 13);
+    }
+    if (production == 115) {
+        let text: [i32; 9] = [46,98,105,116,95,97,110,100,32];
+        return verified::output::bytes(output, capacity, position, text, 9);
+    }
+    if (production == 116) {
+        let text: [i32; 8] = [46,98,105,116,95,111,114,32];
+        return verified::output::bytes(output, capacity, position, text, 8);
+    }
+    return -1;
+}
+
+fn reference(index: i32, output:[i32], capacity: i32, position: i32) -> i32 {
+    let next: i32 = verified::output::byte(output, capacity, position, 101);
+    return verified::output::natural(output, capacity, next, index);
+}
+
+fn path_value(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    arena:[i32], index: i32, first_id: i32, output:[i32], capacity: i32, position: i32) -> i32 {
+    let segments: [i32; 16] = [44,123,32,115,101,103,109,101,110,116,115,32,58,61,32,91];
+    let empty_args: [i32; 3] = [44,91,93];
+    let end_segments: [i32; 3] = [93,32,125];
+    let path_expr: [i32; 7] = [44,46,112,97,116,104,32];
+    let opening: [i32; 3] = [226,159,168];
+    let closing: [i32; 3] = [226,159,169];
+    let slot: i32 = 1 + index * 7;
+    let kind: i32 = arena[slot];
+    let next: i32 = verified::output::bytes(output, capacity, position, opening, 3);
+    next = verified::output::natural(output, capacity, next, first_id + index);
+    next = verified::output::byte(output, capacity, next, 44);
+    next = verified::output::natural(output, capacity, next, arena[slot + 1]);
+    if (kind == 4) {
+        if (arena[slot + 4] != -1) { return -1; }
+        next = verified::output::byte(output, capacity, next, 44);
+        next = verified::surface_atoms::name(source, source_length, tokens, token_count,
+            arena[slot + 5], output, capacity, next);
+        next = verified::output::bytes(output, capacity, next, empty_args, 3);
+    } else {
+        let first: i32 = arena[slot + 3];
+        if (first <= -1 || first >= index) { return -1; }
+        if (kind == 6) {
+            if (arena[1 + first * 7] != 5) { return -1; }
+            next = verified::output::bytes(output, capacity, next, path_expr, 7);
+            next = reference(first, output, capacity, next);
+        } else {
+            if (kind != 5) { return -1; }
+            next = verified::output::bytes(output, capacity, next, segments, 16);
+            let current: i32 = first;
+            while (current != -1) {
+                if (current <= -1 || current >= index || arena[1 + current * 7] != 4) { return -1; }
+                if (current != first) { next = verified::output::byte(output, capacity, next, 44); }
+                next = reference(current, output, capacity, next);
+                let following: i32 = arena[1 + current * 7 + 3];
+                if (following != -1 && following <= current) { return -1; }
+                current = following;
+            }
+            next = verified::output::bytes(output, capacity, next, end_segments, 3);
+        }
+    }
+    return verified::output::bytes(output, capacity, next, closing, 3);
+}
+// Emit let-bound nodes in arena order, so children are serialized only once.
+// The result is a single SurfaceExpr term with the existing deep semantics.
+pub fn emit(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
+    arena:[i32], arena_length: i32, root: i32, first_id: i32,
+    output:[i32], capacity: i32, position: i32) -> i32 {
+    if (arena_length <= 0 || first_id <= -1) { return -1; }
+    let count: i32 = arena[0];
+    if (count <= 0 || !(count <= (arena_length - 1) / 7) || root <= -1
+        || root >= count || !(count <= 2147483647 - first_id)) { return -1; }
+    if (arena[1 + root * 7] == 4 || arena[1 + root * 7] == 5
+        || arena[1 + root * 7] == 11) { return -1; }
+    let segment_type: [i32; 43] = [32,58,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,80,97,116,104,83,101,103,109,101,110,116,32,58,61,32];
+    let path_type: [i32; 36] = [32,58,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,80,97,116,104,32,58,61,32];
+    let binding: [i32; 5] = [108,101,116,32,101];
+    let type_name: [i32; 36] = [32,58,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,69,120,112,114,32,58,61,32];
+    let unary: [i32; 8] = [44,46,117,110,97,114,121,32];
+    let binary: [i32; 9] = [44,46,98,105,110,97,114,121,32];
+    let assign: [i32; 9] = [44,46,97,115,115,105,103,110,32];
+    let indexing: [i32; 8] = [44,46,105,110,100,101,120,32];
+    let member: [i32; 9] = [44,46,109,101,109,98,101,114,32];
+    let call: [i32; 7] = [44,46,99,97,108,108,32];
+    let array: [i32; 8] = [44,46,97,114,114,97,121,32];
+    let struct_value: [i32; 15] = [44,46,115,116,114,117,99,116,95,118,97,108,117,101,32];
+    let opening: [i32; 3] = [226,159,168];
+    let closing: [i32; 3] = [226,159,169];
+    let next: i32 = verified::output::byte(output, capacity, position, 40);
+    let index: i32 = 0;
+    while (index != count) {
+        let slot: i32 = 1 + index * 7;
+        next = verified::output::bytes(output, capacity, next, binding, 5);
+        next = verified::output::natural(output, capacity, next, index);
+        if (arena[slot] == 4) { next = verified::output::bytes(output, capacity, next, segment_type, 43); }
+        else {
+            if (arena[slot] == 5) { next = verified::output::bytes(output, capacity, next, path_type, 36); }
+            else {
+                if (arena[slot] == 11) {
+                    let field_type: [i32; 48] = [32,58,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,83,116,114,117,99,116,70,105,101,108,100,86,97,108,117,101,32,58,61,32];
+                    next = verified::output::bytes(output, capacity, next, field_type, 48);
+                } else { next = verified::output::bytes(output, capacity, next, type_name, 36); }
+            }
+        }
+        if (arena[slot] >= 4 && arena[slot] <= 6) {
+            next = path_value(source, source_length, tokens, token_count, arena,
+                index, first_id, output, capacity, next);
+        } else {
+        if (arena[slot] == 0) {
+            if (arena[slot + 3] != -1 || arena[slot + 4] != -1) { return -1; }
+            next = verified::surface_literal::emit(source, source_length, tokens, token_count,
+                records, records_length, offsets, node_count, arena[slot + 1],
+                first_id + index, output, capacity, next);
+        } else {
+            let kind: i32 = arena[slot];
+            let production: i32 = arena[slot + 2];
+            let left: i32 = arena[slot + 3];
+            let right: i32 = arena[slot + 4];
+            if (kind == 11) {
+                if (left <= -1 || left >= index || right != -1) { return -1; }
+                next = verified::output::bytes(output, capacity, next, opening, 3);
+                next = verified::output::natural(output, capacity, next, first_id + index);
+                next = verified::output::byte(output, capacity, next, 44);
+                next = verified::output::natural(output, capacity, next, arena[slot + 1]);
+                next = verified::output::byte(output, capacity, next, 44);
+                next = verified::surface_atoms::name(source, source_length, tokens,
+                    token_count, arena[slot + 5], output, capacity, next);
+                next = verified::output::byte(output, capacity, next, 44);
+                next = reference(left, output, capacity, next);
+                next = verified::output::bytes(output, capacity, next, closing, 3);
+            } else {
+            if (kind == 12) {
+                if (production != 173 || left <= -1 || left >= index
+                    || arena[1 + left * 7] != 5) { return -1; }
+                next = verified::output::bytes(output, capacity, next, opening, 3);
+                next = verified::output::natural(output, capacity, next, first_id + index);
+                next = verified::output::byte(output, capacity, next, 44);
+                next = verified::output::natural(output, capacity, next, arena[slot + 1]);
+                next = verified::output::bytes(output, capacity, next, struct_value, 15);
+                next = reference(left, output, capacity, next);
+                next = verified::output::byte(output, capacity, next, 32);
+                next = verified::output::byte(output, capacity, next, 91);
+                let field: i32 = right;
+                while (field != -1) {
+                    if (field <= -1 || field >= index || arena[1 + field * 7] != 11) { return -1; }
+                    if (field != right) { next = verified::output::byte(output, capacity, next, 44); }
+                    next = reference(field, output, capacity, next);
+                    let following: i32 = arena[1 + field * 7 + 6];
+                    if (following != -1 && following <= field) { return -1; }
+                    field = following;
+                }
+                next = verified::output::byte(output, capacity, next, 93);
+                next = verified::output::bytes(output, capacity, next, closing, 3);
+            } else {
+            if (kind <= 0 || (kind >= 4 && kind != 7 && kind != 8 && kind != 9 && kind != 10)) { return -1; }
+            if (kind != 10 && (left <= -1 || left >= index)) { return -1; }
+            if (kind == 1 && (production <= 155 || production >= 159)) { return -1; }
+            if (kind == 3 && (production <= 105 || production >= 117)) { return -1; }
+            if (kind == 2 && (production <= 118 || production >= 155)) { return -1; }
+            if (kind == 7 && production != 162) { return -1; }
+            if (kind == 8 && production != 163) { return -1; }
+            if (kind == 9 && production != 161) { return -1; }
+            if (kind == 10 && production != 171) { return -1; }
+            if (kind != 1 && kind != 8 && kind != 9 && kind != 10 && (right <= -1 || right >= index)) { return -1; }
+            next = verified::output::bytes(output, capacity, next, opening, 3);
+            next = verified::output::natural(output, capacity, next, first_id + index);
+            next = verified::output::byte(output, capacity, next, 44);
+            next = verified::output::natural(output, capacity, next, arena[slot + 1]);
+            if (kind == 10) { next = verified::output::bytes(output, capacity, next, array, 8); }
+            else {
+            if (kind == 9) { next = verified::output::bytes(output, capacity, next, call, 7); }
+            else {
+            if (kind == 7) { next = verified::output::bytes(output, capacity, next, indexing, 8); }
+            else {
+            if (kind == 8) { next = verified::output::bytes(output, capacity, next, member, 9); }
+            else {
+            if (kind == 1) { next = verified::output::bytes(output, capacity, next, unary, 8); }
+            else {
+                if (kind == 2) { next = verified::output::bytes(output, capacity, next, binary, 9); }
+                else { next = verified::output::bytes(output, capacity, next, assign, 9); }
+            }
+            }
+            }
+            }
+            }
+            if (kind <= 3) { next = operator(arena[slot + 2], output, capacity, next); }
+            if (kind != 10) { next = reference(left, output, capacity, next); }
+            if (kind != 1) {
+                if (kind != 10) { next = verified::output::byte(output, capacity, next, 32); }
+                if (kind == 9 || kind == 10) {
+                    next = verified::output::byte(output, capacity, next, 91);
+                    let argument: i32 = right;
+                    while (argument != -1) {
+                        if (argument <= -1 || argument >= index) { return -1; }
+                        let argument_slot: i32 = 1 + argument * 7;
+                        if (arena[argument_slot] == 4 || arena[argument_slot] == 5) { return -1; }
+                        if (argument != right) { next = verified::output::byte(output, capacity, next, 44); }
+                        next = reference(argument, output, capacity, next);
+                        let following: i32 = arena[argument_slot + 6];
+                        if (following != -1 && following <= argument) { return -1; }
+                        argument = following;
+                    }
+                    next = verified::output::byte(output, capacity, next, 93);
+                } else {
+                if (kind == 8) {
+                    next = verified::surface_atoms::name(source, source_length, tokens,
+                        token_count, arena[slot + 5], output, capacity, next);
+                } else { next = reference(right, output, capacity, next); }
+                }
+            }
+            next = verified::output::bytes(output, capacity, next, closing, 3);
+            }
+            }
+        }
+        }
+        next = verified::output::byte(output, capacity, next, 59);
+        next = verified::output::byte(output, capacity, next, 32);
+        if (next <= -1) { return -1; }
+        index += 1;
+    }
+    next = reference(root, output, capacity, next);
+    return verified::output::byte(output, capacity, next, 41);
+}

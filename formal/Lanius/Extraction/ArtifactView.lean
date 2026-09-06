@@ -33,6 +33,27 @@ def ArtifactCache.matches (cache : ArtifactCache) (artifact : Artifact) : Bool :
   | some source =>
       decodeBytes source.bytes == some cache.primarySourceBytes.flatten
 
+/-- Check the remaining cache obligations when parse-node representation has
+already been established structurally. Metadata is still untrusted. -/
+def ArtifactCache.matchesWithSharedNodes (cache : ArtifactCache) (artifact : Artifact) : Bool :=
+  cache.parseNodes.wellFormed cache.leafCapacity &&
+  cache.tokens.wellFormed cache.leafCapacity &&
+  cache.tokens.flatten == artifact.tokens &&
+  cache.primarySourceBytes.wellFormed cache.leafCapacity &&
+  match artifact.sources[0]? with
+  | none => cache.primarySourceBytes.flatten.isEmpty
+  | some source => decodeBytes source.bytes == some cache.primarySourceBytes.flatten
+
+theorem ArtifactCache.matches_of_sharedNodes (cache : ArtifactCache) (artifact : Artifact)
+    (represented : cache.parseNodes.Represents artifact.parse_nodes)
+    (accepted : cache.matchesWithSharedNodes artifact = true) :
+    cache.matches artifact = true := by
+  change cache.parseNodes.flatten = artifact.parse_nodes at represented
+  unfold ArtifactCache.matches
+  rw [show (cache.parseNodes.flatten == artifact.parse_nodes) = true from by
+    rw [represented]; exact beq_self_eq_true _]
+  simpa only [ArtifactCache.matchesWithSharedNodes, Bool.and_true] using accepted
+
 structure ArtifactView (artifact : Artifact) where
   cache : ArtifactCache
   parseNodesWellFormed : cache.parseNodes.WellFormed cache.leafCapacity
@@ -82,6 +103,25 @@ def ArtifactCache.checked? (cache : ArtifactCache) (artifact : Artifact) :
   if accepted : cache.matches artifact = true then
     some (cache.ofMatches accepted)
   else none
+
+/-- The stored count is usable only through the authenticated view. -/
+def ArtifactView.nodeCount (view : ArtifactView artifact) : Nat :=
+  view.cache.parseNodes.size
+
+theorem ArtifactView.nodeCount_eq (view : ArtifactView artifact) :
+    view.nodeCount = artifact.parse_nodes.length := by
+  unfold ArtifactView.nodeCount
+  rw [view.cache.parseNodes.size_eq_length view.parseNodesWellFormed,
+    view.parseNodesRepresent]
+
+def ArtifactView.tokenCount (view : ArtifactView artifact) : Nat :=
+  view.cache.tokens.size
+
+theorem ArtifactView.tokenCount_eq (view : ArtifactView artifact) :
+    view.tokenCount = artifact.tokens.length := by
+  unfold ArtifactView.tokenCount
+  rw [view.cache.tokens.size_eq_length view.tokensWellFormed,
+    view.tokensRepresent]
 
 def ArtifactView.node? (view : ArtifactView artifact)
     (nodeId : ParseNodeId) : Option ParseNode :=

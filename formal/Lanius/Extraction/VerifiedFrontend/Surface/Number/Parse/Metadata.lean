@@ -1,0 +1,17 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.View.Artifact
+import Lanius.Extraction.VerifiedFrontend.Artifact.Number.Artifact
+import Lanius.Extraction.ParseChunks
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_parse_semantic verifiedFrontendNumber_semantic_trace_checked_kernel for verifiedFrontendNumberArtifact
+end Lanius.Extraction
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_parse_root verifiedFrontendNumber_root_trace_present_kernel,
+  verifiedFrontendNumberRootTraceKernel, verifiedFrontendNumber_root_trace_found_kernel,
+  verifiedFrontendNumber_root_trace_shape_kernel for verifiedFrontendNumberArtifact, verifiedFrontendNumberView
+end Lanius.Extraction

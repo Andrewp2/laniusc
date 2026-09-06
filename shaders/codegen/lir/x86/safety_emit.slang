@@ -1,149 +1,67 @@
+import codegen.lir.x86.emission_common;
 import codegen.lowering_ir;
 import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.safety;
 import gpu_index;
 
-struct Params
+void emit_prologue(inout uint cursor, TargetLirFunction function,
+                   SemanticLirFunction semantic_function, uint saved_mask)
 {
-    uint target_capacity;
-    uint token_capacity;
-    uint function_capacity;
-    uint artifact_capacity;
-    uint target_start;
-    uint page_capacity;
-    uint reserved0;
-    uint reserved1;
-};
-ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> target_lir_total;
-StructuredBuffer<X86LirCore> target_lir_core;
-StructuredBuffer<X86LirOperands> target_lir_operands;
-StructuredBuffer<X86LirLocations> target_lir_locations;
-StructuredBuffer<uint> semantic_function_id_by_hir;
-StructuredBuffer<uint> target_function_count;
-StructuredBuffer<TargetLirFunction> target_functions;
-StructuredBuffer<uint> target_function_index_by_semantic;
-StructuredBuffer<uint> semantic_lir_function_total;
-StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
-StructuredBuffer<SemanticLirParam> semantic_lir_params;
-StructuredBuffer<uint> x86_decl_location_by_token;
-StructuredBuffer<uint> x86_saved_gpr_mask_by_function;
-StructuredBuffer<uint> target_byte_offset;
-StructuredBuffer<X86ArtifactLayout> x86_artifact_layout;
-RWStructuredBuffer<uint> artifact_bytes;
-
-static const uint DISPATCH_X_STRIDE = 16776960u;
-
-void store_byte(uint pos, uint value)
-{
-    if (pos >= gParams.artifact_capacity) return;
-    uint word_i = pos >> 2u;
-    uint shift = (pos & 3u) * 8u;
-    uint mask = 0xffu << shift;
-    uint old_value = artifact_bytes[word_i];
-    for (;;)
+    bool frameless = frameless_function(function, semantic_function);
+    bool stackless = stackless_caller(function, semantic_function);
+    if (stackless)
+        // SysV function entry is eight bytes away from call alignment. The
+        // paired pop uses RCX so a return value already in RAX survives.
+        emit_u8(cursor, 0x50u);
+    else if (!frameless)
     {
-        uint next = (old_value & ~mask) | ((value & 0xffu) << shift);
-        uint prior;
-        InterlockedCompareExchange(artifact_bytes[word_i], old_value, next, prior);
-        if (prior == old_value) return;
-        old_value = prior;
+        emit_u8(cursor, 0x55u);
+        emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0xe5u);
+        uint bytes = frame_size(function, semantic_function, saved_mask);
+        if (bytes != 0u)
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x81u); emit_u8(cursor, 0xecu);
+            emit_u32(cursor, bytes);
+        }
+        uint first_saved_slot = base_frame_slots(function, semantic_function);
+        save_registers(cursor, saved_mask, first_saved_slot);
     }
-}
-
-void emit_u8(inout uint cursor, uint value) { store_byte(cursor++, value); }
-void emit_u32(inout uint cursor, uint value)
-{
-    for (uint i = 0u; i < 4u; i += 1u) emit_u8(cursor, value >> (i * 8u));
-}
-
-uint displacement(uint slot) { return 0u - 8u * (slot + 1u); }
-
-void emit_stack_modrm(inout uint cursor, uint register, uint slot)
-{
-    bool narrow = x86_stack_displacement_bytes(slot) == 1u;
-    emit_u8(cursor, (narrow ? 0x40u : 0x80u) |
-        ((register & 7u) << 3u) | 5u);
-    if (narrow) emit_u8(cursor, displacement(slot));
-    else emit_u32(cursor, displacement(slot));
-}
-
-void move32_register(inout uint cursor, uint source, uint destination)
-{
-    if (source == destination) return;
-    uint rex = 0x40u | (source >= 8u ? 4u : 0u) | (destination >= 8u ? 1u : 0u);
-    if (rex != 0x40u) emit_u8(cursor, rex);
-    emit_u8(cursor, 0x89u);
-    emit_u8(cursor, 0xc0u | ((source & 7u) << 3u) | (destination & 7u));
-}
-
-uint value_slot(uint value_row, TargetLirFunction function)
-{
-    return x86_location_payload(value_row);
-}
-
-void load_value32(inout uint cursor, uint location, uint destination,
-                  TargetLirFunction function)
-{
-    if (x86_location_is_register(location))
-        move32_register(cursor, x86_location_payload(location), destination);
-    else
+    uint sret_shift = semantic_function.result_word_count > 2u ? 1u : 0u;
+    if (sret_shift != 0u)
+        store_stack64(cursor, x86_abi_argument_register(0u),
+            hidden_sret_slot(function, semantic_function));
+    // Materialize incoming arguments from right to left. Leaf functions may
+    // keep early parameters in R8/R9, which are also the fifth and sixth
+    // SysV argument registers; saving the high arguments first prevents the
+    // destination of parameter zero or one from destroying them.
+    for (uint cursor_ordinal = semantic_function.param_count;
+         cursor_ordinal > 0u; cursor_ordinal -= 1u)
     {
-        if (destination >= 8u) emit_u8(cursor, 0x44u);
-        emit_u8(cursor, 0x8bu);
-        emit_stack_modrm(cursor, destination,
-            value_slot(x86_location_payload(location), function));
-    }
-}
-
-uint declaration_location(uint token)
-{
-    uint location = token < gParams.token_capacity
-        ? x86_decl_location_by_token[token] : X86_LOCATION_INVALID;
-    return location == X86_LOCATION_INVALID ? 0u : location;
-}
-
-uint hidden_sret_slot(TargetLirFunction function)
-{
-    return function.flags & X86_TARGET_FUNCTION_FRAME_SLOT_MASK;
-}
-
-uint base_frame_slots(TargetLirFunction function,
-                      SemanticLirFunction semantic_function)
-{
-    return hidden_sret_slot(function) +
-        (semantic_function.result_word_count > 2u ? 1u : 0u);
-}
-
-uint param_store_bytes(TargetLirFunction target_function,
-                       SemanticLirFunction function, uint hidden_sret)
-{
-    uint bytes = hidden_sret != 0u
-        ? x86_stack64_operand_bytes(hidden_sret_slot(target_function)) : 0u;
-    uint abi_ordinal = hidden_sret;
-    for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
-    {
-        SemanticLirParam param = semantic_lir_params[function.param_start + ordinal];
-        uint width = x86_abi_type_width(param.type_id);
-        if (abi_ordinal + width > 6u) break;
+        uint ordinal = cursor_ordinal - 1u;
+        SemanticLirParam param = semantic_lir_params[semantic_function.param_start + ordinal];
+        uint abi_ordinal = sret_shift;
+        for (uint prior = 0u; prior < ordinal; prior += 1u)
+            abi_ordinal += x86_abi_param_width(
+                semantic_lir_params[semantic_function.param_start + prior]);
+        uint width = x86_abi_param_width(param);
         uint destination = declaration_location(param.declaration_id);
-        bytes += x86_move64_from_fixed_bytes(x86_abi_argument_register(abi_ordinal), destination);
-        if (width == 2u)
-            bytes += x86_move64_from_fixed_bytes(x86_abi_argument_register(abi_ordinal + 1u),
-                destination + 1u);
-        abi_ordinal += width;
+        for (uint component = 0u; component < width; component += 1u)
+        {
+            uint incoming = abi_ordinal + component;
+            if (incoming >= 6u)
+            {
+                // Stack arguments begin above the return address (and saved RBP).
+                uint displacement = (incoming - 6u) * 8u + (frameless ? 8u : 16u);
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
+                emit_u8(cursor, frameless || stackless ? 0x84u : 0x85u);
+                if (frameless || stackless) emit_u8(cursor, 0x24u);
+                emit_u32(cursor, displacement);
+            }
+            store_declaration64(cursor, incoming < 6u ? x86_abi_argument_register(incoming) : 0u,
+                destination + component);
+        }
     }
-    return bytes;
-}
-
-uint prologue_bytes(TargetLirFunction target_function,
-                    SemanticLirFunction function, uint saved_mask)
-{
-    uint hidden_sret = function.result_word_count > 2u ? 1u : 0u;
-    return 11u + x86_saved_gpr_frame_bytes(saved_mask,
-            base_frame_slots(target_function, function)) +
-        param_store_bytes(target_function, function, hidden_sret);
 }
 
 void emit_exit(inout uint cursor, uint code)
@@ -160,8 +78,16 @@ void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
         core.local_ordinal != 0xffffffffu)
     {
         load_value32(cursor, locations.b, 1u, function);
-        emit_u8(cursor, 0x81u); emit_u8(cursor, 0xf9u);
-        emit_u32(cursor, core.local_ordinal);
+        if (core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+        {
+            load_value32(cursor, locations.length, 0u, function);
+            emit_u8(cursor, 0x39u); emit_u8(cursor, 0xc1u);
+        }
+        else
+        {
+            emit_u8(cursor, 0x81u); emit_u8(cursor, 0xf9u);
+            emit_u32(cursor, core.local_ordinal);
+        }
         emit_u8(cursor, 0x72u); emit_u8(cursor, 12u);
         emit_exit(cursor, 101u);
         return;
@@ -203,7 +129,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     X86LirCore core = target_lir_core[page_row];
     X86LirOperands operands = target_lir_operands[page_row];
     X86LirLocations locations = target_lir_locations[page_row];
-    if (x86_safety_guard_bytes(core, operands, locations) == 0u) return;
     uint function_id = semantic_function_id_by_hir[core.source_hir];
     uint semantic_count = min(gParams.function_capacity, semantic_lir_function_total[0u]);
     if (function_id >= semantic_count) return;
@@ -214,6 +139,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint saved_mask = x86_saved_gpr_mask_by_function[function_id];
     uint cursor = layout.body_offset + target_byte_offset[row];
     if (row == function.instruction_start)
-        cursor += prologue_bytes(function, semantic_function, saved_mask);
+        emit_prologue(cursor, function, semantic_function, saved_mask);
     emit_guards(cursor, core, operands, locations, function);
 }

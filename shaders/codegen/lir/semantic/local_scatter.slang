@@ -68,14 +68,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         bool match_result = compact_hir_core[hir].kind == HIR_MATCH_EXPR;
         bool match_binding = match_payload_binding(hir);
+        bool short_circuit = semantic_lir_is_short_circuit(
+            compact_hir_core[hir], compact_hir_payload[hir]);
         SemanticLirLocal result;
         result.function_id = function_id;
         result.declaration_id = match_result
             ? gParams.n_tokens + hir + local * hir_count
+            : short_circuit ? gParams.n_tokens + hir
             : match_binding ? semantic_value_decl_by_hir[hir]
             : local == 0u ? compact_hir_payload[hir].b : gParams.n_tokens + hir;
         result.ordinal = row + local - function.local_start;
-        result.type_id = match_result && local == 1u ? SEMANTIC_LIR_TY_POINTER
+        result.type_id = short_circuit ? 2u
+            : match_result && local == 1u ? SEMANTIC_LIR_TY_POINTER
             : local == 0u ? semantic_value_type_by_hir[hir] : 3u;
         semantic_lir_locals[row + local] = result;
     }

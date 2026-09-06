@@ -1,7 +1,0 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.Parse.Nodes.Assembly
-
-namespace Lanius.Extraction
-theorem verifiedFrontendCanonicalTokensParseValidTraceKernel :
-    ParseArtifactValid verifiedFrontendCanonicalTokensArtifact :=
-  verifiedFrontendCanonicalTokensParseValidChunkKernel
-end Lanius.Extraction

@@ -1,0 +1,32 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Reconstruction
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Parse.Token
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.Parse.Metadata
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+theorem verifiedFrontendRawLexer_nodes_cached_trace_checked_kernel :
+    checkNodesFromParseView laniusGrammar verifiedFrontendRawLexerArtifact verifiedFrontendRawLexerParseView 0
+      verifiedFrontendRawLexerArtifact.parse_nodes = true := by
+  exact verifiedFrontendRawLexer_validated_nodes_kernel
+
+theorem verifiedFrontendRawLexer_nodes_trace_checked_kernel :
+    checkNodesFromView laniusGrammar verifiedFrontendRawLexerArtifact verifiedFrontendRawLexerView 0
+      verifiedFrontendRawLexerArtifact.parse_nodes = true := by
+  change checkNodesFromView laniusGrammar verifiedFrontendRawLexerArtifact
+    verifiedFrontendRawLexerParseView.artifactView 0 verifiedFrontendRawLexerArtifact.parse_nodes = true
+  rw [← checkNodesFromParseView_eq laniusGrammar verifiedFrontendRawLexerArtifact verifiedFrontendRawLexerParseView]
+  exact verifiedFrontendRawLexer_nodes_cached_trace_checked_kernel
+
+theorem verifiedFrontendRawLexerParseValidTraceKernel : ParseArtifactValid verifiedFrontendRawLexerArtifact :=
+  parseArtifactValid_of_view_checks verifiedFrontendRawLexerArtifact verifiedFrontendRawLexerView
+    verifiedFrontendRawLexerRootTraceKernel verifiedFrontendRawLexer_token_trace_checked_kernel
+    verifiedFrontendRawLexer_semantic_trace_checked_kernel verifiedFrontendRawLexer_nodes_trace_checked_kernel
+    verifiedFrontendRawLexer_root_trace_found_kernel verifiedFrontendRawLexer_root_trace_shape_kernel
+end Lanius.Extraction
+
+namespace Lanius.Extraction
+
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+
+end Lanius.Extraction

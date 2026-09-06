@@ -1,0 +1,13 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.RawLexer.View
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+
+kernel_surface_reconstruction verifiedFrontendRawLexer_reconstructed_present_kernel,
+  verifiedFrontendRawLexerReconstructedKernel, verifiedFrontendRawLexer_reconstructed_found_kernel,
+  verifiedFrontendRawLexer_validated_nodes_kernel for
+  verifiedFrontendRawLexerArtifact, verifiedFrontendRawLexerView, verifiedFrontendRawLexerParseView
+
+end Lanius.Extraction

@@ -1,0 +1,19 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.CanonicalTokens.View.Artifact
+import Lanius.Extraction.VerifiedFrontend.Artifact.CanonicalTokens.Artifact
+import Lanius.Extraction.ParseChunks
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_parse_semantic verifiedFrontendCanonicalTokens_semantic_trace_checked_kernel for
+  verifiedFrontendCanonicalTokensArtifact
+end Lanius.Extraction
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_parse_root verifiedFrontendCanonicalTokens_root_trace_present_kernel,
+  verifiedFrontendCanonicalTokensRootTraceKernel,
+  verifiedFrontendCanonicalTokens_root_trace_found_kernel,
+  verifiedFrontendCanonicalTokens_root_trace_shape_kernel for verifiedFrontendCanonicalTokensArtifact, verifiedFrontendCanonicalTokensView
+end Lanius.Extraction

@@ -1,0 +1,19 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Symbol.View.Artifact
+import Lanius.Extraction.VerifiedFrontend.Artifact.Symbol.Artifact
+import Lanius.Extraction.ParseChunks
+
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+kernel_parse_semantic verifiedFrontendSymbol_semantic_trace_checked_kernel for
+  verifiedFrontendSymbolArtifact
+end Lanius.Extraction
+
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+kernel_parse_root verifiedFrontendSymbol_root_trace_present_kernel,
+  verifiedFrontendSymbolRootTraceKernel,
+  verifiedFrontendSymbol_root_trace_found_kernel,
+  verifiedFrontendSymbol_root_trace_shape_kernel for verifiedFrontendSymbolArtifact, verifiedFrontendSymbolView
+end Lanius.Extraction

@@ -1,11 +1,12 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Parse.Nodes
+import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.View
 import Lanius.Extraction.KernelSurfacePhases
 
-/-! Surface reconstruction from the verified parse artifact. -/
 namespace Lanius.Extraction
 set_option maxRecDepth 500000
 set_option maxHeartbeats 0
 kernel_surface_reconstruction verifiedFrontendTokenScan_reconstructed_present_kernel,
-  verifiedFrontendTokenScanReconstructedKernel, verifiedFrontendTokenScan_reconstructed_found_kernel for
-  verifiedFrontendTokenScanArtifact, verifiedFrontendTokenScanView
+  verifiedFrontendTokenScanReconstructedKernel,
+  verifiedFrontendTokenScan_reconstructed_found_kernel,
+  verifiedFrontendTokenScan_validated_nodes_kernel for
+  verifiedFrontendTokenScanArtifact, verifiedFrontendTokenScanView, verifiedFrontendTokenScanParseView
 end Lanius.Extraction

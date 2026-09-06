@@ -69,7 +69,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         bool match_result = core.kind == HIR_MATCH_EXPR;
         bool match_binding = match_payload_binding(hir);
         semantic_local_flag[hir] = match_result ? 3u
-            : source_local || match_binding ? 1u : range_for ? 2u : 0u;
+            : source_local || match_binding || semantic_lir_is_short_circuit(core, payload)
+                ? 1u : range_for ? 2u : 0u;
         return;
     }
     semantic_local_flag[hir] = 0u;

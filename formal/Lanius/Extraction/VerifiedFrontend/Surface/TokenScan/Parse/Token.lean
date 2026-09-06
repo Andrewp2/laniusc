@@ -1,22 +1,15 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.TokenScan.Parse.Token.Raw
+import Lanius.Extraction.VerifiedFrontend.Artifact.TokenScan.Artifact
+import Lanius.Extraction.ParseChunks
 
-/-! Canonical-token validation and assembly of the complete token trace
-certificate. -/
+/-! Complete token validation at one kernel-reduction boundary. -/
 
 namespace Lanius.Extraction
 
 set_option maxRecDepth 500000
 set_option maxHeartbeats 0
 
-kernel_parse_token_canonical
-  verifiedFrontendTokenScan_token_canonical_trace_checked_kernel for
-  verifiedFrontendTokenScanArtifact
-
 theorem verifiedFrontendTokenScan_token_trace_checked_kernel :
-    checkTokenArtifact verifiedFrontendTokenScanArtifact = true :=
-  checkTokenArtifact_of_trace_phases
-    verifiedFrontendTokenScan_token_header_trace_checked_kernel
-    verifiedFrontendTokenScan_token_raw_trace_checked_kernel
-    verifiedFrontendTokenScan_token_canonical_trace_checked_kernel
+    checkTokenArtifact verifiedFrontendTokenScanArtifact = true := by
+  decide +kernel
 
 end Lanius.Extraction

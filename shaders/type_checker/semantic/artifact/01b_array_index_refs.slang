@@ -122,9 +122,14 @@ void publish_ref(uint node, uint tag, uint payload)
 
 void publish_array_length(uint node, uint instance)
 {
-    if (!valid_hir(node) || type_instance_len_kind[instance] != TYPE_LEN_LITERAL)
+    if (!valid_hir(node)) return;
+    if (type_instance_kind[instance] == TYPE_INSTANCE_SLICE)
+    {
+        semantic_array_length_by_hir[node] = 0xfffffffeu;
         return;
-    semantic_array_length_by_hir[node] = type_instance_len_payload[instance];
+    }
+    if (type_instance_len_kind[instance] == TYPE_LEN_LITERAL)
+        semantic_array_length_by_hir[node] = type_instance_len_payload[instance];
 }
 
 uint array_element_decl_token(uint instance)

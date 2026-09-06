@@ -1,5 +1,316 @@
 mod common;
 
+#[test]
+fn x86_forwards_aggregate_call_result_directly_from_return() {
+    assert_source_exit(
+        "forward_aggregate_call_result_from_return",
+        r#"
+struct Pair { left: i32, right: i32 }
+
+fn make_pair(left: i32, right: i32) -> Pair {
+    return Pair { left: left, right: right };
+}
+
+fn forward_pair(left: i32, right: i32) -> Pair {
+    return make_pair(left, right);
+}
+
+fn main() -> i32 {
+    let pair: Pair = forward_pair(2, 3);
+    return pair.left * 30 + pair.right;
+}
+"#,
+        63,
+    );
+}
+
+#[test]
+fn x86_forwards_sret_call_result_directly_from_return() {
+    assert_source_exit(
+        "forward_sret_call_result_from_return",
+        r#"
+struct Triple { first: i32, second: i32, third: i32 }
+
+fn make_triple(first: i32, second: i32, third: i32) -> Triple {
+    return Triple { first: first, second: second, third: third };
+}
+
+fn forward_triple(first: i32, second: i32, third: i32) -> Triple {
+    return make_triple(first, second, third);
+}
+
+fn main() -> i32 {
+    let triple: Triple = forward_triple(4, 5, 6);
+    return triple.first * 30 + triple.second * 10 + triple.third;
+}
+"#,
+        176,
+    );
+}
+
+#[test]
+fn x86_forwards_aggregate_result_returned_through_type_alias() {
+    assert_source_exit(
+        "forward_aggregate_result_returned_through_type_alias",
+        r#"
+struct Quad { first: i32, second: i32, third: i32, fourth: i32 }
+type Scan = Quad;
+
+fn make_scan(value: i32) -> Scan {
+    return Quad {
+        first: value,
+        second: value + 1,
+        third: value + 2,
+        fourth: value + 3,
+    };
+}
+
+fn forward_scan(value: i32) -> Scan {
+    return make_scan(value);
+}
+
+fn main() -> i32 {
+    let result: Scan = forward_scan(7);
+    return result.first * 10 + result.fourth;
+}
+"#,
+        80,
+    );
+}
+
+#[test]
+fn x86_source_pack_returns_imported_aggregate_through_type_alias() {
+    let sources = [
+        r#"
+module verified::record;
+
+pub struct Quad { first: i32, second: i32, third: i32, fourth: i32 }
+
+pub fn quad(value: i32) -> Quad {
+    return Quad {
+        first: value,
+        second: value + 1,
+        third: value + 2,
+        fourth: value + 3,
+    };
+}
+
+pub fn score(value: Quad) -> i32 {
+    return value.first * 10 + value.fourth;
+}
+"#,
+        r#"
+module verified::alias_factory;
+
+import verified::record;
+
+pub type Scan = verified::record::Quad;
+
+pub fn make_scan(value: i32) -> Scan {
+    if (value < 0) {
+        return verified::record::quad(0);
+    }
+    return verified::record::quad(value);
+}
+"#,
+        r#"
+module app::main;
+
+import verified::alias_factory;
+import verified::record;
+
+fn main() -> i32 {
+    let result = verified::alias_factory::make_scan(7);
+    return verified::record::score(result);
+}
+"#,
+    ];
+    let elf = common::run_gpu_codegen_with_timeout(
+        "x86 imported aggregate alias result",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("compile imported aggregate alias result");
+    assert_x86_exit_code(
+        "x86 imported aggregate alias result",
+        "x86_imported_aggregate_alias_result",
+        &elf,
+        80,
+    );
+}
+
+#[test]
+fn x86_forwards_sret_call_result_from_control_flow_with_slice() {
+    assert_source_exit(
+        "forward_sret_call_result_from_control_flow_with_slice",
+        r#"
+struct Quad { first: i32, second: i32, third: i32, fourth: i32 }
+
+fn make_quad(value: i32) -> Quad {
+    return Quad {
+        first: value,
+        second: value + 1,
+        third: value + 2,
+        fourth: value + 3,
+    };
+}
+
+fn select_quad(source: [i32], source_length: i32, position: i32) -> Quad {
+    if (position >= source_length) {
+        return make_quad(position);
+    }
+    let next: i32 = source[position];
+    if (next == 101 || next == 69) {
+        return make_quad(position + 10);
+    }
+    if (next != 46) {
+        return make_quad(position + 20);
+    }
+    return make_quad(position + 30);
+}
+
+fn main() -> i32 {
+    let source: [i32; 1] = [7];
+    let result: Quad = select_quad(source, 1, 0);
+    return result.first * 4 + result.second;
+}
+"#,
+        108,
+    );
+}
+
+#[test]
+fn x86_preserves_register_backed_late_call_argument() {
+    assert_source_exit(
+        "register_backed_late_call_argument",
+        r#"
+fn collect(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {
+    return e * 10 + f;
+}
+
+fn caller(token_count: i32) -> i32 {
+    let position: i32 = 0;
+    while (position <= token_count) {
+        let symbol: i32 = 1;
+        if (symbol < 4) {
+            return collect(11, 12, 13, 14, token_count, position);
+        }
+        position += 1;
+    }
+    return 99;
+}
+
+fn main() -> i32 {
+    return caller(2);
+}
+"#,
+        20,
+    );
+}
+
+#[test]
+fn x86_executes_terminal_scan_with_two_fat_slices() {
+    assert_source_exit(
+        "terminal_scan_with_two_fat_slices",
+        r#"
+fn scan_terminal(grammar: [i32], tokens: [i32], token_count: i32,
+                 position: i32, semantic_kind: i32) -> i32 {
+    let token_index: i32 = position / 2;
+    if (token_index >= token_count) {
+        return -1;
+    }
+    let raw_kind: i32 = tokens[token_index];
+    let canonical_kind: i32 = grammar[grammar[7] + semantic_kind];
+    if (raw_kind == canonical_kind) {
+        return position + 2;
+    }
+    return -1;
+}
+
+fn main() -> i32 {
+    let grammar: [i32; 21] = [
+        1, 4, 3, 3, 0, 99, 30, 17, 21, 24, 27, 30, 4, 34, 37, 40, 3,
+        0, 10, 20, 30,
+    ];
+    let tokens: [i32; 2] = [10, 20];
+    return scan_terminal(grammar, tokens, 2, 0, 1);
+}
+"#,
+        2,
+    );
+}
+
+#[test]
+fn x86_executes_stack_arguments() {
+    for count in [7, 8, 9, 12] {
+        let params = (0..count).map(|i| format!("a{i}: i32")).collect::<Vec<_>>().join(",");
+        let arguments = (0..count).map(|i| (i + 1).to_string()).collect::<Vec<_>>().join(",");
+        let expression = (0..count).map(|i| format!("a{i} * {}", i + 1)).collect::<Vec<_>>().join(" + ");
+        let source = format!("fn sum({params}) -> i32 {{ return ({expression}) % 251; }}\nfn main() -> i32 {{ return sum({arguments}); }}");
+        let elf = common::run_gpu_codegen_with_timeout("native stack arguments", move || {
+            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
+        }).expect("compile stack arguments");
+        let expected = (1..=count).map(|i| i * i).sum::<i32>() % 251;
+        assert_x86_exit_code("native stack arguments", "stack_arguments", &elf, expected);
+    }
+}
+
+#[test]
+fn x86_executes_recursive_stack_arguments() {
+    let source = "fn sum(n:i32,a:i32,b:i32,c:i32,d:i32,e:i32,f:i32,g:i32)->i32 { if (n == 0) { return a+b+c+d+e+f+g; } return sum(n-1,a+1,b+2,c+3,d+4,e+5,f+6,g+7); } fn main()->i32 { return sum(3,0,0,0,0,0,0,0); }";
+    let elf = common::run_gpu_codegen_with_timeout("recursive native stack arguments", move || {
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(source))
+    }).expect("compile recursive stack arguments");
+    assert_x86_exit_code("recursive native stack arguments", "recursive_stack_arguments", &elf, 84);
+}
+
+#[test]
+fn x86_preserves_aggregate_pointer_in_stack_argument() {
+    assert_source_exit(
+        "aggregate_pointer_stack_argument",
+        r#"
+struct Pair { left: i32, right: i32 }
+
+fn make_pair(left: i32, right: i32) -> Pair {
+    return Pair { left: left, right: right };
+}
+
+fn score(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32,
+         pair: Pair) -> i32 {
+    return a + b + c + d + e + f + pair.left * 10 + pair.right;
+}
+
+fn main() -> i32 {
+    return score(1, 2, 3, 4, 5, 6, make_pair(7, 8));
+}
+"#,
+        99,
+    );
+}
+
+#[test]
+fn x86_copies_inferred_aggregate_return_into_local() {
+    assert_source_exit(
+        "inferred_aggregate_return_local",
+        r#"
+struct Pair { left: i32, right: i32 }
+
+fn make_pair(left: i32, right: i32) -> Pair {
+    return Pair { left: left, right: right };
+}
+
+fn score(pair: Pair) -> i32 {
+    return pair.left * 10 + pair.right;
+}
+
+fn main() -> i32 {
+    let pair = make_pair(7, 8);
+    return score(pair);
+}
+"#,
+        78,
+    );
+}
+
 use laniusc_compiler::compiler::{
     CompileError,
     GpuCompiler,
@@ -217,7 +528,7 @@ fn compile_source(context: &str, source: &str) -> Vec<u8> {
     common::run_gpu_codegen_with_timeout(context, move || {
         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
     })
-    .unwrap_or_else(|err| panic!("{context} should compile to x86_64: {err}"))
+    .unwrap_or_else(|err| panic!("{context} should compile to x86_64: {err:?}"))
 }
 
 fn assert_source_exit(name: &str, source: &str, expected: i32) {
@@ -616,141 +927,17 @@ fn main() -> Pair {
 }
 
 #[test]
-fn x86_rejects_helper_parameter_beyond_sysv_registers_with_diagnostic() {
-    let source = r#"
-fn too_many_params(
-    a: i32,
-    b: i32,
-    c: i32,
-    d: i32,
-    e: i32,
-    f: i32,
-    g: i32,
-) -> i32 {
-    return g;
-}
-
-fn main() {
-    return 0;
-}
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout("x86 helper parameter count", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect_err("helper parameter lists beyond SysV register coverage should fail closed");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "parameter-count rejection should use the stable x86 diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "parameter-count rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 parameter register count")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the native parameter-register boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            assert!(
-                label
-                    .source_line
-                    .as_deref()
-                    .is_some_and(|line| line.contains("g: i32")),
-                "diagnostic should point at the first unsupported helper parameter: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 parameter-count diagnostic, got {other:?}"),
-    }
+fn x86_accepts_unused_stack_parameter_helper() {
+    assert_source_exit("unused_stack_helper", "fn helper(a:i32,b:i32,c:i32,d:i32,e:i32,f:i32,g:i32)->i32 { return g; } fn main()->i32 { return 0; }", 0);
 }
 
 #[test]
-fn x86_source_pack_rejects_imported_helper_parameter_beyond_sysv_registers_with_diagnostic() {
-    let sources = [
-        r#"
-module helpers::wide;
-
-pub fn too_many_params(
-    a: i32,
-    b: i32,
-    c: i32,
-    d: i32,
-    e: i32,
-    f: i32,
-    g: i32,
-) -> i32 {
-    return g;
-}
-"#,
-        r#"
-module app::main;
-
-import helpers::wide;
-
-fn main() {
-    return 0;
-}
-"#,
-    ];
-
-    let err =
-        common::run_gpu_codegen_with_timeout("x86 source-pack helper parameter count", move || {
-            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        })
-        .expect_err(
-            "source-pack helper parameter lists beyond SysV register coverage should fail closed",
-        );
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "source-pack parameter-count rejection should use the stable x86 diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "source-pack parameter-count rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 parameter register count")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the native parameter-register boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("source-pack x86 diagnostic should include a primary source label");
-            assert_eq!(label.path.display().to_string(), "<source pack file 0>");
-            assert!(
-                label
-                    .source_line
-                    .as_deref()
-                    .is_some_and(|line| line.contains("g: i32")),
-                "diagnostic should point at the first unsupported imported helper parameter: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected source-pack x86 parameter-count diagnostic, got {other:?}"),
-    }
+fn x86_executes_imported_stack_parameter_helper() {
+    let sources = ["module helpers::wide; pub fn last(a:i32,b:i32,c:i32,d:i32,e:i32,f:i32,g:i32)->i32 { return g; }", "module app::main; import helpers::wide; fn main()->i32 { return helpers::wide::last(1,2,3,4,5,6,7); }"];
+    let elf = common::run_gpu_codegen_with_timeout("imported stack parameters", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    }).expect("compile imported stack parameters");
+    assert_x86_exit_code("imported stack parameters", "imported_stack_parameters", &elf, 7);
 }
 
 #[test]
@@ -1197,130 +1384,17 @@ fn main() -> i32 {
 }
 
 #[test]
-fn x86_rejects_aggregate_return_call_that_exceeds_sysv_register_slots() {
-    let source = r#"
-fn pair6(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> [i32; 2] {
-    return [a + e, b + f];
-}
-
-fn main() {
-    let pair: [i32; 2] = pair6(1, 2, 3, 4, 5, 6);
-    return pair[0] + pair[1];
-}
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout(
-        "x86 aggregate return call register slots",
-        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
-    )
-    .expect_err("aggregate-return calls must reserve a hidden SysV return-pointer slot");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "aggregate-return ABI rejection should use the stable backend diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "aggregate-return ABI rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic.message.contains("unsupported x86 call ABI")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the total SysV register-slot boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the aggregate-return call source line");
-            assert!(
-                source_line.contains("pair6(1, 2, 3, 4, 5, 6)"),
-                "diagnostic should point at the call that needs six explicit args plus a hidden return pointer: {message}"
-            );
-            let call_start = source_line
-                .find("pair6")
-                .map(|offset| offset + 1)
-                .expect("fixture should contain the aggregate-return call");
-            let call_end = source_line
-                .find(");")
-                .map(|offset| offset + 2)
-                .expect("fixture should contain the aggregate-return call terminator");
-            assert!(
-                (call_start..=call_end).contains(&label.column),
-                "diagnostic column should fall inside the capacity-exceeding call expression: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 aggregate-return ABI diagnostic, got {other:?}"),
+fn x86_executes_aggregate_return_with_stack_arguments() {
+    for length in [2, 3] {
+        let values = if length == 2 { "a+e,b+f" } else { "a+e,b+f,c+d" };
+        let source = format!("fn pair(a:i32,b:i32,c:i32,d:i32,e:i32,f:i32)->[i32; {length}] {{ return [{values}]; }} fn main()->i32 {{ let p:[i32; {length}]=pair(1,2,3,4,5,6); return p[0]+p[1]; }}");
+        assert_source_exit(&format!("aggregate_stack_arguments_{length}"), &source, 14);
     }
 }
 
 #[test]
-fn x86_direct_call_with_seven_parameters_reaches_native_parameter_boundary() {
-    let source = r#"
-fn sum7(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) -> i32 {
-    return a + b + c + d + e + f + g;
-}
-
-fn main() {
-    return sum7(1, 2, 3, 4, 5, 6, 7);
-}
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout("x86 direct call parameter count", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect_err("seven-parameter direct callees should fail before native x86 bytes are returned");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "wide direct calls should now reach the native x86 diagnostic boundary: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "wide direct calls should no longer fail in frontend call resolution: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 parameter register count")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the remaining native parameter-register boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the unsupported parameter source line");
-            assert!(
-                source_line.contains("g: i32"),
-                "diagnostic should point at the first unsupported direct-callee parameter: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        CompileError::GpuTypeCheck(message) => {
-            panic!("expected native x86 diagnostic, got raw GPU type-check error: {message}")
-        }
-        other => panic!("expected x86 parameter-count diagnostic, got {other:?}"),
-    }
+fn x86_executes_seven_parameter_direct_call() {
+    assert_source_exit("seven_parameter_direct_call", "fn sum(a:i32,b:i32,c:i32,d:i32,e:i32,f:i32,g:i32)->i32 { return a+b+c+d+e+f+g; } fn main()->i32 { return sum(1,2,3,4,5,6,7); }", 28);
 }
 
 #[test]
@@ -2266,290 +2340,127 @@ fn main() -> bool {
 }
 
 #[test]
-fn x86_rejects_short_circuit_rhs_call_before_eager_lowering() {
-    let cases = [
-        (
-            "and",
-            r#"
-fn rhs() -> bool {
-    return true;
+fn x86_executes_conditional_rhs_calls() {
+    for (name, expression, expected) in [
+        ("skip_and", "false && trap()", 0),
+        ("skip_or", "true || trap()", 1),
+        ("take_and", "true && yes()", 1),
+        ("take_or", "false || yes()", 1),
+        ("nested", "(false && trap()) || (true && yes())", 1),
+        ("argument", "false && identity(trap())", 0),
+        ("conditional_argument", "identity(false && trap())", 0),
+    ] {
+        let source = format!(
+            "fn trap() -> bool {{ let a: [i32; 1] = [0]; let i: i32 = 4; return a[i] == 0; }}\nfn yes() -> bool {{ let n: i32 = 2; while (n > 0) {{ n = n - 1; }} return n == 0; }}\nfn identity(value: bool) -> bool {{ return value; }}\nfn main() -> bool {{ return {expression}; }}"
+        );
+        assert_source_exit(name, &source, expected);
+    }
 }
 
-fn main() -> bool {
-    let left: bool = false;
+#[test]
+fn x86_executes_short_circuit_in_array_and_loop() {
+    assert_source_exit("short_circuit_in_array_and_loop", r#"
+fn rhs() -> bool {
+    let a: [i32; 1] = [0];
+    let index: i32 = 4;
+    return a[index] == 0;
+}
+fn main() -> i32 {
+    let values: [bool; 2] = [false && rhs(), true];
+    let n: i32 = 0;
+    while (n < 3 && values[1]) { n = n + 1; }
+    if (values[0]) { return 99; }
+    return n;
+}
+"#, 3);
+}
+
+#[test]
+fn x86_executes_short_circuit_rhs_call() {
+    assert_source_exit(
+        "x86_executes_short_circuit_rhs_call",
+        r#"
+fn rhs() -> bool {
+    let values: [i32; 1] = [0];
+    let index: i32 = 4;
+    return values[index] == 0;
+}
+fn check(left: bool, index: i32) -> bool {
+    let values: [i32; 2] = [1, 2];
     return left && rhs();
 }
-"#,
-            "    return left && rhs();",
-        ),
-        (
-            "or",
-            r#"
-fn rhs() -> bool {
-    return false;
-}
-
 fn main() -> bool {
-    let left: bool = true;
-    return left || rhs();
+    return check(false, 4);
 }
 "#,
-            "    return left || rhs();",
-        ),
-    ];
-
-    for (name, source, expected_line) in cases {
-        let source = source.to_owned();
-        let err = common::run_gpu_codegen_with_timeout(
-            &format!("x86 short-circuit RHS call {name}"),
-            move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
-        )
-        .expect_err("RHS calls in short-circuit expressions should fail until conditional call lowering exists");
-
-        match err {
-            CompileError::Diagnostic(diagnostic) => {
-                let rendered = diagnostic.render();
-                assert_eq!(
-                    diagnostic.code, "LNC0017",
-                    "short-circuit call rejection should use the stable backend diagnostic: {rendered}"
-                );
-                assert_eq!(
-                    diagnostic.category, "native codegen",
-                    "short-circuit call rejection should stay in the native-codegen category: {rendered}"
-                );
-                assert!(
-                    diagnostic
-                        .message
-                        .contains("unsupported x86 short-circuit call operand")
-                        && rendered.contains("native x86 backend"),
-                    "diagnostic should name the short-circuit call boundary: {rendered}"
-                );
-                let label = diagnostic
-                    .primary_label
-                    .as_ref()
-                    .expect("x86 diagnostic should include a primary source label");
-                let source_line = label
-                    .source_line
-                    .as_deref()
-                    .expect("x86 diagnostic should include the short-circuit source line");
-                assert_eq!(
-                    source_line, expected_line,
-                    "diagnostic should point at the short-circuit expression: {rendered}"
-                );
-                let call_start_column = source_line
-                    .find("rhs")
-                    .map(|column| column + 1)
-                    .expect("fixture should contain the RHS call token");
-                let call_end_column = source_line
-                    .find("();")
-                    .map(|column| column + 3)
-                    .expect("fixture should contain the RHS call expression");
-                assert!(
-                    (call_start_column..=call_end_column).contains(&label.column),
-                    "diagnostic column should fall inside the RHS call: {rendered}"
-                );
-            }
-            CompileError::GpuCodegen(message) => {
-                panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-            }
-            other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-        }
-    }
+        0,
+    );
 }
 
 #[test]
-fn x86_rejects_nested_short_circuit_rhs_call_before_eager_lowering() {
-    let source = r#"
+fn x86_executes_nested_short_circuit_rhs_call() {
+    assert_source_exit(
+        "x86_executes_nested_short_circuit_rhs_call",
+        r#"
 fn rhs() -> bool {
-    return true;
+    let values: [i32; 1] = [0];
+    let index: i32 = 4;
+    return values[index] == 0;
 }
-
-fn main() -> bool {
-    let left: bool = false;
+fn check(left: bool, index: i32) -> bool {
+    let values: [i32; 2] = [1, 2];
     return left && (rhs() == true);
 }
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout(
-        "x86 nested short-circuit RHS call",
-        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
-    )
-    .expect_err(
-        "nested RHS calls in short-circuit expressions should fail until conditional call lowering exists",
+fn main() -> bool {
+    return check(false, 4);
+}
+"#,
+        0,
     );
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let rendered = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "nested short-circuit call rejection should use the stable backend diagnostic: {rendered}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "nested short-circuit call rejection should stay in the native-codegen category: {rendered}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 short-circuit call operand")
-                    && rendered.contains("native x86 backend"),
-                "diagnostic should name the short-circuit call boundary: {rendered}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the short-circuit source line");
-            assert_eq!(
-                source_line, "    return left && (rhs() == true);",
-                "diagnostic should point at the short-circuit expression: {rendered}"
-            );
-            let call_start_column = source_line
-                .find("rhs")
-                .map(|column| column + 1)
-                .expect("fixture should contain the RHS call token");
-            let call_end_column = source_line
-                .find("()")
-                .map(|column| column + 2)
-                .expect("fixture should contain the RHS call expression");
-            assert!(
-                (call_start_column..=call_end_column).contains(&label.column),
-                "diagnostic column should fall inside the nested RHS call: {rendered}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
 }
 
 #[test]
-fn x86_rejects_deeply_nested_short_circuit_rhs_call_without_depth_limit() {
-    let source = r#"
+fn x86_executes_deeply_nested_short_circuit_rhs_call_past_eight_levels() {
+    assert_source_exit(
+        "x86_executes_deeply_nested_short_circuit_rhs_call_past_eight_levels",
+        r#"
 fn rhs() -> bool {
-    return true;
+    let values: [i32; 1] = [0];
+    let index: i32 = 4;
+    return values[index] == 0;
 }
-
-fn main() -> bool {
-    let left: bool = false;
+fn check(left: bool, index: i32) -> bool {
+    let values: [i32; 2] = [1, 2];
     return left && ((((((((rhs() == true) == true) == true) == true) == true) == true) == true) == true);
 }
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout(
-        "x86 deeply nested short-circuit RHS call",
-        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
-    )
-    .expect_err("short-circuit RHS call rejection should not depend on a fixed parent depth");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let rendered = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "deep short-circuit call rejection should use the stable backend diagnostic: {rendered}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 short-circuit call operand")
-                    && rendered.contains("native x86 backend"),
-                "diagnostic should name the short-circuit call boundary: {rendered}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the short-circuit source line");
-            let call_start_column = source_line
-                .find("rhs")
-                .map(|column| column + 1)
-                .expect("fixture should contain the RHS call token");
-            let call_end_column = source_line
-                .find("()")
-                .map(|column| column + 2)
-                .expect("fixture should contain the RHS call expression");
-            assert!(
-                (call_start_column..=call_end_column).contains(&label.column),
-                "diagnostic column should fall inside the deeply nested RHS call: {rendered}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+fn main() -> bool {
+    return check(false, 4);
+}
+"#,
+        0,
+    );
 }
 
 #[test]
-fn x86_rejects_short_circuit_rhs_trapping_arithmetic_before_eager_lowering() {
-    let source = r#"
-fn main() -> bool {
-    let left: bool = false;
-    return left && ((12 / 0) == 0);
+fn x86_executes_short_circuit_rhs_trapping_arithmetic() {
+    assert_source_exit(
+        "x86_executes_short_circuit_rhs_trapping_arithmetic",
+        r#"
+fn rhs() -> bool {
+    let values: [i32; 1] = [0];
+    let index: i32 = 4;
+    return values[index] == 0;
 }
-"#
-    .to_owned();
-
-    let err = common::run_gpu_codegen_with_timeout(
-        "x86 short-circuit RHS trapping arithmetic",
-        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
-    )
-    .expect_err(
-        "RHS arithmetic that needs trap-aware lowering should fail until conditional lowering exists",
+fn check(left: bool, index: i32) -> bool {
+    let values: [i32; 2] = [1, 2];
+    return left && ((12 / index) == 0);
+}
+fn main() -> bool {
+    return check(false, 0);
+}
+"#,
+        0,
     );
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let rendered = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "short-circuit arithmetic rejection should use the stable backend diagnostic: {rendered}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "short-circuit arithmetic rejection should stay in native codegen: {rendered}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 short-circuit trapping operand")
-                    && rendered.contains("native x86 backend"),
-                "diagnostic should identify the conditional trap-lowering boundary: {rendered}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the short-circuit source line");
-            let operand_start = source_line
-                .find("12 / 0")
-                .map(|column| column + 1)
-                .expect("fixture should contain the trapping RHS operand");
-            let operand_end = operand_start + "12 / 0".len();
-            assert!(
-                (operand_start..=operand_end).contains(&label.column),
-                "diagnostic column should fall inside the RHS trapping operand: {rendered}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
 }
 
 #[test]
@@ -2576,72 +2487,25 @@ fn main() -> i32 {
 }
 
 #[test]
-fn x86_rejects_short_circuit_rhs_dynamic_index_before_eager_lowering() {
-    let source = r#"
-fn check(index: i32) -> bool {
+fn x86_executes_short_circuit_rhs_dynamic_index() {
+    assert_source_exit(
+        "x86_executes_short_circuit_rhs_dynamic_index",
+        r#"
+fn rhs() -> bool {
+    let values: [i32; 1] = [0];
+    let index: i32 = 4;
+    return values[index] == 0;
+}
+fn check(left: bool, index: i32) -> bool {
     let values: [i32; 2] = [1, 2];
-    return true || (values[index] == 2);
+    return left && (values[index] == 2);
 }
-
 fn main() -> bool {
-    return check(1);
+    return check(false, 4);
 }
-"#
-    .to_owned();
-
-    let err =
-        common::run_gpu_codegen_with_timeout("x86 short-circuit RHS dynamic index", move || {
-            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-        })
-        .expect_err(
-            "RHS dynamic indexing should fail until short-circuit lowering can avoid eager loads",
-        );
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let rendered = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "short-circuit index rejection should use the stable backend diagnostic: {rendered}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "short-circuit index rejection should stay in native codegen: {rendered}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 short-circuit trapping operand")
-                    && rendered.contains("native x86 backend"),
-                "diagnostic should identify the conditional trap-lowering boundary: {rendered}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the short-circuit source line");
-            assert_eq!(
-                source_line, "    return true || (values[index] == 2);",
-                "diagnostic should point at the short-circuit RHS index expression: {rendered}"
-            );
-            let index_start = source_line
-                .find("index")
-                .map(|column| column + 1)
-                .expect("fixture should contain the dynamic index operand");
-            let index_end = index_start + "index".len();
-            assert!(
-                (index_start..=index_end).contains(&label.column),
-                "diagnostic column should fall inside the dynamic index operand: {rendered}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+"#,
+        0,
+    );
 }
 
 #[test]
@@ -4767,68 +4631,97 @@ fn main() {
 }
 
 #[test]
-fn x86_rejects_unsized_slice_parameter_index_with_diagnostic() {
-    let source = r#"
-fn first(values: [i32], index: i32) -> i32 {
+fn x86_executes_and_forwards_fat_slice_parameters() {
+    assert_source_exit(
+        "fat_slice_forwarding",
+        r#"
+fn get(values: [i32], index: i32) -> i32 {
+    return values[index];
+}
+
+fn forward(values: [i32], index: i32) -> i32 {
+    return get(values, index);
+}
+
+fn main() {
+    let values: [i32; 3] = [7, 8, 19];
+    return forward(values, 2);
+}
+"#,
+        19,
+    );
+}
+
+#[test]
+fn x86_executes_first_fat_slice_element() {
+    assert_source_exit(
+        "fat_slice_first",
+        r#"
+fn get(values: [i32], index: i32) -> i32 { return values[index]; }
+fn main() {
+    let values: [i32; 3] = [7, 8, 19];
+    return get(values, 0);
+}
+"#,
+        7,
+    );
+}
+
+#[test]
+fn x86_executes_multiple_fat_slices_with_stack_argument() {
+    assert_source_exit(
+        "multiple_fat_slices_with_stack_argument",
+        r#"
+fn inspect(first: [i32], first_length: i32, second: [i32],
+           second_length: i32, index: i32) -> i32 {
+    return first[0] + second[index] + first_length + second_length;
+}
+
+fn main() -> i32 {
+    let first: [i32; 2] = [10, 20];
+    let second: [i32; 3] = [30, 40, 50];
+    return inspect(first, 2, second, 3, 1);
+}
+"#,
+        55,
+    );
+}
+
+#[test]
+fn x86_traps_fat_slice_parameter_out_of_bounds() {
+    assert_source_exit(
+        "fat_slice_bounds",
+        r#"
+fn get(values: [i32], index: i32) -> i32 {
     return values[index];
 }
 
 fn main() {
-    return 0;
+    let values: [i32; 3] = [7, 8, 19];
+    return get(values, 3);
 }
-"#
-    .to_owned();
+"#,
+        101,
+    );
+}
 
-    let err = common::run_gpu_codegen_with_timeout("x86 unsized slice index", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect_err("unsized slice parameter indexes should fail before native memory access");
+#[test]
+fn x86_mutates_through_fat_slice_parameter() {
+    assert_source_exit(
+        "fat_slice_mutation",
+        r#"
+fn set(values: [i32], index: i32, value: i32) {
+    values[index] = value;
+}
 
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            let message = diagnostic.render();
-            assert_eq!(
-                diagnostic.code, "LNC0017",
-                "slice-index rejection should use the stable x86 backend diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "slice-index rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic
-                    .message
-                    .contains("unsupported x86 dynamic array index")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the dynamic index boundary: {message}"
-            );
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("x86 diagnostic should include a primary source label");
-            let source_line = label
-                .source_line
-                .as_deref()
-                .expect("x86 diagnostic should include the indexed slice source line");
-            assert_eq!(
-                source_line, "    return values[index];",
-                "diagnostic should point at the unsupported slice index: {message}"
-            );
-            let index_start = source_line
-                .find("index")
-                .map(|column| column + 1)
-                .expect("fixture should contain the index operand");
-            let index_end = index_start + "index".len();
-            assert!(
-                (index_start..=index_end).contains(&label.column),
-                "diagnostic column should fall inside the index operand: {message}"
-            );
-        }
-        CompileError::GpuCodegen(message) => {
-            panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-        }
-        other => panic!("expected x86 diagnostic rejection, got {other:?}"),
-    }
+fn main() {
+    let values: [i32; 3] = [7, 8, 19];
+    set(values, 1, 23);
+    return values[1];
+}
+"#,
+        23,
+    );
 }
 
 #[test]
@@ -8052,6 +7945,7 @@ fn main() {
 #[test]
 fn x86_executes_std_io_print_i32_stdout() {
     let sources = [
+        include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/std/io.lani"),
         r#"
 module app::main;
@@ -8397,6 +8291,7 @@ fn main() {
 #[test]
 fn x86_executes_source_pack_std_io_text_write() {
     let sources = [
+        include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/std/io.lani"),
         r#"
 module app::main;
@@ -8564,6 +8459,210 @@ fn main() -> i32 {
             )
         });
     }
+}
+
+#[test]
+fn x86_i32_array_raw_view_is_packed_for_host_reads() {
+    let sources = [
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("../stdlib/std/io.lani"),
+        r#"
+module app::main;
+
+import core::mem;
+import std::io;
+
+fn main() -> i32 {
+    let bytes: [i32; 2] = [1145258561, 1212630597];
+    let pointer: ptr = core::mem::i32_array_data_ptr(bytes);
+    let written: i32 = std::io::write_stdout(pointer, 8);
+    if (written != 8) { return 1; }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 packed i32 array raw view host read",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("packed i32 array raw view should compile to x86_64");
+
+    let output = common::run_x86_64_elf_output(
+        "x86 packed i32 array raw view host read",
+        "x86_i32_array_raw_view_host_read",
+        &bytes,
+    );
+    common::assert_command_success("x86 packed i32 array raw view host read", &output);
+    assert_eq!(output.stdout, b"ABCDEFGH");
+}
+
+#[test]
+fn x86_i32_slice_from_raw_parts_preserves_pointer_length_and_mutation() {
+    let sources = [
+        include_str!("../stdlib/core/mem.lani"),
+        r#"
+module app::main;
+
+import core::mem;
+
+fn increment(value: i32) -> i32 {
+    return value + 1;
+}
+
+fn main() -> i32 {
+    let values: [i32; 3] = [4, 5, 6];
+    let pointer: ptr = core::mem::i32_array_data_ptr(values);
+    let length: i32 = 3;
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(pointer, length);
+    view[1] = 9;
+    if (view[0] != 4 || view[2] != 6) { return 1; }
+    if (values[1] != 9) { return 2; }
+    return increment(view[1]);
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 i32 slice from raw parts", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("raw-parts i32 slice should compile to x86_64");
+
+    let output = common::run_x86_64_elf_output(
+        "x86 i32 slice from raw parts",
+        "x86_i32_slice_from_raw_parts",
+        &bytes,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(10),
+        "raw-parts slice failed: {output:?}"
+    );
+}
+
+#[test]
+fn x86_string_data_ptr_exposes_literal_bytes_without_corrupting_prologue() {
+    let sources = [
+        include_str!("../stdlib/core/mem.lani"),
+        r#"
+module app::main;
+
+import core::mem;
+
+fn main() -> i32 {
+    let pointer: ptr = core::mem::string_data_ptr("0123");
+    let words: [i32] = core::mem::i32_slice_from_raw_parts(pointer, 1);
+    return words[0] & 255;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 string data pointer", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("string data pointer should compile to x86_64");
+
+    let output =
+        common::run_x86_64_elf_output("x86 string data pointer", "x86_string_data_ptr", &bytes);
+    assert_eq!(
+        output.status.code(),
+        Some(48),
+        "string data pointer failed: {output:?}"
+    );
+}
+
+#[test]
+fn x86_i32_array_raw_view_reflects_host_writes_into_language_indexing() {
+    let sources = [
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("../stdlib/std/io.lani"),
+        r#"
+module app::main;
+
+import core::mem;
+import std::io;
+
+fn main() -> i32 {
+    let bytes: [i32; 2] = [0, 0];
+    let pointer: ptr = core::mem::i32_array_data_ptr(bytes);
+    let read: i32 = std::io::read_stdin(pointer, 8);
+    if (read != 8) { return 1; }
+    if (bytes[0] != 1145258561) { return 2; }
+    if (bytes[1] != 1212630597) { return 3; }
+    return 0;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 packed i32 array raw view host write",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("host writes through an i32 array raw view should compile to x86_64");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::{Command, Stdio};
+
+        let executable = common::TempArtifact::new(
+            "laniusc_i32_raw_view",
+            "host_write",
+            Some("elf"),
+        );
+        std::fs::write(executable.path(), &bytes).expect("write raw-view test executable");
+        let mut permissions = std::fs::metadata(executable.path())
+            .expect("stat raw-view test executable")
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(executable.path(), permissions)
+            .expect("chmod raw-view test executable");
+        let mut child = Command::new(executable.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run raw-view host-write executable");
+        child
+            .stdin
+            .as_mut()
+            .expect("raw-view stdin pipe")
+            .write_all(b"ABCDEFGH")
+            .expect("write raw-view stdin");
+        let output = child.wait_with_output().expect("wait for raw-view executable");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+}
+
+#[test]
+fn x86_mutates_packed_i32_array_locally() {
+    assert_source_exit(
+        "packed_i32_array_local_mutation",
+        r#"
+fn main() -> i32 {
+    let values: [i32; 3] = [7, 8, 19];
+    values[1] = 23;
+    return values[1];
+}
+"#,
+        23,
+    );
+}
+
+#[test]
+fn x86_mutates_and_reads_packed_i32_slice_in_callee() {
+    assert_source_exit(
+        "packed_i32_slice_callee_mutation",
+        r#"
+fn set_and_read(values: [i32], index: i32, value: i32) -> i32 {
+    values[index] = value;
+    return values[index];
+}
+
+fn main() -> i32 {
+    let values: [i32; 3] = [7, 8, 19];
+    return set_and_read(values, 1, 23);
+}
+"#,
+        23,
+    );
 }
 
 #[test]

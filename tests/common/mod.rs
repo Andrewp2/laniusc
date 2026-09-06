@@ -665,6 +665,7 @@ fn run_wasm_main_with_node_output_with_virtual_files(
 const fs = require('fs');
 (async () => {
   let stdout = '';
+  const stdoutDecoder = new (require('string_decoder').StringDecoder)('utf8');
   let instance = null;
   const laniusArgs = ['program', 'LANIUS_TEST_ENV'];
   const cwd = '/lanius/test/cwd';
@@ -1032,7 +1033,7 @@ const fs = require('fs');
         const start = ptr >>> 0;
         const count = len >>> 0;
         const bytes = new Uint8Array(memory.buffer, start, count);
-        stdout += Buffer.from(bytes).toString('utf8');
+        stdout += stdoutDecoder.write(Buffer.from(bytes));
         return count | 0;
       }
     }
@@ -1069,7 +1070,7 @@ const fs = require('fs');
     }));
     fs.writeFileSync(dumpPath, JSON.stringify({ exit_code: status | 0, files }));
   }
-  process.stdout.write(stdout);
+  process.stdout.write(stdout + stdoutDecoder.end());
 })().catch((err) => {
   console.error(err && err.stack ? err.stack : err);
   process.exit(1);

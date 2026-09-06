@@ -1,4 +1,28 @@
-import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Assembly.Trace
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Parse
+import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Origins
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+
+kernel_surface_assembly verifiedFrontendLexerReconstructionTraceKernel,
+  verifiedFrontendLexer_reconstruction_trace_found_kernel,
+  verifiedFrontendLexer_surface_trace_present_kernel,
+  verifiedFrontendLexerSurfaceTraceKernel,
+  verifiedFrontendLexer_surface_trace_found_kernel,
+  verifiedFrontendLexerCheckedSurfaceTraceKernel,
+  verifiedFrontendLexer_surface_trace_valid_kernel for
+  verifiedFrontendLexerArtifact, verifiedFrontendLexerView,
+  verifiedFrontendLexerOrigins, verifiedFrontendLexer_parse_view_checked_kernel,
+  verifiedFrontendLexerReconstructedKernel,
+  verifiedFrontendLexer_reconstructed_found_kernel,
+  verifiedFrontendLexerClaimsTraceKernel,
+  verifiedFrontendLexer_claims_trace_found_kernel,
+  verifiedFrontendLexer_origin_trace_claims_equal_kernel,
+  verifiedFrontendLexer_origins_trace_checked_kernel
+
+end Lanius.Extraction
 
 namespace Lanius.Extraction
 

@@ -96,3 +96,22 @@ pub fn select<T>(condition: bool, when_true: T, when_false: T) -> T {
 pub fn i32_array_data_ptr<const N: usize>(values: [i32; N]) -> ptr {
     return 0;
 }
+
+// Unsafe raw-storage boundary. The returned pointer borrows `values` and must
+// not outlive its backing storage.
+pub fn i32_slice_data_ptr(values: [i32]) -> ptr {
+    return 0;
+}
+
+// Unsafe raw-storage boundary. The returned pointer borrows the immutable
+// decoded UTF-8 storage of `value` and must not outlive it.
+pub fn string_data_ptr(value: str) -> ptr {
+    return 0;
+}
+
+// Unsafe raw-storage boundary. The caller must provide at least `length`
+// aligned i32 elements whose lifetime covers every use of the returned slice.
+// Native code represents the result as the pair (data, length).
+pub fn i32_slice_from_raw_parts(data: ptr, length: i32) -> [i32] {
+    return [];
+}

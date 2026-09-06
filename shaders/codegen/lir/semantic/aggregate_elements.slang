@@ -48,7 +48,7 @@ static const uint TY_ENUM_BASE = 6144u;
 uint lir_for_hir(uint node, uint hir_count)
 {
     return node != LIR_INVALID && node < hir_count && semantic_lir_count[node] != 0u
-        ? semantic_lir_offset[node]
+        ? semantic_lir_offset[node] + semantic_lir_count[node] - 1u
         : LIR_INVALID;
 }
 
@@ -88,7 +88,9 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
         if (materialized != 0u) return materialized;
     }
     uint array_length = semantic_array_length[node];
-    if (array_length != LIR_INVALID) return array_length;
+    if (array_length != LIR_INVALID &&
+        array_length != SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+        return array_length;
     uint projected = semantic_aggregate_word_count[node];
     if (projected != 0u) return projected;
     uint token = aggregate_decl_token_for_hir(node, hir_count);

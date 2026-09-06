@@ -72,10 +72,14 @@ uint register_location(uint function_id, uint ordinal, uint type_id,
 }
 
 uint assign_declaration(uint function_id, uint ordinal, uint type_id,
-                        uint declaration_token, uint incoming_register)
+                        uint declaration_token, uint incoming_register,
+                        bool stack_parameter)
 {
-    uint location = register_location(function_id, ordinal, type_id,
-        declaration_token, incoming_register);
+    // Incoming stack arguments must not occupy a still-live ABI input
+    // register while the prologue materializes register arguments.
+    uint location = stack_parameter ? X86_LOCATION_INVALID :
+        register_location(function_id, ordinal, type_id,
+            declaration_token, incoming_register);
     if (location != X86_LOCATION_INVALID) return location;
     // Stack declaration homes use stable source ordinals, keeping allocation
     // constant-time and parallel. Dead locals are filtered before this point;
@@ -100,6 +104,15 @@ bool local_needs_home(uint declaration_token)
     return x86_declaration_needs_home(analysis, definition_live);
 }
 
+bool function_has_pair_parameter(SemanticLirFunction function)
+{
+    for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
+        if (x86_abi_param_width(
+                semantic_lir_params[function.param_start + ordinal]) > 1u)
+            return true;
+    return false;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -113,11 +126,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             SemanticLirFunction function =
                 semantic_lir_functions[param.function_id];
+            bool pair_parameters = function_has_pair_parameter(function);
+            uint abi_ordinal = function.result_word_count > 2u ? 1u : 0u;
+            for (uint prior = 0u; prior < param.ordinal; prior += 1u)
+                abi_ordinal += x86_abi_param_width(
+                    semantic_lir_params[function.param_start + prior]);
             x86_decl_location_by_token[param.declaration_id] =
                 assign_declaration(param.function_id, param.ordinal,
                     param.type_id, param.declaration_id,
-                    x86_abi_argument_register(
-                        x86_parameter_abi_ordinal(function, param.ordinal)));
+                    abi_ordinal < 6u ? x86_abi_argument_register(abi_ordinal) : X86_LOCATION_INVALID,
+                    // A hidden return pointer shifts the incoming register
+                    // sequence. Keep those parameters in stack homes until
+                    // allocation supports a parallel prologue move schedule.
+                    abi_ordinal >= 6u || function.result_word_count > 2u ||
+                    pair_parameters);
         }
     }
 
@@ -134,7 +156,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             x86_decl_location_by_token[local.declaration_id] =
                 assign_declaration(local.function_id, ordinal,
                     local.type_id, local.declaration_id,
-                    X86_LOCATION_INVALID);
+                    X86_LOCATION_INVALID, false);
         }
     }
 }

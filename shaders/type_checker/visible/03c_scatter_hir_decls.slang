@@ -39,7 +39,7 @@ RWStructuredBuffer<uint> hir_visible_decl_node;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint LANGUAGE_SYMBOL_COUNT = 68u;
+static const uint LANGUAGE_SYMBOL_COUNT = 71u;
 static const uint MATCH_PAYLOAD_BIT = 0x80000000u;
 
 static const uint HIR_FN = 3u;

@@ -1,0 +1,11 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.View
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_surface_reconstruction verifiedFrontendNumber_reconstructed_present_kernel,
+  verifiedFrontendNumberReconstructedKernel, verifiedFrontendNumber_reconstructed_found_kernel,
+  verifiedFrontendNumber_validated_nodes_kernel for
+  verifiedFrontendNumberArtifact, verifiedFrontendNumberView, verifiedFrontendNumberParseView
+end Lanius.Extraction

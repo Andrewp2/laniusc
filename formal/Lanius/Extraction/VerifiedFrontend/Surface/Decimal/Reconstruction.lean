@@ -1,0 +1,11 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Decimal.View
+import Lanius.Extraction.KernelSurfacePhases
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+set_option maxHeartbeats 0
+kernel_surface_reconstruction verifiedFrontendDecimal_reconstructed_present_kernel,
+  verifiedFrontendDecimalReconstructedKernel, verifiedFrontendDecimal_reconstructed_found_kernel,
+  verifiedFrontendDecimal_validated_nodes_kernel for
+  verifiedFrontendDecimalArtifact, verifiedFrontendDecimalView, verifiedFrontendDecimalParseView
+end Lanius.Extraction

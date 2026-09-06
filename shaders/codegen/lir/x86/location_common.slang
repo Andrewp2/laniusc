@@ -32,10 +32,13 @@ uint x86_location_payload(uint location)
 
 bool x86_alias_uses_64_bits(uint metadata)
 {
-    return (metadata & X86_LIR_METADATA_AGGREGATE) != 0u ||
+    return (metadata &
+            (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u ||
         (metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER ||
         ((metadata & X86_LIR_METADATA_STRING_PAIR) != 0u &&
-         (metadata & X86_LIR_METADATA_STRING_LEN) == 0u);
+         (metadata & X86_LIR_METADATA_STRING_LEN) == 0u) ||
+        ((metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u &&
+         (metadata & X86_LIR_METADATA_ARRAY_LEN) == 0u);
 }
 
 uint x86_stack_displacement_bytes(uint slot)
@@ -44,6 +47,29 @@ uint x86_stack_displacement_bytes(uint slot)
     // eight bytes. Slots 0..15 therefore fit the signed disp8 encoding;
     // larger frames retain the general disp32 form.
     return slot < 16u ? 1u : 4u;
+}
+
+uint x86_signed_displacement_bytes(uint value)
+{
+    return value <= 0x7fu || value >= 0xffffff80u ? 1u : 4u;
+}
+
+uint x86_packed_i32_displacement(uint base_slot, uint element)
+{
+    return 0u - 8u * (base_slot + 1u) + element * 4u;
+}
+
+uint x86_packed_i32_stack_operand_bytes(uint base_slot, uint element,
+                                        uint reg)
+{
+    return (reg >= 8u ? 1u : 0u) + 2u +
+        x86_signed_displacement_bytes(
+            x86_packed_i32_displacement(base_slot, element));
+}
+
+uint x86_base_i32_load_bytes(uint byte_offset)
+{
+    return byte_offset == 0u ? 2u : byte_offset <= 0x7fu ? 3u : 6u;
 }
 
 uint x86_stack32_operand_bytes(uint slot, uint register)

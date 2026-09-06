@@ -57,7 +57,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint block_total = min(opt_ir_block_total[0u],
         gParams.block_capacity);
-    uint entry = opt_ir_functions[function_id].entry_block;
+    OptIrFunction function = opt_ir_functions[function_id];
+    // The preceding function-finalize pass permits functions with no local
+    // body (including host externs), normalizing their ranges to empty and
+    // their entry to INVALID. They have no CFG entry to enqueue.
+    if (function.node_start == 0u && function.node_count == 0u &&
+        function.block_start == 0u && function.block_count == 0u &&
+        function.entry_block == 0xffffffffu)
+        return;
+    uint entry = function.entry_block;
     if (entry >= block_total)
     {
         report_structure_failure(function_id);

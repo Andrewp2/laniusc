@@ -1,0 +1,64 @@
+module verified::byte_io;
+import core::mem;
+import std::fs;
+import std::io;
+
+// Bridge byte-oriented host I/O to the extractor's i32-per-byte buffers.
+// Native `[i32]` storage has a coherent packed four-byte raw view, while these
+// buffers deliberately use one language integer per logical byte. This
+// correctness-first bridge therefore transfers one byte through a zeroed
+// one-element raw view. A future batched implementation must explicitly unpack
+// host bytes and preserve the `i32_array_data_ptr` coherence contract.
+// Handles remain caller-owned. Return byte count, -1 for I/O failure, -2 for
+// capacity.
+pub fn read_file(handle: i32, output:[i32], capacity: i32) -> i32 {
+    if (capacity <= -1) { return -2; }
+    let byte: [i32; 1] = [0];
+    let pointer: ptr = core::mem::i32_array_data_ptr(byte);
+    let total: i32 = 0;
+    let count: i32 = 1;
+    while (count != 0) {
+        byte[0] = 0;
+        count = std::fs::read(handle, pointer, 1);
+        if (count <= -1 || count >= 2) { return -1; }
+        if (count == 1) {
+            if (!(total < capacity)) { return -2; }
+            output[total] = byte[0] & 255;
+            total += 1;
+        }
+    }
+    return total;
+}
+
+pub fn write_stdout(input:[i32], length: i32) -> i32 {
+    if (length <= -1) { return -1; }
+    let total: i32 = 0;
+    while (total != length) {
+        let value: i32 = input[total];
+        if (value <= -1 || value >= 256) { return -1; }
+        if (std::io::write_byte(1, value) != 1) { return -1; }
+        total += 1;
+    }
+    return total;
+}
+
+// Write one nonnegative diagnostic integer without allocating or borrowing
+// the certificate output buffer. This keeps bootstrap failures observable even
+// though Unix process exit statuses retain only eight bits.
+pub fn write_stderr_natural(value: i32) -> i32 {
+    if (value <= -1) { return -1; }
+    let divisor: i32 = 1;
+    while (value / divisor >= 10) {
+        divisor *= 10;
+    }
+    let written: i32 = 0;
+    while (divisor != 0) {
+        if (std::io::write_byte(2, 48 + (value / divisor) % 10) != 1) {
+            return -1;
+        }
+        written += 1;
+        divisor /= 10;
+    }
+    if (std::io::write_byte(2, 10) != 1) { return -1; }
+    return written + 1;
+}

@@ -214,7 +214,8 @@ uint lir_for_hir(uint node, uint hir_count)
     // is materialized by the final synthetic VALUE_GET row. Consumers of the
     // HIR identity must observe that value-producing row, just as they observe
     // the sole row of an ordinary expression.
-    return compact_hir_core[node].kind == HIR_MATCH_EXPR
+    return (compact_hir_core[node].kind == HIR_MATCH_EXPR ||
+        semantic_lir_is_short_circuit(compact_hir_core[node], compact_hir_payload[node]))
         ? first + semantic_lir_count[node] - 1u : first;
 }
 
@@ -226,41 +227,6 @@ uint lir_for_value_hir(uint node, uint hir_count)
     return lir_for_hir(node, hir_count);
 }
 
-bool semantic_short_circuit_rhs(uint node, uint hir_count)
-{
-    if (node >= hir_count) return false;
-    uint root = compact_expr_root[node];
-    if (root >= hir_count) return false;
-    HirCore root_core = compact_hir_core[root];
-    if (root_core.kind != HIR_BINARY_EXPR) return false;
-    HirPayload root_payload = compact_hir_payload[root];
-    if (root_payload.a != HIR_EXPR_AND && root_payload.a != HIR_EXPR_OR)
-        return false;
-    uint rhs = root_payload.c;
-    if (rhs >= hir_count) return false;
-    HirCore source = compact_hir_core[node];
-    HirCore rhs_core = compact_hir_core[rhs];
-    uint file_id = compact_hir_links[node].file_id;
-    if (compact_hir_links[root].file_id != file_id ||
-        compact_hir_links[rhs].file_id != file_id)
-        return false;
-    return source.token_start >= rhs_core.token_start &&
-        source.token_end <= rhs_core.token_end;
-}
-
-bool static_index_in_bounds(uint node, uint length, uint hir_count)
-{
-    if (node >= hir_count || length == LIR_INVALID) return false;
-    HirPayload payload = compact_hir_payload[node];
-    return payload.a == HIR_EXPR_INT && payload.b < length;
-}
-
-bool static_nonzero_integer(uint node, uint hir_count)
-{
-    if (node >= hir_count) return false;
-    HirPayload payload = compact_hir_payload[node];
-    return payload.a == HIR_EXPR_INT && payload.b != 0u;
-}
 
 uint bounded_token(uint node, uint hir_count, uint fallback)
 {
@@ -279,20 +245,39 @@ uint semantic_type_for_hir(uint node, uint hir_count)
 
 uint aggregate_word_count_for_type(uint type_id, uint hir_count)
 {
-    if (type_id < 4096u || type_id >= 8192u) return 0u;
-    uint name_token = type_id >= 6144u
-        ? type_id - 6144u : type_id - 4096u;
-    if (name_token >= gParams.n_tokens) return 0u;
-    uint struct_hir = semantic_aggregate_hir_by_name_token[name_token];
-    return struct_hir < hir_count
-        ? semantic_struct_word_count_by_hir[struct_hir] : 0u;
+    if (type_id < 4096u) return 0u;
+    // Validate overlapping legacy nominal encodings against the declaration
+    // HIR.  A large source pack can encode a struct token above 2047 into the
+    // old enum numeric window, but the token-to-HIR relation remains exact.
+    uint struct_token = type_id - 4096u;
+    if (struct_token < gParams.n_tokens)
+    {
+        uint struct_hir = semantic_aggregate_hir_by_name_token[struct_token];
+        if (struct_hir < hir_count &&
+            compact_hir_core[struct_hir].kind == 27u)
+            return semantic_struct_word_count_by_hir[struct_hir];
+    }
+    if (type_id >= 6144u)
+    {
+        uint enum_token = type_id - 6144u;
+        if (enum_token < gParams.n_tokens)
+        {
+            uint enum_hir = semantic_aggregate_hir_by_name_token[enum_token];
+            if (enum_hir < hir_count &&
+                compact_hir_core[enum_hir].kind == 26u)
+                return semantic_struct_word_count_by_hir[enum_hir];
+        }
+    }
+    return 0u;
 }
 
 uint aggregate_word_count_for_hir(uint node, uint hir_count)
 {
     if (node == LIR_INVALID || node >= hir_count) return 0u;
     uint array_length = semantic_array_length[node];
-    if (array_length != LIR_INVALID) return array_length;
+    if (array_length != LIR_INVALID &&
+        array_length != SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+        return array_length;
     uint projected_words = semantic_aggregate_word_count[node];
     if (projected_words != 0u) return projected_words;
     uint ref_tag = semantic_expr_ref_tag[node];
@@ -570,7 +555,7 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
         : root != LIR_INVALID && root < hir_count
             ? compact_hir_core[root].token_end : hir.token_end;
     schedule.execution_tie = expression_row
-        ? 0x7fffffffu - min(semantic_execution_rank[node], 0x7fffffffu)
+        ? (0x0fffffffu - min(semantic_execution_rank[node], 0x0fffffffu)) * 8u
         : 0xffffffffu;
 
     uint result_arm = match_arm_for_result_node(node, hir_count);
@@ -578,6 +563,16 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
     {
         HirCore result = compact_hir_core[compact_match_arms[result_arm].result];
         schedule.execution_region = result.token_start;
+    }
+
+    if (semantic_lir_is_short_circuit(hir, payload))
+    {
+        // Open the conditional after the LHS, before evaluating any RHS row.
+        // Each expression depth owns eight ties so a child's closing rows
+        // precede its parent's opening rows even at equal token boundaries.
+        if (local_row < 3u && payload.b < hir_count)
+            schedule.execution_rank = compact_hir_core[payload.b].token_end;
+        schedule.execution_tie += local_row;
     }
 
     if (semantic_lir_is_control(hir, payload))
@@ -737,6 +732,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     uint match_payload_row = match_payload_for_pattern(node);
     bool match_binding = match_payload_row != LIR_INVALID;
     bool match_expression = hir.kind == HIR_MATCH_EXPR;
+    bool short_circuit = semantic_lir_is_short_circuit(hir, payload);
     bool match_result_get = match_expression && local_row + 1u == local_count;
     bool match_scrutinee_set = match_expression && local_row == 0u;
     bool match_arm_instruction = match_expression && local_row >= 3u &&
@@ -780,13 +776,13 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         }
     }
     if ((op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_VALUE_SET ||
-         op == SEMANTIC_LIR_OP_STORE) && !match_expression)
+         op == SEMANTIC_LIR_OP_STORE) && !match_expression && !short_circuit)
         core.type_id = semantic_value_type[node];
     // A declaration-setting row represents the value being stored, while the
     // statement node itself need not carry an expression type. Preserve the
     // checked RHS reference here so target ABIs can distinguish instantiated
     // aggregates from scalar values without reconstructing declaration syntax.
-    if (op == SEMANTIC_LIR_OP_VALUE_SET && !match_expression && payload.c < hir_count)
+    if (op == SEMANTIC_LIR_OP_VALUE_SET && !match_expression && !short_circuit && payload.c < hir_count)
         semantic_type_ref_for_hir(payload.c, hir_count,
             type_ref_tag, core.type_ref_payload);
     if (semantic_lir_is_assignment(hir, payload) && payload.b < hir_count)
@@ -922,6 +918,13 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
             }
         }
     }
+    // ARRAY_PAIR describes the value representation itself. An indexed
+    // scalar still carries its base slice's runtime length in
+    // projection_metadata for bounds authentication, but it is not a
+    // pointer/length pair and must never inherit this ABI flag.
+    if (op == SEMANTIC_LIR_OP_VALUE_GET &&
+        semantic_array_length[node] == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+        core.flags |= SEMANTIC_LIR_FLAG_ARRAY_PAIR;
     if ((op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_STORE) &&
         (hir.kind == HIR_MEMBER_EXPR || assignment_field))
         core.flags |= SEMANTIC_LIR_FLAG_FIELD;
@@ -935,7 +938,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     if (compound_assignment && !assignment_field && !assignment_indexed &&
         (payload.b >= hir_count || semantic_value_id[payload.b] == LIR_INVALID))
         core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
-    if (semantic_lir_is_control(hir, payload))
+    if (semantic_lir_is_control(hir, payload) || short_circuit)
         core.flags |= SEMANTIC_LIR_FLAG_SYNTHETIC_CONTROL;
     if (hir.kind == HIR_CONTINUE_STMT)
         core.flags |= SEMANTIC_LIR_FLAG_BRANCH_CONTINUE;
@@ -970,22 +973,6 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         core.flags |= semantic_loop_recipe_flags(loop_recipe.kind, local_row);
     if (array_for && (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
         projection_metadata = array_length;
-    if (semantic_short_circuit_rhs(node, hir_count))
-    {
-        if (semantic_lir_is_call(op))
-            core.flags |= SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_CALL;
-        uint index_hir = assignment_indexed
-            ? assignment_lhs_payload.c : payload.c;
-        bool indexed_may_trap =
-            (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u &&
-            !static_index_in_bounds(index_hir, projection_metadata, hir_count);
-        bool division_may_trap =
-            (op == SEMANTIC_LIR_OP_DIV || op == SEMANTIC_LIR_OP_REM) &&
-            !static_nonzero_integer(payload.c, hir_count);
-        if (division_may_trap || op == SEMANTIC_LIR_OP_SHIFT_LEFT ||
-            op == SEMANTIC_LIR_OP_SHIFT_RIGHT || indexed_may_trap)
-            core.flags |= SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_TRAP;
-    }
     SemanticLirOperands operands;
     operands.result = row;
     operands.a = LIR_INVALID;
@@ -993,7 +980,27 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     operands.c = LIR_INVALID;
     uint layout_word_offset = projection_metadata;
 
-    if (match_expression)
+    if (short_circuit)
+    {
+        uint declaration = gParams.n_tokens + node;
+        if (local_row == 0u || local_row == 3u)
+        {
+            operands.a = declaration;
+            operands.b = lir_for_hir(local_row == 0u ? payload.b : payload.c, hir_count);
+        }
+        else if (local_row == 1u)
+            operands.a = payload.a == HIR_EXPR_OR
+                ? lir_for_hir(payload.b, hir_count) : declaration;
+        else if (local_row == 2u)
+        {
+            operands.a = first_row + 1u;
+            operands.b = first_row + 4u;
+            operands.c = 0u;
+        }
+        else if (local_row == 5u)
+            operands.a = declaration;
+    }
+    else if (match_expression)
     {
         uint result_declaration = gParams.n_tokens + node;
         uint scrutinee_declaration = gParams.n_tokens + hir_count + node;

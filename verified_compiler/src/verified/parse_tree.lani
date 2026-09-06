@@ -1,0 +1,75 @@
+module verified::parse_tree;
+
+import verified::parser;
+
+pub const TREE_SUCCESS: i32 = 0;
+pub const TREE_BAD_INPUT: i32 = 1;
+pub const TREE_OUTPUT_FULL: i32 = 2;
+pub const TREE_DEPTH_LIMIT: i32 = 3;
+
+pub struct TreeResult {
+    status: i32,
+    node_count: i32,
+    words_used: i32,
+}
+pub fn tree_status(result: TreeResult) -> i32 { return result.status; }
+pub fn tree_node_count(result: TreeResult) -> i32 { return result.node_count; }
+pub fn tree_words_used(result: TreeResult) -> i32 { return result.words_used; }
+pub fn tree_root(result: TreeResult) -> i32 {
+    if (result.status != TREE_SUCCESS) { return -1; }
+    return result.node_count - 1;
+}
+fn result(status: i32, node_count: i32, words_used: i32) -> TreeResult {
+    return TreeResult { status: status, node_count: node_count, words_used: words_used };
+}
+
+// A record has the copy_derivation header followed by child triples.
+// Its state children are rewritten to dense output node IDs. offsets[node]
+// locates the record; IDs are postorder even though record storage is preorder.
+// Shared derivation states are expanded per occurrence, matching a syntax tree.
+fn visit(workspace:[i32], workspace_length: i32, token_count: i32,
+    state_count: i32, state_id: i32, records:[i32], records_length: i32,
+    offsets:[i32], offsets_length: i32, node_count: i32, words_used: i32,
+    depth: i32,) -> TreeResult {
+    if (depth <= 0) { return result(TREE_DEPTH_LIMIT, node_count, words_used); }
+    if (node_count >= offsets_length) { return result(TREE_OUTPUT_FULL, node_count, words_used); }
+    let count: i32 = verified::parser::copy_derivation(workspace, workspace_length,
+        token_count, state_count, state_id, records, records_length, words_used);
+    if (count == -2) { return result(TREE_OUTPUT_FULL, node_count, words_used); }
+    if (count <= -1) { return result(TREE_BAD_INPUT, node_count, words_used); }
+    let next_word: i32 = words_used + 4 + count * 3;
+    let next_node: i32 = node_count;
+    let child: i32 = 0;
+    while (child != count) {
+        let slot: i32 = words_used + 4 + child * 3;
+        if (records[slot] == verified::parser::CHILD_STATE) {
+            let nested: TreeResult = visit(workspace, workspace_length, token_count,
+                state_count, records[slot + 1], records, records_length, offsets,
+                offsets_length, next_node, next_word, depth - 1);
+            if (nested.status != TREE_SUCCESS) { return nested; }
+            records[slot + 1] = nested.node_count - 1;
+            next_node = nested.node_count;
+            next_word = nested.words_used;
+        }
+        child += 1;
+    }
+    if (next_node >= offsets_length) { return result(TREE_OUTPUT_FULL, next_node, next_word); }
+    offsets[next_node] = words_used;
+    return result(TREE_SUCCESS, next_node + 1, next_word);
+}
+
+// Consume an unchanged successful recognizer workspace. Buffers must be
+// disjoint, and the supplied lengths must describe their actual storage.
+// No allocation, token scanning, or grammar search occurs here. Partial
+// output after failure is not an accepted tree and must not be serialized.
+pub fn materialize(parsed: verified::parser::ParseResult, workspace:[i32],
+    workspace_length: i32, token_count: i32, records:[i32], records_length: i32,
+    offsets:[i32], offsets_length: i32, depth_limit: i32,) -> TreeResult {
+    if (verified::parser::parse_status(parsed) != verified::parser::PARSE_SUCCESS
+        || records_length <= -1 || offsets_length <= -1) {
+        return result(TREE_BAD_INPUT, 0, 0);
+    }
+    return visit(workspace, workspace_length, token_count,
+        verified::parser::parse_state_count(parsed), verified::parser::parse_root_state(parsed),
+        records, records_length, offsets, offsets_length, 0, 0, depth_limit);
+}

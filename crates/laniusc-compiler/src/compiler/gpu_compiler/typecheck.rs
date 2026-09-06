@@ -1853,8 +1853,7 @@ fn lowering_error_to_compile_error_for_source(
         .and_then(|token| read_single_token_for_diagnostic(device, queue, tokens, token).ok())
         .map(|token| (token.start, token.len))
         .unwrap_or_else(|| first_nonempty_source_span(source));
-    CompileError::Diagnostic(
-        Diagnostic::error("LNC0017", message)
+    let mut diagnostic = Diagnostic::error("LNC0017", message)
             .with_primary_label(diagnostic_label_from_source_span(
                 path,
                 source,
@@ -1862,8 +1861,14 @@ fn lowering_error_to_compile_error_for_source(
                 span.1,
                 "not supported by the native x86 backend yet",
             ))
-            .with_note("the native x86 backend rejected this program before emitting an artifact"),
-    )
+            .with_note("the native x86 backend rejected this program before emitting an artifact");
+    if failure.status.first_unsupported_target_op != u32::MAX {
+        diagnostic = diagnostic.with_note(format!(
+            "first unsupported target LIR opcode: {}",
+            failure.status.first_unsupported_target_op
+        ));
+    }
+    CompileError::Diagnostic(diagnostic)
 }
 
 fn lowering_error_to_compile_error_for_source_pack(
@@ -1901,11 +1906,16 @@ fn lowering_error_to_compile_error_for_source_pack(
             })
         })
         .unwrap_or_else(|| lowering_fallback_label_for_source_pack(files));
-    CompileError::Diagnostic(
-        Diagnostic::error("LNC0017", message)
+    let mut diagnostic = Diagnostic::error("LNC0017", message)
             .with_primary_label(label)
-            .with_note("the native x86 backend rejected this program before emitting an artifact"),
-    )
+            .with_note("the native x86 backend rejected this program before emitting an artifact");
+    if failure.status.first_unsupported_target_op != u32::MAX {
+        diagnostic = diagnostic.with_note(format!(
+            "first unsupported target LIR opcode: {}",
+            failure.status.first_unsupported_target_op
+        ));
+    }
+    CompileError::Diagnostic(diagnostic)
 }
 
 fn lowering_diagnostic_message(reason: u32) -> Option<&'static str> {
@@ -1934,6 +1944,25 @@ fn lowering_diagnostic_message(reason: u32) -> Option<&'static str> {
             Some("unsupported x86 short-circuit trapping operand")
         }
         LOWERING_DIAGNOSTIC_X86_MATCH_EXPRESSION => Some("unsupported x86 match expression"),
+        crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION => {
+            Some("operation is not implemented by the x86 backend")
+        }
+        LOWERING_DIAGNOSTIC_X86_CALL_TARGET => Some("x86 call has no resolved target"),
+        LOWERING_DIAGNOSTIC_X86_AGGREGATE_RESULT_LAYOUT => {
+            Some("x86 aggregate call result has no canonical ABI layout")
+        }
+        LOWERING_DIAGNOSTIC_X86_CALLEE_RESULT_LAYOUT => {
+            Some("x86 callee function lost its checked aggregate result layout")
+        }
+        LOWERING_DIAGNOSTIC_X86_INSTANCE_RESULT_LAYOUT => {
+            Some("x86 aggregate instance result has no canonical ABI layout")
+        }
+        LOWERING_DIAGNOSTIC_X86_NOMINAL_RESULT_LAYOUT => {
+            Some("x86 nominal aggregate result has no canonical ABI layout")
+        }
+        LOWERING_DIAGNOSTIC_X86_LEGACY_RESULT_LAYOUT => {
+            Some("x86 legacy aggregate result has no canonical ABI layout")
+        }
         _ => None,
     }
 }

@@ -1,0 +1,32 @@
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.Reconstruction
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.Parse.Token
+import Lanius.Extraction.VerifiedFrontend.Surface.Number.Parse.Metadata
+
+namespace Lanius.Extraction
+set_option maxRecDepth 500000
+theorem verifiedFrontendNumber_nodes_cached_trace_checked_kernel :
+    checkNodesFromParseView laniusGrammar verifiedFrontendNumberArtifact verifiedFrontendNumberParseView 0
+      verifiedFrontendNumberArtifact.parse_nodes = true := by
+  exact verifiedFrontendNumber_validated_nodes_kernel
+
+theorem verifiedFrontendNumber_nodes_trace_checked_kernel :
+    checkNodesFromView laniusGrammar verifiedFrontendNumberArtifact verifiedFrontendNumberView 0
+      verifiedFrontendNumberArtifact.parse_nodes = true := by
+  change checkNodesFromView laniusGrammar verifiedFrontendNumberArtifact
+    verifiedFrontendNumberParseView.artifactView 0 verifiedFrontendNumberArtifact.parse_nodes = true
+  rw [← checkNodesFromParseView_eq laniusGrammar verifiedFrontendNumberArtifact verifiedFrontendNumberParseView]
+  exact verifiedFrontendNumber_nodes_cached_trace_checked_kernel
+
+theorem verifiedFrontendNumberParseValidTraceKernel : ParseArtifactValid verifiedFrontendNumberArtifact :=
+  parseArtifactValid_of_view_checks verifiedFrontendNumberArtifact verifiedFrontendNumberView
+    verifiedFrontendNumberRootTraceKernel verifiedFrontendNumber_token_trace_checked_kernel
+    verifiedFrontendNumber_semantic_trace_checked_kernel verifiedFrontendNumber_nodes_trace_checked_kernel
+    verifiedFrontendNumber_root_trace_found_kernel verifiedFrontendNumber_root_trace_shape_kernel
+end Lanius.Extraction
+
+namespace Lanius.Extraction
+
+set_option maxRecDepth 100000
+set_option maxHeartbeats 0
+
+end Lanius.Extraction

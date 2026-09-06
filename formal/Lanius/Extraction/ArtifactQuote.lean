@@ -6,6 +6,21 @@ open Lean Elab Term
 
 namespace Lanius.Extraction
 
+-- One exact input, scoped to this process. The cached value is untrusted
+-- decoded data; every quoted term and every certificate is still checked.
+private initialize artifactPackInput : IO.Ref (Option (String × ArtifactPack)) ← IO.mkRef none
+
+/-- Decode a pack once across quotation entry points. Exact string comparison
+prevents path reuse or hash collisions from substituting a different input.
+Only the last successful input is retained, bounding cache growth. -/
+def decodeArtifactPackInput (encoded : String) : IO (Except String ArtifactPack) := do
+  if let some (previous, pack) ← artifactPackInput.get then
+    if previous == encoded then return .ok pack
+  let result := Json.parse encoded >>= fromJson?
+  if let .ok pack := result then
+    artifactPackInput.set (some (encoded, pack))
+  return result
+
 /-- Elaborate a compile-time string without executing arbitrary Lean code.
     `include_str` itself produces a string literal, so artifact quotation needs
     only structural literal extraction rather than `Meta.evalExpr`. -/
@@ -33,7 +48,7 @@ private def elabArtifactLiteral (stx : Syntax) : TermElabM Artifact := do
 
 private def elabArtifactPackLiteral (stx : Syntax) : TermElabM ArtifactPack := do
   let encoded ← elabStringLiteral stx
-  match Json.parse encoded >>= fromJson? with
+  match ← decodeArtifactPackInput encoded with
   | .ok pack => pure pack
   | .error message => throwError "invalid extraction artifact pack: {message}"
 
@@ -146,6 +161,22 @@ elab "artifact_pack_unit_full% " json:term ", " path:term : term => do
       artifact.sources.any fun source => source.path == expectedPath
     | throwError "artifact pack has no unit for source {expectedPath}"
   pure (toExpr artifact)
+
+/-- Quote the other artifact fields once while reusing a supplied node list. -/
+elab "artifact_pack_unit_reusing_nodes% " json:term ", " path:term ", " nodes:term : term => do
+  let expectedPath ← elabStringLiteral path
+  let pack ← elabArtifactPackLiteral json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  let nodesExpr ← elabTermEnsuringType nodes (mkApp (mkConst ``List [Level.zero]) (mkConst ``ParseNode))
+  -- Reuse an explicit node expression instead of quoting a second copy. Like
+  -- all artifact quotation, this supplies untrusted input to the checkers;
+  -- callers must choose the matching unit's tree. No Lean code is evaluated.
+  let quoted := toExpr { artifact with parse_nodes := [] }
+  unless quoted.isAppOfArity ``Artifact.mk 12 do
+    throwError "artifact constructor layout changed"
+  pure (mkAppN quoted.getAppFn (quoted.getAppArgs.set! 5 nodesExpr))
 
 /-- Quote only a unit's optional complete raw-token trace. -/
 elab "artifact_pack_raw_tokens% " json:term ", " path:term : term => do

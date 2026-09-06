@@ -1,0 +1,273 @@
+module verified::surface_expr;
+import verified::surface_tree;
+import verified::parser;
+
+// Expression arena: count followed by seven words per node:
+// kind (0 literal, 1 unary, 2 binary, 3 assign, 4 path segment, 5 path,
+// 6 path expression, 7 index, 8 member, 9 call, 10 array,
+// 11 struct field, 12 struct value), parse origin,
+// production, left, right, token, expression-list link.
+// Semantic children precede parents. Segment left fields instead link to the
+// next segment (or -1); the owning path is allocated after all segments.
+fn append(arena:[i32], capacity: i32, kind: i32, origin: i32,
+    production: i32, left: i32, right: i32, token: i32) -> i32 {
+    let count: i32 = arena[0];
+    if (count <= -1 || count >= (capacity - 1) / 7) { return -1; }
+    let slot: i32 = 1 + count * 7;
+    arena[slot] = kind; arena[slot + 1] = origin; arena[slot + 2] = production;
+    arena[slot + 3] = left; arena[slot + 4] = right; arena[slot + 5] = token;
+    arena[slot + 6] = -1;
+    arena[0] = count + 1;
+    return count;
+}
+
+fn child(records:[i32], length: i32, offsets:[i32], count: i32, node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, length, offsets, count,
+        node, index, verified::parser::CHILD_STATE, 0);
+}
+
+fn path(records:[i32], length: i32, offsets:[i32], count: i32, tokens: i32,
+    node: i32, arena:[i32], capacity: i32, fuel: i32) -> i32 {
+    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, node);
+    if (offset <= -1) { return -1; }
+    if (records[offset] != 47) { return -1; }
+    let segment: i32 = child(records, length, offsets, count, node, 0);
+    let tail: i32 = child(records, length, offsets, count, node, 1);
+    let first: i32 = -1;
+    let previous: i32 = -1;
+    let remaining: i32 = fuel;
+    while (remaining >= 1) {
+        remaining -= 1;
+        let segment_offset: i32 = verified::surface_tree::record(records, length, offsets, count, segment);
+        if (segment_offset <= -1) { return -1; }
+        // Generic arguments will be handled by type extraction; never drop them.
+        if (records[segment_offset] != 48) { return -1; }
+        let token: i32 = verified::surface_tree::child(records, length, offsets, count,
+            segment, 0, verified::parser::CHILD_TOKEN, tokens);
+        if (token <= -1) { return -1; }
+        let current: i32 = append(arena, capacity, 4, segment, 48, -1, -1, token);
+        if (current <= -1) { return -1; }
+        if (previous == -1) { first = current; }
+        else { arena[1 + previous * 7 + 3] = current; }
+        previous = current;
+        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
+        if (tail_offset <= -1) { return -1; }
+        if (records[tail_offset] == 51) {
+            return append(arena, capacity, 5, node, 47, first, -1, -1);
+        }
+        if (records[tail_offset] != 50) { return -1; }
+        segment = child(records, length, offsets, count, tail, 2);
+        tail = child(records, length, offsets, count, tail, 3);
+    }
+    return -1;
+}
+
+fn build(records:[i32], length: i32, offsets:[i32], count: i32, tokens: i32,
+    node: i32, arena:[i32], capacity: i32, fuel: i32) -> i32 {
+    if (fuel <= 0) { return -1; }
+    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, node);
+    if (offset <= -1) { return -1; }
+    let production: i32 = records[offset];
+    if (production == 171) {
+        let first: i32 = expression_list(records, length, offsets, count, tokens,
+            child(records, length, offsets, count, node, 1), arena, capacity, fuel - 1, 179);
+        if (first <= -2) { return -1; }
+        return append(arena, capacity, 10, node, production, -1, first, -1);
+    }
+    if (production == 173) {
+        let tail: i32 = child(records, length, offsets, count, node, 1);
+        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
+        if (tail_offset <= -1) { return -1; }
+        let value: i32 = path(records, length, offsets, count, tokens,
+            child(records, length, offsets, count, node, 0), arena, capacity, fuel - 1);
+        if (value <= -1) { return -1; }
+        if (records[tail_offset] == 274) {
+            return append(arena, capacity, 6, node, 173, value, -1, -1);
+        }
+        if (records[tail_offset] != 275) { return -1; }
+        let fields: i32 = struct_fields(records, length, offsets, count, tokens,
+            child(records, length, offsets, count, tail, 1), arena, capacity,
+            fuel - 1);
+        if (fields <= -2) { return -1; }
+        return append(arena, capacity, 12, node, 173, value, fields, -1);
+    }
+    if ((production >= 175 && production <= 178) || production == 185 || production == 186) {
+        if (records[offset + 3] != 1) { return -1; }
+        let token: i32 = verified::surface_tree::child(records, length, offsets, count,
+            node, 0, verified::parser::CHILD_TOKEN, tokens);
+        if (token <= -1) { return -1; }
+        return append(arena, capacity, 0, node, production, -1, -1, token);
+    }
+    if (production == 104 || production == 159 || production == 172) {
+        let index: i32 = 0;
+        if (production == 172) { index = 1; }
+        return build(records, length, offsets, count, tokens,
+            child(records, length, offsets, count, node, index), arena, capacity, fuel - 1);
+    }
+    if (production >= 156 && production <= 158) {
+        let operand: i32 = build(records, length, offsets, count, tokens,
+            child(records, length, offsets, count, node, 1), arena, capacity, fuel - 1);
+        if (operand <= -1) { return -1; }
+        return append(arena, capacity, 1, node, production, operand, -1, -1);
+    }
+    let heads: [i32; 10] = [118,121,124,127,130,133,137,143,147,151];
+    let ends: [i32; 10] = [120,123,126,129,132,136,142,146,150,155];
+    let end: i32 = -1;
+    let layer: i32 = 0;
+    while (layer != 10) {
+        if (production == heads[layer]) { end = ends[layer]; }
+        layer += 1;
+    }
+    if (end == -1 && production != 105 && production != 160) { return -1; }
+    let left: i32 = build(records, length, offsets, count, tokens,
+        child(records, length, offsets, count, node, 0), arena, capacity, fuel - 1);
+    if (left <= -1) { return -1; }
+    let tail: i32 = child(records, length, offsets, count, node, 1);
+    let remaining: i32 = fuel;
+    while (remaining != 0) {
+        remaining -= 1;
+        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
+        if (tail_offset <= -1) { return -1; }
+        let operation: i32 = records[tail_offset];
+        // Keep postfix and binary/assignment paths in explicit branches.
+        // The bootstrap compiler failed the mixed-chain execution test when
+        // this branch used continue after updating the tail reference.
+        if (production == 160) {
+            if (operation == 164) { return left; }
+            if (operation == 161) {
+                let first: i32 = expression_list(records, length, offsets, count, tokens,
+                    child(records, length, offsets, count, tail, 1), arena, capacity, fuel - 1, 165);
+                if (first <= -2) { return -1; }
+                left = append(arena, capacity, 9, tail, operation, left, first, -1);
+                tail = child(records, length, offsets, count, tail, 3);
+            } else {
+            if (operation == 162) {
+                let index: i32 = build(records, length, offsets, count, tokens,
+                    child(records, length, offsets, count, tail, 1), arena, capacity, fuel - 1);
+                if (index <= -1) { return -1; }
+                left = append(arena, capacity, 7, tail, operation, left, index, -1);
+                tail = child(records, length, offsets, count, tail, 3);
+            } else {
+                if (operation != 163) { return -1; }
+                let name: i32 = verified::surface_tree::child(records, length, offsets, count,
+                    tail, 1, verified::parser::CHILD_TOKEN, tokens);
+                if (name <= -1) { return -1; }
+                left = append(arena, capacity, 8, tail, operation, left, -1, name);
+                tail = child(records, length, offsets, count, tail, 2);
+            }
+            }
+            if (left <= -1) { return -1; }
+        } else {
+        if (production == 105) {
+            if (operation == 117) { return left; }
+            if (operation <= 105 || operation >= 117) { return -1; }
+            let right: i32 = build(records, length, offsets, count, tokens,
+                child(records, length, offsets, count, tail, 1), arena, capacity, fuel - 1);
+            if (right <= -1) { return -1; }
+            return append(arena, capacity, 3, tail, operation, left, right, -1);
+        }
+        if (operation == end) { return left; }
+        if (operation <= production || operation >= end) { return -1; }
+        let right: i32 = build(records, length, offsets, count, tokens,
+            child(records, length, offsets, count, tail, 1), arena, capacity, fuel - 1);
+        if (right <= -1) { return -1; }
+        left = append(arena, capacity, 2, tail, operation, left, right, -1);
+        if (left <= -1) { return -1; }
+        tail = child(records, length, offsets, count, tail, 2);
+        }
+    }
+    return -1;
+}
+
+// Expression roots link through their dedicated field without allocating IDs.
+// Call arguments (165..170) and array elements (179..184) have identical
+// grammar shapes; the base selects which productions are accepted.
+// Return -1 for empty, -2 for malformed/unsupported/capacity failure.
+fn expression_list(records:[i32], length: i32, offsets:[i32], count: i32, tokens: i32,
+    node: i32, arena:[i32], capacity: i32, fuel: i32, grammar_base: i32) -> i32 {
+    if (grammar_base != 165 && grammar_base != 179) { return -2; }
+    let current: i32 = node;
+    let first: i32 = -1;
+    let previous: i32 = -1;
+    let remaining: i32 = fuel;
+    while (remaining >= 1) {
+        remaining -= 1;
+        let offset: i32 = verified::surface_tree::record(records, length, offsets, count, current);
+        if (offset <= -1) { return -2; }
+        let shape: i32 = records[offset] - grammar_base;
+        if (shape == 0 && previous == -1) { return -1; }
+        if ((previous == -1 && shape != 1) || (previous != -1 && shape != 4)) { return -2; }
+        let value: i32 = build(records, length, offsets, count, tokens,
+            child(records, length, offsets, count, current, 0), arena, capacity, fuel - 1);
+        if (value <= -1) { return -2; }
+        if (previous == -1) { first = value; }
+        else { arena[1 + previous * 7 + 6] = value; }
+        previous = value;
+        let tail: i32 = child(records, length, offsets, count, current, 1);
+        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
+        if (tail_offset <= -1) { return -2; }
+        let tail_shape: i32 = records[tail_offset] - grammar_base;
+        if (tail_shape == 3) { return first; }
+        if (tail_shape != 2) { return -2; }
+        current = child(records, length, offsets, count, tail, 1);
+        let next_offset: i32 = verified::surface_tree::record(records, length, offsets, count, current);
+        if (next_offset <= -1) { return -2; }
+        let next_shape: i32 = records[next_offset] - grammar_base;
+        if (next_shape == 5) { return first; }
+    }
+    return -2;
+}
+
+// Return -1 for an empty field list and -2 for malformed input or exhaustion.
+fn struct_fields(records:[i32], length: i32, offsets:[i32], count: i32, tokens: i32,
+    node: i32, arena:[i32], capacity: i32, fuel: i32) -> i32 {
+    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, node);
+    if (offset <= -1) { return -2; }
+    if (records[offset] == 276) { return -1; }
+    if (records[offset] != 277 || fuel <= 0) { return -2; }
+    let current: i32 = child(records, length, offsets, count, node, 0);
+    let tail: i32 = child(records, length, offsets, count, node, 1);
+    let first: i32 = -1;
+    let previous: i32 = -1;
+    let remaining: i32 = fuel;
+    while (remaining != 0) {
+        remaining -= 1;
+        let field_offset: i32 = verified::surface_tree::record(records, length,
+            offsets, count, current);
+        if (field_offset <= -1 || records[field_offset] != 278) { return -2; }
+        let name: i32 = verified::surface_tree::child(records, length, offsets,
+            count, current, 0, verified::parser::CHILD_TOKEN, tokens);
+        let value: i32 = build(records, length, offsets, count, tokens,
+            child(records, length, offsets, count, current, 2), arena,
+            capacity, fuel - 1);
+        if (name <= -1 || value <= -1) { return -2; }
+        let field: i32 = append(arena, capacity, 11, current, 278, value, -1, name);
+        if (field <= -1) { return -2; }
+        if (previous == -1) { first = field; }
+        else { arena[1 + previous * 7 + 6] = field; }
+        previous = field;
+        let tail_offset: i32 = verified::surface_tree::record(records, length,
+            offsets, count, tail);
+        if (tail_offset <= -1) { return -2; }
+        if (records[tail_offset] == 280) { return first; }
+        if (records[tail_offset] != 279) { return -2; }
+        let after: i32 = child(records, length, offsets, count, tail, 1);
+        let after_offset: i32 = verified::surface_tree::record(records, length,
+            offsets, count, after);
+        if (after_offset <= -1) { return -2; }
+        if (records[after_offset] == 282) { return first; }
+        if (records[after_offset] != 281) { return -2; }
+        current = child(records, length, offsets, count, after, 0);
+        tail = child(records, length, offsets, count, after, 1);
+    }
+    return -2;
+}
+
+// Requires grammar-validated input. Build once in semantic traversal order.
+// Failure leaves partial arena contents which must be discarded.
+pub fn extract(records:[i32], length: i32, offsets:[i32], count: i32,
+    tokens: i32, root: i32, arena:[i32], capacity: i32, depth: i32) -> i32 {
+    if (capacity <= 0) { return -1; }
+    arena[0] = 0;
+    return build(records, length, offsets, count, tokens, root, arena, capacity, depth);
+}

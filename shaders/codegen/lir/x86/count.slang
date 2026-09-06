@@ -81,8 +81,8 @@ uint function_abi_param_count(SemanticLirFunction function)
 {
     uint count = 0u;
     for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
-        count += x86_abi_type_width(
-            semantic_lir_params[function.param_start + ordinal].type_id);
+        count += x86_abi_param_width(
+            semantic_lir_params[function.param_start + ordinal]);
     return count;
 }
 
@@ -141,11 +141,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         : 0u;
     uint argument_rows = 0u;
     uint argument_start = semantic_lir_call_arg_start_by_hir[source_hir];
-    for (uint arg_i = 0u; arg_i < min(argument_count, 6u); arg_i += 1u)
+    for (uint arg_i = 0u; arg_i < argument_count; arg_i += 1u)
     {
         SemanticLirCallArg argument = semantic_lir_call_args[argument_start + arg_i];
         argument_rows +=
-            (argument.value_metadata & SEMANTIC_LIR_VALUE_STRING) != 0u
+            (argument.value_metadata &
+             (SEMANTIC_LIR_VALUE_STRING | SEMANTIC_LIR_VALUE_ARRAY_PAIR)) != 0u
                 ? 2u : 1u;
     }
     OptIrNodeOperands operands = opt_ir_operands[semantic_row];
@@ -190,7 +191,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             report_diagnostic(LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_AGGREGATE_RETURN,
                 LOWERING_DIAGNOSTIC_DETAIL_TOKEN, function.name_token,
                 function.hir_function, semantic_row);
-        else if (!entrypoint && function_abi_param_count(function) > 6u)
+        else if (!entrypoint && (function.flags & SEMANTIC_FUNCTION_FLAG_EXTERN) != 0u &&
+                 function_abi_param_count(function) > 6u)
         {
             uint detail = function.name_token;
             if (function.param_start != INVALID)
@@ -201,12 +203,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 {
                     SemanticLirParam param =
                         semantic_lir_params[function.param_start + param_ordinal];
-                    if (abi_ordinal + x86_abi_type_width(param.type_id) > 6u)
+                    if (abi_ordinal + x86_abi_param_width(param) > 6u)
                     {
                         detail = param.declaration_id;
                         break;
                     }
-                    abi_ordinal += x86_abi_type_width(param.type_id);
+                    abi_ordinal += x86_abi_param_width(param);
                 }
             }
             report_diagnostic(LOWERING_DIAGNOSTIC_X86_PARAMETER_REGISTERS,
@@ -216,12 +218,31 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     uint result_words = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL &&
         operands.a < function_count ? semantic_lir_functions[operands.a].result_word_count :
-        opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? core.value_word_count : 0u;
+        opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? core.value_word_count :
+        opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+        operands.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS ? 2u : 0u;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL && operands.a >= function_count)
+        report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_TARGET,
+            LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
+    if (((opt_ir_op(core) == SEMANTIC_LIR_OP_CALL &&
+          operands.a < function_count) ||
+         opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL) &&
+        result_words == 0u && x86_semantic_type_is_aggregate(core))
+        report_diagnostic(core.value_word_count != 0u
+                ? LOWERING_DIAGNOSTIC_X86_CALLEE_RESULT_LAYOUT
+                : opt_ir_type_ref_tag(core) == SEMANTIC_TYPE_REF_INSTANCE
+                ? LOWERING_DIAGNOSTIC_X86_INSTANCE_RESULT_LAYOUT
+                : opt_ir_type_ref_tag(core) == SEMANTIC_TYPE_REF_SCALAR
+                ? LOWERING_DIAGNOSTIC_X86_NOMINAL_RESULT_LAYOUT
+                : core.type_id >= 128u
+                ? LOWERING_DIAGNOSTIC_X86_LEGACY_RESULT_LAYOUT
+                : LOWERING_DIAGNOSTIC_X86_AGGREGATE_RESULT_LAYOUT,
+            LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL && operands.a < function_count &&
         (semantic_lir_functions[operands.a].flags & SEMANTIC_FUNCTION_FLAG_EXTERN) != 0u)
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_ABI,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
-    if ((opt_ir_op(core) == SEMANTIC_LIR_OP_CALL || opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL) &&
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL &&
         result_words != 0u && argument_rows >= 6u)
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_ABI,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
@@ -239,15 +260,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint copy_words = 0u;
     if ((opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_SET ||
          opt_ir_op(core) == SEMANTIC_LIR_OP_STORE) &&
-        x86_semantic_type_is_aggregate(core) && operands.b < total)
+        operands.b < total)
     {
         OptIrNodeCore value_core = opt_ir_core[operands.b];
         OptIrNodeOperands value_operands = opt_ir_operands[operands.b];
         uint call_words = opt_ir_op(value_core) == SEMANTIC_LIR_OP_CALL &&
             value_operands.a < function_count
             ? semantic_lir_functions[value_operands.a].result_word_count : 0u;
-        copy_words = max(max(core.value_word_count, call_words),
+        uint value_words = max(call_words,
             x86_aggregate_value_word_count(value_core, value_operands));
+        if (x86_semantic_type_is_aggregate(core) || value_words != 0u)
+            copy_words = max(core.value_word_count, value_words);
     }
     uint operation_rows = x86_lir_count(core, operands);
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL &&

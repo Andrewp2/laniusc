@@ -205,7 +205,8 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
     {
         f = 0u;
     }
-    else if (ends_numeric_range_operator(i_abs))
+    // Only repair a lexical dot, never matching bytes inside comments/strings.
+    else if (ends_numeric_range_operator(i_abs) && token_map[state_before] == TK_DOT)
     {
         uint eof_flags = f & (PF_EOF | PF_KEEP_EOF);
         uint eof_kind = unpack_u16_pair_high(tok_types[i_abs]);
