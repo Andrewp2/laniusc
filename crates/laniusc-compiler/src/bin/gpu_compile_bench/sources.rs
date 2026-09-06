@@ -74,6 +74,10 @@ pub(super) fn make_source_artifact(
             wrap_body_in_main(&make_simple_let_source(lines, target_bytes)),
             Some(String::new()),
         ),
+        SourceMode::LiteralArray => (
+            wrap_body_in_main(&make_literal_array_source(lines, target_bytes)),
+            Some(String::new()),
+        ),
         SourceMode::Mixed => {
             let SourceArtifact {
                 source,
@@ -230,6 +234,27 @@ fn push_simple_let_line(src: &mut String, i: usize) {
     src.push_str(" = ");
     src.push_str(&(i % 1024).to_string());
     src.push_str(";\n");
+}
+
+fn make_literal_array_source(elements: usize, target_bytes: Option<usize>) -> String {
+    let elements = target_bytes
+        .map(|bytes| bytes.div_ceil(2).saturating_add(64))
+        .unwrap_or(elements)
+        .max(1);
+    let mut src = String::with_capacity(elements.saturating_mul(2).saturating_add(96));
+    src.push_str("    let values: [i32; ");
+    src.push_str(&elements.to_string());
+    src.push_str("] = [");
+    for index in 0..elements {
+        if index != 0 {
+            src.push(',');
+        }
+        src.push('0');
+    }
+    src.push_str("];\n    let last = values[");
+    src.push_str(&(elements - 1).to_string());
+    src.push_str("];\n");
+    src
 }
 
 fn append_expected_print(expected_stdout: &mut String, value: i32) {

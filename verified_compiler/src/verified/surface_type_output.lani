@@ -33,33 +33,33 @@ pub fn emit(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
     let count: i32 = arena[0];
     if (count <= 0 || !(count <= (arena_length - 1) / 8) || root <= -1
         || root >= count || !(count <= 2147483647 - first_id)) { return -1; }
-    let binding: [i32; 5] = [108,101,116,32,116];
-    let segment_type: [i32; 43] = [32,58,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,80,97,116,104,83,101,103,109,101,110,116,32,58,61,32];
-    let path_type: [i32; 36] = [32,58,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,80,97,116,104,32,58,61,32];
-    let type_type: [i32; 40] = [32,58,32,76,97,110,105,117,115,46,69,120,116,114,97,99,116,105,111,110,46,83,117,114,102,97,99,101,84,121,112,101,69,120,112,114,32,58,61,32];
-    let segments: [i32; 16] = [44,32,123,32,115,101,103,109,101,110,116,115,32,58,61,32];
-    let structure_end: [i32; 2] = [32,125];
-    let path_value: [i32; 8] = [44,32,46,112,97,116,104,32];
-    let array_value: [i32; 9] = [44,32,46,97,114,114,97,121,32];
-    let slice_value: [i32; 9] = [44,32,46,115,108,105,99,101,32];
-    let reference_value: [i32; 13] = [44,32,46,114,101,102,101,114,101,110,99,101,32];
-    let literal_length: [i32; 10] = [40,46,108,105,116,101,114,97,108,32];
-    let parameter_length: [i32; 12] = [40,46,112,97,114,97,109,101,116,101,114,32];
-    let opening: [i32; 3] = [226,159,168];
-    let closing: [i32; 3] = [226,159,169];
+    let binding: str = "let t";
+    let segment_type: str = " : Lanius.Extraction.SurfacePathSegment := ";
+    let path_type: str = " : Lanius.Extraction.SurfacePath := ";
+    let type_type: str = " : Lanius.Extraction.SurfaceTypeExpr := ";
+    let segments: str = ", { segments := ";
+    let structure_end: str = " }";
+    let path_value: str = ", .path ";
+    let array_value: str = ", .array ";
+    let slice_value: str = ", .slice ";
+    let reference_value: str = ", .reference ";
+    let literal_length: str = "(.literal ";
+    let parameter_length: str = "(.parameter ";
+    let opening: str = "⟨";
+    let closing: str = "⟩";
     let next: i32 = verified::output::byte(output, capacity, position, 40);
     let index: i32 = 0;
     while (index != count) {
         let slot: i32 = 1 + index * 8;
         let kind: i32 = arena[slot];
-        next = verified::output::bytes(output, capacity, next, binding, 5);
+        next = verified::output::text(output, capacity, next, binding, 5);
         next = verified::output::natural(output, capacity, next, index);
-        if (kind == 0) { next = verified::output::bytes(output, capacity, next, segment_type, 43); }
+        if (kind == 0) { next = verified::output::text(output, capacity, next, segment_type, 43); }
         else {
-            if (kind == 1) { next = verified::output::bytes(output, capacity, next, path_type, 36); }
-            else { next = verified::output::bytes(output, capacity, next, type_type, 40); }
+            if (kind == 1) { next = verified::output::text(output, capacity, next, path_type, 36); }
+            else { next = verified::output::text(output, capacity, next, type_type, 40); }
         }
-        next = verified::output::bytes(output, capacity, next, opening, 3);
+        next = verified::output::text(output, capacity, next, opening, 3);
         next = verified::output::natural(output, capacity, next, first_id + index);
         next = verified::output::byte(output, capacity, next, 44);
         next = verified::output::natural(output, capacity, next, arena[slot + 1]);
@@ -72,47 +72,47 @@ pub fn emit(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
                 output, capacity, next);
         } else {
         if (kind == 1) {
-            next = verified::output::bytes(output, capacity, next, segments, 16);
+            next = verified::output::text(output, capacity, next, segments, 16);
             next = references(arena, index, arena[slot + 2], 0,
                 output, capacity, next);
-            next = verified::output::bytes(output, capacity, next, structure_end, 2);
+            next = verified::output::text(output, capacity, next, structure_end, 2);
         } else {
             let child: i32 = arena[slot + 2];
             if (child <= -1 || child >= index) { return -1; }
             if (kind == 2) {
                 if (arena[1 + child * 8] != 1) { return -1; }
-                next = verified::output::bytes(output, capacity, next, path_value, 8);
+                next = verified::output::text(output, capacity, next, path_value, 8);
                 next = reference(child, output, capacity, next);
             } else {
             if (kind == 3) {
-                next = verified::output::bytes(output, capacity, next, array_value, 9);
+                next = verified::output::text(output, capacity, next, array_value, 9);
                 next = reference(child, output, capacity, next);
                 next = verified::output::byte(output, capacity, next, 32);
                 if (arena[slot + 3] == 0) {
-                    next = verified::output::bytes(output, capacity, next, literal_length, 10);
+                    next = verified::output::text(output, capacity, next, literal_length, 10);
                     next = verified::output::natural(output, capacity, next, arena[slot + 4]);
                     next = verified::output::byte(output, capacity, next, 32);
                     next = verified::surface_atoms::token_text(source, source_length,
                         tokens, token_count, arena[slot + 4], output, capacity, next);
                 } else {
                     if (arena[slot + 3] != 1) { return -1; }
-                    next = verified::output::bytes(output, capacity, next, parameter_length, 12);
+                    next = verified::output::text(output, capacity, next, parameter_length, 12);
                     next = verified::surface_atoms::name(source, source_length,
                         tokens, token_count, arena[slot + 4], output, capacity, next);
                 }
                 next = verified::output::byte(output, capacity, next, 41);
             } else {
-                if (kind == 4) { next = verified::output::bytes(output, capacity, next, slice_value, 9); }
+                if (kind == 4) { next = verified::output::text(output, capacity, next, slice_value, 9); }
                 else {
                     if (kind != 5) { return -1; }
-                    next = verified::output::bytes(output, capacity, next, reference_value, 13);
+                    next = verified::output::text(output, capacity, next, reference_value, 13);
                 }
                 next = reference(child, output, capacity, next);
             }
             }
         }
         }
-        next = verified::output::bytes(output, capacity, next, closing, 3);
+        next = verified::output::text(output, capacity, next, closing, 3);
         next = verified::output::byte(output, capacity, next, 59);
         next = verified::output::byte(output, capacity, next, 32);
         if (next <= -1) { return -1; }

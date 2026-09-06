@@ -1,5 +1,7 @@
 module verified::output;
 
+import core::mem;
+
 // Append operations return the next byte offset, or -1. Errors are sticky;
 // callers must discard partial output after an error. Bytes occupy i32 slots.
 pub fn byte(output:[i32], capacity: i32, position: i32, value: i32) -> i32 {
@@ -33,6 +35,27 @@ pub fn bytes(output:[i32], capacity: i32, position: i32,
     let index: i32 = 0;
     while (index != length) {
         next = byte(output, capacity, next, input[index]);
+        if (next == -1) { return -1; }
+        index += 1;
+    }
+    return next;
+}
+
+// Append the first `length` UTF-8 bytes of a compact string. Native strings
+// store four bytes in each little-endian i32 word. Callers use literal byte
+// lengths, making emitted Lean syntax readable without expanding it into a
+// separate Lanius integer expression for every byte.
+pub fn text(output:[i32], capacity: i32, position: i32,
+    input: str, length: i32,) -> i32 {
+    if (length <= -1) { return -1; }
+    let words: [i32] = core::mem::i32_slice_from_raw_parts(
+        core::mem::string_data_ptr(input), (length + 3) / 4);
+    let next: i32 = position;
+    let index: i32 = 0;
+    while (index != length) {
+        let value: i32 =
+            (words[index / 4] >> ((index % 4) * 8)) & 255;
+        next = byte(output, capacity, next, value);
         if (next == -1) { return -1; }
         index += 1;
     }

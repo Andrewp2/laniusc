@@ -86,8 +86,8 @@ pub fn emit(assignments:[i32], assignments_length: i32, token_count: i32,
     output:[i32], capacity: i32, position: i32,) -> i32 {
     if (assignments_length <= -1 || token_count <= -1
         || !(token_count <= assignments_length / 2)) { return -1; }
-    let prefix: [i32; 12] = [40, 50, 49, 52, 55, 52, 56, 51, 54, 52, 56, 43];
-    let suffix: [i32; 7] = [42, 51, 50, 55, 54, 56, 41];
+    let prefix: str = "(2147483648+";
+    let suffix: str = "*32768)";
     let next: i32 = verified::output::byte(output, capacity, position, 91);
     let token: i32 = 0;
     while (token != token_count) {
@@ -95,12 +95,12 @@ pub fn emit(assignments:[i32], assignments_length: i32, token_count: i32,
         let second: i32 = assignments[token * 2 + 1];
         if (first <= -1 || first >= 32768 || second <= -2 || second >= 32768) { return -1; }
         if (token != 0) { next = verified::output::byte(output, capacity, next, 44); }
-        if (second != -1) { next = verified::output::bytes(output, capacity, next, prefix, 12); }
+        if (second != -1) { next = verified::output::text(output, capacity, next, prefix, 12); }
         next = verified::output::natural(output, capacity, next, first);
         if (second != -1) {
             next = verified::output::byte(output, capacity, next, 43);
             next = verified::output::natural(output, capacity, next, second);
-            next = verified::output::bytes(output, capacity, next, suffix, 7);
+            next = verified::output::text(output, capacity, next, suffix, 7);
         }
         if (next == -1) { return -1; }
         token += 1;

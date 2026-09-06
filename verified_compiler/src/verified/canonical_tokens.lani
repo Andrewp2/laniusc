@@ -1,6 +1,7 @@
 module verified::canonical_tokens;
 
 import verified::token;
+import core::mem;
 
 pub fn is_trivia(kind: i32) -> bool {
     return kind == verified::token::WHITESPACE
@@ -8,8 +9,31 @@ pub fn is_trivia(kind: i32) -> bool {
         || kind == verified::token::BLOCK_COMMENT;
 }
 
+// Compare a source-byte span with one compact ASCII string literal. Native
+// strings store four bytes in each little-endian i32 word; keeping keyword
+// spellings in that representation avoids expanding every character into a
+// separate Lanius expression (and therefore many extracted parse nodes).
+fn matches_ascii(
+    source: [i32],
+    start: i32,
+    spelling: str,
+    length: i32,
+) -> bool {
+    let words: [i32] = core::mem::i32_slice_from_raw_parts(
+        core::mem::string_data_ptr(spelling), (length + 3) / 4);
+    let index: i32 = 0;
+    while (index != length) {
+        let expected: i32 =
+            (words[index / 4] >> ((index % 4) * 8)) & 255;
+        if (source[start + index] != expected) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
 // Retags an identifier span only when its complete spelling is a keyword.
-// Length dispatch prevents prefix matches such as `letter` becoming `let`.
+// Length dispatch prevents prefix matches such as `letter` becoming `let` and
+// limits the number of literal comparisons performed for each identifier.
 pub fn keyword_kind(
     source: [i32],
     start: i32,
@@ -17,106 +41,41 @@ pub fn keyword_kind(
 ) -> i32 {
     let length: i32 = end - start;
     if (length == 2) {
-        let a: i32 = source[start];
-        let b: i32 = source[start + 1];
-        if (a == 102 && b == 110) { return verified::token::FN; }
-        if (a == 105 && b == 102) { return verified::token::IF; }
-        if (a == 105 && b == 110) { return verified::token::IN; }
+        if (matches_ascii(source, start, "fn", 2)) { return verified::token::FN; }
+        if (matches_ascii(source, start, "if", 2)) { return verified::token::IF; }
+        if (matches_ascii(source, start, "in", 2)) { return verified::token::IN; }
     }
     if (length == 3) {
-        let a: i32 = source[start];
-        let b: i32 = source[start + 1];
-        let c: i32 = source[start + 2];
-        if (a == 112 && b == 117 && c == 98) { return verified::token::PUB; }
-        if (a == 108 && b == 101 && c == 116) { return verified::token::LET; }
-        if (a == 102 && b == 111 && c == 114) { return verified::token::FOR; }
+        if (matches_ascii(source, start, "pub", 3)) { return verified::token::PUB; }
+        if (matches_ascii(source, start, "let", 3)) { return verified::token::LET; }
+        if (matches_ascii(source, start, "for", 3)) { return verified::token::FOR; }
     }
     if (length == 4) {
-        let a: i32 = source[start];
-        let b: i32 = source[start + 1];
-        let c: i32 = source[start + 2];
-        let d: i32 = source[start + 3];
-        if (a == 101 && b == 108 && c == 115 && d == 101) {
-            return verified::token::ELSE;
-        }
-        if (a == 116 && b == 114 && c == 117 && d == 101) {
-            return verified::token::TRUE;
-        }
-        if (a == 101 && b == 110 && c == 117 && d == 109) {
-            return verified::token::ENUM;
-        }
-        if (a == 105 && b == 109 && c == 112 && d == 108) {
-            return verified::token::IMPL;
-        }
-        if (a == 115 && b == 101 && c == 108 && d == 102) {
-            return verified::token::SELF_VALUE;
-        }
-        if (a == 116 && b == 121 && c == 112 && d == 101) {
-            return verified::token::TYPE;
-        }
+        if (matches_ascii(source, start, "else", 4)) { return verified::token::ELSE; }
+        if (matches_ascii(source, start, "true", 4)) { return verified::token::TRUE; }
+        if (matches_ascii(source, start, "enum", 4)) { return verified::token::ENUM; }
+        if (matches_ascii(source, start, "impl", 4)) { return verified::token::IMPL; }
+        if (matches_ascii(source, start, "self", 4)) { return verified::token::SELF_VALUE; }
+        if (matches_ascii(source, start, "type", 4)) { return verified::token::TYPE; }
     }
     if (length == 5) {
-        let a: i32 = source[start];
-        let b: i32 = source[start + 1];
-        let c: i32 = source[start + 2];
-        let d: i32 = source[start + 3];
-        let e: i32 = source[start + 4];
-        if (a == 102 && b == 97 && c == 108 && d == 115 && e == 101) {
-            return verified::token::FALSE;
-        }
-        if (a == 99 && b == 111 && c == 110 && d == 115 && e == 116) {
-            return verified::token::CONST;
-        }
-        if (a == 109 && b == 97 && c == 116 && d == 99 && e == 104) {
-            return verified::token::MATCH;
-        }
-        if (a == 116 && b == 114 && c == 97 && d == 105 && e == 116) {
-            return verified::token::TRAIT;
-        }
-        if (a == 119 && b == 104 && c == 101 && d == 114 && e == 101) {
-            return verified::token::WHERE;
-        }
-        if (a == 119 && b == 104 && c == 105 && d == 108 && e == 101) {
-            return verified::token::WHILE;
-        }
-        if (a == 98 && b == 114 && c == 101 && d == 97 && e == 107) {
-            return verified::token::BREAK;
-        }
+        if (matches_ascii(source, start, "false", 5)) { return verified::token::FALSE; }
+        if (matches_ascii(source, start, "const", 5)) { return verified::token::CONST; }
+        if (matches_ascii(source, start, "match", 5)) { return verified::token::MATCH; }
+        if (matches_ascii(source, start, "trait", 5)) { return verified::token::TRAIT; }
+        if (matches_ascii(source, start, "where", 5)) { return verified::token::WHERE; }
+        if (matches_ascii(source, start, "while", 5)) { return verified::token::WHILE; }
+        if (matches_ascii(source, start, "break", 5)) { return verified::token::BREAK; }
     }
     if (length == 6) {
-        let a: i32 = source[start];
-        let b: i32 = source[start + 1];
-        let c: i32 = source[start + 2];
-        let d: i32 = source[start + 3];
-        let e: i32 = source[start + 4];
-        let f: i32 = source[start + 5];
-        if (a == 114 && b == 101 && c == 116 && d == 117 && e == 114 && f == 110) {
-            return verified::token::RETURN;
-        }
-        if (a == 115 && b == 116 && c == 114 && d == 117 && e == 99 && f == 116) {
-            return verified::token::STRUCT;
-        }
-        if (a == 101 && b == 120 && c == 116 && d == 101 && e == 114 && f == 110) {
-            return verified::token::EXTERN;
-        }
-        if (a == 105 && b == 109 && c == 112 && d == 111 && e == 114 && f == 116) {
-            return verified::token::IMPORT;
-        }
-        if (a == 109 && b == 111 && c == 100 && d == 117 && e == 108 && f == 101) {
-            return verified::token::MODULE;
-        }
+        if (matches_ascii(source, start, "return", 6)) { return verified::token::RETURN; }
+        if (matches_ascii(source, start, "struct", 6)) { return verified::token::STRUCT; }
+        if (matches_ascii(source, start, "extern", 6)) { return verified::token::EXTERN; }
+        if (matches_ascii(source, start, "import", 6)) { return verified::token::IMPORT; }
+        if (matches_ascii(source, start, "module", 6)) { return verified::token::MODULE; }
     }
     if (length == 8) {
-        let a: i32 = source[start];
-        let b: i32 = source[start + 1];
-        let c: i32 = source[start + 2];
-        let d: i32 = source[start + 3];
-        let e: i32 = source[start + 4];
-        let f: i32 = source[start + 5];
-        let g: i32 = source[start + 6];
-        let h: i32 = source[start + 7];
-        if (a == 99 && b == 111 && c == 110 && d == 116
-            && e == 105 && f == 110 && g == 117 && h == 101) {
+        if (matches_ascii(source, start, "continue", 8)) {
             return verified::token::CONTINUE;
         }
     }

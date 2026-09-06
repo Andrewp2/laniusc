@@ -28,8 +28,8 @@ pub fn emit_tokens(rows:[i32], rows_length: i32, token_count: i32,
     position: i32,) -> i32 {
     if (rows_length <= -1 || token_count <= -1 || source_length <= -1
         || file_id <= -1 || !(token_count <= rows_length / 3)) { return -1; }
-    let opening: [i32; 3] = [226, 159, 168];
-    let closing: [i32; 3] = [226, 159, 169];
+    let opening: str = "⟨";
+    let closing: str = "⟩";
     let next: i32 = verified::output::byte(output, capacity, position, 91);
     let token: i32 = 0;
     while (token != token_count) {
@@ -38,17 +38,17 @@ pub fn emit_tokens(rows:[i32], rows_length: i32, token_count: i32,
         let finish: i32 = rows[row + 2];
         if (start <= -1 || !(start <= finish) || !(finish <= source_length)) { return -1; }
         if (token != 0) { next = verified::output::byte(output, capacity, next, 44); }
-        next = verified::output::bytes(output, capacity, next, opening, 3);
+        next = verified::output::text(output, capacity, next, opening, 3);
         next = verified::output::natural(output, capacity, next, rows[row]);
         next = verified::output::byte(output, capacity, next, 44);
-        next = verified::output::bytes(output, capacity, next, opening, 3);
+        next = verified::output::text(output, capacity, next, opening, 3);
         next = verified::output::natural(output, capacity, next, file_id);
         next = verified::output::byte(output, capacity, next, 44);
         next = verified::output::natural(output, capacity, next, start);
         next = verified::output::byte(output, capacity, next, 44);
         next = verified::output::natural(output, capacity, next, finish);
-        next = verified::output::bytes(output, capacity, next, closing, 3);
-        next = verified::output::bytes(output, capacity, next, closing, 3);
+        next = verified::output::text(output, capacity, next, closing, 3);
+        next = verified::output::text(output, capacity, next, closing, 3);
         if (next == -1) { return -1; }
         token += 1;
     }

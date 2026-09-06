@@ -7,6 +7,7 @@ import verified::output;
 import verified::source_output;
 import verified::semantic_tokens;
 import verified::artifact_output;
+import verified::canonical_tokens;
 
 fn main() -> i32 {
     // One-production grammar: Start -> identifier. This tests composition
@@ -198,5 +199,17 @@ fn main() -> i32 {
     semantic[1] = -1;
     if (verified::semantic_tokens::emit(semantic, 4, 1, source_bytes, 64, 0) != 3
         || source_bytes[0] != 91 || source_bytes[1] != 48 || source_bytes[2] != 93) { return 31; }
+
+    // Keyword matching reads compact packed string literals across word
+    // boundaries and still requires a complete spelling match.
+    let struct_keyword: [i32; 6] = [115,116,114,117,99,116];
+    let struct_prefix: [i32; 7] = [115,116,114,117,99,116,115];
+    let continue_keyword: [i32; 8] = [99,111,110,116,105,110,117,101];
+    if (verified::canonical_tokens::keyword_kind(struct_keyword, 0, 6)
+            != verified::token::STRUCT
+        || verified::canonical_tokens::keyword_kind(struct_prefix, 0, 7)
+            != verified::token::IDENTIFIER
+        || verified::canonical_tokens::keyword_kind(continue_keyword, 0, 8)
+            != verified::token::CONTINUE) { return 35; }
     return 0;
 }

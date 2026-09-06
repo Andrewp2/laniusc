@@ -684,6 +684,7 @@ fn compiler_backends_for_phase(phase: Phase) -> GpuCompilerBackends {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SourceMode {
     SimpleLets,
+    LiteralArray,
     Mixed,
     CallGraph,
     ExprDense,
@@ -694,8 +695,9 @@ enum SourceMode {
     All,
 }
 
-const GENERATED_SINGLE_SOURCE_MODES: [SourceMode; 7] = [
+const GENERATED_SINGLE_SOURCE_MODES: [SourceMode; 8] = [
     SourceMode::SimpleLets,
+    SourceMode::LiteralArray,
     SourceMode::Mixed,
     SourceMode::CallGraph,
     SourceMode::ExprDense,
@@ -704,8 +706,9 @@ const GENERATED_SINGLE_SOURCE_MODES: [SourceMode; 7] = [
     SourceMode::LongFunction,
 ];
 
-const GENERATED_COMPILE_SOURCE_MODES: [SourceMode; 8] = [
+const GENERATED_COMPILE_SOURCE_MODES: [SourceMode; 9] = [
     SourceMode::SimpleLets,
+    SourceMode::LiteralArray,
     SourceMode::Mixed,
     SourceMode::CallGraph,
     SourceMode::ExprDense,
@@ -1045,6 +1048,7 @@ impl SourceMode {
     fn name(self) -> &'static str {
         match self {
             SourceMode::SimpleLets => "simple-lets",
+            SourceMode::LiteralArray => "literal-array",
             SourceMode::Mixed => "mixed",
             SourceMode::CallGraph => "call-graph",
             SourceMode::ExprDense => "expr-dense",
@@ -1114,6 +1118,7 @@ fn parse_source_mode(value: Option<String>) -> Result<SourceMode, String> {
         .as_str()
     {
         "simple" | "simple-let" | "simple-lets" | "lets" => Ok(SourceMode::SimpleLets),
+        "literal-array" | "array-literals" | "zeros" => Ok(SourceMode::LiteralArray),
         "mixed" => Ok(SourceMode::Mixed),
         "call-graph" | "callgraph" | "calls" | "functions" => Ok(SourceMode::CallGraph),
         "expr-dense" | "expression-dense" | "dense-expr" | "expressions" => {
@@ -1127,7 +1132,7 @@ fn parse_source_mode(value: Option<String>) -> Result<SourceMode, String> {
         "module-pack" | "modules" | "source-pack" | "pack" => Ok(SourceMode::ModulePack),
         "all" | "suite" | "generated-suite" => Ok(SourceMode::All),
         other => Err(format!(
-            "unsupported --source {other:?}; expected simple-lets, mixed, call-graph, expr-dense, abi-calls, varied, long-function, module-pack, or all"
+            "unsupported --source {other:?}; expected simple-lets, literal-array, mixed, call-graph, expr-dense, abi-calls, varied, long-function, module-pack, or all"
         )),
     }
 }
@@ -1245,7 +1250,7 @@ fn unique_x86_output_path(phase: &str) -> PathBuf {
 
 fn print_help() {
     eprintln!(
-        "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source] [--source-pack-descriptors] [--source-pack-max-items N] [--source-pack-max-ready-items N] [--source-pack-artifact-root PATH]\n\
+        "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|literal-array|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source] [--source-pack-descriptors] [--source-pack-max-items N] [--source-pack-max-ready-items N] [--source-pack-artifact-root PATH]\n\
          Optional phases: --phase lex|parse|typecheck|wasm|x86.\n\
          All --source modes are synthetic compiler stress inputs, not representative-program benchmarks.\n\
          Defaults to --lines 5000; use --allow-large for intentional large live runs.\n\

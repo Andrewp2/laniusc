@@ -180,6 +180,12 @@ fn synthetic_function_modes_bound_function_size_independently_of_source_size() {
             "{mode:?} should remain an explicit long-function stress workload"
         );
     }
+
+    let literal_array = make_source_artifact(SourceMode::LiteralArray, 50_000, None, 67890);
+    assert!(
+        literal_array.source.lines().map(str::len).max().unwrap_or(0) > 50_000,
+        "literal-array should remain an explicit wide-expression stress workload"
+    );
 }
 
 fn maximum_generated_function_lines(source: &str) -> usize {

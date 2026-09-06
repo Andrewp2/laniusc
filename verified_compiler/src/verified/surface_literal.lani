@@ -19,15 +19,15 @@ pub fn emit(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
     let token: i32 = verified::surface_tree::child(records, records_length, offsets,
         node_count, node, 0, verified::parser::CHILD_TOKEN, token_count);
     if (token <= -1) { return -1; }
-    let opening: [i32; 3] = [226,159,168];
-    let closing: [i32; 3] = [226,159,169];
-    let literal: [i32; 10] = [44,46,108,105,116,101,114,97,108,32];
-    let next: i32 = verified::output::bytes(output, capacity, position, opening, 3);
+    let opening: str = "⟨";
+    let closing: str = "⟩";
+    let literal: str = ",.literal ";
+    let next: i32 = verified::output::text(output, capacity, position, opening, 3);
     next = verified::output::natural(output, capacity, next, surface_id);
     next = verified::output::byte(output, capacity, next, 44);
     next = verified::output::natural(output, capacity, next, node);
-    next = verified::output::bytes(output, capacity, next, literal, 10);
+    next = verified::output::text(output, capacity, next, literal, 10);
     next = verified::surface_atoms::literal(production, source, source_length, tokens,
         token_count, token, output, capacity, next);
-    return verified::output::bytes(output, capacity, next, closing, 3);
+    return verified::output::text(output, capacity, next, closing, 3);
 }

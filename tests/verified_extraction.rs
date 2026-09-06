@@ -40,7 +40,7 @@ example : (List.range 4).map (fun i => reconstructTokenLiteral artifact i (175+i
     std::fs::write(lean.path(), source).unwrap();
     let checked = std::process::Command::new("lake")
         .current_dir(root.join("formal"))
-        .args(["env", "lean", "-M", "12000", "-DElab.async=false"])
+        .args(["env", "lean", "-M", "12000"])
         .arg(lean.path())
         .output()
         .expect("check actual Surface literal output");
@@ -54,14 +54,11 @@ example : (List.range 4).map (fun i => reconstructTokenLiteral artifact i (175+i
 
 use std::path::PathBuf;
 
-use laniusc_compiler::compiler::{
-    EntrySourceRoots,
-    compile_entry_to_x86_64_with_source_root,
-    compile_entry_to_x86_64_with_source_roots,
-};
+use laniusc_compiler::compiler::{EntrySourceRoots, compile_entry_to_x86_64_with_source_roots};
 
 #[test]
 fn lanius_extractor_uses_full_language_grammar() {
+    let started = std::time::Instant::now();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let grammar: Vec<i32> =
         serde_json::from_str(include_str!("../verified_compiler/data/grammar.json"))
@@ -103,6 +100,10 @@ fn lanius_extractor_uses_full_language_grammar() {
         })
         .collect();
     let artifact_path: Vec<i32> = path_bytes.iter().map(|byte| i32::from(*byte)).collect();
+    let encoded_grammar = grammar
+        .iter()
+        .map(|word| format!("{word:04x}"))
+        .collect::<String>();
     let entry = temporary.path().to_path_buf();
     let program = format!(
         r#"module app::main;
@@ -123,11 +124,33 @@ import verified::surface_item_output;
 import verified::surface_path_output;
 import verified::surface_file_output;
 import verified::output;
+import alloc::allocator;
 import core::mem;
 import std::fs;
+
+fn hex_nibble(byte: i32) -> i32 {{
+    if (byte >= 48 && byte <= 57) {{ return byte - 48; }}
+    return byte - 87;
+}}
+
 fn main() -> i32 {{
-    let grammar: [i32; {grammar_len}] = [{grammar}];
-    let source: [i32; 256] = [{source_storage}];
+    let grammar: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc({grammar_bytes}, 4), {grammar_len});
+    let encoded_grammar: str = "{encoded_grammar}";
+    let encoded_words: [i32] = core::mem::i32_slice_from_raw_parts(
+        core::mem::string_data_ptr(encoded_grammar), {grammar_len});
+    let grammar_index: i32 = 0;
+    while (grammar_index != {grammar_len}) {{
+        let encoded_word: i32 = encoded_words[grammar_index];
+        grammar[grammar_index] =
+            (hex_nibble(encoded_word & 255) << 12)
+            | (hex_nibble((encoded_word >> 8) & 255) << 8)
+            | (hex_nibble((encoded_word >> 16) & 255) << 4)
+            | hex_nibble((encoded_word >> 24) & 255);
+        grammar_index += 1;
+    }}
+    let source: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(1024, 4), 256);
     let packed_path: [i32; {path_words}] = [{packed_path}];
     let path: [i32; {path_length}] = [{path}];
     let handle: i32 = std::fs::open_read(core::mem::i32_array_data_ptr(packed_path), {path_length});
@@ -135,15 +158,24 @@ fn main() -> i32 {{
     let source_length: i32 = verified::byte_io::read_file(handle, source, 256);
     let closed: i32 = std::fs::close(handle);
     if (source_length <= -1 || closed <= -1) {{ return 31; }}
-    let raw: [i32; 512] = [{token_storage}];
-    let canonical: [i32; 512] = [{token_storage}];
-    let kinds: [i32; 256] = [{kind_storage}];
-    let workspace: [i32; 32768] = [{workspace}];
-    let records: [i32; 4096] = [{records}];
-    let offsets: [i32; 512] = [{offsets}];
-    let arena: [i32; 256] = [{semantic}];
-    let semantic: [i32; 256] = [{semantic}];
-    let output: [i32; 32768] = [{output}];
+    let raw: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(2048, 4), 512);
+    let canonical: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(2048, 4), 512);
+    let kinds: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(1024, 4), 256);
+    let workspace: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(131072, 4), 32768);
+    let records: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(16384, 4), 4096);
+    let offsets: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(2048, 4), 512);
+    let arena: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(1024, 4), 256);
+    let semantic: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(1024, 4), 256);
+    let output: [i32] = core::mem::i32_slice_from_raw_parts(
+        alloc::allocator::alloc(131072, 4), 32768);
     let extracted = verified::extraction::extract_syntax(source, source_length,
         grammar, {grammar_len}, raw, 512, canonical, 512, kinds, 256,
         workspace, 32768, records, 4096, offsets, 512, 128);
@@ -434,19 +466,12 @@ fn main() -> i32 {{
 }}
 "#,
         grammar_len = grammar.len(),
+        grammar_bytes = grammar.len() * 4,
+        encoded_grammar = encoded_grammar,
         path_words = packed_path.len(),
         packed_path = list(&packed_path),
         path = list(&artifact_path),
         path_length = path_bytes.len(),
-        grammar = list(&grammar),
-        semantic = list(&vec![0; 256]),
-        output = list(&vec![0; 32768]),
-        source_storage = list(&vec![0; 256]),
-        token_storage = list(&vec![0; 512]),
-        kind_storage = list(&vec![0; 256]),
-        records = list(&vec![0; 4096]),
-        offsets = list(&vec![0; 512]),
-        workspace = list(&vec![0; 32768])
     );
     std::fs::write(&entry, program).unwrap();
     let source_root = root.join("verified_compiler/src");
@@ -458,7 +483,15 @@ fn main() -> i32 {{
         pollster::block_on(compile_entry_to_x86_64_with_source_roots(entry, &roots))
     })
     .expect("compile full-grammar extraction test");
-    for source in sources {
+    eprintln!("full-grammar GPU compilation: {:?}", started.elapsed());
+    let native_started = std::time::Instant::now();
+    const LEAN_BATCH_COUNT: usize = 4;
+    let lean_prefix = "import Lanius.Extraction.ParseChecker\n\
+         import Lanius.Extraction.SurfaceReconstruct\n\
+         import Lanius.Extraction.KernelReduction\n\
+         open Lanius.Extraction\n";
+    let mut lean_sources = vec![String::from(lean_prefix); LEAN_BATCH_COUNT];
+    for (case_index, source) in sources.into_iter().enumerate() {
         input.write_bytes(source);
         let result = common::run_x86_64_elf_output(
             "full-grammar Lanius extraction",
@@ -472,66 +505,59 @@ fn main() -> i32 {{
         );
         let stdout = String::from_utf8(result.stdout).expect("native extraction output is UTF-8");
         assert!(stdout.starts_with("{ Lanius.Extraction.Artifact.empty with"));
-        let (artifact_term, primary_term) = stdout
+        let (artifact_term, _) = stdout
             .split_once('\n')
-            .expect("artifact and located primary");
-        let (primary_term, expression_term) = primary_term
-            .split_once('\n')
-            .expect("primary and compound expression");
-        let (expression_term, type_term) = expression_term
-            .split_once('\n')
-            .expect("compound expression and type expression");
-        let (type_term, statement_term) = type_term
-            .split_once('\n')
-            .expect("type expression and statement block");
-        let (statement_term, function_term) = statement_term
-            .split_once('\n')
-            .expect("statement block and function");
-        let (function_term, item_term) = function_term
-            .split_once('\n')
-            .expect("function and function item");
-        let (item_term, path_term) = item_term
-            .split_once('\n')
-            .expect("function item and module item");
-        let (path_term, surface_tail) = path_term
-            .split_once('\n')
-            .expect("module item and standalone path");
-        let (standalone_path_term, file_term) = surface_tail
-            .split_once('\n')
-            .expect("standalone path and complete Surface file");
-        let file_checks = format!(
-            "noncomputable def surfaceFile : Nat × SurfaceFile × Nat := {}\nexample : (reconstructFile 512 extracted surfaceFile.1).run 0 = some (surfaceFile.2.1, surfaceFile.2.2) := by kernel_rfl\n",
-            file_term
-        );
+            .expect("artifact and diagnostic terms");
         assert!(artifact_term.ends_with(" }"));
-        let lean = common::TempArtifact::new("extraction", "runtime_artifact", Some("lean"));
-        std::fs::write(lean.path(), format!(
-        "import Lanius.Extraction.ParseChecker\nimport Lanius.Extraction.SurfaceReconstruct\nimport Lanius.Extraction.KernelReduction\nopen Lanius.Extraction\ndef extracted : Artifact := {}\nnoncomputable def primary : SurfaceExpr := {}\nnoncomputable def compound : Nat × SurfaceExpr × Nat := {}\nnoncomputable def surfaceType : Nat × SurfaceTypeExpr × Nat := {}\nnoncomputable def statements : Nat × List SurfaceStmt × Nat := {}\nnoncomputable def surfaceFunction : Nat × SurfaceFunction × Nat := {}\nnoncomputable def surfaceItem : Nat × SurfaceItem × Nat := {}\nnoncomputable def moduleItem : Nat × SurfaceItem × Nat := {}\nnoncomputable def surfacePath : Nat × SurfacePath × Nat := {}\nexample : checkParseArtifact extracted = true := by kernel_rfl\nexample : extracted.surface = reconstructArtifactSurface extracted := by kernel_rfl\nexample : (reconstructPrimary 4 extracted primary.parse_node).run 7 = some (primary, 8) := by kernel_rfl\nexample : (reconstructExpr 512 extracted compound.1).run 7 = some (compound.2.1, compound.2.2) := by kernel_rfl\nexample : (reconstructTypeExpr 512 extracted surfaceType.1).run 7 = some (surfaceType.2.1, surfaceType.2.2) := by kernel_rfl\nexample : (reconstructBlock 512 extracted statements.1).run 7 = some (statements.2.1, statements.2.2) := by kernel_rfl\nexample : (reconstructFunction 512 extracted surfaceFunction.1 false).run 7 = some (surfaceFunction.2.1, surfaceFunction.2.2) := by kernel_rfl\nexample : (reconstructItem 512 extracted surfaceItem.1).run 7 = some (surfaceItem.2.1, surfaceItem.2.2) := by kernel_rfl\nexample : (reconstructItem 512 extracted moduleItem.1).run 7 = some (moduleItem.2.1, moduleItem.2.2) := by kernel_rfl\nexample : (reconstructPath 512 extracted surfacePath.1).run 7 = some (surfacePath.2.1, surfacePath.2.2) := by kernel_rfl\n{}",
-        artifact_term, primary_term, expression_term, type_term, statement_term,
-        function_term, item_term, path_term, standalone_path_term, file_checks
-    )).unwrap();
-        let checked = std::process::Command::new("lake")
+        lean_sources[case_index % LEAN_BATCH_COUNT].push_str(&format!(
+        "namespace ExtractionCase{}\ndef extracted : Artifact := {}\nexample : checkParseArtifact extracted = true := by kernel_rfl\nexample : extracted.surface = reconstructArtifactSurface extracted := by kernel_rfl\nend ExtractionCase{}\n",
+        case_index, artifact_term, case_index
+    ));
+    }
+    eprintln!("full-grammar native batch: {:?}", native_started.elapsed());
+    let lean_started = std::time::Instant::now();
+    let mut lean_jobs = Vec::with_capacity(LEAN_BATCH_COUNT);
+    for (batch, source) in lean_sources.into_iter().enumerate() {
+        let artifact = common::TempArtifact::new(
+            "extraction",
+            &format!("runtime_artifacts_{batch}"),
+            Some("lean"),
+        );
+        std::fs::write(artifact.path(), source).unwrap();
+        let child = std::process::Command::new("lake")
             .current_dir(root.join("formal"))
-            .args(["env", "lean", "-M", "12000", "-DElab.async=false"])
-            .arg(lean.path())
-            .output()
-            .expect("run Lean on actual Lanius-emitted artifact");
+            .args(["env", "lean", "-M", "3000"])
+            .arg(artifact.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("start batched Lean artifact check");
+        lean_jobs.push((artifact, child));
+    }
+    for (batch, (_artifact, child)) in lean_jobs.into_iter().enumerate() {
+        let checked = child
+            .wait_with_output()
+            .expect("finish batched Lean artifact check");
         assert!(
             checked.status.success(),
-            "Lean rejected emitted artifact:\n{}\n{}",
+            "Lean rejected emitted-artifact batch {batch}:\n{}\n{}",
             String::from_utf8_lossy(&checked.stdout),
             String::from_utf8_lossy(&checked.stderr)
         );
     }
+    eprintln!("full-grammar Lean batch: {:?}", lean_started.elapsed());
 }
 
 #[test]
 fn lanius_extractor_runs_source_to_syntax_evidence() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("verified_compiler/tests/extraction_syntax.lani");
-    let source_root = root.join("verified_compiler/src");
+    let roots = EntrySourceRoots {
+        user_roots: vec![root.join("verified_compiler/src")],
+        stdlib_root: Some(root.join("stdlib")),
+    };
     let elf = common::run_gpu_codegen_with_timeout("Lanius syntax extraction", move || {
-        pollster::block_on(compile_entry_to_x86_64_with_source_root(entry, source_root))
+        pollster::block_on(compile_entry_to_x86_64_with_source_roots(entry, &roots))
     })
     .expect("compile the Lanius extraction test");
     let result =

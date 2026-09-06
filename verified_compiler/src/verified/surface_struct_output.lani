@@ -43,9 +43,9 @@ fn field(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
         || type_arena[0] >= 2147483647 - state.next_id) {
         return failed(state.next_id);
     }
-    let opening: [i32; 3] = [226,159,168];
-    let closing: [i32; 3] = [226,159,169];
-    let next: i32 = verified::output::bytes(output, capacity,
+    let opening: str = "⟨";
+    let closing: str = "⟩";
+    let next: i32 = verified::output::text(output, capacity,
         state.position, opening, 3);
     next = verified::output::natural(output, capacity, next,
         state.next_id + type_arena[0]);
@@ -61,7 +61,7 @@ fn field(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
     next = verified::surface_type_output::emit(source, source_length, tokens,
         token_count, type_arena, type_arena_length, root, state.next_id,
         output, capacity, next);
-    next = verified::output::bytes(output, capacity, next, closing, 3);
+    next = verified::output::text(output, capacity, next, closing, 3);
     if (next <= -1) { return failed(state.next_id); }
     return result(next, state.next_id + type_arena[0] + 1);
 }
@@ -145,29 +145,29 @@ pub fn emit(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
         || where_offset <= -1 || records[where_offset] != 36) {
         return failed(first_id);
     }
-    let name_start: [i32; 10] = [123,32,110,97,109,101,32,58,61,32];
-    let public_start: [i32; 15] = [44,32,105,115,95,112,117,98,108,105,99,32,58,61,32];
-    let fields_start: [i32; 12] = [44,32,102,105,101,108,100,115,32,58,61,32];
-    let record_end: [i32; 2] = [32,125];
-    let yes: [i32; 4] = [116,114,117,101];
-    let no: [i32; 5] = [102,97,108,115,101];
-    let next: i32 = verified::output::bytes(output, capacity, position,
+    let name_start: str = "{ name := ";
+    let public_start: str = ", is_public := ";
+    let fields_start: str = ", fields := ";
+    let record_end: str = " }";
+    let yes: str = "true";
+    let no: str = "false";
+    let next: i32 = verified::output::text(output, capacity, position,
         name_start, 10);
     let name_token: i32 = verified::surface_tree::child(records,
         records_length, offsets, node_count, node, 1,
         verified::parser::CHILD_TOKEN, token_count);
     next = verified::surface_atoms::name(source, source_length, tokens,
         token_count, name_token, output, capacity, next);
-    next = verified::output::bytes(output, capacity, next, public_start, 15);
-    if (is_public) { next = verified::output::bytes(output, capacity, next, yes, 4); }
-    else { next = verified::output::bytes(output, capacity, next, no, 5); }
-    next = verified::output::bytes(output, capacity, next, fields_start, 12);
+    next = verified::output::text(output, capacity, next, public_start, 15);
+    if (is_public) { next = verified::output::text(output, capacity, next, yes, 4); }
+    else { next = verified::output::text(output, capacity, next, no, 5); }
+    next = verified::output::text(output, capacity, next, fields_start, 12);
     let current: EmitResult = fields(source, source_length, tokens,
         token_count, records, records_length, offsets, node_count,
         node_child(records, records_length, offsets, node_count, node, 5),
         type_arena, type_arena_length, depth - 1, output, capacity,
         result(next, first_id));
-    next = verified::output::bytes(output, capacity, current.position,
+    next = verified::output::text(output, capacity, current.position,
         record_end, 2);
     if (next <= -1) { return failed(current.next_id); }
     return result(next, current.next_id);

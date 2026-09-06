@@ -16,10 +16,10 @@ pub fn emit_nodes(grammar:[i32], grammar_length: i32, records:[i32],
     let production_count: i32 = grammar[2];
     if (lhs <= -1 || !(lhs <= grammar_length) || production_count <= -1
         || !(production_count <= grammar_length - lhs)) { return -1; }
-    let open_tuple: [i32; 3] = [226, 159, 168];
-    let close_tuple: [i32; 3] = [226, 159, 169];
-    let token_name: [i32; 7] = [46, 116, 111, 107, 101, 110, 32];
-    let node_name: [i32; 6] = [46, 110, 111, 100, 101, 32];
+    let open_tuple: str = "⟨";
+    let close_tuple: str = "⟩";
+    let token_name: str = ".token ";
+    let node_name: str = ".node ";
     let next: i32 = verified::output::byte(output, capacity, position, 91);
     let node: i32 = 0;
     while (node != node_count) {
@@ -31,7 +31,7 @@ pub fn emit_nodes(grammar:[i32], grammar_length: i32, records:[i32],
         if (production <= -1 || production >= production_count || children <= -1
             || !(children <= (records_length - record - 4) / 3)) { return -1; }
         if (node != 0) { next = verified::output::byte(output, capacity, next, 44); }
-        next = verified::output::bytes(output, capacity, next, open_tuple, 3);
+        next = verified::output::text(output, capacity, next, open_tuple, 3);
         next = verified::output::natural(output, capacity, next, production);
         next = verified::output::byte(output, capacity, next, 44);
         next = verified::output::natural(output, capacity, next, grammar[lhs + production]);
@@ -50,17 +50,17 @@ pub fn emit_nodes(grammar:[i32], grammar_length: i32, records:[i32],
             if (child != 0) { next = verified::output::byte(output, capacity, next, 44); }
             if (tag == verified::parser::CHILD_TOKEN) {
                 if (payload >= token_count) { return -1; }
-                next = verified::output::bytes(output, capacity, next, token_name, 7);
+                next = verified::output::text(output, capacity, next, token_name, 7);
             } else {
                 if (tag != verified::parser::CHILD_STATE || payload >= node) { return -1; }
-                next = verified::output::bytes(output, capacity, next, node_name, 6);
+                next = verified::output::text(output, capacity, next, node_name, 6);
             }
             next = verified::output::natural(output, capacity, next, payload);
             if (next == -1) { return -1; }
             child += 1;
         }
         next = verified::output::byte(output, capacity, next, 93);
-        next = verified::output::bytes(output, capacity, next, close_tuple, 3);
+        next = verified::output::text(output, capacity, next, close_tuple, 3);
         if (next == -1) { return -1; }
         node += 1;
     }

@@ -39,9 +39,9 @@ pub fn token_text(source:[i32], source_length: i32, tokens:[i32],
     let start: i32 = tokens[token * 3 + 1];
     let finish: i32 = tokens[token * 3 + 2];
     if (!valid_utf8(source, source_length, start, finish)) { return -1; }
-    let string_start: [i32; 35] = [40,83,116,114,105,110,103,46,102,114,111,109,85,84,70,56,33,32,40,66,121,116,101,65,114,114,97,121,46,109,107,32,40,40,91];
-    let string_end: [i32; 39] = [93,58,32,76,105,115,116,32,78,97,116,41,46,116,111,65,114,114,97,121,46,109,97,112,32,85,73,110,116,56,46,111,102,78,97,116,41,41,41];
-    let next: i32 = verified::output::bytes(output, capacity, position, string_start, 35);
+    let string_start: str = "(String.fromUTF8! (ByteArray.mk (([";
+    let string_end: str = "]: List Nat).toArray.map UInt8.ofNat)))";
+    let next: i32 = verified::output::text(output, capacity, position, string_start, 35);
     let index: i32 = start;
     while (index != finish) {
         if (index != start) { next = verified::output::byte(output, capacity, next, 44); }
@@ -49,40 +49,40 @@ pub fn token_text(source:[i32], source_length: i32, tokens:[i32],
         if (next == -1) { return -1; }
         index += 1;
     }
-    return verified::output::bytes(output, capacity, next, string_end, 39);
+    return verified::output::text(output, capacity, next, string_end, 39);
 }
 
 pub fn name(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
     token: i32, output:[i32], capacity: i32, position: i32) -> i32 {
-    let opening: [i32; 3] = [226,159,168];
-    let closing: [i32; 3] = [226,159,169];
-    let next: i32 = verified::output::bytes(output, capacity, position, opening, 3);
+    let opening: str = "⟨";
+    let closing: str = "⟩";
+    let next: i32 = verified::output::text(output, capacity, position, opening, 3);
     next = verified::output::natural(output, capacity, next, token);
     next = verified::output::byte(output, capacity, next, 44);
     next = token_text(source, source_length, tokens, token_count, token, output, capacity, next);
-    return verified::output::bytes(output, capacity, next, closing, 3);
+    return verified::output::text(output, capacity, next, closing, 3);
 }
 
 // Emit SurfaceLiteral from a checked primary-production number and token.
 // Boolean constructors intentionally carry no spelling, matching Surface.
 pub fn literal(production: i32, source:[i32], source_length: i32, tokens:[i32],
     token_count: i32, token: i32, output:[i32], capacity: i32, position: i32) -> i32 {
-    let integer: [i32; 10] = [40,46,105,110,116,101,103,101,114,32];
-    let float_name: [i32; 8] = [40,46,102,108,111,97,116,32];
-    let string_name: [i32; 9] = [40,46,115,116,114,105,110,103,32];
-    let character: [i32; 12] = [40,46,99,104,97,114,97,99,116,101,114,32];
-    let yes: [i32; 15] = [40,46,98,111,111,108,101,97,110,32,116,114,117,101,41];
-    let no: [i32; 16] = [40,46,98,111,111,108,101,97,110,32,102,97,108,115,101,41];
-    if (production == 185) { return verified::output::bytes(output, capacity, position, yes, 15); }
-    if (production == 186) { return verified::output::bytes(output, capacity, position, no, 16); }
+    let integer: str = "(.integer ";
+    let float_name: str = "(.float ";
+    let string_name: str = "(.string ";
+    let character: str = "(.character ";
+    let yes: str = "(.boolean true)";
+    let no: str = "(.boolean false)";
+    if (production == 185) { return verified::output::text(output, capacity, position, yes, 15); }
+    if (production == 186) { return verified::output::text(output, capacity, position, no, 16); }
     let next: i32 = position;
-    if (production == 175) { next = verified::output::bytes(output, capacity, next, integer, 10); }
+    if (production == 175) { next = verified::output::text(output, capacity, next, integer, 10); }
     else {
-        if (production == 176) { next = verified::output::bytes(output, capacity, next, float_name, 8); }
+        if (production == 176) { next = verified::output::text(output, capacity, next, float_name, 8); }
         else {
-            if (production == 177) { next = verified::output::bytes(output, capacity, next, string_name, 9); }
+            if (production == 177) { next = verified::output::text(output, capacity, next, string_name, 9); }
             else {
-                if (production == 178) { next = verified::output::bytes(output, capacity, next, character, 12); }
+                if (production == 178) { next = verified::output::text(output, capacity, next, character, 12); }
                 else { return -1; }
             }
         }
@@ -92,4 +92,3 @@ pub fn literal(production: i32, source:[i32], source_length: i32, tokens:[i32],
     next = token_text(source, source_length, tokens, token_count, token, output, capacity, next);
     return verified::output::byte(output, capacity, next, 41);
 }
-
