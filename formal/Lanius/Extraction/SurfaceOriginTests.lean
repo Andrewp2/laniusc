@@ -36,6 +36,36 @@ theorem paths_eq_reference (artifact : Artifact) (view : ArtifactView artifact)
   | cons claim claims ih =>
     cases paths <;> simp [nodeOriginPathsValid, referencePaths, valid_eq_reference, ih]
 
+private def spellingArtifact : Artifact := {
+  Artifact.empty with
+  tokens := [⟨1, ⟨0, 0, 1⟩⟩, ⟨1, ⟨0, 1, 2⟩⟩]
+}
+
+private def spellingClaims (tokens : List Nat) : SurfaceClaims := {
+  spellings := tokens.map fun token => { owner := 0, token, text := "x" }
+}
+
+/-- Coverage is a multiset property, independent of the recursive Surface
+    traversal order, but duplicated claims cannot hide an omitted token. -/
+example : spellingCoverageValid spellingArtifact (spellingClaims [1, 0]) = true := by
+  native_decide
+
+example : spellingCoverageValid spellingArtifact (spellingClaims [0, 0]) = false := by
+  native_decide
+
+private def postorderArtifact : Artifact := {
+  Artifact.empty with
+  parse_nodes := [⟨7, 0, 0, 0, []⟩, ⟨8, 0, 0, 0, [.node 0]⟩]
+}
+
+private def postorderPrunedPass : Bool :=
+  match ArtifactView.canonical? postorderArtifact with
+  | none => false
+  | some view => parseNodeContainsNodePruned postorderArtifact view 1 0
+
+example : postorderPrunedPass = true := by
+  native_decide
+
 private def check (origin : SurfaceNodeOrigin) : Option Bool := do
   let artifact := { Artifact.empty with parse_nodes :=
     [⟨7, 0, 0, 0, []⟩, ⟨8, 0, 0, 0, [.node 0, .token 0]⟩] }

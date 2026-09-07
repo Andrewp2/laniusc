@@ -1,0 +1,7 @@
+module app::main;
+
+// Syntactically valid, but not a well-typed i32-returning function.
+// Extraction and acceptance of its Core certificate are distinct stages.
+fn main() -> i32 {
+    return true;
+}

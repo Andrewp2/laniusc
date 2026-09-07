@@ -1,6 +1,6 @@
 module verified::output;
 
-import core::mem;
+import verified::host;
 
 // Append operations return the next byte offset, or -1. Errors are sticky;
 // callers must discard partial output after an error. Bytes occupy i32 slots.
@@ -48,8 +48,8 @@ pub fn bytes(output:[i32], capacity: i32, position: i32,
 pub fn text(output:[i32], capacity: i32, position: i32,
     input: str, length: i32,) -> i32 {
     if (length <= -1) { return -1; }
-    let words: [i32] = core::mem::i32_slice_from_raw_parts(
-        core::mem::string_data_ptr(input), (length + 3) / 4);
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(input), (length + 3) / 4);
     let next: i32 = position;
     let index: i32 = 0;
     while (index != length) {

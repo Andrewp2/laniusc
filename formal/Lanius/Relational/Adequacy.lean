@@ -407,7 +407,7 @@ theorem ReturnsCorrectly.ofReadOnlyWP
       actualAfterEq⟩ := evaluatesCallReturned_invert function.found
         function.bodyFound returnsValue actualExecution
   obtain ⟨argumentsEq, afterArgumentsEq⟩ :=
-    argumentsEvaluateTo_deterministic actualArgumentsExecution
+    Lanius.CallContracts.argumentsEvaluateTo_deterministic actualArgumentsExecution
       argumentsExecution
   subst actualArguments
   subst actualAfterArguments
@@ -520,7 +520,7 @@ theorem ReturnsCorrectly.ofRelationalReadOnlyWP
       actualAfterEq⟩ := evaluatesCallReturned_invert function.found
         function.bodyFound returnsValue actualExecution
   obtain ⟨argumentsEq, afterArgumentsEq⟩ :=
-    argumentsEvaluateTo_deterministic actualArgumentsExecution
+    Lanius.CallContracts.argumentsEvaluateTo_deterministic actualArgumentsExecution
       argumentsExecution
   subst actualArguments
   subst actualAfterArguments

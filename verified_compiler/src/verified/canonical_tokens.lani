@@ -1,7 +1,7 @@
 module verified::canonical_tokens;
 
 import verified::token;
-import core::mem;
+import verified::host;
 
 pub fn is_trivia(kind: i32) -> bool {
     return kind == verified::token::WHITESPACE
@@ -10,17 +10,18 @@ pub fn is_trivia(kind: i32) -> bool {
 }
 
 // Compare a source-byte span with one compact ASCII string literal. Native
-// strings store four bytes in each little-endian i32 word; keeping keyword
-// spellings in that representation avoids expanding every character into a
-// separate Lanius expression (and therefore many extracted parse nodes).
+// word loads consume four bytes each. Callers explicitly pad spellings to a
+// whole number of words; `length` excludes that padding. Ordinary native
+// strings do not promise readable padding beyond their contents. Keeping
+// spellings compact avoids a separate expression for every character.
 fn matches_ascii(
     source: [i32],
     start: i32,
     spelling: str,
     length: i32,
 ) -> bool {
-    let words: [i32] = core::mem::i32_slice_from_raw_parts(
-        core::mem::string_data_ptr(spelling), (length + 3) / 4);
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(spelling), (length + 3) / 4);
     let index: i32 = 0;
     while (index != length) {
         let expected: i32 =
@@ -41,14 +42,14 @@ pub fn keyword_kind(
 ) -> i32 {
     let length: i32 = end - start;
     if (length == 2) {
-        if (matches_ascii(source, start, "fn", 2)) { return verified::token::FN; }
-        if (matches_ascii(source, start, "if", 2)) { return verified::token::IF; }
-        if (matches_ascii(source, start, "in", 2)) { return verified::token::IN; }
+        if (matches_ascii(source, start, "fn\0\0", 2)) { return verified::token::FN; }
+        if (matches_ascii(source, start, "if\0\0", 2)) { return verified::token::IF; }
+        if (matches_ascii(source, start, "in\0\0", 2)) { return verified::token::IN; }
     }
     if (length == 3) {
-        if (matches_ascii(source, start, "pub", 3)) { return verified::token::PUB; }
-        if (matches_ascii(source, start, "let", 3)) { return verified::token::LET; }
-        if (matches_ascii(source, start, "for", 3)) { return verified::token::FOR; }
+        if (matches_ascii(source, start, "pub\0", 3)) { return verified::token::PUB; }
+        if (matches_ascii(source, start, "let\0", 3)) { return verified::token::LET; }
+        if (matches_ascii(source, start, "for\0", 3)) { return verified::token::FOR; }
     }
     if (length == 4) {
         if (matches_ascii(source, start, "else", 4)) { return verified::token::ELSE; }
@@ -59,20 +60,20 @@ pub fn keyword_kind(
         if (matches_ascii(source, start, "type", 4)) { return verified::token::TYPE; }
     }
     if (length == 5) {
-        if (matches_ascii(source, start, "false", 5)) { return verified::token::FALSE; }
-        if (matches_ascii(source, start, "const", 5)) { return verified::token::CONST; }
-        if (matches_ascii(source, start, "match", 5)) { return verified::token::MATCH; }
-        if (matches_ascii(source, start, "trait", 5)) { return verified::token::TRAIT; }
-        if (matches_ascii(source, start, "where", 5)) { return verified::token::WHERE; }
-        if (matches_ascii(source, start, "while", 5)) { return verified::token::WHILE; }
-        if (matches_ascii(source, start, "break", 5)) { return verified::token::BREAK; }
+        if (matches_ascii(source, start, "false\0\0\0", 5)) { return verified::token::FALSE; }
+        if (matches_ascii(source, start, "const\0\0\0", 5)) { return verified::token::CONST; }
+        if (matches_ascii(source, start, "match\0\0\0", 5)) { return verified::token::MATCH; }
+        if (matches_ascii(source, start, "trait\0\0\0", 5)) { return verified::token::TRAIT; }
+        if (matches_ascii(source, start, "where\0\0\0", 5)) { return verified::token::WHERE; }
+        if (matches_ascii(source, start, "while\0\0\0", 5)) { return verified::token::WHILE; }
+        if (matches_ascii(source, start, "break\0\0\0", 5)) { return verified::token::BREAK; }
     }
     if (length == 6) {
-        if (matches_ascii(source, start, "return", 6)) { return verified::token::RETURN; }
-        if (matches_ascii(source, start, "struct", 6)) { return verified::token::STRUCT; }
-        if (matches_ascii(source, start, "extern", 6)) { return verified::token::EXTERN; }
-        if (matches_ascii(source, start, "import", 6)) { return verified::token::IMPORT; }
-        if (matches_ascii(source, start, "module", 6)) { return verified::token::MODULE; }
+        if (matches_ascii(source, start, "return\0\0", 6)) { return verified::token::RETURN; }
+        if (matches_ascii(source, start, "struct\0\0", 6)) { return verified::token::STRUCT; }
+        if (matches_ascii(source, start, "extern\0\0", 6)) { return verified::token::EXTERN; }
+        if (matches_ascii(source, start, "import\0\0", 6)) { return verified::token::IMPORT; }
+        if (matches_ascii(source, start, "module\0\0", 6)) { return verified::token::MODULE; }
     }
     if (length == 8) {
         if (matches_ascii(source, start, "continue", 8)) {

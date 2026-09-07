@@ -1,0 +1,6 @@
+module app::main;
+
+// Program results need not belong to the extractor's own failure-code set.
+fn main() -> i32 {
+    return 42;
+}

@@ -345,11 +345,11 @@ def callSimple (world : State) (service : HostService) (arguments : List Value) 
       | none => .unavailable service world
   | .writeByte, [.signed .i32 handle, .signed .i32 value] =>
       match writeBytes world handle [UInt8.ofNat (Int.toNat (value % 256))] with
-      | some written => .returned (i32Result 0) written
+      | some written => .returned (i32Result 1) written
       | none => .unavailable service world
   | .writeNewline, [.signed .i32 handle] =>
       match writeBytes world handle [10] with
-      | some written => .returned (i32Result 0) written
+      | some written => .returned (i32Result 1) written
       | none => .unavailable service world
   | .exit, [.signed .i32 code] => .exited code world
   | .argc, _ => .typeMismatch world
@@ -396,11 +396,11 @@ def call (heap : Heap) (world : State) (service : HostService)
           | none => .returned (i32Result (-1)) heap next
       | .writeByte, [.signed .i32 handle, .signed .i32 value] =>
           match writeFileBytes next handle [UInt8.ofNat (Int.toNat (value % 256))] with
-          | some written => .returned (i32Result 0) heap written
+          | some written => .returned (i32Result 1) heap written
           | none => .returned (i32Result (-1)) heap next
       | .writeNewline, [.signed .i32 handle] =>
           match writeFileBytes next handle [10] with
-          | some written => .returned (i32Result 0) heap written
+          | some written => .returned (i32Result 1) heap written
           | none => .returned (i32Result (-1)) heap next
       | .closeFile, [.signed .i32 handle]
       | .close, [.signed .i32 handle] =>

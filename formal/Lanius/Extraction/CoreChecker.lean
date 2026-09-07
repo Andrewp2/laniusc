@@ -27,10 +27,13 @@ mutual
     | ⟨id, .array_to_slice _ operand⟩
     | ⟨id, .dereference operand⟩
     | ⟨id, .intrinsic _ operand⟩
-    | ⟨id, .i32_array_data_ptr operand⟩ => coreExprNodeIds operand ++ [id]
+    | ⟨id, .i32_array_data_ptr operand⟩
+    | ⟨id, .i32_slice_data_ptr operand⟩
+    | ⟨id, .string_data_ptr operand⟩ => coreExprNodeIds operand ++ [id]
     | ⟨id, .binary _ left right⟩
     | ⟨id, .index left right⟩
     | ⟨id, .alloc left right⟩
+    | ⟨id, .i32_slice_from_raw_parts left right⟩
     | ⟨id, .load_byte left right⟩ =>
         coreExprNodeIds left ++ coreExprNodeIds right ++ [id]
     | ⟨id, .array _ elements⟩
@@ -159,10 +162,13 @@ mutual
     | ⟨_, .field operand _⟩
     | ⟨_, .dereference operand⟩
     | ⟨_, .intrinsic _ operand⟩
-    | ⟨_, .i32_array_data_ptr operand⟩ => coreExprValuesCanonical operand
+    | ⟨_, .i32_array_data_ptr operand⟩
+    | ⟨_, .i32_slice_data_ptr operand⟩
+    | ⟨_, .string_data_ptr operand⟩ => coreExprValuesCanonical operand
     | ⟨_, .binary _ left right⟩
     | ⟨_, .index left right⟩
     | ⟨_, .alloc left right⟩
+    | ⟨_, .i32_slice_from_raw_parts left right⟩
     | ⟨_, .load_byte left right⟩ =>
         coreExprValuesCanonical left && coreExprValuesCanonical right
     | ⟨_, .array _ elements⟩

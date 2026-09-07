@@ -1,0 +1,19 @@
+module verified::surface_artifact_output;
+import verified::output;
+import verified::syntax_artifact_output;
+import verified::surface_file_output; // Optional presentation output. Formal Surface checking reconstructs the tree
+// from the syntax certificate; this proposal is useful for inspection but is
+// not part of the bootstrap extractor's trusted path.
+pub fn emit(path:[i32], path_length: i32, source:[i32], source_length: i32, grammar:[i32], grammar_length: i32, raw:[i32], raw_length: i32, raw_count: i32, tokens:[i32], tokens_length: i32, token_count: i32, semantic:[i32], semantic_length: i32, records:[i32], records_length: i32, offsets:[i32], node_count: i32, expression_arena:[i32], expression_arena_length: i32, type_arena:[i32], type_arena_length: i32, depth: i32, output:[i32], capacity: i32,) -> i32 {
+    let next: i32 = verified::syntax_artifact_output::emit_fields(path, path_length, source, source_length, grammar, grammar_length, raw, raw_length, raw_count, tokens, tokens_length, token_count, semantic, semantic_length, records, records_length, offsets, node_count, output, capacity);
+    let surface_start: str = ", surface := (some ";
+    next = verified::output::text(output, capacity, next, surface_start, 19);
+    let surface = verified::surface_file_output::emit(source, source_length, tokens, token_count, records, records_length, offsets, node_count, node_count - 1, expression_arena, expression_arena_length, type_arena, type_arena_length, depth, 0, output, capacity, next);
+    next = verified::surface_file_output::emit_position(surface);
+    if (next <= -1) {
+        return -1;
+    }
+    next = verified::output::byte(output, capacity, next, 41);
+    let end: str = " }";
+    return verified::output::text(output, capacity, next, end, 2);
+}

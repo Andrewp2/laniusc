@@ -21,7 +21,10 @@ def compilerIntrinsicNames : List (Surface.Name × SurfaceElaboration.BuiltinInt
   ("assert", .assert),
   ("print", .printI32),
   ("print_i32", .printI32),
-  ("i32_array_data_ptr", .i32ArrayDataPtr)
+  ("i32_array_data_ptr", .i32ArrayDataPtr),
+  ("i32_slice_from_raw_parts", .i32SliceFromRawParts),
+  ("i32_slice_data_ptr", .i32SliceDataPtr),
+  ("string_data_ptr", .stringDataPtr)
 ]
 
 /-- Exact symbol table snapshot from `type_checker/params.rs`. Unlike the
@@ -39,7 +42,8 @@ def compilerLanguageSymbols : List Surface.Name := [
   "write_stderr", "read_stdin", "i32_array_data_ptr", "fill_secure_bytes",
   "remove_file", "create_dir", "remove_dir", "rename", "monotonic_read",
   "system_read", "sleep_ms_i32", "realloc", "alloc_failed", "core", "range",
-  "Range", "RangeInclusive", "ptr"
+  "Range", "RangeInclusive", "ptr", "i32_slice_from_raw_parts",
+  "i32_slice_data_ptr", "string_data_ptr"
 ]
 
 def compilerStructuralSymbols : List Surface.Name :=
@@ -117,13 +121,13 @@ theorem compiler_primitive_type_count :
 theorem compiler_primitive_types_covered : primitiveTypesCovered? = true := by
   decide
 
-theorem compiler_intrinsic_name_count : compilerIntrinsicNames.length = 4 := by
+theorem compiler_intrinsic_name_count : compilerIntrinsicNames.length = 7 := by
   decide
 
 theorem compiler_intrinsic_names_covered : intrinsicNamesCovered? = true := by
   decide
 
-theorem compiler_language_symbol_count : compilerLanguageSymbols.length = 68 := by
+theorem compiler_language_symbol_count : compilerLanguageSymbols.length = 71 := by
   decide
 
 theorem compiler_language_symbols_distinct : compilerLanguageSymbols.Nodup := by
@@ -173,10 +177,10 @@ theorem compiler_named_range_type_paths_exact :
     ] := by
   rfl
 
-/-- One entrypoint, four intrinsic spellings, and sixteen primitive types are
-    the current compiler's 21 materialized language declarations. -/
+/-- One entrypoint, seven intrinsic spellings, and sixteen primitive types are
+    the current compiler's 24 materialized language declarations. -/
 theorem compiler_language_declaration_count :
-    1 + compilerIntrinsicNames.length + compilerPrimitiveTypeNames.length = 21 := by
+    1 + compilerIntrinsicNames.length + compilerPrimitiveTypeNames.length = 24 := by
   decide
 
 theorem canonical_external_binding_count :

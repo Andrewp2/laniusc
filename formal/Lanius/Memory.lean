@@ -103,6 +103,21 @@ def Heap.mapBorrowed (heap : Heap) (bytes : List UInt8) (alignment : Nat) : Allo
       nextAddress := base + max bytes.length 1
     }
 
+/-- Validate an exact raw allocation and transfer it into protected borrowed
+    storage. This is the ownership boundary used by `slice_from_raw_parts`:
+    once a language slice exists, raw deallocation cannot invalidate it. -/
+def Heap.protectAsBorrowed
+    (heap : Heap) (pointer size alignment : Nat) : Except Trap Heap :=
+  match heap.block? pointer with
+  | none => .error .invalidPointer
+  | some block =>
+      if !block.live then
+        .error .invalidPointer
+      else if block.size != size || block.alignment != alignment then
+        .error .rawMemoryBounds
+      else
+        .ok { heap with blocks := replaceBlock heap.blocks { block with owned := false } }
+
 def Heap.deallocate (heap : Heap) (pointer size alignment : Nat) : Except Trap Heap :=
   if pointer == null then
     .ok heap
@@ -222,5 +237,40 @@ def Heap.reallocate
                         allocated with
                         blocks := replaceBlock allocated.blocks copied
                       }
+
+/-! Structural memory-safety invariants live beside the heap model so clients
+can state safety contracts without importing the much larger metatheory. -/
+
+def BlockWellFormed (block : Block) : Prop :=
+  block.base ≠ null ∧
+    validAlignment block.alignment = true ∧
+    block.bytes.length = block.size ∧
+    block.base % block.alignment = 0
+
+def BlockIntervalsDisjoint (left right : Block) : Prop :=
+  left.base + left.size ≤ right.base ∨
+    right.base + right.size ≤ left.base
+
+def HeapBlockBasesUnique (heap : Heap) : Prop :=
+  ∀ left, left ∈ heap.blocks →
+    ∀ right, right ∈ heap.blocks → left.base = right.base → left = right
+
+def HeapBlocksDisjoint (heap : Heap) : Prop :=
+  ∀ left, left ∈ heap.blocks →
+    ∀ right, right ∈ heap.blocks → left ≠ right →
+      BlockIntervalsDisjoint left right
+
+/-- `nextAddress` is an allocation frontier, not merely a positive hint. The
+`max size 1` term reserves a distinct address even for a zero-byte block. -/
+def HeapBlocksBelowNext (heap : Heap) : Prop :=
+  ∀ block, block ∈ heap.blocks →
+    block.base + max block.size 1 ≤ heap.nextAddress
+
+structure HeapWellFormed (heap : Heap) : Prop where
+  nextAddressPositive : null < heap.nextAddress
+  blockBasesUnique : HeapBlockBasesUnique heap
+  blocksWellFormed : ∀ block, block ∈ heap.blocks → BlockWellFormed block
+  blocksDisjoint : HeapBlocksDisjoint heap
+  blocksBelowNext : HeapBlocksBelowNext heap
 
 end Lanius.Memory

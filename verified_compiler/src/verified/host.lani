@@ -1,0 +1,33 @@
+// Minimal native host boundary used by the self-hosted extractor.
+//
+// Keeping this module narrow is important for verification: the extractor's
+// source closure contains only the services it can actually call, rather than
+// the large capability/documentation surfaces of the general standard library.
+module verified::host;
+
+// These three declarations are compiler intrinsics. Their source bodies are
+// deliberately inert; a backend implements the pointer/length representation.
+pub fn i32_slice_from_raw_parts(data: ptr, length: i32) -> [i32] {
+    return verified::host::i32_slice_from_raw_parts(data, length);
+}
+
+pub fn i32_slice_data_ptr(values: [i32]) -> ptr {
+    return verified::host::i32_slice_data_ptr(values);
+}
+
+pub fn string_data_ptr(value: str) -> ptr {
+    return verified::host::string_data_ptr(value);
+}
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+pub extern "lanius_std" fn open_read(path_ptr: ptr, path_len: usize) -> i32;
+pub extern "lanius_std" fn close(handle: i32) -> i32;
+pub extern "lanius_std" fn read(handle: i32, data: ptr, len: usize) -> i32;
+
+pub extern "lanius_std" fn write_stdout(data: ptr, len: usize) -> i32;
+pub extern "lanius_std" fn write_byte(handle: i32, value: i32) -> i32;
+
+pub extern "lanius_std" fn argc() -> i32;
+pub extern "lanius_std" fn arg_len(index: i32) -> i32;
+pub extern "lanius_std" fn arg_read(index: i32, data: ptr, len: usize) -> i32;

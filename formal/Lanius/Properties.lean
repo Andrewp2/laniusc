@@ -859,42 +859,6 @@ theorem evalAssignValue_preserves_type
             (currentTyped left rfl) rightTyped (by
               simpa [evalAssignValue, assignOpBinary?] using evaluated)
 
-/-- Raw blocks use abstract, nonzero base identities but retain the size,
-    alignment, byte extent, and non-overlap obligations that native and Wasm
-    implementations must respect. -/
-def BlockWellFormed (block : Block) : Prop :=
-  block.base ≠ null ∧
-    validAlignment block.alignment = true ∧
-    block.bytes.length = block.size ∧
-    block.base % block.alignment = 0
-
-def BlockIntervalsDisjoint (left right : Block) : Prop :=
-  left.base + left.size ≤ right.base ∨
-    right.base + right.size ≤ left.base
-
-def HeapBlockBasesUnique (heap : Heap) : Prop :=
-  ∀ left, left ∈ heap.blocks →
-    ∀ right, right ∈ heap.blocks → left.base = right.base → left = right
-
-def HeapBlocksDisjoint (heap : Heap) : Prop :=
-  ∀ left, left ∈ heap.blocks →
-    ∀ right, right ∈ heap.blocks → left ≠ right →
-      BlockIntervalsDisjoint left right
-
-/-- `nextAddress` is an allocation frontier, not merely a positive hint.  The
-    `max size 1` term reserves a distinct address even for a zero-byte block,
-    whose half-open byte interval is otherwise empty. -/
-def HeapBlocksBelowNext (heap : Heap) : Prop :=
-  ∀ block, block ∈ heap.blocks →
-    block.base + max block.size 1 ≤ heap.nextAddress
-
-structure HeapWellFormed (heap : Heap) : Prop where
-  nextAddressPositive : null < heap.nextAddress
-  blockBasesUnique : HeapBlockBasesUnique heap
-  blocksWellFormed : ∀ block, block ∈ heap.blocks → BlockWellFormed block
-  blocksDisjoint : HeapBlocksDisjoint heap
-  blocksBelowNext : HeapBlocksBelowNext heap
-
 theorem empty_heap_well_formed : HeapWellFormed ({} : Heap) := by
   constructor <;>
     simp [null, HeapBlockBasesUnique, HeapBlocksDisjoint, HeapBlocksBelowNext,
@@ -1211,6 +1175,30 @@ theorem mapBorrowed_preserves_heap_well_formed
         frontierLeBase heap.remaining
   · simp [Heap.mapBorrowed, alignmentValid, AllocationResultWellFormed,
       wellFormed]
+
+theorem protectAsBorrowed_preserves_heap_well_formed
+    (wellFormed : HeapWellFormed heap)
+    (result : heap.protectAsBorrowed pointer size alignment = .ok afterHeap) :
+    HeapWellFormed afterHeap := by
+  cases found : heap.block? pointer with
+  | none => simp [Heap.protectAsBorrowed, found] at result
+  | some block =>
+      have member : block ∈ heap.blocks := List.mem_of_find?_eq_some found
+      cases live : block.live with
+      | false => simp [Heap.protectAsBorrowed, found, live] at result
+      | true =>
+          cases mismatch : (block.size != size || block.alignment != alignment) with
+          | true =>
+              simp [Heap.protectAsBorrowed, found, live, mismatch] at result
+          | false =>
+              simp only [Heap.protectAsBorrowed, found, live, Bool.not_true,
+                Bool.false_eq_true, mismatch, ↓reduceIte, Except.ok.injEq]
+                at result
+              subst afterHeap
+              apply replaceBlock_preserves_heap_well_formed wellFormed member
+              · simpa [BlockWellFormed] using wellFormed.blocksWellFormed block member
+              · rfl
+              · rfl
 
 theorem deallocate_preserves_heap_well_formed
     (wellFormed : HeapWellFormed heap)
@@ -2582,14 +2570,6 @@ theorem I32ArrayPlaceHasType.withI32ArrayViews
   exact ⟨rootType, entry, rootValue, stored, found, initialized,
     rootTyped, projected⟩
 
-def I32ArrayViewBlockWellFormed (heap : Heap) (view : I32ArrayView) : Prop :=
-  ∃ block,
-    heap.block? view.address = some block ∧
-    block.live = true ∧
-    block.owned = false ∧
-    block.size = view.length * 4 ∧
-    block.alignment = 4
-
 /-- A registered raw view must connect one exactly typed `[i32; N]` place to
     one live, non-owning heap block of `4 * N` bytes. Byte coherence is a
     transition property established by the explicit synchronization passes;
@@ -2732,6 +2712,81 @@ theorem replaceOwnedBlock_preserves_i32_array_view_blocks
   simp only [Heap.block?] at found ⊢
   exact (replaceBlock_find_other heap.blocks replacement view.address
     different).trans found
+
+theorem protectAsBorrowed_preserves_i32_array_view_blocks
+    (wellFormed : HeapWellFormed heap)
+    (result : heap.protectAsBorrowed pointer size alignment = .ok afterHeap) :
+    I32ArrayViewBlocksPreserved views heap afterHeap := by
+  cases found : heap.block? pointer with
+  | none => simp [Heap.protectAsBorrowed, found] at result
+  | some block =>
+      have member : block ∈ heap.blocks := List.mem_of_find?_eq_some found
+      cases live : block.live with
+      | false => simp [Heap.protectAsBorrowed, found, live] at result
+      | true =>
+          cases mismatch : (block.size != size || block.alignment != alignment) with
+          | true =>
+              simp [Heap.protectAsBorrowed, found, live, mismatch] at result
+          | false =>
+              simp only [Heap.protectAsBorrowed, found, live, Bool.not_true,
+                Bool.false_eq_true, mismatch, ↓reduceIte, Except.ok.injEq]
+                at result
+              subst afterHeap
+              cases owned : block.owned with
+              | false =>
+                  apply replaceBlock_preserves_i32_array_view_blocks
+                    wellFormed member
+                  · rfl
+                  · rfl
+                  · simpa using live
+                  · simp [owned]
+                  · rfl
+              | true =>
+                  simpa only [live] using
+                    (replaceOwnedBlock_preserves_i32_array_view_blocks
+                      (views := views)
+                      (replacement := { block with owned := false })
+                      wellFormed member owned rfl heap.remaining)
+
+theorem protectAsBorrowed_result_view_block_well_formed
+    (heap afterHeap : Heap)
+    (result : Heap.protectAsBorrowed heap pointer (length * 4) 4 =
+      .ok afterHeap) :
+    I32ArrayViewBlockWellFormed afterHeap
+      { address := pointer, root, projections, length } := by
+  cases found : Heap.block? heap pointer with
+  | none => simp [Heap.protectAsBorrowed, found] at result
+  | some block =>
+      cases live : block.live with
+      | false => simp [Heap.protectAsBorrowed, found, live] at result
+      | true =>
+          cases mismatch : (block.size != length * 4 || block.alignment != 4) with
+          | true =>
+              simp [Heap.protectAsBorrowed, found, live, mismatch] at result
+          | false =>
+              have dimensions : block.size = length * 4 ∧ block.alignment = 4 := by
+                simpa using mismatch
+              simp only [Heap.protectAsBorrowed, found, live, Bool.not_true,
+                Bool.false_eq_true, mismatch, ↓reduceIte, Except.ok.injEq]
+                at result
+              subst afterHeap
+              refine ⟨{ block with owned := false }, ?_, live, rfl,
+                dimensions.1, dimensions.2⟩
+              simp only [Heap.block?]
+              have foundList : heap.blocks.find?
+                  (fun candidate => candidate.base == pointer) = some block := by
+                exact found
+              have blockBase : block.base = pointer := by
+                exact beq_iff_eq.mp (List.find?_some
+                  (p := fun candidate : Block => candidate.base == pointer)
+                  foundList)
+              have originalFound : heap.blocks.find?
+                  (fun candidate => candidate.base ==
+                    ({ block with owned := false } : Block).base) = some block := by
+                simpa only [blockBase] using foundList
+              simpa only [blockBase, live] using
+                (replaceBlock_find_same heap.blocks
+                  { block with owned := false } block originalFound)
 
 theorem setByte_length (bytes : List UInt8) (index : Nat) (value : UInt8) :
     (setByte bytes index value).length = bytes.length := by
@@ -6702,6 +6757,144 @@ theorem mapI32ArrayView_preserves_initialized_cells
                 ValueOutcomePreservesInitializedCells]
               exact InitializedCellsPreserved.withHeap state heap
 
+theorem mapStringDataPtr_has_runtime_type
+    (typed : RuntimeStateHasType program context state store) :
+    RuntimeValueOutcomeHasType program context store
+      (mapStringDataPtr state value) (.scalar .rawPtr) := by
+  let bytes := World.utf8Bytes value
+  let base := alignUp (max state.heap.nextAddress 1) 4
+  let block : Block := {
+    base
+    size := bytes.length
+    alignment := 4
+    bytes
+    owned := false
+  }
+  let heap : Heap := {
+    state.heap with
+    blocks := state.heap.blocks ++ [block]
+    nextAddress := base + max bytes.length 1
+  }
+  have alignmentValid : validAlignment 4 = true := by decide
+  have mapped : state.heap.mapBorrowed bytes 4 = .allocated base heap := by
+    simp [Heap.mapBorrowed, alignmentValid, heap, block, base]
+  simp only [mapStringDataPtr, bytes, mapped, RuntimeValueOutcomeHasType]
+  have heapWellFormed : HeapWellFormed heap := by
+    have preserved := mapBorrowed_preserves_heap_well_formed
+      (bytes := bytes) (alignment := 4)
+      typed.typed.wellFormed.heapWellFormed
+    rw [mapped] at preserved
+    exact preserved
+  have oldBlocksPreserved : I32ArrayViewBlocksPreserved
+      state.i32ArrayViews state.heap heap := by
+    intro view member valid
+    have preserved := appendBlock_preserves_i32_array_view_blocks
+      state.i32ArrayViews state.heap block view member valid
+    simpa only [heap, I32ArrayViewBlockWellFormed, Heap.block?] using preserved
+  refine ⟨typed.withHeap heap heapWellFormed oldBlocksPreserved,
+    .pointer base, ?_⟩
+  intro descriptor member
+  simp [valueBorrows] at member
+
+theorem mapStringDataPtr_preserves_initialized_cells
+    (state : State) (value : String) :
+    ValueOutcomePreservesInitializedCells state (mapStringDataPtr state value) := by
+  cases mapped : state.heap.mapBorrowed (World.utf8Bytes value) 4 with
+  | allocated address heap =>
+      simp [mapStringDataPtr, mapped, ValueOutcomePreservesInitializedCells]
+      exact InitializedCellsPreserved.withHeap state heap
+  | exhausted heap | trapped reason heap =>
+      simp [mapStringDataPtr, mapped, ValueOutcomePreservesInitializedCells]
+      exact InitializedCellsPreserved.withHeap state heap
+
+theorem mapI32SliceDataPtr_has_runtime_type
+    (typed : RuntimeStateHasType program context state store)
+    (sliceTyped : ValueHasType program
+      (.slice (.scalar (.signed .i32)) cell projections start length)
+      (.slice (.scalar (.signed .i32))))
+    (sliceBorrows : BorrowsValid program state store
+      (.slice (.scalar (.signed .i32)) cell projections start length)) :
+    RuntimeValueOutcomeHasType program context store
+      (mapI32SliceDataPtr state cell projections start length)
+      (.scalar .rawPtr) := by
+  have valid := sliceBorrows
+    (.slice (.scalar (.signed .i32)) cell projections start length)
+    (by simp [valueBorrows])
+  cases valid with
+  | slice stored found initialized rootTyped projected inBounds =>
+      rename_i rootType entry rootValue arrayLength
+      cases read : readCellProjection state cell projections with
+      | error reason =>
+          simp [mapI32SliceDataPtr, read, RuntimeValueOutcomeHasType]
+          exact typed
+      | ok result =>
+          have resultTyped := readCellProjection_reference_typed
+            (BorrowValid.reference stored found initialized rootTyped projected)
+            read
+          cases resultTyped with
+          | array elements elementType valueLength elementsTyped =>
+              have bounds : start + length ≤ elements.length := by
+                simpa only [valueLength] using inBounds
+              have placeTyped : I32ArrayPlaceHasType program state store
+                  cell projections elements.length := by
+                refine ⟨rootType, entry, rootValue, stored, found, initialized,
+                  rootTyped, ?_⟩
+                simpa only [valueLength] using projected
+              have mappedTyped := mapI32ArrayView_has_type typed placeTyped
+              cases mapped : mapI32ArrayView state cell projections elements with
+              | done mappedValue next =>
+                  rw [mapped] at mappedTyped
+                  obtain ⟨nextTyped, mappedValueTyped, mappedBorrows⟩ := mappedTyped
+                  cases mappedValueTyped with
+                  | pointer address =>
+                      simp only [mapI32SliceDataPtr, read, bounds, ↓reduceIte,
+                        mapped, RuntimeValueOutcomeHasType]
+                      exact ⟨nextTyped, .pointer (address + start * 4), by
+                        intro descriptor member
+                        simp [valueBorrows] at member⟩
+              | trapped reason next | exited reason next =>
+                  rw [mapped] at mappedTyped
+                  simpa only [mapI32SliceDataPtr, read, bounds, ↓reduceIte,
+                    mapped, RuntimeValueOutcomeHasType] using mappedTyped
+              | outOfFuel =>
+                  simp [mapI32SliceDataPtr, read, bounds, mapped,
+                    RuntimeValueOutcomeHasType]
+
+theorem mapI32SliceDataPtr_preserves_initialized_cells
+    (state : State) (cell : CellId) (projections : List ValueProjection)
+    (start length : Nat) :
+    ValueOutcomePreservesInitializedCells state
+      (mapI32SliceDataPtr state cell projections start length) := by
+  cases read : readCellProjection state cell projections with
+  | error reason =>
+      simp [mapI32SliceDataPtr, read, ValueOutcomePreservesInitializedCells]
+      exact InitializedCellsPreserved.refl state
+  | ok value =>
+      cases value with
+      | array elements =>
+          by_cases bounds : start + length ≤ elements.length
+          · have mappedCells := mapI32ArrayView_preserves_initialized_cells
+              state cell projections elements
+            cases mapped : mapI32ArrayView state cell projections elements with
+            | done mappedValue next =>
+                rw [mapped] at mappedCells
+                cases mappedValue <;>
+                  simpa [mapI32SliceDataPtr, read, bounds, mapped,
+                    ValueOutcomePreservesInitializedCells] using mappedCells
+            | trapped reason next | exited reason next =>
+                rw [mapped] at mappedCells
+                simpa [mapI32SliceDataPtr, read, bounds, mapped,
+                  ValueOutcomePreservesInitializedCells] using mappedCells
+            | outOfFuel =>
+                simp [mapI32SliceDataPtr, read, bounds, mapped,
+                  ValueOutcomePreservesInitializedCells]
+          · simp [mapI32SliceDataPtr, read, bounds,
+              ValueOutcomePreservesInitializedCells]
+            exact InitializedCellsPreserved.refl state
+      | _ =>
+          simp [mapI32SliceDataPtr, read, ValueOutcomePreservesInitializedCells]
+          exact InitializedCellsPreserved.refl state
+
 /-- Evaluation may allocate stable temporary cells, so preservation quantifies
     a store typing that extends the input store and records that initialized
     cell identities survive, rather than requiring literal state equality. -/
@@ -10049,6 +10242,9 @@ theorem expressionPlace?_has_type
   | printI32 argument => simp [expressionPlace?] at found
   | assert argument => simp [expressionPlace?] at found
   | i32ArrayDataPtr array => simp [expressionPlace?] at found
+  | i32SliceFromRawParts pointer length => simp [expressionPlace?] at found
+  | i32SliceDataPtr slice => simp [expressionPlace?] at found
+  | stringDataPtr string => simp [expressionPlace?] at found
   | alloc size alignment =>
       simp [expressionPlace?] at found
   | realloc pointer oldSize newSize alignment =>
@@ -10222,6 +10418,208 @@ theorem evalArrayToSlice_has_runtime_type
           simp [evalExpr, placeCase, arrayResult,
             RuntimeValueOutcomeHasExtendedType]
 
+theorem mapRawI32Slice_has_runtime_type
+    (typed : RuntimeStateHasType program context state store) :
+    RuntimeValueOutcomeHasExtendedType program context state store
+      (mapRawI32Slice state address signedLength)
+      (.slice (.scalar (.signed .i32))) := by
+  by_cases negative : signedLength < 0
+  · simp only [mapRawI32Slice, negative, ↓reduceIte,
+      RuntimeValueOutcomeHasExtendedType, RuntimeStateHasExtendedType]
+    exact ⟨store, StoreExtends.refl store,
+      InitializedCellsPreserved.refl state, typed⟩
+  · let length := signedLength.toNat
+    cases protection : state.heap.protectAsBorrowed address (length * 4) 4 with
+    | error reason =>
+        simp only [mapRawI32Slice, negative, ↓reduceIte, length, protection,
+          RuntimeValueOutcomeHasExtendedType, RuntimeStateHasExtendedType]
+        exact ⟨store, StoreExtends.refl store,
+          InitializedCellsPreserved.refl state, typed⟩
+    | ok protectedHeap =>
+        let protectedState : State := { state with heap := protectedHeap }
+        have protectedHeapWellFormed : HeapWellFormed protectedHeap :=
+          protectAsBorrowed_preserves_heap_well_formed
+            typed.typed.wellFormed.heapWellFormed protection
+        have oldBlocksPreserved : I32ArrayViewBlocksPreserved
+            state.i32ArrayViews state.heap protectedHeap :=
+          protectAsBorrowed_preserves_i32_array_view_blocks
+            typed.typed.wellFormed.heapWellFormed protection
+        have protectedTyped : RuntimeStateHasType program context
+            protectedState store := by
+          simpa only [protectedState] using typed.withHeap protectedHeap
+            protectedHeapWellFormed oldBlocksPreserved
+        have protectedCells : InitializedCellsPreserved state protectedState := by
+          simpa only [protectedState] using
+            InitializedCellsPreserved.withHeap state protectedHeap
+        cases loaded : protectedHeap.loadBytes address (length * 4) with
+        | error loadReason =>
+            simp only [mapRawI32Slice, negative, ↓reduceIte, length, protection,
+              loaded, RuntimeValueOutcomeHasExtendedType,
+              RuntimeStateHasExtendedType]
+            exact ⟨store, StoreExtends.refl store, protectedCells,
+              protectedTyped⟩
+        | ok bytes =>
+            cases decoded : decodeI32Array length bytes with
+            | error decodeReason =>
+                simp only [mapRawI32Slice, negative, ↓reduceIte, length,
+                  protection, loaded, decoded, RuntimeValueOutcomeHasExtendedType,
+                  RuntimeStateHasExtendedType]
+                exact ⟨store, StoreExtends.refl store, protectedCells,
+                  protectedTyped⟩
+            | ok elements =>
+                let arrayType := Ty.array (.scalar (.signed .i32)) length
+                let arrayValue := Value.array elements
+                let root := (protectedState.allocateTemporary arrayValue).1
+                let withTemporary :=
+                  (protectedState.allocateTemporary arrayValue).2
+                let nextStore := store.extend protectedState.nextCell arrayType
+                let view : I32ArrayView := {
+                  address
+                  root
+                  projections := []
+                  length
+                }
+                let next : State := {
+                  withTemporary with
+                  i32ArrayViews := withTemporary.i32ArrayViews ++ [view]
+                }
+                have arrayTyped : ValueHasType program arrayValue arrayType := by
+                  simpa only [arrayValue, arrayType] using
+                    (decodeI32Array_has_type (program := program) decoded)
+                have arrayBorrows : BorrowsValid program protectedState store
+                    arrayValue := by
+                  exact (decodeI32Array_is_closed decoded).borrowsValid
+                have temporaryTyped : RuntimeStateHasType program context
+                    withTemporary nextStore := by
+                  simpa only [withTemporary, nextStore] using
+                    protectedTyped.allocateTemporary arrayTyped arrayBorrows
+                have temporaryPlace : I32ArrayPlaceHasType program
+                    withTemporary nextStore root [] length := by
+                  simpa only [withTemporary, nextStore, root, arrayValue,
+                    arrayType] using
+                    allocateTemporary_i32ArrayPlace_has_type protectedTyped
+                      arrayTyped
+                have viewPlace : I32ArrayViewPlaceHasType program next
+                    nextStore view := by
+                  have moved := temporaryPlace.withI32ArrayViews
+                    (withTemporary.i32ArrayViews ++ [view])
+                  simpa only [next, view, I32ArrayViewPlaceHasType] using moved
+                have viewBlock : I32ArrayViewBlockWellFormed next.heap view := by
+                  have valid := protectAsBorrowed_result_view_block_well_formed
+                    (root := root) (projections := []) state.heap protectedHeap
+                    protection
+                  change I32ArrayViewBlockWellFormed protectedHeap view
+                  simpa only [view] using valid
+                have nextStateTyped : StateHasType program context next
+                    nextStore := by
+                  simpa only [next] using temporaryTyped.typed.withI32ArrayViews
+                    (withTemporary.i32ArrayViews ++ [view])
+                have nextViews : I32ArrayViewsWellFormed program next
+                    nextStore := by
+                  intro candidate member
+                  simp only [next, List.mem_append, List.mem_singleton] at member
+                  rcases member with old | added
+                  · have oldValid := temporaryTyped.views candidate old
+                    have moved := oldValid.withI32ArrayViews
+                      (withTemporary.i32ArrayViews ++ [view])
+                    simpa only [next] using moved
+                  · subst candidate
+                    exact ⟨viewPlace, viewBlock⟩
+                have nextTyped : RuntimeStateHasType program context next
+                    nextStore := ⟨nextStateTyped, nextViews⟩
+                have storePreserved : StoreExtends store nextStore := by
+                  simpa only [nextStore, protectedState, arrayType] using
+                    StoreTyping.extends_extend store state.nextCell arrayType
+                      typed.typed.nextCell_store_none
+                have temporaryCells : InitializedCellsPreserved state
+                    withTemporary := protectedCells.trans (by
+                  simpa only [withTemporary, arrayValue] using
+                    allocateTemporary_preserves_initialized_cells
+                      protectedTyped.typed.wellFormed arrayValue)
+                have nextCells : InitializedCellsPreserved state next := by
+                  intro cell entry value found initialized
+                  obtain ⟨nextEntry, nextValue, nextFound, nextInitialized⟩ :=
+                    temporaryCells cell entry value found initialized
+                  refine ⟨nextEntry, nextValue, ?_, nextInitialized⟩
+                  change withTemporary.cellEntry? cell = some nextEntry
+                  exact nextFound
+                have sliceBorrows : BorrowsValid program next nextStore
+                    (.slice (.scalar (.signed .i32)) root [] 0 length) := by
+                  have rootEq : root = protectedState.nextCell := by
+                    simpa only [root, arrayValue] using
+                      allocateTemporary_returns_fresh_cell protectedState
+                        arrayValue
+                  rw [rootEq]
+                  have valid := temporaryArraySlice_borrows_valid
+                    protectedTyped.typed arrayTyped
+                  have moved := valid.withI32ArrayViews
+                    (withTemporary.i32ArrayViews ++ [view])
+                  simpa only [next, withTemporary, nextStore, arrayType,
+                    arrayValue] using moved
+                simp only [mapRawI32Slice, negative, ↓reduceIte, length,
+                  protection, loaded, decoded, protectedState, arrayValue,
+                  root, withTemporary, view, next]
+                exact ⟨nextStore, storePreserved, nextCells, nextTyped,
+                  .slice (.scalar (.signed .i32)) root [] 0 length,
+                  sliceBorrows⟩
+
+theorem evalI32SliceFromRawParts_has_runtime_type
+    (fuel : Nat)
+    (pointerPreserved : RuntimeValueOutcomeHasExtendedType program context
+      state store (evalExpr fuel program state pointerExpression)
+      (.scalar .rawPtr))
+    (lengthPreserved :
+      ∀ (intermediate : State) (intermediateStore : StoreTyping),
+        RuntimeStateHasType program context intermediate intermediateStore →
+        RuntimeValueOutcomeHasExtendedType program context intermediate
+          intermediateStore
+          (evalExpr fuel program intermediate lengthExpression)
+          (.scalar (.signed .i32))) :
+    RuntimeValueOutcomeHasExtendedType program context state store
+      (evalExpr (fuel + 1) program state
+        (.i32SliceFromRawParts pointerExpression lengthExpression))
+      (.slice (.scalar (.signed .i32))) := by
+  cases pointerResult : evalExpr fuel program state pointerExpression with
+  | done pointerValue afterPointer =>
+      rw [pointerResult] at pointerPreserved
+      obtain ⟨pointerStore, pointerStorePreserved, pointerCellsPreserved,
+        afterPointerTyped, pointerTyped, pointerBorrows⟩ := pointerPreserved
+      cases pointerTyped with
+      | pointer address =>
+          have lengthOutcome := lengthPreserved afterPointer pointerStore
+            afterPointerTyped
+          cases lengthResult :
+              evalExpr fuel program afterPointer lengthExpression with
+          | done lengthValue afterLength =>
+              rw [lengthResult] at lengthOutcome
+              obtain ⟨lengthStore, lengthStorePreserved,
+                lengthCellsPreserved, afterLengthTyped, lengthTyped,
+                lengthBorrows⟩ := lengthOutcome
+              cases lengthTyped with
+              | signed signedType value lower upper =>
+                  have mapped := mapRawI32Slice_has_runtime_type
+                    (address := address) (signedLength := value)
+                    afterLengthTyped
+                  simpa only [evalExpr, pointerResult, lengthResult] using
+                    mapped.prepend
+                      (pointerStorePreserved.trans lengthStorePreserved)
+                      (pointerCellsPreserved.trans lengthCellsPreserved)
+          | trapped reason next | exited reason next =>
+              rw [lengthResult] at lengthOutcome
+              simpa only [evalExpr, pointerResult, lengthResult,
+                RuntimeValueOutcomeHasExtendedType] using
+                  lengthOutcome.prepend pointerStorePreserved
+                    pointerCellsPreserved
+          | outOfFuel =>
+              simp [evalExpr, pointerResult, lengthResult,
+                RuntimeValueOutcomeHasExtendedType]
+  | trapped reason next | exited reason next =>
+      rw [pointerResult] at pointerPreserved
+      simpa only [evalExpr, pointerResult,
+        RuntimeValueOutcomeHasExtendedType] using pointerPreserved
+  | outOfFuel =>
+      simp [evalExpr, pointerResult, RuntimeValueOutcomeHasExtendedType]
+
 theorem evalI32ArrayDataPtr_has_runtime_type
     (fuel : Nat)
     (placePreserved :
@@ -10317,6 +10715,63 @@ theorem evalI32ArrayDataPtr_has_runtime_type
       | outOfFuel =>
           simp [evalExpr, placeCase, arrayResult,
             RuntimeValueOutcomeHasExtendedType]
+
+theorem evalStringDataPtr_has_runtime_type
+    (fuel : Nat)
+    (stringPreserved : RuntimeValueOutcomeHasExtendedType program context
+      state store (evalExpr fuel program state stringExpression)
+      (.scalar .string)) :
+    RuntimeValueOutcomeHasExtendedType program context state store
+      (evalExpr (fuel + 1) program state (.stringDataPtr stringExpression))
+      (.scalar .rawPtr) := by
+  cases stringResult : evalExpr fuel program state stringExpression with
+  | done value next =>
+      rw [stringResult] at stringPreserved
+      obtain ⟨afterStore, storePreserved, cellsPreserved, nextTyped,
+        valueTyped, valueBorrows⟩ := stringPreserved
+      cases valueTyped with
+      | string text =>
+          have mapped := mapStringDataPtr_has_runtime_type
+            (value := text) nextTyped
+          have mappedCells := mapStringDataPtr_preserves_initialized_cells
+            next text
+          simpa only [evalExpr, stringResult] using
+            mapped.prepend storePreserved cellsPreserved mappedCells
+  | trapped reason next | exited reason next =>
+      rw [stringResult] at stringPreserved
+      simpa only [evalExpr, stringResult,
+        RuntimeValueOutcomeHasExtendedType] using stringPreserved
+  | outOfFuel =>
+      simp [evalExpr, stringResult, RuntimeValueOutcomeHasExtendedType]
+
+theorem evalI32SliceDataPtr_has_runtime_type
+    (fuel : Nat)
+    (slicePreserved : RuntimeValueOutcomeHasExtendedType program context
+      state store (evalExpr fuel program state sliceExpression)
+      (.slice (.scalar (.signed .i32)))) :
+    RuntimeValueOutcomeHasExtendedType program context state store
+      (evalExpr (fuel + 1) program state (.i32SliceDataPtr sliceExpression))
+      (.scalar .rawPtr) := by
+  cases sliceResult : evalExpr fuel program state sliceExpression with
+  | done value next =>
+      rw [sliceResult] at slicePreserved
+      obtain ⟨afterStore, storePreserved, cellsPreserved, nextTyped,
+        valueTyped, valueBorrows⟩ := slicePreserved
+      cases valueTyped with
+      | slice _ cell projections start length =>
+          have mapped := mapI32SliceDataPtr_has_runtime_type nextTyped
+            (.slice (.scalar (.signed .i32)) cell projections start length)
+            valueBorrows
+          have mappedCells := mapI32SliceDataPtr_preserves_initialized_cells
+            next cell projections start length
+          simpa only [evalExpr, sliceResult] using
+            mapped.prepend storePreserved cellsPreserved mappedCells
+  | trapped reason next | exited reason next =>
+      rw [sliceResult] at slicePreserved
+      simpa only [evalExpr, sliceResult,
+        RuntimeValueOutcomeHasExtendedType] using slicePreserved
+  | outOfFuel =>
+      simp [evalExpr, sliceResult, RuntimeValueOutcomeHasExtendedType]
 
 theorem evalConstant_has_type
     (fuel : Nat)
@@ -13396,6 +13851,17 @@ theorem evalExpr_has_runtime_type_assuming
                 (expressionPlace?_has_type array found) expressionsPreserve
                 fuelLt)
             (fun _ => preserveAtFuel _ _ _ _ _ stateTyped array)
+      | i32SliceFromRawParts pointer length =>
+          exact evalI32SliceFromRawParts_has_runtime_type fuel
+            (preserveAtFuel _ _ _ _ _ stateTyped pointer)
+            (fun intermediate intermediateStore intermediateTyped =>
+              preserveAtFuel _ _ _ _ _ intermediateTyped length)
+      | i32SliceDataPtr slice =>
+          exact evalI32SliceDataPtr_has_runtime_type fuel
+            (preserveAtFuel _ _ _ _ _ stateTyped slice)
+      | stringDataPtr string =>
+          exact evalStringDataPtr_has_runtime_type fuel
+            (preserveAtFuel _ _ _ _ _ stateTyped string)
       | alloc size alignment =>
           exact evalAlloc_has_runtime_type fuel
             (preserveAtFuel _ _ _ _ _ stateTyped size)

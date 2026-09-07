@@ -16,6 +16,21 @@ def ArgumentsEvaluateTo
     (values : List Value) (finalState : State) : Prop :=
   ∃ fuel, evalExprs fuel program state arguments = .done values finalState
 
+theorem argumentsEvaluateTo_deterministic
+    (left : ArgumentsEvaluateTo program state arguments leftValues leftState)
+    (right : ArgumentsEvaluateTo program state arguments rightValues rightState) :
+    leftValues = rightValues ∧ leftState = rightState := by
+  obtain ⟨leftFuel, leftResult⟩ := left
+  obtain ⟨rightFuel, rightResult⟩ := right
+  let common := max leftFuel rightFuel
+  have leftCommon : evalExprs common program state arguments = .done leftValues leftState :=
+    evalExprs_done_at_larger_fuel (Nat.le_max_left _ _) leftResult
+  have rightCommon : evalExprs common program state arguments = .done rightValues rightState :=
+    evalExprs_done_at_larger_fuel (Nat.le_max_right _ _) rightResult
+  have same := leftCommon.symm.trans rightCommon
+  injection same with valuesEq stateEq
+  exact ⟨valuesEq, stateEq⟩
+
 theorem ArgumentsEvaluateTo.nil (program : Program) (state : State) :
     ArgumentsEvaluateTo program state [] [] state := by
   exact ⟨1, rfl⟩

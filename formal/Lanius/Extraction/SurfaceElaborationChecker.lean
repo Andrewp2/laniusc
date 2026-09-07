@@ -1595,6 +1595,11 @@ structure InferredExprsLowering
   types : List Static.GroundTy
   lowered : ExprsCheck context surface types core
 
+structure CheckedExprsLowering
+    (context : Context) (surface : List Surface.Expr)
+    (types : List Static.GroundTy) (core : List Expr) : Type where
+  lowered : ExprsCheck context surface types core
+
 structure CheckedOrderedStructFields (context : Context)
     (schemes : List StructFieldScheme)
     (surface : List (Surface.Name × Surface.Expr)) (core : List Expr) : Type where
@@ -1679,6 +1684,48 @@ mutual
                   typed
             }
           else none
+        else none
+    | .binary operation surfaceLeft (.literal (.integer text)),
+        .binary coreOperation coreLeft (.value (.pointer address)) => do
+        if sameOperation : coreOperation = lowerBinaryOp operation then
+          let left ← inferExpr context surfaceLeft coreLeft
+          let leftType ← groundTypeEq? left.type (.scalar .rawPtr)
+          let null ← literalElaborates? context.target (.integer text)
+            (.scalar .rawPtr) (.value (.pointer address))
+          let typing ← CoreTyping.binaryTyping? coreOperation
+            (.scalar .rawPtr) (.scalar .rawPtr)
+          let output ← outputGround? context typing.output
+          pure {
+            type := output.ground
+            coreType := typing.output
+            grounded := output.grounded
+            lowered := by
+              subst coreOperation
+              exact .binaryNullPointerRight
+                (leftType.proof ▸ left.lowered) null.proof
+                output.grounded typing.typed
+          }
+        else none
+    | .binary operation (.literal (.integer text)) surfaceRight,
+        .binary coreOperation (.value (.pointer address)) coreRight => do
+        if sameOperation : coreOperation = lowerBinaryOp operation then
+          let null ← literalElaborates? context.target (.integer text)
+            (.scalar .rawPtr) (.value (.pointer address))
+          let right ← inferExpr context surfaceRight coreRight
+          let rightType ← groundTypeEq? right.type (.scalar .rawPtr)
+          let typing ← CoreTyping.binaryTyping? coreOperation
+            (.scalar .rawPtr) (.scalar .rawPtr)
+          let output ← outputGround? context typing.output
+          pure {
+            type := output.ground
+            coreType := typing.output
+            grounded := output.grounded
+            lowered := by
+              subst coreOperation
+              exact .binaryNullPointerLeft null.proof
+                (rightType.proof ▸ right.lowered)
+                output.grounded typing.typed
+          }
         else none
     | .binary operation surfaceLeft surfaceRight,
         .binary coreOperation coreLeft coreRight => do
@@ -1783,10 +1830,67 @@ mutual
                 place.grounded typed.proof
           }
         else none
+    | .call (.path path) [surfacePointer, surfaceLength],
+        .i32SliceFromRawParts corePointer coreLength => do
+        if builtin : builtinIntrinsic? path = some .i32SliceFromRawParts then
+          let pointer ← inferExpr context surfacePointer corePointer
+          let pointerType ← groundTypeEq? pointer.type (.scalar .rawPtr)
+          let length ← inferExpr context surfaceLength coreLength
+          let lengthType ← groundTypeEq? length.type (.scalar (.signed .i32))
+          pure {
+            type := .slice (.scalar (.signed .i32))
+            coreType := .slice (.scalar (.signed .i32))
+            grounded := rfl
+            lowered := .i32SliceFromRawParts rfl builtin
+              (pointerType.proof ▸ ExprChecks.exact pointer.lowered)
+              (lengthType.proof ▸ ExprChecks.exact length.lowered)
+          }
+        else none
+    | .call (.path path) [surfaceSlice], .i32SliceDataPtr coreSlice => do
+        if builtin : builtinIntrinsic? path = some .i32SliceDataPtr then
+          let slice ← inferExpr context surfaceSlice coreSlice
+          let sliceType ← groundTypeEq? slice.type
+            (.slice (.scalar (.signed .i32)))
+          pure {
+            type := .scalar .rawPtr
+            coreType := .scalar .rawPtr
+            grounded := rfl
+            lowered := .i32SliceDataPtr rfl builtin
+              (sliceType.proof ▸ ExprChecks.exact slice.lowered)
+          }
+        else none
+    | .call (.path path) [surfaceString], .stringDataPtr coreString => do
+        if builtin : builtinIntrinsic? path = some .stringDataPtr then
+          let string ← inferExpr context surfaceString coreString
+          let stringType ← groundTypeEq? string.type (.scalar .string)
+          pure {
+            type := .scalar .rawPtr
+            coreType := .scalar .rawPtr
+            grounded := rfl
+            lowered := .stringDataPtr rfl builtin
+              (stringType.proof ▸ ExprChecks.exact string.lowered)
+          }
+        else none
+    | .call (.path path) [surfaceArray], .i32ArrayDataPtr coreArray => do
+        if builtin : builtinIntrinsic? path = some .i32ArrayDataPtr then
+          let array ← inferExpr context surfaceArray coreArray
+          match arrayType : array.type with
+          | .array (.scalar (.signed .i32)) length =>
+              pure {
+                type := .scalar .rawPtr
+                coreType := .scalar .rawPtr
+                grounded := rfl
+                lowered := .i32ArrayDataPtr rfl builtin
+                  (arrayType ▸ ExprChecks.exact array.lowered)
+              }
+          | _ => none
+        else none
     | .call (.path path) surfaceArguments, .call function coreArguments => do
-        let arguments ← inferExprs context surfaceArguments coreArguments
+        let selected ← findFunctionInstance? context function
+        let arguments ← checkExprsAgainst context surfaceArguments
+          selected.row.parameterTypes coreArguments
         let resolved ← resolveNongenericDirectCall? context path
-          arguments.types function
+          selected.row.parameterTypes function
         match notIntrinsic : builtinIntrinsic? path with
         | some _ => none
         | none =>
@@ -1890,6 +1994,62 @@ mutual
                   tail.lowered⟩
         else none
     | _, _, _ => none
+
+  def checkExprAgainst (context : Context) :
+      (surface : Surface.Expr) → (expected : Static.GroundTy) →
+      (core : Expr) → Option (Evidence (ExprChecks context surface expected core))
+    | .path path, .scalar targetType,
+        .cast coreTarget coreExpression => do
+        if sameTarget : coreTarget = targetType then
+          let inferred ← inferExpr context (.path path) coreExpression
+          match inferredType : inferred.type with
+          | .scalar sourceType => do
+              if different : sourceType ≠ targetType then
+                let conversion ← CoreTyping.scalarCast? sourceType targetType
+                pure ⟨by
+                  subst coreTarget
+                  exact .scalarCast (inferredType ▸ inferred.lowered)
+                    (by simp [ContextualScalarLiteralApplies])
+                    different conversion.proof⟩
+              else none
+          | _ => none
+        else none
+    | surface, expected, core =>
+        match inferExpr context surface core with
+        | some inferred =>
+            match groundTypeEq? inferred.type expected with
+            | some same => some ⟨same.proof ▸ ExprChecks.exact inferred.lowered⟩
+            | none =>
+                match surface with
+                | .literal literal =>
+                    match grounded : expected.toCore context.monomorphization with
+                    | none => none
+                    | some coreType => do
+                        let lowered ← literalElaborates? context.target literal
+                          coreType core
+                        pure ⟨.literal coreType lowered.proof grounded⟩
+                | _ => none
+        | none =>
+            match surface with
+            | .literal literal =>
+                match grounded : expected.toCore context.monomorphization with
+                | none => none
+                | some coreType => do
+                    let lowered ← literalElaborates? context.target literal
+                      coreType core
+                    pure ⟨.literal coreType lowered.proof grounded⟩
+            | _ => none
+
+  def checkExprsAgainst (context : Context) :
+      (surface : List Surface.Expr) → (types : List Static.GroundTy) →
+      (core : List Expr) → Option (CheckedExprsLowering context surface types core)
+    | [], [], [] => some ⟨.nil⟩
+    | surfaceHead :: surfaceTail, typeHead :: typeTail,
+        coreHead :: coreTail => do
+        let head ← checkExprAgainst context surfaceHead typeHead coreHead
+        let tail ← checkExprsAgainst context surfaceTail typeTail coreTail
+        pure ⟨.cons head.proof tail.lowered⟩
+    | _, _, _ => none
 end
 
 def checkContextualExpr? (context : Context)
@@ -1907,12 +2067,7 @@ def checkContextualExpr? (context : Context)
 def checkExpr (context : Context)
     (surface : Surface.Expr) (expected : Static.GroundTy) (core : Expr) :
     Option (Evidence (ExprChecks context surface expected core)) :=
-  match inferExpr context surface core with
-  | some inferred =>
-      match groundTypeEq? inferred.type expected with
-      | some same => some ⟨same.proof ▸ ExprChecks.exact inferred.lowered⟩
-      | none => checkContextualExpr? context surface expected core
-  | none => checkContextualExpr? context surface expected core
+  checkExprAgainst context surface expected core
 
 def freshLocalId? (context : Context) (id : VarId) :
     Option (Evidence (FreshLocalId context id)) :=

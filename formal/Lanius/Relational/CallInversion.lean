@@ -20,25 +20,6 @@ the generic evaluator boundary; algorithm proofs should never unfold the
 fuelled call evaluator themselves.
 -/
 
-theorem argumentsEvaluateTo_deterministic
-    (left : ArgumentsEvaluateTo program state arguments leftValues leftState)
-    (right : ArgumentsEvaluateTo program state arguments rightValues rightState) :
-    leftValues = rightValues ∧ leftState = rightState := by
-  obtain ⟨leftFuel, leftResult⟩ := left
-  obtain ⟨rightFuel, rightResult⟩ := right
-  let common := max leftFuel rightFuel
-  have leftCommon : evalExprs common program state arguments =
-      .done leftValues leftState :=
-    Lanius.Fuel.evalExprs_done_at_larger_fuel
-      (Nat.le_max_left _ _) leftResult
-  have rightCommon : evalExprs common program state arguments =
-      .done rightValues rightState :=
-    Lanius.Fuel.evalExprs_done_at_larger_fuel
-      (Nat.le_max_right _ _) rightResult
-  have same := leftCommon.symm.trans rightCommon
-  injection same with valuesEq stateEq
-  exact ⟨valuesEq, stateEq⟩
-
 theorem evaluatesCallReturned_invert
     {program : Program} {before actualAfter : State}
     {function : Function} {arguments : List Expr}

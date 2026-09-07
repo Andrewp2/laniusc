@@ -1,0 +1,41 @@
+module verified::syntax_artifact_output;
+import verified::output;
+import verified::source_output;
+import verified::semantic_tokens;
+import verified::parse_output; // Emit the fields shared by syntax artifacts and optional presentation layers.
+// The caller supplies successful extraction prefixes and collected assignments.
+// Paths must be valid UTF-8 bytes; their encoding is decoded by Lean.
+// Partial output must be discarded on failure.
+pub fn emit_fields(path:[i32], path_length: i32, source:[i32], source_length: i32, grammar:[i32], grammar_length: i32, raw:[i32], raw_length: i32, raw_count: i32, tokens:[i32], tokens_length: i32, token_count: i32, semantic:[i32], semantic_length: i32, records:[i32], records_length: i32, offsets:[i32], node_count: i32, output:[i32], capacity: i32,) -> i32 {
+    if (node_count <= 0) {
+        return -1;
+    }
+    let header: str = "{ Lanius.Extraction.Artifact.empty with sources := [{ path := String.fromUTF8! (ByteArray.mk ((";
+    let path_end: str = ": List Nat).toArray.map UInt8.ofNat)), bytes := ";
+    let raw_start: str = " }], raw_tokens := some ";
+    let tokens_start: str = ", tokens := ";
+    let semantic_start: str = ", semantic_token_kinds := ";
+    let nodes_start: str = ", parse_nodes := ";
+    let root_start: str = ", parse_root := some ";
+    let next: i32 = 0;
+    next = verified::output::text(output, capacity, next, header, 95);
+    next = verified::source_output::emit_bytes(path, path_length, output, capacity, next);
+    next = verified::output::text(output, capacity, next, path_end, 48);
+    next = verified::source_output::emit_bytes(source, source_length, output, capacity, next);
+    next = verified::output::text(output, capacity, next, raw_start, 24);
+    next = verified::source_output::emit_tokens(raw, raw_length, raw_count, source_length, 0, output, capacity, next);
+    next = verified::output::text(output, capacity, next, tokens_start, 12);
+    next = verified::source_output::emit_tokens(tokens, tokens_length, token_count, source_length, 0, output, capacity, next);
+    next = verified::output::text(output, capacity, next, semantic_start, 26);
+    next = verified::semantic_tokens::emit(semantic, semantic_length, token_count, output, capacity, next);
+    next = verified::output::text(output, capacity, next, nodes_start, 17);
+    next = verified::parse_output::emit_nodes(grammar, grammar_length, records, records_length, offsets, node_count, token_count, output, capacity, next);
+    next = verified::output::text(output, capacity, next, root_start, 21);
+    next = verified::output::natural(output, capacity, next, node_count - 1);
+    return next;
+}
+pub fn emit(path:[i32], path_length: i32, source:[i32], source_length: i32, grammar:[i32], grammar_length: i32, raw:[i32], raw_length: i32, raw_count: i32, tokens:[i32], tokens_length: i32, token_count: i32, semantic:[i32], semantic_length: i32, records:[i32], records_length: i32, offsets:[i32], node_count: i32, output:[i32], capacity: i32,) -> i32 {
+    let next: i32 = emit_fields(path, path_length, source, source_length, grammar, grammar_length, raw, raw_length, raw_count, tokens, tokens_length, token_count, semantic, semantic_length, records, records_length, offsets, node_count, output, capacity);
+    let end: str = " }";
+    return verified::output::text(output, capacity, next, end, 2);
+}

@@ -233,9 +233,11 @@ mutual
     | .local id => [LocalAccess.read id]
     | .cast _ operand | .unary _ operand | .arrayToSlice _ operand |
         .field operand _ | .dereference operand | .intrinsic _ operand |
-        .i32ArrayDataPtr operand => accesses operand
+        .i32ArrayDataPtr operand | .i32SliceDataPtr operand |
+        .stringDataPtr operand => accesses operand
     | .binary _ left right | .index left right | .alloc left right |
-        .loadByte left right => accesses left ++ accesses right
+        .i32SliceFromRawParts left right | .loadByte left right =>
+        accesses left ++ accesses right
     | .array _ elements | .structValue _ elements |
         .enumValue _ _ elements | .call _ elements =>
         listAccesses elements
@@ -364,9 +366,10 @@ mutual
     | .local id => id ∈ available
     | .cast _ operand | .unary _ operand | .arrayToSlice _ operand |
         .field operand _ | .dereference operand | .intrinsic _ operand |
-        .i32ArrayDataPtr operand => exprWellScoped available operand
+        .i32ArrayDataPtr operand | .i32SliceDataPtr operand |
+        .stringDataPtr operand => exprWellScoped available operand
     | .binary _ left right | .index left right | .alloc left right |
-        .loadByte left right =>
+        .i32SliceFromRawParts left right | .loadByte left right =>
         exprWellScoped available left && exprWellScoped available right
     | .array _ elements | .structValue _ elements |
         .enumValue _ _ elements | .call _ elements =>
@@ -460,9 +463,10 @@ mutual
     | .value _ | .local _ | .constant _ => []
     | .cast _ operand | .unary _ operand | .arrayToSlice _ operand |
         .field operand _ | .dereference operand | .intrinsic _ operand |
-        .i32ArrayDataPtr operand => exprDeclaredLocals operand
+        .i32ArrayDataPtr operand | .i32SliceDataPtr operand |
+        .stringDataPtr operand => exprDeclaredLocals operand
     | .binary _ left right | .index left right | .alloc left right |
-        .loadByte left right =>
+        .i32SliceFromRawParts left right | .loadByte left right =>
         exprDeclaredLocals left ++ exprDeclaredLocals right
     | .array _ elements | .structValue _ elements |
         .enumValue _ _ elements | .call _ elements =>

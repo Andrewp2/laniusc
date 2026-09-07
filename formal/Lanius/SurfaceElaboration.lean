@@ -334,6 +334,9 @@ inductive BuiltinIntrinsic where
   | printI32
   | assert
   | i32ArrayDataPtr
+  | i32SliceFromRawParts
+  | i32SliceDataPtr
+  | stringDataPtr
 deriving DecidableEq, Repr
 
 def builtinIntrinsic? (path : Surface.Path) : Option BuiltinIntrinsic :=
@@ -342,6 +345,9 @@ def builtinIntrinsic? (path : Surface.Path) : Option BuiltinIntrinsic :=
   | some "print_i32" => some .printI32
   | some "assert" => some .assert
   | some "i32_array_data_ptr" => some .i32ArrayDataPtr
+  | some "i32_slice_from_raw_parts" => some .i32SliceFromRawParts
+  | some "i32_slice_data_ptr" => some .i32SliceDataPtr
+  | some "string_data_ptr" => some .stringDataPtr
   | _ => none
 
 /-- Intrinsic recognition and the explicit non-intrinsic call guard are
@@ -1285,6 +1291,28 @@ mutual
           (.array (.scalar (.signed .i32)) length) coreArray) :
         ExprLowers context (.call surfaceCallee [surfaceArgument])
           (.scalar .rawPtr) (.i32ArrayDataPtr coreArray)
+    | i32SliceFromRawParts
+        (callee : surfaceCallee = .path path)
+        (builtin : builtinIntrinsic? path = some .i32SliceFromRawParts)
+        (pointer : ExprChecks context surfacePointer (.scalar .rawPtr) corePointer)
+        (length : ExprChecks context surfaceLength
+          (.scalar (.signed .i32)) coreLength) :
+        ExprLowers context (.call surfaceCallee [surfacePointer, surfaceLength])
+          (.slice (.scalar (.signed .i32)))
+          (.i32SliceFromRawParts corePointer coreLength)
+    | i32SliceDataPtr
+        (callee : surfaceCallee = .path path)
+        (builtin : builtinIntrinsic? path = some .i32SliceDataPtr)
+        (slice : ExprChecks context surfaceSlice
+          (.slice (.scalar (.signed .i32))) coreSlice) :
+        ExprLowers context (.call surfaceCallee [surfaceSlice])
+          (.scalar .rawPtr) (.i32SliceDataPtr coreSlice)
+    | stringDataPtr
+        (callee : surfaceCallee = .path path)
+        (builtin : builtinIntrinsic? path = some .stringDataPtr)
+        (string : ExprChecks context surfaceString (.scalar .string) coreString) :
+        ExprLowers context (.call surfaceCallee [surfaceString])
+          (.scalar .rawPtr) (.stringDataPtr coreString)
     | directCall
         (arguments : ExprsCheck context surfaceArguments argumentTypes coreArguments)
         (resolved : ResolvesDirectCall context path argumentTypes scheme resolvedInstance)

@@ -244,6 +244,13 @@ mutual
         alias their existing cell; other array expressions acquire a stable
         temporary cell during evaluation. -/
     | i32ArrayDataPtr (array : Expr)
+    /-- Unsafe compiler intrinsic constructing a pointer/length i32 slice.
+        Evaluation validates and protects the complete backing block. -/
+    | i32SliceFromRawParts (pointer length : Expr)
+    /-- Compiler intrinsic exposing the data pointer of an i32 slice. -/
+    | i32SliceDataPtr (slice : Expr)
+    /-- Compiler intrinsic exposing stable read-only UTF-8 string storage. -/
+    | stringDataPtr (string : Expr)
     | alloc (size alignment : Expr)
     | realloc (pointer oldSize newSize alignment : Expr)
     | dealloc (pointer size alignment : Expr)

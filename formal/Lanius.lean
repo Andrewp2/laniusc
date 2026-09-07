@@ -88,8 +88,13 @@ import Lanius.Extraction.CoreChecker
 import Lanius.Extraction.Evidence.StructureChecker
 import Lanius.Extraction.CoreTypingChecker
 import Lanius.Extraction.SurfaceElaborationChecker
+import Lanius.Extraction.CoreSynthesis
+import Lanius.Extraction.CoreSynthesis.Program
 import Lanius.Extraction.ArtifactContextChecker
 import Lanius.Extraction.ArtifactPackChecker
+import Lanius.Extraction.CompactArtifact
+import Lanius.Extraction.EntrypointAnalysis
+import Lanius.Extraction.ExtractorContract
 import Lanius.Extraction.ArtifactPackContextChecker
 import Lanius.Extraction.CompleteChecker
 import Lanius.Extraction.SymbolicLocalChecker

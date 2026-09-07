@@ -1,23 +1,28 @@
-# Historical bootstrap syntax extraction
+# Lanius-native x86 bootstrap extraction
 
-> **Historical record:** the Rust CPU exporter and the Python bootstrap,
-> rendering, and pack-check launchers described by this document have been
-> removed. The next supported workflow must be a checked-in Lanius extractor
-> entrypoint that emits its complete proof input directly. Commands below were
-> removed rather than leaving a stale path that silently reintroduced a second
-> extractor outside Lanius.
+The Rust CPU exporter and Python bootstrap/rendering launchers have been
+removed. The supported producer is the checked-in Lanius extractor; the shell
+commands below only compile it, supply its recorded source paths, and invoke
+Lean.
 
 This workflow targets an untrusted GPU-compiled x86-64 Linux ELF executable.
-The Lanius lexer, parser, derivation materializer, and syntax emitter run natively;
-the launcher only captures output and adds Lean proof commands. There is no
-Wasm fallback. Lean must check the output before it is accepted.
+The Lanius lexer, parser, derivation materializer, and compact serializer run
+natively. The executable itself emits the complete Lean module; there is no
+renderer or program-specific proof generator. There is no Wasm fallback. Lean
+must check the output before it is accepted.
 
-**The native syntax bootstrap, exact source-closure self-extraction, and Lean
-acceptance of the resulting logical pack are working.** Runtime-length slice indexing and
+**The native bootstrap, exact source-closure self-extraction, and Lean
+acceptance through reconstructed Surface and synthesized x86 Core are working.** Runtime-length slice indexing and
 the raw `i32` array view now have executable x86 coverage. Native `[i32; N]`
 storage is a coherent packed little-endian view: language indexing and host
-reads or writes observe the same four-byte elements. The bootstrap commands
-below produce an x86-64 ELF extractor and a Lean-checkable syntax artifact.
+reads or writes observe the same four-byte elements. Chunked I/O uses explicit
+`usize` host-call lengths. Known narrow scalars now use narrow alias/argument
+moves in GPU x86 code generation, preventing stale upper bytes from leaking
+out of four-byte spills. Unclassified values retain full width because they
+can be aggregate pointers. File reads reuse the existing scratch slice rather
+than registering an overlapping raw view per file.
+The bootstrap commands below produce an x86-64 ELF extractor and a
+Lean-checkable source, syntax, Surface, and x86 Core artifact.
 The embedded grammar is represented by one hexadecimal string token and
 decoded by the Lanius entry at startup; it remains part of the source and proof
 boundary without forcing the generic parser through thousands of array-literal
@@ -36,17 +41,170 @@ Boolean match lowering failure, and instruction-selection assertions. These
 failures were reproduced with the corresponding pre-change lowering; they have
 not been fixed or removed from the tests.
 
-It does **not** yet extract complete Surface/Core semantics, prove the extractor
-algorithm correct for arbitrary supported inputs, or produce code through a
-verified Lanius x86 backend. See `PLAN.md` for the full goal.
+It does **not** yet prove the extractor's exact execution/output behavior for
+arbitrary supported inputs or produce code through a verified Lanius x86
+backend. See `PLAN.md` for the full goal.
+
+## Current workflow
+
+Build the untrusted x86 bootstrap executable with the existing GPU compiler:
+
+```sh
+cargo run -q --bin laniusc -- --emit x86_64 \
+  --source-root verified_compiler/src --stdlib-root stdlib \
+  -o target/verified-compiler/lanius-extractor \
+  verified_compiler/src/extractor.lani
+```
+
+Self-extract the exact recorded closure into one compact Lean module:
+
+```sh
+xargs target/verified-compiler/lanius-extractor \
+  < verified_compiler/source-closure.txt \
+  > target/verified-compiler/SelfCompactExtracted.lean
+```
+
+Build the fixed decoder/checker once, then validate the embedding:
+
+```sh
+lake -d formal build Lanius.Extraction.CoreSynthesis.Program
+xargs lake -d formal env lean --run \
+  target/verified-compiler/SelfCompactExtracted.lean \
+  < verified_compiler/source-closure.txt
+```
+
+The extractor and compact serializer are Lanius. The generated file contains
+one inert hexadecimal string and a call to fixed Lean infrastructure; it does
+not contain generated proof scripts or expanded constructor forests. Its Lean
+entry point rereads the same ordered paths and checks that the decoded source
+names and bytes equal those files before constructing syntax-validity evidence,
+reconstructing Surface from the accepted parse artifacts, checking all
+Surface-origin claims, synthesizing Core with retained source-lowering
+evidence, and checking the complete x86 Core program's typing derivation.
+This is the generic program checker: libraries need no `main`, and programs
+may return values outside the extractor's own exit-code set.
+`checkExtractorCoreSourcePack` separately links `app::main::main` to a
+well-formed executable and checks extractor-specific return codes. The
+generated module deliberately does not impose that policy on its inputs.
+
+The Lanius process constructs the prefix, complete compact pack, and suffix in
+one output buffer, packs it into the no-longer-needed parser workspace, and
+calls the modeled host stdout service only after every unit has been extracted
+and encoded. Thus all earlier deliberate failures leave stdout untouched, and
+a zero return follows one final write of the complete module.
+
+The September 6, 2026 checkpoint has these reproducible measurements and
+identities:
+
+- exact 18-file, 2,332-line, 105,171-byte closure extraction: 1.26
+  seconds, about 39 MiB peak RSS;
+- proof-producing Lean exact-source, syntax, reconstructed-Surface,
+  source-to-Core lowering and whole-program x86 Core typing with shared
+  infrastructure built: 18.97 seconds,
+  about 1.65 GiB
+  peak RSS;
+- x86 extractor SHA-256:
+  `9608971d94f2cfc2d1622785f0546628c527db5c834e16c9a9ddc63e34977c55`;
+- compact self-embedding SHA-256:
+  `ef7858063a60a986a437b999e2da435d70c69baa806929db32591f9261272049`;
+- SHA-256 of the ordered `sha256sum` closure manifest:
+  `7dc2dcd4b191e1c19e74ce311b95715668a52595b08bd95b3d6cb69a224c6119`;
+- SHA-256 of `source-closure.txt` itself:
+  `079059b1eb54011de70900c1c5a9f7d411a027c7166728a95b55aef461a77bf3`.
+
+After explicit padding fixed out-of-bounds word reads in short keyword
+literals, the x86 bootstrap build took 11.92 s. The updated self-source check,
+including exact I/O-loop linkage and execution tests of the compact matcher
+and keyword dispatcher, took 19.29 s (about 1.70 GiB peak RSS). The earlier
+18.97 s measurement above is the typed acceptance check before that change.
+
+The formal target now distinguishes `Success` and classified `Failure`, and
+states `RunSound`, `RunFailureSafe`, and `RunComplete` over an actual
+`Lanius.Semantics.Outcome`. Exit code zero must imply exact module output,
+exact ordered source binding and proof-carrying syntax,
+unchanged source files, no leaked file handle, and a structurally safe heap and
+raw-view set.
+Nonzero output remains untrusted and must be discarded. The current Lanius
+implementation has not yet been proved to satisfy that execution contract.
+
+`AcceptedSuccess` is separate: it adds Surface reconstruction, source-to-Core
+lowering, and x86 Core typing only after the emitted checker accepts. This
+distinction matters for syntactically valid, ill-typed input such as
+`fn main() -> i32 { return true; }`. The extractor currently emits its syntax
+successfully, while the typed-Core checker correctly rejects it.
+
+`writeStdout_exact` proves that the modeled stdout service appends exactly the
+loaded bytes, records one call, and preserves the heap and all other world
+fields. `writeStdout_invalidRange` proves that a failed load traps without
+changing output or memory. `OutputPacking` proves signed-i32 byte round trips,
+Core shift/OR packing arithmetic, and exact prefixes despite padding and an
+unused workspace tail. Heap read-after-write and disjoint-view synchronization
+proofs connect that representation to the host buffer. Finally,
+`packed_stdout_call_sound` proves exact output for an observed successful Core
+host call, deriving synchronization success from the execution itself.
+`executes_clear_loop` proves that clearing terminates, zeroes exactly the
+required words, and preserves the remaining workspace. `executes_packing_loop`
+proves the complete Core packing loop terminates and
+establishes the exact packed cell, preserving its input buffer and all cells
+outside the workspace/cursor footprint. `findPackingLoop?` returns evidence
+that this exact loop occurs in the checked `main`; it rejects mismatched
+cursor updates and extra loop effects. `findClearLoop?` shares the same source
+traversal and locates the clearing loop. `stdout_after_packing` derives the
+packed buffer and its encoding from the observed loop execution. Valid blocks
+at distinct addresses are proved non-overlapping; pointer exposure preserves
+address uniqueness, and raw-slice construction requires a fresh address. The
+enclosing source execution still must establish initial ownership, fresh raw
+registrations, and phase ordering. Earlier extraction stages must establish
+syntax validity.
+The model writes all bytes; a short native OS write still
+returns failure, and callers must discard that partial output.
+
+On input, `read_call_words` derives the refreshed scratch words and exact file
+bytes through both heap synchronization passes. `executes_unpacking_loop`
+proves termination and exact copying into the source buffer, preserving earlier
+chunks, unused capacity, and scratch contents. `unpack_after_read` composes
+the host call and loop; it does not assume a correctly encoded scratch buffer.
+Its entry ownership and capacity facts must still be established by the
+enclosing file-reader execution. These are stage proofs, not the missing
+whole-extractor success/failure theorem.
+`read_preserves_view` proves that a disjoint registered buffer of valid i32
+values survives the read unchanged, deriving its encoding/refresh coherence.
+Fresh raw slices have distinct backing cells; repeated pointer exposure reuses
+the registry. The request-adjustment branch is proved to compute a positive,
+scratch-bounded capacity probe. Outer-loop and caller-side composition remain.
+
+Focused regression fixtures `tests/extract_library.lani` and
+`tests/extract_return_code.lani` both pass extraction and the generated checker.
+They guard against applying extractor-specific entrypoint policy to arbitrary
+programs. `tests/extract_type_error.lani` additionally requires syntax acceptance
+and Core rejection. `formal/Lanius/Extraction/Tests/Emission.lean` checks both
+stages and rejects modified source bytes; the three-fixture run took 4.43 seconds.
+
+`formal/Lanius/Extraction/Tests/Self.lean` checks the self-embedding and its
+ordered count/clear/pack, input-unpacking, and capacity-probe source linkage in
+one pass (19.70 seconds with shared infrastructure built). `Tests/Packing.lean` and
+`Tests/Input.lean` exercise rejected loop mutations and actual Core executions.
+The input tests cover all byte values at every lane, empty input, partial words,
+and preservation of surrounding buffer contents. The focused input/output
+proof and regression build took 6.42 seconds; the later incremental build with
+preservation and capacity-probe checks took 2.35 seconds. The Core host-call
+regression also checks a partial read followed by EOF with another registered
+buffer containing signed i32 extremes.
+`Tests/Assurance.lean` reports the proof dependencies: only Lean's
+standard axioms, with no project-specific axiom or `sorryAx`.
+
+The extractor imports `src/verified/host.lani`, a narrow Lanius declaration
+module, rather than the large allocator/filesystem/I/O/process standard-library
+surfaces. No general standard-library source is in the exact closure.
+The native x86 runtime returns byte count `1` for successful `write_byte` and
+`write_newline`; the formal world now models the same result instead of zero.
 
 ## Retired workflow
 
-There is currently no supported bootstrap command. The former workflow was
-removed because Python generated the Lanius entrypoint, interpreted and
-rewrote the emitted artifact, and generated program-specific Lean proofs. A
-replacement must keep those responsibilities in checked-in Lanius code or in
-general Lean infrastructure before this document gains a new runnable section.
+The former workflow was removed because Python generated the Lanius entrypoint,
+interpreted and rewrote the emitted artifact, and generated program-specific
+Lean proofs. The current workflow keeps production in checked-in Lanius and
+decoding/checking in general Lean infrastructure.
 
 The generated file keeps one artifact definition. Separate theorems check its
 tokens, semantic token assignments, parse nodes, and root. The node tactic checks
@@ -132,19 +290,11 @@ certificate target.
 
 ## Historical boundaries and limits
 
-- `bootstrap.py` substitutes fixed grammar data and buffer capacities into the
-  Lanius entry template, then invokes the GPU compiler. It does not parse or
-  extract the input program. The generated entry belongs to the source that
-  must eventually be proved correct.
-- `run.py` launches an x86-64 ELF with the input path as argv, captures stdout,
-  and changes the emitted term's presentation into independently checked
-  balanced declarations before adding Lean proof commands. The native
-  runtime and OS provide I/O; the launcher does not emulate services or sandbox
-  the executable. The launcher remains untrusted: Lean validates the resulting
-  artifact internally, while an exact source-to-artifact binding remains part
-  of milestone 3.
-  It writes no result on a nonzero extractor return. Discard partial output
-  after any failure; an older destination file is not evidence of success.
+- The retired Python bootstrap and launcher are not part of the repository or
+  current workflow. `src/extractor.lani` emits the complete Lean module itself;
+  ordinary shell invocation only redirects its stdout. Discard partial output
+  after any nonzero return; an older destination file is not evidence of
+  success.
 - `bootstrap.json` records executable and bootstrap-compiler hashes plus the
   exact ordered source-closure claim. Each source is hashed and the ordered
   aggregate is hashed again. This is authenticated provenance, not yet a Lean

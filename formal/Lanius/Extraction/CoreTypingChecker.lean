@@ -478,6 +478,16 @@ mutual
               (.array (.scalar (.signed .i32)) length)
             pure ⟨.scalar .rawPtr, .i32ArrayDataPtr arrayTyped.proof⟩
         | _ => none
+    | .i32SliceFromRawParts pointer length => do
+        pure ⟨.slice (.scalar (.signed .i32)), .i32SliceFromRawParts
+          (← checkExpr program context pointer (.scalar .rawPtr))
+          (← checkExpr program context length (.scalar (.signed .i32)))⟩
+    | .i32SliceDataPtr slice => do
+        pure ⟨.scalar .rawPtr, .i32SliceDataPtr
+          (← checkExpr program context slice (.slice (.scalar (.signed .i32))))⟩
+    | .stringDataPtr string => do
+        pure ⟨.scalar .rawPtr, .stringDataPtr
+          (← checkExpr program context string (.scalar .string))⟩
     | .alloc size alignment => do
         pure ⟨.scalar .rawPtr, .alloc
           (← checkExpr program context size (.scalar (.unsigned .usize)))

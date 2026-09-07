@@ -41,6 +41,8 @@ def localTypeSymbol : Names.Symbol := {
 def globalResolutionContext : Context := {
   testContext with
   names := { symbols := [localFunctionSymbol, localTypeSymbol] }
+  modulesHaveUniquePaths := none
+  symbolsAreUnique := none
 }
 
 def localRecordScheme : Static.NominalScheme := {
@@ -78,6 +80,8 @@ def ambiguousGlobalResolutionContext : Context := {
     localFunctionSymbol,
     { localFunctionSymbol with declaration := 99 }
   ] }
+  modulesHaveUniquePaths := none
+  symbolsAreUnique := none
 }
 
 theorem conflicting_same_module_declarations_are_rejected :
@@ -110,6 +114,8 @@ def importedResolutionContext : Context := {
     symbols := [importedHelperSymbol, privateImportedHelperSymbol]
     imports := [{ importer := 0, imported := 1 }]
   }
+  modulesHaveUniquePaths := none
+  symbolsAreUnique := none
 }
 
 def importedHelperPath : Surface.Path := {
@@ -137,6 +143,8 @@ theorem imported_qualified_global_is_semantically_resolved :
 def missingImportContext : Context := {
   importedResolutionContext with
   names := { importedResolutionContext.names with imports := [] }
+  modulesHaveUniquePaths := none
+  symbolsAreUnique := none
 }
 
 theorem qualified_global_without_import_is_rejected :
@@ -164,6 +172,8 @@ def ambiguousImportedContext : Context := {
     symbols := [importedHelperSymbol, competingImportedHelperSymbol]
     imports := [{ importer := 0, imported := 1 }, { importer := 0, imported := 2 }]
   }
+  modulesHaveUniquePaths := none
+  symbolsAreUnique := none
 }
 
 theorem ambiguous_imported_unqualified_global_is_rejected :
@@ -177,6 +187,8 @@ def ownQualifiedContext : Context := {
     importedResolutionContext.names with
     symbols := [localFunctionSymbol, importedHelperSymbol]
   }
+  modulesHaveUniquePaths := none
+  symbolsAreUnique := none
 }
 
 def ownQualifiedHelperPath : Surface.Path := {

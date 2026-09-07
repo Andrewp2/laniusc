@@ -1,0 +1,161 @@
+module verified::compact_artifact_output;
+import verified::output;
+import verified::parser;
+fn hex_digit(value: i32) -> i32 {
+    if (value<10) {
+        return 48 + value;
+    }
+    return 87 + value;
+}
+fn hex_u32(output:[i32], capacity: i32, position: i32, value: i32) -> i32 {
+    if (value <= -1) {
+        return -1;
+    }
+    let next: i32 = position;
+    let shift: i32 = 28;
+    while (shift >= 0) {
+        next = verified::output::byte(output, capacity, next, hex_digit((value >> shift)&15));
+        if (next <= -1) {
+            return -1;
+        }
+        shift -= 4;
+    }
+    return next;
+}
+fn hex_byte(output:[i32], capacity: i32, position: i32, value: i32) -> i32 {
+    if (value <= -1 || value >= 256) {
+        return -1;
+    }
+    let next: i32 = verified::output::byte(output, capacity, position, hex_digit((value >> 4)&15));
+    return verified::output::byte(output, capacity, next, hex_digit(value&15));
+}
+fn bytes(input:[i32], length: i32, output:[i32], capacity: i32, position: i32,) -> i32 {
+    if (length <= -1) {
+        return -1;
+    }
+    let next: i32 = position;
+    let index: i32 = 0;
+    while (index != length) {
+        next = hex_byte(output, capacity, next, input[index]);
+        if (next <= -1) {
+            return -1;
+        }
+        index += 1;
+    }
+    return next;
+}
+fn tokens(rows:[i32], rows_length: i32, count: i32, source_length: i32, output:[i32], capacity: i32, position: i32,) -> i32 {
+    if (count <= -1 || !(count <= rows_length / 3)) {
+        return -1;
+    }
+    let next: i32 = position;
+    let token: i32 = 0;
+    while (token != count) {
+        let row: i32 = token * 3;
+        let start: i32 = rows[row + 1];
+        let finish: i32 = rows[row + 2];
+        if (rows[row] <= -1 || start <= -1 || !(start <= finish) || !(finish <= source_length)) {
+            return -1;
+        }
+        next = hex_u32(output, capacity, next, rows[row]);
+        next = hex_u32(output, capacity, next, start);
+        next = hex_u32(output, capacity, next, finish);
+        if (next <= -1) {
+            return -1;
+        }
+        token += 1;
+    }
+    return next;
+}
+fn semantic(assignments:[i32], assignments_length: i32, count: i32, output:[i32], capacity: i32, position: i32,) -> i32 {
+    if (count <= -1 || !(count <= assignments_length / 2)) {
+        return -1;
+    }
+    let next: i32 = position;
+    let token: i32 = 0;
+    while (token != count) {
+        let first: i32 = assignments[token * 2];
+        let second: i32 = assignments[token * 2 + 1];
+        if (first <= -1 || second <= -2) {
+            return -1;
+        }
+        next = hex_u32(output, capacity, next, first);
+        next = hex_u32(output, capacity, next, second + 1);
+        if (next <= -1) {
+            return -1;
+        }
+        token += 1;
+    }
+    return next;
+}
+fn nodes(records:[i32], records_length: i32, offsets:[i32], node_count: i32, token_count: i32, output:[i32], capacity: i32, position: i32,) -> i32 {
+    if (node_count <= -1 || token_count <= -1) {
+        return -1;
+    }
+    let next: i32 = position;
+    let node: i32 = 0;
+    while (node != node_count) {
+        let record: i32 = offsets[node];
+        if (record <= -1 || !(record <= records_length) || records_length - record <= 3) {
+            return -1;
+        }
+        let production: i32 = records[record];
+        let children: i32 = records[record + 3];
+        if (production <= -1 || children <= -1 || !(children <=(records_length - record - 4) / 3)) {
+            return -1;
+        }
+        next = hex_u32(output, capacity, next, production);
+        next = hex_u32(output, capacity, next, records[record + 1]);
+        next = hex_u32(output, capacity, next, records[record + 2]);
+        next = hex_u32(output, capacity, next, children);
+        if (next <= -1) {
+            return -1;
+        }
+        let child: i32 = 0;
+        while (child != children) {
+            let slot: i32 = record + 4 + child * 3;
+            let tag: i32 = records[slot];
+            let payload: i32 = records[slot + 1];
+            if (payload <= -1) {
+                return -1;
+            }
+            if (tag == verified::parser::CHILD_TOKEN) {
+                if (payload >= token_count) {
+                    return -1;
+                }
+            } else {
+                if (tag != verified::parser::CHILD_STATE || payload >= node) {
+                    return -1;
+                }
+            }
+            next = hex_u32(output, capacity, next, tag);
+            next = hex_u32(output, capacity, next, payload);
+            if (next <= -1) {
+                return -1;
+            }
+            child += 1;
+        }
+        node += 1;
+    }
+    return next;
+}
+pub fn emit_header(unit_count: i32, output:[i32], capacity: i32, position: i32) -> i32 {
+    let next: i32 = hex_u32(output, capacity, position, 1);
+    return hex_u32(output, capacity, next, unit_count);
+}
+pub fn emit_unit(path:[i32], path_length: i32, source:[i32], source_length: i32, raw:[i32], raw_length: i32, raw_count: i32, canonical:[i32], canonical_length: i32, token_count: i32, semantic_kinds:[i32], semantic_length: i32, records:[i32], records_length: i32, offsets:[i32], node_count: i32, output:[i32], capacity: i32, position: i32,) -> i32 {
+    if (path_length <= -1 || source_length <= -1 || node_count <= 0) {
+        return -1;
+    }
+    let next: i32 = hex_u32(output, capacity, position, path_length);
+    next = bytes(path, path_length, output, capacity, next);
+    next = hex_u32(output, capacity, next, source_length);
+    next = bytes(source, source_length, output, capacity, next);
+    next = hex_u32(output, capacity, next, raw_count);
+    next = tokens(raw, raw_length, raw_count, source_length, output, capacity, next);
+    next = hex_u32(output, capacity, next, token_count);
+    next = tokens(canonical, canonical_length, token_count, source_length, output, capacity, next);
+    next = semantic(semantic_kinds, semantic_length, token_count, output, capacity, next);
+    next = hex_u32(output, capacity, next, node_count);
+    return nodes(records, records_length, offsets, node_count, token_count, output, capacity, next);
+}

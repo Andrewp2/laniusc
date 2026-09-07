@@ -56,8 +56,8 @@ def verifiedDigitsArtifactWithWrongSurfaceRoot : Artifact :=
       surface := some { surface with id := surface.id + 1 }
     }
 
-theorem verifiedDigitsSurface_rejects_exporter_disagreement :
-    checkSurfaceArtifact verifiedDigitsArtifactWithWrongSurfaceRoot = false := by
+theorem verifiedDigitsSurface_ignores_exporter_proposal :
+    checkSurfaceArtifact verifiedDigitsArtifactWithWrongSurfaceRoot = true := by
   native_decide
 
 theorem verifiedDigitsSurface_checked :

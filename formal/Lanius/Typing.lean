@@ -336,6 +336,22 @@ mutual
         (array : ExprHasType program context expression
           (.array (.scalar (.signed .i32)) length)) :
         ExprHasType program context (.i32ArrayDataPtr expression) (.scalar .rawPtr)
+    | i32SliceFromRawParts
+        (pointer : ExprHasType program context pointerExpression (.scalar .rawPtr))
+        (length : ExprHasType program context lengthExpression
+          (.scalar (.signed .i32))) :
+        ExprHasType program context
+          (.i32SliceFromRawParts pointerExpression lengthExpression)
+          (.slice (.scalar (.signed .i32)))
+    | i32SliceDataPtr
+        (slice : ExprHasType program context sliceExpression
+          (.slice (.scalar (.signed .i32)))) :
+        ExprHasType program context (.i32SliceDataPtr sliceExpression)
+          (.scalar .rawPtr)
+    | stringDataPtr
+        (string : ExprHasType program context stringExpression (.scalar .string)) :
+        ExprHasType program context (.stringDataPtr stringExpression)
+          (.scalar .rawPtr)
     | alloc
         (size : ExprHasType program context sizeExpr (.scalar (.unsigned .usize)))
         (alignment : ExprHasType program context alignmentExpr (.scalar (.unsigned .usize))) :

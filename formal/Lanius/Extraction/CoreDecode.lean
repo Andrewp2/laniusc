@@ -213,6 +213,10 @@ mutual
     | ⟨_, .intrinsic operation argument⟩ =>
         .intrinsic (intrinsic operation) (expression argument)
     | ⟨_, .i32_array_data_ptr array⟩ => .i32ArrayDataPtr (expression array)
+    | ⟨_, .i32_slice_from_raw_parts pointer length⟩ =>
+        .i32SliceFromRawParts (expression pointer) (expression length)
+    | ⟨_, .i32_slice_data_ptr slice⟩ => .i32SliceDataPtr (expression slice)
+    | ⟨_, .string_data_ptr string⟩ => .stringDataPtr (expression string)
     | ⟨_, .alloc size alignment⟩ => .alloc (expression size) (expression alignment)
     | ⟨_, .realloc pointer oldSize newSize alignment⟩ =>
         .realloc (expression pointer) (expression oldSize)

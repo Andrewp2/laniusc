@@ -23,6 +23,16 @@ structure I32ArrayView where
   length : Nat
 deriving Repr
 
+/-- Structural validity of the heap block backing a registered native view.
+The place-typing half of view validity remains in `Lanius.Properties`. -/
+def I32ArrayViewBlockWellFormed (heap : Heap) (view : I32ArrayView) : Prop :=
+  ∃ block,
+    heap.block? view.address = some block ∧
+    block.live = true ∧
+    block.owned = false ∧
+    block.size = view.length * 4 ∧
+    block.alignment = 4
+
 structure State where
   locals : List (VarId × CellId) := []
   cells : List Cell := []
@@ -620,6 +630,56 @@ def mapI32ArrayView
           | .exhausted heap => .trapped .allocationFailure { state with heap }
           | .trapped reason heap => .trapped reason { state with heap }
 
+/-- Construct a language i32 slice over one exact raw block. Protecting the
+    block first makes the resulting cell/view pair stable for the rest of the
+    execution and lets ordinary slice indexing share the existing semantics. -/
+def mapRawI32Slice (state : State) (address : Address) (signedLength : Int) :
+    Outcome Value :=
+  if signedLength < 0 then
+    .trapped .rawMemoryBounds state
+  else
+    let length := signedLength.toNat
+    match state.heap.protectAsBorrowed address (length * 4) 4 with
+    | .error reason => .trapped reason state
+    | .ok protectedHeap =>
+        match protectedHeap.loadBytes address (length * 4) with
+        | .error reason => .trapped reason { state with heap := protectedHeap }
+        | .ok bytes =>
+            match decodeI32Array length bytes with
+            | .error reason => .trapped reason { state with heap := protectedHeap }
+            | .ok elements =>
+                let (root, withTemporary) :=
+                  ({ state with heap := protectedHeap }).allocateTemporary (.array elements)
+                let view : I32ArrayView := { address, root, projections := [], length }
+                .done (.slice (.scalar (.signed .i32)) root [] 0 length) {
+                  withTemporary with
+                  i32ArrayViews := withTemporary.i32ArrayViews ++ [view]
+                }
+
+def mapI32SliceDataPtr
+    (state : State) (cell : CellId) (projections : List ValueProjection)
+    (start length : Nat) : Outcome Value :=
+  match readCellProjection state cell projections with
+  | .error reason => .trapped reason state
+  | .ok (.array elements) =>
+      if start + length ≤ elements.length then
+        match mapI32ArrayView state cell projections elements with
+        | .done (.pointer address) next =>
+            .done (.pointer (address + start * 4)) next
+        | .done _ next => .trapped .typeMismatch next
+        | .trapped reason next => .trapped reason next
+        | .exited code next => .exited code next
+        | .outOfFuel => .outOfFuel
+      else
+        .trapped .arrayBounds state
+  | .ok _ => .trapped .typeMismatch state
+
+def mapStringDataPtr (state : State) (value : String) : Outcome Value :=
+  match state.heap.mapBorrowed (World.utf8Bytes value) 4 with
+  | .allocated address heap => .done (.pointer address) { state with heap }
+  | .exhausted heap => .trapped .allocationFailure { state with heap }
+  | .trapped reason heap => .trapped reason { state with heap }
+
 def worldCallOutcome
     (functionId : FunctionId) (state : State) : World.EffectResult → Outcome Value
   | .returned value heap world =>
@@ -952,6 +1012,35 @@ mutual
                 | .trapped reason next => .trapped reason next
                 | .exited code exitedState => .exited code exitedState
                 | .outOfFuel => .outOfFuel
+        | .i32SliceFromRawParts pointer length =>
+            match evalExpr fuel program state pointer with
+            | .done (.pointer address) afterPointer =>
+                match evalExpr fuel program afterPointer length with
+                | .done (.signed .i32 lengthValue) afterLength =>
+                    mapRawI32Slice afterLength address lengthValue
+                | .done _ next => .trapped .typeMismatch next
+                | .trapped reason next => .trapped reason next
+                | .exited code exitedState => .exited code exitedState
+                | .outOfFuel => .outOfFuel
+            | .done _ next => .trapped .typeMismatch next
+            | .trapped reason next => .trapped reason next
+            | .exited code exitedState => .exited code exitedState
+            | .outOfFuel => .outOfFuel
+        | .i32SliceDataPtr slice =>
+            match evalExpr fuel program state slice with
+            | .done (.slice (.scalar (.signed .i32)) cell projections start length) next =>
+                mapI32SliceDataPtr next cell projections start length
+            | .done _ next => .trapped .typeMismatch next
+            | .trapped reason next => .trapped reason next
+            | .exited code exitedState => .exited code exitedState
+            | .outOfFuel => .outOfFuel
+        | .stringDataPtr string =>
+            match evalExpr fuel program state string with
+            | .done (.string value) next => mapStringDataPtr next value
+            | .done _ next => .trapped .typeMismatch next
+            | .trapped reason next => .trapped reason next
+            | .exited code exitedState => .exited code exitedState
+            | .outOfFuel => .outOfFuel
         | .alloc size alignment =>
             match evalExpr fuel program state size with
             | .done (.unsigned .usize sizeValue) afterSize =>

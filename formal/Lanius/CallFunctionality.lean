@@ -424,6 +424,15 @@ theorem ExprInferenceDerivationSpecializes.functionPathCall_unique_of_functional
       | i32ArrayDataPtr builtin _argument =>
           exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
             notIntrinsic).elim
+      | i32SliceFromRawParts builtin _pointer _length =>
+          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
+            notIntrinsic).elim
+      | i32SliceDataPtr builtin _slice =>
+          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
+            notIntrinsic).elim
+      | stringDataPtr builtin _string =>
+          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
+            notIntrinsic).elim
       | variantExplicit evidence _payload =>
           exact (complete.function_excludes_symbolicVariantConstructor selected
             evidence.selected).elim
@@ -446,6 +455,15 @@ theorem ExprInferenceDerivationSpecializes.functionPathCall_unique_of_functional
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | i32ArrayDataPtr builtin _argument =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceFromRawParts builtin _pointer _length =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceDataPtr builtin _slice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | stringDataPtr builtin _string =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | variantExplicit evidence _payload =>
@@ -481,6 +499,15 @@ theorem ExprInferenceDerivationSpecializes.functionPathCall_unique_of_functional
           | i32ArrayDataPtr builtin _argument =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
+          | i32SliceFromRawParts builtin _pointer _length =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceDataPtr builtin _slice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | stringDataPtr builtin _string =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
           | variantExplicit evidence _payload =>
               exact (complete.function_excludes_symbolicVariantConstructor
                 selected evidence.selected).elim
@@ -512,6 +539,15 @@ theorem ExprInferenceDerivationSpecializes.functionPathCall_unique_of_functional
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | i32ArrayDataPtr builtin _argument =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceFromRawParts builtin _pointer _length =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceDataPtr builtin _slice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | stringDataPtr builtin _string =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | variantExplicit evidence _payload =>
@@ -562,6 +598,15 @@ theorem ExprInferenceDerivationSpecializes.variantPathCall_unique_of_functional
       | i32ArrayDataPtr builtin _argument =>
           exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
             notIntrinsic).elim
+      | i32SliceFromRawParts builtin _pointer _length =>
+          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
+            notIntrinsic).elim
+      | i32SliceDataPtr builtin _slice =>
+          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
+            notIntrinsic).elim
+      | stringDataPtr builtin _string =>
+          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
+            notIntrinsic).elim
       | directCallInferred evidence _arguments =>
           exact (complete.function_excludes_symbolicVariantConstructor
             evidence.selected selected).elim
@@ -584,6 +629,15 @@ theorem ExprInferenceDerivationSpecializes.variantPathCall_unique_of_functional
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | i32ArrayDataPtr builtin _argument =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceFromRawParts builtin _pointer _length =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceDataPtr builtin _slice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | stringDataPtr builtin _string =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | directCallInferred evidence _arguments =>
@@ -619,6 +673,15 @@ theorem ExprInferenceDerivationSpecializes.variantPathCall_unique_of_functional
           | i32ArrayDataPtr builtin _argument =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
+          | i32SliceFromRawParts builtin _pointer _length =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceDataPtr builtin _slice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | stringDataPtr builtin _string =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
           | directCallInferred evidence _arguments =>
               exact (complete.function_excludes_symbolicVariantConstructor
                 evidence.selected selected).elim
@@ -652,6 +715,15 @@ theorem ExprInferenceDerivationSpecializes.variantPathCall_unique_of_functional
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | i32ArrayDataPtr builtin _argument =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceFromRawParts builtin _pointer _length =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceDataPtr builtin _slice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | stringDataPtr builtin _string =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | directCallInferred evidence _arguments =>
@@ -707,6 +779,10 @@ theorem ExprInferenceDerivationSpecializes.intrinsicPathCall_unique_of_functiona
               cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
           | i32ArrayDataPtr rightBuiltin _rightArgument =>
               cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | i32SliceDataPtr rightBuiltin _rightSlice =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | stringDataPtr rightBuiltin _rightString =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
           | variantExplicit evidence _payload =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 found evidence.notIntrinsic).elim
@@ -743,6 +819,10 @@ theorem ExprInferenceDerivationSpecializes.intrinsicPathCall_unique_of_functiona
                 (fun argument => Core.Expr.intrinsic .assert argument)
                 coreEquality⟩
           | i32ArrayDataPtr rightBuiltin _rightArgument =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | i32SliceDataPtr rightBuiltin _rightSlice =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | stringDataPtr rightBuiltin _rightString =>
               cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
           | variantExplicit evidence _payload =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
@@ -781,6 +861,124 @@ theorem ExprInferenceDerivationSpecializes.intrinsicPathCall_unique_of_functiona
                   ((argumentsFunctional _ (by simp)).checking complete)
                   leftArgument rightArgument
               exact ⟨rfl, rfl, congrArg Core.Expr.i32ArrayDataPtr coreEquality⟩
+          | i32SliceDataPtr rightBuiltin _rightSlice =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | stringDataPtr rightBuiltin _rightString =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | variantExplicit evidence _payload =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | variantInferred evidence _payload =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | variantNongeneric evidence _payload =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | directCallInferred evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | directCallExplicit evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | directCallNongeneric evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | associatedCallInferred evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | associatedCallContextual evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+      | i32SliceFromRawParts leftBuiltin leftPointer leftLength =>
+          cases right with
+          | i32SliceFromRawParts _rightBuiltin rightPointer rightLength =>
+              obtain ⟨_pointerGroundEquality, pointerCoreEquality⟩ :=
+                (argumentsFunctional _ (by simp)).checking complete
+                  leftPointer rightPointer
+              obtain ⟨_lengthGroundEquality, lengthCoreEquality⟩ :=
+                (argumentsFunctional _ (by simp)).checking complete
+                  leftLength rightLength
+              cases pointerCoreEquality
+              cases lengthCoreEquality
+              exact ⟨rfl, rfl, rfl⟩
+          | variantExplicit evidence _payload =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | variantInferred evidence _payload =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | variantNongeneric evidence _payload =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | directCallInferred evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | directCallExplicit evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | directCallNongeneric evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | associatedCallInferred evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | associatedCallContextual evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+      | i32SliceDataPtr leftBuiltin leftSlice =>
+          cases right with
+          | printI32 rightBuiltin _rightArgument =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | assert rightBuiltin _rightArgument =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | i32ArrayDataPtr rightBuiltin _rightArgument =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | i32SliceDataPtr _rightBuiltin rightSlice =>
+              obtain ⟨_groundEquality, coreEquality⟩ :=
+                (argumentsFunctional _ (by simp)).checking complete
+                  leftSlice rightSlice
+              exact ⟨rfl, rfl, congrArg Core.Expr.i32SliceDataPtr coreEquality⟩
+          | stringDataPtr rightBuiltin _rightString =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | variantExplicit evidence _payload =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | variantInferred evidence _payload =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | variantNongeneric evidence _payload =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | directCallInferred evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | directCallExplicit evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | directCallNongeneric evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | associatedCallInferred evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+          | associatedCallContextual evidence _arguments =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                found evidence.notIntrinsic).elim
+      | stringDataPtr leftBuiltin leftString =>
+          cases right with
+          | printI32 rightBuiltin _rightArgument =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | assert rightBuiltin _rightArgument =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | i32ArrayDataPtr rightBuiltin _rightArgument =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | i32SliceDataPtr rightBuiltin _rightSlice =>
+              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+          | stringDataPtr _rightBuiltin rightString =>
+              obtain ⟨_groundEquality, coreEquality⟩ :=
+                (argumentsFunctional _ (by simp)).checking complete
+                  leftString rightString
+              exact ⟨rfl, rfl, congrArg Core.Expr.stringDataPtr coreEquality⟩
           | variantExplicit evidence _payload =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 found evidence.notIntrinsic).elim
@@ -855,6 +1053,15 @@ theorem ExprInferenceDerivationSpecializes.associatedPathCall_unique_of_function
       | i32ArrayDataPtr builtin _argument =>
           exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
             notIntrinsic).elim
+      | i32SliceFromRawParts builtin _pointer _length =>
+          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
+            notIntrinsic).elim
+      | i32SliceDataPtr builtin _slice =>
+          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
+            notIntrinsic).elim
+      | stringDataPtr builtin _string =>
+          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
+            notIntrinsic).elim
       | directCallInferred evidence _arguments =>
           exact (notFunction ⟨_, evidence.selected⟩).elim
       | directCallExplicit evidence _arguments =>
@@ -876,6 +1083,15 @@ theorem ExprInferenceDerivationSpecializes.associatedPathCall_unique_of_function
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | i32ArrayDataPtr builtin _argument =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceFromRawParts builtin _pointer _length =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceDataPtr builtin _slice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | stringDataPtr builtin _string =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | directCallInferred evidence _arguments =>
@@ -911,6 +1127,15 @@ theorem ExprInferenceDerivationSpecializes.associatedPathCall_unique_of_function
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | i32ArrayDataPtr builtin _argument =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceFromRawParts builtin _pointer _length =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | i32SliceDataPtr builtin _slice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                builtin notIntrinsic).elim
+          | stringDataPtr builtin _string =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 builtin notIntrinsic).elim
           | directCallInferred evidence _arguments =>
@@ -1000,6 +1225,15 @@ theorem ExprCheckingSpecializationFunctional.pathCall
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 leftBuiltin rightNotIntrinsic).elim
           | i32ArrayDataPtr leftBuiltin _leftArgument =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                leftBuiltin rightNotIntrinsic).elim
+          | i32SliceFromRawParts leftBuiltin _leftPointer _leftLength =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                leftBuiltin rightNotIntrinsic).elim
+          | i32SliceDataPtr leftBuiltin _leftSlice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                leftBuiltin rightNotIntrinsic).elim
+          | stringDataPtr leftBuiltin _leftString =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 leftBuiltin rightNotIntrinsic).elim
           | directCallInferred leftEvidence _leftArguments =>
@@ -1107,6 +1341,15 @@ theorem ExprCheckingSpecializationFunctional.pathCall
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 rightBuiltin leftNotIntrinsic).elim
           | i32ArrayDataPtr rightBuiltin _rightArgument =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                rightBuiltin leftNotIntrinsic).elim
+          | i32SliceFromRawParts rightBuiltin _rightPointer _rightLength =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                rightBuiltin leftNotIntrinsic).elim
+          | i32SliceDataPtr rightBuiltin _rightSlice =>
+              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
+                rightBuiltin leftNotIntrinsic).elim
+          | stringDataPtr rightBuiltin _rightString =>
               exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
                 rightBuiltin leftNotIntrinsic).elim
           | directCallInferred rightEvidence _rightArguments =>

@@ -189,13 +189,13 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir,
                              : X86_LIR_METADATA_ARRAY_LEN);
     if (argument_type == SEMANTIC_LIR_TY_POINTER)
         operands.metadata |= X86_LIR_METADATA_WIDE;
-    // SysV GP register arguments and stack argument slots are machine words.
-    // Move the whole word even for logically narrow integers: callees consume
-    // their low 32 bits, while pointer-like values cannot be truncated when
-    // inference has erased their aggregate identity at this boundary.
-    if (argument_type != X86_LIR_TY_FLOAT &&
-        (operands.metadata &
-         (X86_LIR_METADATA_STRING_LEN | X86_LIR_METADATA_ARRAY_LEN)) == 0u)
+    // Narrow scalar spill slots contain only four initialized bytes. A
+    // dword ABI move zero-extends into the machine-word argument register;
+    // reading eight bytes would pass stale stack data as its high half.
+    // Pointer and aggregate components retain their explicit width above.
+    // Unclassified producers can still be aggregate addresses; do not narrow
+    // those until semantic projection supplies their concrete type metadata.
+    if (argument_type == 0u)
         operands.metadata |= X86_LIR_METADATA_WIDE;
     uint immediate = 0u;
     bool encoded_array_length = array_value && component == 1u &&
@@ -572,10 +572,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint metadata = (source.type_id & 0xffu) | (source.flags << 8u) |
         (x86_semantic_type_is_aggregate(source) || copy_words != 0u
             ? X86_LIR_METADATA_AGGREGATE : 0u);
-    if (opt_ir_op(source) == SEMANTIC_LIR_OP_VALUE_GET)
-        // GP declaration homes contain machine words. Keeping aliases at
-        // that width prevents an inferred pointer-like value from being
-        // truncated before a later call or memory projection.
+    // Alias width follows the checked type/pair metadata. Narrow local stores
+    // initialize four bytes even though their stack homes occupy eight bytes.
+    // Preserve full width for still-unclassified aggregate aliases.
+    if (opt_ir_op(source) == SEMANTIC_LIR_OP_VALUE_GET && source.type_id == 0u)
         metadata |= X86_LIR_METADATA_WIDE;
     if ((opt_ir_op(source) == SEMANTIC_LIR_OP_VALUE_SET ||
          opt_ir_op(source) == SEMANTIC_LIR_OP_STORE) &&

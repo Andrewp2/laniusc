@@ -1,0 +1,6 @@
+module sample::library;
+
+// Extraction validates libraries without requiring a process entrypoint.
+fn answer() -> i32 {
+    return 42;
+}

@@ -6,6 +6,32 @@ open Lanius
 open Lanius.Core
 open Lanius.Fuel
 
+theorem evaluatesStringDataPtr
+    (stringResult : Evaluates program before string (.string text) middle)
+    (mapped : mapStringDataPtr middle text = .done (.pointer address) after) :
+    Evaluates program before (.stringDataPtr string) (.pointer address) after := by
+  obtain ⟨fuel, stringResult⟩ := stringResult
+  refine ⟨fuel + 1, ?_⟩
+  rw [evalExpr.eq_def]
+  simp only
+  rw [stringResult]
+  exact mapped
+
+theorem evaluatesI32SliceFromRawParts
+    (pointerResult : Evaluates program before pointer (.pointer address) afterPointer)
+    (lengthResult : Evaluates program afterPointer length (.signed .i32 count) afterLength)
+    (mapped : mapRawI32Slice afterLength address count = .done value after) :
+    Evaluates program before (.i32SliceFromRawParts pointer length) value after := by
+  obtain ⟨pointerFuel, pointerResult⟩ := pointerResult
+  obtain ⟨lengthFuel, lengthResult⟩ := lengthResult
+  refine ⟨max pointerFuel lengthFuel + 1, ?_⟩
+  rw [evalExpr.eq_def]
+  simp only
+  rw [evalExpr_done_at_larger_fuel (Nat.le_max_left _ _) pointerResult]
+  simp only
+  rw [evalExpr_done_at_larger_fuel (Nat.le_max_right _ _) lengthResult]
+  exact mapped
+
 /-! Fuel-independent structural rules for successful statement execution.
 
 These belong to the dynamic-semantics proof interface rather than to any
@@ -639,6 +665,37 @@ theorem evaluatesNatI32Divide
   rw [quotient, wrapped]
   simp [Nat.ne_of_gt positive]
 
+/-- Remainder on nonnegative i32 operands agrees with natural remainder. -/
+theorem evaluatesNatI32Remainder
+    (leftResult : Evaluates program before left
+      (.signed .i32 (Int.ofNat leftValue)) middle)
+    (rightResult : Evaluates program middle right
+      (.signed .i32 (Int.ofNat rightValue)) after)
+    (positive : 0 < rightValue)
+    (bounded : leftValue % rightValue ≤ 2147483647) :
+    Evaluates program before (.binary .remainder left right)
+      (.signed .i32 (Int.ofNat (leftValue % rightValue))) after := by
+  have quotient : truncDiv (Int.ofNat leftValue) (Int.ofNat rightValue) =
+      Int.ofNat (leftValue / rightValue) := by
+    unfold truncDiv
+    rw [if_pos (show (Int.ofNat leftValue < 0) = (Int.ofNat rightValue < 0) from
+      propext ⟨fun h => False.elim ((Int.not_lt.mpr (Int.natCast_nonneg _)) h),
+        fun h => False.elim ((Int.not_lt.mpr (Int.natCast_nonneg _)) h)⟩)]
+    simp
+  have remainder : Int.ofNat leftValue - Int.ofNat (leftValue / rightValue) *
+      Int.ofNat rightValue = Int.ofNat (leftValue % rightValue) := by
+    change (leftValue : Int) - (leftValue / rightValue : Nat) *
+      (rightValue : Int) = (leftValue % rightValue : Nat)
+    rw [Int.natCast_ediv, Int.natCast_emod]
+    have decomposition := Int.emod_add_ediv_mul (leftValue : Int) (rightValue : Int)
+    omega
+  apply evaluatesEagerBinary (by decide) (by decide) leftResult rightResult
+  simp only [evalBinaryValue, BEq.rfl, if_true, evalSignedBinary]
+  have nonzero : (Int.ofNat rightValue == 0) = false := by simp [Nat.ne_of_gt positive]
+  have notNegative : (Int.ofNat rightValue == -1) = false := by simp
+  simp only [nonzero, notNegative, Bool.and_false, Bool.false_eq_true, if_false]
+  rw [quotient, remainder, wrapSigned_i32_ofNat program.target _ bounded]
+
 /-- The all-ones representation of `-1` is stable for signed i32 on every
     supported target. This is the common result of source-level `-1`
     literals, which elaborate as unary negation of positive one. -/
@@ -649,6 +706,17 @@ theorem wrapSigned_i32_neg_one (target : Target) :
 
 def signedI32Values (values : List Int) : List Value :=
   values.map fun value => .signed .i32 value
+
+theorem encodeSignedI32Values (values : List Int) :
+    encodeI32Array (signedI32Values values) = .ok (values.flatMap i32Bytes) := by
+  induction values with
+  | nil => rfl
+  | cons first rest induction =>
+      change (match encodeI32Array (signedI32Values rest) with
+        | .ok bytes => Except.ok (i32Bytes first ++ bytes)
+        | .error reason => Except.error reason) =
+          Except.ok (i32Bytes first ++ rest.flatMap i32Bytes)
+      rw [induction]
 
 theorem signedI32Values_injective : Function.Injective signedI32Values := by
   intro left right same

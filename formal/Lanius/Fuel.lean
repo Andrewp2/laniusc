@@ -1145,6 +1145,62 @@ theorem evalExpr_fuel_stable_succ
               have stable := previous.place_eq extra place evaluated (by simp [Terminal])
               simp [placeResult, evaluated, stable]
           | outOfFuel => simp [placeResult, evaluated, Terminal] at terminal
+  | i32SliceFromRawParts pointer length =>
+      simp only [evalExpr, Nat.add_succ] at terminal ⊢
+      cases pointerResult : evalExpr fuel program state pointer with
+      | done pointerValue afterPointer =>
+          have pointerStable := previous.expr_eq extra pointerResult (by simp [Terminal])
+          cases pointerValue with
+          | pointer address =>
+              cases lengthResult : evalExpr fuel program afterPointer length with
+              | done lengthValue afterLength =>
+                  have lengthStable := previous.expr_eq extra lengthResult
+                    (by simp [Terminal])
+                  simp [pointerResult, pointerStable, lengthResult, lengthStable]
+              | trapped reason next =>
+                  have lengthStable := previous.expr_eq extra lengthResult
+                    (by simp [Terminal])
+                  simp [pointerResult, pointerStable, lengthResult, lengthStable]
+              | exited code next =>
+                  have lengthStable := previous.expr_eq extra lengthResult
+                    (by simp [Terminal])
+                  simp [pointerResult, pointerStable, lengthResult, lengthStable]
+              | outOfFuel =>
+                  simp [pointerResult, lengthResult, Terminal] at terminal
+          | _ => simp [pointerResult, pointerStable]
+      | trapped reason next =>
+          have pointerStable := previous.expr_eq extra pointerResult (by simp [Terminal])
+          simp [pointerResult, pointerStable]
+      | exited code next =>
+          have pointerStable := previous.expr_eq extra pointerResult (by simp [Terminal])
+          simp [pointerResult, pointerStable]
+      | outOfFuel => simp [pointerResult, Terminal] at terminal
+  | i32SliceDataPtr slice =>
+      simp only [evalExpr, Nat.add_succ] at terminal ⊢
+      cases sliceResult : evalExpr fuel program state slice with
+      | done value next =>
+          have stable := previous.expr_eq extra sliceResult (by simp [Terminal])
+          simp [sliceResult, stable]
+      | trapped reason next =>
+          have stable := previous.expr_eq extra sliceResult (by simp [Terminal])
+          simp [sliceResult, stable]
+      | exited code next =>
+          have stable := previous.expr_eq extra sliceResult (by simp [Terminal])
+          simp [sliceResult, stable]
+      | outOfFuel => simp [sliceResult, Terminal] at terminal
+  | stringDataPtr string =>
+      simp only [evalExpr, Nat.add_succ] at terminal ⊢
+      cases stringResult : evalExpr fuel program state string with
+      | done value next =>
+          have stable := previous.expr_eq extra stringResult (by simp [Terminal])
+          simp [stringResult, stable]
+      | trapped reason next =>
+          have stable := previous.expr_eq extra stringResult (by simp [Terminal])
+          simp [stringResult, stable]
+      | exited code next =>
+          have stable := previous.expr_eq extra stringResult (by simp [Terminal])
+          simp [stringResult, stable]
+      | outOfFuel => simp [stringResult, Terminal] at terminal
   | alloc size alignment =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases sizeResult : evalExpr fuel program state size with

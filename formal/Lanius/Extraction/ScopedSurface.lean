@@ -371,6 +371,18 @@ def collectParameterTypeReferences (fuel : Nat) (unit : Nat) :
       collectModuleTypeReferences fuel unit head.type_expression
       collectParameterTypeReferences fuel unit tail
 
+def collectGenericParameterTypeReferences (fuel : Nat) (unit : Nat) :
+    List SurfaceGenericParameter → ModuleBuildM Unit
+  | [] => pure ()
+  | head :: tail => do
+      if fuel = 0 then failure else
+      let fuel := fuel - 1
+      match head with
+      | .type_parameter _ _ _ => pure ()
+      | .const_parameter _ _ _ typeExpression =>
+          collectModuleTypeReferences fuel unit typeExpression
+      collectGenericParameterTypeReferences fuel unit tail
+
 def collectFieldTypeReferences (fuel : Nat) (unit : Nat) :
     List SurfaceStructField → ModuleBuildM Unit
   | [] => pure ()
@@ -388,6 +400,13 @@ def collectModuleItemReferences (fuel : Nat) (unit : Nat) :
       let fuel := fuel - 1
       match item.value with
       | .function function =>
+          collectGenericParameterTypeReferences fuel unit function.generic_parameters
+          collectParameterTypeReferences fuel unit function.parameters
+          match function.return_type with
+          | none => pure ()
+          | some type => collectModuleTypeReferences fuel unit type
+      | .extern_function function =>
+          collectGenericParameterTypeReferences fuel unit function.generic_parameters
           collectParameterTypeReferences fuel unit function.parameters
           match function.return_type with
           | none => pure ()
