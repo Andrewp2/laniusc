@@ -484,10 +484,11 @@ theorem parentLoopCommand_toCore :
   exact extractedParserRecognize_parent_loop_shape.symm
 
 def parentWorld (words : List Int) (tokens : List Nat)
+    {unused : List Int}
     (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId) :
     Lanius.FunctionalView.Core.ReadOnly.World :=
-  recognizerWorld words tokens workspaceValues grammarCell tokensCell
+  recognizerWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
     workspaceCell
 
 def parentEnvironment
@@ -532,7 +533,7 @@ private theorem parentStateValueTerm_evaluates
     (workspace : LogicalWorkspace) (state : EarleyState)
     (stateId field : Nat) (fieldConstant : ConstantId)
     (different : workspaceCell ≠ grammarCell)
-    (worldEq : world = parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+    (worldEq : world = parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
     (workspaceValueEq : environment ⟨1, by omega⟩ =
       workspaceValue workspaceValues workspaceCell)
     (stateBaseEq : environment ⟨2, by omega⟩ =
@@ -555,7 +556,7 @@ private theorem parentStateValueTerm_evaluates
       .ok (.signed .i32 (stateFieldValue workspace stateId state field),
         world) := by
   subst world
-  let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell
   let machine := parentTermMachine workspaceLayout grammar words grammarCell
   have workspaceResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (parentSlot ⟨1, by omega⟩) =
@@ -653,12 +654,12 @@ private theorem parentRhsLengthTerm_evaluates
       .signed .i32 (Int.ofNat production)) :
     Lanius.FunctionalView.Term.evaluate
       (parentTermMachine workspaceLayout grammar words grammarCell)
-      (parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment parentRhsLengthTerm =
       .ok (.signed .i32 (Int.ofNat
         (grammar.productionAt ⟨production, productionBound⟩).rhs.length),
-        parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
-  let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+        parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
+  let world := parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell
   let machine := parentTermMachine workspaceLayout grammar words grammarCell
   have grammarResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (parentSlot ⟨0, by omega⟩) =
@@ -707,13 +708,13 @@ private theorem parentRhsSymbolTerm_evaluates
       .signed .i32 (Int.ofNat dot)) :
     Lanius.FunctionalView.Term.evaluate
       (parentTermMachine workspaceLayout grammar words grammarCell)
-      (parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment parentRhsSymbolTerm =
       .ok (.signed .i32 (Int.ofNat
         ((grammar.productionAt ⟨production, productionBound⟩).rhs.get
           ⟨dot, dotBound⟩)),
-        parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
-  let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+        parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
+  let world := parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell
   let machine := parentTermMachine workspaceLayout grammar words grammarCell
   have grammarResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (parentSlot ⟨0, by omega⟩) =
@@ -840,13 +841,13 @@ private theorem parentLoopCondition_evaluates
     (parent : Int) :
     Lanius.FunctionalView.Term.evaluate
       (parentTermMachine workspaceLayout grammar words grammarCell)
-      (parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       (parentEnvironment words workspaceValues grammarCell workspaceCell
         workspaceLayout stateCount kindCount position completed completedLhs
         parent)
       parentLoopCondition =
       .ok (.boolean (decide (parent ≥ 0)),
-        parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
+        parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
   simp [parentTermMachine, parentWorld, parentEnvironment,
     parentLoopCondition, parentBinary, parentSlot, parentLiteral,
     Lanius.FunctionalView.Term.evaluate,
@@ -901,7 +902,7 @@ private theorem RecognizerParentLoopInvariant.functional_candidate_reads
     (candidate : EarleyState)
     (found : workspace.state? current = some candidate)
     (productionBound : candidate.production < grammar.productionCount) :
-    let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := parentEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length
       grammar.grammar.n_kinds position completed completedLhs
@@ -935,7 +936,7 @@ private theorem RecognizerParentLoopInvariant.functional_candidate_reads
   have productionRead := parentStateValueTerm_evaluates
     (arity := 10) (by omega) workspaceLayout grammar words workspaceValues
     grammarCell workspaceCell
-    (parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+    (parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell)
     environment workspace candidate current 0 28 different rfl rfl rfl rfl
     invariant.chartCursor.recognizer.workspaceLength
     invariant.chartCursor.recognizer.workspaceEncoded found (by decide)
@@ -943,13 +944,14 @@ private theorem RecognizerParentLoopInvariant.functional_candidate_reads
   have dotRead := parentStateValueTerm_evaluates
     (arity := 11) (by omega) workspaceLayout grammar words workspaceValues
     grammarCell workspaceCell
-    (parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+    (parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell)
     (environment.push (.signed .i32 (Int.ofNat candidate.production)))
     workspace candidate current 1 29 different rfl (by rfl) (by rfl) (by rfl)
     invariant.chartCursor.recognizer.workspaceLength
     invariant.chartCursor.recognizer.workspaceEncoded found (by decide)
     verifiedParser_find_constants.2.2.1
   have rhsRead := parentRhsLengthTerm_evaluates
+    (unused := invariant.chartCursor.recognizer.tokenStorage.unused)
     (tokens := tokens) (tokensCell := tokensCell) workspaceLayout grammar words
     workspaceValues grammarCell workspaceCell
     ((environment.push (.signed .i32 (Int.ofNat candidate.production))).push
@@ -1601,7 +1603,7 @@ private theorem RecognizerParentLoopInvariant.functional_predicate
       completedLhs origin current remaining)
     (candidate : EarleyState)
     (productionBound : candidate.key.production < grammar.productionCount) :
-    let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := parentEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length
       grammar.grammar.n_kinds position completed completedLhs
@@ -1618,7 +1620,7 @@ private theorem RecognizerParentLoopInvariant.functional_predicate
       .ok (.boolean (decide (ParentCandidateMatches grammar candidate
         completedLhs productionBound)), world) := by
   dsimp only
-  let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := parentEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length
     grammar.grammar.n_kinds position completed completedLhs
@@ -1648,6 +1650,7 @@ private theorem RecognizerParentLoopInvariant.functional_predicate
     production.rhs.length dotResult lengthResult
   by_cases dotBound : candidate.dot < production.rhs.length
   · have symbolResult := parentRhsSymbolTerm_evaluates
+      (unused := invariant.chartCursor.recognizer.tokenStorage.unused)
       (tokens := tokens) (tokensCell := tokensCell) workspaceLayout grammar
       words workspaceValues grammarCell workspaceCell predicateEnvironment
       candidate.production candidate.dot productionBound' dotBound
@@ -1728,7 +1731,7 @@ private theorem RecognizerParentLoopInvariant.functional_seed
     (dotBeforeEnd : candidate.dot <
       (grammar.productionAt ⟨candidate.production, by
         simpa [EarleyState.key] using productionBound⟩).rhs.length) :
-    let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := parentEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length
       grammar.grammar.n_kinds position completed completedLhs
@@ -1746,7 +1749,7 @@ private theorem RecognizerParentLoopInvariant.functional_seed
       .ok (stateSeedValue (recognizerParentSeed candidate.production
         candidate.dot candidate.origin current completed), world) := by
   dsimp only
-  let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := parentEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length
     grammar.grammar.n_kinds position completed completedLhs
@@ -1872,7 +1875,7 @@ private theorem RecognizerParentLoopInvariant.functional_append_arguments
     (dotBeforeEnd : candidate.dot <
       (grammar.productionAt ⟨candidate.production, by
         simpa [EarleyState.key] using productionBound⟩).rhs.length) :
-    let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := parentEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length
       grammar.grammar.n_kinds position completed completedLhs
@@ -1895,7 +1898,7 @@ private theorem RecognizerParentLoopInvariant.functional_append_arguments
         .signed .i32 (Int.ofNat position), stateSeedValue seed,
         .signed .i32 (Int.ofNat workspace.states.length)], world) := by
   dsimp only
-  let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := parentEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length
     grammar.grammar.n_kinds position completed completedLhs
@@ -2482,9 +2485,19 @@ def RecognizerParentScopedExecution.restore_invariant
     grammarLengthLocal := preserveLocal 1 (by
       simp [ParentPersistentLocal]) (by decide) _
       beforeInvariant.chartCursor.recognizer.grammarLengthLocal
-    tokensLocal := preserveLocal 2 (by
-      simp [ParentPersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.tokensLocal
+    tokenStorage := beforeInvariant.chartCursor.recognizer.tokenStorage.transport
+      (fun _ found => preserveLocal 2 (by simp [ParentPersistentLocal])
+        (by decide) _ found)
+      (fun _ found => closed.effect.preserves_entry
+        beforeInvariant.chartCursor.recognizer.wellFormed found (by
+          intro written
+          have mutable := writesMutable tokensCell written
+          change tokensCell = workspaceCell ∨ tokensCell = stateCountCell ∨
+            tokensCell = cursorCell at mutable
+          rcases mutable with same | same | same
+          · exact beforeInvariant.chartCursor.recognizer.tokensWorkspaceDistinct same
+          · exact beforeInvariant.appendFrame.stateCountBackingDistinct.2.1 same.symm
+          · exact beforeInvariant.chartCursor.cursorBackingDistinct.2.1 same.symm))
     tokenCountLocal := preserveLocal 3 (by
       simp [ParentPersistentLocal]) (by decide) _
       beforeInvariant.chartCursor.recognizer.tokenCountLocal
@@ -2503,8 +2516,6 @@ def RecognizerParentScopedExecution.restore_invariant
         innerInvariant.chartCursor.recognizer.workspaceLength] using preserved
     grammarBacking := entryTransferred grammarCell _
       innerInvariant.chartCursor.recognizer.grammarBacking
-    tokensBacking := entryTransferred tokensCell _
-      innerInvariant.chartCursor.recognizer.tokensBacking
     workspaceBacking := entryTransferred workspaceCell _
       innerInvariant.chartCursor.recognizer.workspaceBacking
     grammarWorkspaceDistinct :=
@@ -2651,9 +2662,19 @@ def RecognizerParentScopedExecution.restore_finished
     grammarLengthLocal := preserveLocal 1 (by
       simp [ParentPersistentLocal]) (by decide) _
       beforeInvariant.chartCursor.recognizer.grammarLengthLocal
-    tokensLocal := preserveLocal 2 (by
-      simp [ParentPersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.tokensLocal
+    tokenStorage := beforeInvariant.chartCursor.recognizer.tokenStorage.transport
+      (fun _ found => preserveLocal 2 (by simp [ParentPersistentLocal])
+        (by decide) _ found)
+      (fun _ found => closed.effect.preserves_entry
+        beforeInvariant.chartCursor.recognizer.wellFormed found (by
+          intro written
+          have mutable := writesMutable tokensCell written
+          change tokensCell = workspaceCell ∨ tokensCell = stateCountCell ∨
+            tokensCell = cursorCell at mutable
+          rcases mutable with same | same | same
+          · exact beforeInvariant.chartCursor.recognizer.tokensWorkspaceDistinct same
+          · exact beforeInvariant.appendFrame.stateCountBackingDistinct.2.1 same.symm
+          · exact beforeInvariant.chartCursor.cursorBackingDistinct.2.1 same.symm))
     tokenCountLocal := preserveLocal 3 (by
       simp [ParentPersistentLocal]) (by decide) _
       beforeInvariant.chartCursor.recognizer.tokenCountLocal
@@ -2672,8 +2693,6 @@ def RecognizerParentScopedExecution.restore_finished
         innerInvariant.chartCursor.recognizer.workspaceLength] using preserved
     grammarBacking := entryTransferred grammarCell _
       innerInvariant.chartCursor.recognizer.grammarBacking
-    tokensBacking := entryTransferred tokensCell _
-      innerInvariant.chartCursor.recognizer.tokensBacking
     workspaceBacking := entryTransferred workspaceCell _
       innerInvariant.chartCursor.recognizer.workspaceBacking
     grammarWorkspaceDistinct :=
@@ -3073,8 +3092,8 @@ private theorem RecognizerParentLoopInvariant.functional_append
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace position seed
       workspaceValues
-    let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-    let afterWorld := parentWorld words tokens nextValues grammarCell tokensCell workspaceCell
+    let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+    let afterWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
     let environment := parentEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length
       grammar.grammar.n_kinds position completed completedLhs
@@ -3097,8 +3116,8 @@ private theorem RecognizerParentLoopInvariant.functional_append
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace position seed
     workspaceValues
-  let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-  let afterWorld := parentWorld words tokens nextValues grammarCell tokensCell workspaceCell
+  let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+  let afterWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
   let environment := parentEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length
     grammar.grammar.n_kinds position completed completedLhs
@@ -3173,8 +3192,34 @@ private theorem RecognizerParentLoopInvariant.functional_append
   have worldRepresents :
       Lanius.FunctionalView.Core.ReadOnly.World.Represents world
         appended.argumentsState := by
+    have bindBacking {state : State} (wf : StateWellFormed state)
+        (id : VarId) (value : Value) {contents : Option Value}
+        (backing : state.cellEntry? tokensCell =
+          some { id := tokensCell, value := contents }) :
+        (state.bindLocal id value).cellEntry? tokensCell =
+          some { id := tokensCell, value := contents } :=
+      ((bindLocal_effect state id value).oldCells tokensCell
+        (StateWellFormed.cell_lt_next_of_entry wf backing)
+        (by simp [CellSet.empty])).trans backing
+    have productionBacking := bindings.productionEffect.empty_preserves_entry
+      invariant.chartCursor.recognizer.wellFormed
+      invariant.chartCursor.recognizer.tokenStorage.unused_backing
+    have dotBacking := bindings.dotEffect.empty_preserves_entry
+      (bindLocal_preserves_well_formed _ 31 _ bindings.afterProductionWellFormed)
+      (bindBacking bindings.afterProductionWellFormed 31 _ productionBacking)
+    have rhsBacking := bindings.rhsLengthEffect.empty_preserves_entry
+      (bindLocal_preserves_well_formed _ 32 _ bindings.afterDotWellFormed)
+      (bindBacking bindings.afterDotWellFormed 32 _ dotBacking)
+    have predicateBacking := predicate.effect.empty_preserves_entry
+      bindings.invariant.chartCursor.recognizer.wellFormed
+      (bindBacking bindings.afterRhsLengthWellFormed 33 _ rhsBacking)
+    have originBacking := originBinding.originEffect.empty_preserves_entry
+      predicate.invariant.chartCursor.recognizer.wellFormed predicateBacking
+    have argumentBacking := appended.argumentsEffect.empty_preserves_entry
+      originBinding.appendInvariant.frame.recognizer.wellFormed
+      (bindBacking originBinding.afterOriginWellFormed 34 _ originBacking)
     simpa [world, parentWorld] using
-      recognizerWorld_represents appended.argumentsInvariant
+      recognizerWorld_represents appended.argumentsInvariant argumentBacking
   have worldOwned :
       (Lanius.FunctionalView.Core.ReadOnly.World.owns world).holds
         appended.argumentsState :=
@@ -3315,10 +3360,10 @@ private theorem RecognizerParentLoopInvariant.functional_next
       .signed .i32 (Int.ofNat current)) :
     Lanius.FunctionalView.Term.evaluate
       (parentTermMachine workspaceLayout grammar words grammarCell)
-      (parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment (parentStateValueTerm (arity := 13) (by omega) 32) =
       .ok (.signed .i32 (encodeStateId remaining.head?),
-        parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
+        parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
   let candidate := Classical.choose invariant.chartCursor.state_at_cursor
   have candidateFacts :=
     Classical.choose_spec invariant.chartCursor.state_at_cursor
@@ -3327,7 +3372,7 @@ private theorem RecognizerParentLoopInvariant.functional_next
   have evaluated := parentStateValueTerm_evaluates
     (arity := 13) (by omega) workspaceLayout grammar words workspaceValues
     grammarCell workspaceCell
-    (parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+    (parentWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
     environment workspace candidate current 4 32
     invariant.chartCursor.recognizer.grammarWorkspaceDistinct.symm rfl
     workspaceValueEq stateBaseEq currentEq
@@ -3353,7 +3398,7 @@ private theorem RecognizerParentLoopInvariant.functional_no_match_body
     (productionBound : candidate.key.production < grammar.productionCount)
     (notMatches : ¬ ParentCandidateMatches grammar candidate completedLhs
       productionBound) :
-    let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let beforeEnvironment := parentEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length
       grammar.grammar.n_kinds position completed completedLhs
@@ -3368,7 +3413,7 @@ private theorem RecognizerParentLoopInvariant.functional_no_match_body
       world beforeEnvironment parentBodyCommand .next world
       afterEnvironment := by
   dsimp only
-  let world := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let beforeEnvironment := parentEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length
     grammar.grammar.n_kinds position completed completedLhs
@@ -3500,8 +3545,8 @@ private theorem RecognizerParentLoopInvariant.functional_ok_body
       workspace).2
     let nextValues := appendResultValues workspaceLayout workspace position seed
       workspaceValues
-    let beforeWorld := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-    let afterWorld := parentWorld words tokens nextValues grammarCell tokensCell workspaceCell
+    let beforeWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+    let afterWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
     let beforeEnvironment := parentEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length
       grammar.grammar.n_kinds position completed completedLhs
@@ -3524,8 +3569,8 @@ private theorem RecognizerParentLoopInvariant.functional_ok_body
     workspace).2
   let nextValues := appendResultValues workspaceLayout workspace position seed
     workspaceValues
-  let beforeWorld := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-  let afterWorld := parentWorld words tokens nextValues grammarCell tokensCell workspaceCell
+  let beforeWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+  let afterWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
   let beforeEnvironment := parentEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length
     grammar.grammar.n_kinds position completed completedLhs
@@ -3807,8 +3852,8 @@ private theorem RecognizerParentLoopInvariant.functional_full_body
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace position seed
       workspaceValues
-    let beforeWorld := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-    let afterWorld := parentWorld words tokens nextValues grammarCell tokensCell workspaceCell
+    let beforeWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+    let afterWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
     let beforeEnvironment := parentEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length
       grammar.grammar.n_kinds position completed completedLhs
@@ -3826,8 +3871,8 @@ private theorem RecognizerParentLoopInvariant.functional_full_body
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace position seed
     workspaceValues
-  let beforeWorld := parentWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-  let afterWorld := parentWorld words tokens nextValues grammarCell tokensCell workspaceCell
+  let beforeWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+  let afterWorld := parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
   let beforeEnvironment := parentEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length
     grammar.grammar.n_kinds position completed completedLhs
@@ -5217,13 +5262,22 @@ inductive RecognizerParentConfig
   | .active activeConfig => Int.ofNat activeConfig.current
   | .sentinel _ => -1
 
-def RecognizerParentConfig.functionalRuntime
+theorem RecognizerParentConfig.tokenStorage
+    (config : RecognizerParentConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position completed completedLhs origin) :
+    I32PrefixLocal config.runtime 2 tokensCell (tokens.map Int.ofNat) := by
+  cases config with
+  | active config => exact config.invariant.chartCursor.recognizer.tokenStorage
+  | sentinel config => exact config.invariant.chartCursor.recognizer.tokenStorage
+
+noncomputable def RecognizerParentConfig.functionalRuntime
     (config : RecognizerParentConfig grammarLayout grammar words tokens
       workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
       cursorCell position completed completedLhs origin) :
     Lanius.FunctionalView.Stateful.Loop.Runtime
       (parentTermMachine workspaceLayout grammar words grammarCell) 10 :=
-  (parentWorld words tokens config.workspaceValues grammarCell tokensCell workspaceCell,
+  (parentWorld words tokens (unused := config.tokenStorage.unused) config.workspaceValues grammarCell tokensCell workspaceCell,
     parentEnvironment words config.workspaceValues grammarCell workspaceCell
       workspaceLayout config.workspace.states.length grammar.grammar.n_kinds
       position completed completedLhs config.candidate)
@@ -5314,7 +5368,7 @@ inductive RecognizerParentSynchronizedOutcome
         tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell stateCountCell cursorCell physicalAfter position completed
         completedLhs origin)
-      (worldEq : after.world = parentWorld words tokens workspaceValues
+      (worldEq : after.world = parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues
         grammarCell tokensCell workspaceCell)
       (environmentEq : after.environment = parentEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
@@ -5370,7 +5424,7 @@ theorem RecognizerParentSynchronizedOutcome.view
           words tokens workspaceLayout workspace workspaceValues grammarCell
           tokensCell workspaceCell stateCountCell cursorCell physicalAfter
           position completed completedLhs origin,
-        after.world = parentWorld words tokens workspaceValues grammarCell
+        after.world = parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
           tokensCell workspaceCell ∧
         after.environment = parentEnvironment words workspaceValues grammarCell
           workspaceCell workspaceLayout workspace.states.length
@@ -5633,7 +5687,7 @@ noncomputable def RecognizerParentConfig.functional_decide
                 Lanius.FunctionalView.Stateful.Loop.Runtime
                   (parentTermMachine workspaceLayout grammar words
                     grammarCell) 10 :=
-              (parentWorld words tokens nextValues grammarCell tokensCell workspaceCell,
+              (parentWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell,
                 (RecognizerParentConfig.functionalRuntime
                   (.active activeConfig)).environment)
             have functionalBody :
@@ -5727,6 +5781,20 @@ noncomputable def RecognizerParentConfig.functional_decide
                           parentBodyCommand .next
                           nextConfig.functionalRuntime.world
                           nextConfig.functionalRuntime.environment := by
+                      have suffixEq : nextConfig.tokenStorage.unused =
+                          invariant.chartCursor.recognizer.tokenStorage.unused := by
+                        apply nextConfig.tokenStorage.unused_eq_of_backing
+                        apply step.effect.preserves_entry
+                          invariant.chartCursor.recognizer.wellFormed
+                          invariant.chartCursor.recognizer.tokenStorage.unused_backing
+                        simp only [CellSet.union, CellSet.singleton, not_or]
+                        exact ⟨invariant.chartCursor.recognizer.tokensWorkspaceDistinct,
+                          invariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+                          invariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
+                      dsimp only [RecognizerParentConfig.functionalRuntime,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                      rw [suffixEq]
                       simpa [nextConfig,
                         RecognizerParentConfig.functionalRuntime, logical,
                         nextValues, seed, encodeStateId,
@@ -5803,6 +5871,20 @@ noncomputable def RecognizerParentConfig.functional_decide
                           parentBodyCommand .next
                           nextConfig.functionalRuntime.world
                           nextConfig.functionalRuntime.environment := by
+                      have suffixEq : nextConfig.tokenStorage.unused =
+                          invariant.chartCursor.recognizer.tokenStorage.unused := by
+                        apply nextConfig.tokenStorage.unused_eq_of_backing
+                        apply step.effect.preserves_entry
+                          invariant.chartCursor.recognizer.wellFormed
+                          invariant.chartCursor.recognizer.tokenStorage.unused_backing
+                        simp only [CellSet.union, CellSet.singleton, not_or]
+                        exact ⟨invariant.chartCursor.recognizer.tokensWorkspaceDistinct,
+                          invariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+                          invariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
+                      dsimp only [RecognizerParentConfig.functionalRuntime,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                      rw [suffixEq]
                       simpa [nextConfig,
                         RecognizerParentConfig.functionalRuntime, logical,
                         nextValues, seed, encodeStateId,
@@ -5882,6 +5964,20 @@ noncomputable def RecognizerParentConfig.functional_decide
                           parentBodyCommand .next
                           nextConfig.functionalRuntime.world
                           nextConfig.functionalRuntime.environment := by
+                      have suffixEq : nextConfig.tokenStorage.unused =
+                          invariant.chartCursor.recognizer.tokenStorage.unused := by
+                        apply nextConfig.tokenStorage.unused_eq_of_backing
+                        apply step.effect.preserves_entry
+                          invariant.chartCursor.recognizer.wellFormed
+                          invariant.chartCursor.recognizer.tokenStorage.unused_backing
+                        simp only [CellSet.union, CellSet.singleton, not_or]
+                        exact ⟨invariant.chartCursor.recognizer.tokensWorkspaceDistinct,
+                          invariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+                          invariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
+                      dsimp only [RecognizerParentConfig.functionalRuntime,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                      rw [suffixEq]
                       simpa [nextConfig,
                         RecognizerParentConfig.functionalRuntime, logical,
                         nextValues, seed, encodeStateId,
@@ -5965,6 +6061,20 @@ noncomputable def RecognizerParentConfig.functional_decide
                           parentBodyCommand .next
                           nextConfig.functionalRuntime.world
                           nextConfig.functionalRuntime.environment := by
+                      have suffixEq : nextConfig.tokenStorage.unused =
+                          invariant.chartCursor.recognizer.tokenStorage.unused := by
+                        apply nextConfig.tokenStorage.unused_eq_of_backing
+                        apply step.effect.preserves_entry
+                          invariant.chartCursor.recognizer.wellFormed
+                          invariant.chartCursor.recognizer.tokenStorage.unused_backing
+                        simp only [CellSet.union, CellSet.singleton, not_or]
+                        exact ⟨invariant.chartCursor.recognizer.tokensWorkspaceDistinct,
+                          invariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+                          invariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
+                      dsimp only [RecognizerParentConfig.functionalRuntime,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                      rw [suffixEq]
                       simpa [nextConfig,
                         RecognizerParentConfig.functionalRuntime, logical,
                         nextValues, seed, encodeStateId,
@@ -6041,6 +6151,17 @@ noncomputable def RecognizerParentConfig.functional_decide
                     (.active activeConfig)).environment parentBodyCommand
                   .next nextConfig.functionalRuntime.world
                   nextConfig.functionalRuntime.environment := by
+              have suffixEq : nextConfig.tokenStorage.unused =
+                  caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
+                apply nextConfig.tokenStorage.unused_eq_of_backing
+                apply closed.effect.preserves_entry
+                  caseInvariant.chartCursor.recognizer.wellFormed
+                  caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
+                exact caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm
+              dsimp only [RecognizerParentConfig.functionalRuntime,
+                Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+              rw [suffixEq]
               simpa [nextConfig, RecognizerParentConfig.functionalRuntime,
                 encodeStateId,
                 Lanius.FunctionalView.Stateful.Loop.Runtime.world,
@@ -6108,6 +6229,17 @@ noncomputable def RecognizerParentConfig.functional_decide
                     (.active activeConfig)).environment parentBodyCommand
                   .next nextConfig.functionalRuntime.world
                   nextConfig.functionalRuntime.environment := by
+              have suffixEq : nextConfig.tokenStorage.unused =
+                  caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
+                apply nextConfig.tokenStorage.unused_eq_of_backing
+                apply closed.effect.preserves_entry
+                  caseInvariant.chartCursor.recognizer.wellFormed
+                  caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
+                exact caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm
+              dsimp only [RecognizerParentConfig.functionalRuntime,
+                Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+              rw [suffixEq]
               simpa [nextConfig, RecognizerParentConfig.functionalRuntime,
                 encodeStateId,
                 Lanius.FunctionalView.Stateful.Loop.Runtime.world,

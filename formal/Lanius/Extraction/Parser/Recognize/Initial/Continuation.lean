@@ -37,6 +37,13 @@ inductive RecognizerInitialContinuationOutcome
       RecognizerInitialContinuationOutcome grammarLayout grammar words tokens
         workspaceLayout completion
 
+def RecognizerInitialContinuationOutcome.workspaceAgrees
+    (outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words tokens
+      workspaceLayout completion) (finalWorkspace : LogicalWorkspace) : Prop :=
+  match outcome with
+  | .full _ => True
+  | .seeded _ _ _ position => position.workspaceAgrees finalWorkspace
+
 structure RecognizerInitialContinuationExecution
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
@@ -64,6 +71,7 @@ structure RecognizerInitialContinuationExecution
     finalWorkspace finalWorkspaceValues workspaceCell after
   outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words
     tokens workspaceLayout completion
+  outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
 /-- One complete FunctionalView execution of the initial-seeding loop followed
     by the position/root statement, paired with its physical Core refinement.
@@ -86,8 +94,8 @@ structure RecognizerInitialContinuationFunctionalExecution
       tokensCell)
     (positionStatefulMachine workspaceLayout grammar words tokens grammarCell
       tokensCell)
-    (stateWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
-    (initialContinuationEnvironment words tokens workspaceValues grammarCell
+    (stateWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell)
+    (initialContinuationEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
       tokensCell workspaceCell workspaceLayout grammar grammarLayout first count
       workspace.states.length index)
     initialContinuationCommand (.returned (some resultValue)) afterWorld
@@ -108,6 +116,7 @@ structure RecognizerInitialContinuationFunctionalExecution
     finalWorkspace finalWorkspaceValues workspaceCell physicalAfter
   outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words
     tokens workspaceLayout (.returned (some resultValue))
+  outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
 /-- Execute the complete mechanically reified continuation through
     FunctionalView.  Initial seeding is transported into the full recognizer
@@ -150,11 +159,11 @@ noncomputable def
       functionalAfter.environment := by
     simpa only [sourceCompletionEq, sourceAfterEq] using sourceLoopExecution
   have initialWorldEq : initial.functionalRuntime.world =
-      stateWorld words tokens workspaceValues grammarCell tokensCell
+      stateWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
         workspaceCell := by
     rfl
   have initialEnvironmentEq : initial.functionalRuntime.environment =
-      initialContinuationEnvironment words tokens workspaceValues grammarCell
+      initialContinuationEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
         tokensCell workspaceCell workspaceLayout grammar grammarLayout first count
         workspace.states.length index := by
     rfl
@@ -164,9 +173,9 @@ noncomputable def
           tokensCell)
         (positionStatefulMachine workspaceLayout grammar words tokens grammarCell
           tokensCell)
-        (stateWorld words tokens workspaceValues grammarCell tokensCell
+        (stateWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
           workspaceCell)
-        (initialContinuationEnvironment words tokens workspaceValues grammarCell
+        (initialContinuationEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
           tokensCell workspaceCell workspaceLayout grammar grammarLayout first
           count workspace.states.length index)
         initialLoopCommand completion functionalAfter.world
@@ -180,9 +189,9 @@ noncomputable def
             tokensCell)
           (positionStatefulMachine workspaceLayout grammar words tokens
             grammarCell tokensCell)
-          (stateWorld words tokens workspaceValues grammarCell tokensCell
+          (stateWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
             workspaceCell)
-          (initialContinuationEnvironment words tokens workspaceValues
+          (initialContinuationEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues
             grammarCell tokensCell workspaceCell workspaceLayout grammar
             grammarLayout first count workspace.states.length index)
           initialContinuationCommand
@@ -217,13 +226,14 @@ noncomputable def
         growth := initialGrowth
         workspaceArtifact := terminal.workspaceArtifact
         outcome := .full stateCount
+        outcomeWorkspace := True.intro
       }
   | completed nextWorkspace nextValues physicalAfter initialGrowth
       completedInvariant worldEq environmentEq =>
       let position := completedInvariant.functional_execute_position_statement
       have related : Lanius.FunctionalView.Env.Extends
           positionStatementIntoInitialEmbedding
-          (positionStatementEnvironment words tokens nextValues grammarCell
+          (positionStatementEnvironment words tokens (tokenCapacity := tokens.length + completedInvariant.frame.recognizer.tokenStorage.unused.length) nextValues grammarCell
             tokensCell workspaceCell workspaceLayout grammar grammarLayout
             nextWorkspace.states.length)
           functionalAfter.environment := by
@@ -238,13 +248,13 @@ noncomputable def
             tokensCell)
           (positionStatefulMachine workspaceLayout grammar words tokens
             grammarCell tokensCell)
-          (stateWorld words tokens workspaceValues grammarCell tokensCell
+          (stateWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
             workspaceCell)
-          (initialContinuationEnvironment words tokens workspaceValues
+          (initialContinuationEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues
             grammarCell tokensCell workspaceCell workspaceLayout grammar
             grammarLayout first count workspace.states.length index)
           initialLoopCommand .next
-          (stateWorld words tokens nextValues grammarCell tokensCell workspaceCell)
+          (stateWorld words tokens (unused := completedInvariant.frame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell)
           functionalAfter.environment := by
         simpa only [worldEq, stateWorld, predictionWorld] using
           loopExecutionAtSource
@@ -253,9 +263,9 @@ noncomputable def
             tokensCell)
           (positionStatefulMachine workspaceLayout grammar words tokens
             grammarCell tokensCell)
-          (stateWorld words tokens workspaceValues grammarCell tokensCell
+          (stateWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
             workspaceCell)
-          (initialContinuationEnvironment words tokens workspaceValues
+          (initialContinuationEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues
             grammarCell tokensCell workspaceCell workspaceLayout grammar
             grammarLayout first count workspace.states.length index)
           initialContinuationCommand
@@ -299,6 +309,7 @@ noncomputable def
         workspaceArtifact := position.workspaceArtifact
         outcome := .seeded nextWorkspace nextValues
           (.returned (some position.resultValue)) position.outcome
+        outcomeWorkspace := position.outcomeWorkspace
       }
 
 /-- Compose the complete start-production loop with the already verified
@@ -323,6 +334,7 @@ noncomputable def RecognizerInitialLoopInvariant.execute_continuation
     growth := synchronized.growth
     workspaceArtifact := synchronized.workspaceArtifact
     outcome := synchronized.outcome
+    outcomeWorkspace := synchronized.outcomeWorkspace
   }
 
 

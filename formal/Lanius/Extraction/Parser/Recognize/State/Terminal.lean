@@ -151,7 +151,7 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_miss
       workspaceCell stateCountCell cursorCell runtime position current remaining
       beforeInvariant candidate found productionBound dotBeforeEnd bindings)
     (environment : Lanius.FunctionalView.Env 17)
-    (locals : StateAfterBindingsEnvironment grammarLayout grammar words tokens
+    (locals : StateAfterBindingsEnvironment (tokenCapacity := tokens.length + binding.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell position current candidate.production candidate.dot
       candidate.origin
@@ -167,7 +167,7 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_miss
       scanTerminal grammar tokens position symbol = none) :
     let symbol := (grammar.productionAt ⟨candidate.production,
       productionBound⟩).rhs.get ⟨candidate.dot, dotBeforeEnd⟩
-    let world := stateWorld words tokens workspaceValues grammarCell tokensCell
+    let world := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
       workspaceCell
     Lanius.FunctionalView.Stateful.Command.Evaluates
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -178,7 +178,7 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_miss
   dsimp only
   let symbol := (grammar.productionAt ⟨candidate.production,
     productionBound⟩).rhs.get ⟨candidate.dot, dotBeforeEnd⟩
-  let world := stateWorld words tokens workspaceValues grammarCell tokensCell
+  let world := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
     workspaceCell
   let afterSymbol := environment.push (.signed .i32 (Int.ofNat symbol))
   have lift (index : Fin 17) (value : Value)
@@ -230,7 +230,7 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_ok
       workspaceCell stateCountCell cursorCell runtime position current remaining
       beforeInvariant candidate found productionBound dotBeforeEnd bindings)
     (environment : Lanius.FunctionalView.Env 17)
-    (locals : StateAfterBindingsEnvironment grammarLayout grammar words tokens
+    (locals : StateAfterBindingsEnvironment (tokenCapacity := tokens.length + binding.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell position current candidate.production candidate.dot
       candidate.origin
@@ -262,9 +262,9 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_ok
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace nextPosition
       seed workspaceValues
-    let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+    let beforeWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
       tokensCell workspaceCell
-    let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+    let afterWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
       workspaceCell
     Lanius.FunctionalView.Stateful.Command.Evaluates
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -283,9 +283,9 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_ok
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace nextPosition
     seed workspaceValues
-  let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+  let beforeWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
     tokensCell workspaceCell
-  let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+  let afterWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
     workspaceCell
   let afterSymbol := environment.push (.signed .i32 (Int.ofNat symbol))
   have lift (index : Fin 17) (value : Value)
@@ -310,9 +310,17 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_ok
   let ready := binding.to_terminal_ready isTerminal'
   let matched := ready.bind_scan_match nextPosition scanResult'
     nextPositionBound
+  have scanBacking := matched.scanEffect.empty_preserves_entry
+    ready.terminal.recognizer.wellFormed ready.terminal.recognizer.tokenStorage.unused_backing
+  have suffixEq : matched.invariant.terminal.recognizer.tokenStorage.unused =
+      binding.invariant.chartCursor.recognizer.tokenStorage.unused := by
+    apply matched.invariant.terminal.recognizer.tokenStorage.unused_eq_of_backing
+    exact (matched.entered.oldCells tokensCell
+      (StateWellFormed.cell_lt_next_of_entry matched.afterScanInvariant.wellFormed scanBacking)
+      (by simp [CellSet.empty])).trans scanBacking
   have terminalResult := matched.invariant.functional_terminal_ok afterSymbol
     (lift ⟨0, by omega⟩ _ locals.grammarEq)
-    (lift ⟨1, by omega⟩ _ locals.tokensEq)
+    (lift ⟨1, by omega⟩ _ (by simpa only [suffixEq] using locals.tokensEq))
     (lift ⟨2, by omega⟩ _ locals.tokenCountEq)
     (lift ⟨3, by omega⟩ _ locals.workspaceEq)
     (lift ⟨4, by omega⟩ _ locals.stateBaseEq)
@@ -323,6 +331,8 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_ok
     (lift ⟨13, by omega⟩ _ locals.productionEq)
     (lift ⟨14, by omega⟩ _ locals.dotEq)
     (lift ⟨15, by omega⟩ _ locals.originEq) symbolLocal statusOk'
+  dsimp only at terminalResult
+  simp only [suffixEq] at terminalResult
   have branchResult := stateIncompleteCommand_evaluates_of_symbol
     workspaceLayout grammar words tokens grammarCell tokensCell beforeWorld
     environment candidate.production candidate.dot symbol productionBound
@@ -352,7 +362,7 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_full
       workspaceCell stateCountCell cursorCell runtime position current remaining
       beforeInvariant candidate found productionBound dotBeforeEnd bindings)
     (environment : Lanius.FunctionalView.Env 17)
-    (locals : StateAfterBindingsEnvironment grammarLayout grammar words tokens
+    (locals : StateAfterBindingsEnvironment (tokenCapacity := tokens.length + binding.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell position current candidate.production candidate.dot
       candidate.origin
@@ -384,9 +394,9 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_full
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace nextPosition
       seed workspaceValues
-    let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+    let beforeWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
       tokensCell workspaceCell
-    let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+    let afterWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
       workspaceCell
     Lanius.FunctionalView.Stateful.Command.Evaluates
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -405,9 +415,9 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_full
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace nextPosition
     seed workspaceValues
-  let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+  let beforeWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
     tokensCell workspaceCell
-  let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+  let afterWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
     workspaceCell
   let afterSymbol := environment.push (.signed .i32 (Int.ofNat symbol))
   have lift (index : Fin 17) (value : Value)
@@ -432,9 +442,17 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_full
   let ready := binding.to_terminal_ready isTerminal'
   let matched := ready.bind_scan_match nextPosition scanResult'
     nextPositionBound
+  have scanBacking := matched.scanEffect.empty_preserves_entry
+    ready.terminal.recognizer.wellFormed ready.terminal.recognizer.tokenStorage.unused_backing
+  have suffixEq : matched.invariant.terminal.recognizer.tokenStorage.unused =
+      binding.invariant.chartCursor.recognizer.tokenStorage.unused := by
+    apply matched.invariant.terminal.recognizer.tokenStorage.unused_eq_of_backing
+    exact (matched.entered.oldCells tokensCell
+      (StateWellFormed.cell_lt_next_of_entry matched.afterScanInvariant.wellFormed scanBacking)
+      (by simp [CellSet.empty])).trans scanBacking
   have terminalResult := matched.invariant.functional_terminal_full afterSymbol
     (lift ⟨0, by omega⟩ _ locals.grammarEq)
-    (lift ⟨1, by omega⟩ _ locals.tokensEq)
+    (lift ⟨1, by omega⟩ _ (by simpa only [suffixEq] using locals.tokensEq))
     (lift ⟨2, by omega⟩ _ locals.tokenCountEq)
     (lift ⟨3, by omega⟩ _ locals.workspaceEq)
     (lift ⟨4, by omega⟩ _ locals.stateBaseEq)
@@ -445,6 +463,8 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_full
     (lift ⟨13, by omega⟩ _ locals.productionEq)
     (lift ⟨14, by omega⟩ _ locals.dotEq)
     (lift ⟨15, by omega⟩ _ locals.originEq) symbolLocal statusFull'
+  dsimp only at terminalResult
+  simp only [suffixEq] at terminalResult
   have branchResult := stateIncompleteCommand_evaluates_of_symbol
     workspaceLayout grammar words tokens grammarCell tokensCell beforeWorld
     environment candidate.production candidate.dot symbol productionBound
@@ -1148,7 +1168,7 @@ structure RecognizerStateTerminalFunctionalExecution
       tokensCell)
     (stateStatefulMachine workspaceLayout grammar words tokens grammarCell
       tokensCell)
-    (stateWorld words tokens workspaceValues grammarCell tokensCell
+    (stateWorld words tokens (unused := bindings.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
       workspaceCell)
     environment stateIncompleteCommand completion afterWorld afterEnvironment
   physicalExecution : Executes verifiedParserCore
@@ -1183,7 +1203,7 @@ noncomputable def
       workspaceCell stateCountCell cursorCell runtime position current remaining
       beforeInvariant candidate found productionBound dotBeforeEnd bindings)
     (environment : Lanius.FunctionalView.Env 17)
-    (locals : StateAfterBindingsEnvironment grammarLayout grammar words tokens
+    (locals : StateAfterBindingsEnvironment (tokenCapacity := tokens.length + bindings.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell position current candidate.production candidate.dot
       candidate.origin
@@ -1219,6 +1239,34 @@ noncomputable def
     productionBound⟩).rhs.get ⟨candidate.dot, dotBeforeEnd⟩
   have isTerminal' : symbol < grammar.grammar.n_kinds := by
     simpa [symbol] using isTerminal
+  have bindingSuffix : binding.invariant.chartCursor.recognizer.tokenStorage.unused =
+      bindings.invariant.chartCursor.recognizer.tokenStorage.unused := by
+    have readBacking := binding.effect.empty_preserves_entry
+      bindings.invariant.chartCursor.recognizer.wellFormed
+      bindings.invariant.chartCursor.recognizer.tokenStorage.unused_backing
+    apply binding.invariant.chartCursor.recognizer.tokenStorage.unused_eq_of_backing
+    exact ((bindLocal_effect binding.afterRead 29 (.signed .i32 (Int.ofNat symbol))).oldCells
+      tokensCell (StateWellFormed.cell_lt_next_of_entry binding.afterReadWellFormed readBacking)
+      (by simp [CellSet.empty])).trans readBacking
+  have bindingLocals : StateAfterBindingsEnvironment
+      (tokenCapacity := tokens.length + binding.invariant.chartCursor.recognizer.tokenStorage.unused.length)
+      grammarLayout grammar words tokens workspaceLayout workspace workspaceValues
+      grammarCell tokensCell workspaceCell position current candidate.production
+      candidate.dot candidate.origin
+      (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs.length environment := by
+    simpa only [bindingSuffix] using locals
+  have suffixAfter {after : State}
+      (owned : I32PrefixLocal after 2 tokensCell (tokens.map Int.ofNat))
+      (effect : ModifiesOnly writes
+        (bindings.afterRhsLengthRead.bindLocal 28 (.signed .i32 (Int.ofNat
+          (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs.length))) after) :
+      owned.unused = bindings.invariant.chartCursor.recognizer.tokenStorage.unused := by
+    apply owned.unused_eq_of_backing
+    apply effect.preserves_entry bindings.invariant.chartCursor.recognizer.wellFormed
+      bindings.invariant.chartCursor.recognizer.tokenStorage.unused_backing
+    simp only [writes, CellSet.union, CellSet.singleton, not_or]
+    exact ⟨bindings.invariant.chartCursor.recognizer.tokensWorkspaceDistinct,
+      bindings.invariant.appendFrame.stateCountBackingDistinct.2.1.symm⟩
   cases scanEq : scanTerminal grammar tokens position symbol with
   | none =>
       let miss := binding.execute_terminal_miss isTerminal' scanEq
@@ -1227,15 +1275,16 @@ noncomputable def
             (grammar.productionAt ⟨candidate.production,
               productionBound⟩).rhs.length))) miss.after :=
         miss.effect.weaken CellSet.empty_subset
+      have missSuffix := suffixAfter miss.invariant.chartCursor.recognizer.tokenStorage terminalEffect
       exact {
-        afterWorld := stateWorld words tokens workspaceValues grammarCell
+        afterWorld := stateWorld words tokens (unused := bindings.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
           tokensCell workspaceCell
         afterEnvironment := environment
         completion := .next
         physicalAfter := miss.after
         functionalExecution := by
-          simpa [symbol] using binding.functional_terminal_miss environment
-            locals isTerminal' scanEq
+          simpa [symbol, bindingSuffix] using binding.functional_terminal_miss environment
+            bindingLocals isTerminal' scanEq
         physicalExecution := by
           simpa [Lanius.FunctionalView.Core.Stateful.toCoreCompletion] using
             miss.execution
@@ -1248,7 +1297,7 @@ noncomputable def
             miss.invariant.chartCursor.workspaceWithinGrammar
             miss.invariant.appendFrame.stateCountOwned writes terminalEffect
             frameDisjoint cursorNotWritten)
-          rfl locals
+          (by simp only [missSuffix]) (by simpa only [missSuffix] using locals)
       }
   | some nextPosition =>
       have nextPositionBound : nextPosition ≤
@@ -1270,12 +1319,14 @@ noncomputable def
           let success := binding.execute_terminal_success isTerminal'
             nextPosition scanEq nextPositionBound (by
               simpa [seed, symbol] using statusOk)
+          have successSuffix := suffixAfter success.recognizer.tokenStorage
+            (by simpa [writes] using success.effect)
           let afterEnvironment := Lanius.FunctionalView.Stateful.Env.set
             environment 10 (.signed .i32 (Int.ofNat logical.1.stateCount))
           have valuesLength : nextValues.length = workspaceValues.length := by
             simpa [nextValues] using appendResultValues_length workspaceLayout
               workspace nextPosition seed workspaceValues
-          have afterLocals : StateAfterBindingsEnvironment grammarLayout grammar
+          have afterLocals : StateAfterBindingsEnvironment (tokenCapacity := tokens.length + bindings.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar
               words tokens workspaceLayout logical.2 nextValues grammarCell
               tokensCell workspaceCell position current candidate.production
               candidate.dot candidate.origin
@@ -1285,14 +1336,14 @@ noncomputable def
               appendLogical_stateCount_eq] using
               locals.after_workspace_update logical.2 nextValues valuesLength
           exact {
-            afterWorld := stateWorld words tokens nextValues grammarCell
+            afterWorld := stateWorld words tokens (unused := bindings.invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell
               tokensCell workspaceCell
             afterEnvironment := afterEnvironment
             completion := .next
             physicalAfter := success.after
             functionalExecution := by
-              simpa [afterEnvironment, logical, nextValues, seed, symbol] using
-                binding.functional_terminal_ok environment locals isTerminal'
+              simpa [afterEnvironment, logical, nextValues, seed, symbol, bindingSuffix] using
+                binding.functional_terminal_ok environment bindingLocals isTerminal'
                   nextPosition scanEq nextPositionBound (by
                     simpa [seed, symbol] using statusOk)
             physicalExecution := by
@@ -1311,7 +1362,7 @@ noncomputable def
                 (by simpa [logical, seed, symbol] using success.stateCountOwned)
                 writes (by simpa [writes] using success.effect)
                 frameDisjoint cursorNotWritten)
-              rfl afterLocals
+              (by simp only [successSuffix]) (by simpa only [successSuffix] using afterLocals)
           }
       | full =>
           have statusFull : (appendLogical workspaceLayout.capacity nextPosition
@@ -1324,7 +1375,7 @@ noncomputable def
               (position := nextPosition) (seed := seed)
               (values := workspaceValues) statusFull
           exact {
-            afterWorld := stateWorld words tokens workspaceValues grammarCell
+            afterWorld := stateWorld words tokens (unused := bindings.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
               tokensCell workspaceCell
             afterEnvironment := environment
             completion := .returned (some (parseResultValue 2
@@ -1332,12 +1383,12 @@ noncomputable def
             physicalAfter := full.after
             functionalExecution := by
               have evaluated := binding.functional_terminal_full environment
-                locals isTerminal' nextPosition scanEq nextPositionBound (by
+                bindingLocals isTerminal' nextPosition scanEq nextPositionBound (by
                   simpa [seed, symbol] using statusFull)
               dsimp only at evaluated
               dsimp only [nextValues] at valuesEq
               rw [valuesEq] at evaluated
-              simpa [logical, seed, symbol] using evaluated
+              simpa [logical, seed, symbol, bindingSuffix] using evaluated
             physicalExecution := by
               simpa [Lanius.FunctionalView.Core.Stateful.toCoreCompletion,
                 logical, seed, symbol] using full.execution

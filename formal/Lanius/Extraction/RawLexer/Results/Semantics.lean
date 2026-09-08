@@ -1,6 +1,6 @@
 import Lanius.Extraction.RawLexer.Results.Functions
 import Lanius.CallContracts
-import Lanius.FunctionalViewCoreEffectfulStateful
+import Lanius.FunctionalViewCoreFreshSimulation
 
 namespace Lanius.Extraction.RawLexer.Results.Semantics
 
@@ -498,8 +498,8 @@ private theorem preserveRepresentation
   worldLocalsDisjoint := represented.worldLocalsDisjoint
 }
 
-theorem completedCall_soundness :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
+theorem completedCall_framePreserving :
+    Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness
       verifiedFrontendCore completedCalls := by
   constructor
   · intro arity layout localCell beforeWorld afterWorld environment before
@@ -517,26 +517,33 @@ theorem completedCall_soundness :
           completedCall_executes before afterArguments
             (toCoreExprs layout arguments) tokenCount
             afterArgumentsWellFormed argumentsExecution
-        exact ⟨_, CellSet.union argumentWrites CellSet.empty, callExecution,
+        exact ⟨_, callExecution,
           afterWellFormed,
           preserveRepresentation afterArgumentsWellFormed represented
             callEffect,
-          argumentsEffect.trans callEffect⟩
-      next => contradiction
-    next => contradiction
-  · intro beforeWorld afterWorld function arguments result evaluated cell
-    simp only [completedCalls] at evaluated
-    split at evaluated
-    next =>
-      split at evaluated
-      next =>
-        obtain ⟨rfl, rfl⟩ := evaluated
-        rfl
+          argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
       next => contradiction
     next => contradiction
 
-theorem lexicalFailureCall_soundness :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
+private theorem completedCalls_worldPreserving :
+    Lanius.FunctionalView.FreshSimulation.WorldPreserving completedCalls := by
+  intro beforeWorld afterWorld function arguments result evaluated
+  simp only [completedCalls] at evaluated
+  split at evaluated
+  next =>
+    split at evaluated
+    next =>
+      obtain ⟨rfl, rfl⟩ := evaluated
+      rfl
+    next => contradiction
+  next => contradiction
+
+theorem completedCall_soundness :
+    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness verifiedFrontendCore completedCalls :=
+  completedCall_framePreserving.toCallSoundness completedCalls_worldPreserving
+
+theorem lexicalFailureCall_framePreserving :
+    Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness
       verifiedFrontendCore lexicalFailureCalls := by
   constructor
   · intro arity layout localCell beforeWorld afterWorld environment before
@@ -554,26 +561,33 @@ theorem lexicalFailureCall_soundness :
           lexicalFailureCall_executes before afterArguments
             (toCoreExprs layout arguments) tokenCount errorOffset
             afterArgumentsWellFormed argumentsExecution
-        exact ⟨_, CellSet.union argumentWrites CellSet.empty, callExecution,
+        exact ⟨_, callExecution,
           afterWellFormed,
           preserveRepresentation afterArgumentsWellFormed represented
             callEffect,
-          argumentsEffect.trans callEffect⟩
-      next => contradiction
-    next => contradiction
-  · intro beforeWorld afterWorld function arguments result evaluated cell
-    simp only [lexicalFailureCalls] at evaluated
-    split at evaluated
-    next =>
-      split at evaluated
-      next =>
-        obtain ⟨rfl, rfl⟩ := evaluated
-        rfl
+          argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
       next => contradiction
     next => contradiction
 
-theorem outputFullCall_soundness :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
+private theorem lexicalFailureCalls_worldPreserving :
+    Lanius.FunctionalView.FreshSimulation.WorldPreserving lexicalFailureCalls := by
+  intro beforeWorld afterWorld function arguments result evaluated
+  simp only [lexicalFailureCalls] at evaluated
+  split at evaluated
+  next =>
+    split at evaluated
+    next =>
+      obtain ⟨rfl, rfl⟩ := evaluated
+      rfl
+    next => contradiction
+  next => contradiction
+
+theorem lexicalFailureCall_soundness :
+    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness verifiedFrontendCore lexicalFailureCalls :=
+  lexicalFailureCall_framePreserving.toCallSoundness lexicalFailureCalls_worldPreserving
+
+theorem outputFullCall_framePreserving :
+    Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness
       verifiedFrontendCore outputFullCalls := by
   constructor
   · intro arity layout localCell beforeWorld afterWorld environment before
@@ -591,23 +605,30 @@ theorem outputFullCall_soundness :
           outputFullCall_executes before afterArguments
             (toCoreExprs layout arguments) tokenCount sourceOffset
             afterArgumentsWellFormed argumentsExecution
-        exact ⟨_, CellSet.union argumentWrites CellSet.empty, callExecution,
+        exact ⟨_, callExecution,
           afterWellFormed,
           preserveRepresentation afterArgumentsWellFormed represented
             callEffect,
-          argumentsEffect.trans callEffect⟩
+          argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
       next => contradiction
     next => contradiction
-  · intro beforeWorld afterWorld function arguments result evaluated cell
-    simp only [outputFullCalls] at evaluated
+
+private theorem outputFullCalls_worldPreserving :
+    Lanius.FunctionalView.FreshSimulation.WorldPreserving outputFullCalls := by
+  intro beforeWorld afterWorld function arguments result evaluated
+  simp only [outputFullCalls] at evaluated
+  split at evaluated
+  next =>
     split at evaluated
     next =>
-      split at evaluated
-      next =>
-        obtain ⟨rfl, rfl⟩ := evaluated
-        rfl
-      next => contradiction
+      obtain ⟨rfl, rfl⟩ := evaluated
+      rfl
     next => contradiction
+  next => contradiction
+
+theorem outputFullCall_soundness :
+    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness verifiedFrontendCore outputFullCalls :=
+  outputFullCall_framePreserving.toCallSoundness outputFullCalls_worldPreserving
 
 /-- One routed registry for the three constructors used by `lex_into`. -/
 def constructorCalls : CallModel :=
@@ -623,6 +644,13 @@ theorem constructorCall_soundness :
     completedCall_soundness
     (Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness.route
       lexicalFailureCall_soundness outputFullCall_soundness)
+
+theorem constructorFramePreservingCallSoundness :
+    Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore constructorCalls := by
+  exact Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness.route
+    completedCall_framePreserving
+    (Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness.route
+      lexicalFailureCall_framePreserving outputFullCall_framePreserving)
 
 theorem constructorCalls_completed (world : World) (tokenCount : Int) :
     constructorCalls.evaluate world completedFunction.id

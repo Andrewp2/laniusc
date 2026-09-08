@@ -1,20 +1,24 @@
 import Lanius.Extraction.ArtifactQuote
-import Lanius.Extraction.VerifiedFrontend.Artifacts
 import Lanius.Extraction.VerifiedFrontend.Parser.Certificate
 import Lanius.ExecutionRules
 
 namespace Lanius.Extraction
 
 set_option maxRecDepth 1000000
+set_option compiler.extract_closed false
 
 open Lanius.Core
 open Lanius.Semantics
 
-theorem verifiedParserArtifact_tracks_source :
+/-- The standalone proof artifact predates the appended derivation reader.
+This checks its exact source prefix, not the complete current module. Current
+program reuse additionally requires the checked Core relocation link. -/
+theorem verifiedParserArtifact_tracks_source_prefix :
     verifiedParserArtifact.sources.map (fun source => source.path) =
         ["verified_compiler/src/verified/parser.lani"] ∧
-      verifiedParserArtifact.sources.map (fun source => source.bytes) =
-        [sourceBytes verifiedParserSourceText] := by
+      verifiedParserArtifact.sources.map (fun source =>
+        source.bytes.isPrefixOf
+          (verifiedParserSourceText.toUTF8.toList.map UInt8.toNat)) = [true] := by
   native_decide
 
 def extractedParserRangeValidWire : CoreFunction :=
@@ -247,18 +251,7 @@ theorem verifiedParser_workspace_constants :
         type := parserI32Type
         value := .signed .i32 9
       } := by
-  have evidence :
-      (verifiedParserCore.constant? 24).map (fun declaration =>
-          (declaration.id, declaration.type,
-            signedI32ConstantValue? declaration.value)) =
-          some (24, parserI32Type, some 2) ∧
-        (verifiedParserCore.constant? 27).map (fun declaration =>
-          (declaration.id, declaration.type,
-            signedI32ConstantValue? declaration.value)) =
-          some (27, parserI32Type, some 9) := by
-    native_decide
-  exact ⟨constant_eq_of_signed_i32_evidence verifiedParserCore 24 2 evidence.1,
-    constant_eq_of_signed_i32_evidence verifiedParserCore 27 9 evidence.2⟩
+  exact ⟨rfl, rfl⟩
 
 theorem verifiedParser_find_constants :
     verifiedParserCore.constant? 25 = some {

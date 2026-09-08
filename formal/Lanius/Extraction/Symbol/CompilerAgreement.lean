@@ -52,6 +52,55 @@ private def behaviorPair (input : List Byte) : Int × Int :=
 private def agrees (input : List Byte) : Bool :=
   compilerPair input == some (behaviorPair input)
 
+private def thirdRepresentative (byte : Byte) : Byte :=
+  if byte.val = 61 then 61 else 0
+
+private theorem bestMatching_congr (rules : List SymbolRule) (left right : List Nat)
+    (same : ∀ rule ∈ rules, rule.matches left = rule.matches right) :
+    bestMatching rules left = bestMatching rules right := by
+  induction rules with
+  | nil => rfl
+  | cons rule rest induction =>
+      simp only [bestMatching, same rule (by simp),
+        induction (fun entry member => same entry (by simp [member]))]
+
+private theorem compilerPair_third (first second third : Byte) :
+    compilerPair [first, second, third] =
+      compilerPair [first, second, thirdRepresentative third] := by
+  apply congrArg (Option.map _)
+  apply bestMatching_congr
+  intro rule member
+  simp only [symbolRules, List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  all_goals by_cases equal : third.val = 61
+  all_goals simp [SymbolRule.matches, startsWith, thirdRepresentative, equal,
+    beq_iff_eq]
+  all_goals first
+    | solve | simp [(show (61 : Byte).val = 61 from rfl)]
+    | exact fun _ _ same => equal same.symm
+
+private theorem behaviorPair_third (first second third : Byte) :
+    behaviorPair [first, second, third] =
+      behaviorPair [first, second, thirdRepresentative third] := by
+  by_cases equal : third.val = 61
+  · have byteEq : third = 61 := Fin.ext equal
+    subst third
+    rfl
+  · have intNe : (third.val : Int) ≠ 61 := by
+      intro same
+      exact equal (Int.ofNat.inj same)
+    simp [behaviorPair, inputMatch, Behavior.classify, thirdRepresentative, equal, intNe]
+
+private theorem agrees_third (first second third : Byte) :
+    agrees [first, second, third] = agrees [first, second, thirdRepresentative third] := by
+  unfold agrees
+  rw [compilerPair_third, behaviorPair_third]
+
 private theorem everyByte_mem (byte : Byte) : byte ∈ allBytes := by
   exact List.mem_ofFn.mpr ⟨byte, rfl⟩
 
@@ -67,7 +116,7 @@ private theorem twoByteAgreement :
 private theorem threeByteAgreement :
     symbolStartBytes.all (fun first =>
       allBytes.all (fun second =>
-        allBytes.all (fun third => agrees [first, second, third]))) = true := by
+        ([0, 61] : List Byte).all (fun third => agrees [first, second, third]))) = true := by
   native_decide
 
 private theorem first_mem_symbolStartBytes
@@ -126,7 +175,8 @@ theorem compilerValue_eq_behaviorValue
           (List.all_eq_true.mp
             (List.all_eq_true.mp threeByteAgreement first firstMember)
             second (everyByte_mem second))
-          third (everyByte_mem third)
+          (thirdRepresentative third) (by by_cases equal : third.val = 61 <;> simp [thirdRepresentative, equal])
+        rw [← agrees_third first second third] at checked
         have pairEq : compilerPair [first, second, third] =
             some (behaviorPair [first, second, third]) := beq_iff_eq.mp checked
         simpa [compilerPair, behaviorPair, compilerValue, behaviorValue,

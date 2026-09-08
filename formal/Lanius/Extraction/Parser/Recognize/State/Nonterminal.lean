@@ -494,7 +494,7 @@ noncomputable def RecognizerStateNonterminalIndexBinding.enter_prediction
         countInvariant.chartCursor.recognizer.grammarBacking,
       Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
         countInvariant.chartCursor.recognizer.wellFormed
-        countInvariant.chartCursor.recognizer.tokensBacking,
+        countInvariant.chartCursor.recognizer.tokenStorage.unused_backing,
       Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
         countInvariant.chartCursor.recognizer.wellFormed
         countInvariant.chartCursor.recognizer.workspaceBacking,
@@ -927,7 +927,7 @@ noncomputable def RecognizerStatePredictionCompletedFrame.enter_nullable
       (⟨Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
           headRead.invariant.wellFormed headRead.invariant.grammarBacking,
         Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-          headRead.invariant.wellFormed headRead.invariant.tokensBacking,
+          headRead.invariant.wellFormed headRead.invariant.tokenStorage.unused_backing,
         Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
           headRead.invariant.wellFormed headRead.invariant.workspaceBacking⟩)
   have nullableCursorStateCountDistinct : nullableCursorCell ≠ stateCountCell := by
@@ -1396,7 +1396,8 @@ inductive RecognizerStateNullableSynchronizedOutcome
         tokensCell workspaceCell stateCountCell cursorCell physicalAfter
         position current remaining)
       (sourceCompletionEq : sourceCompletion = .next)
-      (worldEq : after.world = nullableWorld words tokens workspaceValues
+      (worldEq : after.world = nullableWorld words tokens
+        (unused := frame.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues
         grammarCell tokensCell workspaceCell)
       (environmentEq : after.environment = nullableEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
@@ -1698,6 +1699,10 @@ noncomputable def RecognizerStateNullableEntry.execute
         finished.chartCursor.workspaceWithinGrammar stateCountOwned
         retainedWrites effect frameDisjoint cursorNotWritten
       let outerFrame := nestedFrame.prepend completed.growth completed.progress
+      have suffixEq : outerFrame.invariant.chartCursor.recognizer.tokenStorage.unused =
+          finished.chartCursor.recognizer.tokenStorage.unused := by
+        apply outerFrame.invariant.chartCursor.recognizer.tokenStorage.unused_eq_of_backing
+        exact finished.chartCursor.recognizer.tokenStorage.unused_backing
       exact ⟨{
         after := after
         execution := execution
@@ -1706,7 +1711,7 @@ noncomputable def RecognizerStateNullableEntry.execute
           simpa [completionEq] using
             (RecognizerStateNullableSynchronizedOutcome.completed nextWorkspace
               nextValues after (completed.growth.trans growth) outerFrame
-              sourceCompletionEq worldEq environmentEq)
+              sourceCompletionEq (by simpa only [suffixEq] using worldEq) environmentEq)
       }, trivial⟩
   exact Classical.choose existsResult
 
@@ -1783,6 +1788,7 @@ inductive RecognizerStatePredictionSynchronizedOutcome
       (predictionCompletionEq :
         entry.functionalConfig.functional_run.completion = .next)
       (predictionWorldEq : predictionAfter.world = predictionWorld words tokens
+        (unused := completed.predictionInvariant.frame.recognizer.tokenStorage.unused)
         completed.workspaceValues grammarCell tokensCell workspaceCell)
       (predictionEnvironmentEq : predictionAfter.environment =
         predictionEnvironment words completed.workspaceValues grammarCell
@@ -1904,6 +1910,7 @@ inductive RecognizerStatePredictionNullableSynchronizedOutcome
       (predictionCompletionEq :
         entry.functionalConfig.functional_run.completion = .next)
       (predictionWorldEq : predictionAfter.world = predictionWorld words tokens
+        (unused := predictionFrame.predictionInvariant.frame.recognizer.tokenStorage.unused)
         predictionFrame.workspaceValues grammarCell tokensCell workspaceCell)
       (predictionEnvironmentEq : predictionAfter.environment =
         predictionEnvironment words predictionFrame.workspaceValues grammarCell
@@ -1926,7 +1933,9 @@ inductive RecognizerStatePredictionNullableSynchronizedOutcome
         tokensCell workspaceCell stateCountCell cursorCell physicalAfter
         position current remaining)
       (nullableWorldEq : nullableEntry.functionalConfig.functional_run.after.world =
-        nullableWorld words tokens finalValues grammarCell tokensCell workspaceCell)
+        nullableWorld words tokens
+          (unused := frame.invariant.chartCursor.recognizer.tokenStorage.unused)
+          finalValues grammarCell tokensCell workspaceCell)
       (nullableEnvironmentEq :
         nullableEntry.functionalConfig.functional_run.after.environment =
           nullableEnvironment words finalValues grammarCell workspaceCell
@@ -1949,6 +1958,7 @@ inductive RecognizerStatePredictionNullableSynchronizedOutcome
       (predictionCompletionEq :
         entry.functionalConfig.functional_run.completion = .next)
       (predictionWorldEq : predictionAfter.world = predictionWorld words tokens
+        (unused := predictionFrame.predictionInvariant.frame.recognizer.tokenStorage.unused)
         predictionFrame.workspaceValues grammarCell tokensCell workspaceCell)
       (predictionEnvironmentEq : predictionAfter.environment =
         predictionEnvironment words predictionFrame.workspaceValues grammarCell
@@ -2122,10 +2132,14 @@ def
     (afterWorld : Lanius.FunctionalView.Core.ReadOnly.World)
     (afterEnvironment : Lanius.FunctionalView.Env 17) : Prop :=
   match outcome with
-  | .completed _ _ _ _ _ _ finalWorkspace finalValues _ _ _ _ _ =>
-      afterWorld = stateWorld words tokens finalValues grammarCell tokensCell
+  | .completed _ _ _ _ _ _ finalWorkspace finalValues _ _ frame _ _ =>
+      afterWorld = stateWorld words tokens
+          (unused := frame.invariant.chartCursor.recognizer.tokenStorage.unused)
+          finalValues grammarCell tokensCell
           workspaceCell ∧
-        StateAfterBindingsEnvironment grammarLayout grammar words tokens
+        StateAfterBindingsEnvironment
+          (tokenCapacity := tokens.length + frame.invariant.chartCursor.recognizer.tokenStorage.unused.length)
+          grammarLayout grammar words tokens
           workspaceLayout finalWorkspace finalValues grammarCell tokensCell
           workspaceCell position current candidate.production candidate.dot
           candidate.origin
@@ -2147,6 +2161,7 @@ def
       found productionBound dotBeforeEnd bindings symbolBinding isNonterminal
       nonterminalBinding entry predictionAfter innerAfter completion)
     (physical : outcome.Restored physicalAfter)
+    (tokensRestored : physicalAfter.cellEntry? tokensCell = innerAfter.cellEntry? tokensCell)
     (functional : outcome.FunctionalRestored afterWorld afterEnvironment) :
     RecognizerStateBranchSynchronizedOutcome grammarLayout grammar words tokens
       workspaceLayout workspace grammarCell tokensCell workspaceCell
@@ -2158,8 +2173,13 @@ def
   | completed predictionFrame predictionCompletionEq predictionWorldEq
       predictionEnvironmentEq nullableEntry nullableCompletionEq finalWorkspace
       finalValues innerAfter growth frame nullableWorldEq nullableEnvironmentEq =>
+      have suffixEq : physical.invariant.chartCursor.recognizer.tokenStorage.unused =
+          frame.invariant.chartCursor.recognizer.tokenStorage.unused := by
+        apply physical.invariant.chartCursor.recognizer.tokenStorage.unused_eq_of_backing
+        exact tokensRestored.trans frame.invariant.chartCursor.recognizer.tokenStorage.unused_backing
       exact .completed finalWorkspace finalValues physicalAfter growth physical
-        functional.1 functional.2
+        (by simpa only [suffixEq] using functional.1)
+        (by simpa only [suffixEq] using functional.2)
   | nullableFull predictionFrame predictionCompletionEq predictionWorldEq
       predictionEnvironmentEq nullableEntry finalWorkspace finalValues
       innerAfter growth terminal stateCount wellFormed nullableCompletionEq

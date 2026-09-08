@@ -173,11 +173,11 @@ theorem RecognizerInitialLoopInvariant.enter_position_loop
       (initialEntryAtFurthest grammarCell
         invariant.frame.recognizer.grammarBacking)
     positionTokensDistinct := positionDifferent tokensCell
-      (initialEntryAtFurthest tokensCell invariant.frame.recognizer.tokensBacking)
+      (initialEntryAtFurthest tokensCell invariant.frame.recognizer.tokenStorage.unused_backing)
     furthestGrammarDistinct := furthestDifferent grammarCell
       invariant.frame.recognizer.grammarBacking
     furthestTokensDistinct := furthestDifferent tokensCell
-      invariant.frame.recognizer.tokensBacking
+      invariant.frame.recognizer.tokenStorage.unused_backing
     positionWorkspaceDistinct := positionDifferent workspaceCell
       (initialEntryAtFurthest workspaceCell
         invariant.frame.recognizer.workspaceBacking)
@@ -505,13 +505,13 @@ private structure RecognizerPositionActivityFunctionalExecution
       tokensCell)
     (positionStatefulMachine workspaceLayout grammar words tokens grammarCell
       tokensCell)
-    (stateWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
-    (positionEnvironment words tokens workspaceValues grammarCell tokensCell
+    (stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell)
+    (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell tokensCell
       workspaceCell workspaceLayout grammar grammarLayout workspace.states.length
       furthest position)
     positionActivityCommand .next
-    (stateWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
-    (positionEnvironment words tokens workspaceValues grammarCell tokensCell
+    (stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell)
+    (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell tokensCell
       workspaceCell workspaceLayout grammar grammarLayout workspace.states.length
       nextFurthest position)
 
@@ -525,12 +525,14 @@ private noncomputable def
       tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell positionCell furthestCell runtime position
       furthest invariant := by
-  let world := stateWorld words tokens workspaceValues grammarCell tokensCell
+  let world := stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
     workspaceCell
-  let environment := positionEnvironment words tokens workspaceValues grammarCell
+  let environment := positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
     tokensCell workspaceCell workspaceLayout grammar grammarLayout
     workspace.states.length furthest position
   have condition := positionActivityCondition_evaluates grammarLayout grammar words
+    (unused := invariant.appendFrame.recognizer.tokenStorage.unused)
+    (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length)
     tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
     workspaceCell workspace.states.length furthest position
     (stateWorld_finds_workspace
@@ -584,7 +586,7 @@ private noncomputable def
       have environmentAfter :
           Lanius.FunctionalView.Stateful.Env.set environment ⟨13, by omega⟩
               (.signed .i32 (Int.ofNat position)) =
-            positionEnvironment words tokens workspaceValues grammarCell
+            positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
               tokensCell workspaceCell workspaceLayout grammar grammarLayout
               workspace.states.length position position := by
         apply Lanius.FunctionalView.Env.eq_ofFn
@@ -658,18 +660,18 @@ private theorem positionAdvanceCommand_evaluates
 /-- Updating the position slot beneath the scoped state cursor produces the
     canonical environment for the next position. -/
 private theorem positionEnvironment_push_advance
-    (words : List Int) (tokens : List Nat) (workspaceValues : List Int)
+    (words : List Int) (tokens : List Nat) {tokenCapacity : Nat} (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId)
     (workspaceLayout : WorkspaceLayout) (grammar : IndexedGrammar)
     (grammarLayout : PackedGrammarLayout) (stateCount furthest position : Nat)
     (candidate : Int) :
     Lanius.FunctionalView.Stateful.Env.set
-        ((positionEnvironment words tokens workspaceValues
+        ((positionEnvironment words tokens (tokenCapacity := tokenCapacity) workspaceValues
           grammarCell tokensCell workspaceCell workspaceLayout grammar
           grammarLayout stateCount furthest position).push
           (.signed .i32 candidate))
         ⟨14, by omega⟩ (.signed .i32 (Int.ofNat (position + 1))) =
-      ((positionEnvironment words tokens workspaceValues
+      ((positionEnvironment words tokens (tokenCapacity := tokenCapacity) workspaceValues
         grammarCell tokensCell workspaceCell workspaceLayout grammar
         grammarLayout stateCount furthest (position + 1)).push
         (.signed .i32 candidate)) := by
@@ -915,6 +917,25 @@ private def RecognizerPositionStateEntry.functionalConfig
   cursor := entry.cursor
 }
 
+private theorem RecognizerPositionStateEntry.functionalConfig_suffix
+    (entry : RecognizerPositionStateEntry grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell positionCell furthestCell source position
+      furthest sourceInvariant) :
+    entry.functionalConfig.tokenStorage.unused =
+      sourceInvariant.appendFrame.recognizer.tokenStorage.unused := by
+  have readBacking := entry.chartEntry.headRead.effect.empty_preserves_entry
+    sourceInvariant.appendFrame.recognizer.wellFormed
+    sourceInvariant.appendFrame.recognizer.tokenStorage.unused_backing
+  apply entry.functionalConfig.tokenStorage.unused_eq_of_backing
+  change entry.chartEntry.bound.cellEntry? tokensCell = _
+  rw [entry.chartEntry.boundEq]
+  exact ((bindLocal_effect entry.chartEntry.headRead.after 24
+    (.signed .i32 (chartHeadValue workspace position))).oldCells tokensCell
+    (StateWellFormed.cell_lt_next_of_entry
+      entry.chartEntry.headRead.invariant.wellFormed readBacking)
+    (by simp [CellSet.empty])).trans readBacking
+
 private theorem RecognizerPositionStateEntry.functionalConfig_candidate
     (entry : RecognizerPositionStateEntry grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
@@ -958,7 +979,7 @@ private theorem RecognizerPositionStateEntry.functional_environment_extends
     (outerFurthest : Nat) :
     Lanius.FunctionalView.Env.Extends stateIntoPositionEmbedding
       entry.functionalConfig.functionalRuntime.environment
-      ((positionEnvironment words tokens workspaceValues grammarCell tokensCell
+      ((positionEnvironment words tokens (tokenCapacity := tokens.length + entry.functionalConfig.tokenStorage.unused.length) workspaceValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar grammarLayout workspace.states.length
         outerFurthest position).push
         (.signed .i32 (chartHeadValue workspace position))) := by
@@ -987,7 +1008,7 @@ private noncomputable def
         tokensCell)
       Lanius.FunctionalView.Core.Stateful.actionRenamer
       stateIntoPositionEmbedding entry.functionalConfig.functionalRuntime.world
-      ((positionEnvironment words tokens workspaceValues grammarCell tokensCell
+      ((positionEnvironment words tokens (tokenCapacity := tokens.length + entry.functionalConfig.tokenStorage.unused.length) workspaceValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar grammarLayout workspace.states.length
         outerFurthest position).push
         (.signed .i32 (chartHeadValue workspace position)))
@@ -1008,29 +1029,31 @@ private theorem RecognizerPositionStateEntry.functional_state_after_large_eq
     (outerFurthest : Nat) (nextWorkspace : LogicalWorkspace)
     (nextValues : List Int)
     (environmentEq : entry.functionalConfig.functional_run.after.environment =
-      stateEnvironment words tokens nextValues grammarCell tokensCell
+      stateEnvironment words tokens (tokenCapacity := tokens.length + entry.functionalConfig.tokenStorage.unused.length) nextValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar.grammar.n_kinds
         grammarLayout.lhsOffsetsOffset grammarLayout.lhsCountsOffset
         grammarLayout.lhsProductionsOffset nextWorkspace.states.length position
         (-1)) :
     (entry.functional_execute_state_loop outerFurthest).afterLarge =
-      ((positionEnvironment words tokens nextValues grammarCell tokensCell
+      ((positionEnvironment words tokens (tokenCapacity := tokens.length + entry.functionalConfig.tokenStorage.unused.length) nextValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar grammarLayout
         nextWorkspace.states.length outerFurthest position).push
         (.signed .i32 (-1))) := by
   let execution := entry.functional_execute_state_loop outerFurthest
   have leftRelated : Lanius.FunctionalView.Env.Extends
       stateIntoPositionEmbedding
-      (stateEnvironment words tokens nextValues grammarCell tokensCell
+      (stateEnvironment words tokens (tokenCapacity := tokens.length + entry.functionalConfig.tokenStorage.unused.length) nextValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar.grammar.n_kinds
         grammarLayout.lhsOffsetsOffset grammarLayout.lhsCountsOffset
         grammarLayout.lhsProductionsOffset nextWorkspace.states.length position
         (-1)) execution.afterLarge := by
     simpa only [environmentEq] using execution.related
   have rightRelated := stateEnvironment_extends_positionEnvironment words tokens
+    (tokenCapacity := tokens.length + entry.functionalConfig.tokenStorage.unused.length)
     nextValues grammarCell tokensCell workspaceCell workspaceLayout grammar
     grammarLayout nextWorkspace.states.length outerFurthest position (-1)
   have rightPreserved := positionStateFrame_preserved words tokens
+    (tokenCapacity := tokens.length + entry.functionalConfig.tokenStorage.unused.length)
     workspaceValues nextValues grammarCell tokensCell workspaceCell
     workspaceLayout grammar grammarLayout workspace.states.length
     nextWorkspace.states.length outerFurthest position
@@ -1982,15 +2005,15 @@ private inductive RecognizerPositionStateScopeSynchronizedExecution
             tokensCell)
           (positionStatefulMachine workspaceLayout grammar words tokens
             grammarCell tokensCell)
-          (stateWorld words tokens workspaceValues grammarCell tokensCell
+          (stateWorld words tokens (unused := sourceInvariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
             workspaceCell)
-          (positionEnvironment words tokens workspaceValues grammarCell
+          (positionEnvironment words tokens (tokenCapacity := tokens.length + sourceInvariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
             tokensCell workspaceCell workspaceLayout grammar grammarLayout
             workspace.states.length furthest position)
           positionStateScopeCommand .next
-          (stateWorld words tokens nextValues grammarCell tokensCell
+          (stateWorld words tokens (unused := frame.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
             workspaceCell)
-          (positionEnvironment words tokens nextValues grammarCell tokensCell
+          (positionEnvironment words tokens (tokenCapacity := tokens.length + frame.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell tokensCell
             workspaceCell workspaceLayout grammar grammarLayout
             nextWorkspace.states.length furthest (position + 1)))
       (physicalExecution : Executes verifiedParserCore source
@@ -2020,9 +2043,9 @@ private inductive RecognizerPositionStateScopeSynchronizedExecution
             tokensCell)
           (positionStatefulMachine workspaceLayout grammar words tokens
             grammarCell tokensCell)
-          (stateWorld words tokens workspaceValues grammarCell tokensCell
+          (stateWorld words tokens (unused := sourceInvariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
             workspaceCell)
-          (positionEnvironment words tokens workspaceValues grammarCell
+          (positionEnvironment words tokens (tokenCapacity := tokens.length + sourceInvariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
             tokensCell workspaceCell workspaceLayout grammar grammarLayout
             workspace.states.length furthest position)
           positionStateScopeCommand
@@ -2052,11 +2075,19 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
       words tokens workspaceLayout workspace workspaceValues grammarCell
       tokensCell workspaceCell stateCountCell positionCell furthestCell source
       position furthest sourceInvariant entry := by
-  let baseWorld := stateWorld words tokens workspaceValues grammarCell tokensCell
+  let baseWorld := stateWorld words tokens (unused := sourceInvariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
     workspaceCell
-  let baseEnvironment := positionEnvironment words tokens workspaceValues
+  let baseEnvironment := positionEnvironment words tokens (tokenCapacity := tokens.length + sourceInvariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues
     grammarCell tokensCell workspaceCell workspaceLayout grammar grammarLayout
     workspace.states.length furthest position
+  have initialWorldEq : entry.functionalConfig.functionalRuntime.world = baseWorld := by
+    change stateWorld words tokens (unused := entry.functionalConfig.tokenStorage.unused)
+      workspaceValues grammarCell tokensCell workspaceCell = _
+    rw [entry.functionalConfig_suffix]
+  have entryWellFormed : StateWellFormed entry.functionalConfig.runtime := by
+    change StateWellFormed entry.chartEntry.bound
+    rw [entry.chartEntry.boundEq]
+    exact bindLocal_preserves_well_formed _ _ _ entry.chartEntry.headRead.invariant.wellFormed
   have initializerResult : Lanius.FunctionalView.Term.evaluate
       (positionTermMachine workspaceLayout grammar words tokens grammarCell
         tokensCell)
@@ -2087,9 +2118,16 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
     cases result.outcome with
     | completed nextWorkspace nextValues stateAfter growth finished worldEq
         environmentEq =>
+      have finishedSuffix := finished.appendFrame.recognizer.tokenStorage.unused_eq_of_backing
+        (result.effect.preserves_entry entryWellFormed
+          entry.functionalConfig.tokenStorage.unused_backing (by
+            simp only [stateLoopMutableCells, CellSet.union, CellSet.singleton, not_or]
+            exact ⟨sourceInvariant.appendFrame.recognizer.tokensWorkspaceDistinct,
+              sourceInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+              finished.chartCursor.cursorBackingDistinct.2.1.symm⟩))
       have sourceEnvironmentEq :
           entry.functionalConfig.functional_run.after.environment =
-            stateEnvironment words tokens nextValues grammarCell tokensCell
+            stateEnvironment words tokens (tokenCapacity := tokens.length + finished.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell tokensCell
               workspaceCell workspaceLayout grammar.grammar.n_kinds
               grammarLayout.lhsOffsetsOffset grammarLayout.lhsCountsOffset
               grammarLayout.lhsProductionsOffset nextWorkspace.states.length
@@ -2097,13 +2135,10 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
         rw [sourceAfterEq]
         exact environmentEq
       have renamedAfterEq := entry.functional_state_after_large_eq furthest
-        nextWorkspace nextValues sourceEnvironmentEq
-      have initialWorldEq : entry.functionalConfig.functionalRuntime.world =
-          baseWorld := by
-        rfl
+        nextWorkspace nextValues (by simpa only [finishedSuffix] using sourceEnvironmentEq)
       have sourceWorldEq :
           entry.functionalConfig.functional_run.after.world =
-            stateWorld words tokens nextValues grammarCell tokensCell
+            stateWorld words tokens (unused := finished.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
               workspaceCell := by
         rw [sourceAfterEq]
         exact worldEq
@@ -2116,18 +2151,19 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
           (baseEnvironment.push
             (.signed .i32 (chartHeadValue workspace position)))
           positionStateLoopCommand .next
-          (stateWorld words tokens nextValues grammarCell tokensCell workspaceCell)
-          ((positionEnvironment words tokens nextValues grammarCell tokensCell
+          (stateWorld words tokens (unused := finished.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell)
+          ((positionEnvironment words tokens (tokenCapacity := tokens.length + finished.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell tokensCell
             workspaceCell workspaceLayout grammar grammarLayout
             nextWorkspace.states.length furthest position).push
             (.signed .i32 (-1))) := by
         simpa only [renamed, baseEnvironment, initialWorldEq,
-          sourceCompletionEq, sourceWorldEq, renamedAfterEq] using
+          sourceCompletionEq, sourceWorldEq, renamedAfterEq, finishedSuffix,
+          entry.functionalConfig_suffix] using
             renamed.evaluated
       have advanceFunctional := positionAdvanceCommand_evaluates workspaceLayout
         grammar words tokens grammarCell tokensCell
-        (stateWorld words tokens nextValues grammarCell tokensCell workspaceCell)
-        ((positionEnvironment words tokens nextValues grammarCell tokensCell
+        (stateWorld words tokens (unused := finished.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell)
+        ((positionEnvironment words tokens (tokenCapacity := tokens.length + finished.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell tokensCell
           workspaceCell workspaceLayout grammar grammarLayout
           nextWorkspace.states.length furthest position).push
           (.signed .i32 (-1))) position (by rfl) (by
@@ -2145,9 +2181,9 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
             (positionStatefulMachine workspaceLayout grammar words tokens
               grammarCell tokensCell)
             baseWorld baseEnvironment positionStateScopeCommand .next
-            (stateWorld words tokens nextValues grammarCell tokensCell
+            (stateWorld words tokens (unused := finished.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
               workspaceCell)
-            (positionEnvironment words tokens nextValues grammarCell tokensCell
+            (positionEnvironment words tokens (tokenCapacity := tokens.length + finished.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell tokensCell
               workspaceCell workspaceLayout grammar grammarLayout
               nextWorkspace.states.length furthest (position + 1)) := by
         rw [positionStateScopeCommand]
@@ -2156,16 +2192,21 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
       let advance := entry.advance_position result.physicalAfter result.execution
         result.effect nextWorkspace nextValues growth finished
       let closed := advance.close
+      have closedSuffix := closed.frame.appendFrame.recognizer.tokenStorage.unused_eq_of_backing
+        (closed.closed.effect.preserves_entry sourceInvariant.appendFrame.recognizer.wellFormed
+          sourceInvariant.appendFrame.recognizer.tokenStorage.unused_backing (by
+            simp only [positionStateScopeRetainedCells, CellSet.union, CellSet.singleton, not_or]
+            exact ⟨sourceInvariant.appendFrame.recognizer.tokensWorkspaceDistinct,
+              sourceInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+              sourceInvariant.positionTokensDistinct.symm⟩))
       exact .completed nextWorkspace nextValues closed.closed.after growth
-        closed.frame (by simpa [baseWorld, baseEnvironment] using scopedFunctional)
+        closed.frame (by simpa only [baseWorld, baseEnvironment, closedSuffix,
+          finishedSuffix, entry.functionalConfig_suffix] using scopedFunctional)
         closed.closed.execution closed.closed.effect
   | returned value =>
     cases result.outcome with
     | full nextWorkspace nextValues stateAfter growth terminal stateCount
         wellFormed =>
-      have initialWorldEq : entry.functionalConfig.functionalRuntime.world =
-          baseWorld := by
-        rfl
       have sourceWorldEq :
           entry.functionalConfig.functional_run.after.world =
             functionalAfter.world := by
@@ -2183,7 +2224,7 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
             (Int.ofNat position))))
           functionalAfter.world renamed.afterLarge := by
         simpa only [renamed, baseEnvironment, initialWorldEq,
-          sourceCompletionEq, sourceWorldEq] using renamed.evaluated
+          sourceCompletionEq, sourceWorldEq, entry.functionalConfig_suffix] using renamed.evaluated
       have bodyFunctional :=
         Lanius.FunctionalView.Stateful.Command.Evaluates.sequenceStop
           (secondCommand := positionAdvanceCommand) stateFunctional (by simp)
@@ -2347,15 +2388,15 @@ private inductive RecognizerPositionStepSynchronizedExecution
             tokensCell)
           (positionStatefulMachine workspaceLayout grammar words tokens
             grammarCell tokensCell)
-          (stateWorld words tokens workspaceValues grammarCell tokensCell
+          (stateWorld words tokens (unused := beforeInvariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
             workspaceCell)
-          (positionEnvironment words tokens workspaceValues grammarCell
+          (positionEnvironment words tokens (tokenCapacity := tokens.length + beforeInvariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
             tokensCell workspaceCell workspaceLayout grammar grammarLayout
             workspace.states.length furthest position)
           positionBodyCommand .next
-          (stateWorld words tokens nextValues grammarCell tokensCell
+          (stateWorld words tokens (unused := frame.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
             workspaceCell)
-          (positionEnvironment words tokens nextValues grammarCell tokensCell
+          (positionEnvironment words tokens (tokenCapacity := tokens.length + frame.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell tokensCell
             workspaceCell workspaceLayout grammar grammarLayout
             nextWorkspace.states.length nextFurthest (position + 1)))
       (physicalExecution : Executes verifiedParserCore before
@@ -2385,9 +2426,9 @@ private inductive RecognizerPositionStepSynchronizedExecution
             tokensCell)
           (positionStatefulMachine workspaceLayout grammar words tokens
             grammarCell tokensCell)
-          (stateWorld words tokens workspaceValues grammarCell tokensCell
+          (stateWorld words tokens (unused := beforeInvariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
             workspaceCell)
-          (positionEnvironment words tokens workspaceValues grammarCell
+          (positionEnvironment words tokens (tokenCapacity := tokens.length + beforeInvariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
             tokensCell workspaceCell workspaceLayout grammar grammarLayout
             workspace.states.length furthest position)
           positionBodyCommand
@@ -2452,20 +2493,24 @@ private noncomputable def
           tokensCell)
         (positionStatefulMachine workspaceLayout grammar words tokens grammarCell
           tokensCell)
-        (stateWorld words tokens workspaceValues grammarCell tokensCell
+        (stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
           workspaceCell)
-        (positionEnvironment words tokens workspaceValues grammarCell tokensCell
+        (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell tokensCell
           workspaceCell workspaceLayout grammar grammarLayout
           workspace.states.length furthest position)
         positionActivityCommand .next
-        (stateWorld words tokens workspaceValues grammarCell tokensCell
+        (stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
           workspaceCell)
-        (positionEnvironment words tokens workspaceValues grammarCell tokensCell
+        (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell tokensCell
           workspaceCell workspaceLayout grammar grammarLayout
           workspace.states.length activity.nextFurthest position) := by
     simpa only [nextFurthestEq] using functionalActivity.execution
   let entry := activity.invariant.enter_state_loop
   let scope := entry.execute_scope_synchronized
+  have activitySuffix := activity.invariant.appendFrame.recognizer.tokenStorage.unused_eq_of_backing
+    (activity.effect.preserves_entry invariant.appendFrame.recognizer.wellFormed
+      invariant.appendFrame.recognizer.tokenStorage.unused_backing
+      (by simpa only [CellSet.singleton] using invariant.furthestTokensDistinct.symm))
   cases scope with
   | completed nextWorkspace nextValues physicalAfter growth frame
       scopeFunctional scopePhysical scopeEffect =>
@@ -2475,20 +2520,20 @@ private noncomputable def
               tokensCell)
             (positionStatefulMachine workspaceLayout grammar words tokens
               grammarCell tokensCell)
-            (stateWorld words tokens workspaceValues grammarCell tokensCell
+            (stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
               workspaceCell)
-            (positionEnvironment words tokens workspaceValues grammarCell
+            (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
               tokensCell workspaceCell workspaceLayout grammar grammarLayout
               workspace.states.length furthest position)
             positionBodyCommand .next
-            (stateWorld words tokens nextValues grammarCell tokensCell
+            (stateWorld words tokens (unused := frame.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
               workspaceCell)
-            (positionEnvironment words tokens nextValues grammarCell tokensCell
+            (positionEnvironment words tokens (tokenCapacity := tokens.length + frame.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell tokensCell
               workspaceCell workspaceLayout grammar grammarLayout
               nextWorkspace.states.length activity.nextFurthest
               (position + 1)) := by
         rw [positionBodyCommand_shape, positionExpectedBodyCommand]
-        exact .sequenceNext activityFunctional scopeFunctional
+        exact .sequenceNext activityFunctional (by simpa only [activitySuffix] using scopeFunctional)
       have physicalExecution : Executes verifiedParserCore runtime
           parserRecognizePositionLoopBody .next physicalAfter := by
         rw [extractedParserRecognize_position_body_shape]
@@ -2506,9 +2551,9 @@ private noncomputable def
               tokensCell)
             (positionStatefulMachine workspaceLayout grammar words tokens
               grammarCell tokensCell)
-            (stateWorld words tokens workspaceValues grammarCell tokensCell
+            (stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
               workspaceCell)
-            (positionEnvironment words tokens workspaceValues grammarCell
+            (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
               tokensCell workspaceCell workspaceLayout grammar grammarLayout
               workspace.states.length furthest position)
             positionBodyCommand
@@ -2516,7 +2561,7 @@ private noncomputable def
               (Int.ofNat position))))
             functionalAfterWorld functionalAfterEnvironment := by
         rw [positionBodyCommand_shape, positionExpectedBodyCommand]
-        exact .sequenceNext activityFunctional scopeFunctional
+        exact .sequenceNext activityFunctional (by simpa only [activitySuffix] using scopeFunctional)
       have physicalExecution : Executes verifiedParserCore runtime
           parserRecognizePositionLoopBody
           (parserCapacityCompletion position stateCount) physicalAfter := by
@@ -2697,6 +2742,15 @@ structure RecognizerPositionConfig
     workspaceLayout workspace workspaceValues grammarCell tokensCell
     workspaceCell stateCountCell positionCell furthestCell runtime
 
+theorem RecognizerPositionConfig.tokenStorage
+    (config : RecognizerPositionConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      positionCell furthestCell) :
+    I32PrefixLocal config.runtime 2 tokensCell (tokens.map Int.ofNat) := by
+  cases config.cursor with
+  | active position furthest invariant => exact invariant.appendFrame.recognizer.tokenStorage
+  | finished furthest invariant => exact invariant.frame.appendFrame.recognizer.tokenStorage
+
 def RecognizerPositionConfig.measure
     (config : RecognizerPositionConfig grammarLayout grammar words tokens
       workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
@@ -2729,9 +2783,9 @@ noncomputable def RecognizerPositionConfig.functionalRuntime
     Lanius.FunctionalView.Stateful.Loop.Runtime
       (positionTermMachine workspaceLayout grammar words tokens grammarCell
         tokensCell) 15 :=
-  (stateWorld words tokens config.workspaceValues grammarCell tokensCell
+  (stateWorld words tokens (unused := config.tokenStorage.unused) config.workspaceValues grammarCell tokensCell
       workspaceCell,
-    positionEnvironment words tokens config.workspaceValues grammarCell tokensCell
+    positionEnvironment words tokens (tokenCapacity := tokens.length + config.tokenStorage.unused.length) config.workspaceValues grammarCell tokensCell
       workspaceCell workspaceLayout grammar grammarLayout
       config.workspace.states.length config.currentFurthest
       config.currentPosition)
@@ -2776,10 +2830,10 @@ inductive RecognizerPositionSynchronizedOutcome
         tokensCell workspaceCell stateCountCell positionCell furthestCell
         physicalAfter furthest)
       (worldEq : functionalAfter.world =
-        stateWorld words tokens workspaceValues grammarCell tokensCell
+        stateWorld words tokens (unused := invariant.frame.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
           workspaceCell)
       (environmentEq : functionalAfter.environment =
-        positionEnvironment words tokens workspaceValues grammarCell tokensCell
+        positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell tokensCell
           workspaceCell workspaceLayout grammar grammarLayout
           workspace.states.length furthest
           (finalPosition workspaceLayout.tokenCount + 1)) :
@@ -2916,7 +2970,7 @@ private noncomputable def RecognizerPositionConfig.functional_decide
               config.workspace config.workspaceValues config.runtime
               (.refl config.workspace) furthest invariant
             · rfl
-            · change positionEnvironment words tokens config.workspaceValues
+            · change positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.appendFrame.recognizer.tokenStorage.unused.length) config.workspaceValues
                   grammarCell tokensCell workspaceCell workspaceLayout grammar
                   grammarLayout config.workspace.states.length
                   config.currentFurthest config.currentPosition = _
@@ -2935,9 +2989,9 @@ private noncomputable def RecognizerPositionConfig.functional_decide
           finalPosition workspaceLayout.tokenCount :=
         invariant.appendFrame.positionBound
       have configRuntimeEq : config.functionalRuntime =
-          (stateWorld words tokens config.workspaceValues grammarCell tokensCell
+          (stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) config.workspaceValues grammarCell tokensCell
               workspaceCell,
-            positionEnvironment words tokens config.workspaceValues grammarCell
+            positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) config.workspaceValues grammarCell
               tokensCell workspaceCell workspaceLayout grammar grammarLayout
               config.workspace.states.length furthest position) := by
         unfold RecognizerPositionConfig.functionalRuntime
@@ -2993,9 +3047,9 @@ private noncomputable def RecognizerPositionConfig.functional_decide
                 (frame.next_invariant nextBound)
             }
             have nextRuntimeEq : nextConfig.functionalRuntime =
-                (stateWorld words tokens nextValues grammarCell tokensCell
+                (stateWorld words tokens (unused := frame.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
                     workspaceCell,
-                  positionEnvironment words tokens nextValues grammarCell
+                  positionEnvironment words tokens (tokenCapacity := tokens.length + frame.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell
                     tokensCell workspaceCell workspaceLayout grammar grammarLayout
                     nextWorkspace.states.length nextFurthest (position + 1)) := by
               rfl
@@ -3047,15 +3101,15 @@ private noncomputable def RecognizerPositionConfig.functional_decide
               cursor := .finished nextFurthest finishedInvariant
             }
             have nextRuntimeEq : nextConfig.functionalRuntime =
-                (stateWorld words tokens nextValues grammarCell tokensCell
+                (stateWorld words tokens (unused := frame.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
                     workspaceCell,
-                  positionEnvironment words tokens nextValues grammarCell
+                  positionEnvironment words tokens (tokenCapacity := tokens.length + frame.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell
                     tokensCell workspaceCell workspaceLayout grammar grammarLayout
                     nextWorkspace.states.length nextFurthest (position + 1)) := by
               unfold RecognizerPositionConfig.functionalRuntime
-              change (stateWorld words tokens nextValues grammarCell tokensCell
+              change (stateWorld words tokens (unused := frame.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
                   workspaceCell,
-                positionEnvironment words tokens nextValues grammarCell
+                positionEnvironment words tokens (tokenCapacity := tokens.length + frame.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell
                   tokensCell workspaceCell workspaceLayout grammar grammarLayout
                   nextWorkspace.states.length nextFurthest
                   (finalPosition workspaceLayout.tokenCount + 1)) = _

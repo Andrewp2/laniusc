@@ -5,10 +5,13 @@ import Lanius.Extraction.VerifiedFrontend.Parser.Result
 import Lanius.LoopVerification
 import Lanius.Compiler.WorkspaceLoop
 import Lanius.Compiler.ParserTree
+import Lanius.Separation.I32Prefix
+import Lanius.Extraction.Parser.Workspace.Artifact
 
 namespace Lanius.Extraction.ParserRecognize
 
 set_option maxRecDepth 100000
+set_option compiler.extract_closed false
 
 open Lanius.Core
 open Lanius.SymbolicCore
@@ -668,6 +671,64 @@ theorem parserRecognizeScanTerminalCall_implements_model
       parserRecognizeScanTerminalArguments stateWellFormed arguments
       grammarBacking tokensBacking invariant
 
+/-- The recognizer's actual call site with a capacity-independent token
+resource. The same resource survives the call, including its hidden suffix. -/
+theorem parserRecognizeScanTerminalCall_implements_prefix_model
+    (state : State) (stateWellFormed : StateWellFormed state)
+    (grammarLocal : state.local? 0 = some (parserGrammarValue words grammarCell))
+    (tokenStorage : I32PrefixLocal state 2 tokensCell (tokens.map Int.ofNat))
+    (tokenCountLocal : state.local? 3 = some (.signed .i32 (Int.ofNat tokens.length)))
+    (positionLocal : state.local? 23 = some (.signed .i32 (Int.ofNat position)))
+    (semanticKindLocal : state.local? 29 = some (.signed .i32 (Int.ofNat semanticKind)))
+    (grammarBacking : state.cellEntry? grammarCell = some {
+      id := grammarCell
+      value := some (.array (signedI32Values words)) })
+    (encoded : EncodesGrammar layout grammar words)
+    (wordsI32 : words.length ≤ 2147483647)
+    (semanticKindBound : semanticKind < grammar.grammar.canonical_kinds.length)
+    (positionAdvanceI32 : position + 2 ≤ 2147483647) :
+    ∃ after,
+      Evaluates verifiedParserCore state parserRecognizeScanTerminalCall
+        (scanTerminalValue (scanTerminal grammar tokens position semanticKind)) after ∧
+      ModifiesOnly CellSet.empty state after ∧ StateWellFormed after ∧
+      I32PrefixLocal after 2 tokensCell (tokens.map Int.ofNat) := by
+  obtain ⟨capacity, tokensLocal, unused, length, tokensBacking⟩ := tokenStorage
+  have physicalLength : tokens.length + unused.length = capacity := by simpa using length
+  have grammarResult : Evaluates verifiedParserCore state (.local 0)
+      (parserGrammarValue words grammarCell) state :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore state 0 _ grammarLocal⟩
+  have tokensResult : Evaluates verifiedParserCore state (.local 2)
+      ((.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))) state :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore state 2 _ (by simpa only [physicalLength, parserI32Type] using tokensLocal)⟩
+  have countResult : Evaluates verifiedParserCore state (.local 3)
+      (.signed .i32 (Int.ofNat tokens.length)) state :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3 _ tokenCountLocal⟩
+  have positionResult : Evaluates verifiedParserCore state (.local 23)
+      (.signed .i32 (Int.ofNat position)) state :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore state 23 _ positionLocal⟩
+  have kindResult : Evaluates verifiedParserCore state (.local 29)
+      (.signed .i32 (Int.ofNat semanticKind)) state :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore state 29 _ semanticKindLocal⟩
+  have arguments : ArgumentsEvaluateTo verifiedParserCore state
+      parserRecognizeScanTerminalArguments [
+        parserGrammarValue words grammarCell,
+        (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length)),
+        .signed .i32 (Int.ofNat tokens.length),
+        .signed .i32 (Int.ofNat position),
+        .signed .i32 (Int.ofNat semanticKind)] state :=
+    ArgumentsEvaluateTo.cons grammarResult
+      (ArgumentsEvaluateTo.cons tokensResult
+        (ArgumentsEvaluateTo.cons countResult
+          (ArgumentsEvaluateTo.cons positionResult
+            (ArgumentsEvaluateTo.singleton kindResult))))
+  obtain ⟨after, evaluation, effect, wellFormed, _, afterTokens⟩ :=
+    extractedParserScanTerminalCall_implements_model_storage state state
+      parserRecognizeScanTerminalArguments stateWellFormed arguments grammarBacking tokensBacking
+      encoded wordsI32 semanticKindBound positionAdvanceI32
+  refine ⟨after, ?_, effect, wellFormed, capacity, ?_, unused, length, afterTokens⟩
+  · simpa [parserRecognizeScanTerminalCall] using evaluation
+  · exact effect.empty_preserves_local stateWellFormed tokensLocal
+
 /-- Persistent physical resources available before and throughout
     recognition. Chart initialization starts from this representation-only
     frame because the caller's workspace does not encode a logical chart
@@ -689,8 +750,7 @@ structure RecognizerResources
     some (parserGrammarValue words grammarCell)
   grammarLengthLocal : runtime.local? 1 =
     some (.signed .i32 (Int.ofNat words.length))
-  tokensLocal : runtime.local? 2 =
-    some (parserTokensValue tokens tokensCell)
+  tokenStorage : I32PrefixLocal runtime 2 tokensCell (tokens.map Int.ofNat)
   tokenCountLocal : runtime.local? 3 =
     some (.signed .i32 (Int.ofNat tokens.length))
   workspaceLocal : runtime.local? 4 =
@@ -700,11 +760,6 @@ structure RecognizerResources
   grammarBacking : runtime.cellEntry? grammarCell = some {
     id := grammarCell
     value := some (.array (signedI32Values words))
-  }
-  tokensBacking : runtime.cellEntry? tokensCell = some {
-    id := tokensCell
-    value := some (.array
-      (signedI32Values (tokens.map Int.ofNat)))
   }
   workspaceBacking : runtime.cellEntry? workspaceCell = some {
     id := workspaceCell
@@ -738,8 +793,7 @@ structure RecognizerInvariant
     some (parserGrammarValue words grammarCell)
   grammarLengthLocal : runtime.local? 1 =
     some (.signed .i32 (Int.ofNat words.length))
-  tokensLocal : runtime.local? 2 =
-    some (parserTokensValue tokens tokensCell)
+  tokenStorage : I32PrefixLocal runtime 2 tokensCell (tokens.map Int.ofNat)
   tokenCountLocal : runtime.local? 3 =
     some (.signed .i32 (Int.ofNat tokens.length))
   workspaceLocal : runtime.local? 4 =
@@ -749,11 +803,6 @@ structure RecognizerInvariant
   grammarBacking : runtime.cellEntry? grammarCell = some {
     id := grammarCell
     value := some (.array (signedI32Values words))
-  }
-  tokensBacking : runtime.cellEntry? tokensCell = some {
-    id := tokensCell
-    value := some (.array
-      (signedI32Values (tokens.map Int.ofNat)))
   }
   workspaceBacking : runtime.cellEntry? workspaceCell = some {
     id := workspaceCell
@@ -776,22 +825,6 @@ theorem RecognizerInvariant.backpointersSound
     WorkspaceBackpointersSound grammar tokens workspace :=
   invariant.derivations.backpointersSound
 
-/-- Caller-visible semantic artifact produced by recognition.  Unlike
-    `RecognizerInvariant`, this representation does not mention callee-local
-    parameter bindings, so it remains meaningful after the function scope is
-    closed. -/
-structure RecognizerWorkspaceArtifact
-    (workspaceLayout : WorkspaceLayout) (workspace : LogicalWorkspace)
-    (workspaceValues : List Int) (workspaceCell : CellId)
-    (runtime : State) : Prop where
-  workspaceLength : workspaceValues.length = workspaceLayout.workspaceLength
-  workspaceEncoded : EncodesWorkspace workspaceLayout workspace
-    (listWords workspaceValues)
-  workspaceBacking : runtime.cellEntry? workspaceCell = some {
-    id := workspaceCell
-    value := some (.array (signedI32Values workspaceValues))
-  }
-
 theorem RecognizerInvariant.workspaceArtifact
     (invariant : RecognizerInvariant grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
@@ -801,18 +834,6 @@ theorem RecognizerInvariant.workspaceArtifact
   workspaceLength := invariant.workspaceLength
   workspaceEncoded := invariant.workspaceEncoded
   workspaceBacking := invariant.workspaceBacking
-}
-
-theorem RecognizerWorkspaceArtifact.transfer_cells
-    (artifact : RecognizerWorkspaceArtifact workspaceLayout workspace
-      workspaceValues workspaceCell before)
-    (cells : after.cells = before.cells) :
-    RecognizerWorkspaceArtifact workspaceLayout workspace workspaceValues
-      workspaceCell after := {
-  workspaceLength := artifact.workspaceLength
-  workspaceEncoded := artifact.workspaceEncoded
-  workspaceBacking := by
-    simpa [State.cellEntry?, cells] using artifact.workspaceBacking
 }
 
 theorem RecognizerInvariant.resources
@@ -830,12 +851,11 @@ theorem RecognizerInvariant.resources
   wellFormed := invariant.wellFormed
   grammarLocal := invariant.grammarLocal
   grammarLengthLocal := invariant.grammarLengthLocal
-  tokensLocal := invariant.tokensLocal
+  tokenStorage := invariant.tokenStorage
   tokenCountLocal := invariant.tokenCountLocal
   workspaceLocal := invariant.workspaceLocal
   workspaceLengthLocal := invariant.workspaceLengthLocal
   grammarBacking := invariant.grammarBacking
-  tokensBacking := invariant.tokensBacking
   workspaceBacking := invariant.workspaceBacking
   grammarWorkspaceDistinct := invariant.grammarWorkspaceDistinct
   tokensWorkspaceDistinct := invariant.tokensWorkspaceDistinct
@@ -862,12 +882,11 @@ theorem RecognizerResources.with_workspace_encoding
   wellFormed := resources.wellFormed
   grammarLocal := resources.grammarLocal
   grammarLengthLocal := resources.grammarLengthLocal
-  tokensLocal := resources.tokensLocal
+  tokenStorage := resources.tokenStorage
   tokenCountLocal := resources.tokenCountLocal
   workspaceLocal := resources.workspaceLocal
   workspaceLengthLocal := resources.workspaceLengthLocal
   grammarBacking := resources.grammarBacking
-  tokensBacking := resources.tokensBacking
   workspaceBacking := resources.workspaceBacking
   grammarWorkspaceDistinct := resources.grammarWorkspaceDistinct
   tokensWorkspaceDistinct := resources.tokensWorkspaceDistinct
@@ -894,8 +913,9 @@ theorem RecognizerInvariant.after_empty_effect
     invariant.grammarLocal
   grammarLengthLocal := effect.empty_preserves_local invariant.wellFormed
     invariant.grammarLengthLocal
-  tokensLocal := effect.empty_preserves_local invariant.wellFormed
-    invariant.tokensLocal
+  tokenStorage := invariant.tokenStorage.transport
+    (fun _ found => effect.empty_preserves_local invariant.wellFormed found)
+    (fun _ found => effect.empty_preserves_entry invariant.wellFormed found)
   tokenCountLocal := effect.empty_preserves_local invariant.wellFormed
     invariant.tokenCountLocal
   workspaceLocal := effect.empty_preserves_local invariant.wellFormed
@@ -904,8 +924,6 @@ theorem RecognizerInvariant.after_empty_effect
     invariant.workspaceLengthLocal
   grammarBacking := effect.empty_preserves_entry invariant.wellFormed
     invariant.grammarBacking
-  tokensBacking := effect.empty_preserves_entry invariant.wellFormed
-    invariant.tokensBacking
   workspaceBacking := effect.empty_preserves_entry invariant.wellFormed
     invariant.workspaceBacking
   grammarWorkspaceDistinct := invariant.grammarWorkspaceDistinct
@@ -940,9 +958,11 @@ theorem RecognizerInvariant.after_bind_local
     grammarLengthLocal :=
       (bindLocal_preserves_other_local invariant.wellFormed not1).trans
         invariant.grammarLengthLocal
-    tokensLocal :=
-      (bindLocal_preserves_other_local invariant.wellFormed not2).trans
-        invariant.tokensLocal
+    tokenStorage := invariant.tokenStorage.transport
+      (fun _ found => (bindLocal_preserves_other_local invariant.wellFormed not2).trans found)
+      (fun _ found => by
+        have old := Lanius.Separation.StateWellFormed.cell_lt_next_of_entry invariant.wellFormed found
+        exact (effect.oldCells tokensCell old (by simp [CellSet.empty])).trans found)
     tokenCountLocal :=
       (bindLocal_preserves_other_local invariant.wellFormed not3).trans
         invariant.tokenCountLocal
@@ -957,11 +977,6 @@ theorem RecognizerInvariant.after_bind_local
         invariant.wellFormed invariant.grammarBacking
       exact (effect.oldCells grammarCell old (by simp [CellSet.empty])).trans
         invariant.grammarBacking
-    tokensBacking := by
-      have old := Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
-        invariant.wellFormed invariant.tokensBacking
-      exact (effect.oldCells tokensCell old (by simp [CellSet.empty])).trans
-        invariant.tokensBacking
     workspaceBacking := by
       have old := Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
         invariant.wellFormed invariant.workspaceBacking
@@ -1025,9 +1040,11 @@ theorem RecognizerInvariant.after_workspace_effect
   have grammarLengthLocal := effect.singleton_preserves_local_of_ne
     invariant.wellFormed invariant.grammarLengthLocal
     invariant.workspaceBacking (by simp)
-  have tokensLocal := effect.singleton_preserves_local_of_ne
-    invariant.wellFormed invariant.tokensLocal invariant.workspaceBacking
-    (by simp [parserTokensValue, parserGrammarValue])
+  have tokenStorage := invariant.tokenStorage.transport
+    (fun _ found => effect.singleton_preserves_local_of_ne
+      invariant.wellFormed found invariant.workspaceBacking (by simp))
+    (fun _ found => effect.preserves_entry invariant.wellFormed found
+      (by simpa [CellSet.singleton] using invariant.tokensWorkspaceDistinct))
   have tokenCountLocal := effect.singleton_preserves_local_of_ne
     invariant.wellFormed invariant.tokenCountLocal invariant.workspaceBacking
     (by simp)
@@ -1051,7 +1068,7 @@ theorem RecognizerInvariant.after_workspace_effect
     wellFormed := afterWellFormed
     grammarLocal := grammarLocal
     grammarLengthLocal := grammarLengthLocal
-    tokensLocal := tokensLocal
+    tokenStorage := tokenStorage
     tokenCountLocal := tokenCountLocal
     workspaceLocal := by
       simpa [workspaceValue, sameLength] using workspaceLocal
@@ -1061,9 +1078,6 @@ theorem RecognizerInvariant.after_workspace_effect
     grammarBacking := effect.preserves_entry invariant.wellFormed
       invariant.grammarBacking (by
         simpa [CellSet.singleton] using invariant.grammarWorkspaceDistinct)
-    tokensBacking := effect.preserves_entry invariant.wellFormed
-      invariant.tokensBacking (by
-        simpa [CellSet.singleton] using invariant.tokensWorkspaceDistinct)
     workspaceBacking := newBacking
     grammarWorkspaceDistinct := invariant.grammarWorkspaceDistinct
     tokensWorkspaceDistinct := invariant.tokensWorkspaceDistinct
@@ -1139,7 +1153,9 @@ theorem RecognizerInvariant.after_workspace_and_scalar_effect
     grammarLocal := preserveLocal 0 (by simp) _ invariant.grammarLocal
     grammarLengthLocal := preserveLocal 1 (by simp) _
       invariant.grammarLengthLocal
-    tokensLocal := preserveLocal 2 (by simp) _ invariant.tokensLocal
+    tokenStorage := invariant.tokenStorage.transport
+      (fun _ found => preserveLocal 2 (by simp) _ found)
+      (fun _ found => effect.preserves_entry invariant.wellFormed found tokensNotWritten)
     tokenCountLocal := preserveLocal 3 (by simp) _
       invariant.tokenCountLocal
     workspaceLocal := by
@@ -1152,8 +1168,6 @@ theorem RecognizerInvariant.after_workspace_and_scalar_effect
       exact preserved
     grammarBacking := effect.preserves_entry invariant.wellFormed
       invariant.grammarBacking grammarNotWritten
-    tokensBacking := effect.preserves_entry invariant.wellFormed
-      invariant.tokensBacking tokensNotWritten
     workspaceBacking := newBacking
     grammarWorkspaceDistinct := invariant.grammarWorkspaceDistinct
     tokensWorkspaceDistinct := invariant.tokensWorkspaceDistinct
@@ -1196,7 +1210,9 @@ theorem RecognizerInvariant.after_disjoint_effect
     grammarLocal := preserveLocal 0 (by simp) _ invariant.grammarLocal
     grammarLengthLocal := preserveLocal 1 (by simp) _
       invariant.grammarLengthLocal
-    tokensLocal := preserveLocal 2 (by simp) _ invariant.tokensLocal
+    tokenStorage := invariant.tokenStorage.transport
+      (fun _ found => preserveLocal 2 (by simp) _ found)
+      (fun _ found => effect.preserves_entry invariant.wellFormed found tokensNotWritten)
     tokenCountLocal := preserveLocal 3 (by simp) _
       invariant.tokenCountLocal
     workspaceLocal := preserveLocal 4 (by simp) _ invariant.workspaceLocal
@@ -1204,8 +1220,6 @@ theorem RecognizerInvariant.after_disjoint_effect
       invariant.workspaceLengthLocal
     grammarBacking := effect.preserves_entry invariant.wellFormed
       invariant.grammarBacking grammarNotWritten
-    tokensBacking := effect.preserves_entry invariant.wellFormed
-      invariant.tokensBacking tokensNotWritten
     workspaceBacking := effect.preserves_entry invariant.wellFormed
       invariant.workspaceBacking workspaceNotWritten
     grammarWorkspaceDistinct := invariant.grammarWorkspaceDistinct
@@ -1531,6 +1545,7 @@ structure RecognizerSeededAppendResult
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell before position) where
   argumentsState : State
+  argumentsEffect : ModifiesOnly CellSet.empty before argumentsState
   argumentsEvaluation : ArgumentsEvaluateTo verifiedParserCore before
     (recognizerAppendArguments positionExpr seedExpr) [
       workspaceValue workspaceValues workspaceCell,
@@ -1630,6 +1645,7 @@ noncomputable def RecognizerAppendFrame.evaluate_seeded_append
         (member.symm.trans written))
   exact {
     argumentsState := afterSeed
+    argumentsEffect := seedEffect
     argumentsEvaluation := argumentsResult
     argumentsInvariant := afterSeedInvariant
     after := appended.after
@@ -2260,28 +2276,16 @@ noncomputable def RecognizerTerminalReadyInvariant.bind_scan_match
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell runtime position semanticKind nextPosition
       production dot origin stateId invariant := by
-  have scanEntry : ScanTerminalInvariant grammarLayout grammar words tokens
-      grammarCell tokensCell position semanticKind
-      (parserScanTerminalCallee runtime words tokens grammarCell tokensCell
-        position semanticKind) :=
-    parserScanTerminalCallee_entry grammarLayout grammar words tokens
-      grammarCell tokensCell position semanticKind runtime
-      invariant.terminal.recognizer.grammarEncoded
-      invariant.terminal.recognizer.wordsI32
-      invariant.terminal.recognizer.tokensI32
-      invariant.terminal.positionAdvanceI32
-      invariant.terminal.semanticKindBound
-      invariant.terminal.recognizer.wellFormed
-      invariant.terminal.recognizer.grammarBacking
-      invariant.terminal.recognizer.tokensBacking
-  let scanResultProof := parserRecognizeScanTerminalCall_implements_model
+  let scanResultProof := parserRecognizeScanTerminalCall_implements_prefix_model
     runtime invariant.terminal.recognizer.wellFormed
     invariant.terminal.recognizer.grammarLocal
-    invariant.terminal.recognizer.tokensLocal
+    invariant.terminal.recognizer.tokenStorage
     invariant.terminal.recognizer.tokenCountLocal
     invariant.terminal.positionLocal invariant.terminal.semanticKindLocal
     invariant.terminal.recognizer.grammarBacking
-    invariant.terminal.recognizer.tokensBacking scanEntry
+    invariant.terminal.recognizer.grammarEncoded
+    invariant.terminal.recognizer.wordsI32
+    invariant.terminal.semanticKindBound invariant.terminal.positionAdvanceI32
   let afterScan := Classical.choose scanResultProof
   have scanFacts := Classical.choose_spec scanResultProof
   have afterScanInvariant :=
@@ -2437,6 +2441,7 @@ structure RecognizerTerminalAppendResult
       tokensCell workspaceCell stateCountCell before position semanticKind
       nextPosition production dot origin stateId) where
   argumentsState : State
+  argumentsEffect : ModifiesOnly CellSet.empty before argumentsState
   argumentsEvaluation : ArgumentsEvaluateTo verifiedParserCore before
     parserRecognizeTerminalAppendArguments [
       workspaceValue workspaceValues workspaceCell,
@@ -2519,6 +2524,7 @@ noncomputable def RecognizerTerminalAppendInvariant.evaluate_append
     seedEvaluation seedEffect (by simpa [afterSeed] using seedContract.2.2)
   exact {
     argumentsState := appended.argumentsState
+    argumentsEffect := appended.argumentsEffect
     argumentsEvaluation := by
       simpa [parserRecognizeTerminalAppendArguments, recognizerAppendArguments,
         seed] using appended.argumentsEvaluation
@@ -2915,9 +2921,9 @@ noncomputable def RecognizerTerminalReadyInvariant.execute_match
     grammarLengthLocal := by
       rw [afterParameterLocal 1 (by simp)]
       exact success.invariant.grammarLengthLocal
-    tokensLocal := by
-      rw [afterParameterLocal 2 (by simp)]
-      exact success.invariant.tokensLocal
+    tokenStorage := success.invariant.tokenStorage.transport
+      (fun _ found => by rw [afterParameterLocal 2 (by simp)]; exact found)
+      (fun _ found => found)
     tokenCountLocal := by
       rw [afterParameterLocal 3 (by simp)]
       exact success.invariant.tokenCountLocal
@@ -2928,7 +2934,6 @@ noncomputable def RecognizerTerminalReadyInvariant.execute_match
       rw [afterParameterLocal 5 (by simp)]
       exact success.invariant.workspaceLengthLocal
     grammarBacking := success.invariant.grammarBacking
-    tokensBacking := success.invariant.tokensBacking
     workspaceBacking := success.invariant.workspaceBacking
     grammarWorkspaceDistinct := success.invariant.grammarWorkspaceDistinct
     tokensWorkspaceDistinct := success.invariant.tokensWorkspaceDistinct
@@ -4857,21 +4862,6 @@ def RecognizerInitialConfig.measure
       indexCell first count) : Nat :=
   count - config.index
 
-theorem RecognizerTerminalInvariant.scan_entry
-    (invariant : RecognizerTerminalInvariant grammarLayout grammar words tokens
-      workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell runtime position semanticKind) :
-    ScanTerminalInvariant grammarLayout grammar words tokens grammarCell
-      tokensCell position semanticKind
-      (parserScanTerminalCallee runtime words tokens grammarCell tokensCell
-        position semanticKind) := by
-  exact parserScanTerminalCallee_entry grammarLayout grammar words tokens
-    grammarCell tokensCell position semanticKind runtime
-    invariant.recognizer.grammarEncoded invariant.recognizer.wordsI32
-    invariant.recognizer.tokensI32 invariant.positionAdvanceI32
-    invariant.semanticKindBound invariant.recognizer.wellFormed
-    invariant.recognizer.grammarBacking invariant.recognizer.tokensBacking
-
 structure RecognizerScanCallResult
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
@@ -4899,12 +4889,12 @@ noncomputable def RecognizerTerminalInvariant.evaluate_scan
     RecognizerScanCallResult grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell runtime position semanticKind invariant := by
-  let result := parserRecognizeScanTerminalCall_implements_model runtime
+  let result := parserRecognizeScanTerminalCall_implements_prefix_model runtime
       invariant.recognizer.wellFormed invariant.recognizer.grammarLocal
-      invariant.recognizer.tokensLocal invariant.recognizer.tokenCountLocal
+      invariant.recognizer.tokenStorage invariant.recognizer.tokenCountLocal
       invariant.positionLocal invariant.semanticKindLocal
-      invariant.recognizer.grammarBacking invariant.recognizer.tokensBacking
-      invariant.scan_entry
+      invariant.recognizer.grammarBacking invariant.recognizer.grammarEncoded
+      invariant.recognizer.wordsI32 invariant.semanticKindBound invariant.positionAdvanceI32
   let after := Classical.choose result
   have facts := Classical.choose_spec result
   exact {

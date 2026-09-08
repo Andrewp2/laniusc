@@ -33,7 +33,9 @@ def verifiedFrontendSourcePaths : List String := [
   "raw_lexer.lani"
 ]
 
-def verifiedFrontendSourceTexts : List String := [
+/-- Current source text only for unchanged units. The historical canonicalizer
+is intentionally excluded; its replacement has a separate source-bound proof. -/
+def verifiedFrontendUnchangedSourceTexts : List String := [
   include_str ".." / ".." / ".." / ".." / "verified_compiler" / "src" /
     "verified" / "lexer.lani",
   include_str ".." / ".." / ".." / ".." / "verified_compiler" / "src" /
@@ -42,8 +44,6 @@ def verifiedFrontendSourceTexts : List String := [
     "verified" / "digits.lani",
   include_str ".." / ".." / ".." / ".." / "verified_compiler" / "src" /
     "verified" / "token.lani",
-  include_str ".." / ".." / ".." / ".." / "verified_compiler" / "src" /
-    "verified" / "canonical_tokens.lani",
   include_str ".." / ".." / ".." / ".." / "verified_compiler" / "src" /
     "verified" / "decimal.lani",
   include_str ".." / ".." / ".." / ".." / "verified_compiler" / "src" /
@@ -68,12 +68,13 @@ theorem verifiedFrontendPack_digits_unit :
     verifiedFrontendPack.units[2]? = some verifiedFrontendDigitsArtifact := by
   rfl
 
-theorem verifiedFrontendPack_tracks_sources :
+theorem verifiedFrontendPack_tracks_unchanged_sources :
     verifiedFrontendExtractedSources.map (·.path) =
         verifiedFrontendSourcePaths.map
           ("verified_compiler/src/verified/" ++ ·) ∧
-      verifiedFrontendExtractedSources.map (·.bytes) =
-        verifiedFrontendSourceTexts.map sourceTextBytes := by
+      (verifiedFrontendExtractedSources.filter
+        (fun source => source.path != "verified_compiler/src/verified/canonical_tokens.lani")).map (·.bytes) =
+        verifiedFrontendUnchangedSourceTexts.map sourceTextBytes := by
   native_decide
 
 end Lanius.Extraction

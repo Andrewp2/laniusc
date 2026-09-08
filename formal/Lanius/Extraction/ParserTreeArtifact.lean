@@ -7,7 +7,7 @@ open Lanius.Compiler.Parser
 
 /-! # Canonical parser-tree artifacts
 
-The verified recognizer materializes a representation-independent `ParseTree`.
+The verified recognizer materializes a representation-independent `Lanius.Compiler.Parser.ParseTree`.
 The existing Surface reconstruction code consumes the compact postorder
 `ParseNode` format exported by the production compiler. This module is the
 single bridge between those representations: it assigns node IDs
@@ -25,7 +25,7 @@ mutual
       not allocate parse nodes; nonterminals allocate one node after all of
       their children. -/
   def serializeParseTreeFrom (base : Nat) :
-      ParseTree → List ParseNode × ParseChild
+      Lanius.Compiler.Parser.ParseTree → List ParseNode × ParseChild
     | .terminal tokenIndex _ => ([], .token tokenIndex)
     | .nonterminal productionId nonterminal start finish children =>
         let serializedChildren := serializeParseTreesFrom base children
@@ -43,7 +43,7 @@ mutual
   /-- Serialize siblings left-to-right. The base for each suffix advances by
       exactly the number of nodes emitted by the preceding sibling. -/
   def serializeParseTreesFrom (base : Nat) :
-      List ParseTree → List ParseNode × List ParseChild
+      List Lanius.Compiler.Parser.ParseTree → List ParseNode × List ParseChild
     | [] => ([], [])
     | tree :: trees =>
         let serializedTree := serializeParseTreeFrom base tree
@@ -55,7 +55,7 @@ end
 
 /-- Canonical zero-based serialization. A terminal root has no parse-node
     root; a checked materialized parse can never take that branch. -/
-def serializeParseTree (tree : ParseTree) : List ParseNode × Option ParseNodeId :=
+def serializeParseTree (tree : Lanius.Compiler.Parser.ParseTree) : List ParseNode × Option ParseNodeId :=
   let serialized := serializeParseTreeFrom 0 tree
   match serialized.2 with
   | .token _ => (serialized.1, none)
@@ -152,7 +152,7 @@ theorem ParseChildNodeBefore.mono
       exact Nat.lt_of_lt_of_le before bound
 
 theorem serializeParseTreeFrom_reference_before
-    (base : Nat) (tree : ParseTree) :
+    (base : Nat) (tree : Lanius.Compiler.Parser.ParseTree) :
     let serialized := serializeParseTreeFrom base tree
     ParseChildNodeBefore (base + serialized.1.length) serialized.2 := by
   cases tree <;> simp [serializeParseTreeFrom, ParseChildNodeBefore]
@@ -161,7 +161,7 @@ theorem serializeParseTreeFrom_reference_before
     the forest's postorder prefix. This is the local fact a parent needs to
     establish that all of its node children precede it. -/
 theorem serializeParseTreesFrom_references_before
-    (base : Nat) (trees : List ParseTree) :
+    (base : Nat) (trees : List Lanius.Compiler.Parser.ParseTree) :
     let serialized := serializeParseTreesFrom base trees
     ∀ child, child ∈ serialized.2 →
       ParseChildNodeBefore (base + serialized.1.length) child := by

@@ -349,29 +349,29 @@ theorem first60_run (world : ReadOnly.World)
       simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, evaluate_equal_third, decide_true,
         Behavior.classify, if_pos]
-      rw [returnMatch_run_id 52 3 54 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 52 3 54 _ (by decide) (by rfl)]
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, evaluate_equal_third, decide_true,
         decide_false, third61, Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 43 2 45 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 43 2 45 _ (by decide) (by rfl)]
   · by_cases second61 : second = 61
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_true, decide_false,
         second60, Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 14 2 20 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 14 2 20 _ (by decide) (by rfl)]
     · by_cases second62 : second = 62
       · subst second
         simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
           evaluate_equal_second, decide_true, decide_false,
           second60, second61, Behavior.classify, if_pos, if_false]
-        rw [returnMatch_run_id 24 2 30 _ (by native_decide) (by rfl)]
+        rw [returnMatch_run_id 24 2 30 _ (by decide) (by rfl)]
       · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
           evaluate_equal_second, decide_false,
           second60, second61, second62, Behavior.classify,
           if_pos, if_false]
-        rw [returnMatch_run_id 12 1 18 _ (by native_decide) (by rfl)]
+        rw [returnMatch_run_id 12 1 18 _ (by decide) (by rfl)]
 
 theorem first62_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -390,25 +390,25 @@ theorem first62_run (world : ReadOnly.World)
       simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, evaluate_equal_third, decide_true,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 53 3 55 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 53 3 55 _ (by decide) (by rfl)]
       simp [Behavior.classify]
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, evaluate_equal_third, decide_true,
         decide_false, third61, Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 44 2 46 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 44 2 46 _ (by decide) (by rfl)]
       simp [Behavior.classify]
   · by_cases second61 : second = 61
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_true, decide_false,
         second62, Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 15 2 21 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 15 2 21 _ (by decide) (by rfl)]
       simp [Behavior.classify]
     · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_false, second62, second61,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 13 1 19 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 13 1 19 _ (by decide) (by rfl)]
       simp [Behavior.classify]
 
 theorem first43_run (world : ReadOnly.World)
@@ -426,19 +426,19 @@ theorem first43_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 46 2 48 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 46 2 48 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · by_cases second43 : second = 43
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_true, decide_false, second61,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 56 2 58 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 56 2 58 _ (by decide) (by rfl)]
       simp [Behavior.classify]
     · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_false, second61, second43,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 6 1 12 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 6 1 12 _ (by decide) (by rfl)]
       simp [Behavior.classify]
 
 theorem first45_run (world : ReadOnly.World)
@@ -456,26 +456,26 @@ theorem first45_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 47 2 49 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 47 2 49 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · by_cases second45 : second = 45
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_true, decide_false, second61,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 57 2 59 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 57 2 59 _ (by decide) (by rfl)]
       simp [Behavior.classify]
     · by_cases second62 : second = 62
       · subst second
         simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
           evaluate_equal_second, decide_true, decide_false, second61,
           second45, Behavior.classify, if_pos, if_false]
-        rw [returnMatch_run_id 75 2 69 _ (by native_decide) (by rfl)]
+        rw [returnMatch_run_id 75 2 69 _ (by decide) (by rfl)]
         simp [Behavior.classify]
       · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
           evaluate_equal_second, decide_false, second61, second45,
           second62, Behavior.classify, if_pos, if_false]
-        rw [returnMatch_run_id 27 1 33 _ (by native_decide) (by rfl)]
+        rw [returnMatch_run_id 27 1 33 _ (by decide) (by rfl)]
         simp [Behavior.classify]
 
 theorem first61_run (world : ReadOnly.World)
@@ -493,19 +493,19 @@ theorem first61_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 16 2 22 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 16 2 22 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · by_cases second62 : second = 62
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_true, decide_false, second61,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 113 2 86 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 113 2 86 _ (by decide) (by rfl)]
       simp [Behavior.classify]
     · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_false, second61, second62,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 8 1 14 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 8 1 14 _ (by decide) (by rfl)]
       simp [Behavior.classify]
 
 theorem first47_run (world : ReadOnly.World)
@@ -523,26 +523,26 @@ theorem first47_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 10 2 16 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 10 2 16 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · by_cases second42 : second = 42
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_true, decide_false, second47,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 11 2 17 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 11 2 17 _ (by decide) (by rfl)]
       simp [Behavior.classify]
     · by_cases second61 : second = 61
       · subst second
         simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
           evaluate_equal_second, decide_true, decide_false, second47,
           second42, Behavior.classify, if_pos, if_false]
-        rw [returnMatch_run_id 49 2 51 _ (by native_decide) (by rfl)]
+        rw [returnMatch_run_id 49 2 51 _ (by decide) (by rfl)]
         simp [Behavior.classify]
       · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
           evaluate_equal_second, decide_false, second47, second42,
           second61, Behavior.classify, if_pos, if_false]
-        rw [returnMatch_run_id 9 1 15 _ (by native_decide) (by rfl)]
+        rw [returnMatch_run_id 9 1 15 _ (by decide) (by rfl)]
         simp [Behavior.classify]
 
 theorem first38_run (world : ReadOnly.World)
@@ -560,19 +560,19 @@ theorem first38_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 17 2 23 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 17 2 23 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · by_cases second61 : second = 61
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_true, decide_false, second38,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 54 2 56 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 54 2 56 _ (by decide) (by rfl)]
       simp [Behavior.classify]
     · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_false, second38, second61,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 25 1 31 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 25 1 31 _ (by decide) (by rfl)]
       simp [Behavior.classify]
 
 theorem first124_run (world : ReadOnly.World)
@@ -590,19 +590,19 @@ theorem first124_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 18 2 24 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 18 2 24 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · by_cases second61 : second = 61
     · subst second
       simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_true, decide_false, second124,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 55 2 57 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 55 2 57 _ (by decide) (by rfl)]
       simp [Behavior.classify]
     · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
         evaluate_equal_second, decide_false, second124, second61,
         Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 26 1 32 _ (by native_decide) (by rfl)]
+      rw [returnMatch_run_id 26 1 32 _ (by decide) (by rfl)]
       simp [Behavior.classify]
 
 theorem first33_run (world : ReadOnly.World)
@@ -620,12 +620,12 @@ theorem first33_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 40 2 42 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 40 2 42 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_false, second61,
       Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 19 1 25 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 19 1 25 _ (by decide) (by rfl)]
     simp [Behavior.classify]
 
 theorem first42_run (world : ReadOnly.World)
@@ -643,12 +643,12 @@ theorem first42_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 48 2 50 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 48 2 50 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_false, second61,
       Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 7 1 13 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 7 1 13 _ (by decide) (by rfl)]
     simp [Behavior.classify]
 
 theorem first37_run (world : ReadOnly.World)
@@ -666,12 +666,12 @@ theorem first37_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 50 2 52 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 50 2 52 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_false, second61,
       Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 41 1 43 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 41 1 43 _ (by decide) (by rfl)]
     simp [Behavior.classify]
 
 theorem first94_run (world : ReadOnly.World)
@@ -689,12 +689,12 @@ theorem first94_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 51 2 53 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 51 2 53 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_false, second61,
       Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 42 1 44 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 42 1 44 _ (by decide) (by rfl)]
     simp [Behavior.classify]
 
 theorem first46_run (world : ReadOnly.World)
@@ -712,12 +712,12 @@ theorem first46_run (world : ReadOnly.World)
   · subst second
     simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 182 2 87 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 182 2 87 _ (by decide) (by rfl)]
     simp [Behavior.classify]
   · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
       evaluate_equal_second, decide_false, second46,
       Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 35 1 37 _ (by native_decide) (by rfl)]
+    rw [returnMatch_run_id 35 1 37 _ (by decide) (by rfl)]
     simp [Behavior.classify]
 
 macro "simplify_symbol_cases" : tactic =>
@@ -792,61 +792,61 @@ theorem symbolCases_run (world : ReadOnly.World)
                             · subst first
                               simplify_symbol_cases
                               rw [returnMatch_run_id 4 1 10 _
-                                (by native_decide) (by rfl)]
+                                (by decide) (by rfl)]
                               simp [Behavior.classify]
                             · by_cases first41 : first = 41
                               · subst first
                                 simplify_symbol_cases
                                 rw [returnMatch_run_id 5 1 11 _
-                                  (by native_decide) (by rfl)]
+                                  (by decide) (by rfl)]
                                 simp [Behavior.classify]
                               · by_cases first91 : first = 91
                                 · subst first
                                   simplify_symbol_cases
                                   rw [returnMatch_run_id 20 1 26 _
-                                    (by native_decide) (by rfl)]
+                                    (by decide) (by rfl)]
                                   simp [Behavior.classify]
                                 · by_cases first93 : first = 93
                                   · subst first
                                     simplify_symbol_cases
                                     rw [returnMatch_run_id 21 1 27 _
-                                      (by native_decide) (by rfl)]
+                                      (by decide) (by rfl)]
                                     simp [Behavior.classify]
                                   · by_cases first123 : first = 123
                                     · subst first
                                       simplify_symbol_cases
                                       rw [returnMatch_run_id 22 1 28 _
-                                        (by native_decide) (by rfl)]
+                                        (by decide) (by rfl)]
                                       simp [Behavior.classify]
                                     · by_cases first125 : first = 125
                                       · subst first
                                         simplify_symbol_cases
                                         rw [returnMatch_run_id 23 1 29 _
-                                          (by native_decide) (by rfl)]
+                                          (by decide) (by rfl)]
                                         simp [Behavior.classify]
                                       · by_cases first126 : first = 126
                                         · subst first
                                           simplify_symbol_cases
                                           rw [returnMatch_run_id 45 1 47 _
-                                            (by native_decide) (by rfl)]
+                                            (by decide) (by rfl)]
                                           simp [Behavior.classify]
                                         · by_cases first44 : first = 44
                                           · subst first
                                             simplify_symbol_cases
                                             rw [returnMatch_run_id 36 1 38 _
-                                              (by native_decide) (by rfl)]
+                                              (by decide) (by rfl)]
                                             simp [Behavior.classify]
                                           · by_cases first59 : first = 59
                                             · subst first
                                               simplify_symbol_cases
                                               rw [returnMatch_run_id 37 1 39 _
-                                                (by native_decide) (by rfl)]
+                                                (by decide) (by rfl)]
                                               simp [Behavior.classify]
                                             · by_cases first58 : first = 58
                                               · subst first
                                                 simplify_symbol_cases
                                                 rw [returnMatch_run_id 38 1 40 _
-                                                  (by native_decide) (by rfl)]
+                                                  (by decide) (by rfl)]
                                                 simp [Behavior.classify]
                                               · simp only [Structure.symbolCases,
                                                   Structure.orderedCases,
@@ -868,7 +868,7 @@ theorem symbolCases_run (world : ReadOnly.World)
                                                   first59, first58,
                                                   decide_false, if_false]
                                                 rw [returnMatch_run_id 39 1 41 _
-                                                  (by native_decide) (by rfl)]
+                                                  (by decide) (by rfl)]
                                                 simp [Behavior.classify, *]
 
 theorem matchSymbolHeadCommand_run

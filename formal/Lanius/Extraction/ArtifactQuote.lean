@@ -6,9 +6,45 @@ open Lean Elab Term
 
 namespace Lanius.Extraction
 
+/-- Keep constructor data below the size where native-code specialization
+repeatedly scans long constructor chains. Auxiliary definitions are ordinary
+kernel-checked definitions, so the result remains definitionally equal to the
+original quotation. No serialized data or proof is trusted by this step. -/
+private partial def boundQuotation (value : Expr) :
+    StateRefT (Array Name) TermElabM (Expr × Nat) := do
+  if !value.isApp then return (value, 1)
+  let mut args := #[]
+  let mut size := 1
+  for arg in value.getAppArgs do
+    let (arg, argSize) ← boundQuotation arg
+    args := args.push arg
+    size := size + argSize
+  let value := mkAppN value.getAppFn args
+  if size < 512 then return (value, size)
+  let name ← mkAuxDeclName `quotedData
+  let value ← Meta.mkAuxDefinitionFor name value (compile := false)
+  modify fun names => names.push name
+  return (value, 1)
+
+def quoteBounded [ToExpr α] (value : α) : TermElabM Expr := do
+  let ((expression, _), declarations) ← (boundQuotation (toExpr value)).run #[]
+  compileDecls declarations
+  return expression
+
 -- One exact input, scoped to this process. The cached value is untrusted
 -- decoded data; every quoted term and every certificate is still checked.
 private initialize artifactPackInput : IO.Ref (Option (String × ArtifactPack)) ← IO.mkRef none
+private initialize artifactInput : IO.Ref (Option (String × Artifact)) ← IO.mkRef none
+
+/-- Share one decoded artifact across its field and function quotations.
+Only exact input equality permits reuse; the cache grants no proof authority. -/
+def decodeArtifactInput (encoded : String) : IO (Except String Artifact) := do
+  if let some (previous, artifact) ← artifactInput.get then
+    if previous == encoded then return .ok artifact
+  let result := Json.parse encoded >>= fromJson?
+  if let .ok artifact := result then
+    artifactInput.set (some (encoded, artifact))
+  return result
 
 /-- Decode a pack once across quotation entry points. Exact string comparison
 prevents path reuse or hash collisions from substituting a different input.
@@ -40,9 +76,17 @@ private def elabNatLiteral (stx : Syntax) : TermElabM Nat := do
     | throwError "artifact quotation requires a compile-time natural literal"
   pure value
 
+private def reportQuotation (phase : String) : TermElabM Unit := do
+  if (← getOptions).getBool `trace.profiler false then
+    IO.eprintln s!"artifact quotation [{← IO.monoMsNow} ms]: {phase}"
+
 private def elabArtifactLiteral (stx : Syntax) : TermElabM Artifact := do
+  reportQuotation "read literal"
   let encoded ← elabStringLiteral stx
-  match Json.parse encoded >>= fromJson? with
+  reportQuotation "decode input"
+  let decoded ← decodeArtifactInput encoded
+  reportQuotation "decoded input"
+  match decoded with
   | .ok artifact => pure artifact
   | .error message => throwError "invalid extraction artifact: {message}"
 
@@ -80,20 +124,21 @@ elab "artifact% " json:term : term => do
     large artifacts be assembled from independently compiled constants instead
     of forcing Lean's code generator to normalize one enormous record. -/
 elab "artifact_field% " json:term ", " field:ident : term => do
+  reportQuotation s!"field {field.getId}"
   let artifact ← elabArtifactLiteral json
   match field.getId.toString with
-  | "schema_version" => pure (toExpr artifact.schema_version)
-  | "sources" => pure (toExpr artifact.sources)
-  | "tokens" => pure (toExpr artifact.tokens)
-  | "raw_tokens" => pure (toExpr artifact.raw_tokens)
-  | "semantic_token_kinds" => pure (toExpr artifact.semantic_token_kinds)
-  | "parse_nodes" => pure (toExpr artifact.parse_nodes)
-  | "parse_root" => pure (toExpr artifact.parse_root)
-  | "surface" => pure (toExpr artifact.surface)
-  | "resolutions" => pure (toExpr artifact.resolutions)
-  | "types" => pure (toExpr artifact.types)
-  | "core_program" => pure (toExpr artifact.core_program)
-  | "lowering" => pure (toExpr artifact.lowering)
+  | "schema_version" => quoteBounded artifact.schema_version
+  | "sources" => quoteBounded artifact.sources
+  | "tokens" => quoteBounded artifact.tokens
+  | "raw_tokens" => quoteBounded artifact.raw_tokens
+  | "semantic_token_kinds" => quoteBounded artifact.semantic_token_kinds
+  | "parse_nodes" => quoteBounded artifact.parse_nodes
+  | "parse_root" => quoteBounded artifact.parse_root
+  | "surface" => quoteBounded artifact.surface
+  | "resolutions" => quoteBounded artifact.resolutions
+  | "types" => quoteBounded artifact.types
+  | "core_program" => quoteBounded artifact.core_program
+  | "lowering" => quoteBounded artifact.lowering
   | name => throwError "artifact has no quotable field {name}"
 
 /-- Quote one field of an artifact's Core program. Core function bodies can be
@@ -101,27 +146,29 @@ elab "artifact_field% " json:term ", " field:ident : term => do
     separate declarations prevents a constant or type lookup from unfolding
     every function body. -/
 elab "artifact_core_field% " json:term ", " field:ident : term => do
+  reportQuotation s!"Core field {field.getId}"
   let artifact ← elabArtifactLiteral json
   let some program := artifact.core_program
     | throwError "extraction artifact has no Core program"
   match field.getId.toString with
-  | "target" => pure (toExpr program.target)
-  | "structures" => pure (toExpr program.structures)
-  | "enumerations" => pure (toExpr program.enumerations)
-  | "constants" => pure (toExpr program.constants)
-  | "functions" => pure (toExpr program.functions)
+  | "target" => quoteBounded program.target
+  | "structures" => quoteBounded program.structures
+  | "enumerations" => quoteBounded program.enumerations
+  | "constants" => quoteBounded program.constants
+  | "functions" => quoteBounded program.functions
   | name => throwError "artifact Core program has no quotable field {name}"
 
 /-- Quote a checked slice of an artifact's parse-node table. Very large parse
     tables are emitted as several independently compiled constants and then
     concatenated, avoiding a monolithic LCNF compilation unit. -/
 elab "artifact_parse_nodes% " json:term ", " start:term ", " count:term : term => do
+  reportQuotation "parse-node range"
   let artifact ← elabArtifactLiteral json
   let start ← elabNatLiteral start
   let count ← elabNatLiteral count
   unless start + count ≤ artifact.parse_nodes.length do
     throwError "parse-node slice [{start}, {start + count}) exceeds table length {artifact.parse_nodes.length}"
-  pure (toExpr (artifact.parse_nodes.drop start |>.take count))
+  quoteBounded (artifact.parse_nodes.drop start |>.take count)
 
 /-- Quote the decoded Core program from a standalone extraction artifact.
     Keeping JSON parsing in the elaborator makes later function lookup reduce

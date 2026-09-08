@@ -1,4 +1,5 @@
 import Lanius.Extraction.RawLexer.ScanOne.Evaluation
+import Lanius.Compiler.LexerStreamOffsets
 
 namespace Lanius.Extraction.RawLexer.ScanOne.Evaluation
 
@@ -1008,7 +1009,7 @@ theorem dispatch_run
       have logical : Lanius.Compiler.Lexer.scanOne source start =
           .token ⟨Lanius.Compiler.TokenKind.identifier, start,
             scanIdentifierEnd source start⟩ := by
-        simp [Lanius.Compiler.Lexer.scanOne, startInBounds, startClass]
+        simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass]
       rw [logical]
       rfl
   | decimalNumber =>
@@ -1059,7 +1060,7 @@ theorem dispatch_run
       rw [branchRun]
       have logical : Lanius.Compiler.Lexer.scanOne source start =
           tokenFromNumber start (scanNumber source start) := by
-        simp [Lanius.Compiler.Lexer.scanOne, startInBounds, startClass]
+        simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass]
       rw [logical, Model.encoded_tokenFromNumber]
       rfl
   | whitespace =>
@@ -1123,7 +1124,7 @@ theorem dispatch_run
       have logical : Lanius.Compiler.Lexer.scanOne source start =
           .token ⟨Lanius.Compiler.TokenKind.whitespace, start,
             scanWhitespaceEnd source start⟩ := by
-        simp [Lanius.Compiler.Lexer.scanOne, startInBounds, startClass]
+        simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass]
       rw [logical]
       rfl
   | symbol =>
@@ -1184,7 +1185,7 @@ theorem dispatch_run
       rw [branchRun]
       have logical : Lanius.Compiler.Lexer.scanOne source start =
           scanSymbol source start := by
-        simp [Lanius.Compiler.Lexer.scanOne, startInBounds, startClass]
+        simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass]
       rw [logical]
       rfl
   | stringLiteral =>
@@ -1245,7 +1246,7 @@ theorem dispatch_run
       rw [branchRun]
       have logical : Lanius.Compiler.Lexer.scanOne source start =
           tokenFromDelimited Lanius.Compiler.TokenKind.string start scan := by
-        simp [Lanius.Compiler.Lexer.scanOne, startInBounds, startClass, scan]
+        simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass, scan]
       rw [logical, Model.encoded_tokenFromDelimited]
       rfl
   | characterLiteral =>
@@ -1314,7 +1315,7 @@ theorem dispatch_run
       rw [branchRun]
       have logical : Lanius.Compiler.Lexer.scanOne source start =
           tokenFromDelimited Lanius.Compiler.TokenKind.character start scan := by
-        simp [Lanius.Compiler.Lexer.scanOne, startInBounds, startClass, scan]
+        simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass, scan]
       rw [logical, Model.encoded_tokenFromDelimited]
       rfl
   | invalid =>
@@ -1377,7 +1378,7 @@ theorem dispatch_run
       simp only [bind, Except.bind]
       rw [branchRun]
       have logical : Lanius.Compiler.Lexer.scanOne source start = .failure start := by
-        simp [Lanius.Compiler.Lexer.scanOne, startInBounds, startClass]
+        simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass]
       rw [logical]
       rfl
 
@@ -1436,6 +1437,6 @@ theorem scanOne_run
     rw [failureRun]
     have missing : source[start]? = none := List.getElem?_eq_none (by omega)
     have logical : Lanius.Compiler.Lexer.scanOne source start = .failure start := by
-      simp [Lanius.Compiler.Lexer.scanOne, missing]
+      simp [scanOne_eq_scanOneAt, scanOneAt, missing]
     rw [logical]
     rfl

@@ -146,44 +146,44 @@ theorem evaluatesNatLessThreaded
 /-- One ambient FunctionalView world for the complete recognizer. Grammar,
     workspace, and token slices share this representation across every
     recognition operation. -/
-def recognizerWorld (words : List Int) (tokens : List Nat)
+def recognizerWorld (words : List Int) (tokens : List Nat) {unused : List Int}
     (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId) :
     Lanius.FunctionalView.Core.ReadOnly.World := {
   i32Slice? := fun candidate =>
     if candidate = grammarCell then some words
     else if candidate = workspaceCell then some workspaceValues
-    else if candidate = tokensCell then some (tokens.map Int.ofNat)
+    else if candidate = tokensCell then some (tokens.map Int.ofNat ++ unused)
     else none
 }
 
 @[simp] theorem recognizerWorld_finds_grammar :
-    (recognizerWorld words tokens workspaceValues grammarCell tokensCell
+    (recognizerWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
       workspaceCell).i32Slice? grammarCell = some words := by
   simp [recognizerWorld]
 
 @[simp] theorem recognizerWorld_finds_workspace
     (different : workspaceCell ≠ grammarCell) :
-    (recognizerWorld words tokens workspaceValues grammarCell tokensCell
+    (recognizerWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
       workspaceCell).i32Slice? workspaceCell = some workspaceValues := by
   simp [recognizerWorld, different]
 
 @[simp] theorem recognizerWorld_finds_tokens
     (grammarDifferent : tokensCell ≠ grammarCell)
     (workspaceDifferent : tokensCell ≠ workspaceCell) :
-    (recognizerWorld words tokens workspaceValues grammarCell tokensCell
+    (recognizerWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
       workspaceCell).i32Slice? tokensCell =
-      some (tokens.map Int.ofNat) := by
+      some (tokens.map Int.ofNat ++ unused) := by
   simp [recognizerWorld, grammarDifferent, workspaceDifferent]
 
 @[simp] theorem recognizerWorld_set_workspace
     (grammarDifferent : workspaceCell ≠ grammarCell)
     (tokensDifferent : workspaceCell ≠ tokensCell) :
     Lanius.FunctionalView.Core.ReadOnly.World.setI32Slice
-        (recognizerWorld words tokens beforeValues grammarCell tokensCell
+        (recognizerWorld words tokens (unused := unused) beforeValues grammarCell tokensCell
           workspaceCell)
         workspaceCell afterValues =
-      recognizerWorld words tokens afterValues grammarCell tokensCell
+      recognizerWorld words tokens (unused := unused) afterValues grammarCell tokensCell
         workspaceCell := by
   apply congrArg Lanius.FunctionalView.Core.ReadOnly.World.mk
   funext candidate
@@ -197,14 +197,17 @@ def recognizerWorld (words : List Int) (tokens : List Nat)
 theorem recognizerWorld_represents
     (invariant : RecognizerInvariant grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell runtime) :
+      workspaceCell runtime)
+    (tokensBacking : runtime.cellEntry? tokensCell = some {
+      id := tokensCell
+      value := some (.array (signedI32Values (tokens.map Int.ofNat ++ unused))) }) :
     Lanius.FunctionalView.Core.ReadOnly.World.Represents
-      (recognizerWorld words tokens workspaceValues grammarCell tokensCell
+      (recognizerWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell) runtime := by
   intro cell values found
   change (if cell = grammarCell then some words
     else if cell = workspaceCell then some workspaceValues
-    else if cell = tokensCell then some (tokens.map Int.ofNat)
+    else if cell = tokensCell then some (tokens.map Int.ofNat ++ unused)
     else none) = some values at found
   split at found
   next grammarEq =>
@@ -229,10 +232,51 @@ theorem recognizerWorld_represents
         subst cell
         simp only [Option.some.injEq] at found
         subst values
-        exact ⟨invariant.tokensBacking,
+        exact ⟨tokensBacking,
           Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
-            invariant.wellFormed invariant.tokensBacking⟩
+            invariant.wellFormed tokensBacking⟩
       next tokensNe => simp at found
+
+/-- Recover one consistent physical suffix from the persistent token
+resource, for use by a Functional View evaluation and its environment. -/
+theorem recognizerWorld_from_invariant
+    (invariant : RecognizerInvariant grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell workspaceCell runtime) :
+    ∃ unused : List Int,
+      Lanius.FunctionalView.Core.ReadOnly.World.Represents
+        (recognizerWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
+        runtime ∧
+      runtime.local? 2 = some (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length)) := by
+  obtain ⟨capacity, sliceLocal, unused, length, backing⟩ := invariant.tokenStorage
+  refine ⟨unused, recognizerWorld_represents invariant backing, ?_⟩
+  have physicalLength : tokens.length + unused.length = capacity := by simpa using length
+  simpa only [physicalLength, parserI32Type] using sliceLocal
+
+theorem RecognizerInvariant.physicalWorld_represents
+    (invariant : RecognizerInvariant grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell workspaceCell runtime) :
+    Lanius.FunctionalView.Core.ReadOnly.World.Represents
+      (recognizerWorld words tokens (unused := invariant.tokenStorage.unused)
+        workspaceValues grammarCell tokensCell workspaceCell) runtime :=
+  recognizerWorld_represents invariant invariant.tokenStorage.unused_backing
+
+/-- Workspace updates may reconstruct the resource proof, but cannot change
+the token suffix chosen for the next Functional View world. -/
+theorem RecognizerInvariant.physicalWorld_set_workspace
+    (beforeInvariant : RecognizerInvariant grammarLayout grammar words tokens
+      workspaceLayout beforeWorkspace beforeValues grammarCell tokensCell workspaceCell before)
+    (afterInvariant : RecognizerInvariant grammarLayout grammar words tokens
+      workspaceLayout afterWorkspace afterValues grammarCell tokensCell workspaceCell after)
+    (effect : CellEffect writes before after) (tokensUntouched : ¬ writes tokensCell) :
+    Lanius.FunctionalView.Core.ReadOnly.World.setI32Slice
+      (recognizerWorld words tokens (unused := beforeInvariant.tokenStorage.unused)
+        beforeValues grammarCell tokensCell workspaceCell) workspaceCell afterValues =
+      recognizerWorld words tokens (unused := afterInvariant.tokenStorage.unused)
+        afterValues grammarCell tokensCell workspaceCell := by
+  have sameSuffix := beforeInvariant.tokenStorage.unused_preserved afterInvariant.tokenStorage
+    beforeInvariant.wellFormed effect tokensUntouched
+  rw [recognizerWorld_set_workspace beforeInvariant.grammarWorkspaceDistinct.symm
+    beforeInvariant.tokensWorkspaceDistinct.symm, sameSuffix]
 
 theorem evaluatesLogicalAnd
     {arity : Nat}

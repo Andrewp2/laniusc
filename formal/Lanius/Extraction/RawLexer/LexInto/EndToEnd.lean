@@ -23,12 +23,11 @@ merged frontend registry below; keeping this lower lemma explicit makes the
 simulation boundary reusable without weakening the public theorem.
 -/
 
-/-- A fully supported physical invocation.  The record-length equality is part
-of the contract rather than a latent theorem-side assumption, so a caller
-cannot obtain the success theorem for an undersized output slice. -/
+/-- A supported physical invocation. The declared token capacity must fit
+the backing slice; extra words are allowed and remain outside that capacity. -/
 structure Invocation extends Model.Request where
   records : List Int
-  recordsLength : records.length = 3 * capacity
+  recordsCapacity : 3 * capacity ≤ records.length
 
 theorem output_records_exact (request : Model.Request) (records : List Int) :
     (Model.run request.source request.capacity records).records =
@@ -37,7 +36,7 @@ theorem output_records_exact (request : Model.Request) (records : List Int) :
 
 theorem checkedBody_executes
     (request : Model.Request) (records : List Int)
-    (recordsLength : records.length = 3 * request.capacity)
+    (recordsCapacity : 3 * request.capacity ≤ records.length)
     (callSoundness :
       Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
         verifiedFrontendCore (Calls.callModel request.source))
@@ -60,7 +59,7 @@ theorem checkedBody_executes
         after ∧
       ModifiesOnly writes state after := by
   have evaluated := Execution.command_evaluates_request request records
-    recordsLength
+    recordsCapacity
   have logical :
       (Model.run request.source request.capacity records).outcome =
         request.outcome := by
@@ -94,7 +93,7 @@ theorem checkedBody_executes
 
 theorem checkedCall_executes
     (request : Model.Request) (records : List Int)
-    (recordsLength : records.length = 3 * request.capacity)
+    (recordsCapacity : 3 * request.capacity ≤ records.length)
     (callSoundness :
       Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
         verifiedFrontendCore (Calls.callModel request.source))
@@ -134,7 +133,7 @@ theorem checkedCall_executes
         completed := by
   obtain ⟨completed, writes, bodyExecution, completedWellFormed,
       completedRepresented, bodyEffect⟩ :=
-    checkedBody_executes request records recordsLength callSoundness represented
+    checkedBody_executes request records recordsCapacity callSoundness represented
       wellFormed
   exact ⟨completed, writes,
     evaluatesCallReturned argumentsResult
@@ -147,7 +146,7 @@ theorem checkedCall_executes
 their concrete checked frontend registries. -/
 theorem call_executes
     (request : Model.Request) (records : List Int)
-    (recordsLength : records.length = 3 * request.capacity)
+    (recordsCapacity : 3 * request.capacity ≤ records.length)
     {before afterArguments : State} {arguments : List Expr}
     {values : List Value} {localCell : Fin 4 → CellId}
     (argumentsResult : ArgumentsEvaluateTo verifiedFrontendCore before arguments
@@ -182,7 +181,7 @@ theorem call_executes
           (parameterBindings
             (Execution.initialEnvironment request.source records request.capacity)))
         completed :=
-  checkedCall_executes request records recordsLength
+  checkedCall_executes request records recordsCapacity
     (Calls.callSoundness request.source) argumentsResult parametersBound
       represented wellFormed
 

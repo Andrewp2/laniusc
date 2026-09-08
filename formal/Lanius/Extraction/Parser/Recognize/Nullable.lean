@@ -275,10 +275,11 @@ theorem nullableLoopCommand_toCore :
   exact extractedParserRecognize_nullable_loop_shape.symm
 
 def nullableWorld (words : List Int) (tokens : List Nat)
+    {unused : List Int}
     (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId) :
     Lanius.FunctionalView.Core.ReadOnly.World :=
-  recognizerWorld words tokens workspaceValues grammarCell tokensCell
+  recognizerWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
     workspaceCell
 
 /-- Persistent source values in the exact checked nullable-loop layout.
@@ -332,7 +333,7 @@ private theorem nullableStateValueTerm_evaluates
     (workspace : LogicalWorkspace) (state : EarleyState)
     (stateId field : Nat) (fieldConstant : ConstantId)
     (different : workspaceCell ≠ grammarCell)
-    (worldEq : world = nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+    (worldEq : world = nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
     (workspaceValueEq : environment ⟨1, by omega⟩ =
       workspaceValue workspaceValues workspaceCell)
     (stateBaseEq : environment ⟨2, by omega⟩ =
@@ -357,23 +358,23 @@ private theorem nullableStateValueTerm_evaluates
   subst world
   let machine := nullableTermMachine workspaceLayout grammar words grammarCell
   have workspaceResult : Lanius.FunctionalView.Term.evaluate machine
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment (nullableSlot ⟨1, by omega⟩) =
       .ok (workspaceValue workspaceValues workspaceCell,
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
     exact Lanius.FunctionalView.Term.evaluate_slot workspaceValueEq
   have baseResult : Lanius.FunctionalView.Term.evaluate machine
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment (nullableSlot ⟨2, by omega⟩) =
       .ok (.signed .i32 (Int.ofNat
         (stateBase workspaceLayout.tokenCount)),
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
     exact Lanius.FunctionalView.Term.evaluate_slot stateBaseEq
   have stateResult : Lanius.FunctionalView.Term.evaluate machine
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment (nullableSlot ⟨11, by omega⟩) =
       .ok (.signed .i32 (Int.ofNat stateId),
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
     exact Lanius.FunctionalView.Term.evaluate_slot stateIdEq
   let constantTerm : Lanius.FunctionalView.Term
       Lanius.FunctionalView.Core.signature arity :=
@@ -383,24 +384,24 @@ private theorem nullableStateValueTerm_evaluates
       (program := verifiedParserCore)
       (calls := RecognizerTraversalCallRegistry.calls workspaceLayout grammar
         words grammarCell)
-      (world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (world := nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       (environment := environment) constantTerm (by rfl)
   have constantReadOnly : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment constantTerm =
       .ok (.signed .i32 (Int.ofNat field),
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
     exact Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_constant
       constantFound
   have constantResult : Lanius.FunctionalView.Term.evaluate machine
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment constantTerm =
       .ok (.signed .i32 (Int.ofNat field),
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
     exact constantAgreement.trans constantReadOnly
   have argumentsResult : Lanius.FunctionalView.evaluateTerms machine
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment [nullableSlot ⟨1, by omega⟩,
         nullableSlot ⟨2, by omega⟩, nullableSlot ⟨11, by omega⟩,
         constantTerm] =
@@ -408,20 +409,20 @@ private theorem nullableStateValueTerm_evaluates
         .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)),
         .signed .i32 (Int.ofNat stateId),
         .signed .i32 (Int.ofNat field)],
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) :=
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) :=
     Lanius.FunctionalView.evaluateTerms_cons workspaceResult
       (Lanius.FunctionalView.evaluateTerms_cons baseResult
         (Lanius.FunctionalView.evaluateTerms_cons stateResult
           (Lanius.FunctionalView.evaluateTerms_cons constantResult
             (Lanius.FunctionalView.evaluateTerms_nil machine
-              (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+              (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
               environment))))
   have addressBound : stateWord (stateBase workspaceLayout.tokenCount)
       stateId field < workspaceValues.length := by
     rw [valuesLength]
     exact encoded.state_address_valid foundState fieldBound
   have worldFound :
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell).i32Slice?
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell).i32Slice?
         workspaceCell = some workspaceValues := by
     exact recognizerWorld_finds_workspace different
   have addressValue := workspaceLayout.state_value_eq_address
@@ -437,7 +438,7 @@ private theorem nullableStateValueTerm_evaluates
     RecognizerTraversalCallRegistry.calls_at_state_value
       (workspaceLayout := workspaceLayout) (grammar := grammar)
       (words := words) (grammarCell := grammarCell)
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       workspaceValues workspaceCell 0 workspaceValues.length
       (stateWord (stateBase workspaceLayout.tokenCount) stateId field)
       (Int.ofNat (stateBase workspaceLayout.tokenCount)) (Int.ofNat stateId)
@@ -453,7 +454,7 @@ private theorem nullableStateValueTerm_evaluates
   apply Lanius.FunctionalView.Term.evaluate_apply argumentsResult
   change (RecognizerTraversalCallRegistry.calls workspaceLayout grammar words
     grammarCell).evaluate
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       extractedParserStateValueFunction.id [
         workspaceValue workspaceValues workspaceCell,
         .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)),
@@ -476,12 +477,12 @@ private theorem nullableRhsLengthTerm_evaluates
       .signed .i32 (Int.ofNat production)) :
     Lanius.FunctionalView.Term.evaluate
       (nullableTermMachine workspaceLayout grammar words grammarCell)
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment nullableRhsLengthTerm =
       .ok (.signed .i32 (Int.ofNat
         (grammar.productionAt ⟨production, productionBound⟩).rhs.length),
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
-  let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
+  let world := nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell
   let machine := nullableTermMachine workspaceLayout grammar words grammarCell
   have grammarResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (nullableSlot ⟨0, by omega⟩) =
@@ -528,12 +529,12 @@ private theorem nullableLhsTerm_evaluates
       .signed .i32 (Int.ofNat production)) :
     Lanius.FunctionalView.Term.evaluate
       (nullableTermMachine workspaceLayout grammar words grammarCell)
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment nullableLhsTerm =
       .ok (.signed .i32 (Int.ofNat
         (grammar.productionAt ⟨production, productionBound⟩).lhs),
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
-  let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
+  let world := nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell
   let machine := nullableTermMachine workspaceLayout grammar words grammarCell
   have grammarResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (nullableSlot ⟨0, by omega⟩) =
@@ -605,13 +606,13 @@ private theorem nullableLoopCondition_evaluates
       expected : Nat) (candidate : Int) :
     Lanius.FunctionalView.Term.evaluate
       (nullableTermMachine workspaceLayout grammar words grammarCell)
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       (nullableEnvironment words workspaceValues grammarCell workspaceCell
         workspaceLayout stateCount position parentState parentProduction
         parentDot parentOrigin expected candidate)
       nullableLoopCondition =
       .ok (.boolean (decide (candidate ≥ 0)),
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
   simp [nullableTermMachine, nullableWorld, nullableEnvironment,
     nullableLoopCondition, nullableSlot, nullableLiteral,
     Lanius.FunctionalView.Term.evaluate,
@@ -957,7 +958,7 @@ private theorem RecognizerNullableLoopInvariant.functional_candidate_reads
       remaining)
     (candidate : EarleyState)
     (found : workspace.state? current = some candidate) :
-    let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := nullableEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length position
       parentState parentProduction parentDot parentOrigin expected
@@ -989,7 +990,7 @@ private theorem RecognizerNullableLoopInvariant.functional_candidate_reads
   have productionRead := nullableStateValueTerm_evaluates
     (arity := 12) (by omega) workspaceLayout grammar words workspaceValues
     grammarCell workspaceCell
-    (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+    (nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell)
     environment workspace candidate current 0 28 different rfl rfl rfl rfl
     invariant.chartCursor.recognizer.workspaceLength
     invariant.chartCursor.recognizer.workspaceEncoded found (by decide)
@@ -997,7 +998,7 @@ private theorem RecognizerNullableLoopInvariant.functional_candidate_reads
   have dotRead := nullableStateValueTerm_evaluates
     (arity := 13) (by omega) workspaceLayout grammar words workspaceValues
     grammarCell workspaceCell
-    (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+    (nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell)
     (environment.push (.signed .i32 (Int.ofNat candidate.production)))
     workspace candidate current 1 29 different rfl (by rfl) (by rfl) (by rfl)
     invariant.chartCursor.recognizer.workspaceLength
@@ -1006,7 +1007,7 @@ private theorem RecognizerNullableLoopInvariant.functional_candidate_reads
   have originRead := nullableStateValueTerm_evaluates
     (arity := 14) (by omega) workspaceLayout grammar words workspaceValues
     grammarCell workspaceCell
-    (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+    (nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell)
     ((environment.push (.signed .i32 (Int.ofNat candidate.production))).push
       (.signed .i32 (Int.ofNat candidate.dot)))
     workspace candidate current 2 30 different rfl (by rfl) (by rfl) (by rfl)
@@ -2135,9 +2136,19 @@ def RecognizerNullableScopedExecution.restore_invariant
     grammarLengthLocal := preserveLocal 1 (by
       simp [NullablePersistentLocal]) (by decide) _
       beforeInvariant.chartCursor.recognizer.grammarLengthLocal
-    tokensLocal := preserveLocal 2 (by
-      simp [NullablePersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.tokensLocal
+    tokenStorage := beforeInvariant.chartCursor.recognizer.tokenStorage.transport
+      (fun _ found => preserveLocal 2 (by simp [NullablePersistentLocal])
+        (by decide) _ found)
+      (fun _ found => closed.effect.preserves_entry
+        beforeInvariant.chartCursor.recognizer.wellFormed found (by
+          intro written
+          have mutable := writesMutable tokensCell written
+          change tokensCell = workspaceCell ∨ tokensCell = stateCountCell ∨
+            tokensCell = cursorCell at mutable
+          rcases mutable with same | same | same
+          · exact beforeInvariant.chartCursor.recognizer.tokensWorkspaceDistinct same
+          · exact beforeInvariant.appendFrame.stateCountBackingDistinct.2.1 same.symm
+          · exact beforeInvariant.chartCursor.cursorBackingDistinct.2.1 same.symm))
     tokenCountLocal := preserveLocal 3 (by
       simp [NullablePersistentLocal]) (by decide) _
       beforeInvariant.chartCursor.recognizer.tokenCountLocal
@@ -2156,8 +2167,6 @@ def RecognizerNullableScopedExecution.restore_invariant
         innerInvariant.chartCursor.recognizer.workspaceLength] using preserved
     grammarBacking := entryTransferred grammarCell _
       innerInvariant.chartCursor.recognizer.grammarBacking
-    tokensBacking := entryTransferred tokensCell _
-      innerInvariant.chartCursor.recognizer.tokensBacking
     workspaceBacking := entryTransferred workspaceCell _
       innerInvariant.chartCursor.recognizer.workspaceBacking
     grammarWorkspaceDistinct :=
@@ -2317,9 +2326,19 @@ def RecognizerNullableScopedExecution.restore_finished
     grammarLengthLocal := preserveLocal 1 (by
       simp [NullablePersistentLocal]) (by decide) _
       beforeInvariant.chartCursor.recognizer.grammarLengthLocal
-    tokensLocal := preserveLocal 2 (by
-      simp [NullablePersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.tokensLocal
+    tokenStorage := beforeInvariant.chartCursor.recognizer.tokenStorage.transport
+      (fun _ found => preserveLocal 2 (by simp [NullablePersistentLocal])
+        (by decide) _ found)
+      (fun _ found => closed.effect.preserves_entry
+        beforeInvariant.chartCursor.recognizer.wellFormed found (by
+          intro written
+          have mutable := writesMutable tokensCell written
+          change tokensCell = workspaceCell ∨ tokensCell = stateCountCell ∨
+            tokensCell = cursorCell at mutable
+          rcases mutable with same | same | same
+          · exact beforeInvariant.chartCursor.recognizer.tokensWorkspaceDistinct same
+          · exact beforeInvariant.appendFrame.stateCountBackingDistinct.2.1 same.symm
+          · exact beforeInvariant.chartCursor.cursorBackingDistinct.2.1 same.symm))
     tokenCountLocal := preserveLocal 3 (by
       simp [NullablePersistentLocal]) (by decide) _
       beforeInvariant.chartCursor.recognizer.tokenCountLocal
@@ -2338,8 +2357,6 @@ def RecognizerNullableScopedExecution.restore_finished
         innerInvariant.chartCursor.recognizer.workspaceLength] using preserved
     grammarBacking := entryTransferred grammarCell _
       innerInvariant.chartCursor.recognizer.grammarBacking
-    tokensBacking := entryTransferred tokensCell _
-      innerInvariant.chartCursor.recognizer.tokensBacking
     workspaceBacking := entryTransferred workspaceCell _
       innerInvariant.chartCursor.recognizer.workspaceBacking
     grammarWorkspaceDistinct :=
@@ -2450,7 +2467,7 @@ private theorem RecognizerNullableLoopInvariant.functional_predicate
       remaining)
     (candidate : EarleyState)
     (candidateWithin : StateKeyWithinGrammar grammar candidate.key) :
-    let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := nullableEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length position
       parentState parentProduction parentDot parentOrigin expected
@@ -2467,7 +2484,7 @@ private theorem RecognizerNullableLoopInvariant.functional_predicate
       .ok (.boolean (decide (NullableCandidateMatches grammar candidate
         position expected candidateWithin.productionBound)), world) := by
   dsimp only
-  let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := nullableEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length position parentState
     parentProduction parentDot parentOrigin expected (Int.ofNat current)
@@ -2492,10 +2509,12 @@ private theorem RecognizerNullableLoopInvariant.functional_predicate
       world originEnvironment (nullableSlot ⟨13, by omega⟩) =
       .ok (.signed .i32 (Int.ofNat candidate.dot), world) := by rfl
   have rhsLengthResult := nullableRhsLengthTerm_evaluates
+    (unused := invariant.chartCursor.recognizer.tokenStorage.unused)
     (tokens := tokens) (tokensCell := tokensCell) workspaceLayout
     grammar words workspaceValues grammarCell workspaceCell originEnvironment
     candidate.production productionBound (by rfl) (by rfl)
   have lhsResult := nullableLhsTerm_evaluates
+    (unused := invariant.chartCursor.recognizer.tokenStorage.unused)
     (tokens := tokens) (tokensCell := tokensCell) workspaceLayout grammar words
     workspaceValues grammarCell workspaceCell originEnvironment
     candidate.production productionBound (by rfl) (by rfl)
@@ -2590,7 +2609,7 @@ private theorem RecognizerNullableLoopInvariant.functional_seed
       parentProduction parentDot parentOrigin parentState expected current
       remaining)
     (candidate : EarleyState) :
-    let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := nullableEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length position
       parentState parentProduction parentDot parentOrigin expected
@@ -2605,7 +2624,7 @@ private theorem RecognizerNullableLoopInvariant.functional_seed
       .ok (stateSeedValue (recognizerNullableSeed parentProduction parentDot
         parentOrigin parentState current), world) := by
   dsimp only
-  let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := nullableEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length position parentState
     parentProduction parentDot parentOrigin expected (Int.ofNat current)
@@ -2740,7 +2759,7 @@ private theorem RecognizerNullableLoopInvariant.functional_append_arguments
       parentProduction parentDot parentOrigin parentState expected current
       remaining)
     (candidate : EarleyState) :
-    let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := nullableEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length position
       parentState parentProduction parentDot parentOrigin expected
@@ -2762,7 +2781,7 @@ private theorem RecognizerNullableLoopInvariant.functional_append_arguments
         stateSeedValue seed,
         .signed .i32 (Int.ofNat workspace.states.length)], world) := by
   dsimp only
-  let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := nullableEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length position parentState
     parentProduction parentDot parentOrigin expected (Int.ofNat current)
@@ -3133,8 +3152,8 @@ private theorem RecognizerNullableLoopInvariant.functional_append
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace position seed
       workspaceValues
-    let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-    let afterWorld := nullableWorld words tokens nextValues grammarCell tokensCell workspaceCell
+    let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+    let afterWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
     let environment := nullableEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout workspace.states.length position
       parentState parentProduction parentDot parentOrigin expected
@@ -3154,8 +3173,8 @@ private theorem RecognizerNullableLoopInvariant.functional_append
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace position seed
     workspaceValues
-  let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-  let afterWorld := nullableWorld words tokens nextValues grammarCell tokensCell workspaceCell
+  let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+  let afterWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
   let environment := nullableEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length position parentState
     parentProduction parentDot parentOrigin expected (Int.ofNat current)
@@ -3214,8 +3233,31 @@ private theorem RecognizerNullableLoopInvariant.functional_append
   have worldRepresents :
       Lanius.FunctionalView.Core.ReadOnly.World.Represents world
         appended.argumentsState := by
+    have bindBacking {state : State} (wf : StateWellFormed state)
+        (id : VarId) (value : Value) {contents : Option Value}
+        (backing : state.cellEntry? tokensCell =
+          some { id := tokensCell, value := contents }) :
+        (state.bindLocal id value).cellEntry? tokensCell =
+          some { id := tokensCell, value := contents } :=
+      ((bindLocal_effect state id value).oldCells tokensCell
+        (StateWellFormed.cell_lt_next_of_entry wf backing)
+        (by simp [CellSet.empty])).trans backing
+    have productionBacking := bindings.productionEffect.empty_preserves_entry
+      invariant.chartCursor.recognizer.wellFormed
+      invariant.chartCursor.recognizer.tokenStorage.unused_backing
+    have dotBacking := bindings.dotEffect.empty_preserves_entry
+      (bindLocal_preserves_well_formed _ 37 _ bindings.afterProductionWellFormed)
+      (bindBacking bindings.afterProductionWellFormed 37 _ productionBacking)
+    have originBacking := bindings.originEffect.empty_preserves_entry
+      (bindLocal_preserves_well_formed _ 38 _ bindings.afterDotWellFormed)
+      (bindBacking bindings.afterDotWellFormed 38 _ dotBacking)
+    have predicateBacking := predicate.effect.empty_preserves_entry
+      bindings.invariant.chartCursor.recognizer.wellFormed
+      (bindBacking bindings.afterOriginWellFormed 39 _ originBacking)
+    have argumentBacking := appended.argumentsEffect.empty_preserves_entry
+      predicate.invariant.chartCursor.recognizer.wellFormed predicateBacking
     simpa [world, nullableWorld] using
-      recognizerWorld_represents appended.argumentsInvariant
+      recognizerWorld_represents appended.argumentsInvariant argumentBacking
   have worldOwned :
       (Lanius.FunctionalView.Core.ReadOnly.World.owns world).holds
         appended.argumentsState :=
@@ -3367,10 +3409,10 @@ private theorem RecognizerNullableLoopInvariant.functional_next
       .signed .i32 (Int.ofNat current)) :
     Lanius.FunctionalView.Term.evaluate
       (nullableTermMachine workspaceLayout grammar words grammarCell)
-      (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+      (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
       environment (nullableStateValueTerm (arity := 15) (by omega) 32) =
       .ok (.signed .i32 (encodeStateId remaining.head?),
-        nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell) := by
+        nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell) := by
   let candidate := Classical.choose invariant.chartCursor.state_at_cursor
   have candidateFacts :=
     Classical.choose_spec invariant.chartCursor.state_at_cursor
@@ -3379,7 +3421,7 @@ private theorem RecognizerNullableLoopInvariant.functional_next
   have evaluated := nullableStateValueTerm_evaluates
     (arity := 15) (by omega) workspaceLayout grammar words workspaceValues
     grammarCell workspaceCell
-    (nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
+    (nullableWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell workspaceCell)
     environment workspace candidate current 4 32
     invariant.chartCursor.recognizer.grammarWorkspaceDistinct.symm rfl
     workspaceValueEq stateBaseEq currentEq
@@ -3406,7 +3448,7 @@ private theorem RecognizerNullableLoopInvariant.functional_no_match_body
     (candidateWithin : StateKeyWithinGrammar grammar candidate.key)
     (notMatches : ¬ NullableCandidateMatches grammar candidate position
       expected candidateWithin.productionBound) :
-    let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let beforeEnvironment := nullableEnvironment words workspaceValues
       grammarCell workspaceCell workspaceLayout workspace.states.length
       position parentState parentProduction parentDot parentOrigin expected
@@ -3421,7 +3463,7 @@ private theorem RecognizerNullableLoopInvariant.functional_no_match_body
       world beforeEnvironment nullableBodyCommand .next world
       afterEnvironment := by
   dsimp only
-  let world := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let beforeEnvironment := nullableEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length position parentState
     parentProduction parentDot parentOrigin expected (Int.ofNat current)
@@ -3550,8 +3592,8 @@ private theorem RecognizerNullableLoopInvariant.functional_ok_body
       workspace).2
     let nextValues := appendResultValues workspaceLayout workspace position seed
       workspaceValues
-    let beforeWorld := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-    let afterWorld := nullableWorld words tokens nextValues grammarCell tokensCell workspaceCell
+    let beforeWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+    let afterWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
     let beforeEnvironment := nullableEnvironment words workspaceValues
       grammarCell workspaceCell workspaceLayout workspace.states.length
       position parentState parentProduction parentDot parentOrigin expected
@@ -3574,8 +3616,8 @@ private theorem RecognizerNullableLoopInvariant.functional_ok_body
     workspace).2
   let nextValues := appendResultValues workspaceLayout workspace position seed
     workspaceValues
-  let beforeWorld := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-  let afterWorld := nullableWorld words tokens nextValues grammarCell tokensCell workspaceCell
+  let beforeWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+  let afterWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
   let beforeEnvironment := nullableEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length position parentState
     parentProduction parentDot parentOrigin expected (Int.ofNat current)
@@ -3924,8 +3966,8 @@ private theorem RecognizerNullableLoopInvariant.functional_full_body
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace position seed
       workspaceValues
-    let beforeWorld := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-    let afterWorld := nullableWorld words tokens nextValues grammarCell tokensCell workspaceCell
+    let beforeWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+    let afterWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
     let beforeEnvironment := nullableEnvironment words workspaceValues
       grammarCell workspaceCell workspaceLayout workspace.states.length
       position parentState parentProduction parentDot parentOrigin expected
@@ -3943,8 +3985,8 @@ private theorem RecognizerNullableLoopInvariant.functional_full_body
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace position seed
     workspaceValues
-  let beforeWorld := nullableWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-  let afterWorld := nullableWorld words tokens nextValues grammarCell tokensCell workspaceCell
+  let beforeWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+  let afterWorld := nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
   let beforeEnvironment := nullableEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout workspace.states.length position parentState
     parentProduction parentDot parentOrigin expected (Int.ofNat current)
@@ -5053,16 +5095,25 @@ inductive RecognizerNullableConfig
       Int.ofNat activeConfig.current
   | RecognizerNullableConfig.sentinel _ => -1
 
+theorem RecognizerNullableConfig.tokenStorage
+    (config : RecognizerNullableConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position parentProduction parentDot parentOrigin parentState
+      expected) : I32PrefixLocal config.runtime 2 tokensCell (tokens.map Int.ofNat) := by
+  cases config with
+  | active config => exact config.invariant.chartCursor.recognizer.tokenStorage
+  | sentinel config => exact config.invariant.chartCursor.recognizer.tokenStorage
+
 /-- Pure FunctionalView state corresponding to a nullable traversal
     configuration. -/
-def RecognizerNullableConfig.functionalRuntime
+noncomputable def RecognizerNullableConfig.functionalRuntime
     (config : RecognizerNullableConfig grammarLayout grammar words tokens
       workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
       cursorCell position parentProduction parentDot parentOrigin parentState
       expected) :
     Lanius.FunctionalView.Stateful.Loop.Runtime
       (nullableTermMachine workspaceLayout grammar words grammarCell) 12 :=
-  (nullableWorld words tokens config.workspaceValues grammarCell tokensCell workspaceCell,
+  (nullableWorld words tokens (unused := config.tokenStorage.unused) config.workspaceValues grammarCell tokensCell workspaceCell,
     nullableEnvironment words config.workspaceValues grammarCell workspaceCell
       workspaceLayout config.workspace.states.length position parentState
       parentProduction parentDot parentOrigin expected config.candidate)
@@ -5142,7 +5193,7 @@ inductive RecognizerNullableSynchronizedOutcome
         words tokens workspaceLayout workspace workspaceValues grammarCell
         tokensCell workspaceCell stateCountCell cursorCell physicalAfter
         position parentProduction parentDot parentOrigin parentState expected)
-      (worldEq : after.world = nullableWorld words tokens workspaceValues
+      (worldEq : after.world = nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues
         grammarCell tokensCell workspaceCell)
       (environmentEq : after.environment = nullableEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
@@ -5202,7 +5253,7 @@ theorem RecognizerNullableSynchronizedOutcome.view
           words tokens workspaceLayout workspace workspaceValues grammarCell
           tokensCell workspaceCell stateCountCell cursorCell physicalAfter
           position parentProduction parentDot parentOrigin parentState expected,
-        after.world = nullableWorld words tokens workspaceValues grammarCell
+        after.world = nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
           tokensCell workspaceCell ∧
         after.environment = nullableEnvironment words workspaceValues
           grammarCell workspaceCell workspaceLayout workspace.states.length
@@ -5407,7 +5458,7 @@ noncomputable def RecognizerNullableConfig.functional_decide
                 Lanius.FunctionalView.Stateful.Loop.Runtime
                   (nullableTermMachine workspaceLayout grammar words
                     grammarCell) 12 :=
-              (nullableWorld words tokens nextValues grammarCell tokensCell workspaceCell,
+              (nullableWorld words tokens (unused := invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell,
                 (RecognizerNullableConfig.functionalRuntime
                   (.active activeConfig)).environment)
             have functionalBody :
@@ -5509,6 +5560,20 @@ noncomputable def RecognizerNullableConfig.functional_decide
                           nullableBodyCommand .next
                           nextConfig.functionalRuntime.world
                           nextConfig.functionalRuntime.environment := by
+                      have suffixEq : nextConfig.tokenStorage.unused =
+                          caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
+                        apply nextConfig.tokenStorage.unused_eq_of_backing
+                        apply closed.effect.preserves_entry
+                          caseInvariant.chartCursor.recognizer.wellFormed
+                          caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
+                        simp only [writes, CellSet.union, CellSet.singleton, not_or]
+                        exact ⟨caseInvariant.chartCursor.recognizer.tokensWorkspaceDistinct,
+                          caseInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+                          caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
+                      dsimp only [RecognizerNullableConfig.functionalRuntime,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                      rw [suffixEq]
                       simpa [nextConfig,
                         RecognizerNullableConfig.functionalRuntime, logical,
                         nextValues, seed, encodeStateId,
@@ -5579,6 +5644,20 @@ noncomputable def RecognizerNullableConfig.functional_decide
                           nullableBodyCommand .next
                           nextConfig.functionalRuntime.world
                           nextConfig.functionalRuntime.environment := by
+                      have suffixEq : nextConfig.tokenStorage.unused =
+                          caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
+                        apply nextConfig.tokenStorage.unused_eq_of_backing
+                        apply closed.effect.preserves_entry
+                          caseInvariant.chartCursor.recognizer.wellFormed
+                          caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
+                        simp only [writes, CellSet.union, CellSet.singleton, not_or]
+                        exact ⟨caseInvariant.chartCursor.recognizer.tokensWorkspaceDistinct,
+                          caseInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+                          caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
+                      dsimp only [RecognizerNullableConfig.functionalRuntime,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                      rw [suffixEq]
                       simpa [nextConfig,
                         RecognizerNullableConfig.functionalRuntime, logical,
                         nextValues, seed, encodeStateId,
@@ -5672,6 +5751,20 @@ noncomputable def RecognizerNullableConfig.functional_decide
                           nullableBodyCommand .next
                           nextConfig.functionalRuntime.world
                           nextConfig.functionalRuntime.environment := by
+                      have suffixEq : nextConfig.tokenStorage.unused =
+                          caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
+                        apply nextConfig.tokenStorage.unused_eq_of_backing
+                        apply closed.effect.preserves_entry
+                          caseInvariant.chartCursor.recognizer.wellFormed
+                          caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
+                        simp only [writes, CellSet.union, CellSet.singleton, not_or]
+                        exact ⟨caseInvariant.chartCursor.recognizer.tokensWorkspaceDistinct,
+                          caseInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+                          caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
+                      dsimp only [RecognizerNullableConfig.functionalRuntime,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                      rw [suffixEq]
                       simpa [nextConfig,
                         RecognizerNullableConfig.functionalRuntime, logical,
                         nextValues, seed, encodeStateId,
@@ -5747,6 +5840,20 @@ noncomputable def RecognizerNullableConfig.functional_decide
                           nullableBodyCommand .next
                           nextConfig.functionalRuntime.world
                           nextConfig.functionalRuntime.environment := by
+                      have suffixEq : nextConfig.tokenStorage.unused =
+                          caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
+                        apply nextConfig.tokenStorage.unused_eq_of_backing
+                        apply closed.effect.preserves_entry
+                          caseInvariant.chartCursor.recognizer.wellFormed
+                          caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
+                        simp only [writes, CellSet.union, CellSet.singleton, not_or]
+                        exact ⟨caseInvariant.chartCursor.recognizer.tokensWorkspaceDistinct,
+                          caseInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
+                          caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
+                      dsimp only [RecognizerNullableConfig.functionalRuntime,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                      rw [suffixEq]
                       simpa [nextConfig,
                         RecognizerNullableConfig.functionalRuntime, logical,
                         nextValues, seed, encodeStateId,
@@ -5824,6 +5931,17 @@ noncomputable def RecognizerNullableConfig.functional_decide
                     (.active activeConfig)).environment nullableBodyCommand
                   .next nextConfig.functionalRuntime.world
                   nextConfig.functionalRuntime.environment := by
+              have suffixEq : nextConfig.tokenStorage.unused =
+                  caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
+                apply nextConfig.tokenStorage.unused_eq_of_backing
+                apply closed.effect.preserves_entry
+                  caseInvariant.chartCursor.recognizer.wellFormed
+                  caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
+                exact caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm
+              dsimp only [RecognizerNullableConfig.functionalRuntime,
+                Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+              rw [suffixEq]
               simpa [nextConfig,
                 RecognizerNullableConfig.functionalRuntime,
                 encodeStateId,
@@ -5893,6 +6011,17 @@ noncomputable def RecognizerNullableConfig.functional_decide
                     (.active activeConfig)).environment nullableBodyCommand
                   .next nextConfig.functionalRuntime.world
                   nextConfig.functionalRuntime.environment := by
+              have suffixEq : nextConfig.tokenStorage.unused =
+                  caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
+                apply nextConfig.tokenStorage.unused_eq_of_backing
+                apply closed.effect.preserves_entry
+                  caseInvariant.chartCursor.recognizer.wellFormed
+                  caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
+                exact caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm
+              dsimp only [RecognizerNullableConfig.functionalRuntime,
+                Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+              rw [suffixEq]
               simpa [nextConfig,
                 RecognizerNullableConfig.functionalRuntime,
                 encodeStateId,

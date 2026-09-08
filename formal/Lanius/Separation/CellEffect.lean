@@ -31,6 +31,22 @@ theorem CellEffect.weaken (frame : CellEffect writes before after) (subset : Cel
   intro cell old untouched
   exact frame.oldCells cell old (fun written => untouched (subset cell written))
 
+/-- Compose phases whose live lexical scopes differ. Restoring the outer caller
+does not undo their cell changes; the combined footprint and host world still
+compose, and retained cell identities justify restoring the original locals. -/
+theorem CellEffect.transScoped
+    (first : CellEffect writes before (restoreLocals before middle))
+    (second : CellEffect writes middle (restoreLocals middle after))
+    (wellFormed : StateWellFormed before) :
+    CellEffect writes before (restoreLocals before after) := by
+  have domain : CellDomainExtension before (restoreLocals middle after) :=
+    first.domain.trans ⟨second.domain.cells⟩
+  refine ⟨domain.restoreLocals_wellFormed wellFormed second.wellFormed, rfl,
+    second.world.trans first.world, ?_, Nat.le_trans first.nextCell second.nextCell, domain.restoreLocals⟩
+  intro cell old untouched
+  exact (second.oldCells cell (Nat.lt_of_lt_of_le old first.nextCell) untouched).trans
+    (first.oldCells cell old untouched)
+
 /-- Hide writes to fresh temporary cells when closing a caller scope. Only
 the part of the write set below the caller's frontier needs to remain visible. -/
 theorem CellEffect.narrow (frame : CellEffect writes before after)

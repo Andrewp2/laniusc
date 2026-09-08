@@ -971,6 +971,10 @@ theorem calls_at_base
 
 end RecognizerTraversalCallRegistry
 
+/-- Physical token storage capacity is independent of the logical token count. -/
+def parserTokenBufferValue (capacity : Nat) (cell : CellId) : Value :=
+  .slice parserI32Type cell [] 0 capacity
+
 namespace RecognizerStateCallRegistry
 
 open Lanius.FunctionalView.Core.Effectful
@@ -978,9 +982,9 @@ open Lanius.FunctionalView.Core.Effectful
 private noncomputable def scanInput (words : List Int) (tokens : List Nat)
     (grammarCell tokensCell : CellId) (values : List Value) : Nat × Nat := by
   classical
-  exact if found : ∃ input : Nat × Nat,
+  exact if found : ∃ input : Nat × Nat, ∃ capacity : Nat,
       values = [parserGrammarValue words grammarCell,
-        parserTokensValue tokens tokensCell,
+        parserTokenBufferValue capacity tokensCell,
         .signed .i32 (Int.ofNat tokens.length),
         .signed .i32 (Int.ofNat input.1),
         .signed .i32 (Int.ofNat input.2)] then
@@ -989,10 +993,10 @@ private noncomputable def scanInput (words : List Int) (tokens : List Nat)
 
 private theorem scanInput_expected
     (words : List Int) (tokens : List Nat) (grammarCell tokensCell : CellId)
-    (position semanticKind : Nat) :
+    (position semanticKind capacity : Nat) :
     scanInput words tokens grammarCell tokensCell [
         parserGrammarValue words grammarCell,
-        parserTokensValue tokens tokensCell,
+        parserTokenBufferValue capacity tokensCell,
         .signed .i32 (Int.ofNat tokens.length),
         .signed .i32 (Int.ofNat position),
         .signed .i32 (Int.ofNat semanticKind)] =
@@ -1000,19 +1004,20 @@ private theorem scanInput_expected
   simp only [scanInput]
   split
   next found =>
+    obtain ⟨foundCapacity, foundValues⟩ := found.choose_spec
     apply Prod.ext
     · have valueEq := congrArg
-          (fun values : List Value => values[3]?) found.choose_spec
+          (fun values : List Value => values[3]?) foundValues
       have intEq : Int.ofNat found.choose.1 = Int.ofNat position := by
         simpa using valueEq.symm
       exact Int.ofNat_inj.mp intEq
     · have valueEq := congrArg
-          (fun values : List Value => values[4]?) found.choose_spec
+          (fun values : List Value => values[4]?) foundValues
       have intEq : Int.ofNat found.choose.2 = Int.ofNat semanticKind := by
         simpa using valueEq.symm
       exact Int.ofNat_inj.mp intEq
   next notFound =>
-    exact (notFound ⟨(position, semanticKind), rfl⟩).elim
+    exact (notFound ⟨(position, semanticKind), capacity, rfl⟩).elim
 
 /-- The terminal-scan operation first encountered by the enclosing state loop. -/
 noncomputable def scanCalls (grammar : IndexedGrammar) (words : List Int)
@@ -1021,14 +1026,14 @@ noncomputable def scanCalls (grammar : IndexedGrammar) (words : List Int)
   exact {
     evaluate := fun world function values =>
       if function = extractedParserScanTerminalFunction.id then
-        if found : ∃ input : Nat × Nat,
+        if found : ∃ input : Nat × Nat, ∃ unused : List Int,
             values = [parserGrammarValue words grammarCell,
-              parserTokensValue tokens tokensCell,
+              parserTokenBufferValue (tokens.length + unused.length) tokensCell,
               .signed .i32 (Int.ofNat tokens.length),
               .signed .i32 (Int.ofNat input.1),
               .signed .i32 (Int.ofNat input.2)] ∧
             world.i32Slice? grammarCell = some words ∧
-            world.i32Slice? tokensCell = some (tokens.map Int.ofNat) then
+            world.i32Slice? tokensCell = some (tokens.map Int.ofNat ++ unused) then
           .ok (scanTerminalValue
             (Lanius.Compiler.Parser.scanTerminal grammar tokens
               (scanInput words tokens grammarCell tokensCell values).1
@@ -1052,15 +1057,16 @@ noncomputable def calls (workspaceLayout : WorkspaceLayout)
         grammarCell))
 
 theorem calls_at_scan_terminal
+    {unused : List Int}
     (world : Lanius.FunctionalView.Core.ReadOnly.World)
     (position semanticKind : Nat)
     (grammarFound : world.i32Slice? grammarCell = some words)
     (tokensFound : world.i32Slice? tokensCell =
-      some (tokens.map Int.ofNat)) :
+      some (tokens.map Int.ofNat ++ unused)) :
     (calls workspaceLayout grammar words tokens grammarCell tokensCell).evaluate
         world extractedParserScanTerminalFunction.id [
           parserGrammarValue words grammarCell,
-          parserTokensValue tokens tokensCell,
+          parserTokenBufferValue (tokens.length + unused.length) tokensCell,
           .signed .i32 (Int.ofNat tokens.length),
           .signed .i32 (Int.ofNat position),
           .signed .i32 (Int.ofNat semanticKind)] =
@@ -1074,7 +1080,7 @@ theorem calls_at_scan_terminal
   next found =>
     rw [scanInput_expected]
   next notFound =>
-    exact (notFound ⟨(position, semanticKind), rfl, grammarFound,
+    exact (notFound ⟨(position, semanticKind), unused, rfl, grammarFound,
       tokensFound⟩).elim
 
 theorem calls_at_chart_word

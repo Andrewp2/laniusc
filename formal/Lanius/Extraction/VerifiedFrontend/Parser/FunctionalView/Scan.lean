@@ -245,68 +245,67 @@ private theorem tokenEndGuard_evaluates
   functional_eval
 
 private theorem rawKind_evaluates
-    (invariant : ScanTerminalInvariant layout grammar words tokens grammarCell
-      tokensCell position semanticKind state)
+    (world : ReadOnly.World) (tokens : List Nat) (unused : List Int)
+    (tokensCell : CellId) (position : Nat)
+    (found : world.i32Slice? tokensCell = some (tokens.map Int.ofNat ++ unused))
     (environment : Env 6) (tokenBound : position / 2 < tokens.length)
     (tokensValue : environment ⟨1, by omega⟩ =
-      parserTokensValue tokens tokensCell)
+      .slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))
     (tokenIndexValue : environment ⟨5, by omega⟩ =
       .signed .i32 (Int.ofNat (position / 2))) :
     Term.evaluate (ReadOnly.machine verifiedParserCore)
-        (scanWorld words tokens grammarCell tokensCell) environment
+        world environment
         (indexI32 (slot 1) (slot 5)) =
       .ok (.signed .i32 (Int.ofNat
         (tokens.get ⟨position / 2, tokenBound⟩)),
-        scanWorld words tokens grammarCell tokensCell) := by
+        world) := by
   have baseValue : environment ⟨1, by omega⟩ =
-      .slice parserI32Type tokensCell [] 0 (tokens.map Int.ofNat).length := by
-    simpa [parserTokensValue, parserGrammarValue, parserI32Type] using tokensValue
-  have found := scanWorld_finds_tokens invariant
-  have inBounds : position / 2 < (tokens.map Int.ofNat).length := by
-    simpa using tokenBound
-  simpa using (show
+      .slice parserI32Type tokensCell [] 0 (tokens.map Int.ofNat ++ unused).length := by
+    simpa using tokensValue
+  have inBounds : position / 2 < (tokens.map Int.ofNat ++ unused).length := by
+    simp only [List.length_append, List.length_map]; omega
+  have prefixBound : position / 2 < (tokens.map Int.ofNat).length := by simpa using tokenBound
+  have selected : (tokens.map Int.ofNat ++ unused).get ⟨position / 2, inBounds⟩ =
+      Int.ofNat (tokens.get ⟨position / 2, tokenBound⟩) := by
+    have same := List.getElem?_append_left (l₂ := unused) prefixBound
+    simpa only [List.getElem?_eq_getElem inBounds, List.getElem?_eq_getElem prefixBound,
+      Option.some.injEq, List.getElem_map, List.get_eq_getElem] using same
+  simpa only [selected] using (show
     Term.evaluate (ReadOnly.machine verifiedParserCore)
-        (scanWorld words tokens grammarCell tokensCell) environment
+        world environment
         (indexI32 (slot 1) (slot 5)) =
-      .ok (.signed .i32 ((tokens.map Int.ofNat).get ⟨position / 2, inBounds⟩),
-        scanWorld words tokens grammarCell tokensCell) by
+      .ok (.signed .i32 ((tokens.map Int.ofNat ++ unused).get ⟨position / 2, inBounds⟩), world) by
     simp only [indexI32, slot, apply, reference]
     functional_eval)
 
 private theorem canonicalKind_evaluates
-    (invariant : ScanTerminalInvariant layout grammar words tokens grammarCell
-      tokensCell position semanticKind state)
+    (world : ReadOnly.World) (encoded : EncodesGrammar layout grammar words)
+    (wordsI32 : words.length ≤ 2147483647)
+    (semanticKindBound : semanticKind < grammar.grammar.canonical_kinds.length)
+    (found : world.i32Slice? grammarCell = some words)
     (environment : Env 7)
     (grammarValue : environment ⟨0, by omega⟩ =
       parserGrammarValue words grammarCell)
     (semanticValue : environment ⟨4, by omega⟩ =
       .signed .i32 (Int.ofNat semanticKind)) :
     Term.evaluate (ReadOnly.machine verifiedParserCore)
-        (scanWorld words tokens grammarCell tokensCell) environment
+        world environment
         canonicalKind =
       .ok (.signed .i32 (Int.ofNat
         (grammar.grammar.canonical_kinds.get
-          ⟨semanticKind, invariant.semanticKindBound⟩)),
-        scanWorld words tokens grammarCell tokensCell) := by
-  let world := scanWorld words tokens grammarCell tokensCell
+          ⟨semanticKind, semanticKindBound⟩)), world) := by
   have baseValue : environment ⟨0, by omega⟩ =
       .slice parserI32Type grammarCell [] 0 words.length := by
     simpa [parserGrammarValue] using grammarValue
-  have found : world.i32Slice? grammarCell = some words := by
-    simp [world]
   have constantFound := verifiedParser_scan_terminal_constants.2.2
-  have headerBound := invariant.encoded.canonicalKindsOffset.index_in_bounds
-  have headerValue := invariant.encoded.canonicalKindsOffset.get
+  have headerBound := encoded.canonicalKindsOffset.index_in_bounds
+  have headerValue := encoded.canonicalKindsOffset.get
   have addressBound : layout.canonicalKindsOffset + semanticKind ≤
       2147483647 := by
-    have rowBound := invariant.encoded.canonicalKinds.row_in_bounds
-      invariant.semanticKindBound
-    have wordsBound := invariant.wordsI32
+    have rowBound := encoded.canonicalKinds.row_in_bounds semanticKindBound
     omega
-  have rowBound := invariant.encoded.canonicalKinds.row_in_bounds
-    invariant.semanticKindBound
-  have rowValue := invariant.encoded.canonicalKinds.get
-    invariant.semanticKindBound
+  have rowBound := encoded.canonicalKinds.row_in_bounds semanticKindBound
+  have rowValue := encoded.canonicalKinds.get semanticKindBound
   simp only [canonicalKind, indexI32, binaryI32, constant, slot, apply,
     reference]
   functional_eval
@@ -473,36 +472,118 @@ private theorem tokenIndex_evaluates
   simp only [binaryI32, slot, i32, literal, apply, reference]
   functional_eval
 
-theorem scanTerminal_evaluates
-    (invariant : ScanTerminalInvariant layout grammar words tokens grammarCell
-      tokensCell position semanticKind state)
+def scanStorageEnvironment (words : List Int) (tokens : List Nat)
+    (unused : List Int) (grammarCell tokensCell : CellId)
+    (position semanticKind : Nat) : Env 5 :=
+  fun index => match index.val with
+    | 0 => parserGrammarValue words grammarCell
+    | 1 => .slice parserI32Type tokensCell [] 0 (tokens.length + unused.length)
+    | 2 => .signed .i32 (Int.ofNat tokens.length)
+    | 3 => .signed .i32 (Int.ofNat position)
+    | _ => .signed .i32 (Int.ofNat semanticKind)
+
+/-- Concrete entry facts for a scan over a logical prefix. The suffix remains
+part of the physical slice, not an assumed-away allocation. -/
+structure ScanStorageEntry (words : List Int) (tokens : List Nat) (unused : List Int)
+    (grammarCell tokensCell : CellId) (position semanticKind : Nat) (state : State) : Prop where
+  wellFormed : StateWellFormed state
+  grammarLocal : state.local? 0 = some (parserGrammarValue words grammarCell)
+  tokensLocal : state.local? 1 =
+    some (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))
+  countLocal : state.local? 2 = some (.signed .i32 (Int.ofNat tokens.length))
+  positionLocal : state.local? 3 = some (.signed .i32 (Int.ofNat position))
+  kindLocal : state.local? 4 = some (.signed .i32 (Int.ofNat semanticKind))
+  grammarBacking : state.cellEntry? grammarCell = some {
+    id := grammarCell
+    value := some (.array (signedI32Values words)) }
+  tokensBacking : state.cellEntry? tokensCell = some {
+    id := tokensCell
+    value := some (.array (signedI32Values (tokens.map Int.ofNat ++ unused))) }
+
+theorem ScanStorageEntry.represents
+    (entry : ScanStorageEntry words tokens unused grammarCell tokensCell position semanticKind state) :
+    (ReadOnly.World.pair grammarCell words tokensCell (tokens.map Int.ofNat ++ unused)).Represents state := by
+  by_cases different : tokensCell ≠ grammarCell
+  · exact ReadOnly.World.pair_represents entry.wellFormed different
+      entry.grammarBacking entry.tokensBacking
+  · have same : tokensCell = grammarCell := by simpa using different
+    subst tokensCell
+    have sameWorld : ReadOnly.World.pair grammarCell words grammarCell (tokens.map Int.ofNat ++ unused) =
+        ReadOnly.World.singleton grammarCell words := by
+      apply congrArg ReadOnly.World.mk
+      funext candidate
+      by_cases found : candidate = grammarCell <;>
+        simp [ReadOnly.World.pair, ReadOnly.World.singleton, found]
+    rw [sameWorld]
+    exact ReadOnly.World.singleton_represents entry.wellFormed entry.grammarBacking
+
+theorem ScanStorageEntry.finds_tokens
+    (entry : ScanStorageEntry words tokens unused grammarCell tokensCell position semanticKind state) :
+    (ReadOnly.World.pair grammarCell words tokensCell (tokens.map Int.ofNat ++ unused)).i32Slice?
+      tokensCell = some (tokens.map Int.ofNat ++ unused) := by
+  by_cases different : tokensCell ≠ grammarCell
+  · exact ReadOnly.World.pair_finds_second different
+  · have same : tokensCell = grammarCell := by simpa using different
+    subst tokensCell
+    have encodedValues : signedI32Values words = signedI32Values (tokens.map Int.ofNat ++ unused) := by
+      have cells := Option.some.inj (entry.grammarBacking.symm.trans entry.tokensBacking)
+      have arrays := Option.some.inj (congrArg Cell.value cells)
+      injection arrays
+    have values := signedI32Values_injective encodedValues
+    simpa [ReadOnly.World.pair] using congrArg some values
+
+theorem ScanStorageEntry.environmentMatches
+    (entry : ScanStorageEntry words tokens unused grammarCell tokensCell position semanticKind state) :
+    EnvironmentMatches (identityLayout (arity := 5))
+      (scanStorageEnvironment words tokens unused grammarCell tokensCell position semanticKind) state := by
+  rintro ⟨index, bound⟩
+  have alternatives : index = 0 ∨ index = 1 ∨ index = 2 ∨ index = 3 ∨ index = 4 := by omega
+  rcases alternatives with rfl | rfl | rfl | rfl | rfl
+  · exact entry.grammarLocal
+  · exact entry.tokensLocal
+  · exact entry.countLocal
+  · exact entry.positionLocal
+  · exact entry.kindLocal
+
+theorem scanTerminal_evaluates_storage
+    (world : ReadOnly.World) (tokens : List Nat) (unused : List Int)
+    (encoded : EncodesGrammar layout grammar words)
+    (wordsI32 : words.length ≤ 2147483647)
+    (semanticKindBound : semanticKind < grammar.grammar.canonical_kinds.length)
+    (positionAdvanceI32 : position + 2 ≤ 2147483647)
+    (grammarFound : world.i32Slice? grammarCell = some words)
+    (tokensFound : world.i32Slice? tokensCell = some (tokens.map Int.ofNat ++ unused))
     (tokenBound : position / 2 < tokens.length) :
     Block.evaluate (ReadOnly.machine verifiedParserCore)
-        (scanWorld words tokens grammarCell tokensCell)
-        (scanEnvironment words tokens grammarCell tokensCell position semanticKind)
+        world
+        (scanStorageEnvironment words tokens unused grammarCell tokensCell position semanticKind)
         scanTerminal =
       .done (.returned (some (scanTerminalValue
         (scanTerminalStep grammar.grammar.split_token_kind
           grammar.grammar.split_component_kind
           (tokens.get ⟨position / 2, tokenBound⟩)
           (grammar.grammar.canonical_kinds.get
-            ⟨semanticKind, invariant.semanticKindBound⟩)
+            ⟨semanticKind, semanticKindBound⟩)
           position))))
-        (scanWorld words tokens grammarCell tokensCell) := by
-  let world := scanWorld words tokens grammarCell tokensCell
-  let environment := scanEnvironment words tokens grammarCell tokensCell
+        world := by
+  let environment := scanStorageEnvironment words tokens unused grammarCell tokensCell
     position semanticKind
   let tokenIndex := position / 2
   let rawKind := tokens.get ⟨tokenIndex, tokenBound⟩
   let canonicalKindValue := grammar.grammar.canonical_kinds.get
-    ⟨semanticKind, invariant.semanticKindBound⟩
+    ⟨semanticKind, semanticKindBound⟩
   let tokenEnvironment := environment.push
     (.signed .i32 (Int.ofNat tokenIndex))
   let rawEnvironment := tokenEnvironment.push
     (.signed .i32 (Int.ofNat rawKind))
   let canonicalEnvironment := rawEnvironment.push
     (.signed .i32 (Int.ofNat canonicalKindValue))
-  have tokenIndexResult := tokenIndex_evaluates invariant
+  have tokenIndexResult : Term.evaluate (ReadOnly.machine verifiedParserCore)
+      world environment (binaryI32 .divide (slot 3) (i32 2)) =
+      .ok (.signed .i32 (Int.ofNat (position / 2)), world) := by
+    have positionBound : position ≤ 2147483647 := by omega
+    simp only [binaryI32, slot, i32, literal, apply, reference]
+    functional_eval
   have tokenIndexValue : tokenEnvironment ⟨5, by omega⟩ =
       .signed .i32 (Int.ofNat tokenIndex) := by
     rfl
@@ -519,13 +600,14 @@ theorem scanTerminal_evaluates
       simpa [tokenIndex] using (Nat.not_le.mpr tokenBound)
     simpa [notPastEnd] using guard
   have tokensValue : tokenEnvironment ⟨1, by omega⟩ =
-      parserTokensValue tokens tokensCell := by
+      (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length)) := by
     rfl
   have rawResult : Term.evaluate (ReadOnly.machine verifiedParserCore)
       world tokenEnvironment (indexI32 (slot 1) (slot 5)) =
       .ok (.signed .i32 (Int.ofNat rawKind), world) := by
-    simpa [world, tokenIndex, rawKind] using
-      rawKind_evaluates invariant tokenEnvironment tokenBound tokensValue
+    simpa [tokenIndex, rawKind] using
+      rawKind_evaluates world tokens unused tokensCell position tokensFound
+        tokenEnvironment tokenBound (by simpa [parserTokensValue, parserGrammarValue] using tokensValue)
         tokenIndexValue
   have grammarValueAtRaw : rawEnvironment ⟨0, by omega⟩ =
       parserGrammarValue words grammarCell := by
@@ -536,7 +618,8 @@ theorem scanTerminal_evaluates
   have canonicalResult : Term.evaluate (ReadOnly.machine verifiedParserCore)
       world rawEnvironment canonicalKind =
       .ok (.signed .i32 (Int.ofNat canonicalKindValue), world) := by
-    simpa [world, canonicalKindValue] using canonicalKind_evaluates invariant
+    simpa [canonicalKindValue] using canonicalKind_evaluates world encoded
+      wordsI32 semanticKindBound grammarFound
       rawEnvironment grammarValueAtRaw semanticValueAtRaw
   have positionValue : canonicalEnvironment ⟨3, by omega⟩ =
       .signed .i32 (Int.ofNat position) := by
@@ -563,15 +646,15 @@ theorem scanTerminal_evaluates
       (world := world) (environment := canonicalEnvironment)
       verifiedParser_scan_terminal_constants.2.1
   have splitTokenResult := grammarHeader_evaluates world canonicalEnvironment
-    words grammarCell grammarValue splitTokenConstant scanWorld_finds_grammar
-    invariant.encoded.splitTokenKind
+    words grammarCell grammarValue splitTokenConstant grammarFound
+    encoded.splitTokenKind
   have splitComponentResult := grammarHeader_evaluates world
     canonicalEnvironment words grammarCell grammarValue splitComponentConstant
-    scanWorld_finds_grammar invariant.encoded.splitComponentKind
+    grammarFound encoded.splitComponentKind
   have dispatchResult := dispatch_evaluates world canonicalEnvironment position
     rawKind canonicalKindValue grammar.grammar.split_token_kind
     grammar.grammar.split_component_kind positionValue rawValue canonicalValue
-    splitTokenResult splitComponentResult invariant.positionAdvanceI32
+    splitTokenResult splitComponentResult positionAdvanceI32
   rw [scanTerminal_shape]
   apply Block.evaluate_letValue tokenIndexResult
   apply Block.evaluate_sequence_next
@@ -579,6 +662,62 @@ theorem scanTerminal_evaluates
   apply Block.evaluate_letValue rawResult
   apply Block.evaluate_letValue canonicalResult
   exact dispatchResult
+
+theorem scanTerminal_evaluates
+    (invariant : ScanTerminalInvariant layout grammar words tokens grammarCell
+      tokensCell position semanticKind state)
+    (tokenBound : position / 2 < tokens.length) :
+    Block.evaluate (ReadOnly.machine verifiedParserCore)
+        (scanWorld words tokens grammarCell tokensCell)
+        (scanEnvironment words tokens grammarCell tokensCell position semanticKind)
+        scanTerminal =
+      .done (.returned (some (scanTerminalValue
+        (scanTerminalStep grammar.grammar.split_token_kind
+          grammar.grammar.split_component_kind
+          (tokens.get ⟨position / 2, tokenBound⟩)
+          (grammar.grammar.canonical_kinds.get
+            ⟨semanticKind, invariant.semanticKindBound⟩)
+          position))))
+        (scanWorld words tokens grammarCell tokensCell) := by
+  have sameEnvironment :
+      scanStorageEnvironment words tokens [] grammarCell tokensCell position semanticKind =
+      scanEnvironment words tokens grammarCell tokensCell position semanticKind := by
+    funext ⟨index, bound⟩
+    have alternatives : index = 0 ∨ index = 1 ∨ index = 2 ∨ index = 3 ∨ index = 4 := by omega
+    rcases alternatives with rfl | rfl | rfl | rfl | rfl <;>
+      simp [scanStorageEnvironment, scanEnvironment, parserTokensValue, parserGrammarValue]
+  rw [← sameEnvironment]
+  exact scanTerminal_evaluates_storage
+      (scanWorld words tokens grammarCell tokensCell) tokens [] invariant.encoded
+      invariant.wordsI32 invariant.semanticKindBound invariant.positionAdvanceI32
+      scanWorld_finds_grammar
+      (by simpa using scanWorld_finds_tokens invariant) tokenBound
+
+/-- Rejection only inspects the logical count and position, never storage. -/
+theorem scanTerminal_rejects_past_end_storage
+    (world : ReadOnly.World) (environment : Env 5) (tokenCount position : Nat)
+    (positionBound : position ≤ 2147483647)
+    (positionValue : environment ⟨3, by omega⟩ = .signed .i32 (Int.ofNat position))
+    (countValue : environment ⟨2, by omega⟩ = .signed .i32 (Int.ofNat tokenCount))
+    (pastEnd : tokenCount ≤ position / 2) :
+    Block.evaluate (ReadOnly.machine verifiedParserCore) world environment scanTerminal =
+      .done (.returned (some (scanTerminalValue none))) world := by
+  let tokenEnvironment := environment.push (.signed .i32 (Int.ofNat (position / 2)))
+  have tokenIndexResult : Term.evaluate (ReadOnly.machine verifiedParserCore)
+      world environment (binaryI32 .divide (slot 3) (i32 2)) =
+      .ok (.signed .i32 (Int.ofNat (position / 2)), world) := by
+    simp only [binaryI32, slot, i32, literal, apply, reference]
+    functional_eval
+  have guard := tokenEndGuard_evaluates world tokenEnvironment (position / 2)
+    tokenCount (by rfl) (by simpa [tokenEnvironment] using countValue)
+  have guardTrue : Term.evaluate (ReadOnly.machine verifiedParserCore)
+      world tokenEnvironment (compareI32 .greaterEqual (slot 5) (slot 2)) =
+      .ok (.boolean true, world) := by
+    simpa [pastEnd] using guard
+  rw [scanTerminal_shape]
+  apply Block.evaluate_letValue tokenIndexResult
+  simpa [scanTerminalValue, tokenEnvironment] using Block.evaluate_sequence_returned
+    (Block.evaluate_if_true guardTrue (reject_evaluates world tokenEnvironment))
 
 theorem scanTerminal_rejects_past_end_evaluates
     (invariant : ScanTerminalInvariant layout grammar words tokens grammarCell
@@ -590,32 +729,11 @@ theorem scanTerminal_rejects_past_end_evaluates
         scanTerminal =
       .done (.returned (some (scanTerminalValue none)))
         (scanWorld words tokens grammarCell tokensCell) := by
-  let world := scanWorld words tokens grammarCell tokensCell
-  let environment := scanEnvironment words tokens grammarCell tokensCell
-    position semanticKind
-  let tokenIndex := position / 2
-  let tokenEnvironment := environment.push
-    (.signed .i32 (Int.ofNat tokenIndex))
-  have tokenIndexResult := tokenIndex_evaluates invariant
-  have tokenIndexValue : tokenEnvironment ⟨5, by omega⟩ =
-      .signed .i32 (Int.ofNat tokenIndex) := by
-    rfl
-  have tokenCountValue : tokenEnvironment ⟨2, by omega⟩ =
-      .signed .i32 (Int.ofNat tokens.length) := by
-    rfl
-  have guard := tokenEndGuard_evaluates world tokenEnvironment tokenIndex
-    tokens.length tokenIndexValue tokenCountValue
-  have guardTrue : Term.evaluate (ReadOnly.machine verifiedParserCore)
-      world tokenEnvironment
-      (compareI32 .greaterEqual (slot 5) (slot 2)) =
-      .ok (.boolean true, world) := by
-    simpa [pastEnd, tokenIndex] using guard
-  rw [scanTerminal_shape]
-  apply Block.evaluate_letValue tokenIndexResult
-  simpa [scanTerminalValue, world, environment, tokenIndex,
-    tokenEnvironment] using Block.evaluate_sequence_returned
-    (Block.evaluate_if_true guardTrue
-      (reject_evaluates world tokenEnvironment))
+  exact scanTerminal_rejects_past_end_storage
+    (scanWorld words tokens grammarCell tokensCell)
+    (scanEnvironment words tokens grammarCell tokensCell position semanticKind)
+    tokens.length position (by have := invariant.positionAdvanceI32; omega)
+    rfl rfl pastEnd
 
 /-- The Functional View is not a second, manually trusted parser model. Deterministic
     conversion recreates the body decoded from the checked compiler artifact. -/
@@ -663,6 +781,39 @@ theorem extractedScanTerminal_executes_of_evaluation
     scanTerminalView_toCore_exactly] at execution
   exact ⟨after, execution, effect, afterWellFormed, afterRepresented,
     afterMatches⟩
+
+/-- Execute the actual extracted body with physical capacity larger than the
+logical token count. The read-only bridge preserves all caller cells. -/
+theorem extractedParserScanTerminalBody_scans_storage
+    (world : ReadOnly.World) (tokens : List Nat) (unused : List Int)
+    (encoded : EncodesGrammar layout grammar words)
+    (wordsI32 : words.length ≤ 2147483647)
+    (semanticKindBound : semanticKind < grammar.grammar.canonical_kinds.length)
+    (positionAdvanceI32 : position + 2 ≤ 2147483647)
+    (grammarFound : world.i32Slice? grammarCell = some words)
+    (tokensFound : world.i32Slice? tokensCell = some (tokens.map Int.ofNat ++ unused))
+    (represented : world.Represents state)
+    (matchesEnvironment : EnvironmentMatches (identityLayout (arity := 5))
+      (scanStorageEnvironment words tokens unused grammarCell tokensCell position semanticKind) state)
+    (wellFormed : StateWellFormed state)
+    (tokenBound : position / 2 < tokens.length) :
+    ∃ after,
+      Executes verifiedParserCore state extractedParserScanTerminalBody
+        (.returned (some (scanTerminalValue
+          (scanTerminalStep grammar.grammar.split_token_kind
+            grammar.grammar.split_component_kind
+            (tokens.get ⟨position / 2, tokenBound⟩)
+            (grammar.grammar.canonical_kinds.get ⟨semanticKind, semanticKindBound⟩)
+            position)))) after ∧
+      ModifiesOnly CellSet.empty state after ∧ StateWellFormed after := by
+  obtain ⟨after, execution, effect, afterWellFormed, _, _⟩ :=
+    extractedScanTerminal_executes_of_evaluation (ReadOnly.bridge verifiedParserCore)
+      represented
+      (scanStorageEnvironment words tokens unused grammarCell tokensCell position semanticKind)
+      matchesEnvironment wellFormed
+      (scanTerminal_evaluates_storage world tokens unused encoded wordsI32 semanticKindBound
+        positionAdvanceI32 grammarFound tokensFound tokenBound)
+  exact ⟨after, execution, effect, afterWellFormed⟩
 
 /-- The extracted parser scan theorem through Functional View. Compared with the
     structural proof, the function-level argument states the abstract
@@ -745,6 +896,46 @@ theorem extractedParserScanTerminalBody_implements_model
       simpa [Lanius.Compiler.Parser.scanTerminal, tokenMissing]
         using execution, effect, wellFormed⟩
 
+/-- The complete scan model follows from concrete prefix-backed entry facts,
+including rejection at and beyond the logical end. -/
+theorem extractedParserScanTerminalBody_implements_model_storage
+    (entry : ScanStorageEntry words tokens unused grammarCell tokensCell position semanticKind state)
+    (encoded : EncodesGrammar layout grammar words)
+    (wordsI32 : words.length ≤ 2147483647)
+    (semanticKindBound : semanticKind < grammar.grammar.canonical_kinds.length)
+    (positionAdvanceI32 : position + 2 ≤ 2147483647) :
+    ∃ after,
+      Executes verifiedParserCore state extractedParserScanTerminalBody
+        (.returned (some (scanTerminalValue
+          (Lanius.Compiler.Parser.scanTerminal grammar tokens position semanticKind)))) after ∧
+      ModifiesOnly CellSet.empty state after ∧ StateWellFormed after := by
+  let world := ReadOnly.World.pair grammarCell words tokensCell (tokens.map Int.ofNat ++ unused)
+  let environment := scanStorageEnvironment words tokens unused grammarCell tokensCell position semanticKind
+  by_cases tokenBound : position / 2 < tokens.length
+  · obtain ⟨after, execution, effect, wellFormed⟩ :=
+      extractedParserScanTerminalBody_scans_storage world tokens unused encoded wordsI32
+        semanticKindBound positionAdvanceI32 ReadOnly.World.pair_finds_first
+        entry.finds_tokens
+        entry.represents entry.environmentMatches entry.wellFormed tokenBound
+    have tokenFound : tokens[position / 2]? = some (tokens.get ⟨position / 2, tokenBound⟩) :=
+      List.getElem?_eq_getElem tokenBound
+    have canonicalFound : grammar.grammar.canonical_kinds[semanticKind]? = some
+        (grammar.grammar.canonical_kinds.get ⟨semanticKind, semanticKindBound⟩) :=
+      List.getElem?_eq_getElem semanticKindBound
+    exact ⟨after, by
+      simpa [Lanius.Compiler.Parser.scanTerminal, tokenFound, canonicalFound] using execution,
+      effect, wellFormed⟩
+  · have pastEnd : tokens.length ≤ position / 2 := Nat.le_of_not_gt tokenBound
+    have evaluated := scanTerminal_rejects_past_end_storage world environment tokens.length
+      position (by omega) rfl rfl pastEnd
+    obtain ⟨after, execution, effect, wellFormed, _, _⟩ :=
+      extractedScanTerminal_executes_of_evaluation (ReadOnly.bridge verifiedParserCore)
+        entry.represents environment entry.environmentMatches entry.wellFormed evaluated
+    have tokenMissing : tokens[position / 2]? = none := List.getElem?_eq_none (by omega)
+    exact ⟨after, by
+      simpa [Lanius.Compiler.Parser.scanTerminal, tokenMissing, toCoreCompletion] using execution,
+      effect, wellFormed⟩
+
 end Lanius.Extraction.ParserScan.Proof
 
 namespace Lanius.Extraction.ParserScan
@@ -818,6 +1009,186 @@ theorem extractedParserScanTerminalCall_implements_model
   have entered : StoreEffect CellSet.empty afterArguments callee := by
     simpa [callee, parserScanTerminalCallee, bindings,
       parserScanTerminalBindings] using
+      enterCall_effect afterArguments bindings
+  have callStore : StoreEffect CellSet.empty afterArguments completed :=
+    entered.trans_same bodyEffect.toStoreEffect
+  have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
+    simpa [after] using callStore.restoreLocals
+  have afterWellFormed : StateWellFormed after :=
+    callStore.restoreLocals_wellFormed afterArgumentsWellFormed
+      completedWellFormed
+  exact ⟨after, evaluation, callEffect, afterWellFormed,
+    callEffect.empty_preserves_entry afterArgumentsWellFormed grammarBacking,
+    callEffect.empty_preserves_entry afterArgumentsWellFormed tokensBacking⟩
+
+def parserScanStorageBindings (words : List Int) (tokens : List Nat) (unused : List Int)
+    (grammarCell tokensCell : CellId) (position semanticKind : Nat) : List (VarId × Value) := [
+  (0, parserGrammarValue words grammarCell),
+  (1, .slice parserI32Type tokensCell [] 0 (tokens.length + unused.length)),
+  (2, .signed .i32 (Int.ofNat tokens.length)),
+  (3, .signed .i32 (Int.ofNat position)),
+  (4, .signed .i32 (Int.ofNat semanticKind))]
+
+def parserScanStorageCallee (caller : State) (words : List Int) (tokens : List Nat)
+    (unused : List Int) (grammarCell tokensCell : CellId) (position semanticKind : Nat) : State :=
+  enterCall caller (parserScanStorageBindings words tokens unused grammarCell tokensCell position semanticKind)
+
+theorem parserScanStorageCallee_entry
+    (caller : State) (words : List Int) (tokens : List Nat) (unused : List Int)
+    (grammarCell tokensCell : CellId) (position semanticKind : Nat)
+    (wellFormed : StateWellFormed caller)
+    (grammarBacking : caller.cellEntry? grammarCell = some {
+      id := grammarCell
+      value := some (.array (signedI32Values words)) })
+    (tokensBacking : caller.cellEntry? tokensCell = some {
+      id := tokensCell
+      value := some (.array (signedI32Values (tokens.map Int.ofNat ++ unused))) }) :
+    Proof.ScanStorageEntry words tokens unused grammarCell tokensCell position semanticKind
+      (parserScanStorageCallee caller words tokens unused grammarCell tokensCell position semanticKind) := by
+  let bindings := parserScanStorageBindings words tokens unused grammarCell
+    tokensCell position semanticKind
+  let callee := enterCall caller bindings
+  have calleeWellFormed : StateWellFormed callee :=
+    enterCall_preserves_wellFormed wellFormed
+  have grammarOld : grammarCell < caller.nextCell :=
+    Lanius.Separation.StateWellFormed.cell_lt_next_of_entry wellFormed
+      grammarBacking
+  have tokensOld : tokensCell < caller.nextCell :=
+    Lanius.Separation.StateWellFormed.cell_lt_next_of_entry wellFormed
+      tokensBacking
+  have calleeGrammarBacking : callee.cellEntry? grammarCell = some {
+      id := grammarCell
+      value := some (.array (signedI32Values words))
+    } := ((enterCall_effect caller bindings).oldCells grammarCell grammarOld
+      (by simp [CellSet.empty])).trans grammarBacking
+  have calleeTokensBacking : callee.cellEntry? tokensCell = some {
+      id := tokensCell
+      value := some (.array
+        (signedI32Values (tokens.map Int.ofNat ++ unused)))
+    } := ((enterCall_effect caller bindings).oldCells tokensCell tokensOld
+      (by simp [CellSet.empty])).trans tokensBacking
+  have local0 : callee.local? 0 =
+      some (parserGrammarValue words grammarCell) := by
+    simpa [callee, bindings, parserScanStorageBindings] using
+      (enterCall_local_of_binding caller [] [
+        (1, (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))),
+        (2, .signed .i32 (Int.ofNat tokens.length)),
+        (3, .signed .i32 (Int.ofNat position)),
+        (4, .signed .i32 (Int.ofNat semanticKind))]
+        0 (parserGrammarValue words grammarCell) wellFormed (by simp))
+  have local1 : callee.local? 1 =
+      some ((.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))) := by
+    simpa [callee, bindings, parserScanStorageBindings] using
+      (enterCall_local_of_binding caller [
+        (0, parserGrammarValue words grammarCell)] [
+        (2, .signed .i32 (Int.ofNat tokens.length)),
+        (3, .signed .i32 (Int.ofNat position)),
+        (4, .signed .i32 (Int.ofNat semanticKind))]
+        1 ((.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))) wellFormed (by simp))
+  have local2 : callee.local? 2 =
+      some (.signed .i32 (Int.ofNat tokens.length)) := by
+    simpa [callee, bindings, parserScanStorageBindings] using
+      (enterCall_local_of_binding caller [
+        (0, parserGrammarValue words grammarCell),
+        (1, (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length)))] [
+        (3, .signed .i32 (Int.ofNat position)),
+        (4, .signed .i32 (Int.ofNat semanticKind))]
+        2 (.signed .i32 (Int.ofNat tokens.length)) wellFormed (by simp))
+  have local3 : callee.local? 3 =
+      some (.signed .i32 (Int.ofNat position)) := by
+    simpa [callee, bindings, parserScanStorageBindings] using
+      (enterCall_local_of_binding caller [
+        (0, parserGrammarValue words grammarCell),
+        (1, (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))),
+        (2, .signed .i32 (Int.ofNat tokens.length))] [
+        (4, .signed .i32 (Int.ofNat semanticKind))]
+        3 (.signed .i32 (Int.ofNat position)) wellFormed (by simp))
+  have local4 : callee.local? 4 =
+      some (.signed .i32 (Int.ofNat semanticKind)) := by
+    simpa [callee, bindings, parserScanStorageBindings] using
+      (enterCall_local_of_binding caller [
+        (0, parserGrammarValue words grammarCell),
+        (1, (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))),
+        (2, .signed .i32 (Int.ofNat tokens.length)),
+        (3, .signed .i32 (Int.ofNat position))] []
+        4 (.signed .i32 (Int.ofNat semanticKind)) wellFormed (by simp))
+  simpa [parserScanStorageCallee, bindings, callee] using
+    (show Proof.ScanStorageEntry words tokens unused grammarCell
+      tokensCell position semanticKind callee from {
+        wellFormed := calleeWellFormed
+        grammarLocal := local0
+        tokensLocal := local1
+        countLocal := local2
+        positionLocal := local3
+        kindLocal := local4
+        grammarBacking := calleeGrammarBacking
+        tokensBacking := calleeTokensBacking })
+
+
+
+theorem extractedParserScanTerminalCall_implements_model_storage
+    (before afterArguments : State) (arguments : List Expr)
+    (afterArgumentsWellFormed : StateWellFormed afterArguments)
+    (argumentsResult : ArgumentsEvaluateTo verifiedParserCore before arguments [
+      parserGrammarValue words grammarCell,
+      (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length)),
+      .signed .i32 (Int.ofNat tokens.length),
+      .signed .i32 (Int.ofNat position),
+      .signed .i32 (Int.ofNat semanticKind)] afterArguments)
+    (grammarBacking : afterArguments.cellEntry? grammarCell = some {
+      id := grammarCell
+      value := some (.array (signedI32Values words))
+    })
+    (tokensBacking : afterArguments.cellEntry? tokensCell = some {
+      id := tokensCell
+      value := some (.array
+        (signedI32Values (tokens.map Int.ofNat ++ unused)))
+    })
+    (encoded : EncodesGrammar layout grammar words)
+    (wordsI32 : words.length ≤ 2147483647)
+    (semanticKindBound : semanticKind < grammar.grammar.canonical_kinds.length)
+    (positionAdvanceI32 : position + 2 ≤ 2147483647) :
+    ∃ after,
+      Evaluates verifiedParserCore before
+        (.call extractedParserScanTerminalFunction.id arguments)
+        (scanTerminalValue (scanTerminal grammar tokens position semanticKind))
+        after ∧
+      ModifiesOnly CellSet.empty afterArguments after ∧
+      StateWellFormed after ∧
+      after.cellEntry? grammarCell = some {
+        id := grammarCell
+        value := some (.array (signedI32Values words))
+      } ∧
+      after.cellEntry? tokensCell = some {
+        id := tokensCell
+        value := some (.array
+          (signedI32Values (tokens.map Int.ofNat ++ unused)))
+      } := by
+  let callee := parserScanStorageCallee afterArguments words tokens unused grammarCell
+    tokensCell position semanticKind
+  have entry := parserScanStorageCallee_entry afterArguments words tokens unused grammarCell
+    tokensCell position semanticKind afterArgumentsWellFormed grammarBacking tokensBacking
+  obtain ⟨completed, body, bodyEffect, completedWellFormed⟩ :=
+    Proof.extractedParserScanTerminalBody_implements_model_storage entry encoded wordsI32
+      semanticKindBound positionAdvanceI32
+  rw [extractedParserScanTerminalBody_eq] at body
+  let after := restoreLocals afterArguments completed
+  have evaluation : Evaluates verifiedParserCore before
+      (.call extractedParserScanTerminalFunction.id arguments)
+      (scanTerminalValue (scanTerminal grammar tokens position semanticKind))
+      after := by
+    apply evaluatesCallReturned argumentsResult
+      verifiedParserCore_finds_scanTerminal
+    · rw [extractedParserScanTerminal_function_shape.2.1]
+      rfl
+    · exact extractedParserScanTerminal_function_shape.2.2.2.1
+    · simpa [callee, after, parserScanStorageCallee,
+        parserScanStorageBindings] using body
+  let bindings := parserScanStorageBindings words tokens unused grammarCell
+    tokensCell position semanticKind
+  have entered : StoreEffect CellSet.empty afterArguments callee := by
+    simpa [callee, parserScanStorageCallee, bindings,
+      parserScanStorageBindings] using
       enterCall_effect afterArguments bindings
   have callStore : StoreEffect CellSet.empty afterArguments completed :=
     entered.trans_same bodyEffect.toStoreEffect

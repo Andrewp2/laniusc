@@ -5,6 +5,7 @@ import Lanius.Extraction.Parser.Recognize.Parent
 namespace Lanius.Extraction.ParserRecognize
 
 set_option maxRecDepth 100000
+set_option compiler.extract_closed false
 
 open Lanius.Core
 open Lanius.SymbolicCore
@@ -849,11 +850,14 @@ private def stateAfterBindingsLayout : Layout 17 :=
 /-- The remaining branch is projected from the one mechanically reified body.
     It is not independently reified or handwritten, so semantic proofs cannot
     accidentally select a different command than the enclosing body contains. -/
-def stateAfterBindingsCommand :
+private def stateAfterBindingsBranch (command :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 13) :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 17 :=
-  match stateBodyCommand with
+  match command with
   | .letValue _ _ afterProduction =>
       match afterProduction with
       | .letValue _ _ afterDot =>
@@ -866,6 +870,8 @@ def stateAfterBindingsCommand :
       | _ => .skip
   | _ => .skip
 
+def stateAfterBindingsCommand := stateAfterBindingsBranch stateBodyCommand
+
 def stateLessTerm {arity : Nat} (left right : Fin arity) :
     Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
   .apply (.binary .less parserI32Type parserI32Type (.scalar .bool))
@@ -873,29 +879,42 @@ def stateLessTerm {arity : Nat} (left right : Fin arity) :
 
 /-- The two semantic branches and cursor advance are projections of the one
     artifact-derived command, never independently reified copies. -/
-def stateIncompleteCommand :
+private def stateIncompleteBranch (command :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 17) :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 17 :=
-  match stateAfterBindingsCommand with
+  match command with
   | .sequence (.ifThenElse _ incomplete _) _ => incomplete
   | _ => .skip
 
-def stateCompleteCommand :
+private def stateCompleteBranch (command :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 17) :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 17 :=
-  match stateAfterBindingsCommand with
+  match command with
   | .sequence (.ifThenElse _ _ complete) _ => complete
   | _ => .skip
 
-def stateAdvanceCommand :
+private def stateAdvanceBranch (command :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 17) :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 17 :=
-  match stateAfterBindingsCommand with
+  match command with
   | .sequence (.ifThenElse _ _ _) advance => advance
   | _ => .skip
+
+def stateIncompleteCommand := stateIncompleteBranch stateAfterBindingsCommand
+def stateCompleteCommand := stateCompleteBranch stateAfterBindingsCommand
+def stateAdvanceCommand := stateAdvanceBranch stateAfterBindingsCommand
 
 private def stateLessTermMatches {arity : Nat}
     (term : Lanius.FunctionalView.Term
@@ -931,22 +950,32 @@ private theorem stateAfterBindingsCommand_matches :
 
 /-- Exact branch decomposition recovered from the executable constructor
     check, while retaining each branch by projection from the source command. -/
-theorem stateAfterBindingsCommand_shape :
-    stateAfterBindingsCommand =
+private theorem stateAfterBindingsCommandMatches_shape
+    (command : Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 17)
+    (matched : stateAfterBindingsCommandMatches command = true) :
+    command =
       .sequence
         (.ifThenElse (stateLessTerm ⟨14, by omega⟩ ⟨16, by omega⟩)
-          stateIncompleteCommand stateCompleteCommand)
-        stateAdvanceCommand := by
-  have matched := stateAfterBindingsCommand_matches
-  generalize commandEq : stateAfterBindingsCommand = command at matched ⊢
+          (stateIncompleteBranch command) (stateCompleteBranch command))
+        (stateAdvanceBranch command) := by
   cases command <;> simp [stateAfterBindingsCommandMatches] at matched
   case sequence first advance =>
     cases first <;> simp [stateAfterBindingsCommandMatches] at matched
     case ifThenElse condition incomplete complete =>
       have conditionEq := stateLessTermMatches_sound condition
         ⟨14, by omega⟩ ⟨16, by omega⟩ matched
-      simp_all [stateIncompleteCommand, stateCompleteCommand,
-        stateAdvanceCommand]
+      simp_all [stateIncompleteBranch, stateCompleteBranch, stateAdvanceBranch]
+
+theorem stateAfterBindingsCommand_shape :
+    stateAfterBindingsCommand =
+      .sequence
+        (.ifThenElse (stateLessTerm ⟨14, by omega⟩ ⟨16, by omega⟩)
+          stateIncompleteCommand stateCompleteCommand)
+        stateAdvanceCommand :=
+  stateAfterBindingsCommandMatches_shape stateAfterBindingsCommand
+    stateAfterBindingsCommand_matches
 
 def stateValueTerm {arity : Nat} (workspace base state : Fin arity)
     (field : ConstantId) :
@@ -1307,38 +1336,58 @@ theorem parserFunctionalCommandMatches_sound {arity : Nat}
   stateCommandMatches_sound left right matched
 
 /-- Branches retained by projection from the incomplete-state command. -/
-def stateTerminalCommand :
+private def stateTerminalBranch (command :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 17) :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 18 :=
-  match stateIncompleteCommand with
+  match command with
   | .letValue _ _ (.sequence (.ifThenElse _ terminal _) .skip) => terminal
   | _ => .skip
 
-def stateNonterminalCommand :
+def stateTerminalCommand := stateTerminalBranch stateIncompleteCommand
+
+private def stateNonterminalBranch (command :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 17) :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 18 :=
-  match stateIncompleteCommand with
+  match command with
   | .letValue _ _ (.sequence (.ifThenElse _ _ nonterminal) .skip) =>
       nonterminal
   | _ => .skip
 
-private def stateTerminalSuccessCommand :
+def stateNonterminalCommand := stateNonterminalBranch stateIncompleteCommand
+
+private def stateTerminalSuccessBranch (command :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 18) :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 19 :=
-  match stateTerminalCommand with
+  match command with
   | .letValue _ _ (.sequence (.ifThenElse _ success _) _) => success
   | _ => .skip
 
-private def stateTerminalFullCommand :
+private def stateTerminalSuccessCommand := stateTerminalSuccessBranch stateTerminalCommand
+
+private def stateTerminalFullBranch (command :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 19) :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 20 :=
-  match stateTerminalSuccessCommand with
+  match command with
   | .letValue _ _ (.sequence (.ifThenElse _ full _) _) => full
   | _ => .skip
+
+private def stateTerminalFullCommand := stateTerminalFullBranch stateTerminalSuccessCommand
 
 /-- The terminal transition seed as it occurs inside the source-derived
     `append_state` call.  Its slots are those of the state body after binding
@@ -1714,17 +1763,19 @@ private theorem stateTerminalSuccessCommand_matches :
 /-- Exact append-control structure projected from `parser.lani::recognize`.
     The full branch remains a projection of the same command rather than an
     independently maintained copy. -/
-private theorem stateTerminalSuccessCommand_shape :
-    stateTerminalSuccessCommand =
+private theorem stateTerminalSuccessCommandMatches_shape
+    (command : Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 19)
+    (matched : stateTerminalSuccessCommandMatches command = true) :
+    command =
       .letValue (.structure 2) stateTerminalAppendTerm
         (.sequence
           (.ifThenElse stateTerminalFullCondition
-            stateTerminalFullCommand .skip)
+            (stateTerminalFullBranch command) .skip)
           (.sequence
             (.setLocal ⟨10, by omega⟩ stateTerminalStateCountTerm)
             .skip)) := by
-  have matched := stateTerminalSuccessCommand_matches
-  generalize commandEq : stateTerminalSuccessCommand = command at matched ⊢
   cases command <;> try { simp [stateTerminalSuccessCommandMatches] at matched }
   case letValue appendType appendTerm body =>
     cases body <;> try { simp [stateTerminalSuccessCommandMatches] at matched }
@@ -1749,7 +1800,18 @@ private theorem stateTerminalSuccessCommand_shape :
             have stateCountEq := stateTerminalStateCountTermMatches_sound
               stateCountTerm matched.1.2
             have trailingEq := stateCommandIsSkip_sound trailing matched.2
-            simp_all [stateTerminalFullCommand]
+            simp_all [stateTerminalFullBranch]
+
+private theorem stateTerminalSuccessCommand_shape :
+    stateTerminalSuccessCommand =
+      .letValue (.structure 2) stateTerminalAppendTerm
+        (.sequence
+          (.ifThenElse stateTerminalFullCondition
+            stateTerminalFullCommand .skip)
+          (.sequence
+            (.setLocal ⟨10, by omega⟩ stateTerminalStateCountTerm)
+            .skip)) :=
+  stateTerminalSuccessCommandMatches_shape stateTerminalSuccessCommand stateTerminalSuccessCommand_matches
 
 private def stateIncompleteCommandMatches :
     Lanius.FunctionalView.Stateful.Command
@@ -1770,17 +1832,19 @@ private theorem stateIncompleteCommand_matches :
 
 /-- Exact constructor-level shape of the incomplete-state branch projected
     from `parser.lani::recognize`. -/
-private theorem stateIncompleteCommand_shape :
-    stateIncompleteCommand =
+private theorem stateIncompleteCommandMatches_shape
+    (command : Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 17)
+    (matched : stateIncompleteCommandMatches command = true) :
+    command =
       .letValue parserI32Type
         (stateRhsSymbolTerm ⟨0, by omega⟩ ⟨13, by omega⟩
           ⟨14, by omega⟩)
         (.sequence
           (.ifThenElse (stateLessTerm ⟨17, by omega⟩ ⟨6, by omega⟩)
-            stateTerminalCommand stateNonterminalCommand)
+            (stateTerminalBranch command) (stateNonterminalBranch command))
           .skip) := by
-  have matched := stateIncompleteCommand_matches
-  generalize commandEq : stateIncompleteCommand = command at matched ⊢
   cases command <;> try { simp [stateIncompleteCommandMatches] at matched }
   case letValue symbolType symbolTerm body =>
     cases body <;> try { simp [stateIncompleteCommandMatches] at matched }
@@ -1797,7 +1861,18 @@ private theorem stateIncompleteCommand_shape :
         have testEq := stateLessTermMatches_sound terminalTest
           ⟨17, by omega⟩ ⟨6, by omega⟩ testMatched
         have trailingEq := stateCommandIsSkip_sound second trailingMatched
-        simp_all [stateTerminalCommand, stateNonterminalCommand]
+        simp_all [stateTerminalBranch, stateNonterminalBranch]
+
+private theorem stateIncompleteCommand_shape :
+    stateIncompleteCommand =
+      .letValue parserI32Type
+        (stateRhsSymbolTerm ⟨0, by omega⟩ ⟨13, by omega⟩
+          ⟨14, by omega⟩)
+        (.sequence
+          (.ifThenElse (stateLessTerm ⟨17, by omega⟩ ⟨6, by omega⟩)
+            stateTerminalCommand stateNonterminalCommand)
+          .skip) :=
+  stateIncompleteCommandMatches_shape stateIncompleteCommand stateIncompleteCommand_matches
 
 private def stateTerminalCommandMatches :
     Lanius.FunctionalView.Stateful.Command
@@ -1818,17 +1893,19 @@ private theorem stateTerminalCommand_matches :
 
 /-- Exact outer control shape of the terminal branch.  The successful append
     path remains projected from the source command. -/
-private theorem stateTerminalCommand_shape :
-    stateTerminalCommand =
+private theorem stateTerminalCommandMatches_shape
+    (command : Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 18)
+    (matched : stateTerminalCommandMatches command = true) :
+    command =
       .letValue parserI32Type
         (stateScanTerminalTerm ⟨0, by omega⟩ ⟨1, by omega⟩
           ⟨2, by omega⟩ ⟨11, by omega⟩ ⟨17, by omega⟩)
         (.sequence
           (.ifThenElse (stateGreaterEqualZeroTerm ⟨18, by omega⟩)
-            stateTerminalSuccessCommand .skip)
+            (stateTerminalSuccessBranch command) .skip)
           .skip) := by
-  have matched := stateTerminalCommand_matches
-  generalize commandEq : stateTerminalCommand = command at matched ⊢
   cases command <;> try { simp [stateTerminalCommandMatches] at matched }
   case letValue nextType nextTerm body =>
     cases body <;> try { simp [stateTerminalCommandMatches] at matched }
@@ -1848,7 +1925,18 @@ private theorem stateTerminalCommand_shape :
           ⟨18, by omega⟩ testMatched
         have missEq := stateCommandIsSkip_sound miss missMatched
         have trailingEq := stateCommandIsSkip_sound trailing trailingMatched
-        simp_all [stateTerminalSuccessCommand]
+        simp_all [stateTerminalSuccessBranch]
+
+private theorem stateTerminalCommand_shape :
+    stateTerminalCommand =
+      .letValue parserI32Type
+        (stateScanTerminalTerm ⟨0, by omega⟩ ⟨1, by omega⟩
+          ⟨2, by omega⟩ ⟨11, by omega⟩ ⟨17, by omega⟩)
+        (.sequence
+          (.ifThenElse (stateGreaterEqualZeroTerm ⟨18, by omega⟩)
+            stateTerminalSuccessCommand .skip)
+          .skip) :=
+  stateTerminalCommandMatches_shape stateTerminalCommand stateTerminalCommand_matches
 
 private def stateAdvanceCommandMatches :
     Lanius.FunctionalView.Stateful.Command
@@ -1934,8 +2022,12 @@ private theorem stateBodyCommand_matches :
 
 /-- Exact lexical decomposition recovered from the executable constructor
     check.  No second body is reified or maintained. -/
-private theorem stateBodyCommand_shape :
-    stateBodyCommand =
+private theorem stateBodyCommandMatches_shape
+    (command : Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 13)
+    (matched : stateBodyCommandMatches command = true) :
+    command =
       .letValue parserI32Type
         (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 28)
         (.letValue parserI32Type
@@ -1944,9 +2036,7 @@ private theorem stateBodyCommand_shape :
             (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 30)
             (.letValue parserI32Type
               (stateRhsLengthTerm ⟨0, by omega⟩ ⟨13, by omega⟩)
-              stateAfterBindingsCommand))) := by
-  have matched := stateBodyCommand_matches
-  generalize commandEq : stateBodyCommand = command at matched ⊢
+              (stateAfterBindingsBranch command)))) := by
   cases command <;> simp [stateBodyCommandMatches] at matched
   case letValue productionType productionTerm afterProduction =>
     cases afterProduction <;> simp [stateBodyCommandMatches] at matched
@@ -1967,7 +2057,20 @@ private theorem stateBodyCommand_shape :
             ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 30 originMatched
           have rhsLengthEq := stateRhsLengthTermMatches_sound rhsLengthTerm
             ⟨0, by omega⟩ ⟨13, by omega⟩ rhsLengthMatched
-          simp_all [stateAfterBindingsCommand]
+          simp_all [stateAfterBindingsBranch]
+
+private theorem stateBodyCommand_shape :
+    stateBodyCommand =
+      .letValue parserI32Type
+        (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 28)
+        (.letValue parserI32Type
+          (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 29)
+          (.letValue parserI32Type
+            (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 30)
+            (.letValue parserI32Type
+              (stateRhsLengthTerm ⟨0, by omega⟩ ⟨13, by omega⟩)
+              stateAfterBindingsCommand))) :=
+  stateBodyCommandMatches_shape stateBodyCommand stateBodyCommand_matches
 
 private def coreAfterFourBindings : Stmt → Stmt
   | .letLocal _ _ _
@@ -2659,21 +2762,22 @@ noncomputable def RecognizerParentConfig.evaluates_in_state_environment
 
 /-- Functional world for every slice visible to the state loop. -/
 def stateWorld (words : List Int) (tokens : List Nat)
+    {unused : List Int}
     (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId) :
     Lanius.FunctionalView.Core.ReadOnly.World :=
-  recognizerWorld words tokens workspaceValues grammarCell tokensCell
+  recognizerWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
     workspaceCell
 
 theorem stateWorld_finds_grammar :
-    (stateWorld words tokens workspaceValues grammarCell tokensCell
+    (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
       workspaceCell).i32Slice? grammarCell = some words := by
   exact recognizerWorld_finds_grammar
 
 theorem stateWorld_finds_workspace
     (grammarDistinct : grammarCell ≠ workspaceCell)
     (tokensDistinct : tokensCell ≠ workspaceCell) :
-    (stateWorld words tokens workspaceValues grammarCell tokensCell
+    (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
       workspaceCell).i32Slice? workspaceCell = some workspaceValues := by
   exact recognizerWorld_finds_workspace grammarDistinct.symm
 
@@ -2681,24 +2785,25 @@ theorem stateWorld_finds_tokens
     (invariant : RecognizerInvariant grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell runtime) :
-    (stateWorld words tokens workspaceValues grammarCell tokensCell
+    (stateWorld words tokens (unused := invariant.tokenStorage.unused) workspaceValues grammarCell tokensCell
       workspaceCell).i32Slice? tokensCell =
-      some (tokens.map Int.ofNat) := by
+      some (tokens.map Int.ofNat ++ invariant.tokenStorage.unused) := by
   by_cases sameCell : tokensCell = grammarCell
   · subst tokensCell
     have encodedValues : signedI32Values words =
-        signedI32Values (tokens.map Int.ofNat) := by
+        signedI32Values (tokens.map Int.ofNat ++ invariant.tokenStorage.unused) := by
       have backing := invariant.grammarBacking.symm.trans
-        invariant.tokensBacking
+        invariant.tokenStorage.unused_backing
       have cellEquality := Option.some.inj backing
       have valueEquality := congrArg Cell.value cellEquality
       have arrayEquality := Option.some.inj valueEquality
       injection arrayEquality
-    have valuesAgree : words = tokens.map Int.ofNat :=
+    have valuesAgree : words = tokens.map Int.ofNat ++ invariant.tokenStorage.unused :=
       signedI32Values_injective encodedValues
     simpa [stateWorld, valuesAgree] using
       (recognizerWorld_finds_grammar
-        (words := tokens.map Int.ofNat) (tokens := tokens)
+        (words := tokens.map Int.ofNat ++ invariant.tokenStorage.unused) (tokens := tokens)
+        (unused := invariant.tokenStorage.unused)
         (workspaceValues := workspaceValues) (grammarCell := grammarCell)
         (tokensCell := grammarCell) (workspaceCell := workspaceCell))
   · exact recognizerWorld_finds_tokens sameCell
@@ -2708,10 +2813,10 @@ private theorem stateWorld_set_workspace
     (grammarDistinct : grammarCell ≠ workspaceCell)
     (tokensDistinct : tokensCell ≠ workspaceCell) :
     Lanius.FunctionalView.Core.ReadOnly.World.setI32Slice
-        (stateWorld words tokens beforeValues grammarCell tokensCell
+        (stateWorld words tokens (unused := unused) beforeValues grammarCell tokensCell
           workspaceCell)
         workspaceCell afterValues =
-      stateWorld words tokens afterValues grammarCell tokensCell
+      stateWorld words tokens (unused := unused) afterValues grammarCell tokensCell
         workspaceCell := by
   exact recognizerWorld_set_workspace grammarDistinct.symm
     tokensDistinct.symm
@@ -2719,21 +2824,25 @@ private theorem stateWorld_set_workspace
 private theorem stateWorld_represents
     (invariant : RecognizerInvariant grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell runtime) :
+      workspaceCell runtime)
+    (tokensBacking : runtime.cellEntry? tokensCell = some {
+      id := tokensCell
+      value := some (.array (signedI32Values (tokens.map Int.ofNat ++ unused))) }) :
     Lanius.FunctionalView.Core.ReadOnly.World.Represents
-      (stateWorld words tokens workspaceValues grammarCell tokensCell
+      (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell) runtime := by
-  exact recognizerWorld_represents invariant
+  exact recognizerWorld_represents invariant tokensBacking
 
 /-- Persistent values selected by `stateLoopLayout`. -/
 def stateEnvironment (words : List Int) (tokens : List Nat)
+    {tokenCapacity : Nat}
     (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId)
     (workspaceLayout : WorkspaceLayout) (kindCount lhsOffsetsOffset
       lhsCountsOffset lhsProductionsOffset stateCount position : Nat)
     (current : Int) : Lanius.FunctionalView.Env 13
   | ⟨0, _⟩ => parserGrammarValue words grammarCell
-  | ⟨1, _⟩ => parserTokensValue tokens tokensCell
+  | ⟨1, _⟩ => parserTokenBufferValue tokenCapacity tokensCell
   | ⟨2, _⟩ => .signed .i32 (Int.ofNat tokens.length)
   | ⟨3, _⟩ => workspaceValue workspaceValues workspaceCell
   | ⟨4, _⟩ => .signed .i32
@@ -2749,13 +2858,14 @@ def stateEnvironment (words : List Int) (tokens : List Nat)
 
 /-- Persistent source values selected by `positionLoopLayout`. -/
 def positionEnvironment (words : List Int) (tokens : List Nat)
+    {tokenCapacity : Nat}
     (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId)
     (workspaceLayout : WorkspaceLayout) (grammar : IndexedGrammar)
     (grammarLayout : PackedGrammarLayout) (stateCount furthest position : Nat) :
     Lanius.FunctionalView.Env 15
   | ⟨0, _⟩ => parserGrammarValue words grammarCell
-  | ⟨1, _⟩ => parserTokensValue tokens tokensCell
+  | ⟨1, _⟩ => parserTokenBufferValue tokenCapacity tokensCell
   | ⟨2, _⟩ => .signed .i32 (Int.ofNat tokens.length)
   | ⟨3, _⟩ => workspaceValue workspaceValues workspaceCell
   | ⟨4, _⟩ => .signed .i32
@@ -2778,13 +2888,14 @@ def positionEnvironment (words : List Int) (tokens : List Nat)
     entering the two lexical scopes cannot introduce a second semantic model
     of the recognizer state. -/
 def positionStatementEnvironment (words : List Int)
+    {tokenCapacity : Nat}
     (tokens : List Nat) (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId)
     (workspaceLayout : WorkspaceLayout) (grammar : IndexedGrammar)
     (grammarLayout : PackedGrammarLayout) (stateCount : Nat) :
     Lanius.FunctionalView.Env 13
   | ⟨0, _⟩ => parserGrammarValue words grammarCell
-  | ⟨1, _⟩ => parserTokensValue tokens tokensCell
+  | ⟨1, _⟩ => parserTokenBufferValue tokenCapacity tokensCell
   | ⟨2, _⟩ => .signed .i32 (Int.ofNat tokens.length)
   | ⟨3, _⟩ => workspaceValue workspaceValues workspaceCell
   | ⟨4, _⟩ => .signed .i32
@@ -2806,10 +2917,10 @@ theorem positionStatementEnvironment_push_zeroes
     (grammarCell tokensCell workspaceCell : CellId)
     (workspaceLayout : WorkspaceLayout) (grammar : IndexedGrammar)
     (grammarLayout : PackedGrammarLayout) (stateCount : Nat) :
-    ((positionStatementEnvironment words tokens workspaceValues grammarCell
+    ((positionStatementEnvironment words tokens (tokenCapacity := tokenCapacity) workspaceValues grammarCell
       tokensCell workspaceCell workspaceLayout grammar grammarLayout
       stateCount).push (.signed .i32 0)).push (.signed .i32 0) =
-      positionEnvironment words tokens workspaceValues grammarCell tokensCell
+      positionEnvironment words tokens (tokenCapacity := tokenCapacity) workspaceValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar grammarLayout stateCount 0 0 := by
   apply Lanius.FunctionalView.Env.eq_ofFn
   rfl
@@ -2825,11 +2936,11 @@ theorem stateEnvironment_extends_positionEnvironment
     (grammarLayout : PackedGrammarLayout) (stateCount furthest position : Nat)
     (candidate : Int) :
     Lanius.FunctionalView.Env.Extends stateIntoPositionEmbedding
-      (stateEnvironment words tokens workspaceValues grammarCell tokensCell
+      (stateEnvironment words tokens (tokenCapacity := tokenCapacity) workspaceValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar.grammar.n_kinds
         grammarLayout.lhsOffsetsOffset grammarLayout.lhsCountsOffset
         grammarLayout.lhsProductionsOffset stateCount position candidate)
-      ((positionEnvironment words tokens workspaceValues grammarCell tokensCell
+      ((positionEnvironment words tokens (tokenCapacity := tokenCapacity) workspaceValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar grammarLayout stateCount furthest
         position).push (.signed .i32 candidate)) := by
   apply Lanius.FunctionalView.Env.Extends.ofFn
@@ -2855,10 +2966,10 @@ theorem positionStateFrame_preserved
     (beforeCount afterCount furthest position : Nat)
     (beforeCandidate afterCandidate : Int) :
     Lanius.FunctionalView.Env.PreservesOutside stateIntoPositionEmbedding
-      ((positionEnvironment words tokens beforeValues grammarCell tokensCell
+      ((positionEnvironment words tokens (tokenCapacity := tokenCapacity) beforeValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar grammarLayout beforeCount furthest
         position).push (.signed .i32 beforeCandidate))
-      ((positionEnvironment words tokens afterValues grammarCell tokensCell
+      ((positionEnvironment words tokens (tokenCapacity := tokenCapacity) afterValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar grammarLayout afterCount furthest
         position).push (.signed .i32 afterCandidate)) := by
   intro index outside
@@ -2869,6 +2980,7 @@ theorem positionStateFrame_preserved
     the state body has decoded its current Earley item.  This is the shared
     boundary for all source-derived state branches. -/
 structure StateAfterBindingsEnvironment
+    {tokenCapacity : Nat}
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
     (workspaceLayout : WorkspaceLayout) (workspace : LogicalWorkspace)
@@ -2877,7 +2989,7 @@ structure StateAfterBindingsEnvironment
     (position current production dot origin rhsLength : Nat)
     (environment : Lanius.FunctionalView.Env 17) : Prop where
   grammarEq : environment ⟨0, by omega⟩ = parserGrammarValue words grammarCell
-  tokensEq : environment ⟨1, by omega⟩ = parserTokensValue tokens tokensCell
+  tokensEq : environment ⟨1, by omega⟩ = parserTokenBufferValue tokenCapacity tokensCell
   tokenCountEq : environment ⟨2, by omega⟩ =
     .signed .i32 (Int.ofNat tokens.length)
   workspaceEq : environment ⟨3, by omega⟩ =
@@ -2914,12 +3026,12 @@ structure StateAfterBindingsEnvironment
     value itself depends only on the stable backing cell and capacity-sized
     list length, so every other source local is framed automatically. -/
 theorem StateAfterBindingsEnvironment.after_workspace_update
-    (meaning : StateAfterBindingsEnvironment grammarLayout grammar words tokens
+    (meaning : StateAfterBindingsEnvironment (tokenCapacity := tokenCapacity) grammarLayout grammar words tokens
       workspaceLayout beforeWorkspace beforeValues grammarCell tokensCell
       workspaceCell position current production dot origin rhsLength environment)
     (afterWorkspace : LogicalWorkspace) (afterValues : List Int)
     (sameLength : afterValues.length = beforeValues.length) :
-    StateAfterBindingsEnvironment grammarLayout grammar words tokens
+    StateAfterBindingsEnvironment (tokenCapacity := tokenCapacity) grammarLayout grammar words tokens
       workspaceLayout afterWorkspace afterValues grammarCell tokensCell
       workspaceCell position current production dot origin rhsLength
       (Lanius.FunctionalView.Stateful.Env.set environment ⟨10, by omega⟩
@@ -3392,7 +3504,7 @@ private theorem stateTerminalAppendArguments_evaluates
     (positionBound : position ≤ 2147483647) :
     let seed := recognizerTerminalSeed production dot origin current position
       symbol
-    let world := stateWorld words tokens workspaceValues grammarCell tokensCell
+    let world := stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
       workspaceCell
     Lanius.FunctionalView.evaluateTerms
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -3406,7 +3518,7 @@ private theorem stateTerminalAppendArguments_evaluates
   dsimp only
   let seed := recognizerTerminalSeed production dot origin current position
     symbol
-  let world := stateWorld words tokens workspaceValues grammarCell tokensCell
+  let world := stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
     workspaceCell
   let machine := stateTermMachine workspaceLayout grammar words tokens
     grammarCell tokensCell
@@ -3483,9 +3595,9 @@ private theorem RecognizerTerminalAppendInvariant.functional_append
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace nextPosition
       seed workspaceValues
-    let world := stateWorld words tokens workspaceValues grammarCell tokensCell
+    let world := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
       workspaceCell
-    let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+    let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
       workspaceCell
     Lanius.FunctionalView.Term.evaluate
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -3499,9 +3611,9 @@ private theorem RecognizerTerminalAppendInvariant.functional_append
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace nextPosition
     seed workspaceValues
-  let world := stateWorld words tokens workspaceValues grammarCell tokensCell
+  let world := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
     workspaceCell
-  let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+  let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
     workspaceCell
   let machine := stateTermMachine workspaceLayout grammar words tokens
     grammarCell tokensCell
@@ -3555,6 +3667,9 @@ private theorem RecognizerTerminalAppendInvariant.functional_append
         appended.argumentsState := by
     simpa [world, appended] using stateWorld_represents
       appended.argumentsInvariant
+      (appended.argumentsEffect.empty_preserves_entry
+        invariant.terminal.recognizer.wellFormed
+        invariant.terminal.recognizer.tokenStorage.unused_backing)
   have worldOwned :
       (Lanius.FunctionalView.Core.ReadOnly.World.owns world).holds
         appended.argumentsState :=
@@ -3739,9 +3854,9 @@ private theorem RecognizerTerminalAppendInvariant.functional_success_ok
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace nextPosition
       seed workspaceValues
-    let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+    let beforeWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell
       tokensCell workspaceCell
-    let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+    let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
       workspaceCell
     Lanius.FunctionalView.Stateful.Command.Evaluates
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -3758,9 +3873,9 @@ private theorem RecognizerTerminalAppendInvariant.functional_success_ok
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace nextPosition
     seed workspaceValues
-  let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+  let beforeWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell
     tokensCell workspaceCell
-  let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+  let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
     workspaceCell
   let resultEnvironment := environment.push (appendOutcomeValue outcome)
   have appendResult : Lanius.FunctionalView.Term.evaluate
@@ -3881,9 +3996,9 @@ private theorem RecognizerTerminalAppendInvariant.functional_success_full
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace nextPosition
       seed workspaceValues
-    let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+    let beforeWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell
       tokensCell workspaceCell
-    let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+    let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
       workspaceCell
     Lanius.FunctionalView.Stateful.Command.Evaluates
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -3900,9 +4015,9 @@ private theorem RecognizerTerminalAppendInvariant.functional_success_full
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace nextPosition
     seed workspaceValues
-  let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+  let beforeWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell
     tokensCell workspaceCell
-  let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+  let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
     workspaceCell
   let resultEnvironment := environment.push (appendOutcomeValue outcome)
   have appendResult : Lanius.FunctionalView.Term.evaluate
@@ -4279,6 +4394,7 @@ private theorem stateRhsSymbolTerm_evaluates
 /-- Evaluate the terminal scanner call embedded in the projected terminal
     branch under the state-loop call registry. -/
 private theorem stateScanTerminalTerm_evaluates
+    {unused : List Int}
     {arity : Nat} (workspaceLayout : WorkspaceLayout)
     (grammar : IndexedGrammar) (words : List Int) (tokens : List Nat)
     (grammarCell tokensCell : CellId)
@@ -4289,7 +4405,7 @@ private theorem stateScanTerminalTerm_evaluates
     (grammarValueEq : environment grammarSlot =
       parserGrammarValue words grammarCell)
     (tokensValueEq : environment tokensSlot =
-      parserTokensValue tokens tokensCell)
+      parserTokenBufferValue (tokens.length + unused.length) tokensCell)
     (tokenCountValueEq : environment tokenCountSlot =
       .signed .i32 (Int.ofNat tokens.length))
     (positionValueEq : environment positionSlot =
@@ -4298,7 +4414,7 @@ private theorem stateScanTerminalTerm_evaluates
       .signed .i32 (Int.ofNat symbol))
     (grammarFound : world.i32Slice? grammarCell = some words)
     (tokensFound : world.i32Slice? tokensCell =
-      some (tokens.map Int.ofNat)) :
+      some (tokens.map Int.ofNat ++ unused)) :
     Lanius.FunctionalView.Term.evaluate
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
         tokensCell)
@@ -4315,7 +4431,7 @@ private theorem stateScanTerminalTerm_evaluates
     Lanius.FunctionalView.Term.evaluate_slot grammarValueEq
   have tokensResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (.reference (.slot tokensSlot)) =
-      .ok (parserTokensValue tokens tokensCell, world) :=
+      .ok (parserTokenBufferValue (tokens.length + unused.length) tokensCell, world) :=
     Lanius.FunctionalView.Term.evaluate_slot tokensValueEq
   have tokenCountResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (.reference (.slot tokenCountSlot)) =
@@ -4334,7 +4450,7 @@ private theorem stateScanTerminalTerm_evaluates
         .reference (.slot tokensSlot), .reference (.slot tokenCountSlot),
         .reference (.slot positionSlot), .reference (.slot symbolSlot)] =
       .ok ([parserGrammarValue words grammarCell,
-        parserTokensValue tokens tokensCell,
+        parserTokenBufferValue (tokens.length + unused.length) tokensCell,
         .signed .i32 (Int.ofNat tokens.length),
         .signed .i32 (Int.ofNat position),
         .signed .i32 (Int.ofNat symbol)], world) :=
@@ -4633,6 +4749,7 @@ private theorem stateGreaterEqualZeroTerm_evaluates
 /-- A failed scan executes the exact terminal branch without entering the
     append path. -/
 theorem stateTerminalCommand_evaluates_miss
+    {unused : List Int}
     (workspaceLayout : WorkspaceLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
     (grammarCell tokensCell : CellId)
@@ -4642,7 +4759,7 @@ theorem stateTerminalCommand_evaluates_miss
     (grammarValueEq : environment ⟨0, by omega⟩ =
       parserGrammarValue words grammarCell)
     (tokensValueEq : environment ⟨1, by omega⟩ =
-      parserTokensValue tokens tokensCell)
+      parserTokenBufferValue (tokens.length + unused.length) tokensCell)
     (tokenCountValueEq : environment ⟨2, by omega⟩ =
       .signed .i32 (Int.ofNat tokens.length))
     (positionValueEq : environment ⟨11, by omega⟩ =
@@ -4651,7 +4768,7 @@ theorem stateTerminalCommand_evaluates_miss
       .signed .i32 (Int.ofNat symbol))
     (grammarFound : world.i32Slice? grammarCell = some words)
     (tokensFound : world.i32Slice? tokensCell =
-      some (tokens.map Int.ofNat))
+      some (tokens.map Int.ofNat ++ unused))
     (scanMiss : scanTerminal grammar tokens position symbol = none) :
     Lanius.FunctionalView.Stateful.Command.Evaluates
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -4696,6 +4813,7 @@ theorem stateTerminalCommand_evaluates_miss
     handles scanner evaluation, local binding, control selection, and scope
     closure. -/
 private theorem stateTerminalCommand_evaluates_success
+    {unused : List Int}
     (workspaceLayout : WorkspaceLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
     (grammarCell tokensCell : CellId)
@@ -4705,7 +4823,7 @@ private theorem stateTerminalCommand_evaluates_success
     (grammarValueEq : environment ⟨0, by omega⟩ =
       parserGrammarValue words grammarCell)
     (tokensValueEq : environment ⟨1, by omega⟩ =
-      parserTokensValue tokens tokensCell)
+      parserTokenBufferValue (tokens.length + unused.length) tokensCell)
     (tokenCountValueEq : environment ⟨2, by omega⟩ =
       .signed .i32 (Int.ofNat tokens.length))
     (positionValueEq : environment ⟨11, by omega⟩ =
@@ -4714,7 +4832,7 @@ private theorem stateTerminalCommand_evaluates_success
       .signed .i32 (Int.ofNat symbol))
     (grammarFound : world.i32Slice? grammarCell = some words)
     (tokensFound : world.i32Slice? tokensCell =
-      some (tokens.map Int.ofNat))
+      some (tokens.map Int.ofNat ++ unused))
     (scanSuccess : scanTerminal grammar tokens position symbol =
       some nextPosition)
     (branchResult : Lanius.FunctionalView.Stateful.Command.Evaluates
@@ -4779,7 +4897,8 @@ theorem RecognizerTerminalAppendInvariant.functional_terminal_ok
     (grammarEq : environment ⟨0, by omega⟩ =
       parserGrammarValue words grammarCell)
     (tokensEq : environment ⟨1, by omega⟩ =
-      parserTokensValue tokens tokensCell)
+      parserTokenBufferValue
+        (tokens.length + invariant.terminal.recognizer.tokenStorage.unused.length) tokensCell)
     (tokenCountEq : environment ⟨2, by omega⟩ =
       .signed .i32 (Int.ofNat tokens.length))
     (workspaceEq : environment ⟨3, by omega⟩ =
@@ -4813,9 +4932,9 @@ theorem RecognizerTerminalAppendInvariant.functional_terminal_ok
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace nextPosition
       seed workspaceValues
-    let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+    let beforeWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell
       tokensCell workspaceCell
-    let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+    let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
       workspaceCell
     Lanius.FunctionalView.Stateful.Command.Evaluates
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -4832,9 +4951,9 @@ theorem RecognizerTerminalAppendInvariant.functional_terminal_ok
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace nextPosition
     seed workspaceValues
-  let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+  let beforeWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell
     tokensCell workspaceCell
-  let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+  let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
     workspaceCell
   let afterScan := environment.push
     (.signed .i32 (Int.ofNat nextPosition))
@@ -4891,7 +5010,8 @@ theorem RecognizerTerminalAppendInvariant.functional_terminal_full
     (grammarEq : environment ⟨0, by omega⟩ =
       parserGrammarValue words grammarCell)
     (tokensEq : environment ⟨1, by omega⟩ =
-      parserTokensValue tokens tokensCell)
+      parserTokenBufferValue
+        (tokens.length + invariant.terminal.recognizer.tokenStorage.unused.length) tokensCell)
     (tokenCountEq : environment ⟨2, by omega⟩ =
       .signed .i32 (Int.ofNat tokens.length))
     (workspaceEq : environment ⟨3, by omega⟩ =
@@ -4925,9 +5045,9 @@ theorem RecognizerTerminalAppendInvariant.functional_terminal_full
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace nextPosition
       seed workspaceValues
-    let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+    let beforeWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell
       tokensCell workspaceCell
-    let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+    let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
       workspaceCell
     Lanius.FunctionalView.Stateful.Command.Evaluates
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -4944,9 +5064,9 @@ theorem RecognizerTerminalAppendInvariant.functional_terminal_full
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace nextPosition
     seed workspaceValues
-  let beforeWorld := stateWorld words tokens workspaceValues grammarCell
+  let beforeWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) workspaceValues grammarCell
     tokensCell workspaceCell
-  let afterWorld := stateWorld words tokens nextValues grammarCell tokensCell
+  let afterWorld := stateWorld words tokens (unused := invariant.terminal.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
     workspaceCell
   let afterScan := environment.push
     (.signed .i32 (Int.ofNat nextPosition))
@@ -5251,7 +5371,7 @@ theorem positionActivityCondition_evaluates
     (grammarCell tokensCell workspaceCell : CellId)
     (stateCount furthest position : Nat)
     (workspaceFound :
-      (stateWorld words tokens workspaceValues grammarCell tokensCell
+      (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell).i32Slice? workspaceCell = some workspaceValues)
     (valuesLength : workspaceValues.length = workspaceLayout.workspaceLength)
     (encoded : EncodesWorkspace workspaceLayout workspace
@@ -5260,18 +5380,18 @@ theorem positionActivityCondition_evaluates
     Lanius.FunctionalView.Term.evaluate
       (positionTermMachine workspaceLayout grammar words tokens grammarCell
         tokensCell)
-      (stateWorld words tokens workspaceValues grammarCell tokensCell
+      (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell)
-      (positionEnvironment words tokens workspaceValues grammarCell tokensCell
+      (positionEnvironment words tokens (tokenCapacity := tokenCapacity) workspaceValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar grammarLayout
         stateCount furthest position)
       positionActivityCondition =
       .ok (.boolean (decide (chartHeadValue workspace position ≥ 0)),
-        stateWorld words tokens workspaceValues grammarCell tokensCell
+        stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
           workspaceCell) := by
-  let world := stateWorld words tokens workspaceValues grammarCell tokensCell
+  let world := stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
     workspaceCell
-  let environment := positionEnvironment words tokens workspaceValues grammarCell
+  let environment := positionEnvironment words tokens (tokenCapacity := tokenCapacity) workspaceValues grammarCell
     tokensCell workspaceCell workspaceLayout grammar grammarLayout
     stateCount furthest position
   have headResult := stateChartHeadTerm_evaluates workspaceLayout grammar words
@@ -5630,7 +5750,7 @@ noncomputable def RecognizerInvariant.enter_chart_loop
       (⟨Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
           headRead.invariant.wellFormed headRead.invariant.grammarBacking,
         Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-          headRead.invariant.wellFormed headRead.invariant.tokensBacking,
+          headRead.invariant.wellFormed headRead.invariant.tokenStorage.unused_backing,
         Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
           headRead.invariant.wellFormed headRead.invariant.workspaceBacking⟩)
   have cursorDifferent (fixed : Nat) (bound : fixed ≤ 5) :
@@ -5756,9 +5876,11 @@ theorem RecognizerInvariant.restore_temporary
     grammarLengthLocal := by
       rw [restoredParameterLocal 1 (by simp)]
       exact completedInvariant.grammarLengthLocal
-    tokensLocal := by
-      rw [restoredParameterLocal 2 (by simp)]
-      exact completedInvariant.tokensLocal
+    tokenStorage := completedInvariant.tokenStorage.transport
+      (fun _ found => by
+        rw [restoredParameterLocal 2 (by simp)]
+        exact found)
+      (fun _ found => found)
     tokenCountLocal := by
       rw [restoredParameterLocal 3 (by simp)]
       exact completedInvariant.tokenCountLocal
@@ -5769,7 +5891,6 @@ theorem RecognizerInvariant.restore_temporary
       rw [restoredParameterLocal 5 (by simp)]
       exact completedInvariant.workspaceLengthLocal
     grammarBacking := completedInvariant.grammarBacking
-    tokensBacking := completedInvariant.tokensBacking
     workspaceBacking := completedInvariant.workspaceBacking
     grammarWorkspaceDistinct := completedInvariant.grammarWorkspaceDistinct
     tokensWorkspaceDistinct := completedInvariant.tokensWorkspaceDistinct
@@ -5847,13 +5968,13 @@ private theorem RecognizerStateLoopInvariant.functional_next
     Lanius.FunctionalView.Term.evaluate
       (stateTermMachine workspaceLayout grammar words tokens grammarCell
         tokensCell)
-      (stateWorld words tokens workspaceValues grammarCell tokensCell
+      (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell)
       environment
         (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩
           ⟨12, by omega⟩ 32) =
       .ok (.signed .i32 (encodeStateId remaining.head?),
-        stateWorld words tokens workspaceValues grammarCell tokensCell
+        stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
           workspaceCell) := by
   let candidate := Classical.choose invariant.chartCursor.state_at_cursor
   have candidateFacts :=
@@ -5862,7 +5983,7 @@ private theorem RecognizerStateLoopInvariant.functional_next
   have positionEq : candidate.position = position := candidateFacts.2
   have evaluated := stateValueTerm_evaluates workspaceLayout grammar words
     tokens grammarCell tokensCell workspaceCell
-    (stateWorld words tokens workspaceValues grammarCell tokensCell
+    (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
       workspaceCell)
     environment ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ workspace
     candidate workspaceValues current 4 32 workspaceValueEq stateBaseEq
@@ -5897,14 +6018,14 @@ theorem RecognizerStateLoopInvariant.functional_advance
         tokensCell)
       (stateStatefulMachine workspaceLayout grammar words tokens grammarCell
         tokensCell)
-      (stateWorld words tokens workspaceValues grammarCell tokensCell
+      (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell)
       environment stateAdvanceCommand .next
-      (stateWorld words tokens workspaceValues grammarCell tokensCell
+      (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell)
       (Lanius.FunctionalView.Stateful.Env.set environment ⟨12, by omega⟩
         (.signed .i32 (encodeStateId remaining.head?))) := by
-  have nextResult := invariant.functional_next environment workspaceValueEq
+  have nextResult := invariant.functional_next (unused := unused) environment workspaceValueEq
     stateBaseEq currentEq
   rw [stateAdvanceCommand_shape]
   exact .sequenceNext (.setLocal nextResult) .skip
@@ -6041,9 +6162,9 @@ inductive RecognizerStateBranchSynchronizedOutcome
         workspaceLayout beforeWorkspace workspace workspaceValues grammarCell
         tokensCell workspaceCell stateCountCell cursorCell physicalAfter
         position current beforeRemaining)
-      (worldEq : afterWorld = stateWorld words tokens workspaceValues grammarCell
+      (worldEq : afterWorld = stateWorld words tokens (unused := frame.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
         tokensCell workspaceCell)
-      (environmentMeaning : StateAfterBindingsEnvironment grammarLayout grammar
+      (environmentMeaning : StateAfterBindingsEnvironment (tokenCapacity := tokens.length + frame.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar
         words tokens workspaceLayout workspace workspaceValues grammarCell
         tokensCell workspaceCell position current production dot origin
         rhsLength afterEnvironment) :
@@ -6108,9 +6229,9 @@ theorem RecognizerStateBranchSynchronizedOutcome.view
           tokensCell workspaceCell stateCountCell cursorCell physicalAfter
           position current beforeRemaining,
       completion = .next ∧
-      afterWorld = stateWorld words tokens workspaceValues grammarCell tokensCell
+      afterWorld = stateWorld words tokens (unused := frame.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
         workspaceCell ∧
-      StateAfterBindingsEnvironment grammarLayout grammar words tokens
+      StateAfterBindingsEnvironment (tokenCapacity := tokens.length + frame.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell position current production dot origin rhsLength
         afterEnvironment) := by
@@ -7547,7 +7668,8 @@ inductive RecognizerStateParentSynchronizedOutcome
         workspaceLayout beforeWorkspace workspace workspaceValues grammarCell
         tokensCell workspaceCell stateCountCell cursorCell physicalAfter
         position current beforeRemaining)
-      (worldEq : after.world = parentWorld words tokens workspaceValues
+      (worldEq : after.world = parentWorld words tokens
+        (unused := frame.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues
         grammarCell tokensCell workspaceCell)
       (environmentEq : after.environment = parentEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
@@ -7602,7 +7724,8 @@ theorem RecognizerStateParentSynchronizedOutcome.view
           workspaceLayout beforeWorkspace workspace workspaceValues grammarCell
           tokensCell workspaceCell stateCountCell cursorCell physicalAfter
           position current beforeRemaining,
-        after.world = parentWorld words tokens workspaceValues grammarCell
+        after.world = parentWorld words tokens
+          (unused := frame.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell
           tokensCell workspaceCell ∧
         after.environment = parentEnvironment words workspaceValues grammarCell
           workspaceCell workspaceLayout workspace.states.length
@@ -7875,6 +7998,10 @@ noncomputable def RecognizerStateParentEntry.execute
         after growth restoredRecognizer finished.chartCursor.workspaceWithinGrammar
         stateCountOwned retainedWrites effect frameDisjoint
         stateCursorNotWritten
+      have suffixEq : frame.invariant.chartCursor.recognizer.tokenStorage.unused =
+          finished.chartCursor.recognizer.tokenStorage.unused := by
+        apply frame.invariant.chartCursor.recognizer.tokenStorage.unused_eq_of_backing
+        exact finished.chartCursor.recognizer.tokenStorage.unused_backing
       exact ⟨{
         after := after
         execution := execution
@@ -7882,7 +8009,8 @@ noncomputable def RecognizerStateParentEntry.execute
         outcome := by
           simpa [completionEq] using
             (RecognizerStateParentSynchronizedOutcome.completed nextWorkspace
-              nextValues after growth frame worldEq environmentEq)
+              nextValues after growth frame
+              (by simpa only [suffixEq] using worldEq) environmentEq)
       }, trivial⟩
     · rcases fullResult with ⟨finalWorkspace, finalValues, growth, terminal,
         stateCount, _, completionEq⟩

@@ -42,6 +42,16 @@ theorem callSoundness (source : List Compiler.Lexer.Byte) :
   Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness.route
     (ScanOne.Calls.callSoundness source) nonScanningCall_soundness
 
+/-- Every expression-level helper preserves the caller's existing cells.
+    Only the enclosing lex_into array actions may write token records. -/
+theorem framePreservingCallSoundness (source : List Compiler.Lexer.Byte) :
+    Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness
+      verifiedFrontendCore (callModel source) := by
+  apply Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness.route
+    (ScanOne.Calls.framePreservingCallSoundness source)
+  exact Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness.route
+    TokenScan.Semantics.framePreservingCallSoundness Results.Semantics.constructorFramePreservingCallSoundness
+
 theorem scanOne (source : List Compiler.Lexer.Byte) (world : ReadOnly.World)
     (start : Nat)
     (sourceBound : source.length ≤ 2147483646)

@@ -377,12 +377,11 @@ theorem run_records (source : List Byte) (capacity : Nat) (records : List Int) :
 
 theorem writeToken_indices_in_bounds
     {records : List Int} {capacity tokenIndex : Nat}
-    (length : records.length = 3 * capacity)
+    (length : 3 * capacity ≤ records.length)
     (available : tokenIndex < capacity) :
     3 * tokenIndex < records.length ∧
       3 * tokenIndex + 1 < records.length ∧
       3 * tokenIndex + 2 < records.length := by
-  rw [length]
   omega
 
 def resultValue : Outcome → Lanius.Core.Value

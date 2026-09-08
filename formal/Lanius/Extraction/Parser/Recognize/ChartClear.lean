@@ -827,15 +827,15 @@ theorem RecognizerChartClearExecution.recognizer_invariant
     grammarLocal := preserveLocal 0 (by simp) _ resources.grammarLocal
     grammarLengthLocal := preserveLocal 1 (by simp) _
       resources.grammarLengthLocal
-    tokensLocal := preserveLocal 2 (by simp) _ resources.tokensLocal
+    tokenStorage := resources.tokenStorage.transport
+      (fun _ found => preserveLocal 2 (by simp) _ found)
+      (fun _ found => execution.effect.preserves_entry resources.wellFormed found tokensNotWritten)
     tokenCountLocal := preserveLocal 3 (by simp) _
       resources.tokenCountLocal
     workspaceLocal := execution.invariant.workspaceLocal
     workspaceLengthLocal := execution.invariant.workspaceLengthLocal
     grammarBacking := execution.effect.preserves_entry resources.wellFormed
       resources.grammarBacking grammarNotWritten
-    tokensBacking := execution.effect.preserves_entry resources.wellFormed
-      resources.tokensBacking tokensNotWritten
     workspaceBacking := execution.invariant.workspaceBacking
     grammarWorkspaceDistinct := resources.grammarWorkspaceDistinct
     tokensWorkspaceDistinct := resources.tokensWorkspaceDistinct

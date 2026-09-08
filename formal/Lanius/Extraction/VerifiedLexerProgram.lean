@@ -1,6 +1,7 @@
 import Lanius.Extraction.VerifiedFrontend.Pack
 import Lanius.Extraction.ArtifactQuote
 import Lanius.Extraction.ArtifactPackChecker
+import Lanius.Extraction.ArtifactContextChecker
 import Lanius.Extraction.StatementNormalization
 import Lanius.Compiler.LexerProgramNumbers
 import Lanius.CallContracts

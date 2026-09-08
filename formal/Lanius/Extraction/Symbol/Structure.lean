@@ -55,7 +55,9 @@ def index (base position : PTerm arity) : PTerm arity :=
 def tokenKindConstantId (kind : Int) : ConstantId :=
   ((verifiedFrontendCore.constants.find?
     (fun declaration => 7 <= declaration.id && declaration.id <= 88 &&
-      declaration.value == .signed .i32 kind)).map
+      (match declaration.value with
+       | .signed .i32 value => value == kind
+       | _ => false))).map
       (fun declaration => declaration.id)).getD 0
 
 def tokenKind (kind : Int) : PTerm arity :=

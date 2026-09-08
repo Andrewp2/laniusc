@@ -1,6 +1,8 @@
 import Lanius.Semantics.Relocation.Pointers
 import Lanius.Semantics.Relocation.Pattern
 import Lanius.Semantics.Relocation.Access
+-- Reuse canonical generated evaluator congruences across semantic proofs.
+import Lanius.ProgramSemanticsAgreement
 
 namespace Lanius.Semantics.Relocation.Execution
 

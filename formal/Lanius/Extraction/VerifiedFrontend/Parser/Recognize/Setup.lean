@@ -151,19 +151,24 @@ private theorem recognizerSeedSetupReification_exists :
     recognizerSeedSetupReification?.isSome := by
   native_decide
 
+/-- Check the reification once; clients project its command and lowering
+    proof without unfolding the reifier again in kernel conversion. -/
+private opaque recognizerSeedSetupReification : ReifiedCommand verifiedParserCore
+    (.structure 0) recognizerSeedSetupContext false recognizerSeedSetupLayout 11
+    parserRecognizeSeedSetupStatement :=
+  recognizerSeedSetupReification?.get recognizerSeedSetupReification_exists
+
 /-- The complete nested setup statement mechanically recovered from the
     checked `parser.lani::recognize` body. -/
 def recognizerSeedSetupCommand :=
-  recognizerSeedSetupReification?.get recognizerSeedSetupReification_exists
-    |>.command
+  recognizerSeedSetupReification.command
 
 theorem recognizerSeedSetupCommand_toCore_exactly :
     Lanius.FunctionalView.Core.Stateful.toCoreStmt
       Lanius.FunctionalView.Core.Stateful.actionAdapter
       recognizerSeedSetupLayout 11 recognizerSeedSetupCommand =
       parserRecognizeSeedSetupStatement :=
-  (recognizerSeedSetupReification?.get
-    recognizerSeedSetupReification_exists).toCoreExactly
+  recognizerSeedSetupReification.toCoreExactly
 
 private def setupSlot {arity : Nat} (index : Fin arity) :
     Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
@@ -271,38 +276,38 @@ private theorem setupHeader_evaluates
     Lanius.FunctionalView.Term.evaluate
       (positionTermMachine workspaceLayout grammar words tokens grammarCell
         tokensCell)
-      (stateWorld words tokens workspaceValues grammarCell tokensCell
+      (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell)
       environment (setupHeader constantId first) =
       .ok (.signed .i32 (Int.ofNat value),
-        stateWorld words tokens workspaceValues grammarCell tokensCell
+        stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
           workspaceCell) := by
   apply setupTerm_evaluates_of_readOnly
     (grammar := grammar) (tokens := tokens) (tokensCell := tokensCell)
     (free := by rfl)
   have baseResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      (stateWorld words tokens workspaceValues grammarCell tokensCell
+      (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell)
       environment (setupSlot ⟨0, first⟩) =
       .ok (parserGrammarValue words grammarCell,
-        stateWorld words tokens workspaceValues grammarCell tokensCell
+        stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
           workspaceCell) := by
     simp [setupSlot, Lanius.FunctionalView.Term.evaluate,
       Lanius.FunctionalView.Ref.evaluate, grammarValue]
   have constantResult :=
     Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_constant
       (program := verifiedParserCore)
-      (world := stateWorld words tokens workspaceValues grammarCell tokensCell
+      (world := stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell)
       (environment := environment) (type := parserI32Type) constantFound
   have indexResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      (stateWorld words tokens workspaceValues grammarCell tokensCell
+      (stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
         workspaceCell)
       environment (setupConstant constantId) =
       .ok (.signed .i32 (Int.ofNat headerIndex),
-        stateWorld words tokens workspaceValues grammarCell tokensCell
+        stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
           workspaceCell) := by
     simpa [setupConstant] using constantResult
   simpa [setupHeader, setupIndex, parserGrammarValue, parserI32Type] using
@@ -640,8 +645,10 @@ theorem RecognizerEntryResources.after_empty_effect
       entry.resources.grammarLocal
     grammarLengthLocal := effect.empty_preserves_local
       entry.resources.wellFormed entry.resources.grammarLengthLocal
-    tokensLocal := effect.empty_preserves_local entry.resources.wellFormed
-      entry.resources.tokensLocal
+    tokenStorage := entry.resources.tokenStorage.preserved
+      (fun _ found => effect.empty_preserves_local entry.resources.wellFormed found)
+      entry.resources.wellFormed
+      (CellEffect.ofModifiesOnly effect afterWellFormed) (by simp [CellSet.empty])
     tokenCountLocal := effect.empty_preserves_local entry.resources.wellFormed
       entry.resources.tokenCountLocal
     workspaceLocal := effect.empty_preserves_local entry.resources.wellFormed
@@ -650,8 +657,6 @@ theorem RecognizerEntryResources.after_empty_effect
       entry.resources.wellFormed entry.resources.workspaceLengthLocal
     grammarBacking := effect.empty_preserves_entry entry.resources.wellFormed
       entry.resources.grammarBacking
-    tokensBacking := effect.empty_preserves_entry entry.resources.wellFormed
-      entry.resources.tokensBacking
     workspaceBacking := effect.empty_preserves_entry entry.resources.wellFormed
       entry.resources.workspaceBacking
     grammarWorkspaceDistinct := entry.resources.grammarWorkspaceDistinct
@@ -755,14 +760,15 @@ theorem RecognizerResources.after_bind_locals
     grammarLocal := preserveLocal 0 (by decide) _ resources.grammarLocal
     grammarLengthLocal := preserveLocal 1 (by decide) _
       resources.grammarLengthLocal
-    tokensLocal := preserveLocal 2 (by decide) _ resources.tokensLocal
+    tokenStorage := resources.tokenStorage.transport
+      (fun _ found => preserveLocal 2 (by decide) _ found)
+      (fun _ found => preserveEntry tokensCell found)
     tokenCountLocal := preserveLocal 3 (by decide) _
       resources.tokenCountLocal
     workspaceLocal := preserveLocal 4 (by decide) _ resources.workspaceLocal
     workspaceLengthLocal := preserveLocal 5 (by decide) _
       resources.workspaceLengthLocal
     grammarBacking := preserveEntry grammarCell resources.grammarBacking
-    tokensBacking := preserveEntry tokensCell resources.tokensBacking
     workspaceBacking := preserveEntry workspaceCell resources.workspaceBacking
     grammarWorkspaceDistinct := resources.grammarWorkspaceDistinct
     tokensWorkspaceDistinct := resources.tokensWorkspaceDistinct
@@ -1086,7 +1092,7 @@ noncomputable def makeRecognizerSetupEntry
     have grammarOld := StateWellFormed.cell_lt_next_of_entry
       recognizer.wellFormed recognizer.grammarBacking
     have tokensOld := StateWellFormed.cell_lt_next_of_entry
-      recognizer.wellFormed recognizer.tokensBacking
+      recognizer.wellFormed recognizer.tokenStorage.unused_backing
     have workspaceOld := StateWellFormed.cell_lt_next_of_entry
       recognizer.wellFormed recognizer.workspaceBacking
     refine ⟨?_, ?_, ?_⟩
@@ -1348,7 +1354,7 @@ noncomputable def makeRecognizerSetupEntry
         have grammarOld := StateWellFormed.cell_lt_next_of_entry
           recognizer.wellFormed recognizer.grammarBacking
         have tokensOld := StateWellFormed.cell_lt_next_of_entry
-          recognizer.wellFormed recognizer.tokensBacking
+          recognizer.wellFormed recognizer.tokenStorage.unused_backing
         have workspaceOld := StateWellFormed.cell_lt_next_of_entry
           recognizer.wellFormed recognizer.workspaceBacking
         refine ⟨?_, ?_, ?_, ?_⟩
@@ -1394,6 +1400,7 @@ structure RecognizerSetupExecution
     finalWorkspace finalWorkspaceValues workspaceCell after
   outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words
     tokens workspaceLayout completion
+  outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
 /-- Evaluate the exact nested setup statements selected from the extracted
     recognizer, then enter the verified start-production loop. -/
@@ -1692,6 +1699,7 @@ noncomputable def executeRecognizerSetup
     growth := continuation.growth
     workspaceArtifact := continuation.workspaceArtifact.transfer_cells cells
     outcome := continuation.outcome
+    outcomeWorkspace := continuation.outcomeWorkspace
   }
 
 /-- The chart-clear loop and semantic recognizer continuation, starting at
@@ -1720,6 +1728,7 @@ structure RecognizerChartContinuationExecution
     finalWorkspace finalWorkspaceValues workspaceCell after
   outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words
     tokens workspaceLayout completion
+  outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
 /-- Clear the caller's workspace prefix, reframe it as the empty logical
     Earley workspace, and immediately execute the already verified recognizer
@@ -1742,7 +1751,7 @@ noncomputable def executeRecognizerChartContinuation
   have indexTokensDistinct : chartEntry.indexCell ≠ tokensCell := by
     intro same
     have old := StateWellFormed.cell_lt_next_of_entry
-      entry.resources.wellFormed entry.resources.tokensBacking
+      entry.resources.wellFormed entry.resources.tokenStorage.unused_backing
     rw [← same, chartEntry.indexCellEq] at old
     exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 4)) old
   have afterRecognizer := clearExecution.recognizer_invariant
@@ -1766,6 +1775,7 @@ noncomputable def executeRecognizerChartContinuation
     growth := setup.growth
     workspaceArtifact := setup.workspaceArtifact
     outcome := setup.outcome
+    outcomeWorkspace := setup.outcomeWorkspace
   }
 
 /-- Execution of the complete recognizer body that follows successful grammar
@@ -1791,6 +1801,7 @@ structure RecognizerAfterGrammarExecution
     finalWorkspace finalWorkspaceValues workspaceCell after
   outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words
     tokens workspaceLayout completion
+  outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
 noncomputable def executeRecognizerAfterGrammarGuard
     (entry : RecognizerEntryResources grammarLayout grammar words tokens
@@ -2045,6 +2056,7 @@ noncomputable def executeRecognizerAfterGrammarGuard
     growth := continuation.growth
     workspaceArtifact := continuation.workspaceArtifact.transfer_cells cells
     outcome := continuation.outcome
+    outcomeWorkspace := continuation.outcomeWorkspace
   }
 
 /-- End-to-end execution of the exact extracted `recognize` body for a packed,
@@ -2070,6 +2082,7 @@ structure RecognizerExecution
     finalWorkspace finalWorkspaceValues workspaceCell after
   outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words
     tokens workspaceLayout completion
+  outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
 noncomputable def executeRecognizer
     (entry : RecognizerEntryResources grammarLayout grammar words tokens
@@ -2102,6 +2115,7 @@ noncomputable def executeRecognizer
     growth := continuation.growth
     workspaceArtifact := continuation.workspaceArtifact
     outcome := continuation.outcome
+    outcomeWorkspace := continuation.outcomeWorkspace
   }
 
 /-- The concrete parse-result value selected by a completed semantic
@@ -2166,7 +2180,7 @@ def RecognizerInitialContinuationOutcome.languageOutcome
       | .completed _ _ _ _ root =>
           match root with
           | .accepted _ _ _ _ _ materializedParse =>
-              .accepted materializedParse
+              .accepted materializedParse.toMaterializedParse
           | .rejected _ => .rejected
 
 theorem RecognizerExecution.returns_result
@@ -2195,31 +2209,59 @@ theorem RecognizerExecution.executes_view_lowering
   exact execution.returns_result
 
 def parserRecognizeValues
-    (words : List Int) (tokens : List Nat) (workspaceValues : List Int)
+    (words : List Int) (tokens : List Nat) (tokenCapacity : Nat) (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId) : List Value := [
   parserGrammarValue words grammarCell,
   .signed .i32 (Int.ofNat words.length),
-  parserTokensValue tokens tokensCell,
+  parserTokenBufferValue tokenCapacity tokensCell,
   .signed .i32 (Int.ofNat tokens.length),
   workspaceValue workspaceValues workspaceCell,
   .signed .i32 (Int.ofNat workspaceValues.length)]
 
 def parserRecognizeBindings
-    (words : List Int) (tokens : List Nat) (workspaceValues : List Int)
+    (words : List Int) (tokens : List Nat) (tokenCapacity : Nat) (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId) : List (VarId × Value) := [
   (0, parserGrammarValue words grammarCell),
   (1, .signed .i32 (Int.ofNat words.length)),
-  (2, parserTokensValue tokens tokensCell),
+  (2, parserTokenBufferValue tokenCapacity tokensCell),
   (3, .signed .i32 (Int.ofNat tokens.length)),
   (4, workspaceValue workspaceValues workspaceCell),
   (5, .signed .i32 (Int.ofNat workspaceValues.length))]
 
 def parserRecognizeCallee
-    (caller : State) (words : List Int) (tokens : List Nat)
+    (caller : State) (words : List Int) (tokens : List Nat) (tokenCapacity : Nat)
     (workspaceValues : List Int) (grammarCell tokensCell workspaceCell : CellId) :
     State :=
-  enterCall caller (parserRecognizeBindings words tokens workspaceValues
+  enterCall caller (parserRecognizeBindings words tokens tokenCapacity workspaceValues
     grammarCell tokensCell workspaceCell)
+
+/-- Entering the recognizer retains the caller's full-capacity token buffer;
+    only the meaningful prefix is the logical parser input. -/
+theorem parserRecognizeCallee_tokenStorage
+    (wellFormed : StateWellFormed caller)
+    (storage : I32Prefix caller tokensCell tokenCapacity (tokens.map Int.ofNat)) :
+    I32PrefixLocal
+      (parserRecognizeCallee caller words tokens tokenCapacity workspaceValues
+        grammarCell tokensCell workspaceCell)
+      2 tokensCell (tokens.map Int.ofNat) := by
+  apply I32PrefixLocal.of_storage (capacity := tokenCapacity)
+  · exact enterCall_local_of_binding caller
+      [(0, parserGrammarValue words grammarCell),
+        (1, .signed .i32 (Int.ofNat words.length))]
+      [(3, .signed .i32 (Int.ofNat tokens.length)),
+        (4, workspaceValue workspaceValues workspaceCell),
+        (5, .signed .i32 (Int.ofNat workspaceValues.length))]
+      2 (parserTokenBufferValue tokenCapacity tokensCell) wellFormed (by
+        intro binding member
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+        rcases member with rfl | rfl | rfl <;> simp)
+  · obtain ⟨unused, lengthEq, backing⟩ := storage
+    refine ⟨unused, lengthEq, ?_⟩
+    exact ((enterCall_effect caller
+      (parserRecognizeBindings words tokens tokenCapacity workspaceValues
+        grammarCell tokensCell workspaceCell)).oldCells tokensCell
+      (StateWellFormed.cell_lt_next_of_entry wellFormed backing)
+      (by simp [CellSet.empty])).trans backing
 
 theorem extractedParserRecognize_function_contract_shape :
     extractedParserRecognizeFunction.parameters = [
@@ -2233,9 +2275,9 @@ theorem extractedParserRecognize_function_contract_shape :
 
 theorem extractedParserRecognize_parameters_bind :
     bindParameters extractedParserRecognizeFunction.parameters
-        (parserRecognizeValues words tokens workspaceValues grammarCell
+        (parserRecognizeValues words tokens tokenCapacity workspaceValues grammarCell
           tokensCell workspaceCell) =
-      some (parserRecognizeBindings words tokens workspaceValues grammarCell
+      some (parserRecognizeBindings words tokens tokenCapacity workspaceValues grammarCell
         tokensCell workspaceCell) := by
   rw [extractedParserRecognize_function_contract_shape.1]
   rfl
@@ -2258,12 +2300,15 @@ structure RecognizerCallExecution
     (.call extractedParserRecognizeFunction.id arguments)
     outcome.resultValue after
   effect : ModifiesOnly (CellSet.singleton workspaceCell) afterArguments after
+  preservesWellFormed : StateWellFormed afterArguments → StateWellFormed after
   finalWorkspace : LogicalWorkspace
   finalWorkspaceValues : List Int
   growth : WorkspaceAppendClosure workspaceLayout.capacity emptyWorkspace
     finalWorkspace
   workspaceArtifact : RecognizerWorkspaceArtifact workspaceLayout
     finalWorkspace finalWorkspaceValues workspaceCell after
+
+  outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
 /-- Public semantic result paired with the concrete extracted-call proof. -/
 def RecognizerCallExecution.languageOutcome
@@ -2275,11 +2320,11 @@ def RecognizerCallExecution.languageOutcome
 
 noncomputable def executeRecognizerCall
     (argumentsResult : ArgumentsEvaluateTo verifiedParserCore before arguments
-      (parserRecognizeValues words tokens workspaceValues grammarCell tokensCell
+      (parserRecognizeValues words tokens tokenCapacity workspaceValues grammarCell tokensCell
         workspaceCell) afterArguments)
     (entry : RecognizerEntryResources grammarLayout grammar words tokens
       workspaceLayout workspaceValues grammarCell tokensCell workspaceCell
-      (parserRecognizeCallee afterArguments words tokens workspaceValues
+      (parserRecognizeCallee afterArguments words tokens tokenCapacity workspaceValues
         grammarCell tokensCell workspaceCell)) :
     RecognizerCallExecution grammarLayout grammar words tokens workspaceLayout
       workspaceValues grammarCell tokensCell workspaceCell before afterArguments
@@ -2287,7 +2332,7 @@ noncomputable def executeRecognizerCall
   let body := executeRecognizer entry
   let after := restoreLocals afterArguments body.after
   have bodyResult : Executes verifiedParserCore
-      (parserRecognizeCallee afterArguments words tokens workspaceValues
+      (parserRecognizeCallee afterArguments words tokens tokenCapacity workspaceValues
         grammarCell tokensCell workspaceCell)
       extractedParserRecognizeBody
       (.returned (some body.outcome.resultValue)) body.after :=
@@ -2306,8 +2351,14 @@ noncomputable def executeRecognizerCall
     after := after
     outcomeCompletion := body.completion
     outcome := body.outcome
+    outcomeWorkspace := body.outcomeWorkspace
     evaluation := evaluation
     effect := effect
+    preservesWellFormed := fun wellFormed =>
+      ((enterCall_effect afterArguments
+        (parserRecognizeBindings words tokens tokenCapacity workspaceValues
+          grammarCell tokensCell workspaceCell)).domain.trans
+        body.effect.domain).restoreLocals_wellFormed wellFormed body.wellFormed
     finalWorkspace := body.finalWorkspace
     finalWorkspaceValues := body.finalWorkspaceValues
     growth := body.growth

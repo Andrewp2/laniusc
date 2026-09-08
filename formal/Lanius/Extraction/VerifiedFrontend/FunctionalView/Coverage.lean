@@ -72,13 +72,13 @@ private theorem reference {proposition : Prop} (proof : proposition) :
     TheoremReference proof := ⟨proof⟩
 
 structure SourceCoverage where
-  packSources : TheoremReference verifiedFrontendPack_tracks_sources
+  unchangedPackSources : TheoremReference verifiedFrontendPack_tracks_unchanged_sources
   names : TheoremReference source_function_names
   count : TheoremReference source_function_count
 
 theorem sources_complete : Nonempty SourceCoverage := by
   exact ⟨{
-    packSources := reference verifiedFrontendPack_tracks_sources
+    unchangedPackSources := reference verifiedFrontendPack_tracks_unchanged_sources
     names := reference source_function_names
     count := reference source_function_count
   }⟩

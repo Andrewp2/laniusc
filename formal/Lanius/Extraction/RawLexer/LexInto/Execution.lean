@@ -566,7 +566,7 @@ theorem loopBody_token
     (scanned : Lexer.scanOne source offset = .token token)
     (startEq : token.start = offset)
     (room : tokenCount < capacity)
-    (recordsLength : records.length = 3 * capacity)
+    (recordsCapacity : 3 * capacity ≤ records.length)
     (capacityBound : 3 * capacity ≤ 2147483647) :
     Command.Evaluates (TM source) (SM source) (world source records)
         (loopEnvironment source records capacity offset tokenCount)
@@ -750,7 +750,7 @@ theorem loop_evaluates_runFromFuel
     (enoughFuel : source.length - offset < fuel)
     (acceptedCount : accepted.length = tokenCount)
     (countFits : tokenCount ≤ capacity)
-    (recordsLength : records.length = 3 * capacity)
+    (recordsCapacity : 3 * capacity ≤ records.length)
     (capacityBound : 3 * capacity ≤ 2147483647) :
     let result := Model.runFromFuel source capacity fuel offset tokenCount
       accepted records
@@ -804,17 +804,12 @@ theorem loop_evaluates_runFromFuel
               have nextAcceptedCount :
                   (accepted ++ [token]).length = tokenCount + 1 := by
                 simp [acceptedCount]
-              have nextRecordsLength :
-                  (afterToken records tokenCount token).length =
-                    3 * capacity := by
-                calc
-                  (afterToken records tokenCount token).length = records.length :=
-                    afterToken_length records tokenCount token
-                  _ = 3 * capacity := recordsLength
+              have nextRecordsCapacity : 3 * capacity ≤ (afterToken records tokenCount token).length := by
+                simpa only [afterToken_length] using recordsCapacity
               have rest := induction token.finish (tokenCount + 1)
                 (accepted ++ [token])
                 (afterToken records tokenCount token) tailFuel nextAcceptedCount
-                nextCountFits nextRecordsLength
+                nextCountFits nextRecordsCapacity
               rw [Structure.loop]
               exact .whileNext
                 (by simpa [beforeEnd] using
@@ -823,14 +818,14 @@ theorem loop_evaluates_runFromFuel
                 (loopBody_token source records capacity offset tokenCount token
                   sourceBound offsetBound scanned
                   (Model.scanOne_token_start scanned)
-                  room recordsLength
+                  room recordsCapacity
                   capacityBound)
                 (by simpa [afterToken_eq_writeToken, Structure.loop] using rest)
 
 theorem loop_evaluates_run
     (source : List Lexer.Byte) (capacity : Nat) (records : List Int)
     (sourceBound : source.length ≤ 2147483646)
-    (recordsLength : records.length = 3 * capacity)
+    (recordsCapacity : 3 * capacity ≤ records.length)
     (capacityBound : 3 * capacity ≤ 2147483647) :
     let result := Model.run source capacity records
     Command.Evaluates (TM source) (SM source) (world source records)
@@ -840,13 +835,13 @@ theorem loop_evaluates_run
       (loopEnvironment source result.records capacity result.offset
         result.tokenCount) := by
   exact loop_evaluates_runFromFuel source capacity (source.length + 1) 0 0
-    [] records sourceBound (by simp) (by simp) (by simp) recordsLength
+    [] records sourceBound (by simp) (by simp) (by simp) recordsCapacity
     capacityBound
 
 theorem command_evaluates_run
     (source : List Lexer.Byte) (capacity : Nat) (records : List Int)
     (sourceBound : source.length ≤ 2147483646)
-    (recordsLength : records.length = 3 * capacity)
+    (recordsCapacity : 3 * capacity ≤ records.length)
     (capacityBound : 3 * capacity ≤ 2147483647) :
     let result := Model.run source capacity records
     Command.Evaluates (TM source) (SM source) (world source records)
@@ -861,7 +856,7 @@ theorem command_evaluates_run
       (world source result.records)
       (loopEnvironment source result.records capacity result.offset
         result.tokenCount) := by
-    exact loop_evaluates_run source capacity records sourceBound recordsLength
+    exact loop_evaluates_run source capacity records sourceBound recordsCapacity
       capacityBound
   change Command.Evaluates (TM source) (SM source) (world source records)
       (initialEnvironment source records capacity) Structure.command
@@ -955,7 +950,7 @@ theorem command_evaluates_run
 
 theorem command_evaluates_request
     (request : Model.Request) (records : List Int)
-    (recordsLength : records.length = 3 * request.capacity) :
+    (recordsCapacity : 3 * request.capacity ≤ records.length) :
     let result := Model.run request.source request.capacity records
     Command.Evaluates (TM request.source) (SM request.source)
       (world request.source records)
@@ -965,6 +960,6 @@ theorem command_evaluates_request
       (world request.source result.records)
       (initialEnvironment request.source result.records request.capacity) := by
   exact command_evaluates_run request.source request.capacity records
-    request.sourceFitsI32 recordsLength request.recordsFitI32
+    request.sourceFitsI32 recordsCapacity request.recordsFitI32
 
 end Lanius.Extraction.RawLexer.LexInto.Execution

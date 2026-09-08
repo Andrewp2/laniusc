@@ -94,12 +94,12 @@ private theorem accessorCalls_success
     next => contradiction
   next => contradiction
 
-private theorem accessorCallSoundnessFor
+private theorem accessorFramePreservingCallSoundnessFor
     (function : Function) (field : FieldId)
     (functionFound : verifiedFrontendCore.function? function.id = some function)
     (parameters : function.parameters = [(0, tokenScanType)])
     (body : function.body = some (accessorBody field)) :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
+    Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness
       verifiedFrontendCore (accessorCalls function.id field) := by
   constructor
   · intro arity layout localCell beforeWorld afterWorld environment before
@@ -151,14 +151,24 @@ private theorem accessorCallSoundnessFor
       localCellsInjective := represented.localCellsInjective
       worldLocalsDisjoint := represented.worldLocalsDisjoint
     }
-    exact ⟨after, CellSet.union argumentWrites CellSet.empty, callExecution,
-      afterWellFormed, afterRepresented, argumentsEffect.trans callEffect⟩
-  · intro beforeWorld afterWorld calledFunction arguments result evaluated cell
-    obtain ⟨fields, functionEq, valuesEq, fieldFound, worldEq⟩ :=
-      accessorCalls_success (expectedFunction := function.id) (field := field)
-        evaluated
-    exact congrArg (fun currentWorld : World =>
-      (currentWorld.i32Slice? cell).map List.length) worldEq
+    exact ⟨after, callExecution, afterWellFormed, afterRepresented,
+      argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+
+private theorem accessorWorldPreserving :
+    Lanius.FunctionalView.FreshSimulation.WorldPreserving (accessorCalls function field) := by
+  intro beforeWorld afterWorld calledFunction arguments result evaluated
+  obtain ⟨_, _, _, _, worldEq⟩ := accessorCalls_success evaluated
+  exact worldEq
+
+private theorem accessorCallSoundnessFor
+    (function : Function) (field : FieldId)
+    (functionFound : verifiedFrontendCore.function? function.id = some function)
+    (parameters : function.parameters = [(0, tokenScanType)])
+    (body : function.body = some (accessorBody field)) :
+    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
+      verifiedFrontendCore (accessorCalls function.id field) :=
+  (accessorFramePreservingCallSoundnessFor function field functionFound parameters body).toCallSoundness
+    accessorWorldPreserving
 
 def succeededCalls : CallModel := accessorCalls succeededFunction.id 0
 def kindCalls : CallModel := accessorCalls kindFunction.id 1
@@ -581,6 +591,24 @@ theorem callSoundness :
           errorOffsetCall_soundness
           (Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness.route
             successfulCall_soundness failedCall_soundness))))
+
+/-- The complete token-result registry preserves caller cells, including when
+    it is used inside the lexer's output-writing loop. -/
+theorem framePreservingCallSoundness :
+    Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore callModel := by
+  apply Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness.route
+    (accessorFramePreservingCallSoundnessFor succeededFunction 0 core_finds_succeeded
+      succeeded_shape.2.1 succeeded_shape.2.2.2)
+  apply Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness.route
+    (accessorFramePreservingCallSoundnessFor kindFunction 1 core_finds_kind
+      kind_shape.2.1 kind_shape.2.2.2)
+  apply Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness.route
+    (accessorFramePreservingCallSoundnessFor endOffsetFunction 2 core_finds_endOffset
+      endOffset_shape.2.1 endOffset_shape.2.2.2)
+  apply Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness.route
+    (accessorFramePreservingCallSoundnessFor errorOffsetFunction 3 core_finds_errorOffset
+      errorOffset_shape.2.1 errorOffset_shape.2.2.2)
+  exact constructorFramePreservingCallSoundness
 
 theorem callModel_succeeded (world : World)
     (success : Bool) (kind endOffset errorOffset : Int) :

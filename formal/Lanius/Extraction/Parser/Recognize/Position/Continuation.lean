@@ -21,6 +21,21 @@ open Lanius.FunctionalView.Core
 open Lanius.FunctionalView.Core.Stateful
 open Lanius.FunctionalView.Core.Stateful.Reification
 /-! ## Artifact-derived FunctionalView for final root selection -/
+
+/-- A successful outcome names the same workspace as the physical result.
+    Failure carries no selected root and imposes no such equality. -/
+def RecognizerRootStatementOutcome.workspaceAgrees
+    (outcome : RecognizerRootStatementOutcome grammar tokens workspace completion)
+    (finalWorkspace : LogicalWorkspace) : Prop :=
+  match outcome with
+  | .accepted _ _ _ _ _ _ => workspace = finalWorkspace
+  | .rejected _ => True
+
+theorem RecognizerRootStatementOutcome.workspaceAgrees_self
+    (outcome : RecognizerRootStatementOutcome grammar tokens workspace completion) :
+    outcome.workspaceAgrees workspace := by
+  cases outcome <;> trivial
+
 inductive RecognizerPositionStatementOutcome
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
@@ -36,6 +51,13 @@ inductive RecognizerPositionStatementOutcome
       (root : RecognizerRootStatementOutcome grammar tokens workspace completion) :
       RecognizerPositionStatementOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace completion
+
+def RecognizerPositionStatementOutcome.workspaceAgrees
+    (outcome : RecognizerPositionStatementOutcome grammarLayout grammar words tokens
+      workspaceLayout beforeWorkspace completion) (finalWorkspace : LogicalWorkspace) : Prop :=
+  match outcome with
+  | .full _ _ => True
+  | .completed _ _ _ _ root => root.workspaceAgrees finalWorkspace
 
 /-- The only caller-owned cells mutated by the position/root continuation.
     The loop's position and furthest-position cells are lexical temporaries
@@ -177,8 +199,8 @@ structure RecognizerPositionStatementFunctionalExecution
       tokensCell)
     (positionStatefulMachine workspaceLayout grammar words tokens grammarCell
       tokensCell)
-    (stateWorld words tokens workspaceValues grammarCell tokensCell workspaceCell)
-    (positionStatementEnvironment words tokens workspaceValues grammarCell
+    (stateWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell)
+    (positionStatementEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
       tokensCell workspaceCell workspaceLayout grammar grammarLayout
       workspace.states.length)
     positionStatementCommand (.returned (some resultValue)) afterWorld
@@ -198,6 +220,7 @@ structure RecognizerPositionStatementFunctionalExecution
     finalWorkspace finalWorkspaceValues workspaceCell physicalAfter
   outcome : RecognizerPositionStatementOutcome grammarLayout grammar words
     tokens workspaceLayout workspace (.returned (some resultValue))
+  outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
 /-- Execute both scoped initializers, the total position loop, and final root
     classification through one FunctionalView statement.  Physical Core state
@@ -210,9 +233,9 @@ noncomputable def
     RecognizerPositionStatementFunctionalExecution grammarLayout grammar words
       tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell indexCell before first count invariant := by
-  let world := stateWorld words tokens workspaceValues grammarCell tokensCell
+  let world := stateWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
     workspaceCell
-  let baseEnvironment := positionStatementEnvironment words tokens
+  let baseEnvironment := positionStatementEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length)
     workspaceValues grammarCell tokensCell workspaceCell workspaceLayout grammar
     grammarLayout workspace.states.length
   let furthestState := before.bindLocal 22 (.signed .i32 0)
@@ -236,18 +259,30 @@ noncomputable def
     rfl
   have initialPositionEq : initial.currentPosition = 0 := by
     rfl
+  have initialSuffix : initial.tokenStorage.unused =
+      invariant.frame.recognizer.tokenStorage.unused := by
+    have firstBacking := ((bindLocal_effect before 22 (.signed .i32 0)).oldCells
+      tokensCell (StateWellFormed.cell_lt_next_of_entry invariant.frame.recognizer.wellFormed
+        invariant.frame.recognizer.tokenStorage.unused_backing)
+      (by simp [CellSet.empty])).trans invariant.frame.recognizer.tokenStorage.unused_backing
+    have firstWF := bindLocal_preserves_well_formed before 22 (.signed .i32 0)
+      invariant.frame.recognizer.wellFormed
+    exact initial.tokenStorage.unused_eq_of_backing
+      (((bindLocal_effect furthestState 23 (.signed .i32 0)).oldCells tokensCell
+        (StateWellFormed.cell_lt_next_of_entry firstWF firstBacking)
+        (by simp [CellSet.empty])).trans firstBacking)
   have loopExecution : Lanius.FunctionalView.Stateful.Command.Evaluates
       (positionTermMachine workspaceLayout grammar words tokens grammarCell
         tokensCell)
       (positionStatefulMachine workspaceLayout grammar words tokens grammarCell
         tokensCell)
       world
-      (positionEnvironment words tokens workspaceValues grammarCell tokensCell
+      (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell tokensCell
         workspaceCell workspaceLayout grammar grammarLayout
         workspace.states.length 0 0)
       positionLoopCommand completion functionalAfter.world
       functionalAfter.environment := by
-    simpa only [initial, RecognizerPositionConfig.functionalRuntime, world,
+    simpa only [RecognizerPositionConfig.functionalRuntime, initialSuffix, world,
       sourceCompletionEq, sourceAfterEq, initialFurthestEq, initialPositionEq,
       positionLoopCommand,
       Lanius.FunctionalView.Stateful.Loop.Runtime.world,
@@ -255,7 +290,7 @@ noncomputable def
         initial.functional_run.trace.evaluates
   have boundEnvironmentEq :
       ((baseEnvironment.push (.signed .i32 0)).push (.signed .i32 0)) =
-        positionEnvironment words tokens workspaceValues grammarCell tokensCell
+        positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell tokensCell
           workspaceCell workspaceLayout grammar grammarLayout
           workspace.states.length 0 0 := by
     exact positionStatementEnvironment_push_zeroes words tokens workspaceValues
@@ -322,6 +357,7 @@ noncomputable def
         growth := growth
         workspaceArtifact := artifact
         outcome := .full position stateCount
+        outcomeWorkspace := True.intro
       }
   | next =>
     cases result.outcome with
@@ -335,11 +371,11 @@ noncomputable def
           (positionStatefulMachine workspaceLayout grammar words tokens
             grammarCell tokensCell)
           world
-          (positionEnvironment words tokens workspaceValues grammarCell
+          (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.frame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
             tokensCell workspaceCell workspaceLayout grammar grammarLayout
             workspace.states.length 0 0)
           positionLoopCommand .next
-          (stateWorld words tokens nextValues grammarCell tokensCell
+          (stateWorld words tokens (unused := finished.frame.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
             workspaceCell)
           functionalAfter.environment := by
         simpa only [worldEq] using loopExecution
@@ -422,6 +458,7 @@ noncomputable def
         workspaceArtifact := artifact
         outcome := .completed nextWorkspace nextValues growth
           (.returned (some root.resultValue)) root.outcome
+        outcomeWorkspace := root.outcome.workspaceAgrees_self
       }
   | breakLoop => cases result.outcome
   | continueLoop => cases result.outcome
@@ -453,6 +490,7 @@ structure RecognizerPositionStatementExecution
     finalWorkspace finalWorkspaceValues workspaceCell after
   outcome : RecognizerPositionStatementOutcome grammarLayout grammar words
     tokens workspaceLayout workspace completion
+  outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
 /-- Execute the entire recognizer continuation after successful initial-state
     seeding: the scoped position loop followed by final root classification. -/
@@ -475,6 +513,7 @@ noncomputable def RecognizerInitialLoopInvariant.execute_position_statement
     growth := synchronized.growth
     workspaceArtifact := synchronized.workspaceArtifact
     outcome := synchronized.outcome
+    outcomeWorkspace := synchronized.outcomeWorkspace
   }
 
 end Lanius.Extraction.ParserRecognize

@@ -359,11 +359,11 @@ theorem predictionLoopCommand_toCore :
       parserRecognizePredictionLoop := by
   rfl
 
-def predictionWorld (words : List Int) (tokens : List Nat)
+def predictionWorld (words : List Int) (tokens : List Nat) {unused : List Int}
     (workspaceValues : List Int)
     (grammarCell tokensCell workspaceCell : CellId) :
     Lanius.FunctionalView.Core.ReadOnly.World :=
-  recognizerWorld words tokens workspaceValues grammarCell tokensCell
+  recognizerWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
     workspaceCell
 
 /-- The ten live values retained by the mechanically selected prediction
@@ -895,7 +895,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_read_production
       index)
     (rowBound : first + index < grammar.lhsProductions.length) :
     let production := grammar.lhsProductions.get ⟨first + index, rowBound⟩
-    let world := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := predictionEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout grammarLayout.lhsProductionsOffset position
       first count index workspace.states.length
@@ -905,7 +905,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_read_production
       .ok (.signed .i32 (Int.ofNat production), world) := by
   dsimp only
   let production := grammar.lhsProductions.get ⟨first + index, rowBound⟩
-  let world := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := predictionEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout grammarLayout.lhsProductionsOffset position
     first count index workspace.states.length
@@ -983,7 +983,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_seed
     (rowBound : first + index < grammar.lhsProductions.length) :
     let production := grammar.lhsProductions.get ⟨first + index, rowBound⟩
     let seed := recognizerPredictionSeed production position
-    let world := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := (predictionEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout grammarLayout.lhsProductionsOffset position
       first count index workspace.states.length).push
@@ -995,7 +995,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_seed
   dsimp only
   let production := grammar.lhsProductions.get ⟨first + index, rowBound⟩
   let seed := recognizerPredictionSeed production position
-  let world := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := (predictionEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout grammarLayout.lhsProductionsOffset position
     first count index workspace.states.length).push
@@ -1097,7 +1097,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_append_arguments
     (rowBound : first + index < grammar.lhsProductions.length) :
     let production := grammar.lhsProductions.get ⟨first + index, rowBound⟩
     let seed := recognizerPredictionSeed production position
-    let world := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := (predictionEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout grammarLayout.lhsProductionsOffset position
       first count index workspace.states.length).push
@@ -1115,7 +1115,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_append_arguments
   dsimp only
   let production := grammar.lhsProductions.get ⟨first + index, rowBound⟩
   let seed := recognizerPredictionSeed production position
-  let world := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := (predictionEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout grammarLayout.lhsProductionsOffset position
     first count index workspace.states.length).push
@@ -1169,7 +1169,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_append
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace position seed
       workspaceValues
-    let world := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+    let world := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
     let environment := (predictionEnvironment words workspaceValues grammarCell
       workspaceCell workspaceLayout grammarLayout.lhsProductionsOffset position
       first count index workspace.states.length).push
@@ -1178,7 +1178,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_append
       (predictionTermMachine workspaceLayout words grammarCell)
       world environment predictionAppendTerm =
       .ok (appendOutcomeValue outcome,
-        predictionWorld words tokens nextValues grammarCell tokensCell workspaceCell) := by
+        predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell) := by
   dsimp only
   let production := grammar.lhsProductions.get ⟨first + index, rowBound⟩
   let seed := recognizerPredictionSeed production position
@@ -1186,7 +1186,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_append
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace position seed
     workspaceValues
-  let world := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
+  let world := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
   let environment := (predictionEnvironment words workspaceValues grammarCell
     workspaceCell workspaceLayout grammarLayout.lhsProductionsOffset position
     first count index workspace.states.length).push
@@ -1238,8 +1238,16 @@ private theorem RecognizerPredictionLoopInvariant.functional_append
   have worldRepresents :
       Lanius.FunctionalView.Core.ReadOnly.World.Represents world
         appended.argumentsState := by
+    have tokensOld := StateWellFormed.cell_lt_next_of_entry
+      invariant.frame.recognizer.wellFormed invariant.frame.recognizer.tokenStorage.unused_backing
+    have boundBacking := ((bindLocal_effect runtime 34 (.signed .i32 (Int.ofNat production))).oldCells
+      tokensCell tokensOld (by simp [CellSet.empty])).trans
+        invariant.frame.recognizer.tokenStorage.unused_backing
+    have boundWellFormed := bindLocal_preserves_well_formed runtime 34
+      (.signed .i32 (Int.ofNat production)) invariant.frame.recognizer.wellFormed
+    have argumentBacking := appended.argumentsEffect.empty_preserves_entry boundWellFormed boundBacking
     simpa [world, predictionWorld] using
-      recognizerWorld_represents appended.argumentsInvariant
+      recognizerWorld_represents appended.argumentsInvariant argumentBacking
   have worldOwned :
       (Lanius.FunctionalView.Core.ReadOnly.World.owns world).holds
         appended.argumentsState :=
@@ -1253,10 +1261,10 @@ private theorem RecognizerPredictionLoopInvariant.functional_append
   have outcomeEq : input.outcome = outcome := by
     rfl
   have afterWorldEq : input.afterWorld =
-      predictionWorld words tokens nextValues grammarCell tokensCell workspaceCell := by
+      predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell := by
     change Lanius.FunctionalView.Core.ReadOnly.World.setI32Slice world
         workspaceCell nextValues =
-      predictionWorld words tokens nextValues grammarCell tokensCell workspaceCell
+      predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
     simpa [world, predictionWorld] using
       (recognizerWorld_set_workspace
         (tokens := tokens) (tokensCell := tokensCell)
@@ -1266,7 +1274,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_append
   change (RecognizerCallRegistry.calls workspaceLayout words grammarCell).evaluate
     world extractedParserAppendStateFunction.id callValues =
       .ok (appendOutcomeValue outcome,
-        predictionWorld words tokens nextValues grammarCell tokensCell workspaceCell)
+        predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell)
   rw [outcomeEq, afterWorldEq] at registryResult
   exact registryResult
 
@@ -1411,8 +1419,8 @@ private theorem RecognizerPredictionLoopInvariant.functional_ok_body
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace position seed
       workspaceValues
-    let beforeWorld := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-    let afterWorld := predictionWorld words tokens nextValues grammarCell tokensCell workspaceCell
+    let beforeWorld := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+    let afterWorld := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
     let beforeEnvironment := predictionEnvironment words workspaceValues
       grammarCell workspaceCell workspaceLayout
       grammarLayout.lhsProductionsOffset position first count index
@@ -1431,8 +1439,8 @@ private theorem RecognizerPredictionLoopInvariant.functional_ok_body
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace position seed
     workspaceValues
-  let beforeWorld := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-  let afterWorld := predictionWorld words tokens nextValues grammarCell tokensCell workspaceCell
+  let beforeWorld := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+  let afterWorld := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
   let beforeEnvironment := predictionEnvironment words workspaceValues
     grammarCell workspaceCell workspaceLayout
     grammarLayout.lhsProductionsOffset position first count index
@@ -1554,8 +1562,8 @@ private theorem RecognizerPredictionLoopInvariant.functional_full_body
       workspace).1
     let nextValues := appendResultValues workspaceLayout workspace position seed
       workspaceValues
-    let beforeWorld := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-    let afterWorld := predictionWorld words tokens nextValues grammarCell tokensCell workspaceCell
+    let beforeWorld := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+    let afterWorld := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
     let beforeEnvironment := predictionEnvironment words workspaceValues
       grammarCell workspaceCell workspaceLayout
       grammarLayout.lhsProductionsOffset position first count index
@@ -1573,8 +1581,8 @@ private theorem RecognizerPredictionLoopInvariant.functional_full_body
     workspace).1
   let nextValues := appendResultValues workspaceLayout workspace position seed
     workspaceValues
-  let beforeWorld := predictionWorld words tokens workspaceValues grammarCell tokensCell workspaceCell
-  let afterWorld := predictionWorld words tokens nextValues grammarCell tokensCell workspaceCell
+  let beforeWorld := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell workspaceCell
+  let afterWorld := predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell workspaceCell
   let beforeEnvironment := predictionEnvironment words workspaceValues
     grammarCell workspaceCell workspaceLayout
     grammarLayout.lhsProductionsOffset position first count index
@@ -2069,7 +2077,7 @@ inductive RecognizerPredictionSynchronizedOutcome
         tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell stateCountCell indexCell physicalAfter position first
         count count)
-      (worldEq : after.world = predictionWorld words tokens workspaceValues
+      (worldEq : after.world = predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues
         grammarCell tokensCell workspaceCell)
       (environmentEq : after.environment = predictionEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
@@ -2124,7 +2132,7 @@ theorem RecognizerPredictionSynchronizedOutcome.view
           words tokens workspaceLayout workspace workspaceValues grammarCell
           tokensCell workspaceCell stateCountCell indexCell physicalAfter
           position first count count,
-        after.world = predictionWorld words tokens workspaceValues grammarCell
+        after.world = predictionWorld words tokens (unused := invariant.frame.recognizer.tokenStorage.unused) workspaceValues grammarCell
           tokensCell workspaceCell ∧
         after.environment = predictionEnvironment words workspaceValues
           grammarCell workspaceCell workspaceLayout lhsProductionsOffset
@@ -2235,13 +2243,13 @@ def RecognizerPredictionConfig.measure
 /-- Pure FunctionalView state corresponding to one prediction configuration.
     The physical Core runtime remains proof evidence in the configuration; it
     is not used to define the algorithm being executed. -/
-def RecognizerPredictionConfig.functionalRuntime
+noncomputable def RecognizerPredictionConfig.functionalRuntime
     (config : RecognizerPredictionConfig grammarLayout grammar words tokens
       workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
       indexCell position first count) :
     Lanius.FunctionalView.Stateful.Loop.Runtime
       (predictionTermMachine workspaceLayout words grammarCell) 10 :=
-  (predictionWorld words tokens config.workspaceValues grammarCell tokensCell workspaceCell,
+  (predictionWorld words tokens (unused := config.invariant.frame.recognizer.tokenStorage.unused) config.workspaceValues grammarCell tokensCell workspaceCell,
     predictionEnvironment words config.workspaceValues grammarCell
       workspaceCell workspaceLayout grammarLayout.lhsProductionsOffset position
       first count config.index config.workspace.states.length)
@@ -2475,6 +2483,16 @@ noncomputable def RecognizerPredictionConfig.functional_decide
         }
         have bodyResult := config.invariant.functional_ok_body indexBound
           rowBound (by simpa [seed, production, rowBound] using statusOk)
+        have sameSuffix : next.invariant.frame.recognizer.tokenStorage.unused =
+            config.invariant.frame.recognizer.tokenStorage.unused := by
+          apply config.invariant.frame.recognizer.tokenStorage.unused_preserved
+            next.invariant.frame.recognizer.tokenStorage
+            config.invariant.frame.recognizer.wellFormed
+            (CellEffect.ofModifiesOnly step.effect next.invariant.frame.recognizer.wellFormed)
+          simp only [CellSet.union, CellSet.singleton, not_or]
+          exact ⟨config.invariant.frame.recognizer.tokensWorkspaceDistinct,
+            config.invariant.frame.stateCountBackingDistinct.2.1.symm,
+            config.invariant.indexBackingDistinct.2.1.symm⟩
         have environmentEq := predictionOkEnvironment_eq_next
           (words := words) (grammarCell := grammarCell)
           (workspaceCell := workspaceCell) (workspaceLayout := workspaceLayout)
@@ -2497,6 +2515,14 @@ noncomputable def RecognizerPredictionConfig.functional_decide
               next.functionalRuntime.world next.functionalRuntime.environment := by
           dsimp only at bodyResult environmentEq
           rw [environmentEq] at bodyResult
+          change Lanius.FunctionalView.Stateful.Command.Evaluates
+            (predictionTermMachine workspaceLayout words grammarCell)
+            (predictionStatefulMachine workspaceLayout words grammarCell)
+            (predictionWorld words tokens (unused := config.invariant.frame.recognizer.tokenStorage.unused)
+              config.workspaceValues grammarCell tokensCell workspaceCell) _ _ _
+            (predictionWorld words tokens (unused := next.invariant.frame.recognizer.tokenStorage.unused)
+              next.workspaceValues grammarCell tokensCell workspaceCell) _
+          rw [sameSuffix]
           simpa [RecognizerPredictionConfig.functionalRuntime,
             Lanius.FunctionalView.Stateful.Loop.Runtime.world,
             Lanius.FunctionalView.Stateful.Loop.Runtime.environment,
