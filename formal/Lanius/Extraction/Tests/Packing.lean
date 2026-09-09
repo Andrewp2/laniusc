@@ -1,8 +1,118 @@
 import Lanius.Extraction.OutputPacking.Clear
+import Lanius.Extraction.OutputPacking.Preparation
+import Lanius.Extraction.OutputPacking.Entry
+import Lanius.Extraction.OutputPacking.Pipeline
+import Lanius.Extraction.OutputPacking.Setup
+import Lanius.Extraction.OutputPacking.Stdout
+import Lanius.Extraction.OutputPacking.Complete
+import Lanius.Extraction.ExtractorContract
+import Lanius.Memory.Access
+import Lanius.Semantics.I32Views.Allocation
+import Lanius.Extraction.Allocation.Execution
+import Lanius.Extraction.Allocation.Source
+import Lanius.Extraction.Allocation.Host
+import Lanius.Extraction.Allocation.Registry
+import Lanius.Extraction.Allocation.Sequence
+import Lanius.Extraction.Entry.Arguments
+import Lanius.Extraction.Entry.Pointers
+import Lean.Util.CollectAxioms
 
-open Lanius.Core Lanius.Semantics Lanius.Extraction.OutputPacking
+open Lanius.Core Lanius.Semantics Lanius.Extraction Lanius.Extraction.OutputPacking
+
+run_elab do
+  for name in #[``output_word_bounds, ``evaluates_output_words, ``clear_cursor_entry,
+      ``packing_cursor_entry, ``cleared_packing_entry, ``clear_then_pack,
+      ``clear_cursor_frame, ``clear_cursor_input, ``clear_setup_then_pack, ``prepare_buffers,
+      ``Lanius.Extraction.ExtractorContract.evaluates_workspace_stdout,
+      ``Lanius.Memory.Heap.containingBlock_exists, ``Lanius.Memory.Heap.loadByte_exists,
+      ``Lanius.Memory.loadBytesFrom_exists, ``Lanius.Memory.Heap.loadBytes_exists,
+      ``Lanius.Memory.Heap.storeByte_exists, ``Lanius.Memory.storeBytesFrom_view_exists,
+      ``Lanius.Memory.Heap.storeBytes_view_exists,
+      ``encodeI32Array_exists, ``syncI32ViewsToHeapFrom_exists, ``syncI32ViewsToHeap_exists,
+      ``Lanius.Memory.loadBytesFrom_length, ``Lanius.Memory.Heap.loadBytes_length,
+      ``decodeI32Array_exists, ``loadI32View_exists, ``syncI32RootViewsFromHeapFrom_exists,
+      ``syncI32ViewsToHeapFrom_preserves_storage,
+      ``Lanius.Extraction.ExtractorContract.workspace_stdout_exists, ``packing_then_continue,
+      ``clear_then_continue, ``clear_setup_then_continue, ``prepare_with_continuation,
+      ``stdout_from_completed_packing, ``syncI32RootViewsFromHeapFrom_preserves_other_cell,
+      ``syncI32RootViewsFromHeapFrom_preserves_locals,
+      ``i32Result_byte_count, ``stdout_check_returns_zero,
+      ``evaluates_output_size, ``output_size_scope, ``stdout_tail_returns_zero,
+      ``stdout_arguments, ``StdoutTail.executes, ``LoopInvariant.workspace_view,
+      ``preserved_projection, ``LoopInvariant.registered_arrays, ``preparation_effect,
+      ``preparation_local_binding, ``preserved_local, ``prepare_and_write,
+      ``Preparation.checked_stdout_statement, ``mapRawI32Slice_exists, ``decodeI32Array_shape,
+      ``Lanius.Memory.Heap.allocated_block, ``mapAllocatedI32Slice_exists,
+      ``Lanius.Memory.Heap.allocate_exists, ``allocateI32Slice_exists,
+      ``Lanius.Memory.Heap.allocate_remaining, ``Lanius.Memory.Heap.allocate_leaves_room,
+      ``evaluatesAlloc, ``evaluatesAllocatedI32Slice, ``evaluatesAllocatedI32Slice_resources,
+      ``Lanius.Extraction.Allocation.executes, ``Allocation.Ready.wellFormed,
+      ``Allocation.Ready.world, ``Allocation.Ready.validViews, ``Allocation.Ready.remaining,
+      ``Lanius.CallContracts.evaluatesHostAllocation,
+      ``Lanius.Memory.Heap.storeByte_remaining, ``Lanius.Memory.storeBytesFrom_remaining,
+      ``syncI32ViewsToHeapFrom_remaining, ``Allocation.hostAllocation_exists,
+      ``syncI32ViewsToHeapFrom_nextCell, ``syncI32RootViewsFromHeapFrom_preserves_structure,
+      ``Allocation.hostSlice_exists, ``syncI32RootViewsFromHeapFrom_arrays,
+      ``Allocation.Registry.root_lt_next, ``Allocation.Registry.allocate, ``Allocation.Registry.bindLocal,
+      ``Allocation.hostSequence_executes, ``Allocation.CheckedAllocator.executes,
+      ``Allocation.Registry.of_empty_views, ``Allocation.HostReady.remaining,
+      ``Allocation.HostReady.world, ``Allocation.HostReady.nextCell,
+      ``Entry.evaluatesArgc, ``Entry.Arguments.executes, ``Entry.CheckedArguments.executes,
+      ``Entry.CheckedArguments.allocate, ``evaluatesI32SliceDataPtr,
+      ``Allocation.Registry.synchronize, ``Allocation.Registry.findView, ``Allocation.Registry.pointer,
+      ``Allocation.Registry.nonnull, ``Allocation.Registry.evaluatesPointer,
+      ``Allocation.HostReady.preserves_cell, ``Allocation.HostReady.preserves_binding,
+      ``Allocation.HostReady.preserves_local, ``Allocation.HostReady.preserves_view,
+      ``Allocation.HostReady.head_read, ``Allocation.HostReady.buffer, ``Allocation.HostReady.pointer,
+      ``Entry.Pointers.Frame.localRead, ``Entry.Pointers.Pointer.evaluates,
+      ``Entry.Pointers.Check.evaluatesFalse, ``Entry.Pointers.Guard.executes] do
+    for dependency in ← Lean.collectAxioms name do
+      unless #[``propext, ``Classical.choice, ``Quot.sound].contains dependency do
+        throwError "Packing preparation theorem {name} depends on {dependency}"
 
 private def locals : LoopLocals := ⟨8, 12, 36, 23⟩
+
+example : (Entry.Pointers.checkCondition? (.binary .logicalOr
+    (.binary .equal (.local 14) (.value (.pointer 0)))
+    (.binary .equal (.i32SliceDataPtr (.local 2)) (.value (.pointer 0))))).isSome = true := by decide
+example : (Entry.Pointers.checkCondition?
+    (.binary .equal (.i32SliceDataPtr (.local 2)) (.value (.pointer 1)))).isSome = false := by decide
+example : (Entry.Pointers.checkCondition?
+    (.binary .notEqual (.local 14) (.value (.pointer 0)))).isSome = false := by decide
+
+example : (Allocation.Sequence.distinctNames? ⟨[⟨1, 2⟩, ⟨2, 3⟩], .skip⟩).isSome = true := by decide
+example : (Allocation.Sequence.distinctNames? ⟨[⟨1, 2⟩, ⟨1, 3⟩], .skip⟩).isSome = false := by decide
+
+private def argcProgram : Program := { functions := [{
+  id := 0, parameters := [], returnType := .scalar (.signed .i32), body := none,
+  external := some (.host .argc) }] }
+
+example : (Entry.checkArguments? argcProgram (Entry.Arguments.statement ⟨0, 1, .skip⟩)).isSome = true := by decide
+example : (Entry.checkArguments? argcProgram (Entry.Arguments.statement ⟨2, 1, .skip⟩)).isSome = false := by decide
+example : (Entry.checkArguments? argcProgram
+    (.letLocal 1 (.scalar (.signed .i32)) (.call 0 [])
+      (.sequence (.ifThenElse (.binary .lessEqual (.local 2) (.value (.signed .i32 1)))
+        (.sequence (.returnValue (some (.value (.signed .i32 1)))) .skip) .skip) .skip))).isSome = false := by decide
+
+example : (Allocation.checkSequence? 116 [2, 3]
+    (Allocation.hostStatement 116 [⟨1, 2⟩, ⟨2, 3⟩] .skip)).isSome = true := by decide
+example : (Allocation.checkSequence? 116 [2, 4]
+    (Allocation.hostStatement 116 [⟨1, 2⟩, ⟨2, 3⟩] .skip)).isSome = false := by decide
+example : (Allocation.checkSequence? 116 [2] (.letLocal 1 (.slice (.scalar (.signed .i32)))
+    (.i32SliceFromRawParts (.call 116 [.value (.unsigned .usize 7),
+      .value (.unsigned .usize 4)]) (.value (.signed .i32 2))) .skip)).isSome = false := by decide
+example : (Allocation.checkSequence? 116 [2]
+    (Allocation.hostStatement 117 [⟨1, 2⟩] .skip)).isSome = false := by decide
+
+example : (checkStdoutTail? (StdoutTail.statement ⟨37, 23, 16, 120⟩)).isSome = true := by decide
+example : (checkStdoutTail? (.returnValue (some (.value (.signed .i32 0))))).isSome = false := by decide
+
+private def mismatchedStdoutSize : Stmt :=
+  match StdoutTail.statement ⟨37, 23, 16, 120⟩ with
+  | .letLocal _ type initializer body => .letLocal 38 type initializer body
+  | statement => statement
+
+example : (checkStdoutTail? mismatchedStdoutSize).isSome = false := by decide
 
 example : (checkPackingLoop? locals.loop).isSome = true := by decide
 

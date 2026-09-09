@@ -172,6 +172,110 @@ theorem synchronized_workspace_stdout
   apply writeStdout_exact
   simpa only [exactPrefix] using Heap.loadBytes_prefix loaded within
 
+/-- Construct the actual stdout evaluation for the oversized packed workspace.
+Heap byte contents and host-call success follow from the cell encoding; only
+the two view-synchronization operations remain explicit. -/
+theorem evaluates_workspace_stdout
+    {program : Core.Program} {function : Core.Function}
+    {before afterArguments ready after : Lanius.Semantics.State}
+    {arguments : List Core.Expr} {bindings : List (Lanius.VarId × Core.Value)}
+    {view : I32ArrayView}
+    (bytes : List UInt8) (tail : List Int)
+    (argumentsResult : Lanius.CallContracts.ArgumentsEvaluateTo program before arguments
+      [.pointer view.address, .unsigned .usize bytes.length] afterArguments)
+    (functionFound : program.function? function.id = some function)
+    (parametersBound : bindParameters function.parameters
+      [.pointer view.address, .unsigned .usize bytes.length] = some bindings)
+    (noBody : function.body = none)
+    (host : function.external = some (.host .writeStdout))
+    (wellFormed : HeapWellFormed afterArguments.heap)
+    (disjoint : afterArguments.i32ArrayViews.Pairwise I32ViewRangesDisjoint)
+    (member : view ∈ afterArguments.i32ArrayViews)
+    (packed : readCellProjection afterArguments view.root view.projections =
+      .ok (.array (OutputPacking.pack bytes ++ signedI32Values tail)))
+    (synchronized : syncI32ViewsToHeap afterArguments = .ok ready)
+    (refreshed : syncI32ViewsFromHeap { ready with world := {
+      ready.world with
+        standardOutput := ready.world.standardOutput ++ bytes
+        calls := ready.world.calls ++ [.writeStdout] } } = .ok after) :
+    Evaluates program before (.call function.id arguments) (Lanius.World.i32Result bytes.length) after := by
+  have encoded : encodeI32Array (OutputPacking.pack bytes ++ signedI32Values tail) =
+      .ok ((bytes ++ List.replicate (OutputPacking.padding bytes.length) 0) ++ tail.flatMap i32Bytes) := by
+    rw [OutputPacking.encodeI32Array_append, OutputPacking.encode_pack, encodeSignedI32Values]
+  exact Lanius.CallContracts.evaluatesHostCallReturned argumentsResult functionFound parametersBound noBody host
+    synchronized (synchronized_workspace_stdout bytes (signedI32Values tail) _ wellFormed disjoint member
+      packed encoded synchronized) refreshed
+
+/-- Constructive stdout execution from structural buffer conditions, without
+assuming that either synchronization operation succeeds. -/
+theorem workspace_stdout_exists
+    {program : Core.Program} {function : Core.Function}
+    {before afterArguments : Lanius.Semantics.State}
+    {arguments : List Core.Expr} {bindings : List (Lanius.VarId × Core.Value)}
+    {view : I32ArrayView}
+    (bytes : List UInt8) (tail : List Int)
+    (argumentsResult : Lanius.CallContracts.ArgumentsEvaluateTo program before arguments
+      [.pointer view.address, .unsigned .usize bytes.length] afterArguments)
+    (functionFound : program.function? function.id = some function)
+    (parametersBound : bindParameters function.parameters
+      [.pointer view.address, .unsigned .usize bytes.length] = some bindings)
+    (noBody : function.body = none)
+    (host : function.external = some (.host .writeStdout))
+    (wellFormed : HeapWellFormed afterArguments.heap)
+    (disjoint : afterArguments.i32ArrayViews.Pairwise I32ViewRangesDisjoint)
+    (member : view ∈ afterArguments.i32ArrayViews)
+    (packed : readCellProjection afterArguments view.root view.projections =
+      .ok (.array (OutputPacking.pack bytes ++ signedI32Values tail)))
+    (blocks : ∀ view ∈ afterArguments.i32ArrayViews,
+      I32ArrayViewBlockWellFormed afterArguments.heap view)
+    (roots : ∀ view ∈ afterArguments.i32ArrayViews, view.projections = [])
+    (arrays : ∀ view ∈ afterArguments.i32ArrayViews, ∃ elements,
+      readCellProjection afterArguments view.root view.projections = .ok (.array elements) ∧
+      elements.length = view.length ∧
+      ∀ element ∈ elements, ∃ value, element = .signed .i32 value) :
+    ∃ after, Evaluates program before (.call function.id arguments)
+      (Lanius.World.i32Result bytes.length) after ∧
+      after.world = { afterArguments.world with
+        standardOutput := afterArguments.world.standardOutput ++ bytes
+        calls := afterArguments.world.calls ++ [.writeStdout] } ∧
+      (∀ cell, (∀ other ∈ afterArguments.i32ArrayViews, cell ≠ other.root) →
+        after.cellEntry? cell = afterArguments.cellEntry? cell) ∧
+      after.locals = afterArguments.locals := by
+  obtain ⟨ready, synchronized⟩ := syncI32ViewsToHeap_exists wellFormed blocks arrays
+  obtain ⟨readyValid, preserved, cells, registry, locals⟩ :=
+    syncI32ViewsToHeapFrom_preserves_storage (views := afterArguments.i32ArrayViews)
+      wellFormed synchronized
+  let written : Lanius.Semantics.State := { ready with world := { ready.world with
+    standardOutput := ready.world.standardOutput ++ bytes
+    calls := ready.world.calls ++ [.writeStdout] } }
+  have readyCells : ∀ other ∈ written.i32ArrayViews,
+      ∃ cell, written.cellEntry? other.root = some cell := by
+    intro other mem
+    have original : other ∈ afterArguments.i32ArrayViews := by simpa only [written, registry] using mem
+    obtain ⟨elements, read, _, _⟩ := arrays other original
+    cases found : afterArguments.cellEntry? other.root with
+    | none => simp [readCellProjection, found] at read
+    | some cell =>
+        exact ⟨cell, by change ready.cells.find? _ = some cell; rw [cells]; exact found⟩
+  obtain ⟨after, refreshed⟩ := syncI32RootViewsFromHeapFrom_exists
+    (before := written) (pending := written.i32ArrayViews) readyValid
+    (fun other mem => preserved other (by simpa only [written, registry] using mem)
+      (blocks other (by simpa only [written, registry] using mem)))
+    (fun other mem => roots other (by simpa only [written, registry] using mem)) readyCells
+  refine ⟨after, evaluates_workspace_stdout bytes tail argumentsResult functionFound
+    parametersBound noBody host wellFormed disjoint member packed synchronized refreshed, ?_, ?_, ?_⟩
+  · have unchanged := Lanius.Properties.syncI32ViewsToHeap_preserves_world synchronized
+    have finalWorld := syncI32ViewsFromHeapFrom_preserves_world refreshed
+    simpa only [written, unchanged] using finalWorld
+  · intro cell separate
+    have kept := syncI32RootViewsFromHeapFrom_preserves_other_cell
+      (fun other mem => roots other (by simpa only [written, registry] using mem))
+      (fun other mem => separate other (by simpa only [written, registry] using mem)) refreshed
+    simpa only [State.cellEntry?, written, cells] using kept
+  · have kept := syncI32RootViewsFromHeapFrom_preserves_locals
+      (fun other mem => roots other (by simpa only [written, registry] using mem)) refreshed
+    exact kept.trans locals
+
 /-- Partial correctness of the real stdout call: an observed successful Core
 evaluation with a packed, disjoint workspace returns its byte count and appends
 exactly those bytes. Neither synchronization success nor its resulting heap is

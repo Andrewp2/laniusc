@@ -36,6 +36,26 @@ theorem evaluatesHostCallReturned
   rw [called]
   simp [worldCallOutcome, refreshed]
 
+/-- Host allocation is not the primitive Core `.alloc`: it synchronizes views
+and records a host call. Keep both effects explicit when connecting buffer
+allocation proofs to source-level calls. -/
+theorem evaluatesHostAllocation
+    (argumentsResult : ArgumentsEvaluateTo program before arguments
+      [.unsigned .usize size, .unsigned .usize alignment] afterArguments)
+    (functionFound : program.function? function.id = some function)
+    (parametersBound : bindParameters function.parameters
+      [.unsigned .usize size, .unsigned .usize alignment] = some bindings)
+    (noBody : function.body = none)
+    (host : function.external = some (.host .alloc))
+    (synchronized : syncI32ViewsToHeap afterArguments = .ok ready)
+    (allocated : ready.heap.allocate size alignment = .allocated address heap)
+    (refreshed : syncI32ViewsFromHeap
+      { ready with heap, world := World.record ready.world .alloc } = .ok after) :
+    Evaluates program before (.call function.id arguments) (.pointer address) after := by
+  apply evaluatesHostCallReturned argumentsResult functionFound parametersBound noBody host synchronized
+    (refreshed := refreshed)
+  simp only [World.call, World.callSimple, allocated]
+
 /-- Invert a successful source-level host call. Both synchronization passes
 and the returned host effect are consequences of the observed evaluation. -/
 theorem evaluatesHostCallReturned_invert

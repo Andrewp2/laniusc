@@ -25,6 +25,12 @@ import Lanius.Extraction.Tests.SemanticTokens
 import Lanius.Extraction.SemanticTokens.Pipeline
 import Lanius.Extraction.Tests.CompactOutput
 import Lanius.Extraction.Tests.CompactOutput.Word
+import Lanius.Extraction.Tests.CompactOutput.Bytes
+import Lanius.Extraction.Tests.CompactOutput.Assignments
+import Lanius.Extraction.Tests.CompactOutput.Tokens
+import Lanius.Extraction.Tests.CompactOutput.Nodes
+import Lanius.Extraction.Tests.CompactOutput.PackHeader
+import Lanius.Extraction.Tests.CompactOutput.Unit
 
 /-! Check exact frontend relocation and the assumptions of the generic
 execution-transport theorem against the actual self-embedding. This is not
@@ -80,6 +86,67 @@ def main (arguments : List String) : IO UInt32 := do
       (arguments := arguments) (outputCell := outputCell) (original := original) word
   let wordCalls ← Tests.CompactOutput.Word.checkExecution checked.checked.program.core word.source.function.id
   IO.println s!"Current hex_u32 complete source and public-call theorem checked: {wordCalls} executions cover fixed width, byte order, all output cutoffs, invalid inputs, and caller frames."
+  let some bytesWriter := CompactOutput.Bytes.check? checked.checked.program byte digit hexByte
+    | throw (IO.userError "compact bytes differs from its checked complete function or helper identity")
+  have _bytesCall := fun {caller before : Semantics.State} {arguments : List Expr}
+      {inputCell outputCell : CellId} {physicalCapacity : Nat} {original : List Int} =>
+    CompactOutput.Bytes.Checked.write (caller := caller) (before := before)
+      (arguments := arguments) (inputCell := inputCell) (outputCell := outputCell)
+      (physicalCapacity := physicalCapacity) (original := original) bytesWriter
+  let bytesCalls ← Tests.CompactOutput.Bytes.checkExecution checked.checked.program.core bytesWriter.source.function.id
+  IO.println s!"Current bytes complete source and public-call theorem checked: {bytesCalls} executions cover logical length, spare capacity, partial writes, negative-length rejection, and caller frames."
+  let some assignmentsWriter := CompactOutput.Assignments.check? checked.checked.program byte digit word
+    | throw (IO.userError "compact semantic serializer differs from its complete checked body or word helper")
+  let some tokensWriter := CompactOutput.Tokens.check? checked.checked.program byte digit word
+    | throw (IO.userError "compact token serializer differs from its complete checked body or word helper")
+  let some packHeader := CompactOutput.PackHeader.check? checked.checked.program byte digit word
+    | throw (IO.userError "pack header differs from its complete checked body or word helper")
+  have _packHeaderCall := fun {caller before : Semantics.State} {arguments : List Expr}
+      {outputCell : CellId} {original : List Int} =>
+    CompactOutput.PackHeader.Checked.write (caller := caller) (before := before)
+      (arguments := arguments) (outputCell := outputCell) (original := original) packHeader
+  IO.println "Current pack header complete source and public-call theorem checked: format version 1 followed by unit count, including partial output."
+  let some nodesWriter := CompactOutput.Nodes.check? checked.checked.program byte digit word
+      collector.symbols.childToken collector.symbols.childState
+    | throw (IO.userError "compact node serializer differs from its complete checked body, word helper, or child tags")
+  have _nodesCall := fun {caller before : Semantics.State} {arguments : List Expr}
+      {inputCell offsetCell outputCell : CellId} {inputCapacity offsetCapacity : Nat} {original : List Int} =>
+    CompactOutput.Nodes.Checked.write (caller := caller) (before := before)
+      (arguments := arguments) (inputCell := inputCell) (offsetCell := offsetCell) (outputCell := outputCell)
+      (inputCapacity := inputCapacity) (offsetCapacity := offsetCapacity) (original := original)
+      nodesWriter collector.tokenTag collector.stateTag
+  IO.println "Current node serializer complete source, word-helper and child-tag identities, and public-call theorem checked on the valid-record separate-output domain."
+  let unitSymbols : CompactOutput.Unit.Symbols := {
+    word := word.source.function.id, bytes := bytesWriter.source.function.id,
+    tokens := tokensWriter.source.function.id, semantic := assignmentsWriter.source.function.id,
+    nodes := nodesWriter.source.function.id }
+  let some unitWriter := CompactOutput.Unit.check? checked.checked.program unitSymbols
+    | throw (IO.userError "unit emitter differs from its complete checked body or serializer helper identities")
+  have _unitCall := fun {caller before : Semantics.State} {arguments : List Expr}
+      {values : List Value} {bindings : List (VarId × Value)} {outputCell : CellId} {original : List Int} =>
+    CompactOutput.Unit.Checked.write (caller := caller) (before := before) (arguments := arguments)
+      (values := values) (bindings := bindings) (outputCell := outputCell) (original := original)
+      word bytesWriter tokensWriter assignmentsWriter nodesWriter unitWriter collector.tokenTag collector.stateTag
+  IO.println "Current unit emitter complete body, all five helper identities, and public-call theorem checked on the valid-input nonempty-node separate-output domain; decoding remains open."
+  have _collectionEmission := fun {before extracted : Semantics.State} {stage detail position : Int}
+      (emission : CompactOutput.Unit.Emission) =>
+    CompactOutput.Unit.collection_then_emit (before := before) (extracted := extracted)
+      (stage := stage) (detail := detail) (position := position) (collectorId := collector.source.function.id)
+      emission word bytesWriter tokensWriter assignmentsWriter nodesWriter unitWriter collector.tokenTag collector.stateTag
+  IO.println "Collector-to-emitter composition instantiated with current function identities: caller storage and all 19 bindings are derived, with encodability, full syntax acceptance, and decoding under explicit grammar/path/output-byte premises; main/I/O remains open."
+  have _tokensCall := fun {caller before : Semantics.State} {arguments : List Expr}
+      {inputCell outputCell : CellId} {physicalCapacity : Nat} {original : List Int} =>
+    CompactOutput.Tokens.Checked.write (caller := caller) (before := before)
+      (arguments := arguments) (inputCell := inputCell) (outputCell := outputCell)
+      (physicalCapacity := physicalCapacity) (original := original) tokensWriter
+  IO.println "Current token serializer complete source, word-helper identity, and public-call theorem checked on the valid-token separate-buffer domain."
+  have _assignmentsCall := fun {caller before : Semantics.State} {arguments : List Expr}
+      {inputCell outputCell : CellId} {physicalCapacity : Nat} {original : List Int} =>
+    CompactOutput.Assignments.Checked.write (caller := caller) (before := before)
+      (arguments := arguments) (inputCell := inputCell) (outputCell := outputCell)
+      (physicalCapacity := physicalCapacity) (original := original) assignmentsWriter
+  let assignmentCalls ← Tests.CompactOutput.Assignments.checkExecution checked.checked.program.core assignmentsWriter.source.function.id
+  IO.println s!"Current semantic serializer complete source and public-call theorem checked: {assignmentCalls} executions cover fixed-width fields, absent second fields, spare input capacity, partial output, and caller frames."
   let some extraction := CoreSynthesis.Program.checkSourceFunction? checked.checked.program
       ["verified", "extraction"] "extract_syntax"
     | throw (IO.userError "checked extract_syntax function was not found")

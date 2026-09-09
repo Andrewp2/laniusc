@@ -40,13 +40,16 @@ private theorem literal_arguments (program : Program) (state : State) (values : 
 use that call's returned counts, not independently supplied parser metadata. -/
 def CollectionContinuation (program : Program) (functionId : FunctionId) (data : SyntaxData)
     (count nodes words : Nat) (outputCell : CellId) (original : List Int) (before extracted : State) : Prop :=
-  ∃ assignments : List Assignment, ∃ after,
-    semanticKindsValid data.grammar.grammar (artifactTokens data.tokens) (assignments.map Assignment.code) = true ∧
+  ∃ result : FrontendResult data count nodes words extracted,
+  ∃ collection : CollectionRecords data.grammar (artifactTokens data.tokens) result.parse.tree 0 0, ∃ after,
+    count = (artifactTokens data.tokens).length ∧ nodes = collection.records.length ∧
+    words = (ParserTreeLayout.treeFrom 0 0 result.parse.tree).words.length ∧
     Evaluates program extracted (.call functionId ((collectorValues data count nodes words outputCell original).map Expr.value))
       (.signed .i32 (if count * 2 ≤ original.length then 0 else -2)) after ∧
     after.cellEntry? outputCell = some {
       id := outputCell, value := some (.array (signedI32Values
-        (if count * 2 ≤ original.length then assignments.flatMap Assignment.words ++ original.drop (count * 2) else original))) } ∧
+        (if count * 2 ≤ original.length then collection.assignments.flatMap Assignment.words ++ original.drop (count * 2) else original))) } ∧
+    CellEffect (CellSet.singleton outputCell) extracted after ∧
     CellEffect (CellSet.union data.writes (CellSet.singleton outputCell)) before after
 
 /-- Derive preserved grammar/output storage and all semantic collector inputs
@@ -70,10 +73,13 @@ theorem collect_after_frontend {checkedProgram : CoreSynthesis.Program.CheckedPr
     apply separate cell
     simp only [List.mem_cons, List.not_mem_nil, or_false] at member
     rcases member with rfl | rfl | rfl | rfl <;> simp [frontendCells]
-  obtain ⟨assignments, after, accepted, call, contents, collectorEffect⟩ := result.collect checked valid kindsFit
+  obtain ⟨collection, after, call, contents, collectorEffect⟩ := result.collect checked valid kindsFit
     effect.wellFormed grammarAfter outputAfter outputFit collectorSeparate
     (literal_arguments checkedProgram.core extracted (collectorValues data count nodes words outputCell original))
-  exact ⟨assignments, after, accepted, call, contents,
+  have nodesEqual : nodes = collection.records.length := by
+    have same := congrArg List.length collection.offsets
+    simpa only [List.length_map, ← result.nodesEq] using same.symm
+  exact ⟨result, collection, after, result.countEq, nodesEqual, result.wordsEq, call, contents, collectorEffect,
     (effect.weaken CellSet.subset_union_left).trans (collectorEffect.weaken CellSet.subset_union_right)⟩
 
 variable {checkedProgram : CoreSynthesis.Program.CheckedProgram artifacts}

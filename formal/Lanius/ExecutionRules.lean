@@ -17,6 +17,21 @@ theorem evaluatesStringDataPtr
   rw [stringResult]
   exact mapped
 
+theorem evaluatesAlloc
+    (sizeResult : Evaluates program before size (.unsigned .usize bytes) afterSize)
+    (alignmentResult : Evaluates program afterSize alignment (.unsigned .usize align) afterAlignment)
+    (allocated : afterAlignment.heap.allocate bytes align = .allocated address heap) :
+    Evaluates program before (.alloc size alignment) (.pointer address) { afterAlignment with heap } := by
+  obtain ⟨sizeFuel, sizeResult⟩ := sizeResult
+  obtain ⟨alignmentFuel, alignmentResult⟩ := alignmentResult
+  refine ⟨max sizeFuel alignmentFuel + 1, ?_⟩
+  rw [evalExpr.eq_def]
+  simp only
+  rw [evalExpr_done_at_larger_fuel (Nat.le_max_left _ _) sizeResult]
+  simp only
+  rw [evalExpr_done_at_larger_fuel (Nat.le_max_right _ _) alignmentResult]
+  simp only [allocated]
+
 theorem evaluatesI32SliceFromRawParts
     (pointerResult : Evaluates program before pointer (.pointer address) afterPointer)
     (lengthResult : Evaluates program afterPointer length (.signed .i32 count) afterLength)
@@ -30,6 +45,17 @@ theorem evaluatesI32SliceFromRawParts
   rw [evalExpr_done_at_larger_fuel (Nat.le_max_left _ _) pointerResult]
   simp only
   rw [evalExpr_done_at_larger_fuel (Nat.le_max_right _ _) lengthResult]
+  exact mapped
+
+theorem evaluatesI32SliceDataPtr
+    (sliceResult : Evaluates program before slice
+      (.slice (.scalar (.signed .i32)) cell projections start length) middle)
+    (mapped : mapI32SliceDataPtr middle cell projections start length = .done value after) :
+    Evaluates program before (.i32SliceDataPtr slice) value after := by
+  obtain ⟨fuel, evaluated⟩ := sliceResult
+  refine ⟨fuel + 1, ?_⟩
+  rw [evalExpr.eq_def]
+  simp only [evaluated]
   exact mapped
 
 /-! Fuel-independent structural rules for successful statement execution.

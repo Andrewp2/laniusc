@@ -60,7 +60,7 @@ lemma. Run it when the source/link boundary changes or a step closes.
 | 1 | Successful recognizer result → callable derivation record reader | Complete; call connection checked and trust assumptions audited |
 | 2 | Retained workspace → complete materialized tree | Complete on the stated caller domain; success, resource failures, wrapper rejection, source link, and axiom audit checked |
 | 3 | Source buffer → complete `extract_syntax` result | Complete on the stated caller domain; whole public call, all stage failures, negative-length rejection, current-source links, and axiom audit checked |
-| 4 | Extracted unit → exact accepted compact unit encoding | Active: collector public call and frontend composition complete on their stated domains; compact emission and syntax acceptance remain |
+| 4 | Extracted unit → exact accepted compact unit encoding | Active: collector/emitter calls, decoding bridges, and complete syntax acceptance proved on stated domains; final output-byte connection remains |
 | 5 | Ordered files → exact successful `main` output | Open; depends on 4 |
 | 6 | Failure/completeness theorems and milestone acceptance audit | Open; depends on 1–5 |
 
@@ -1312,9 +1312,451 @@ calls against the actual self-embedding, and retained the earlier frontend,
 collector, and byte-writer checks. No Lanius source or executable format changed.
 These are scoped proof/integration timings, not full-extractor verification.
 
-Next within 4.3: prove the byte/token/assignment/node serialization loops and
-compose `emit_unit` and the pack header. Exact compact decoding and syntax
-acceptance remain separate, required parts of this same step. Step 4 and
+Further supporting work: `CompactOutput/Chunks.lean::appendAll_append` proves
+that sequential chunks compose while retaining the first capacity failure.
+`appendAll_hexByte` connects the two-call byte writer's output/cursor model to
+that sequence model, including failure after either digit. These proofs cover
+arbitrary initial buffers and integer cursors. Their enforced standard-axiom
+audit passed in 1.74 seconds (`compact-chunks-audit.log`). These are composition
+lemmas, not standalone execution proofs. No source or executable changed.
+
+The byte-loop proof now includes `Bytes/Read.lean::read_write`, which derives
+the actual indexed input read and `hex_byte` call, and
+`Bytes/Step.lean::assign_byte`, which derives the effectful cursor assignment
+while preserving the input (including spare storage) and loop counter. The
+complete signature/body/helper checker is in `Bytes/Source.lean`. These two
+theorems formed the starting point for the whole-call proof recorded below.
+
+The focused byte tests and enforced axiom audit passed in 1.92 seconds
+(`compact-bytes-audit.log`). They cover 416 executions with independent hex
+formatting, empty input, logical lengths distinct from physical allocation,
+every relevant capacity cutoff, negative/extreme cursors, and preserved caller
+storage. Source-equality mutation checks reject missing guards, wrong helper
+IDs, and extra effects. Both new execution theorems use standard axioms only.
+The current-source integration passed in 24.64 seconds
+(`compact-bytes-current-source.log`), authenticating the entire `bytes` function
+and running the same 416 cases against the self-embedding. No Lanius source,
+bootstrap executable, or wire format changed.
+
+The complete byte serializer now has a public-call proof in
+`Bytes/Call.lean::Checked.write`. `Bytes/State.lean` preserves the input prefix,
+output storage, parameter bindings, and cursor/index ownership across each
+iteration. `Bytes/Loop.lean::execute_loop` proves termination over the actual
+remaining input suffix and exact partial output on capacity failure.
+`Bytes/Entry.lean` derives the invariant from the real local declarations and
+executes the length guard, loop, return, and scope closures. Callers supply
+ordinary input/output storage and arguments, not loop execution or initialized
+temporary locals.
+
+The domain is a logical sequence of bytes below 256, with signed-i32 length and
+capacity bounds and separate input/output storage. Physical input capacity may
+exceed logical length. `Checked.success` proves exact interval replacement and
+cursor advancement by twice the input length, preserving output prefix/suffix.
+`Checked.reject` covers negative logical lengths without accessing buffers.
+The general write contract also handles empty input and negative initial cursors.
+Malformed byte values and aliased buffers are outside its stated input domain.
+
+The focused suite and enforced eleven-theorem standard-axiom audit passed in
+4.00 seconds (`compact-bytes-complete-audit.log`), including 418 executions and
+source mutation checks. No Lanius source or executable changed. This closes the
+byte-loop/public-call obligation on its stated domain, not all of step 4.3.
+The current-source check passed in 22.49 seconds
+(`compact-bytes-complete-source.log`): it authenticated the complete function
+and helper identity, instantiated the public-call theorem for the current
+self-embedding, and ran all 418 cases alongside the existing frontend checks.
+
+Shared multi-field support now includes `Word/Assign.lean::assign_word`, which
+derives the real word call and cursor assignment from caller expression
+evaluations and storage. `Word/Chunks.lean::appendAll_following_word` proves
+that an unconditionally executed later word preserves a previous capacity
+failure and agrees with flat concatenation. This matches the delayed failure
+checks in the token, assignment, and node serializers. The six-theorem enforced
+standard-axiom audit passed in 1.66 seconds
+(`compact-field-compose-audit.log`); these are shared prerequisites, not proofs
+of those enclosing serializers. No source/link boundary changed, so this
+focused proof check did not repeat self-extraction or frontend integration.
+
+Assignment field support now proves the real validity guard and `second + 1`
+expression in `Assignments/Fields.lean`, including the absent-field sentinel
+`-1 → 0`. The upper bound is strict: the guard alone permits signed-i32 maximum,
+whose increment would overflow. `Assignments/Domain.lean::field_bounds` derives
+the required bound from the collector's `Assignment.Valid` contract and the
+existing grammar kind bound of 32,768. `stored_fields` links the two values to
+the collector's actual word representation. The four-theorem standard-axiom
+audit passed in 2.30 seconds (`compact-assignment-domain.log`). These results
+do not alone prove input indexing, the two writes, or the enclosing assignment
+loop; they establish its arithmetic/domain handoff without adding an unchecked
+no-overflow premise. No Lanius source or executable changed.
+
+`Assignments/Write.lean::write_fields` now derives both consecutive word calls
+and assignments to `next`, including the real second-field increment. It
+preserves the required parameter locals across the first call and proves exact
+combined cursor/output by the flat two-field encoding. The second call still
+executes when the first runs out of capacity; its sentinel behavior preserves
+that partial result. `Assignments/Source.lean` describes the complete six-argument
+function, both indexed reads, guards, loop, and helper identity for source
+authentication. Input-index execution, local scope composition, and the whole
+loop/public-call proof remain open. The five-theorem standard-axiom audit passed
+in 2.38 seconds (`compact-assignment-write-audit.log`).
+The current-source integration passed in 23.06 seconds
+(`compact-assignment-source.log`), authenticating the complete assignment
+serializer's signature/body/helper identity alongside the existing checks.
+This authenticates the source model; it does not close the remaining execution
+proofs of its input reads and enclosing loop. No Lanius source changed.
+
+`Assignments/Read.lean::stored_pair` now links each indexed pair to the
+collector's flattened `Assignment.words` list. `read_pair` proves the actual
+multiply/add index expressions and both buffer reads, with signed-i32 address
+bounds and arbitrary spare capacity. `initialize_fields` places the second read
+after the first local declaration, derives both resulting locals and state
+well-formedness, and preserves the same input prefix through both bindings.
+The expanded eight-theorem standard-axiom audit passed in 2.50 seconds
+(`compact-assignment-read-audit.log`). Iteration composition, field-scope
+closure, loop termination, and the public-call theorem remain open. No source
+or helper identity changed; the existing source authentication still applies.
+
+`Assignments/Scope.lean::Entry.write` now derives field-local separation,
+parameter preservation, the validation guard, and both writes from resources
+before the declarations. `Assignments/Failure.lean::Entry.failure` executes the
+complete actual iteration when its computed output outcome is full: both
+indexed reads, declarations, validation, writes, early return, and scope
+closures. It preserves exact partial output, changes only output/cursor cells,
+and does not execute the token increment. No iteration execution is assumed.
+The ten-theorem standard-axiom audit passed in 1.57 seconds
+(`compact-assignment-scope-audit.log`). The successful iteration, loop invariant,
+termination, and public call remain open. No source/link identity changed.
+
+`Assignments/Success.lean::Entry.success` now executes the complete successful
+iteration on the valid-field domain, including both reads/declarations, the
+field guard, both writes, the capacity check, safe counter increment, and scope
+closures. Its postcondition retains ownership of the updated cursor and counter,
+exact output, and a write set containing only those three cells. The successful
+cursor's nonnegativity follows from the computed nonempty encoding, not an
+extra caller assumption (`Outcome.lean::appendAll_done_nonnegative`). Together
+with `Entry.failure`, both iteration branches are proved. The twelve-theorem
+standard-axiom audit passed in 1.68 seconds
+(`compact-assignment-iteration-audit.log`). The loop invariant, termination, and
+public call still need composition; neither iteration theorem assumes a loop
+execution. No Lanius source or source-link identity changed.
+
+`Assignments/State.lean` now supplies the loop invariant and its preservation,
+including unchanged logical input and spare capacity, stable parameters,
+output length, and cursor/index ownership. `Assignments/Loop.lean::execute_loop`
+executes the complete actual loop over the remaining input suffix. It proves
+termination, exact flat assignment encoding or exact partial output on capacity
+failure, and an exhausted input counter on normal completion. It derives each
+iteration from the prior proofs; no loop run or successful output is assumed.
+The fifteen-theorem standard-axiom audit passed in 1.65 seconds
+(`compact-assignment-loop-audit.log`). The outer function's entry guard, initial
+local bindings, final return, and public-call composition remain open. No Lanius
+source or helper identity changed.
+
+`Assignments/Guard.lean::entry_guard` now evaluates the actual signed division
+and complete entry condition for nonnegative counts/lengths. Its pass/reject
+corollaries handle both even lengths and spare trailing words, deriving the
+Boolean result from `2 * count ≤ length` or its strict failure. The public
+`Assignments/Reject.lean::Checked.short_input` theorem executes the full early
+rejection call with arbitrary buffer values, proving no buffer access or
+iteration-local allocation and an empty write effect. The nineteen-theorem
+standard-axiom audit passed in 3.46 seconds
+(`compact-assignment-guard-audit.log`). Normal-entry initialization, final return,
+and the general public write contract remain open. No source/link identity changed.
+
+`Assignments/Function.lean::Entry.invariant` now derives the initial loop
+resources and fresh-cell separation from the actual declarations.
+`Entry.execute` composes the entry guard, both initial locals, complete loop,
+final return, and scope closures. `Assignments/Call.lean::Checked.write` exposes
+the complete public function with ordinary arguments and backing storage,
+proving exact flat encoding (or partial capacity-error output) and an
+output-only effect after caller-local restoration. The declared logical input
+length and physical allocation are separate; spare input storage is preserved.
+The contract's field bounds follow from collector validity as recorded above.
+Malformed fields and aliased input/output remain outside this write domain;
+the separate public short-input rejection theorem requires no buffer storage.
+
+The focused suite and twenty-two-theorem standard-axiom audit passed in 3.52
+seconds (`compact-assignment-complete-audit.log`). Its 840 executions use
+independent standard-library fixed-width formatting and cover empty input,
+present/absent second fields, odd spare allocation, every output cutoff,
+negative/extreme cursors, and caller/input frames. This closes the assignment
+serializer's public write proof on its stated domain. No Lanius source changed.
+The current-source integration passed in 24.78 seconds
+(`compact-assignment-complete-source.log`), authenticating the complete function
+and helper identity, instantiating the public write theorem, and running all
+840 cases against the self-embedding alongside the earlier frontend checks.
+
+Token serializer work now reuses the frontend's existing `encodeTokens` and
+`encoded_row` layout instead of introducing another token representation.
+`Tokens/Read.lean::row_index` proves the actual signed `token * 3` expression;
+`read_row` proves the actual kind/start/finish index expressions and values,
+including arithmetic bounds and independence from arbitrary spare input words.
+The two-theorem standard-axiom audit passed in 2.56 seconds
+(`compact-token-read-audit.log`). These are read contracts, not a whole token
+serializer proof: field validation, lexical declarations, three writes, the
+loop, and public-call/source authentication remain to be composed. No Lanius
+source changed.
+
+The token field guard now has a standard-axiom proof for ordered spans within
+the source, using the actual indexed kind read and local span values
+(`Tokens/Fields.lean::fields_valid`). The focused three-theorem audit passed
+in 2.53 seconds (`compact-token-fields-audit.log`).
+`Tokens/Source.lean` now checks the complete function signature, body, and word
+helper identity. The updated audit built in 2.69 seconds; current-source
+integration passed in 25.66 seconds (`compact-token-source-link.log`).
+This authenticates the token function against the self-embedding, but does not
+yet prove its declarations, three writes, loop, or public-call execution.
+No Lanius source changed.
+
+The token serializer's complete public write proof is now checked:
+`Tokens/Call.lean::Checked.write`. It derives the initial locals, guarded
+iteration, exact three-word encoding per token, capacity failure, final return,
+and caller restoration. The domain requires ordered spans within an i32-sized
+source, representable kind codes, sufficient input prefix, and separate input
+and output buffers. Negative cursors and partial output remain covered;
+malformed token rejection is not claimed by this write theorem.
+The seventeen-theorem standard-axiom audit passed in 3.09 seconds
+(`compact-token-call-audit.log`). Current-source integration instantiated the
+public theorem against the complete self-embedded function and helper identity
+in 24.16 seconds (`compact-token-public-source.log`). This run reuses the
+existing execution suites; a token-specific differential execution suite has
+not yet been added. No Lanius source changed.
+
+The node serializer's complete public write proof is now checked:
+`Nodes/Call.lean::Checked.write`. It derives offset lookup, record/header
+declarations and guards, all four header writes, the nested child traversal,
+node advancement, capacity failure, final return, and caller restoration.
+It reuses the parser's `RecordVisit.Stored` layout and `ChildVisit.Linked`
+relations. The domain requires representable nonnegative header fields,
+backward node references, bounded token references, sufficient input prefixes,
+and an output buffer separate from both input buffers. Negative initial cursors,
+empty record lists, spare input capacity, and exact partial output are covered.
+The write theorem does not claim rejection of arbitrary malformed records.
+
+The enforced 42-declaration standard-axiom audit passed in 3.39 seconds
+(`compact-node-call-audit.log`). Current-source integration passed in
+24.79 seconds (`compact-node-public-source.log`), instantiating the public
+theorem with the complete self-embedded function, word helper, and checked
+child-tag constants. This run reuses the existing execution suites; a
+node-specific differential execution suite has not yet been added. No Lanius
+source, executable, or output format changed. These are component checks, not
+whole-extractor verification timings; inherited frontend trust obligations
+remain open.
+
+The pack header's complete public call is now proved by
+`CompactOutput/PackHeader.lean::Checked.write`: it emits version 1 and the unit
+count, including exact partial-output behavior. Its standard-axiom audit passed
+in 2.46 seconds (`compact-pack-header-audit.log`); current-source integration
+passed in 25.19 seconds (`compact-pack-header-source.log`).
+
+For `emit_unit`, the complete source sequence and all five helper identities
+are checked. `Unit/Word`, `Bytes`, `Tokens`, `Semantic`, and `Nodes` prove the
+actual calls (and cursor assignments where present), preserving the other
+inputs through the shared `Unit.Memory` frame. `Unit/Entry.initialize_cursor`
+now executes the initial path-length word call using the incoming position,
+allocates the fresh cursor, and derives that frame while preserving all other
+parameters and separate input arrays. No intermediate serializer execution is
+assumed by this initializer theorem. The expanded 14-declaration standard-axiom
+audit passed in 2.54 seconds (`compact-unit-entry-audit.log`).
+
+The full `emit_unit` composition is now proved. `Unit/Inputs.lean` packages
+logical data, storage, scalar bounds, and reference validity without execution
+premises. `Inputs.execute_tail` derives the ten calls after cursor allocation
+in their actual source order, preserving exact output through capacity failure
+and empty serializers. `Inputs.execute` includes the entry guard, first word
+call, cursor allocation, full sequence, return, and local-scope closure.
+`Unit/Call.lean::Checked.write` lifts this to the checked public call, given
+evaluated arguments, their parameter binding, and the input contract in that
+bound state. No intermediate call or whole-body execution is assumed.
+
+The domain requires valid byte/token/assignment/node inputs, a nonempty node
+list, and output storage separate from input buffers. Output capacity need not
+suffice: the theorem gives the exact partial bytes and returned cursor.
+It does not claim rejection of every malformed input or decoder acceptance.
+The expanded 19-declaration standard-axiom audit passed in 2.51 seconds
+(`compact-unit-call-audit.log`). This is a focused incremental component check,
+not a full extractor verification time.
+Current-source integration passed in 25.28 seconds
+(`compact-unit-public-source.log`), checking the complete embedded `emit_unit`,
+all five helper identities, and instantiating its public-call theorem. The run
+reuses existing execution suites; no unit-specific differential suite was added.
+No Lanius source, executable, or wire format changed.
+
+The collector-to-emitter bridge now derives semantic and node input contracts
+in `Unit/Collection.lean`. `CollectionRecords.semanticInput` uses the collector's
+exact written array, derives assignment length and field bounds from semantic
+validity, and retains the unused capacity suffix. `CollectionRecords.nodeInput`
+uses the selected parse and materialized arrays to derive production/span
+bounds, reference validity, record counts, and storage bounds. Production IDs
+are bounded by the recognized grammar; grammar storage establishes the i32
+limit. `CollectionRecords.nonempty` derives the unit guard's positive node count
+from recognition of the grammar's start nonterminal.
+
+The internal collector result now retains `CollectionRecords`, not just an
+assignment list. The pipeline continuation retains the corresponding
+`FrontendResult`, returned-count relationships, and the collector-only write
+effect as well as the combined frontend effect. This preserves the witnesses
+and buffer facts needed for emission; internal callers were updated directly,
+without a second compatibility interface. The focused bridge/pipeline audits
+passed in 3.06 seconds (`compact-unit-collection-audit.log`). The unit audit now
+covers 26 declarations with standard axioms only. The full frontend composition
+still carries the same 463 inherited assumptions and adds none.
+Current-source integration passed in 25.43 seconds
+(`compact-collection-handoff-source.log`) with the strengthened pipeline result.
+No source-language code, executable, or wire format changed.
+
+`Unit/Lexical.lean` now derives the raw and canonical token field bounds from
+the lexer and both canonicalization passes. Filtering and inclusive-range
+retagging preserve byte spans; every token-kind code fits the wire field.
+`lexical_storage` extracts the actual source/raw/canonical array prefixes from
+successful frontend output. `lexical_storage_after_collection` preserves them
+through the collector's separate output-only effect, without rescanning source
+or treating spare capacity as logical tokens. `byteInput`, `rawInput`, and
+`canonicalInput` construct the corresponding emitter contracts. Byte bounds
+come from `Fin 256`, not an added range assumption.
+
+The expanded 36-declaration standard-axiom audit passed in 2.91 seconds
+(`compact-unit-lexical-audit.log`). No source, executable, or format changed;
+the source-link check was not rerun for these input-contract-only proofs.
+
+The full emitter argument handoff is now assembled in `Unit/Arguments.lean`.
+`Emission.values` gives the actual 19-argument order, distinguishing logical
+counts from physical capacities. `Storage.inputs` derives the complete bound
+parameter state from caller storage and the selected frontend/collection
+witnesses. `Storage.of_collection` supplies that storage from the frontend
+postcondition and collector effect; `Storage.write` invokes the checked public
+emitter without assuming a callee state or independent nonempty-node proof.
+Its encoding names the exact path/source bytes, raw/canonical tokens,
+assignments, and records retained by the pipeline.
+
+`Unit/Pipeline.lean::collection_then_emit` consumes the proved collector
+continuation and composes its real call with the emitter call. It derives the
+emitter arguments, retains both executions, and proves exact output plus the
+combined frontend/collector/emitter write footprint. The semantic buffer must
+fit so collection succeeds; emission capacity may still be insufficient and
+the exact partial-output result is retained. This is call composition, not yet
+execution of the surrounding main/I/O statements.
+
+The expanded 42-declaration standard-axiom audit passed in 2.97 seconds
+(`compact-unit-pipeline-audit.log`). No new nonstandard assumptions were added.
+Current-source integration passed in 24.11 seconds
+(`compact-unit-pipeline-source.log`), instantiating the new composition with the
+actual collector, emitter, and helper identities. No Lanius source, executable,
+or format changed. These remain incremental component checks, not a new
+whole-extractor timing.
+
+Compact decoding proofs now target the actual reader implementation in
+`CompactDecode/Reader.lean`. Its contents were moved out of
+`CompactArtifact.lean`; a direct comparison confirmed the reader logic is
+unchanged apart from declaration visibility. `CompactArtifact.lean` retains
+the artifact/checker logic and public decoding entry point. No duplicate
+decoder or compatibility shim was added.
+
+`CompactDecode/Hex.lean` proves single-digit decoding, arbitrary base-16
+accumulation, and exact inverses for the two-character byte and eight-character
+word encodings, with precise cursor advancement. `CompactDecode/Fields.lean`
+composes these into the actual token, semantic-kind, and child-reference
+readers. The ten-theorem standard-axiom audit and 1,721 execution checks passed
+in 11.94 seconds including newly built dependencies
+(`compact-decoder-fields-audit.log`). The execution checks cover all byte
+values, word boundaries, nonzero cursors, every field truncation, and several
+malformed/empty public pack inputs. They are not a whole-pack inverse proof.
+Current self-artifact/source integration passed after the move in 24.05 seconds
+(`compact-decoder-reader-source.log`). Lanius code, executables, and wire format
+remain unchanged; inherited frontend trust obligations remain open.
+
+Further decoder progress: `CompactDecode/Repeat.lean` proves the actual
+`readMany` loop and composition of element reads. `Bytes.lean` proves byte-array
+decoding and derives remaining-buffer bounds from encoded bytes. `Nodes.lean`
+proves child references, complete nodes, and arbitrary node lists, including
+grammar lookup and exact cursor advancement. The node round trip derives its
+buffer-space condition rather than requiring a separate premise. `Tokens.lean`
+proves raw/canonical token lists and semantic-assignment lists, recovering
+`Assignment.code` for both single and packed kinds. Field-range and grammar
+conditions remain explicit; these theorems do not claim every record is valid.
+
+The expanded 30-theorem standard-axiom audit and 2,296 execution checks passed
+in 3.10 seconds (`compact-decoder-token-lists-audit.log`). Added cases cover
+empty/repeated lists, node and semantic-kind boundaries, and every truncation
+of the selected list fixtures. No runtime reader, Lanius source, executable,
+or wire format changed. This is a focused incremental check, not whole-extractor
+verification timing.
+
+The decoder round trip now composes whole units and ordered packs.
+`CompactDecode/Path.lean` proves byte-array reconstruction and UTF-8 path
+recovery. `Artifact.lean` composes the actual field readers. `Unit.lean` derives
+all their reads and bounds from one contiguous encoding, using the existing
+field serializers' encodings. `Units.lean::readPack_encoding` composes these
+units with the actual pack reader and proves exact end-of-input consumption.
+Its explicit conditions are encodable fields, recognized productions, matching
+token/assignment counts, nonempty node lists and pack, and an exact input end.
+No successful field or unit execution is assumed by this round-trip theorem.
+`Pack.lean` also proves wrong-version rejection and framing behavior for empty
+packs and trailing bytes.
+
+The 48-theorem standard-axiom audit and 2,818 execution cases passed in 2.85
+seconds (`compact-decoder-full-pack-audit.log`). Cases include Unicode paths,
+a nonempty artifact with all fields populated, ordered distinct sources,
+truncations, wrong versions, and trailing bytes. These are decoder checks,
+not syntax-validator acceptance checks or whole-extractor timings.
+
+`CompactDecode/Emission.lean::emission_encoding` now identifies this unit
+encoding with `CompactOutput.Unit.Emission.encoding`, the encoding in the
+proved Lanius emitter call. The proof covers the two byte-hex representations
+and the `Fin 256`/`UInt8` source representation. `emission_decode` applies the
+unit round trip to that exact encoding. UTF-8 path-byte agreement and unit
+encodability remain explicit premises. The expanded 47-theorem emitter/bridge
+standard-axiom audit passed in 2.68 seconds
+(`compact-emission-decoder-audit.log`).
+Current self-artifact/source integration also passed in 24.11 seconds
+(`compact-emission-decoder-source.log`); no runtime source or format changed.
+
+Subsequent 4.3 progress: `CompactDecode/Contracts.lean` derives unit encodability
+from frontend/collector storage and capacity bounds. `Buffer.lean` transports
+the successful append buffer to `EncodedAt`; `Grammar.lean` derives production
+lookups from the recognized tree under the shared-grammar identity. The remaining
+byte-backing premise identifies the actual output bytes with the written buffer;
+the packing/I/O caller must still supply it. Loaded grammar identity also remains
+an explicit caller obligation.
+
+`CompactDecode/Acceptance/Unit.lean::frontend_artifact_accepted` now proves
+acceptance by the complete syntax checker. It composes successful frontend
+lexing/canonicalization, exact byte/token decoding, semantic-kind acceptance,
+every node's production/children/spans/backward references, and root acceptance.
+Terminal advancement includes both halves of split tokens and accounts for
+postorder collection. Grammar-child identities are derived from tree recognition
+and preserved when sibling record arrays are concatenated. No token, node,
+root, or whole-checker acceptance is assumed.
+
+This theorem consumes the frontend postcondition, its zero status, the selected
+parse/collection, shared parser/decoder grammar identity, and the semantic-kind
+bound. It does not prove execution of `main` or native output I/O. The expanded
+standard-axiom audit passed in 1.84 seconds
+(`frontend-artifact-acceptance-audit.log`). These are incremental proof checks,
+not a whole-extractor verification benchmark. Existing frontend trust cleanup
+remains in step 6.
+
+The current self-artifact/source-link integration passed in 26.86 seconds
+(`frontend-artifact-acceptance-source.log`). It checks the existing source-linked
+frontend/collector boundary; it is not an end-to-end instantiation of the new
+acceptance theorem with native output bytes. No runtime source or wire format
+changed in this work.
+
+`CompactOutput/Unit/Pipeline.lean::collection_then_emit` now includes these
+results in the actual collector/emitter call theorem. Its returned collection
+determines both the written buffer and the accepted artifact. For a matching
+UTF-8 path and shared grammar, it derives encodability and syntax acceptance;
+for sufficient output room and bytes matching the written prefix, it derives
+exact decoding and the ending cursor. No separate successful emitter execution
+or accepted artifact is assumed. The strengthened theorem passed the
+standard-axiom audit in 2.08 seconds (`certified-emission-audit.log`).
+
+`CompactDecode/Packing.lean::packing_decode_unit` now connects the physical
+packing input to exact unit decoding. It derives the byte-prefix equality from
+the packing invariant and emitter buffer contents; it still requires the
+packing invariant and the matching output count at that boundary.
+
+Next within 4.3: instantiate that connection in the per-unit/whole-pack flow
+and audit the capacity-error cases before closing the boundary. Step 4 and
 milestone 3 remain open.
 
 Exit: from step 3's result, `collect` and `emit_unit` produce exactly one unit's
@@ -1326,7 +1768,179 @@ do not assume acceptance. Include record origin/span validity and capacity error
 
 Sources: `extractor.lani`, `byte_io.lani`, and `host.lani`.
 Reuse input chunk/read/unpacking proofs, output clear/packing proofs,
-`stdout_after_packing`, and the host-call memory rules.
+the constructive stdout-tail proof, and the host-call memory rules.
+
+#### Output path: completed components and remaining composition
+
+`OutputPacking/Complete.lean::prepare_and_write` now composes preparation and
+the stdout tail into one execution theorem, returning zero and appending the
+exact bytes. Its premises describe the entry buffers, registry, local reads,
+separation, capacity, and host declaration. It derives both loop executions,
+the packed workspace, preserved other arrays and pointer, both synchronization
+operations, and the stdout call. No continuation execution is assumed.
+The component audit passed in 1.78 seconds (`prepare-and-write-audit.log`).
+This is an output-stage theorem, not yet a theorem about all of `main`.
+
+The composition uses these proved components:
+
+- `OutputPacking/Setup.lean::prepare_with_continuation` executes the exact
+  `Preparation.statement`: word-count calculation, clear-cursor binding,
+  clearing loop, pack-cursor binding, packing loop, and a supplied continuation
+  inside those scopes. The continuation remains a premise, receiving the
+  completed packing invariant and the loops' memory effects. The theorem now
+  carries any continuation world postcondition through all scope restorations.
+  The focused proof and axiom audit passed in 3.19 seconds
+  (`target/verified-compiler/preparation-world-post-audit.log`).
+- `OutputPacking/Stdout.lean::StdoutTail.executes` proves the complete output
+  tail: explicit usize cast and binding, pointer/size argument reads,
+  synchronization to the heap, stdout, synchronization back, return-count
+  check, and return zero. It derives execution and exact world effects from
+  pre-tail buffer, registry, local-read, separation, capacity, and host-function
+  conditions. Neither synchronization success nor host-call success is a
+  premise. This theorem covers root-array views, not arbitrary projections.
+- `LoopInvariant.workspace_view` derives the workspace array's contents,
+  length, and element types from completed packing and matching view metadata.
+  `LoopInvariant.registered_arrays` combines that result with pre-loop arrays
+  outside the write set. The caller still supplies the metadata and separation
+  conditions and must connect the actual loops' effects.
+- `Tests/Self.lean` checks the complete stdout-tail shape in the self-embedding,
+  its shared output-length local, and its external stdout service. It
+  instantiates the tail theorem for the recovered template; it does not
+  discharge the theorem's runtime premises or prove the entire checked `main`.
+
+The latest registry proof and dependency audit passed in 2.75 seconds
+(`target/verified-compiler/registry-array-audit.log`). The latest self-source
+integration passed in 19.35 seconds (`stdout-theorem-source-link.log`). These
+are scoped checks, not timings or evidence for a completed milestone. The new
+proof dependencies pass the standard-axiom audit; inherited frontend trust
+obligations remain.
+
+`Preparation.checked_stdout_statement` supplies exact equality between the
+recovered preparation statement and the composed theorem's template. The self
+test checks that equality and instantiates `prepare_and_write` for the checked
+program. Runtime entry premises are still open.
+
+Next: connect the output-stage entry resources and byte contents to the
+ordered file loop, module framing, and decoding. The initial allocations and
+view registrations must establish the registry metadata and separation; the
+emission/file-loop proof must establish the output buffer and count.
+
+Allocation support now has two explicit boundaries:
+
+- `Semantics/I32Views/Allocation.lean::evaluatesAllocatedI32Slice_resources`
+  constructs a primitive Core allocation and raw-slice mapping from a sufficient
+  budget. It establishes full state validity, array storage, a registered view,
+  preservation of existing view blocks, and the exact remaining budget.
+- `Allocation/Execution.lean::executes` composes primitive allocations under
+  one total budget and runs the continuation inside their lexical scopes.
+  `Ready` retains each buffer's resources; its projections establish final
+  state validity, validity of the whole view registry, and total budget use.
+
+These primitive proofs do **not** yet cover the extractor's actual allocation
+calls. Source inspection found that `main` calls the host `.alloc` service,
+which synchronizes existing views in both directions and records a host event.
+`CallContracts/Host.lean::evaluatesHostAllocation` proves that call boundary
+with both synchronization results still explicit. `Allocation/Source.lean`
+checks the exact nested host-call representation, allocator identity, byte
+sizes, alignments, and element counts for all 13 buffers. It does not replace
+the calls with primitive allocations.
+
+The focused host-allocation proof, source matcher tests, and new theorem
+dependency audit passed in 2.13 seconds (`allocation-host-audit.log`). The
+18-file self-embedding source check passed in 20.36 seconds
+(`allocation-source-link.log`), confirming the exact 13-buffer host-call
+sequence and its 56,440,332-byte allocation total. This is a source-shape
+check, not execution of those allocations or proof of their total success.
+
+The single host initializer is now proved by
+`Allocation/Host.lean::hostSlice_exists`. Given a well-formed state, sufficient
+budget, valid root-view blocks, and readable i32 arrays of their declared
+lengths, it constructs both synchronization passes, the host allocation, and
+the raw-slice mapping. Its result includes readable new array storage, the
+appended view, full state validity, preservation of existing view blocks,
+unchanged local bindings, exact cell-counter growth, exact remaining budget,
+and the one added allocation event. Neither synchronization success nor an
+intermediate execution is assumed. `hostAllocation_exists` exposes the host
+call separately, including its fresh zero-filled block. The new proofs and
+dependency audit passed in 2.22 seconds (`host-slice-initializer-audit.log`).
+
+The host sequence now composes in
+`Allocation/Sequence.lean::hostSequence_executes`. `Registry` carries state
+validity, valid backing blocks, distinct root views, and readable arrays of
+the declared lengths. `Registry.allocate` and `Registry.bindLocal` establish
+that invariant after every initializer and binding. `HostReady` retains the
+new storage at each step and proves aggregate budget use, host events, and
+cell-counter growth. No intermediate allocation or synchronization execution
+is assumed. The continuation runs inside the scopes with those resources.
+
+`checkAllocator?` recovers proof evidence for the actual allocator declaration,
+including parameter binding; `CheckedAllocator.executes` connects it to the
+recovered source sequence. The 18-file self-embedding integration passed in
+20.26 seconds (`host-allocation-sequence-source-link.log`) with the actual
+13-buffer sequence: 56,440,332 bytes, 13 allocation events, and 26 new cells.
+The focused proof/dependency audit passed in 2.24 seconds
+(`host-sequence-effects-audit.log`); new proofs use only standard Lean axioms.
+The integration checks source linkage, not concrete execution of the buffers.
+
+The argument entry now composes with these allocations in
+`Entry/Arguments.lean::CheckedArguments.allocate`. It constructs the `argc`
+call, binds the result, proves that the `<= 1` guard falls through for a
+supported count, and derives the initial allocation registry. Its external
+conditions are a well-formed initial state with no registered views, an
+argument count between 2 and `2^31 - 1`, sufficient allocation budget, and a
+specification for the post-allocation continuation. No initial allocation
+registry or successful intermediate execution is assumed separately.
+
+`checkArguments?` checks the exact start of `main` and the `argc` declaration.
+The source integration now requires the exact allocation sequence immediately
+after that guard; it no longer searches for the allocations elsewhere in the
+body. The checked entry/allocation composition passed self-source integration
+in 20.55 seconds (`argument-allocation-source-link.log`). Focused matcher
+regressions and the proof-dependency audit passed in 2.08 seconds
+(`argument-entry-regression-audit.log`), including rejection of a missing
+callee and a guard that reads the wrong local.
+
+Pointer support now includes `Allocation.Registry.evaluatesPointer`. For a
+local that contains a registered slice, it constructs the actual
+`i32SliceDataPtr` evaluation, proves the returned address is non-null, and
+retains registry validity, cells, locals, view metadata, cell counter, budget,
+and world. The only change is synchronization of heap bytes; it does not
+allocate another block. `Registry.synchronize` establishes its synchronization
+premise from the registry invariant. The focused proof/dependency audit passed
+in 3.69 seconds (`non-null-pointer-audit.log`). This does not yet prove the
+whole pointer-guard sequence.
+
+The local-read premise is now derived by `Allocation.HostReady.buffer`:
+each buffer remains readable through its binding after the entire allocation
+sequence when the buffer names are distinct. The allocation contracts retain
+preservation of existing cells outside registered array roots;
+`HostReady.preserves_cell`, `preserves_binding`, and `preserves_local` lift
+that fact through later allocations and local bindings. `HostReady.pointer`
+then constructs the non-null pointer evaluation from allocation history,
+without assuming its slice-local read. The source checker now produces
+evidence that all allocation bindings are distinct, with positive and
+duplicate-binding rejection tests. The focused proof/dependency audit passed
+in 2.98 seconds (`allocated-buffer-pointer-audit.log`). Self-source integration
+passed in 20.05 seconds (`allocated-buffer-pointer-source-link.log`), including
+the distinct-binding evidence for the actual allocation sequence.
+
+`Entry/Pointers.lean::Check.evaluatesFalse` now composes the null-check
+expression, including mixed pointer-local reads, slice-pointer queries, and
+short-circuit disjunction. Its frame preserves the reads needed by later
+operands even when an earlier query synchronizes heap bytes. `Guard.executes`
+then skips the return-3 branch and runs the continuation under those resource
+facts. The source matcher checks exact expression equality and the complete
+return-3 guard; tests reject nonzero comparison constants and inverted
+comparisons. The focused proof/dependency audit passed in 2.53 seconds
+(`pointer-guard-source-audit.log`). The self-source link passed in 20.67 seconds
+(`pointer-guard-source-link.log`), locating the exact guard in the
+post-allocation continuation. Guard readiness remains a premise: the
+three pointer bindings before it still need to establish that predicate.
+
+Next: compose those pointer bindings with the guard, then grammar
+initialization and the file-processing continuation. The rejected
+argument-count branch still needs its failure contract. Whole-`main`
+execution remains open.
 
 Finish argument/path handling, allocation and slice-view resources, embedded
 grammar decoding/identity, the complete file-read loop and close, ordered

@@ -108,13 +108,12 @@ theorem FrontendResult.collect {checkedProgram : CoreSynthesis.Program.CheckedPr
     (separate : ∀ cell ∈ [data.grammarCell, data.kindsCell, data.recordsCell, data.offsetsCell], cell ≠ outputCell)
     (argumentsResult : ArgumentsEvaluateTo checkedProgram.core caller arguments
       (collectorValues data count nodes words outputCell original) before) :
-    ∃ assignments : List Assignment, ∃ after,
-      semanticKindsValid data.grammar.grammar (artifactTokens data.tokens) (assignments.map Assignment.code) = true ∧
+    ∃ collection : CollectionRecords data.grammar (artifactTokens data.tokens) result.parse.tree 0 0, ∃ after,
       Evaluates checkedProgram.core caller (.call checked.source.function.id arguments)
         (.signed .i32 (if count * 2 ≤ original.length then 0 else -2)) after ∧
       after.cellEntry? outputCell = some {
         id := outputCell, value := some (.array (signedI32Values
-          (if count * 2 ≤ original.length then assignments.flatMap Assignment.words ++ original.drop (count * 2) else original))) } ∧
+          (if count * 2 ≤ original.length then collection.assignments.flatMap Assignment.words ++ original.drop (count * 2) else original))) } ∧
       CellEffect (CellSet.singleton outputCell) before after := by
   obtain ⟨collection⟩ := selected_collection_records (artifactTokens data.tokens) result.parse kindsFit 0 0
   by_cases enough : count * 2 ≤ original.length
@@ -160,7 +159,7 @@ theorem FrontendResult.collect {checkedProgram : CoreSynthesis.Program.CheckedPr
       exact Nat.le_trans bound valid.treeOffsetsFit
     obtain ⟨after, call, contents, effect⟩ := checked.call_evaluates storage wellFormed nodeBound outputFit separate
       (by simpa only [values] using argumentsResult)
-    refine ⟨collection.assignments, after, collection.acceptedKinds, ?_, ?_, effect⟩
+    refine ⟨collection, after, ?_, ?_, effect⟩
     · simpa only [if_pos enough] using call
     · simpa only [traversal, result.countEq, if_pos (by simpa only [result.countEq] using enough)] using contents
   · have header : 16 < data.grammarWords.length := by
@@ -174,7 +173,7 @@ theorem FrontendResult.collect {checkedProgram : CoreSynthesis.Program.CheckedPr
       (.slice i32 data.offsetsCell [] 0 data.treeOffsets.length)
       (.slice i32 outputCell [] 0 original.length) data.grammarWords.length count words nodes original.length
       wellFormed header (by simpa only [result.countEq] using result.tokensFit) outputFit (by omega) argumentsResult
-    exact ⟨collection.assignments, after, collection.acceptedKinds, by simpa only [if_neg enough] using call,
+    exact ⟨collection, after, by simpa only [if_neg enough] using call,
       by simpa only [if_neg enough] using effect.empty_preserves_entry wellFormed output,
       effect.weaken CellSet.empty_subset⟩
 

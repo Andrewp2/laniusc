@@ -128,4 +128,37 @@ def checkPreparation? : (statement : Stmt) → Option (CheckedStatement Preparat
 
 def findPreparation? := findStatement? Preparation.statement checkPreparation?
 
+structure StdoutTail where
+  size : VarId
+  length : VarId
+  pointer : VarId
+  function : FunctionId
+
+def StdoutTail.statement (tail : StdoutTail) : Stmt :=
+  .letLocal tail.size (.scalar (.unsigned .usize)) (.cast (.unsigned .usize) (.local tail.length))
+    (.sequence (.ifThenElse
+      (.binary .notEqual (.call tail.function [.local tail.pointer, .local tail.size]) (.local tail.length))
+      (.sequence (.returnValue (some (.value (.signed .i32 22)))) .skip) .skip)
+      (.sequence (.returnValue (some (.value (.signed .i32 0)))) .skip))
+
+def checkStdoutTail? : (statement : Stmt) → Option (CheckedStatement StdoutTail.statement statement)
+  | .letLocal size (.scalar (.unsigned .usize)) (.cast (.unsigned .usize) (.local length))
+      (.sequence (.ifThenElse
+        (.binary .notEqual (.call function [.local pointer, .local sizeRead]) (.local lengthRead))
+        (.sequence (.returnValue (some (.value (.signed .i32 22)))) .skip) .skip)
+        (.sequence (.returnValue (some (.value (.signed .i32 0)))) .skip)) =>
+      if same : sizeRead = size ∧ lengthRead = length then
+        some ⟨⟨size, length, pointer, function⟩, by rcases same with ⟨rfl, rfl⟩; rfl⟩
+      else none
+  | _ => none
+
+theorem Preparation.checked_stdout_statement (preparation : Preparation)
+    (checked : CheckedStatement StdoutTail.statement preparation.continuation) :
+    preparation.statement =
+      (Preparation.statement ⟨preparation.packing, preparation.wordCount,
+        preparation.clearCursor, checked.locals.statement⟩) := by
+  exact congrArg (fun continuation =>
+    (Preparation.statement ⟨preparation.packing, preparation.wordCount,
+      preparation.clearCursor, continuation⟩)) checked.exactSource
+
 end Lanius.Extraction.OutputPacking
