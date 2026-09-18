@@ -39,9 +39,9 @@ structure UnpackInvariant (memory : UnpackMemory) (locals : UnpackLocals)
     id := memory.packedCell, value := some (.array (signedI32Values memory.packedValues)) }
   cursor : (Assertion.localPointsTo locals.cursor memory.cursorCell
     (some (.signed .i32 processed.length))).holds state
-  total : state.local? locals.total = some (.signed .i32 memory.earlier.length)
+  total : locals.Offset state memory.earlier.length
   limit : state.local? locals.length = some (.signed .i32 memory.bytes.length)
-  stable : ∀ localId, localId ∈ [locals.output, locals.packed, locals.total, locals.length] →
+  stable : ∀ localId, localId ∈ locals.stableLocals →
     ∀ cell, state.cellId? localId = some cell → ¬ memory.writes cell
 
 private theorem body_step (program : Program) (memory : UnpackMemory) (locals : UnpackLocals)
@@ -69,16 +69,15 @@ private theorem body_step (program : Program) (memory : UnpackMemory) (locals : 
   refine ⟨after, executed, ?_, effect⟩
   refine ⟨afterWF, ?_, afterContents, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact effect.preserves_local invariant.wellFormed invariant.outputLocal
-      (invariant.stable _ (by simp))
+      (invariant.stable _ (by simp [UnpackLocals.stableLocals]))
   · exact effect.preserves_local invariant.wellFormed invariant.packedLocal
-      (invariant.stable _ (by simp))
+      (invariant.stable _ (by simp [UnpackLocals.stableLocals]))
   · exact effect.preserves_entry invariant.wellFormed invariant.packedContents
       (by simp [CellSet.union, CellSet.singleton, memory.packed_output, memory.packed_cursor])
   · simpa using afterCursor
-  · exact effect.preserves_local invariant.wellFormed invariant.total
-      (invariant.stable _ (by simp))
+  · exact invariant.total.preserved invariant.wellFormed effect invariant.stable
   · exact effect.preserves_local invariant.wellFormed invariant.limit
-      (invariant.stable _ (by simp))
+      (invariant.stable _ (by simp [UnpackLocals.stableLocals]))
   · intro localId member cell found
     apply invariant.stable localId member cell
     simpa [State.cellId?, effect.locals] using found

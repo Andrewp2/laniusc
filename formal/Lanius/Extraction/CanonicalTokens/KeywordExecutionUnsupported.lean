@@ -13,13 +13,6 @@ open Lanius.Extraction.CanonicalTokens
 abbrev TM := KeywordDispatchSemantics.TM
 abbrev SM := KeywordDispatchSemantics.SM
 
-private theorem length_beq_false (length expected : Nat)
-    (different : length ≠ expected) :
-    (Int.ofNat length == Int.ofNat expected) = false := by
-  apply beq_eq_false_iff_ne.mpr
-  intro same
-  exact different (Int.ofNat_inj.mp same)
-
 theorem keywordKind_identifier (spelling : List Int)
     (not2 : spelling.length ≠ 2) (not3 : spelling.length ≠ 3)
     (not4 : spelling.length ≠ 4) (not5 : spelling.length ≠ 5)
@@ -38,77 +31,45 @@ theorem keywordKind_identifier (spelling : List Int)
     (by simpa using not8)
   rw [none]
 
-theorem body_evaluates (leading spelling trailing : List Int)
+theorem body_evaluates (cell : CellId) (leading spelling trailing : List Int)
     (not2 : spelling.length ≠ 2) (not3 : spelling.length ≠ 3)
     (not4 : spelling.length ≠ 4) (not5 : spelling.length ≠ 5)
     (not6 : spelling.length ≠ 6) (not8 : spelling.length ≠ 8) :
     Lanius.FunctionalView.Stateful.Acyclic.run? TM SM
-      (Model.keywordWorld (leading ++ spelling ++ trailing))
-      (KeywordSemantics.lengthEnvironment leading spelling trailing)
+      (Model.keywordWorld cell (leading ++ spelling ++ trailing))
+      (KeywordSemantics.lengthEnvironment cell leading spelling trailing)
       KeywordDispatchSemantics.body =
     some (.returned
       (some (.signed .i32 (Int.ofNat TokenKind.identifier.gpuCode))),
-      Model.keywordWorld (leading ++ spelling ++ trailing),
-      KeywordSemantics.lengthEnvironment leading spelling trailing) := by
-  let world := Model.keywordWorld (leading ++ spelling ++ trailing)
-  let environment := KeywordSemantics.lengthEnvironment leading spelling trailing
-  have branch2 := KeywordDispatchSemantics.lengthBranch_false leading spelling trailing 2
-    (KeywordCommand.directLoad2
-      (KeywordCommand.directChoices KeywordCommand.length2Rules))
-    (by simpa using length_beq_false spelling.length 2 not2)
-  have branch3 := KeywordDispatchSemantics.lengthBranch_false leading spelling trailing 3
-    (KeywordCommand.directLoad3
-      (KeywordCommand.directChoices KeywordCommand.length3Rules))
-    (by simpa using length_beq_false spelling.length 3 not3)
-  have branch4 := KeywordDispatchSemantics.lengthBranch_false leading spelling trailing 4
-    (KeywordCommand.directLoad4
-      (KeywordCommand.directChoices KeywordCommand.length4Rules))
-    (by simpa using length_beq_false spelling.length 4 not4)
-  have branch5 := KeywordDispatchSemantics.lengthBranch_false leading spelling trailing 5
-    (KeywordCommand.directLoad5
-      (KeywordCommand.directChoices KeywordCommand.length5Rules))
-    (by simpa using length_beq_false spelling.length 5 not5)
-  have branch6 := KeywordDispatchSemantics.lengthBranch_false leading spelling trailing 6
-    (KeywordCommand.directLoad6
-      (KeywordCommand.directChoices KeywordCommand.length6Rules))
-    (by simpa using length_beq_false spelling.length 6 not6)
-  have branch8 := KeywordDispatchSemantics.lengthBranch_false leading spelling trailing 8
-    (KeywordCommand.directLoad8
-      (KeywordCommand.directChoices KeywordCommand.length8Rules))
-    (by simpa using length_beq_false spelling.length 8 not8)
-  have finalResult := KeywordDispatchSemantics.identifier_return_evaluates
-    leading spelling trailing
-  have tail8 := KeywordDispatchSemantics.sequence_next world environment _ _ _
-    branch8 finalResult
-  have tail6 := KeywordDispatchSemantics.sequence_next world environment _ _ _
-    branch6 tail8
-  have tail5 := KeywordDispatchSemantics.sequence_next world environment _ _ _
-    branch5 tail6
-  have tail4 := KeywordDispatchSemantics.sequence_next world environment _ _ _
-    branch4 tail5
-  have tail3 := KeywordDispatchSemantics.sequence_next world environment _ _ _
-    branch3 tail4
-  have all := KeywordDispatchSemantics.sequence_next world environment _ _ _
-    branch2 tail3
-  simpa [KeywordDispatchSemantics.body, world, environment] using all
+      Model.keywordWorld cell (leading ++ spelling ++ trailing),
+      KeywordSemantics.lengthEnvironment cell leading spelling trailing) := by
+  apply KeywordDispatchSemantics.body_evaluates_of_outcomes
+    cell
+    (expected := .signed .i32 (Int.ofNat TokenKind.identifier.gpuCode))
+  · intro width command member sameLength
+    simp [KeywordDispatchSemantics.branchCommands] at member
+    rcases member with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+      ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    all_goals omega
+  · exact Or.inr rfl
 
-theorem command_evaluates (leading spelling trailing : List Int)
+theorem command_evaluates (cell : CellId) (leading spelling trailing : List Int)
     (bounded : spelling.length ≤ 2147483647)
     (not2 : spelling.length ≠ 2) (not3 : spelling.length ≠ 3)
     (not4 : spelling.length ≠ 4) (not5 : spelling.length ≠ 5)
     (not6 : spelling.length ≠ 6) (not8 : spelling.length ≠ 8) :
     Lanius.FunctionalView.Stateful.Acyclic.run? TM SM
-      (Model.keywordWorld (leading ++ spelling ++ trailing))
-      (Model.keywordEnvironment (leading ++ spelling ++ trailing)
+      (Model.keywordWorld cell (leading ++ spelling ++ trailing))
+      (Model.keywordEnvironment cell (leading ++ spelling ++ trailing)
         leading.length (leading.length + spelling.length)) KeywordCommand.command =
     some (.returned (some (.signed .i32
         (Model.keywordKind spelling 0 spelling.length))),
-      Model.keywordWorld (leading ++ spelling ++ trailing),
-      Model.keywordEnvironment (leading ++ spelling ++ trailing)
+      Model.keywordWorld cell (leading ++ spelling ++ trailing),
+      Model.keywordEnvironment cell (leading ++ spelling ++ trailing)
         leading.length (leading.length + spelling.length)) := by
-  have body := body_evaluates leading spelling trailing not2 not3 not4 not5 not6 not8
+  have body := body_evaluates cell leading spelling trailing not2 not3 not4 not5 not6 not8
   rw [keywordKind_identifier spelling not2 not3 not4 not5 not6 not8]
-  exact KeywordDispatchSemantics.command_evaluates_of_body leading spelling trailing
+  exact KeywordDispatchSemantics.command_evaluates_of_body cell leading spelling trailing
     (Int.ofNat TokenKind.identifier.gpuCode) bounded body
 
 end Lanius.Extraction.CanonicalTokens.KeywordExecutionUnsupported

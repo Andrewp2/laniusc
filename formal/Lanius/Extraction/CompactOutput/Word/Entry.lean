@@ -77,13 +77,13 @@ theorem Entry.execute (entry : Entry before) (byte : CheckedByte program) (digit
       after.cellEntry? entry.outputCell = some {
         id := entry.outputCell
         value := some (.array (signedI32Values (appendAll entry.capacity (hexDigits entry.value 8) entry.position entry.contents).contents)) } ∧
-      CellEffect (CellSet.singleton entry.outputCell) before after := by
+      CellEffect (CellSet.singleton entry.outputCell) before after ∧ HeapFrame before after := by
   have passed : Evaluates program.core before (binary .lessEqual (read 3) negativeOne) (.boolean false) before := by
     apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program.core entry.valueRead)
       (negativeOne_evaluates program.core before)
     simp [evalBinaryValue, evalSignedBinary]
     omega
-  obtain ⟨completed, loopRun, ⟨left, finalOwned⟩, effect⟩ := execute_loop byte digit entry.invariant (by decide)
+  obtain ⟨completed, loopRun, ⟨left, finalOwned⟩, effect, heapFrame⟩ := execute_loop byte digit entry.invariant (by decide)
   let first := before.bindLocal 4 (.signed .i32 entry.position)
   have firstWF : StateWellFormed first := bindLocal_preserves_well_formed _ _ _ entry.wellFormed
   have tailRun : Executes program.core entry.entered
@@ -104,13 +104,17 @@ theorem Entry.execute (entry : Entry before) (byte : CheckedByte program) (digit
         (show Evaluates program.core first (number 28) (.signed .i32 28) first from ⟨1, rfl⟩) tailRun))
   have closed := CellEffect.closeLocal before 4 (.signed .i32 entry.position) entry.wellFormed
     (CellEffect.closeLocal first 5 (.signed .i32 28) firstWF effect)
-  refine ⟨restoreLocals before completed, run, finalOwned.backing, closed.narrow ?_⟩
-  intro cell old changed
-  rcases changed with (output | cursor) | shift
-  · exact output
-  · change cell = before.nextCell at cursor
-    exact (Nat.ne_of_lt old cursor).elim
-  · change cell = before.nextCell + 1 at shift
-    exact (Nat.ne_of_lt (Nat.lt_trans old (Nat.lt_succ_self _)) shift).elim
+  refine ⟨restoreLocals before completed, run, finalOwned.backing, closed.narrow ?_,
+    ?_⟩
+  · intro cell old changed
+    rcases changed with (output | cursor) | shift
+    · exact output
+    · change cell = before.nextCell at cursor
+      exact (Nat.ne_of_lt old cursor).elim
+    · change cell = before.nextCell + 1 at shift
+      exact (Nat.ne_of_lt (Nat.lt_trans old (Nat.lt_succ_self _)) shift).elim
+  · simpa only [restoreLocals] using
+      HeapFrame.closeLocal before 4 (.signed .i32 entry.position)
+        (HeapFrame.closeLocal first 5 (.signed .i32 28) heapFrame)
 
 end Lanius.Extraction.CompactOutput.Word

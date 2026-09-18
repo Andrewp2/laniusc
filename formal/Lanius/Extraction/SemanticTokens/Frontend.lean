@@ -42,7 +42,7 @@ theorem frontend_result {data : SyntaxData} (valid : data.Valid)
   · rcases early.1.stage with failed | failed <;> omega
   · have failed := storage.2.1
     omega
-  · rcases parsed with failure | ⟨root, stageEq, _, output⟩
+  · rcases parsed with failure | ⟨root, stageEq, _, output, _⟩
     · have failed := failure.1
       omega
     · have zero : detail = 0 := by
@@ -86,12 +86,12 @@ theorem frontend_result {data : SyntaxData} (valid : data.Valid)
 
 /-- Actual collector arguments after the frontend returns its logical counts.
 Input slices retain the frontend's original physical capacities. -/
-def collectorValues (data : SyntaxData) (count nodes words : Nat) (outputCell : CellId) (original : List Int) : List Value :=
+def collectorValues (data : SyntaxData) (count nodes : Nat) (outputCell : CellId) (original : List Int) : List Value :=
   argumentValues (.slice i32 data.grammarCell [] 0 data.grammarWords.length)
     (.slice i32 data.kindsCell [] 0 data.kinds.length)
     (.slice i32 data.recordsCell [] 0 data.treeRecords.length)
     (.slice i32 data.offsetsCell [] 0 data.treeOffsets.length)
-    (.slice i32 outputCell [] 0 original.length) data.grammarWords.length count words nodes original.length
+    (.slice i32 outputCell [] 0 original.length) data.grammarWords.length count data.treeRecords.length nodes original.length
 
 /-- The public collector consumes the exact selected frontend outputs. Both
 sufficient and insufficient output capacity are covered, without assuming the
@@ -107,7 +107,7 @@ theorem FrontendResult.collect {checkedProgram : CoreSynthesis.Program.CheckedPr
     (outputFit : original.length ≤ 2147483647)
     (separate : ∀ cell ∈ [data.grammarCell, data.kindsCell, data.recordsCell, data.offsetsCell], cell ≠ outputCell)
     (argumentsResult : ArgumentsEvaluateTo checkedProgram.core caller arguments
-      (collectorValues data count nodes words outputCell original) before) :
+      (collectorValues data count nodes outputCell original) before) :
     ∃ collection : CollectionRecords data.grammar (artifactTokens data.tokens) result.parse.tree 0 0, ∃ after,
       Evaluates checkedProgram.core caller (.call checked.source.function.id arguments)
         (.signed .i32 (if count * 2 ≤ original.length then 0 else -2)) after ∧
@@ -132,7 +132,9 @@ theorem FrontendResult.collect {checkedProgram : CoreSynthesis.Program.CheckedPr
       original
       capacity := by simpa only [result.countEq] using enough
       tokensFit := result.tokensFit
-      wordsFit := Nat.le_trans result.records.length_le valid.treeRecordsFit
+      recordsLimit := data.treeRecords.length
+      wordsWithin := result.records.length_le
+      limitFits := valid.treeRecordsFit
     }
     have recordCount : collection.records.length = nodes := by
       have same := congrArg List.length collection.offsets
@@ -149,9 +151,9 @@ theorem FrontendResult.collect {checkedProgram : CoreSynthesis.Program.CheckedPr
       offsets := result.offsets
       output
     }
-    have values : storage.values = collectorValues data count nodes words outputCell original := by
+    have values : storage.values = collectorValues data count nodes outputCell original := by
       simp only [CallStorage.values, collectorValues, storage, traversal, grammarData,
-        ← result.countEq, ← result.wordsEq, recordCount]
+        ← result.countEq, recordCount]
     have nodeBound : collection.records.length ≤ 2147483647 := by
       have bound := result.offsets.length_le
       simp only [List.length_map, ← result.nodesEq] at bound
@@ -171,7 +173,7 @@ theorem FrontendResult.collect {checkedProgram : CoreSynthesis.Program.CheckedPr
       (.slice i32 data.kindsCell [] 0 data.kinds.length)
       (.slice i32 data.recordsCell [] 0 data.treeRecords.length)
       (.slice i32 data.offsetsCell [] 0 data.treeOffsets.length)
-      (.slice i32 outputCell [] 0 original.length) data.grammarWords.length count words nodes original.length
+      (.slice i32 outputCell [] 0 original.length) data.grammarWords.length count data.treeRecords.length nodes original.length
       wellFormed header (by simpa only [result.countEq] using result.tokensFit) outputFit (by omega) argumentsResult
     exact ⟨collection, after, by simpa only [if_neg enough] using call,
       by simpa only [if_neg enough] using effect.empty_preserves_entry wellFormed output,

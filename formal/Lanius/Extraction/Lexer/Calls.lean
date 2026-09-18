@@ -11,6 +11,7 @@ import Lanius.FunctionalViewCoreCallFrame
 import Lanius.FunctionalViewCoreFreshSimulation
 import Lanius.FunctionalViewCoreStatefulCallRefinement
 import Lanius.FunctionalViewLoop
+import Lanius.FunctionalViewRenaming
 
 namespace Lanius.Extraction.Lexer.Calls
 
@@ -152,7 +153,6 @@ private theorem unaryFramePreservingCallSoundness
       evaluated
     obtain ⟨byte, rfl, rfl, rfl, rfl⟩ := modelSuccess evaluated
     let callee := Predicates.byteCalleeState afterArguments byte
-    let after := restoreLocals afterArguments callee
     have calleeWellFormed : StateWellFormed callee := by
       simpa [callee, Predicates.byteCalleeState] using
         (enterCall_preserves_wellFormed
@@ -163,39 +163,17 @@ private theorem unaryFramePreservingCallSoundness
         (functionBody function) (.returned (some (resultFor byte))) callee := by
       simpa [callee] using
         verifiedFrontendCore_extends_verifiedFrontendLexerCore.executes bodySmall
-    have callExecution : Evaluates verifiedFrontendCore before
-        (.call function.id (toCoreExprs layout arguments)) (resultFor byte)
-        after := by
-      apply evaluatesCallReturned argumentsExecution
-        (verifiedFrontendCore_extends_verifiedFrontendLexerCore.function found)
-      · rw [parameters]
-        rfl
-      · exact hasBody
-      · change Executes verifiedFrontendCore callee (functionBody function)
-          (.returned (some (resultFor byte))) callee
-        exact bodyMerged
-    have entered : StoreEffect CellSet.empty afterArguments callee := by
+    have bodyEffect : ModifiesOnly CellSet.empty
+        (enterCall afterArguments
+          (parameterBindings (Predicates.byteEnvironment byte))) callee := by
       simpa [callee, Predicates.byteCalleeState] using
-        enterCall_effect afterArguments
-          (parameterBindings (Predicates.byteEnvironment byte))
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after, callee] using entered.restoreLocals
-    have afterWellFormed : StateWellFormed after := by
-      exact entered.restoreLocals_wellFormed afterArgumentsWellFormed
-        calleeWellFormed
-    have afterRepresented : Representation layout localCell afterWorld
-        environment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns afterWorld)
-        represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed
-        (Assertion.localPointsTo (layout index) (localCell index)
-          (some (environment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint }
-    exact ⟨after, callExecution, afterWellFormed, afterRepresented,
-      argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+        (ModifiesOnly.refl callee)
+    exact represented.callReturned (body := functionBody function)
+      argumentsExecution argumentsEffect
+      (verifiedFrontendCore_extends_verifiedFrontendLexerCore.function found)
+      (by rw [parameters]; rfl) hasBody bodyMerged
+      afterArgumentsWellFormed calleeWellFormed bodyEffect
+      (by intro cell written; exact written.elim)
 
 private theorem decimalDigitCalls_success
     (evaluated : decimalDigitCalls.evaluate world function arguments =
@@ -339,8 +317,6 @@ private theorem accessorFramePreservingCallSoundness
     cases selected
     let callee := ScanEnd.resultCalleeState afterArguments success
       endOffset errorOffset
-    let after := ScanEnd.resultCallState afterArguments success
-      endOffset errorOffset
     have calleeWellFormed : StateWellFormed callee := by
       simpa [callee, ScanEnd.resultCalleeState] using
         (enterCall_preserves_wellFormed
@@ -354,41 +330,18 @@ private theorem accessorFramePreservingCallSoundness
         (.returned (some (resultFor success endOffset errorOffset))) callee := by
       simpa [callee] using
         verifiedFrontendCore_extends_verifiedFrontendLexerCore.executes bodySmall
-    have callExecution : Evaluates verifiedFrontendCore before
-        (.call function.id (toCoreExprs layout arguments))
-        (resultFor success endOffset errorOffset) after := by
-      apply evaluatesCallReturned argumentsExecution
-      · exact verifiedFrontendCore_extends_verifiedFrontendLexerCore.function
-          found
-      · rw [parameters]
-        rfl
-      · exact hasBody
-      · change Executes verifiedFrontendCore callee (functionBody function)
-          (.returned (some (resultFor success endOffset errorOffset))) callee
-        exact bodyMerged
-    have entered : StoreEffect CellSet.empty afterArguments callee := by
-      simpa [callee, ScanEnd.resultCalleeState] using
-        enterCall_effect afterArguments
+    have bodyEffect : ModifiesOnly CellSet.empty
+        (enterCall afterArguments
           (parameterBindings
-            (ScanEnd.resultEnvironment success endOffset errorOffset))
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after, ScanEnd.resultCallState, callee] using entered.restoreLocals
-    have afterWellFormed : StateWellFormed after := by
-      exact entered.restoreLocals_wellFormed afterArgumentsWellFormed
-        calleeWellFormed
-    have afterRepresented : Representation layout localCell afterWorld
-        environment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns afterWorld)
-        represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed
-        (Assertion.localPointsTo (layout index) (localCell index)
-          (some (environment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint }
-    exact ⟨after, callExecution, afterWellFormed, afterRepresented,
-      argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+            (ScanEnd.resultEnvironment success endOffset errorOffset))) callee := by
+      simpa [callee, ScanEnd.resultCalleeState] using
+        (ModifiesOnly.refl callee)
+    exact represented.callReturned (body := functionBody function)
+      argumentsExecution argumentsEffect
+      (verifiedFrontendCore_extends_verifiedFrontendLexerCore.function found)
+      (by rw [parameters]; rfl) hasBody bodyMerged
+      afterArgumentsWellFormed calleeWellFormed bodyEffect
+      (by intro cell written; exact written.elim)
 
 theorem scanSucceededFramePreservingCallSoundness :
     FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
@@ -469,7 +422,7 @@ private theorem successfulConstructorBody_executes
   exact constructorBody_executes state wellFormed successfulScanFunction
     successfulScanBlock offset (ScanEnd.value true offset 0)
     (ScanEnd.successfulScanBlock_evaluates offset)
-    successfulScanBlock_toCore_exactly (by native_decide)
+    successfulScanBlock_toCore_exactly (by decide +kernel)
 
 private theorem failedConstructorBody_executes
     (state : State) (wellFormed : StateWellFormed state) (offset : Int) :
@@ -480,31 +433,7 @@ private theorem failedConstructorBody_executes
   exact constructorBody_executes state wellFormed failedScanFunction
     failedScanBlock offset (ScanEnd.value false 0 offset)
     (ScanEnd.failedScanBlock_evaluates offset)
-    failedScanBlock_toCore_exactly (by native_decide)
-
-private theorem scanEndConstructorCalls_success
-    (evaluated : ScanEndCalls.calls.evaluate world function arguments =
-      .ok (result, afterWorld)) :
-    (∃ offset, function = successfulScanFunction.id ∧
-      arguments = [.signed .i32 offset] ∧
-      result = ScanEnd.value true offset 0 ∧ afterWorld = world) ∨
-    (∃ offset, function = failedScanFunction.id ∧
-      arguments = [.signed .i32 offset] ∧
-      result = ScanEnd.value false 0 offset ∧ afterWorld = world) := by
-  simp only [ScanEndCalls.calls] at evaluated
-  split at evaluated
-  next offset =>
-    split at evaluated
-    next successful =>
-      obtain ⟨rfl, rfl⟩ := evaluated
-      exact .inl ⟨offset, successful, rfl, rfl, rfl⟩
-    next =>
-      split at evaluated
-      next failed =>
-        obtain ⟨rfl, rfl⟩ := evaluated
-        exact .inr ⟨offset, failed, rfl, rfl, rfl⟩
-      next => contradiction
-  next => contradiction
+    failedScanBlock_toCore_exactly (by decide +kernel)
 
 private theorem scanEndConstructorFramePreservingCallSoundnessFor
     (program : Program)
@@ -515,11 +444,10 @@ private theorem scanEndConstructorFramePreservingCallSoundnessFor
     afterArguments function arguments values result argumentWrites
     afterArgumentsWellFormed represented argumentsExecution argumentsEffect
     evaluated
-  rcases scanEndConstructorCalls_success evaluated with
+  rcases ScanEndCalls.calls_success evaluated with
     ⟨offset, rfl, rfl, rfl, worldEq⟩ | ⟨offset, rfl, rfl, rfl, worldEq⟩
   · subst afterWorld
     let callee := constructorCallee afterArguments offset
-    let after := restoreLocals afterArguments callee
     have bodySmall := successfulConstructorBody_executes afterArguments
       afterArgumentsWellFormed offset
     have bodyMerged : Executes program callee
@@ -527,41 +455,22 @@ private theorem scanEndConstructorFramePreservingCallSoundnessFor
         (.returned (some (ScanEnd.value true offset 0))) callee := by
       simpa [callee] using
         extension.executes bodySmall
-    have execution : Evaluates program before
-        (.call successfulScanFunction.id (toCoreExprs layout arguments))
-        (ScanEnd.value true offset 0) after := by
-      apply evaluatesCallReturned
-        (bindings := constructorBindings offset)
-        (body := functionBody successfulScanFunction) argumentsExecution
-      · exact extension.function (by rfl)
-      · rfl
-      · rfl
-      · simpa [callee, constructorCallee] using bodyMerged
-    have entered : StoreEffect CellSet.empty afterArguments callee := by
+    have calleeWellFormed : StateWellFormed callee := by
       simpa [callee, constructorCallee] using
-        enterCall_effect afterArguments (constructorBindings offset)
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after] using entered.restoreLocals
-    have afterWellFormed := entered.restoreLocals_wellFormed
-      afterArgumentsWellFormed (by
-        simpa [callee, constructorCallee] using
-          enterCall_preserves_wellFormed
-            (bindings := constructorBindings offset) afterArgumentsWellFormed)
-    have afterRepresented : Representation layout localCell beforeWorld
-        environment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns beforeWorld) represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed
-        (Assertion.localPointsTo (layout index) (localCell index)
-          (some (environment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint }
-    exact ⟨after, execution, afterWellFormed, afterRepresented,
-      argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+        enterCall_preserves_wellFormed
+          (bindings := constructorBindings offset) afterArgumentsWellFormed
+    have bodyEffect : ModifiesOnly CellSet.empty
+        (enterCall afterArguments (constructorBindings offset)) callee := by
+      simpa [callee, constructorCallee] using
+        (ModifiesOnly.refl callee)
+    exact represented.callReturned (body := functionBody successfulScanFunction)
+      argumentsExecution argumentsEffect
+      (extension.function (by rfl)) (by rfl) (by rfl)
+      (by simpa [callee, constructorCallee] using bodyMerged)
+      afterArgumentsWellFormed calleeWellFormed bodyEffect
+      (by intro cell written; exact written.elim)
   · subst afterWorld
     let callee := constructorCallee afterArguments offset
-    let after := restoreLocals afterArguments callee
     have bodySmall := failedConstructorBody_executes afterArguments
       afterArgumentsWellFormed offset
     have bodyMerged : Executes program callee
@@ -569,38 +478,20 @@ private theorem scanEndConstructorFramePreservingCallSoundnessFor
         (.returned (some (ScanEnd.value false 0 offset))) callee := by
       simpa [callee] using
         extension.executes bodySmall
-    have execution : Evaluates program before
-        (.call failedScanFunction.id (toCoreExprs layout arguments))
-        (ScanEnd.value false 0 offset) after := by
-      apply evaluatesCallReturned
-        (bindings := constructorBindings offset)
-        (body := functionBody failedScanFunction) argumentsExecution
-      · exact extension.function (by rfl)
-      · rfl
-      · rfl
-      · simpa [callee, constructorCallee] using bodyMerged
-    have entered : StoreEffect CellSet.empty afterArguments callee := by
+    have calleeWellFormed : StateWellFormed callee := by
       simpa [callee, constructorCallee] using
-        enterCall_effect afterArguments (constructorBindings offset)
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after] using entered.restoreLocals
-    have afterWellFormed := entered.restoreLocals_wellFormed
-      afterArgumentsWellFormed (by
-        simpa [callee, constructorCallee] using
-          enterCall_preserves_wellFormed
-            (bindings := constructorBindings offset) afterArgumentsWellFormed)
-    have afterRepresented : Representation layout localCell beforeWorld
-        environment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns beforeWorld) represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed
-        (Assertion.localPointsTo (layout index) (localCell index)
-          (some (environment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint }
-    exact ⟨after, execution, afterWellFormed, afterRepresented,
-      argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+        enterCall_preserves_wellFormed
+          (bindings := constructorBindings offset) afterArgumentsWellFormed
+    have bodyEffect : ModifiesOnly CellSet.empty
+        (enterCall afterArguments (constructorBindings offset)) callee := by
+      simpa [callee, constructorCallee] using
+        (ModifiesOnly.refl callee)
+    exact represented.callReturned (body := functionBody failedScanFunction)
+      argumentsExecution argumentsEffect
+      (extension.function (by rfl)) (by rfl) (by rfl)
+      (by simpa [callee, constructorCallee] using bodyMerged)
+      afterArgumentsWellFormed calleeWellFormed bodyEffect
+      (by intro cell written; exact written.elim)
 
 theorem scanEndConstructorFramePreservingCallSoundness :
     FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
@@ -762,6 +653,19 @@ private theorem frameExtension_modifiesEmpty
     exact ⟨entry, List.mem_of_find?_eq_some foundAfter, rfl⟩
   locals := extension.locals }
 
+private theorem preserveRepresentation
+    (wellFormed : StateWellFormed before)
+    (represented : Representation layout localCell world environment before)
+    (effect : ModifiesOnly CellSet.empty before after) :
+    Representation layout localCell world environment after := {
+  worldOwned := effect.empty_preserves_assertion wellFormed
+    (World.owns world) represented.worldOwned
+  localOwned := fun index => effect.empty_preserves_assertion wellFormed
+    (Assertion.localPointsTo (layout index) (localCell index)
+      (some (environment index))) (represented.localOwned index)
+  localCellsInjective := represented.localCellsInjective
+  worldLocalsDisjoint := represented.worldLocalsDisjoint }
+
 def predicateCalls (expectedFunction : FunctionId)
     (accept : Byte → Bool) : CallModel where
   evaluate := fun world function arguments =>
@@ -844,15 +748,8 @@ private theorem predicateFramePreservingSoundness
   have callEffect : ModifiesOnly CellSet.empty afterArguments after :=
     frameExtension_modifiesEmpty closed afterArgumentsWellFormed
   have afterRepresented : Representation layout localCell afterWorld
-      environment after := {
-    worldOwned := callEffect.empty_preserves_assertion
-      afterArgumentsWellFormed (World.owns afterWorld) represented.worldOwned
-    localOwned := fun index => callEffect.empty_preserves_assertion
-      afterArgumentsWellFormed
-      (Assertion.localPointsTo (layout index) (localCell index)
-        (some (environment index))) (represented.localOwned index)
-    localCellsInjective := represented.localCellsInjective
-    worldLocalsDisjoint := represented.worldLocalsDisjoint }
+      environment after :=
+    preserveRepresentation afterArgumentsWellFormed represented callEffect
   exact ⟨after, callExecution, afterWellFormed, afterRepresented,
     argumentsEffect.trans_same
       (callEffect.weaken CellSet.empty_subset)⟩
@@ -956,6 +853,10 @@ private def scannerRuntime (predicate : FunctionId) (accept : Byte → Bool)
       (predicateCalls predicate accept)) 4 :=
   (sourceWorld source, scannerLoopEnvironment source start cursor)
 
+private def scannerAccepts (source : List Byte) (accept : Byte → Bool)
+    (cursor : Nat) : Bool :=
+  (source[cursor]?.map accept).getD false
+
 @[simp] theorem predicateCalls_at (world : World) (function : FunctionId)
     (accept : Byte → Bool) (byte : Byte) :
     (predicateCalls function accept).evaluate world function
@@ -963,53 +864,34 @@ private def scannerRuntime (predicate : FunctionId) (accept : Byte → Bool)
       .ok (.boolean (accept byte), world) := by
   simp [predicateCalls, byte.isLt]
 
-private theorem scannerCondition_in_bounds
+private theorem scannerCondition_evaluates
     (predicate : FunctionId) (accept : Byte → Bool)
     (source : List Byte) (start cursor : Nat)
-    (inBounds : cursor < source.length) :
+    :
     Term.evaluate (Effectful.machine verifiedFrontendCore
         (predicateCalls predicate accept))
       (scannerRuntime predicate accept source start cursor).world
       (scannerRuntime predicate accept source start cursor).environment
       (scannerLoopCondition predicate) =
-      .ok (.boolean (accept (source.get ⟨cursor, inBounds⟩)),
+      .ok (.boolean
+        (decide (cursor < source.length) && scannerAccepts source accept cursor),
         (scannerRuntime predicate accept source start cursor).world) := by
-  have left : Term.evaluate (Effectful.machine verifiedFrontendCore
+  have bounds : Term.evaluate (Effectful.machine verifiedFrontendCore
       (predicateCalls predicate accept))
-      (scannerRuntime predicate accept source start cursor).world
-      (scannerRuntime predicate accept source start cursor).environment
+      (sourceWorld source) (scannerLoopEnvironment source start cursor)
       (apply (.binary .less Program.i32Type Program.i32Type (.scalar .bool))
         [scannerCursorTerm, scannerBoundTerm]) =
-      .ok (.boolean true,
-        (scannerRuntime predicate accept source start cursor).world) := by
-    change Term.evaluate (Effectful.machine verifiedFrontendCore
-      (predicateCalls predicate accept)) (sourceWorld source)
-      (scannerLoopEnvironment source start cursor)
-      (apply (.binary .less Program.i32Type Program.i32Type (.scalar .bool))
-        [scannerCursorTerm, scannerBoundTerm]) =
-      .ok (.boolean true, sourceWorld source)
-    calc
-      _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
-          (sourceWorld source) (scannerLoopEnvironment source start cursor)
-          (apply (.binary .less Program.i32Type Program.i32Type (.scalar .bool))
-            [scannerCursorTerm, scannerBoundTerm]) :=
-        Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (program := verifiedFrontendCore)
-          (calls := predicateCalls predicate accept) _ (by decide +kernel)
-      _ = _ := by
-        have evaluated := ReadOnly.Term.evaluate_i32_less
-          (program := verifiedFrontendCore) (world := sourceWorld source)
-          (environment := scannerLoopEnvironment source start cursor)
-          (leftType := Program.i32Type) (rightType := Program.i32Type)
-          (outputType := .scalar .bool)
-          (left := scannerCursorTerm) (right := scannerBoundTerm)
-          (leftValue := cursor) (rightValue := source.length) (by rfl) (by rfl)
-        have decided : decide (cursor < source.length) = true := by
-          simp [inBounds]
-        rw [decided] at evaluated
-        exact evaluated
+      .ok (.boolean (decide (cursor < source.length)), sourceWorld source) := by
+    rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by decide +kernel)]
+    change Term.evaluate (ReadOnly.machine verifiedFrontendCore)
+      (sourceWorld source) (scannerLoopEnvironment source start cursor)
+      (Term.apply (.binary .less Program.i32Type Program.i32Type (.scalar .bool))
+        [scannerCursorTerm, scannerBoundTerm]) = _
+    apply ReadOnly.Term.evaluate_i32_less <;> rfl
   unfold scannerLoopCondition
-  apply Term.evaluate_logicalAnd_true left
+  apply Term.evaluate_logicalAnd_guarded bounds
+  intro accepted
+  have inBounds : cursor < source.length := of_decide_eq_true accepted
   have currentByte : Term.evaluate (Effectful.machine verifiedFrontendCore
       (predicateCalls predicate accept))
       (sourceWorld source)
@@ -1018,67 +900,22 @@ private theorem scannerCondition_in_bounds
         [scannerSourceTerm, scannerCursorTerm]) =
       .ok (.signed .i32
         (Int.ofNat (source.get ⟨cursor, inBounds⟩).val), sourceWorld source) := by
-    calc
-      _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
-          (sourceWorld source) (scannerLoopEnvironment source start cursor)
-          (apply (.index (.slice Program.i32Type) Program.i32Type Program.i32Type)
-            [scannerSourceTerm, scannerCursorTerm]) :=
-        Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (program := verifiedFrontendCore)
-          (calls := predicateCalls predicate accept) _ (by decide +kernel)
-      _ = _ := by
-        apply ReadOnly.Term.evaluate_i32_index_as
-          (cell := 0) (values := sourceIntegers source) (position := cursor)
-          (expected := Int.ofNat (source.get ⟨cursor, inBounds⟩).val)
-        · change Except.ok (sourceSlice source, sourceWorld source) =
-            Except.ok (.slice (.scalar (.signed .i32)) 0 [] 0
-              (sourceIntegers source).length, sourceWorld source)
-          simp [sourceSlice, sourceIntegers]
-        · rfl
-        · exact sourceWorld_finds source
-        · simp [sourceIntegers]
-        · simpa [sourceIntegers] using inBounds
+    rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by decide +kernel)]
+    change Term.evaluate (ReadOnly.machine verifiedFrontendCore)
+      (sourceWorld source) (scannerLoopEnvironment source start cursor)
+      (Term.apply (.index (.slice Program.i32Type) Program.i32Type Program.i32Type)
+        [scannerSourceTerm, scannerCursorTerm]) = _
+    apply ReadOnly.Term.evaluate_i32_index_map
+      (cell := 0) (values := source)
+      (encode := fun byte => Int.ofNat byte.val) (position := cursor)
+    · rfl
+    · rfl
+    · exact sourceWorld_finds source
   apply Term.evaluate_apply1 currentByte
-  exact predicateCalls_at (sourceWorld source) predicate accept
-    (source.get ⟨cursor, inBounds⟩)
-
-private theorem scannerCondition_out_of_bounds
-    (predicate : FunctionId) (accept : Byte → Bool)
-    (source : List Byte) (start cursor : Nat)
-    (outOfBounds : ¬ cursor < source.length) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore
-        (predicateCalls predicate accept))
-      (scannerRuntime predicate accept source start cursor).world
-      (scannerRuntime predicate accept source start cursor).environment
-      (scannerLoopCondition predicate) =
-      .ok (.boolean false,
-        (scannerRuntime predicate accept source start cursor).world) := by
-  change Term.evaluate (Effectful.machine verifiedFrontendCore
-    (predicateCalls predicate accept)) (sourceWorld source)
-    (scannerLoopEnvironment source start cursor)
-    (scannerLoopCondition predicate) = .ok (.boolean false, sourceWorld source)
-  unfold scannerLoopCondition
-  apply Term.evaluate_logicalAnd_false
-  calc
-    _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
-        (sourceWorld source) (scannerLoopEnvironment source start cursor)
-        (apply (.binary .less Program.i32Type Program.i32Type (.scalar .bool))
-          [scannerCursorTerm, scannerBoundTerm]) :=
-      Effectful.Term.evaluate_eq_readOnly_of_callFree
-        (program := verifiedFrontendCore)
-        (calls := predicateCalls predicate accept) _ (by decide +kernel)
-    _ = _ := by
-      have evaluated := ReadOnly.Term.evaluate_i32_less
-        (program := verifiedFrontendCore) (world := sourceWorld source)
-        (environment := scannerLoopEnvironment source start cursor)
-        (leftType := Program.i32Type) (rightType := Program.i32Type)
-        (outputType := .scalar .bool)
-        (left := scannerCursorTerm) (right := scannerBoundTerm)
-        (leftValue := cursor) (rightValue := source.length) (by rfl) (by rfl)
-      have decided : decide (cursor < source.length) = false := by
-        simp [outOfBounds]
-      rw [decided] at evaluated
-      exact evaluated
+  simpa [scannerAccepts, Effectful.evaluateOperation,
+    List.getElem?_eq_getElem inBounds] using
+    (predicateCalls_at (sourceWorld source) predicate accept
+      (source.get ⟨cursor, inBounds⟩))
 
 private theorem scannerBody_evaluates
     (predicate : FunctionId) (accept : Byte → Bool)
@@ -1099,45 +936,21 @@ private theorem scannerBody_evaluates
       (scannerRuntime predicate accept source start (cursor + 1)).environment =
       Env.set (scannerRuntime predicate accept source start cursor).environment
         ⟨3, by omega⟩ (.signed .i32 (Int.ofNat (cursor + 1))) := by
-    funext index
-    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-        index.val = 3 := by omega
-    rcases cases with zero | one | two | three
-    · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-      rw [same]
-      simp [scannerRuntime, scannerLoopEnvironment, Runtime.environment,
-        Env.set]
-    · have same : index = ⟨1, by omega⟩ := Fin.ext one
-      rw [same]
-      simp [scannerRuntime, scannerLoopEnvironment, Runtime.environment,
-        Env.set]
-    · have same : index = ⟨2, by omega⟩ := Fin.ext two
-      rw [same]
-      simp [scannerRuntime, scannerLoopEnvironment, Runtime.environment,
-        Env.set]
-    · have same : index = ⟨3, by omega⟩ := Fin.ext three
-      rw [same]
-      simp [scannerRuntime, scannerLoopEnvironment, Runtime.environment,
-        Env.set]
+    exact Env.eq_ofFn rfl
   rw [nextEnvironment]
   have updateResult : evalAssignValue verifiedFrontendCore.target .add
       (some (.signed .i32 (Int.ofNat cursor))) (.signed .i32 1) =
       .ok (.signed .i32 (Int.ofNat (cursor + 1))) := by
     simp only [evalAssignValue, assignOpBinary?, evalBinaryValue,
       beq_self_eq_true, if_true, evalSignedBinary]
-    have addition : Int.ofNat cursor + 1 = Int.ofNat (cursor + 1) := by simp
-    rw [addition]
-    rw [Lanius.Semantics.wrapSigned_i32_ofNat _ _
-      (Nat.le_trans (Nat.succ_le_of_lt inBounds) sourceBound)]
+    rw [show Int.ofNat cursor + 1 = Int.ofNat (cursor + 1) by simp,
+      Lanius.Semantics.wrapSigned_i32_ofNat _ _
+        (Nat.le_trans (Nat.succ_le_of_lt inBounds) sourceBound)]
   apply Command.Evaluates.sequenceNext
   · exact Command.Evaluates.updateLocal (by rfl) (by
       simpa [Stateful.machineWith, scannerRuntime, scannerLoopEnvironment,
         Runtime.environment, Ref.evaluate] using updateResult)
   · exact .skip
-
-private def scannerAccepts (source : List Byte) (accept : Byte → Bool)
-    (cursor : Nat) : Bool :=
-  (source[cursor]?.map accept).getD false
 
 private theorem scannerRecurrence (source : List Byte)
     (accept : Byte → Bool) :
@@ -1162,127 +975,16 @@ private theorem scannerSpec (predicate : FunctionId) (accept : Byte → Bool)
           (predicateCalls predicate accept)))
       (scannerLoopCondition predicate) scannerLoopBody
       (scannerRuntime predicate accept source start) source.length
-      (scannerAccepts source accept) := {
+  (scannerAccepts source accept) := {
   conditionInBounds := fun cursor inBounds => by
-    simpa [scannerAccepts, List.getElem?_eq_getElem inBounds] using
-      scannerCondition_in_bounds predicate accept source start cursor inBounds
-  conditionOutOfBounds := scannerCondition_out_of_bounds predicate accept source start
+    simpa [scannerAccepts, inBounds, List.getElem?_eq_getElem inBounds] using
+      scannerCondition_evaluates predicate accept source start cursor
+  conditionOutOfBounds := fun cursor outOfBounds => by
+    simpa [scannerAccepts,
+      List.getElem?_eq_none (Nat.le_of_not_gt outOfBounds)] using
+      scannerCondition_evaluates predicate accept source start cursor
   body := fun cursor inBounds _ => scannerBody_evaluates predicate accept source
     start cursor sourceBound inBounds }
-
-/-- Structural partial-correctness proof for the scanner command. The loop is
-discharged by `Relational.Command.cursorScan`; no complete loop trace or
-termination argument is used here. -/
-private theorem scannerCommand_wp
-    (predicate : FunctionId) (accept : Byte → Bool)
-    (source : List Byte) (start : Nat)
-    (sourceBound : source.length ≤ 2147483647)
-    (startInBounds : start < source.length) :
-    Lanius.Relational.Command.WP
-      (Effectful.machine verifiedFrontendCore (predicateCalls predicate accept))
-      (Stateful.machineWith verifiedFrontendCore
-        (Effectful.evaluateOperation verifiedFrontendCore
-          (predicateCalls predicate accept)))
-      (scannerCommand predicate)
-      (fun completion afterWorld _afterEnvironment =>
-        completion = .returned (some (.signed .i32 (Int.ofNat
-          (Program.scanAcceptedFrom accept source (start + 1))))) ∧
-        afterWorld = sourceWorld source)
-      (sourceWorld source) (scannerParameterEnvironment source start) := by
-  let initial := start + 1
-  have initialBound : initial ≤ 2147483647 :=
-    Nat.le_trans (Nat.succ_le_of_lt startInBounds) sourceBound
-  have initializerResult : Term.evaluate
-      (Effectful.machine verifiedFrontendCore (predicateCalls predicate accept))
-      (sourceWorld source) (scannerParameterEnvironment source start)
-      (apply (.binary .add Program.i32Type Program.i32Type Program.i32Type)
-        [reference ⟨2, by omega⟩, literal (.signed .i32 1)]) =
-      .ok (.signed .i32 (Int.ofNat initial), sourceWorld source) := by
-    calc
-      _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
-          (sourceWorld source) (scannerParameterEnvironment source start)
-          (apply (.binary .add Program.i32Type Program.i32Type Program.i32Type)
-            [reference ⟨2, by omega⟩, literal (.signed .i32 1)]) :=
-        Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (program := verifiedFrontendCore)
-          (calls := predicateCalls predicate accept) _ (by rfl)
-      _ = _ := by
-        have evaluated := ReadOnly.Term.evaluate_i32_add
-          (program := verifiedFrontendCore) (world := sourceWorld source)
-          (environment := scannerParameterEnvironment source start)
-          (leftType := Program.i32Type) (rightType := Program.i32Type)
-          (outputType := Program.i32Type)
-          (left := reference ⟨2, by omega⟩)
-          (right := literal (.signed .i32 1))
-          (leftValue := start) (rightValue := 1) (by rfl) (by rfl)
-          initialBound
-        have addition : Int.ofNat (start + 1) = Int.ofNat initial := by
-          simp [initial]
-        rw [addition] at evaluated
-        exact evaluated
-  have pushed : (scannerParameterEnvironment source start).push
-      (.signed .i32 (Int.ofNat initial)) =
-      scannerLoopEnvironment source start initial := by
-    funext index
-    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-        index.val = 3 := by omega
-    rcases cases with zero | one | two | three
-    · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-      rw [same]
-      rfl
-    · have same : index = ⟨1, by omega⟩ := Fin.ext one
-      rw [same]
-      rfl
-    · have same : index = ⟨2, by omega⟩ := Fin.ext two
-      rw [same]
-      rfl
-    · have same : index = ⟨3, by omega⟩ := Fin.ext three
-      rw [same]
-      rfl
-  apply Lanius.Relational.Command.letValue
-  intro value initializedWorld evaluated
-  have same := evaluated.symm.trans initializerResult
-  injection same with pairEq
-  have valueEq := congrArg Prod.fst pairEq
-  have worldEq := congrArg Prod.snd pairEq
-  change value = .signed .i32 (Int.ofNat initial) at valueEq
-  change initializedWorld = sourceWorld source at worldEq
-  subst value
-  subst initializedWorld
-  rw [pushed]
-  apply Lanius.Relational.Command.sequence
-  intro completion loopWorld loopEnvironment loopEvaluated
-  have loopWP := Lanius.Relational.Command.cursorScan
-    (scannerSpec predicate accept source start sourceBound)
-    (scannerRecurrence source accept) initial
-  obtain ⟨completionEq, loopWorldEq, loopEnvironmentEq⟩ :=
-    loopWP completion loopWorld loopEnvironment loopEvaluated
-  subst completion
-  subst loopWorld
-  subst loopEnvironment
-  apply Lanius.Relational.Command.sequence
-  apply Lanius.Relational.Command.returnSome
-  intro result returnWorld returnEvaluated
-  have cursorResult : Term.evaluate
-      (Effectful.machine verifiedFrontendCore (predicateCalls predicate accept))
-      (scannerRuntime predicate accept source start
-        (Program.scanAcceptedFrom accept source initial)).world
-      (scannerRuntime predicate accept source start
-        (Program.scanAcceptedFrom accept source initial)).environment
-      scannerCursorTerm =
-      .ok (.signed .i32 (Int.ofNat
-        (Program.scanAcceptedFrom accept source initial)),
-        (sourceWorld source)) := by rfl
-  have same := returnEvaluated.symm.trans cursorResult
-  injection same with pairEq
-  have resultEq := congrArg Prod.fst pairEq
-  have worldEq := congrArg Prod.snd pairEq
-  change result = .signed .i32 (Int.ofNat
-    (Program.scanAcceptedFrom accept source initial)) at resultEq
-  change returnWorld = sourceWorld source at worldEq
-  subst result
-  subst returnWorld
-  exact ⟨rfl, rfl⟩
 
 private theorem scannerCommand_evaluates
     (predicate : FunctionId) (accept : Byte → Bool)
@@ -1312,75 +1014,27 @@ private theorem scannerCommand_evaluates
       (apply (.binary .add Program.i32Type Program.i32Type Program.i32Type)
         [reference ⟨2, by omega⟩, literal (.signed .i32 1)]) =
       .ok (.signed .i32 (Int.ofNat initial), sourceWorld source) := by
-    calc
-      _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
-          (sourceWorld source) (scannerParameterEnvironment source start)
-          (apply (.binary .add Program.i32Type Program.i32Type Program.i32Type)
-            [reference ⟨2, by omega⟩, literal (.signed .i32 1)]) :=
-        Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (program := verifiedFrontendCore)
-          (calls := predicateCalls predicate accept) _ (by rfl)
-      _ = _ := by
-        have evaluated := ReadOnly.Term.evaluate_i32_add
-          (program := verifiedFrontendCore) (world := sourceWorld source)
-          (environment := scannerParameterEnvironment source start)
-          (leftType := Program.i32Type) (rightType := Program.i32Type)
-          (outputType := Program.i32Type)
-          (left := reference ⟨2, by omega⟩)
-          (right := literal (.signed .i32 1))
-          (leftValue := start) (rightValue := 1) (by rfl) (by rfl)
-          initialBound
-        have addition : Int.ofNat (start + 1) = Int.ofNat initial := by
-          simp [initial]
-        rw [addition] at evaluated
-        exact evaluated
+    rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+    simpa [Lanius.FunctionalView.Core.apply, initial] using
+      (ReadOnly.Term.evaluate_i32_add
+        (leftValue := start) (rightValue := 1) rfl rfl initialBound)
   have pushed : (scannerParameterEnvironment source start).push
       (.signed .i32 (Int.ofNat initial)) =
-      scannerLoopEnvironment source start initial := by
-    funext index
-    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-        index.val = 3 := by omega
-    rcases cases with zero | one | two | three
-    · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-      rw [same]
-      rfl
-    · have same : index = ⟨1, by omega⟩ := Fin.ext one
-      rw [same]
-      rfl
-    · have same : index = ⟨2, by omega⟩ := Fin.ext two
-      rw [same]
-      rfl
-    · have same : index = ⟨3, by omega⟩ := Fin.ext three
-      rw [same]
-      rfl
+      scannerLoopEnvironment source start initial := Env.eq_ofFn rfl
   let execution := CursorScan.run
     (scannerSpec predicate accept source start sourceBound)
     (scannerRecurrence source accept) initial
-  have loopResult : Command.Evaluates
-      (Effectful.machine verifiedFrontendCore (predicateCalls predicate accept))
-      (Stateful.machineWith verifiedFrontendCore
-        (Effectful.evaluateOperation verifiedFrontendCore
-          (predicateCalls predicate accept)))
-      (scannerRuntime predicate accept source start initial).world
-      (scannerRuntime predicate accept source start initial).environment
-      (.whileLoop (scannerLoopCondition predicate) scannerLoopBody) .next
-      execution.after.world execution.after.environment := by
-    simpa [execution.result.completionEq] using execution.trace.evaluates
+  have loopResult := execution.trace.evaluates
+  rw [execution.result.completionEq] at loopResult
   have afterEq : execution.after = scannerRuntime predicate accept source start
       (Program.scanAcceptedFrom accept source initial) := by
     simp [execution.result.afterEq, execution.result.finalEq]
   rw [afterEq] at loopResult
   let finish := Program.scanAcceptedFrom accept source initial
-  have returnResult : Term.evaluate
-      (Effectful.machine verifiedFrontendCore (predicateCalls predicate accept))
-      (scannerRuntime predicate accept source start finish).world
-      (scannerRuntime predicate accept source start finish).environment
-      scannerCursorTerm =
-      .ok (.signed .i32 (Int.ofNat finish),
-        (scannerRuntime predicate accept source start finish).world) := by rfl
   have bodyResult := Command.Evaluates.sequenceNext loopResult
     (Command.Evaluates.sequenceStop (secondCommand := .skip)
-      (Command.Evaluates.returnSome returnResult) (by simp))
+      (.returnSome (value := scannerCursorTerm)
+        (result := .signed .i32 (Int.ofNat finish)) (by rfl)) (by simp))
   have whole := Command.Evaluates.letValue
     (type := Program.i32Type) initializerResult (by
       rw [pushed]
@@ -1388,9 +1042,31 @@ private theorem scannerCommand_evaluates
   exact ⟨Env.pop (scannerLoopEnvironment source start finish),
     by simpa [scannerCommand, initial, finish] using whole⟩
 
-/-- Exact recovered identifier-scanner command semantics retained as the
-constructive migration witness. The structural relational WP must eventually
-replace this theorem as a premise of the pilot. -/
+/-- Partial correctness follows from the proved total execution and
+determinism; the constructive execution remains the termination witness. -/
+private theorem scannerCommand_wp
+    (predicate : FunctionId) (accept : Byte → Bool)
+    (source : List Byte) (start : Nat)
+    (sourceBound : source.length ≤ 2147483647)
+    (startInBounds : start < source.length) :
+    Lanius.Relational.Command.WP
+      (Effectful.machine verifiedFrontendCore (predicateCalls predicate accept))
+      (Stateful.machineWith verifiedFrontendCore
+        (Effectful.evaluateOperation verifiedFrontendCore
+          (predicateCalls predicate accept)))
+      (scannerCommand predicate)
+      (fun completion afterWorld _afterEnvironment =>
+        completion = .returned (some (.signed .i32 (Int.ofNat
+          (Program.scanAcceptedFrom accept source (start + 1))))) ∧
+        afterWorld = sourceWorld source)
+      (sourceWorld source) (scannerParameterEnvironment source start) := by
+  obtain ⟨_, canonical⟩ := scannerCommand_evaluates predicate accept source start
+    sourceBound startInBounds
+  intro completion afterWorld afterEnvironment evaluated
+  have same := evaluated.deterministic canonical
+  exact ⟨same.1, same.2.1⟩
+
+/-- Parameter environment of the recovered identifier-scanner command. -/
 def identifierEnvironment (source : List Byte) (start : Nat) : Env 3 :=
   scannerParameterEnvironment source start
 
@@ -1565,120 +1241,38 @@ theorem representationOnlySource
     exact represented.worldLocalsDisjoint 0
       ⟨sourceIntegers source, sourceFound⟩ localMember }
 
-private theorem basicScannerFramePreservingSoundness
-    (source : List Byte) (function : Function) (predicate : FunctionId)
-    (accept : Byte → Bool) (resultFor : Nat → Nat)
-    (predicateSound : FreshSimulation.FramePreservingCallSoundness
-      verifiedFrontendCore (predicateCalls predicate accept))
-    (commandExact : Lanius.FunctionalView.Core.Stateful.toCoreStmt
-      actionAdapter identityLayout 3 (scannerCommand predicate) =
-        functionBody function)
-    (resultEq : ∀ start, Program.scanAcceptedFrom accept source (start + 1) =
-      resultFor start)
-    (found : verifiedFrontendLexerCore.function? function.id = some function)
-    (parameters : function.parameters =
-      [(0, .slice Program.i32Type), (1, Program.i32Type),
-        (2, Program.i32Type)])
-    (hasBody : function.body = some (functionBody function)) :
-    FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
-      (scannerCalls source function.id false
-        (fun start => .signed .i32 (Int.ofNat (resultFor start)))) := by
-  constructor
-  intro arity layout localCell beforeWorld afterWorld callerEnvironment before
-    afterArguments functionId sourceArguments values result argumentWrites
-    afterArgumentsWellFormed represented argumentsExecution argumentsEffect
-    evaluated
-  obtain ⟨start, sourceFound, rfl, rfl, sourceBound, startInBounds,
-      startBound, _, rfl, worldEq⟩ := scannerCalls_success evaluated
-  subst afterWorld
-  let calleeEnvironment := scannerParameterEnvironment source start
-  let bindings := parameterBindings calleeEnvironment
-  let callee := enterCall afterArguments bindings
-  have calleeRepresentedFull : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) (sourceWorld source)
-      calleeEnvironment callee :=
-    representationOnlySource calleeRepresentedFull sourceFound
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
-  obtain ⟨afterFunctionalEnvironment, functionalEvaluation⟩ :=
-    scannerCommand_evaluates predicate accept source
-        start sourceBound startInBounds
-  let operations := FreshSimulation.operationSoundness verifiedFrontendCore
-    (predicateCalls predicate accept) predicateSound
-  have simulation := FreshSimulation.commandSoundness operations
-    functionalEvaluation (by rfl) calleeRepresented
-    (LayoutBelow.identity (arity := 3)) calleeWellFormed
-    (frontier := afterArguments.nextCell)
-    (by intro index; simp [callLocalCells])
-    (by simpa [callee] using (enterCall_effect afterArguments bindings).nextCell)
-  obtain ⟨completed, bodyExecution, completedWellFormed,
-      completedRepresented, bodyEffect⟩ := simulation
-  rw [commandExact] at bodyExecution
-  rw [resultEq start] at bodyExecution
-  change Executes verifiedFrontendCore callee (functionBody function)
-    (.returned (some (.signed .i32 (Int.ofNat (resultFor start)))))
-    completed at bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call function.id (toCoreExprs layout sourceArguments))
-      (.signed .i32 (Int.ofNat (resultFor start)))
-      (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned (bindings := bindings)
-      (body := functionBody function) argumentsExecution
-    · exact verifiedFrontendCore_extends_verifiedFrontendLexerCore.function found
-    · rw [parameters]
-      simp [bindings, calleeEnvironment, parameterBindings,
-        scannerParameterEnvironment, scannerArguments, sourceSlice,
-        List.finRange]
-      rfl
-    · exact hasBody
-    · simpa [callee, bindings] using bodyExecution
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
-      (bindings := bindings) bodyEffect (by intro cell written; exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+private theorem sourceCalleeFrame
+    (source : List Byte) (calleeEnvironment : Env arity)
+    (sourceFound : beforeWorld.i32Slice? 0 = some (sourceIntegers source))
+    (represented : Representation layout localCell beforeWorld environment
+      afterArguments)
+    (afterArgumentsWellFormed : StateWellFormed afterArguments)
+    (callee : State)
+    (calleeEq : callee =
+      enterCall afterArguments (parameterBindings calleeEnvironment)) :
+    Representation identityLayout (callLocalCells afterArguments)
+        (sourceWorld source) calleeEnvironment callee ∧
+      StateWellFormed callee := by
+  subst callee
+  exact ⟨representationOnlySource
+      (represented.enterCallParameters afterArgumentsWellFormed
+        (environment := calleeEnvironment)) sourceFound,
+    enterCall_preserves_wellFormed afterArgumentsWellFormed⟩
 
-theorem identifierFramePreservingCallSoundness (source : List Byte) :
-    FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
-      (identifierCalls source) := by
-  exact basicScannerFramePreservingSoundness source
-    Scanners.scanIdentifierEndFunction isIdentifierContinueFunction.id
-    isIdentifierContinue (fun start => scanIdentifierEnd source start)
-    identifierPredicateFramePreservingSoundness
-    identifierCommand_exact (by intro start; rfl)
-    Scanners.verifiedFrontendLexerCore_finds_scanIdentifierEnd
-    (by native_decide) Scanners.scanIdentifierEndFunction_has_body
-
-theorem whitespaceFramePreservingCallSoundness (source : List Byte) :
-    FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
-      (whitespaceCalls source) := by
-  exact basicScannerFramePreservingSoundness source
-    Scanners.scanWhitespaceEndFunction isWhitespaceFunction.id isWhitespace
-    (fun start => scanWhitespaceEnd source start)
-    whitespacePredicateFramePreservingSoundness whitespaceCommand_exact
-    (by intro start; rfl)
-    Scanners.verifiedFrontendLexerCore_finds_scanWhitespaceEnd
-    (by native_decide) Scanners.scanWhitespaceEndFunction_has_body
-
-private theorem effectfulScannerFramePreservingSoundness
-    (source : List Byte) (function : Function) (command : C 3)
+private theorem scannerCallFramePreservingSoundness
+    (source : List Byte) (program : Program)
+    (extension : program.RuntimeExtends verifiedFrontendCore)
+    (function : Function) (requiresOpening : Bool) (command : C 3)
     (helpers : CallModel)
-    (helperSound : FreshSimulation.FramePreservingCallSoundness
-      verifiedFrontendLexerCore helpers)
+    (helperSound : FreshSimulation.FramePreservingCallSoundness program helpers)
     (resultFor : Nat → Value)
     (evaluates : ∀ start, source.length ≤ 2147483647 →
-      start + 1 < source.length →
+      start < source.length →
+      (requiresOpening → start + 1 < source.length) →
       ∃ afterWorld afterEnvironment,
-        Command.Evaluates (Effectful.machine verifiedFrontendLexerCore helpers)
-          (Stateful.machineWith verifiedFrontendLexerCore
-            (Effectful.evaluateOperation verifiedFrontendLexerCore helpers))
+        Command.Evaluates (Effectful.machine program helpers)
+          (Stateful.machineWith program
+            (Effectful.evaluateOperation program helpers))
           (sourceWorld source) (scannerParameterEnvironment source start)
           command (.returned (some (resultFor start)))
           afterWorld afterEnvironment)
@@ -1691,7 +1285,7 @@ private theorem effectfulScannerFramePreservingSoundness
         (2, Program.i32Type)])
     (hasBody : function.body = some (functionBody function)) :
     FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
-      (scannerCalls source function.id true resultFor) := by
+      (scannerCalls source function.id requiresOpening resultFor) := by
   constructor
   intro arity layout localCell beforeWorld afterWorld callerEnvironment before
     afterArguments functionId sourceArguments values result argumentWrites
@@ -1704,22 +1298,14 @@ private theorem effectfulScannerFramePreservingSoundness
   let calleeEnvironment := scannerParameterEnvironment source start
   let bindings := parameterBindings calleeEnvironment
   let callee := enterCall afterArguments bindings
-  have calleeRepresentedFull : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) (sourceWorld source)
-      calleeEnvironment callee :=
-    representationOnlySource calleeRepresentedFull sourceFound
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
+  obtain ⟨calleeRepresented, calleeWellFormed⟩ :=
+    sourceCalleeFrame source calleeEnvironment sourceFound
+      represented afterArgumentsWellFormed callee (by rfl)
   obtain ⟨afterFunctionalWorld, afterFunctionalEnvironment,
-      functionalEvaluation⟩ := evaluates start sourceBound (openingInBounds rfl)
-  let operations := FreshSimulation.operationSoundness verifiedFrontendLexerCore
-    helpers helperSound
+      functionalEvaluation⟩ := evaluates start sourceBound startInBounds
+        openingInBounds
+  let operations := FreshSimulation.operationSoundness program helpers
+    helperSound
   have simulation := FreshSimulation.commandSoundness operations
     functionalEvaluation actionFree calleeRepresented
     (LayoutBelow.identity (arity := 3)) calleeWellFormed
@@ -1729,30 +1315,62 @@ private theorem effectfulScannerFramePreservingSoundness
   obtain ⟨completed, bodyExecution, completedWellFormed,
       completedRepresented, bodyEffect⟩ := simulation
   rw [commandExact] at bodyExecution
-  change Executes verifiedFrontendLexerCore callee (functionBody function)
+  change Executes program callee (functionBody function)
     (.returned (some (resultFor start))) completed at bodyExecution
   have bodyExecutionMerged : Executes verifiedFrontendCore callee
       (functionBody function) (.returned (some (resultFor start))) completed :=
-    verifiedFrontendCore_extends_verifiedFrontendLexerCore.executes bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call function.id (toCoreExprs layout sourceArguments))
-      (resultFor start) (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned (bindings := bindings)
-      (body := functionBody function) argumentsExecution
-    · exact verifiedFrontendCore_extends_verifiedFrontendLexerCore.function found
-    · rw [parameters]
-      simp [bindings, calleeEnvironment, parameterBindings,
-        scannerParameterEnvironment, scannerArguments, sourceSlice,
-        List.finRange]
-      rfl
-    · exact hasBody
-    · simpa [callee, bindings] using bodyExecutionMerged
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
-      (bindings := bindings) bodyEffect (by intro cell written; exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+    extension.executes bodyExecution
+  exact represented.callReturned (body := functionBody function)
+    argumentsExecution argumentsEffect
+    (verifiedFrontendCore_extends_verifiedFrontendLexerCore.function found)
+    (by rw [parameters]; rfl)
+    hasBody (by simpa [callee, bindings] using bodyExecutionMerged)
+    afterArgumentsWellFormed completedWellFormed bodyEffect
+    (by intro cell written; exact written)
+
+theorem identifierFramePreservingCallSoundness (source : List Byte) :
+    FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
+      (identifierCalls source) := by
+  exact scannerCallFramePreservingSoundness
+    (source := source) (program := verifiedFrontendCore)
+    (extension := Core.Program.RuntimeExtends.refl verifiedFrontendCore)
+    (function := Scanners.scanIdentifierEndFunction) (requiresOpening := false)
+    (command := scannerCommand isIdentifierContinueFunction.id)
+    (helpers := predicateCalls isIdentifierContinueFunction.id isIdentifierContinue)
+    (helperSound := identifierPredicateFramePreservingSoundness)
+    (resultFor := fun start =>
+      .signed .i32 (Int.ofNat (scanIdentifierEnd source start)))
+    (evaluates := by
+      intro start sourceBound startInBounds _
+      obtain ⟨afterEnvironment, evaluated⟩ :=
+        scannerCommand_evaluates isIdentifierContinueFunction.id
+          isIdentifierContinue source start sourceBound startInBounds
+      exact ⟨sourceWorld source, afterEnvironment, evaluated⟩)
+    (commandExact := identifierCommand_exact) (actionFree := by rfl)
+    (found := Scanners.verifiedFrontendLexerCore_finds_scanIdentifierEnd)
+    (parameters := by rfl) (hasBody := Scanners.scanIdentifierEndFunction_has_body)
+
+theorem whitespaceFramePreservingCallSoundness (source : List Byte) :
+    FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
+      (whitespaceCalls source) := by
+  exact scannerCallFramePreservingSoundness
+    (source := source) (program := verifiedFrontendCore)
+    (extension := Core.Program.RuntimeExtends.refl verifiedFrontendCore)
+    (function := Scanners.scanWhitespaceEndFunction) (requiresOpening := false)
+    (command := scannerCommand isWhitespaceFunction.id)
+    (helpers := predicateCalls isWhitespaceFunction.id isWhitespace)
+    (helperSound := whitespacePredicateFramePreservingSoundness)
+    (resultFor := fun start =>
+      .signed .i32 (Int.ofNat (scanWhitespaceEnd source start)))
+    (evaluates := by
+      intro start sourceBound startInBounds _
+      obtain ⟨afterEnvironment, evaluated⟩ :=
+        scannerCommand_evaluates isWhitespaceFunction.id
+          isWhitespace source start sourceBound startInBounds
+      exact ⟨sourceWorld source, afterEnvironment, evaluated⟩)
+    (commandExact := whitespaceCommand_exact) (actionFree := by rfl)
+    (found := Scanners.verifiedFrontendLexerCore_finds_scanWhitespaceEnd)
+    (parameters := by rfl) (hasBody := Scanners.scanWhitespaceEndFunction_has_body)
 
 private theorem blockCommentCommand_evaluates
     (source : List Byte) (start : Nat)
@@ -1789,15 +1407,22 @@ private theorem blockCommentCommand_evaluates
 theorem blockCommentFramePreservingCallSoundness (source : List Byte) :
     FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
       (blockCommentCalls source) := by
-  exact effectfulScannerFramePreservingSoundness source
-    Scanners.scanBlockCommentEndFunction BlockComment.view.command
-    ScanEndCalls.calls scanEndConstructorLexerFramePreservingCallSoundness
-    (fun start => encodedScanEnd (scanBlockCommentEnd source start))
-    (blockCommentCommand_evaluates source)
-    BlockComment.command_toCore_exactly
-    (by native_decide)
-    Scanners.verifiedFrontendLexerCore_finds_scanBlockCommentEnd
-    (by native_decide) Scanners.scanBlockCommentEndFunction_has_body
+  exact scannerCallFramePreservingSoundness
+    (source := source) (program := verifiedFrontendLexerCore)
+    (extension := verifiedFrontendCore_extends_verifiedFrontendLexerCore)
+    (function := Scanners.scanBlockCommentEndFunction)
+    (requiresOpening := true) (command := BlockComment.view.command)
+    (helpers := ScanEndCalls.calls)
+    (helperSound := scanEndConstructorLexerFramePreservingCallSoundness)
+    (resultFor := fun start => encodedScanEnd (scanBlockCommentEnd source start))
+    (evaluates := by
+      intro start sourceBound startInBounds openingInBounds
+      exact blockCommentCommand_evaluates source start sourceBound
+        (openingInBounds rfl))
+    (commandExact := BlockComment.command_toCore_exactly)
+    (actionFree := by decide +kernel)
+    (found := Scanners.verifiedFrontendLexerCore_finds_scanBlockCommentEnd)
+    (parameters := by rfl) (hasBody := Scanners.scanBlockCommentEndFunction_has_body)
 
 private def quotedEnvironment (source : List Byte) (start : Nat)
     (delimiter : Byte) : Env 4
@@ -1967,25 +1592,16 @@ private theorem quotedFramePreservingCallSoundness
   let calleeEnvironment := quotedEnvironment source start delimiter
   let bindings := parameterBindings calleeEnvironment
   let callee := enterCall afterArguments bindings
-  have calleeRepresentedFull : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) (sourceWorld source)
-      calleeEnvironment callee :=
-    representationOnlySource calleeRepresentedFull sourceFound
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
+  obtain ⟨calleeRepresented, calleeWellFormed⟩ :=
+    sourceCalleeFrame source calleeEnvironment sourceFound
+      represented afterArgumentsWellFormed callee (by rfl)
   obtain ⟨afterFunctionalWorld, afterFunctionalEnvironment,
       functionalEvaluation⟩ := quotedCommand_evaluates source start delimiter
         sourceBound startInBounds
   let operations := FreshSimulation.operationSoundness verifiedFrontendLexerCore
     ScanEndCalls.calls scanEndConstructorLexerFramePreservingCallSoundness
   have simulation := FreshSimulation.commandSoundness operations
-    functionalEvaluation (by native_decide) calleeRepresented
+    functionalEvaluation (by decide +kernel) calleeRepresented
     (LayoutBelow.identity (arity := 4)) calleeWellFormed
     (frontier := afterArguments.nextCell)
     (by intro index; simp [callLocalCells])
@@ -1999,24 +1615,14 @@ private theorem quotedFramePreservingCallSoundness
       (scanQuotedEnd source start delimiter)))) completed at bodyExecution
   have bodyExecutionMerged :=
     verifiedFrontendCore_extends_verifiedFrontendLexerCore.executes bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call Scanners.scanQuotedEndFunction.id
-        (toCoreExprs layout sourceArguments))
-      (encodedScanEnd (scanQuotedEnd source start delimiter))
-      (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned (bindings := bindings)
-      (body := Scanners.scanQuotedEndBody) argumentsExecution
-    · exact verifiedFrontendCore_extends_verifiedFrontendLexerCore.function
-        Scanners.verifiedFrontendLexerCore_finds_scanQuotedEnd
-    · rfl
-    · exact Scanners.scanQuotedEndFunction_has_body
-    · simpa [callee, bindings] using bodyExecutionMerged
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
-      (bindings := bindings) bodyEffect (by intro cell written; exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+  exact represented.callReturned (body := Scanners.scanQuotedEndBody)
+    argumentsExecution argumentsEffect
+    (verifiedFrontendCore_extends_verifiedFrontendLexerCore.function
+      Scanners.verifiedFrontendLexerCore_finds_scanQuotedEnd)
+    (by rfl) Scanners.scanQuotedEndFunction_has_body
+    (by simpa [callee, bindings] using bodyExecutionMerged)
+    afterArgumentsWellFormed completedWellFormed bodyEffect
+    (by intro cell written; exact written)
 
 @[simp] theorem quotedAnyCalls_at (source : List Byte) (start : Nat)
     (delimiter : Byte) (sourceBound : source.length ≤ 2147483647)
@@ -2112,49 +1718,22 @@ private theorem quotedWrapperFramePreservingCallSoundness
   let calleeEnvironment := scannerParameterEnvironment source start
   let bindings := parameterBindings calleeEnvironment
   let callee := enterCall afterArguments bindings
-  have calleeRepresentedFull : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) (sourceWorld source)
-      calleeEnvironment callee :=
-    representationOnlySource calleeRepresentedFull sourceFound
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
+  obtain ⟨calleeRepresented, calleeWellFormed⟩ :=
+    sourceCalleeFrame source calleeEnvironment sourceFound
+      represented afterArgumentsWellFormed callee (by rfl)
   have quotedArgumentsExecution : ArgumentsEvaluateTo verifiedFrontendCore
       callee (toCoreExprs identityLayout (quotedLocalTerms delimiter))
       (quotedArguments source start delimiter) callee := by
     rw [quotedLocalTerms_toCore]
-    have local0 : callee.local? 0 = some (sourceSlice source) := by
-      simpa [calleeEnvironment, scannerParameterEnvironment, identityLayout] using
-        calleeRepresented.environmentMatches ⟨0, by omega⟩
-    have local1 : callee.local? 1 =
-        some (.signed .i32 (Int.ofNat source.length)) := by
-      simpa [calleeEnvironment, scannerParameterEnvironment, identityLayout] using
-        calleeRepresented.environmentMatches ⟨1, by omega⟩
-    have local2 : callee.local? 2 =
-        some (.signed .i32 (Int.ofNat start)) := by
-      simpa [calleeEnvironment, scannerParameterEnvironment, identityLayout] using
-        calleeRepresented.environmentMatches ⟨2, by omega⟩
-    have first : Evaluates verifiedFrontendCore callee (.local 0)
-        (sourceSlice source) callee :=
-      ⟨1, evalLocal_of_local 1 verifiedFrontendCore callee 0 _ local0⟩
-    have second : Evaluates verifiedFrontendCore callee (.local 1)
-        (.signed .i32 (Int.ofNat source.length)) callee :=
-      ⟨1, evalLocal_of_local 1 verifiedFrontendCore callee 1 _ local1⟩
-    have third : Evaluates verifiedFrontendCore callee (.local 2)
-        (.signed .i32 (Int.ofNat start)) callee :=
-      ⟨1, evalLocal_of_local 1 verifiedFrontendCore callee 2 _ local2⟩
-    have fourth : Evaluates verifiedFrontendCore callee
-        (.value (.signed .i32 (Int.ofNat delimiter.val)))
-        (.signed .i32 (Int.ofNat delimiter.val)) callee := ⟨1, rfl⟩
-    exact ArgumentsEvaluateTo.cons first
-      (ArgumentsEvaluateTo.cons second
-        (ArgumentsEvaluateTo.cons third
-          (ArgumentsEvaluateTo.singleton fourth)))
+    have termsEvaluated :
+        evaluateTerms (ReadOnly.machine verifiedFrontendCore)
+          (sourceWorld source) calleeEnvironment
+          (quotedLocalTerms delimiter) =
+        .ok (quotedArguments source start delimiter, sourceWorld source) := by
+      rfl
+    exact (Core.terms_evaluate (ReadOnly.bridge verifiedFrontendCore)
+      (calleeRepresented.worldRepresents calleeWellFormed)
+      calleeRepresented.environmentMatches termsEvaluated).1.toArgumentsEvaluateTo
   have quotedModelEvaluation := quotedCalls_at source start delimiter
     sourceBound startInBounds startBound
   obtain ⟨quotedAfter, quotedExecution, quotedAfterWellFormed,
@@ -2167,26 +1746,15 @@ private theorem quotedWrapperFramePreservingCallSoundness
       quotedAfter := by
     rw [resultEq start]
     exact bodyFromCall quotedExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call function.id (toCoreExprs layout sourceArguments))
-      (resultFor start) (restoreLocals afterArguments quotedAfter) := by
-    apply evaluatesCallReturned (bindings := bindings)
-      (body := functionBody function) argumentsExecution
-    · exact verifiedFrontendCore_extends_verifiedFrontendLexerCore.function found
-    · rw [parameters]
-      simp [bindings, calleeEnvironment, parameterBindings,
-        scannerParameterEnvironment, scannerArguments, sourceSlice,
-        List.finRange]
-      rfl
-    · exact hasBody
-    · simpa [callee, bindings] using bodyExecution
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed
-      quotedAfterWellFormed (bindings := bindings) quotedEffect
-      (by intro cell written; contradiction)
-  exact ⟨restoreLocals afterArguments quotedAfter, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+  apply represented.callReturned
+    (program := verifiedFrontendCore) (function := function)
+    (body := functionBody function) (bindings := bindings)
+    argumentsExecution argumentsEffect
+    (verifiedFrontendCore_extends_verifiedFrontendLexerCore.function found)
+    (by rw [parameters]; rfl)
+    hasBody (by simpa [callee, bindings] using bodyExecution)
+    afterArgumentsWellFormed quotedAfterWellFormed quotedEffect
+    (by intro cell written; contradiction)
 
 private theorem stringBodyFromQuotedCall
     {state after : State} {result : Value}
@@ -2204,7 +1772,7 @@ private theorem stringBodyFromQuotedCall
       Program.scanQuotedEndFunction.id := by rfl
   rw [functionEq] at callExecution
   have delimiterEq : Int.ofNat Program.doubleQuoteByte.val = 34 := by
-    native_decide
+    rfl
   rw [delimiterEq] at callExecution
   simpa [Program.quotedWrapperBody, Program.i32Literal] using
     executesReturnValue callExecution
@@ -2225,7 +1793,7 @@ private theorem characterBodyFromQuotedCall
       Program.scanQuotedEndFunction.id := by rfl
   rw [functionEq] at callExecution
   have delimiterEq : Int.ofNat Program.singleQuoteByte.val = 39 := by
-    native_decide
+    rfl
   rw [delimiterEq] at callExecution
   simpa [Program.quotedWrapperBody, Program.i32Literal] using
     executesReturnValue callExecution
@@ -2239,7 +1807,7 @@ theorem stringFramePreservingCallSoundness (source : List Byte) :
       (scanQuotedEnd source start Program.doubleQuoteByte))
     (by intro start; rfl) stringBodyFromQuotedCall
     Scanners.verifiedFrontendLexerCore_finds_scanStringEnd
-    (by native_decide) Scanners.scanStringEndFunction_has_body
+    (by rfl) Scanners.scanStringEndFunction_has_body
 
 theorem characterFramePreservingCallSoundness (source : List Byte) :
     FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
@@ -2250,7 +1818,7 @@ theorem characterFramePreservingCallSoundness (source : List Byte) :
       (scanQuotedEnd source start Program.singleQuoteByte))
     (by intro start; rfl) characterBodyFromQuotedCall
     Scanners.verifiedFrontendLexerCore_finds_scanCharacterEnd
-    (by native_decide) Scanners.scanCharacterEndFunction_has_body
+    (by rfl) Scanners.scanCharacterEndFunction_has_body
 
 private def commandCallFree : C arity → Bool
   | .skip | .breakLoop | .continueLoop | .returnValue none => true
@@ -2266,6 +1834,16 @@ private def commandCallFree : C arity → Bool
       Effectful.termCallFree condition && commandCallFree body
   | .returnValue (some value) => Effectful.termCallFree value
 
+private theorem termEvaluates_effectful_of_readOnly
+    (calls : CallModel) {term : Term Core.signature arity}
+    (free : Effectful.termCallFree term = true)
+    (evaluated : Term.evaluate (ReadOnly.machine verifiedFrontendLexerCore)
+      beforeWorld beforeEnvironment term = .ok (value, afterWorld)) :
+    Term.evaluate (Effectful.machine verifiedFrontendLexerCore calls)
+      beforeWorld beforeEnvironment term = .ok (value, afterWorld) :=
+  (Effectful.Term.evaluate_eq_readOnly_of_callFree
+    (calls := calls) term free).trans evaluated
+
 private theorem commandEvaluates_effectful_of_readOnly
     (calls : CallModel) (command : C arity)
     (free : commandCallFree command = true)
@@ -2279,91 +1857,58 @@ private theorem commandEvaluates_effectful_of_readOnly
         (Effectful.evaluateOperation verifiedFrontendLexerCore calls))
       beforeWorld beforeEnvironment command completion afterWorld
       afterEnvironment := by
-  induction evaluated with
-  | skip => exact .skip
-  | sequenceNext firstResult secondResult firstIH secondIH =>
-      simp only [commandCallFree, Bool.and_eq_true] at free
+  induction evaluated <;>
+    try (have freeOriginal := free) <;>
+    simp only [commandCallFree, Bool.and_eq_true] at free
+  case skip => exact .skip
+  case sequenceNext firstResult secondResult firstIH secondIH =>
       exact .sequenceNext (firstIH free.1) (secondIH free.2)
-  | sequenceStop firstResult stops firstIH =>
-      simp only [commandCallFree, Bool.and_eq_true] at free
+  case sequenceStop firstResult stops firstIH =>
       exact .sequenceStop (firstIH free.1) stops
-  | letValue initializerResult bodyResult bodyIH =>
-      simp only [commandCallFree, Bool.and_eq_true] at free
-      have initializerResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (calls := calls) _ free.1).trans
-          initializerResult
-      exact .letValue initializerResult' (bodyIH free.2)
-  | setLocal valueResult =>
-      have valueResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree (calls := calls) _ (by
-          simpa only [commandCallFree] using free)).trans valueResult
-      exact .setLocal valueResult'
-  | updateLocal valueResult updateResult =>
-      have valueResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree (calls := calls) _ (by
-          simpa only [commandCallFree] using free)).trans valueResult
-      exact .updateLocal valueResult' updateResult
-  | action actionResult => simp [commandCallFree] at free
-  | ifTrue conditionResult branchResult branchIH =>
-      simp only [commandCallFree, Bool.and_eq_true] at free
-      have conditionResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (calls := calls) _ free.1.1).trans
-          conditionResult
-      exact .ifTrue conditionResult' (branchIH free.1.2)
-  | ifFalse conditionResult branchResult branchIH =>
-      simp only [commandCallFree, Bool.and_eq_true] at free
-      have conditionResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (calls := calls) _ free.1.1).trans
-          conditionResult
-      exact .ifFalse conditionResult' (branchIH free.2)
-  | whileFalse conditionResult =>
-      simp only [commandCallFree, Bool.and_eq_true] at free
-      have conditionResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (calls := calls) _ free.1).trans
-          conditionResult
-      exact .whileFalse conditionResult'
-  | whileNext conditionResult bodyResult restResult bodyIH restIH =>
-      have loopFree := free
-      simp only [commandCallFree, Bool.and_eq_true] at free
-      have conditionResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (calls := calls) _ free.1).trans
-          conditionResult
-      exact .whileNext conditionResult' (bodyIH free.2) (restIH loopFree)
-  | whileContinue conditionResult bodyResult restResult bodyIH restIH =>
-      have loopFree := free
-      simp only [commandCallFree, Bool.and_eq_true] at free
-      have conditionResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (calls := calls) _ free.1).trans
-          conditionResult
-      exact .whileContinue conditionResult' (bodyIH free.2) (restIH loopFree)
-  | whileBreak conditionResult bodyResult bodyIH =>
-      simp only [commandCallFree, Bool.and_eq_true] at free
-      have conditionResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (calls := calls) _ free.1).trans
-          conditionResult
-      exact .whileBreak conditionResult' (bodyIH free.2)
-  | whileReturn conditionResult bodyResult bodyIH =>
-      simp only [commandCallFree, Bool.and_eq_true] at free
-      have conditionResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree
-          (calls := calls) _ free.1).trans
-          conditionResult
-      exact .whileReturn conditionResult' (bodyIH free.2)
-  | returnNone => exact .returnNone
-  | returnSome valueResult =>
-      have valueResult' :=
-        (Effectful.Term.evaluate_eq_readOnly_of_callFree (calls := calls) _ (by
-          simpa only [commandCallFree] using free)).trans valueResult
-      exact .returnSome valueResult'
-  | breakLoop => exact .breakLoop
-  | continueLoop => exact .continueLoop
+  case letValue initializerResult bodyResult bodyIH =>
+      exact .letValue
+        (termEvaluates_effectful_of_readOnly calls free.1 initializerResult)
+        (bodyIH free.2)
+  case setLocal valueResult =>
+      exact .setLocal
+        (termEvaluates_effectful_of_readOnly calls free valueResult)
+  case updateLocal valueResult updateResult =>
+      exact .updateLocal
+        (termEvaluates_effectful_of_readOnly calls free valueResult) updateResult
+  case action actionResult => simp [commandCallFree] at free
+  case ifTrue conditionResult branchResult branchIH =>
+      exact .ifTrue
+        (termEvaluates_effectful_of_readOnly calls free.1.1 conditionResult)
+        (branchIH free.1.2)
+  case ifFalse conditionResult branchResult branchIH =>
+      exact .ifFalse
+        (termEvaluates_effectful_of_readOnly calls free.1.1 conditionResult)
+        (branchIH free.2)
+  case whileFalse conditionResult =>
+      exact .whileFalse
+        (termEvaluates_effectful_of_readOnly calls free.1 conditionResult)
+  case whileNext conditionResult bodyResult restResult bodyIH restIH =>
+      exact .whileNext
+        (termEvaluates_effectful_of_readOnly calls free.1 conditionResult)
+        (bodyIH free.2) (restIH freeOriginal)
+  case whileContinue conditionResult bodyResult restResult bodyIH restIH =>
+      exact .whileContinue
+        (termEvaluates_effectful_of_readOnly calls free.1 conditionResult)
+        (bodyIH free.2) (restIH freeOriginal)
+  case whileBreak conditionResult bodyResult bodyIH =>
+      exact .whileBreak
+        (termEvaluates_effectful_of_readOnly calls free.1 conditionResult)
+        (bodyIH free.2)
+  case whileReturn conditionResult bodyResult bodyIH =>
+      exact .whileReturn
+        (termEvaluates_effectful_of_readOnly calls free.1 conditionResult)
+        (bodyIH free.2)
+  case returnNone => exact .returnNone
+  case returnSome valueResult =>
+      exact .returnSome
+        (termEvaluates_effectful_of_readOnly calls free valueResult)
+  case breakLoop => exact .breakLoop
+  case continueLoop => exact .continueLoop
 
 private theorem lineCommentCommand_evaluates
     (source : List Byte) (start : Nat)
@@ -2390,19 +1935,28 @@ private theorem lineCommentCommand_evaluates
     afterWorld afterEnvironment at evaluated
   exact ⟨afterWorld, afterEnvironment,
     commandEvaluates_effectful_of_readOnly ScanEndCalls.calls
-      LineComment.view.command (by native_decide) evaluated⟩
+      LineComment.view.command (by decide +kernel) evaluated⟩
 
 theorem lineCommentFramePreservingCallSoundness (source : List Byte) :
     FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
       (lineCommentCalls source) := by
-  exact effectfulScannerFramePreservingSoundness source
-    Scanners.scanLineCommentEndFunction LineComment.view.command
-    ScanEndCalls.calls scanEndConstructorLexerFramePreservingCallSoundness
-    (fun start => .signed .i32 (Int.ofNat (scanLineCommentEnd source start)))
-    (lineCommentCommand_evaluates source) LineComment.view_toCore_exactly
-    (by native_decide)
-    Scanners.verifiedFrontendLexerCore_finds_scanLineCommentEnd
-    (by native_decide) Scanners.scanLineCommentEndFunction_has_body
+  exact scannerCallFramePreservingSoundness
+    (source := source) (program := verifiedFrontendLexerCore)
+    (extension := verifiedFrontendCore_extends_verifiedFrontendLexerCore)
+    (function := Scanners.scanLineCommentEndFunction)
+    (requiresOpening := true) (command := LineComment.view.command)
+    (helpers := ScanEndCalls.calls)
+    (helperSound := scanEndConstructorLexerFramePreservingCallSoundness)
+    (resultFor := fun start =>
+      .signed .i32 (Int.ofNat (scanLineCommentEnd source start)))
+    (evaluates := by
+      intro start sourceBound startInBounds openingInBounds
+      exact lineCommentCommand_evaluates source start sourceBound
+        (openingInBounds rfl))
+    (commandExact := LineComment.view_toCore_exactly)
+    (actionFree := by decide +kernel)
+    (found := Scanners.verifiedFrontendLexerCore_finds_scanLineCommentEnd)
+    (parameters := by rfl) (hasBody := Scanners.scanLineCommentEndFunction_has_body)
 
 theorem scannerFramePreservingCallSoundness (source : List Byte) :
     FreshSimulation.FramePreservingCallSoundness verifiedFrontendCore
@@ -2465,7 +2019,7 @@ private theorem baseWorldPreserving :
 private theorem scanEndConstructorWorldPreserving :
     FreshSimulation.WorldPreserving ScanEndCalls.calls := by
   intro beforeWorld afterWorld function values value evaluated
-  rcases scanEndConstructorCalls_success evaluated with successful | failed
+  rcases ScanEndCalls.calls_success evaluated with successful | failed
   · obtain ⟨offset, functionEq, valuesEq, valueEq, worldEq⟩ := successful
     exact worldEq
   · obtain ⟨offset, functionEq, valuesEq, valueEq, worldEq⟩ := failed
@@ -2538,9 +2092,14 @@ theorem callSoundness (source : List Byte) :
         Scanners.scanIdentifierEndFunction.id (scannerArguments source start) =
       .ok (.signed .i32 (Int.ofNat (scanIdentifierEnd source start)),
         sourceWorld source) := by
-  simp [scannerCallModel, CallModel.route, identifierCalls, scannerCalls,
-    scannerArguments, sourceSlice, sourceBound]
-  split <;> simp_all [Int.ofNat_inj] <;> omega
+  simp only [scannerCallModel, CallModel.route]
+  rw [show decide True = true by decide]
+  simp only [if_true]
+  exact scannerCalls_at_world source Scanners.scanIdentifierEndFunction.id
+    false
+    (fun start => .signed .i32 (Int.ofNat (scanIdentifierEnd source start)))
+    (sourceWorld source) start sourceBound startInBounds startBound (by simp)
+    (sourceWorld_finds source)
 
 @[simp] theorem scannerCallModel_whitespace
     (source : List Byte) (start : Nat)
@@ -2551,11 +2110,14 @@ theorem callSoundness (source : List Byte) :
         Scanners.scanWhitespaceEndFunction.id (scannerArguments source start) =
       .ok (.signed .i32 (Int.ofNat (scanWhitespaceEnd source start)),
         sourceWorld source) := by
-  have different : Scanners.scanWhitespaceEndFunction.id ≠
-      Scanners.scanIdentifierEndFunction.id := by native_decide
-  simp [scannerCallModel, CallModel.route, whitespaceCalls, scannerCalls,
-    scannerArguments, sourceSlice, sourceBound, different]
-  split <;> simp_all [Int.ofNat_inj] <;> omega
+  simp only [scannerCallModel, CallModel.route]
+  rw [if_neg (by decide), show decide True = true by decide]
+  simp only [if_true]
+  exact scannerCalls_at_world source Scanners.scanWhitespaceEndFunction.id
+    false
+    (fun start => .signed .i32 (Int.ofNat (scanWhitespaceEnd source start)))
+    (sourceWorld source) start sourceBound startInBounds startBound (by simp)
+    (sourceWorld_finds source)
 
 @[simp] theorem scannerCallModel_string
     (source : List Byte) (start : Nat)
@@ -2567,14 +2129,16 @@ theorem callSoundness (source : List Byte) :
       .ok (encodedScanEnd
           (scanQuotedEnd source start Program.doubleQuoteByte),
         sourceWorld source) := by
-  have identifierDifferent : Scanners.scanStringEndFunction.id ≠
-      Scanners.scanIdentifierEndFunction.id := by native_decide
-  have whitespaceDifferent : Scanners.scanStringEndFunction.id ≠
-      Scanners.scanWhitespaceEndFunction.id := by native_decide
-  simp [scannerCallModel, CallModel.route, stringCalls, scannerCalls,
-    scannerArguments, sourceSlice, sourceBound,
-    identifierDifferent, whitespaceDifferent]
-  split <;> simp_all [Int.ofNat_inj] <;> omega
+  simp only [scannerCallModel, CallModel.route]
+  rw [if_neg (by decide), if_neg (by decide),
+    show decide True = true by decide]
+  simp only [if_true]
+  exact scannerCalls_at_world source Scanners.scanStringEndFunction.id
+    false
+    (fun start => encodedScanEnd
+      (scanQuotedEnd source start Program.doubleQuoteByte))
+    (sourceWorld source) start sourceBound startInBounds startBound (by simp)
+    (sourceWorld_finds source)
 
 @[simp] theorem scannerCallModel_character
     (source : List Byte) (start : Nat)
@@ -2586,16 +2150,16 @@ theorem callSoundness (source : List Byte) :
       .ok (encodedScanEnd
           (scanQuotedEnd source start Program.singleQuoteByte),
         sourceWorld source) := by
-  have identifierDifferent : Scanners.scanCharacterEndFunction.id ≠
-      Scanners.scanIdentifierEndFunction.id := by native_decide
-  have whitespaceDifferent : Scanners.scanCharacterEndFunction.id ≠
-      Scanners.scanWhitespaceEndFunction.id := by native_decide
-  have stringDifferent : Scanners.scanCharacterEndFunction.id ≠
-      Scanners.scanStringEndFunction.id := by native_decide
-  simp [scannerCallModel, CallModel.route, characterCalls, scannerCalls,
-    scannerArguments, sourceSlice, sourceBound,
-    identifierDifferent, whitespaceDifferent, stringDifferent]
-  split <;> simp_all [Int.ofNat_inj] <;> omega
+  simp only [scannerCallModel, CallModel.route]
+  rw [if_neg (by decide), if_neg (by decide), if_neg (by decide),
+    show decide True = true by decide]
+  simp only [if_true]
+  exact scannerCalls_at_world source Scanners.scanCharacterEndFunction.id
+    false
+    (fun start => encodedScanEnd
+      (scanQuotedEnd source start Program.singleQuoteByte))
+    (sourceWorld source) start sourceBound startInBounds startBound (by simp)
+    (sourceWorld_finds source)
 
 @[simp] theorem scannerCallModel_lineComment
     (source : List Byte) (start : Nat)
@@ -2604,22 +2168,18 @@ theorem callSoundness (source : List Byte) :
     (startBound : start ≤ 2147483647) :
     (scannerCallModel source).evaluate (sourceWorld source)
         Scanners.scanLineCommentEndFunction.id (scannerArguments source start) =
-      .ok (.signed .i32 (Int.ofNat (scanLineCommentEnd source start)),
+        .ok (.signed .i32 (Int.ofNat (scanLineCommentEnd source start)),
         sourceWorld source) := by
   have startInBounds : start < source.length := by omega
-  have identifierDifferent : Scanners.scanLineCommentEndFunction.id ≠
-      Scanners.scanIdentifierEndFunction.id := by native_decide
-  have whitespaceDifferent : Scanners.scanLineCommentEndFunction.id ≠
-      Scanners.scanWhitespaceEndFunction.id := by native_decide
-  have stringDifferent : Scanners.scanLineCommentEndFunction.id ≠
-      Scanners.scanStringEndFunction.id := by native_decide
-  have characterDifferent : Scanners.scanLineCommentEndFunction.id ≠
-      Scanners.scanCharacterEndFunction.id := by native_decide
-  simp [scannerCallModel, CallModel.route, lineCommentCalls, scannerCalls,
-    scannerArguments, sourceSlice, sourceBound,
-    identifierDifferent, whitespaceDifferent,
-    stringDifferent, characterDifferent]
-  split <;> simp_all [Int.ofNat_inj] <;> omega
+  simp only [scannerCallModel, CallModel.route]
+  rw [if_neg (by decide), if_neg (by decide), if_neg (by decide),
+    if_neg (by decide), show decide True = true by decide]
+  simp only [if_true]
+  exact scannerCalls_at_world source Scanners.scanLineCommentEndFunction.id
+    true
+    (fun start => .signed .i32 (Int.ofNat (scanLineCommentEnd source start)))
+    (sourceWorld source) start sourceBound startInBounds startBound
+    (by simpa using openingInBounds) (sourceWorld_finds source)
 
 @[simp] theorem scannerCallModel_blockComment
     (source : List Byte) (start : Nat)
@@ -2631,23 +2191,14 @@ theorem callSoundness (source : List Byte) :
       .ok (encodedScanEnd (scanBlockCommentEnd source start),
         sourceWorld source) := by
   have startInBounds : start < source.length := by omega
-  have identifierDifferent : Scanners.scanBlockCommentEndFunction.id ≠
-      Scanners.scanIdentifierEndFunction.id := by native_decide
-  have whitespaceDifferent : Scanners.scanBlockCommentEndFunction.id ≠
-      Scanners.scanWhitespaceEndFunction.id := by native_decide
-  have stringDifferent : Scanners.scanBlockCommentEndFunction.id ≠
-      Scanners.scanStringEndFunction.id := by native_decide
-  have characterDifferent : Scanners.scanBlockCommentEndFunction.id ≠
-      Scanners.scanCharacterEndFunction.id := by native_decide
-  have lineDifferent : Scanners.scanBlockCommentEndFunction.id ≠
-      Scanners.scanLineCommentEndFunction.id := by native_decide
-  have quotedDifferent : Scanners.scanBlockCommentEndFunction.id ≠
-      Scanners.scanQuotedEndFunction.id := by native_decide
-  simp [scannerCallModel, CallModel.route, blockCommentCalls, scannerCalls,
-    scannerArguments, sourceSlice, sourceBound,
-    identifierDifferent, whitespaceDifferent,
-    stringDifferent, characterDifferent, lineDifferent, quotedDifferent]
-  split <;> simp_all [Int.ofNat_inj] <;> omega
+  simp only [scannerCallModel, CallModel.route]
+  rw [if_neg (by decide), if_neg (by decide), if_neg (by decide),
+    if_neg (by decide), if_neg (by decide), if_neg (by decide)]
+  exact scannerCalls_at_world source Scanners.scanBlockCommentEndFunction.id
+    true
+    (fun start => encodedScanEnd (scanBlockCommentEnd source start))
+    (sourceWorld source) start sourceBound startInBounds startBound
+    (by simpa using openingInBounds) (sourceWorld_finds source)
 
 @[simp] theorem scannerCallModel_quoted
     (source : List Byte) (start : Nat) (delimiter : Byte)
@@ -2660,10 +2211,8 @@ theorem callSoundness (source : List Byte) :
       .ok (encodedScanEnd (scanQuotedEnd source start delimiter),
         sourceWorld source) := by
   simp only [scannerCallModel, CallModel.route]
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide)]
-  rw [show decide True = true by native_decide]
+  rw [if_neg (by decide), if_neg (by decide), if_neg (by decide),
+    if_neg (by decide), if_neg (by decide), show decide True = true by decide]
   simp only [if_true]
   exact quotedAnyCalls_at source start delimiter sourceBound startInBounds
     startBound
@@ -2686,103 +2235,77 @@ private theorem callModel_scanner_route (source : List Byte)
     (callModel source).evaluate world isDecimalDigitFunction.id
         [.signed .i32 (Int.ofNat byte.val)] =
       .ok (.boolean (isDecimalDigit byte), world) := by
-  rw [show (callModel source).evaluate world isDecimalDigitFunction.id
-      [.signed .i32 (Int.ofNat byte.val)] =
-      decimalDigitCalls.evaluate world isDecimalDigitFunction.id
-        [.signed .i32 (Int.ofNat byte.val)] by
-    simp [callModel, baseCallModel, CallModel.route]]
-  exact decimalDigitCalls_at world byte
+  simpa [callModel, baseCallModel, CallModel.route] using
+    decimalDigitCalls_at world byte
 
 @[simp] theorem callModel_classifyStart (source : List Byte)
     (world : World) (byte : Byte) :
     (callModel source).evaluate world classifyStartFunction.id
         [.signed .i32 (Int.ofNat byte.val)] =
       .ok (.signed .i32 (Int.ofNat (classifyStartCode byte)), world) := by
-  rw [show (callModel source).evaluate world classifyStartFunction.id
-      [.signed .i32 (Int.ofNat byte.val)] =
-      classifyStartCalls.evaluate world classifyStartFunction.id
-        [.signed .i32 (Int.ofNat byte.val)] by
-    simp [callModel, baseCallModel, CallModel.route,
-      (by native_decide : classifyStartFunction.id ≠ isDecimalDigitFunction.id)]]
-  exact classifyStartCalls_at world byte
+  simpa [callModel, baseCallModel, CallModel.route,
+    (by decide : classifyStartFunction.id ≠ isDecimalDigitFunction.id)] using
+    classifyStartCalls_at world byte
 
 @[simp] theorem callModel_scanSucceeded (source : List Byte)
     (world : World) (success : Bool) (endOffset errorOffset : Int) :
     (callModel source).evaluate world scanSucceededFunction.id
         [ScanEnd.value success endOffset errorOffset] =
       .ok (.boolean success, world) := by
-  rw [show (callModel source).evaluate world scanSucceededFunction.id
-      [ScanEnd.value success endOffset errorOffset] =
-      scanSucceededCalls.evaluate world scanSucceededFunction.id
-        [ScanEnd.value success endOffset errorOffset] by
-    simp [callModel, baseCallModel, CallModel.route,
-      (by native_decide : scanSucceededFunction.id ≠ isDecimalDigitFunction.id),
-      (by native_decide : scanSucceededFunction.id ≠ classifyStartFunction.id)]]
-  exact scanSucceededCalls_at world success endOffset errorOffset
+  simpa [callModel, baseCallModel, CallModel.route,
+    (by decide : scanSucceededFunction.id ≠ isDecimalDigitFunction.id),
+    (by decide : scanSucceededFunction.id ≠ classifyStartFunction.id)] using
+    scanSucceededCalls_at world success endOffset errorOffset
 
 @[simp] theorem callModel_scanEndOffset (source : List Byte)
     (world : World) (success : Bool) (endOffset errorOffset : Int) :
     (callModel source).evaluate world scanEndOffsetFunction.id
         [ScanEnd.value success endOffset errorOffset] =
       .ok (.signed .i32 endOffset, world) := by
-  rw [show (callModel source).evaluate world scanEndOffsetFunction.id
-      [ScanEnd.value success endOffset errorOffset] =
-      scanEndOffsetCalls.evaluate world scanEndOffsetFunction.id
-        [ScanEnd.value success endOffset errorOffset] by
-    simp [callModel, baseCallModel, CallModel.route,
-      (by native_decide : scanEndOffsetFunction.id ≠ isDecimalDigitFunction.id),
-      (by native_decide : scanEndOffsetFunction.id ≠ classifyStartFunction.id),
-      (by native_decide : scanEndOffsetFunction.id ≠ scanSucceededFunction.id)]]
-  exact scanEndOffsetCalls_at world success endOffset errorOffset
+  simpa [callModel, baseCallModel, CallModel.route,
+    (by decide : scanEndOffsetFunction.id ≠ isDecimalDigitFunction.id),
+    (by decide : scanEndOffsetFunction.id ≠ classifyStartFunction.id),
+    (by decide : scanEndOffsetFunction.id ≠ scanSucceededFunction.id)] using
+    scanEndOffsetCalls_at world success endOffset errorOffset
 
 @[simp] theorem callModel_scanErrorOffset (source : List Byte)
     (world : World) (success : Bool) (endOffset errorOffset : Int) :
     (callModel source).evaluate world scanErrorOffsetFunction.id
         [ScanEnd.value success endOffset errorOffset] =
       .ok (.signed .i32 errorOffset, world) := by
-  rw [show (callModel source).evaluate world scanErrorOffsetFunction.id
-      [ScanEnd.value success endOffset errorOffset] =
-      scanErrorOffsetCalls.evaluate world scanErrorOffsetFunction.id
-        [ScanEnd.value success endOffset errorOffset] by
-    simp [callModel, baseCallModel, CallModel.route,
-      (by native_decide : scanErrorOffsetFunction.id ≠ isDecimalDigitFunction.id),
-      (by native_decide : scanErrorOffsetFunction.id ≠ classifyStartFunction.id),
-      (by native_decide : scanErrorOffsetFunction.id ≠ scanSucceededFunction.id),
-      (by native_decide : scanErrorOffsetFunction.id ≠ scanEndOffsetFunction.id)]]
-  exact scanErrorOffsetCalls_at world success endOffset errorOffset
+  simpa [callModel, baseCallModel, CallModel.route,
+    (by decide : scanErrorOffsetFunction.id ≠ isDecimalDigitFunction.id),
+    (by decide : scanErrorOffsetFunction.id ≠ classifyStartFunction.id),
+    (by decide : scanErrorOffsetFunction.id ≠ scanSucceededFunction.id),
+    (by decide : scanErrorOffsetFunction.id ≠ scanEndOffsetFunction.id)] using
+    scanErrorOffsetCalls_at world success endOffset errorOffset
 
 @[simp] theorem callModel_successfulScan (source : List Byte)
     (world : World) (offset : Int) :
     (callModel source).evaluate world successfulScanFunction.id
         [.signed .i32 offset] =
       .ok (ScanEnd.value true offset 0, world) := by
-  rw [show (callModel source).evaluate world successfulScanFunction.id
-      [.signed .i32 offset] = ScanEndCalls.calls.evaluate world
-        successfulScanFunction.id [.signed .i32 offset] by
-    simp [callModel, CallModel.route,
-      (by native_decide : ¬(successfulScanFunction.id = isDecimalDigitFunction.id ∨
-        successfulScanFunction.id = classifyStartFunction.id ∨
-        successfulScanFunction.id = scanSucceededFunction.id ∨
-        successfulScanFunction.id = scanEndOffsetFunction.id ∨
-        successfulScanFunction.id = scanErrorOffsetFunction.id))]]
-  exact ScanEndCalls.successful world offset
+  simpa [callModel, CallModel.route,
+    (by decide : ¬(successfulScanFunction.id = isDecimalDigitFunction.id ∨
+      successfulScanFunction.id = classifyStartFunction.id ∨
+      successfulScanFunction.id = scanSucceededFunction.id ∨
+      successfulScanFunction.id = scanEndOffsetFunction.id ∨
+      successfulScanFunction.id = scanErrorOffsetFunction.id))] using
+    ScanEndCalls.successful world offset
 
 @[simp] theorem callModel_failedScan (source : List Byte)
     (world : World) (offset : Int) :
     (callModel source).evaluate world failedScanFunction.id
         [.signed .i32 offset] =
       .ok (ScanEnd.value false 0 offset, world) := by
-  rw [show (callModel source).evaluate world failedScanFunction.id
-      [.signed .i32 offset] = ScanEndCalls.calls.evaluate world
-        failedScanFunction.id [.signed .i32 offset] by
-    simp [callModel, CallModel.route,
-      (by native_decide : ¬(failedScanFunction.id = isDecimalDigitFunction.id ∨
-        failedScanFunction.id = classifyStartFunction.id ∨
-        failedScanFunction.id = scanSucceededFunction.id ∨
-        failedScanFunction.id = scanEndOffsetFunction.id ∨
-        failedScanFunction.id = scanErrorOffsetFunction.id)),
-      (by native_decide : failedScanFunction.id ≠ successfulScanFunction.id)]]
-  exact ScanEndCalls.failed world offset
+  simpa [callModel, CallModel.route,
+    (by decide : ¬(failedScanFunction.id = isDecimalDigitFunction.id ∨
+      failedScanFunction.id = classifyStartFunction.id ∨
+      failedScanFunction.id = scanSucceededFunction.id ∨
+      failedScanFunction.id = scanEndOffsetFunction.id ∨
+      failedScanFunction.id = scanErrorOffsetFunction.id)),
+    (by decide : failedScanFunction.id ≠ successfulScanFunction.id)] using
+    ScanEndCalls.failed world offset
 
 @[simp] theorem callModel_identifier
     (source : List Byte) (start : Nat)
@@ -2795,7 +2318,7 @@ private theorem callModel_scanner_route (source : List Byte)
         sourceWorld source) := by
   rw [callModel_scanner_route source Scanners.scanIdentifierEndFunction.id
     (sourceWorld source) (scannerArguments source start)
-    (by native_decide) (by native_decide)]
+    (by decide) (by decide)]
   exact scannerCallModel_identifier source start sourceBound startInBounds
     startBound
 
@@ -2810,7 +2333,7 @@ private theorem callModel_scanner_route (source : List Byte)
         sourceWorld source) := by
   rw [callModel_scanner_route source Scanners.scanWhitespaceEndFunction.id
     (sourceWorld source) (scannerArguments source start)
-    (by native_decide) (by native_decide)]
+    (by decide) (by decide)]
   exact scannerCallModel_whitespace source start sourceBound startInBounds
     startBound
 
@@ -2826,7 +2349,7 @@ private theorem callModel_scanner_route (source : List Byte)
         sourceWorld source) := by
   rw [callModel_scanner_route source Scanners.scanQuotedEndFunction.id
     (sourceWorld source) (quotedArguments source start delimiter)
-    (by native_decide) (by native_decide)]
+    (by decide) (by decide)]
   exact scannerCallModel_quoted source start delimiter sourceBound
     startInBounds startBound
 
@@ -2842,7 +2365,7 @@ private theorem callModel_scanner_route (source : List Byte)
         sourceWorld source) := by
   rw [callModel_scanner_route source Scanners.scanStringEndFunction.id
     (sourceWorld source) (scannerArguments source start)
-    (by native_decide) (by native_decide)]
+    (by decide) (by decide)]
   exact scannerCallModel_string source start sourceBound startInBounds startBound
 
 @[simp] theorem callModel_character
@@ -2857,7 +2380,7 @@ private theorem callModel_scanner_route (source : List Byte)
         sourceWorld source) := by
   rw [callModel_scanner_route source Scanners.scanCharacterEndFunction.id
     (sourceWorld source) (scannerArguments source start)
-    (by native_decide) (by native_decide)]
+    (by decide) (by decide)]
   exact scannerCallModel_character source start sourceBound startInBounds
     startBound
 
@@ -2872,7 +2395,7 @@ private theorem callModel_scanner_route (source : List Byte)
         sourceWorld source) := by
   rw [callModel_scanner_route source Scanners.scanLineCommentEndFunction.id
     (sourceWorld source) (scannerArguments source start)
-    (by native_decide) (by native_decide)]
+    (by decide) (by decide)]
   exact scannerCallModel_lineComment source start sourceBound openingInBounds
     startBound
 
@@ -2887,7 +2410,7 @@ private theorem callModel_scanner_route (source : List Byte)
         sourceWorld source) := by
   rw [callModel_scanner_route source Scanners.scanBlockCommentEndFunction.id
     (sourceWorld source) (scannerArguments source start)
-    (by native_decide) (by native_decide)]
+    (by decide) (by decide)]
   exact scannerCallModel_blockComment source start sourceBound openingInBounds
     startBound
 
@@ -2901,9 +2424,9 @@ private theorem callModel_scanner_route (source : List Byte)
         (scannerArguments source start) =
       .ok (.signed .i32 (Int.ofNat (scanIdentifierEnd source start)), world) := by
   rw [callModel_scanner_route source Scanners.scanIdentifierEndFunction.id
-    world (scannerArguments source start) (by native_decide) (by native_decide)]
+    world (scannerArguments source start) (by decide) (by decide)]
   simp only [scannerCallModel, CallModel.route]
-  rw [show decide True = true by native_decide]
+  rw [show decide True = true by decide]
   simp only [if_true]
   exact scannerCalls_at_world source Scanners.scanIdentifierEndFunction.id
     false _ world start sourceBound startInBounds startBound (by simp) sourceFound
@@ -2918,10 +2441,10 @@ private theorem callModel_scanner_route (source : List Byte)
         (scannerArguments source start) =
       .ok (.signed .i32 (Int.ofNat (scanWhitespaceEnd source start)), world) := by
   rw [callModel_scanner_route source Scanners.scanWhitespaceEndFunction.id
-    world (scannerArguments source start) (by native_decide) (by native_decide)]
+    world (scannerArguments source start) (by decide) (by decide)]
   simp only [scannerCallModel, CallModel.route]
-  rw [if_neg (by native_decide)]
-  rw [show decide True = true by native_decide]
+  rw [if_neg (by decide)]
+  rw [show decide True = true by decide]
   simp only [if_true]
   exact scannerCalls_at_world source Scanners.scanWhitespaceEndFunction.id
     false _ world start sourceBound startInBounds startBound (by simp) sourceFound
@@ -2937,10 +2460,10 @@ private theorem callModel_scanner_route (source : List Byte)
       .ok (encodedScanEnd
         (scanQuotedEnd source start Program.doubleQuoteByte), world) := by
   rw [callModel_scanner_route source Scanners.scanStringEndFunction.id
-    world (scannerArguments source start) (by native_decide) (by native_decide)]
+    world (scannerArguments source start) (by decide) (by decide)]
   simp only [scannerCallModel, CallModel.route]
-  rw [if_neg (by native_decide), if_neg (by native_decide)]
-  rw [show decide True = true by native_decide]
+  rw [if_neg (by decide), if_neg (by decide)]
+  rw [show decide True = true by decide]
   simp only [if_true]
   exact scannerCalls_at_world source Scanners.scanStringEndFunction.id
     false _ world start sourceBound startInBounds startBound (by simp) sourceFound
@@ -2956,11 +2479,11 @@ private theorem callModel_scanner_route (source : List Byte)
       .ok (encodedScanEnd
         (scanQuotedEnd source start Program.singleQuoteByte), world) := by
   rw [callModel_scanner_route source Scanners.scanCharacterEndFunction.id
-    world (scannerArguments source start) (by native_decide) (by native_decide)]
+    world (scannerArguments source start) (by decide) (by decide)]
   simp only [scannerCallModel, CallModel.route]
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide)]
-  rw [show decide True = true by native_decide]
+  rw [if_neg (by decide), if_neg (by decide),
+    if_neg (by decide)]
+  rw [show decide True = true by decide]
   simp only [if_true]
   exact scannerCalls_at_world source Scanners.scanCharacterEndFunction.id
     false _ world start sourceBound startInBounds startBound (by simp) sourceFound
@@ -2976,11 +2499,11 @@ private theorem callModel_scanner_route (source : List Byte)
       .ok (.signed .i32 (Int.ofNat (scanLineCommentEnd source start)), world) := by
   have startInBounds : start < source.length := by omega
   rw [callModel_scanner_route source Scanners.scanLineCommentEndFunction.id
-    world (scannerArguments source start) (by native_decide) (by native_decide)]
+    world (scannerArguments source start) (by decide) (by decide)]
   simp only [scannerCallModel, CallModel.route]
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide)]
-  rw [show decide True = true by native_decide]
+  rw [if_neg (by decide), if_neg (by decide),
+    if_neg (by decide), if_neg (by decide)]
+  rw [show decide True = true by decide]
   simp only [if_true]
   exact scannerCalls_at_world source Scanners.scanLineCommentEndFunction.id
     true _ world start sourceBound startInBounds startBound
@@ -2997,11 +2520,11 @@ private theorem callModel_scanner_route (source : List Byte)
       .ok (encodedScanEnd (scanBlockCommentEnd source start), world) := by
   have startInBounds : start < source.length := by omega
   rw [callModel_scanner_route source Scanners.scanBlockCommentEndFunction.id
-    world (scannerArguments source start) (by native_decide) (by native_decide)]
+    world (scannerArguments source start) (by decide) (by decide)]
   simp only [scannerCallModel, CallModel.route]
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide)]
+  rw [if_neg (by decide), if_neg (by decide),
+    if_neg (by decide), if_neg (by decide),
+    if_neg (by decide), if_neg (by decide)]
   exact scannerCalls_at_world source Scanners.scanBlockCommentEndFunction.id
     true _ world start sourceBound startInBounds startBound
     (by simpa using openingInBounds) sourceFound
@@ -3017,12 +2540,12 @@ private theorem callModel_scanner_route (source : List Byte)
       .ok (encodedScanEnd (scanQuotedEnd source start delimiter), world) := by
   rw [callModel_scanner_route source Scanners.scanQuotedEndFunction.id
     world (quotedArguments source start delimiter)
-    (by native_decide) (by native_decide)]
+    (by decide) (by decide)]
   simp only [scannerCallModel, CallModel.route]
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide)]
-  rw [show decide True = true by native_decide]
+  rw [if_neg (by decide), if_neg (by decide),
+    if_neg (by decide), if_neg (by decide),
+    if_neg (by decide)]
+  rw [show decide True = true by decide]
   simp only [if_true]
   exact quotedAnyCalls_at_world source world start delimiter sourceBound
     startInBounds startBound sourceFound

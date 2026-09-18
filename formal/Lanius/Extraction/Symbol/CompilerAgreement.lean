@@ -24,9 +24,7 @@ def compilerValue (input : List Byte) : Option Core.Value :=
 theorem compilerValue_ignores_after_three
     (first second third : Byte) (rest : List Byte) :
     compilerValue (first :: second :: third :: rest) =
-      compilerValue [first, second, third] := by
-  simp [compilerValue, matchSymbolHead, bestMatching, symbolRules,
-    SymbolRule.matches, startsWith, chooseLonger]
+      compilerValue [first, second, third] := by rfl
 
 theorem behaviorValue_ignores_after_three
     (first second third : Byte) (rest : List Byte) :
@@ -38,8 +36,13 @@ private def symbolStartBytes : List Byte :=
   [40, 41, 43, 42, 61, 45, 47, 33, 91, 93, 123, 125,
     60, 62, 38, 124, 37, 94, 126, 44, 59, 58, 63, 46]
 
-private def allBytes : List Byte :=
-  List.ofFn (fun byte : Fin 256 => byte)
+/-- Only these second-byte equalities are observed by either symbol matcher.
+Zero represents every byte that fails all of those comparisons. -/
+private def secondRepresentatives : List Byte :=
+  [0, 38, 42, 43, 45, 46, 47, 60, 61, 62, 124]
+
+private def secondRepresentative (byte : Byte) : Byte :=
+  if byte ∈ secondRepresentatives then byte else 0
 
 private def compilerPair (input : List Byte) : Option (Int × Int) :=
   (matchSymbolHead input).map fun rule =>
@@ -64,9 +67,62 @@ private theorem bestMatching_congr (rules : List SymbolRule) (left right : List 
       simp only [bestMatching, same rule (by simp),
         induction (fun entry member => same entry (by simp [member]))]
 
+private theorem compilerPair_second (first second : Byte) (rest : List Byte) :
+    compilerPair (first :: second :: rest) =
+      compilerPair (first :: secondRepresentative second :: rest) := by
+  simp only [compilerPair, matchSymbolHead_eq]
+  by_cases known : second ∈ secondRepresentatives
+  · simp only [secondRepresentative, if_pos known]
+  · simp only [secondRepresentative, if_neg known]
+    simp only [secondRepresentatives, List.mem_cons, List.not_mem_nil,
+      or_false, Fin.ext_iff, Fin.val_zero, not_or] at known
+    apply congrArg (Option.map _)
+    apply bestMatching_congr
+    intro rule member
+    simp only [symbolRules, List.mem_cons, List.not_mem_nil, or_false] at member
+    rcases member with
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    all_goals simp [SymbolRule.matches, startsWith, beq_iff_eq] <;> omega
+
+private theorem behaviorPair_second (first second : Byte) (rest : List Byte) :
+    behaviorPair (first :: second :: rest) =
+      behaviorPair (first :: secondRepresentative second :: rest) := by
+  by_cases known : second ∈ secondRepresentatives
+  · simp only [secondRepresentative, if_pos known]
+  · simp only [secondRepresentative, if_neg known]
+    simp only [secondRepresentatives, List.mem_cons, List.not_mem_nil,
+      or_false, Fin.ext_iff, Fin.val_zero, not_or] at known
+    have excluded : (second.val : Int) ≠ 38 ∧ (second.val : Int) ≠ 42 ∧
+        (second.val : Int) ≠ 43 ∧ (second.val : Int) ≠ 45 ∧
+        (second.val : Int) ≠ 46 ∧ (second.val : Int) ≠ 47 ∧
+        (second.val : Int) ≠ 60 ∧ (second.val : Int) ≠ 61 ∧
+        (second.val : Int) ≠ 62 ∧ (second.val : Int) ≠ 124 := by omega
+    rcases excluded with ⟨h38, h42, h43, h45, h46, h47, h60, h61, h62, h124⟩
+    simp only [behaviorPair, inputMatch, List.getElem?_cons_zero,
+      List.getElem?_cons_succ, Option.map_some, Option.getD_some]
+    simp [Behavior.classify, h38, h42, h43, h45, h46, h47, h60, h61, h62, h124]
+
+private theorem agrees_second (first second : Byte) (rest : List Byte) :
+    agrees (first :: second :: rest) =
+      agrees (first :: secondRepresentative second :: rest) := by
+  unfold agrees
+  rw [compilerPair_second, behaviorPair_second]
+
+private theorem secondRepresentative_mem (byte : Byte) :
+    secondRepresentative byte ∈ secondRepresentatives := by
+  unfold secondRepresentative
+  split
+  · assumption
+  · decide +kernel
+
 private theorem compilerPair_third (first second third : Byte) :
     compilerPair [first, second, third] =
       compilerPair [first, second, thirdRepresentative third] := by
+  simp only [compilerPair, matchSymbolHead_eq]
   apply congrArg (Option.map _)
   apply bestMatching_congr
   intro rule member
@@ -101,23 +157,20 @@ private theorem agrees_third (first second third : Byte) :
   unfold agrees
   rw [compilerPair_third, behaviorPair_third]
 
-private theorem everyByte_mem (byte : Byte) : byte ∈ allBytes := by
-  exact List.mem_ofFn.mpr ⟨byte, rfl⟩
-
 private theorem oneByteAgreement :
     symbolStartBytes.all (fun first => agrees [first]) = true := by
-  native_decide
+  decide +kernel
 
 private theorem twoByteAgreement :
     symbolStartBytes.all (fun first =>
-      allBytes.all (fun second => agrees [first, second])) = true := by
-  native_decide
+      secondRepresentatives.all (fun second => agrees [first, second])) = true := by
+  decide +kernel
 
 private theorem threeByteAgreement :
     symbolStartBytes.all (fun first =>
-      allBytes.all (fun second =>
+      secondRepresentatives.all (fun second =>
         ([0, 61] : List Byte).all (fun third => agrees [first, second, third]))) = true := by
-  native_decide
+  decide +kernel
 
 private theorem first_mem_symbolStartBytes
     {first : Byte} {rest : List Byte} {rule : SymbolRule}
@@ -162,7 +215,8 @@ theorem compilerValue_eq_behaviorValue
       | nil =>
         have checked := List.all_eq_true.mp
           (List.all_eq_true.mp twoByteAgreement first firstMember)
-          second (everyByte_mem second)
+          (secondRepresentative second) (secondRepresentative_mem second)
+        rw [← agrees_second first second []] at checked
         have pairEq : compilerPair [first, second] =
             some (behaviorPair [first, second]) := beq_iff_eq.mp checked
         simpa [compilerPair, behaviorPair, compilerValue, behaviorValue,
@@ -174,9 +228,10 @@ theorem compilerValue_eq_behaviorValue
         have checked := List.all_eq_true.mp
           (List.all_eq_true.mp
             (List.all_eq_true.mp threeByteAgreement first firstMember)
-            second (everyByte_mem second))
+            (secondRepresentative second) (secondRepresentative_mem second))
           (thirdRepresentative third) (by by_cases equal : third.val = 61 <;> simp [thirdRepresentative, equal])
-        rw [← agrees_third first second third] at checked
+        rw [← agrees_third first (secondRepresentative second) third,
+          ← agrees_second first second [third]] at checked
         have pairEq : compilerPair [first, second, third] =
             some (behaviorPair [first, second, third]) := beq_iff_eq.mp checked
         simpa [compilerPair, behaviorPair, compilerValue, behaviorValue,

@@ -34,14 +34,14 @@ theorem assign_word (checked : Checked program byte digit)
     intro same
     rw [same, cursor.2] at backing
     cases backing
-  obtain ⟨written, run, contents, writeEffect⟩ := checked.write position capacity value wellFormed
+  obtain ⟨written, run, contents, writeEffect, writeHeap⟩ := checked.write position capacity value wellFormed
     capacityBound capacityFit valueFit backing
     (.cons outputResult (.cons capacityResult
       (.cons (local_evaluates program.core (Assertion.localPointsTo_local _ _ _ _ cursor))
         (.cons valueResult (.nil _ _)))))
   have cursorStill := writeEffect.preserves_localPointsTo wellFormed cursor
     (by simpa only [CellSet.singleton] using Ne.symm distinct)
-  obtain ⟨after, assigned, cursorAfter, effect, assignmentEffect⟩ :=
+  obtain ⟨after, assigned, cursorAfter, effect, assignmentEffect, assignmentHeap, _⟩ :=
     evaluatesOwnedLocalSet cursor run writeEffect cursorStill
   exact ⟨after, assigned, cursorAfter, assignmentEffect.preserves_entry writeEffect.wellFormed contents
     (by simpa only [CellSet.singleton] using distinct), effect⟩

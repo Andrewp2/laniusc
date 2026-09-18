@@ -72,7 +72,6 @@ theorem finishDecimal_run
         exponent_true (by simpa [beginsExponent] using exponent)
       simp [finishDecimal, byteValueAt,
         List.getElem?_eq_getElem inBounds, nextAt, exponentLogical]
-      rfl
     · have exponentFalse : beginsExponent = false := Bool.eq_false_iff.mpr exponent
       rw [show (decide (next.val = 101) || decide (next.val = 69)) = false
           by exact exponentFalse]
@@ -133,7 +132,6 @@ theorem finishDecimal_run
               List.getElem?_eq_getElem inBounds,
               List.getElem?_eq_getElem fractionInBounds,
               nextAt, firstAt, isDot, twoDots, noExponent, dotted]
-            rfl
           · rw [decide_eq_false twoDots]
             simp only [Stateful.Acyclic.run?, bind, Except.bind]
             have tail := finishFraction source world integerEnd next first sourceFound
@@ -142,7 +140,6 @@ theorem finishDecimal_run
             unfold tailRun tailResult at tail
             rw [tail]
             simp only [Env.pop_push]
-            rfl
         · rw [decide_eq_false fractionInBounds]
           simp only [Stateful.Acyclic.run?, bind, Except.bind]
           have tail := finishAtEnd source world integerEnd next inBounds nextAt
@@ -150,7 +147,6 @@ theorem finishDecimal_run
           unfold tailRun tailResult at tail
           rw [tail]
           simp only [Env.pop_push]
-          rfl
       · rw [decide_eq_true isDot]
         simp only [Commands.returned, Stateful.Acyclic.run?, bind, Except.bind]
         have returned := integerScan_evaluates (source := source) (world := world)
@@ -162,7 +158,6 @@ theorem finishDecimal_run
           (by simpa [beginsExponent] using exponentFalse)
         simp [finishDecimal, byteValueAt,
           List.getElem?_eq_getElem inBounds, nextAt, isDot, noExponent]
-        rfl
   · have atEnd : integerEnd = source.length := by omega
     subst integerEnd
     rw [decide_eq_true (by omega)]
@@ -173,7 +168,6 @@ theorem finishDecimal_run
       (by rfl)
     rw [returned]
     simp [finishDecimal, byteValueAt]
-    rfl
 
 theorem finishDecimal_evaluates
     (source : List Byte) (world : ReadOnly.World) (integerEnd : Nat)

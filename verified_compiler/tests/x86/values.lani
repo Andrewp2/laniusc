@@ -1,0 +1,79 @@
+module examples::values;
+
+pub struct Pair { number: i32, flag: bool, }
+pub struct Nested { left: Pair, right: Pair, tail: i32, }
+const OFFSET: i32 = 17;
+
+fn pair(number: i32, flag: bool) -> Pair { return Pair { number: number, flag: flag }; }
+fn score(value: Pair) -> i32 {
+    if (value.flag) { return value.number + OFFSET; }
+    return value.number - OFFSET;
+}
+fn replace(value: Pair, number: i32) -> Pair {
+    value = pair(number, !value.flag);
+    return value;
+}
+pub fn copies(number: i32) -> i32 {
+    let original: Pair = pair(number, true);
+    let copied: Pair = original;
+    original = replace(original, number + 3);
+    return score(copied) * 2 + score(original);
+}
+fn build(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) -> Nested {
+    return Nested { left: pair(a + c + e + g, true), right: pair(b + d + f, false), tail: g };
+}
+fn consume(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, value: Nested) -> i32 {
+    return a + b + c + d + e + f + score(value.left) + score(value.right) + value.tail;
+}
+pub fn nested(number: i32) -> i32 {
+    return consume(number, 2, 3, 4, 5, 6, build(number, 7, 8, 9, 10, 11, 12));
+}
+fn seven(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) -> i32 {
+    return a - b + c - d + e - f + g;
+}
+fn eight(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) -> i32 {
+    return seven(a, b, c, d, e, f, g) + h;
+}
+pub fn staged(number: i32) -> i32 {
+    return eight(score(pair(number, true)), seven(1,2,3,4,5,6,7),
+        number + 3, score(replace(pair(number, false), 123)), 5, 6, 7, 8);
+}
+pub fn factorial(number: i32) -> i32 {
+    if (number <= 1) { return 1; }
+    return number * factorial(number - 1);
+}
+fn odd(number: i32) -> bool {
+    if (number == 0) { return false; }
+    return even(number - 1);
+}
+fn even(number: i32) -> bool {
+    if (number == 0) { return true; }
+    return odd(number - 1);
+}
+pub fn mutual(number: i32) -> i32 {
+    if (even(number)) { return 100; }
+    return -100;
+}
+pub fn pointer_identity(value: ptr) -> ptr { return value; }
+pub fn word_identity(value: usize) -> usize { return value; }
+pub fn pointer_null(value: ptr) -> i32 {
+    if (value == 0) { return 1; }
+    return 0;
+}
+pub fn pointer_equal(value: ptr) -> i32 {
+    if (value == pointer_identity(value)) { return 1; }
+    return 0;
+}
+pub fn word_nonzero(value: usize) -> i32 {
+    let zero: usize = 0;
+    if (value != zero) { return 1; }
+    return 0;
+}
+pub fn word_equal(value: usize) -> i32 {
+    if (value == word_identity(value)) { return 1; }
+    return 0;
+}
+pub fn widen(value: i32) -> usize { let wide: usize = value; return wide; }
+pub fn narrow(value: usize) -> i32 { let small: i32 = value; return small; }
+fn slice_identity(value: [i32]) -> [i32] { return value; }
+pub fn slice_forward(value: [i32]) -> [i32] { return slice_identity(value); }

@@ -1,0 +1,74 @@
+module backend::frame;
+import x86::register;
+import x86::encode;
+import x86::buffer;
+
+// Mutable compilation state and scoped binding tables. Each table has
+// `stride` entries. Eight tables hold local IDs/types/slots, break patches,
+// call fields/targets, and function input/code positions for the whole image.
+pub const HEADER: i32 = 16;
+pub const INPUT: i32 = 0;
+pub const CODE: i32 = 1;
+pub const SLOTS: i32 = 2;
+pub const RESULT: i32 = 3;
+pub const FAILED: i32 = 4;
+pub const BREAK_COUNT: i32 = 5;
+pub const TOP: i32 = 6;
+pub const SRET: i32 = 7;
+pub const FUNCTION_COUNT: i32 = 8;
+pub const FIXUP_COUNT: i32 = 9;
+pub const STRUCT_END: i32 = 10;
+pub const CONST_END: i32 = 11;
+pub const STRIDE: i32 = 12;
+// Compile-time result of place resolution: initialization flag slot, or -1.
+pub const PLACE_FLAG: i32 = 13;
+
+pub fn allocate(work: [i32], count: i32) -> i32 {
+    if (count < 1 || count > 1048576 - work[TOP]) { work[FAILED] = 1; return -1; }
+    work[TOP] += count;
+    if (work[TOP] > work[SLOTS]) { work[SLOTS] = work[TOP]; }
+    return work[TOP] - 1;
+}
+
+pub fn take(input: [i32], length: i32, work: [i32]) -> i32 {
+    let position: i32 = work[INPUT];
+    if (position < 0 || position >= length) { work[FAILED] = 1; return 0; }
+    work[INPUT] = position + 1;
+    return input[position];
+}
+
+pub fn lookup(work: [i32], active: i32, id: i32) -> i32 {
+    let index: i32 = active;
+    while (index > 0) {
+        index -= 1;
+        if (work[HEADER + index] == id) { return index; }
+    }
+    return -1;
+}
+
+pub fn displacement(slot: i32) -> i32 { return -(slot + 1) * 8; }
+pub fn bytes(slots: i32) -> i32 { return ((slots + 1) / 2) * 16; }
+
+pub fn store(output: [i32], capacity: i32, work: [i32], slot: i32, source: i32) -> i32 {
+    if (slot + 1 > work[SLOTS]) { work[SLOTS] = slot + 1; }
+    work[CODE] = x86::encode::store(output, capacity, work[CODE], 32, source,
+        x86::register::RBP, displacement(slot));
+    return work[CODE];
+}
+
+pub fn load(output: [i32], capacity: i32, work: [i32], slot: i32, destination: i32) -> i32 {
+    work[CODE] = x86::encode::load(output, capacity, work[CODE], 32, destination,
+        x86::register::RBP, displacement(slot));
+    return work[CODE];
+}
+
+pub fn return_value(output: [i32], capacity: i32, cursor: i32) -> i32 {
+    // MOV RSP,RBP; POP RBP; RET. Reserve the complete fixed protocol first.
+    if (!x86::buffer::fits(capacity, cursor, 5)) { return -1; }
+    output[cursor] = 72;
+    output[cursor + 1] = 137;
+    output[cursor + 2] = 236;
+    output[cursor + 3] = 93;
+    output[cursor + 4] = 195;
+    return cursor + 5;
+}

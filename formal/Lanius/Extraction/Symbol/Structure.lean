@@ -315,7 +315,7 @@ symbol matcher without duplicating its syntax. -/
 
 theorem matchSymbolHead_pattern_matches :
     matchSymbolHeadPattern.matches matchSymbolHeadView.command = true := by
-  native_decide
+  decide +kernel
 
 /-- The readable command is exactly the artifact-backed recovered command. -/
 theorem matchSymbolHead_command_exact :

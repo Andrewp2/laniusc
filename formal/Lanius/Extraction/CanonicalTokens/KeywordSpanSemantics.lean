@@ -14,15 +14,15 @@ abbrev SM := KeywordDispatchSemantics.SM
 /-- The exact checked keyword command implements the logical classifier on
 every valid bounded half-open source span, including non-keywords and keyword
 prefixes embedded in a larger source slice. -/
-theorem command_evaluates (source : List Int) (start finish : Nat)
+theorem command_evaluates (cell : CellId) (source : List Int) (start finish : Nat)
     (ordered : start ≤ finish) (inBounds : finish ≤ source.length)
     (sourceFitsI32 : source.length ≤ 2147483647) :
     Lanius.FunctionalView.Stateful.Acyclic.run? TM SM
-      (Model.keywordWorld source) (Model.keywordEnvironment source start finish)
+      (Model.keywordWorld cell source) (Model.keywordEnvironment cell source start finish)
       KeywordCommand.command =
     some (.returned (some (.signed .i32
         (Model.keywordKind source start finish))),
-      Model.keywordWorld source, Model.keywordEnvironment source start finish) := by
+      Model.keywordWorld cell source, Model.keywordEnvironment cell source start finish) := by
   let leading := source.take start
   let spelling := Model.keywordSpan source start finish
   let trailing := source.drop finish
@@ -46,7 +46,7 @@ theorem command_evaluates (source : List Int) (start finish : Nat)
   have finishLength : start + spelling.length = finish := by
     rw [spellingLength]
     omega
-  have embedded := KeywordExecution.command_evaluates leading spelling trailing
+  have embedded := KeywordExecution.command_evaluates cell leading spelling trailing
     (by simpa [sourceSplit] using sourceFitsI32)
   have logicalResult :
       Model.keywordKind spelling 0 spelling.length =

@@ -46,7 +46,7 @@ theorem initialize_cursor (word : Word.Checked program byte digit) (pathLength c
         value ≠ .array (signedI32Values original) → memory.base.local? id = some value) ∧
       (∀ cell physicalCapacity values, I32Prefix before cell physicalCapacity values →
         outputCell ≠ cell → I32Prefix memory.base cell physicalCapacity values) := by
-  obtain ⟨written, run, output, effect⟩ := word.write position capacity pathLength wellFormed
+  obtain ⟨written, run, output, effect, heapFrame⟩ := word.write position capacity pathLength wellFormed
     room capacityFit pathFit backing
     (.cons (local_evaluates program.core outputRead) (.cons (local_evaluates program.core capacityRead)
       (.cons (local_evaluates program.core positionRead) (.cons (local_evaluates program.core pathRead) (.nil _ _)))))

@@ -36,26 +36,11 @@ def isTrivia (kind : TokenKind) : Bool := isTriviaKind kind
 def isTriviaEnvironment (kind : Int) : Env 1
   | _ => .signed .i32 kind
 
-private def isTriviaRun (kind : Int) :=
-  Lanius.FunctionalView.Stateful.Acyclic.run?
-    (termMachine (evaluateOperation verifiedFrontendCore noCalls))
-    (machineWith verifiedFrontendCore
-      (evaluateOperation verifiedFrontendCore noCalls))
-    emptyWorld (isTriviaEnvironment kind) isTriviaView.command
-
 def returnedBool? : Option
     (Lanius.FunctionalView.Stateful.Completion × World × Env arity) →
     Option Bool
   | some (.returned (some (.boolean result)), _, _) => some result
   | _ => none
-
-/-- The exact checked `is_trivia` view computes the logical trivia
-classifier for every encoded token kind. -/
-theorem isTriviaView_result : ∀ kind : TokenKind,
-    returnedBool? (isTriviaRun (Int.ofNat kind.gpuCode)) =
-      some (isTrivia kind) := by
-  intro kind
-  cases kind <;> native_decide
 
 def keywordSpan (source : List Int) (start finish : Nat) : List Int :=
   (source.drop start).take (finish - start)
@@ -66,13 +51,13 @@ def keywordKind (source : List Int) (start finish : Nat) : Int :=
     | some kind => kind.gpuCode
     | none => TokenKind.identifier.gpuCode
 
-def keywordWorld (source : List Int) : World := World.singleton 0 source
+def keywordWorld (cell : CellId) (source : List Int) : World := World.singleton cell source
 
-def keywordSource (source : List Int) : Value :=
-  .slice (.scalar (.signed .i32)) 0 [] 0 source.length
+def keywordSource (cell : CellId) (source : List Int) : Value :=
+  .slice (.scalar (.signed .i32)) cell [] 0 source.length
 
-def keywordEnvironment (source : List Int) (start finish : Nat) : Env 3
-  | ⟨0, _⟩ => keywordSource source
+def keywordEnvironment (cell : CellId) (source : List Int) (start finish : Nat) : Env 3
+  | ⟨0, _⟩ => keywordSource cell source
   | ⟨1, _⟩ => .signed .i32 start
   | ⟨2, _⟩ => .signed .i32 finish
 
@@ -86,7 +71,7 @@ private def keywordRun (source : List Int) (start finish : Nat) :=
     (termMachine (evaluateOperation verifiedFrontendCore noCalls))
     (machineWith verifiedFrontendCore
       (evaluateOperation verifiedFrontendCore noCalls))
-    (keywordWorld source) (keywordEnvironment source start finish)
+    (keywordWorld 0 source) (keywordEnvironment 0 source start finish)
     keywordCommand
 
 def returnedI32? : Option
@@ -141,13 +126,13 @@ def callModel : CallModel where
       | _ => .error .typeMismatch
     else .error .invalidPointer
 
-theorem callModel_keywordKind (source : List Int) (start finish : Nat)
+theorem callModel_keywordKind (cell : CellId) (source : List Int) (start finish : Nat)
     (ordered : start ≤ finish) (inBounds : finish ≤ source.length)
     (sourceFitsI32 : source.length ≤ 2147483647) :
-    callModel.evaluate (keywordWorld source) keywordKindFunction.id
-        [keywordSource source, .signed .i32 start, .signed .i32 finish] =
+    callModel.evaluate (keywordWorld cell source) keywordKindFunction.id
+        [keywordSource cell source, .signed .i32 start, .signed .i32 finish] =
       .ok (.signed .i32 (keywordKind source start finish),
-        keywordWorld source) := by
+        keywordWorld cell source) := by
   have distinct : keywordKindFunction.id ≠ isTriviaFunction.id := by
     native_decide
   simp [callModel, keywordWorld, keywordSource, distinct, ordered, inBounds,

@@ -1,0 +1,533 @@
+module backend::compile;
+import backend::syntax;
+import backend::frame;
+import backend::operation;
+import backend::layout;
+import backend::value;
+import backend::call;
+import backend::index;
+import backend::literal;
+import backend::local;
+import backend::parameter;
+import x86::register;
+import x86::encode;
+import x86::control;
+import x86::buffer;
+
+pub const MAX_WORDS: i32 = 65536;
+pub const MAX_DEPTH: i32 = 512;
+
+fn string_value(input: [i32], length: i32, start: i32, count: i32,
+    work: [i32], output: [i32], capacity: i32) -> i32 {
+    work[backend::frame::CODE] = backend::literal::string(input, length, start, count, output, capacity, work[backend::frame::CODE]);
+    if (work[backend::frame::CODE] < 0) { return -1; }
+    let slot: i32 = backend::frame::allocate(work, 2);
+    if (slot < 0) { return -1; }
+    backend::value::save_word(output, capacity, work, slot, x86::register::RAX);
+    work[backend::frame::CODE] = x86::encode::immediate(output, capacity, work[backend::frame::CODE], 64, x86::register::RAX, count, 0);
+    backend::value::save_word(output, capacity, work, slot - 1, x86::register::RAX);
+    backend::value::address(output, capacity, work, slot, x86::register::RAX);
+    return backend::syntax::STRING;
+}
+
+fn emit_expression(input: [i32], length: i32, work: [i32], output: [i32], capacity: i32,
+    active: i32, depth: i32, context: [i32], context_length: i32) -> i32 {
+    if (depth >= MAX_DEPTH || work[backend::frame::FAILED] != 0 || work[backend::frame::CODE] < 0) { return -1; }
+    let tag: i32 = backend::frame::take(input, length, work);
+    if (tag == backend::syntax::VALUE) {
+        let kind: i32 = backend::frame::take(input, length, work);
+        let value: i32 = backend::frame::take(input, length, work);
+        if (kind == backend::syntax::STRING) {
+            let result: i32 = string_value(input, length, work[backend::frame::INPUT], value, work, output, capacity);
+            if (result < 0) { return -1; }
+            work[backend::frame::INPUT] += value;
+            return result;
+        }
+        if (kind < backend::syntax::I32 || kind > backend::syntax::POINTER || (kind == backend::syntax::BOOL && value != 0 && value != 1)) { return -1; }
+        let high: i32 = 0;
+        if (backend::layout::width(kind) == 64) { high = backend::frame::take(input, length, work); }
+        work[backend::frame::CODE] = x86::encode::immediate(output, capacity, work[backend::frame::CODE], backend::layout::width(kind), x86::register::RAX, value, high);
+        return kind;
+    }
+    if (tag == backend::syntax::LOCAL) {
+        let id: i32 = backend::frame::take(input, length, work);
+        let binding: i32 = backend::frame::lookup(work, active, id);
+        if (binding < 0) { return -1; }
+        let kind: i32 = work[backend::frame::HEADER + work[backend::frame::STRIDE] + binding];
+        let slot: i32 = work[backend::frame::HEADER + work[backend::frame::STRIDE] * 2 + binding];
+        if (kind < 0) {
+            kind = 0 - kind;
+            backend::local::require(output, capacity, work, slot - backend::layout::words(context, context_length, kind, 0));
+        }
+        backend::value::get(output, capacity, work, slot, kind);
+        if (backend::layout::aggregate(kind)) {
+            // A Core local read snapshots an aggregate value before later
+            // operands may assign that local or call another function.
+            let snapshot: i32 = backend::frame::allocate(work, backend::layout::words(context, context_length, kind, 0));
+            backend::value::put(context, context_length, output, capacity, work, snapshot, kind);
+            backend::value::address(output, capacity, work, snapshot, x86::register::RAX);
+        }
+        return kind;
+    }
+    if (tag == backend::syntax::CAST) {
+        let target: i32 = backend::frame::take(input, length, work);
+        let source: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+        if ((target != backend::syntax::I32 && target != backend::syntax::USIZE) ||
+            (source != backend::syntax::I32 && source != backend::syntax::USIZE)) { return -1; }
+        if (source != target) {
+            if (target == backend::syntax::USIZE) {
+                work[backend::frame::CODE] = x86::encode::sign_extend_i32(output, capacity, work[backend::frame::CODE], x86::register::RAX, x86::register::RAX);
+            } else {
+                work[backend::frame::CODE] = x86::encode::move_register(output, capacity, work[backend::frame::CODE], 32, x86::register::RAX, x86::register::RAX);
+            }
+        }
+        return target;
+    }
+    if (tag == backend::syntax::UNARY) {
+        let operation: i32 = backend::frame::take(input, length, work);
+        let kind: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+        if (operation == backend::syntax::POSITIVE && kind == backend::syntax::I32) { return kind; }
+        if (operation == backend::syntax::NEGATE && kind == backend::syntax::I32) {
+            work[backend::frame::CODE] = x86::encode::negate(output, capacity, work[backend::frame::CODE], 32, x86::register::RAX);
+            return kind;
+        }
+        if (operation == backend::syntax::NOT && kind == backend::syntax::BOOL) {
+            let next: i32 = x86::encode::binary(output, capacity, work[backend::frame::CODE], 32, x86::encode::TEST, x86::register::RAX, x86::register::RAX);
+            work[backend::frame::CODE] = backend::operation::boolean(output, capacity, next, x86::control::EQUAL);
+            return kind;
+        }
+        return -1;
+    }
+    if (tag == backend::syntax::BINARY) {
+        let operation: i32 = backend::frame::take(input, length, work);
+        let left: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+        if (left < 1) { return -1; }
+        if (operation == backend::syntax::AND_THEN || operation == backend::syntax::OR_ELSE) {
+            if (left != backend::syntax::BOOL) { return -1; }
+            work[backend::frame::CODE] = x86::encode::binary(output, capacity, work[backend::frame::CODE], 32, x86::encode::TEST, x86::register::RAX, x86::register::RAX);
+            let jump: i32 = work[backend::frame::CODE];
+            let condition: i32 = x86::control::EQUAL;
+            if (operation == backend::syntax::OR_ELSE) { condition = x86::control::NOT_EQUAL; }
+            work[backend::frame::CODE] = x86::control::branch(output, capacity, jump, condition, 0);
+            let right: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+            if (right != backend::syntax::BOOL || work[backend::frame::CODE] < 0) { return -1; }
+            x86::control::patch_relative(output, work[backend::frame::CODE], jump + 2, work[backend::frame::CODE]);
+            return backend::syntax::BOOL;
+        }
+        if (left == backend::syntax::USIZE || left == backend::syntax::POINTER) {
+            // Null checks and other pointer/usize equality compare all bits.
+            // Save the left operand before the right expression can call out.
+            if (operation != backend::syntax::EQUAL && operation != backend::syntax::NOT_EQUAL) { return -1; }
+            let saved: i32 = backend::frame::allocate(work, 1);
+            backend::value::save_word(output, capacity, work, saved, x86::register::RAX);
+            if (expression(input, length, work, output, capacity, active, depth + 1, context, context_length) != left) { return -1; }
+            backend::value::load_word(output, capacity, work, saved, x86::register::RCX);
+            let next: i32 = x86::encode::binary(output, capacity, work[backend::frame::CODE], 64,
+                x86::encode::CMP, x86::register::RCX, x86::register::RAX);
+            work[backend::frame::CODE] = backend::operation::boolean(output, capacity, next, backend::operation::condition(operation));
+            return backend::syntax::BOOL;
+        }
+        if (!backend::syntax::scalar(left)) { return -1; }
+        let saved: i32 = backend::frame::allocate(work, 1);
+        backend::frame::store(output, capacity, work, saved, x86::register::RAX);
+        let right: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+        if (left != right || (left != backend::syntax::I32 && operation != backend::syntax::EQUAL && operation != backend::syntax::NOT_EQUAL)) { return -1; }
+        work[backend::frame::CODE] = backend::operation::from_slot(output, capacity, work[backend::frame::CODE], saved, operation);
+        if (operation >= backend::syntax::EQUAL && operation <= backend::syntax::GREATER_EQUAL) { return backend::syntax::BOOL; }
+        return backend::syntax::I32;
+    }
+    if (tag == backend::syntax::ASSIGN) {
+        let operation: i32 = backend::frame::take(input, length, work);
+        let kind: i32 = place(input, length, work, output, capacity, active, depth + 1, context, context_length, operation != 0);
+        if (kind < 1 || operation < 0 || operation > 10) { return -1; }
+        let initialization: i32 = work[backend::frame::PLACE_FLAG];
+        let target: i32 = backend::frame::allocate(work, 1);
+        backend::value::save_word(output, capacity, work, target, x86::register::RAX);
+        let saved: i32 = backend::frame::allocate(work, 1);
+        if (operation != 0) {
+            // Core resolves the old value before evaluating the RHS.
+            if (kind != backend::syntax::I32) { return -1; }
+            work[backend::frame::CODE] = x86::encode::load(output, capacity, work[backend::frame::CODE], 32,
+                x86::register::RAX, x86::register::RAX, 0);
+            backend::frame::store(output, capacity, work, saved, x86::register::RAX);
+        }
+        let right: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+        if (right != kind) { return -1; }
+        if (operation != 0) {
+            if (kind != backend::syntax::I32) { return -1; }
+            work[backend::frame::CODE] = backend::operation::from_slot(output, capacity, work[backend::frame::CODE], saved, backend::syntax::assignment_binary(operation));
+        }
+        backend::value::load_word(output, capacity, work, target, x86::register::R11);
+        if (backend::layout::aggregate(kind)) {
+            backend::value::copy(output, capacity, work, backend::layout::words(context, context_length, kind, 0));
+        } else {
+            work[backend::frame::CODE] = x86::encode::store(output, capacity, work[backend::frame::CODE],
+                backend::layout::width(kind), x86::register::RAX, x86::register::R11, 0);
+        }
+        // Mark only after RHS evaluation and the actual store. In particular
+        // `x = x` must still trap if x was never initialized.
+        if (initialization >= 0) { backend::local::mark(output, capacity, work, initialization, true); }
+        return 0; // Core assignment expressions return unit.
+    }
+    if (tag == backend::syntax::INDEX) {
+        if (expression(input, length, work, output, capacity, active, depth + 1, context, context_length) != backend::syntax::SLICE) { return -1; }
+        if (!indexed(input, length, work, output, capacity, active, depth + 1, context, context_length)) { return -1; }
+        work[backend::frame::CODE] = x86::encode::load(output, capacity, work[backend::frame::CODE], 32,
+            x86::register::RAX, x86::register::RAX, 0);
+        return backend::syntax::I32;
+    }
+    if (tag == backend::syntax::SLICE_DATA_PTR || tag == backend::syntax::STRING_DATA_PTR) {
+        let kind: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+        if ((tag == backend::syntax::SLICE_DATA_PTR && kind != backend::syntax::SLICE) ||
+            (tag == backend::syntax::STRING_DATA_PTR && kind != backend::syntax::STRING)) { return -1; }
+        if (tag == backend::syntax::STRING_DATA_PTR) {
+            // Core maps a fresh borrowed block on every call. Returning the
+            // literal's address would break pointer equality and allow mutation
+            // through one raw view to change later views of an immutable string.
+            work[backend::frame::CODE] = x86::encode::move_register(output, capacity, work[backend::frame::CODE], 64,
+                x86::register::RDI, x86::register::RAX);
+            backend::call::relative(output, capacity, work, -1);
+        } else {
+            // Slice descriptors already point at the logical first element.
+            work[backend::frame::CODE] = x86::encode::load(output, capacity, work[backend::frame::CODE], 64,
+                x86::register::RAX, x86::register::RAX, 0);
+        }
+        return backend::syntax::POINTER;
+    }
+    if (tag == backend::syntax::SLICE_FROM_RAW_PARTS) {
+        if (expression(input, length, work, output, capacity, active, depth + 1, context, context_length) != backend::syntax::POINTER) { return -1; }
+        let slot: i32 = backend::frame::allocate(work, 2);
+        if (slot < 0) { return -1; }
+        backend::value::save_word(output, capacity, work, slot, x86::register::RAX);
+        if (expression(input, length, work, output, capacity, active, depth + 1, context, context_length) != backend::syntax::I32) { return -1; }
+        // Preserve Core's signed-length rejection. Allocation provenance,
+        // exact backing size and lifetime remain the runtime/storage domain;
+        // constructing this descriptor does not establish those conditions.
+        let next: i32 = x86::encode::binary(output, capacity, work[backend::frame::CODE], 32,
+            x86::encode::TEST, x86::register::RAX, x86::register::RAX);
+        next = x86::control::branch(output, capacity, next, x86::control::GREATER_EQUAL, next + 8);
+        next = x86::control::trap(output, capacity, next);
+        work[backend::frame::CODE] = x86::encode::move_register(output, capacity, next, 32,
+            x86::register::RAX, x86::register::RAX);
+        backend::value::save_word(output, capacity, work, slot - 1, x86::register::RAX);
+        backend::value::address(output, capacity, work, slot, x86::register::RAX);
+        return backend::syntax::SLICE;
+    }
+    if (tag == backend::syntax::STRUCT_VALUE) {
+        let kind: i32 = backend::frame::take(input, length, work);
+        let count: i32 = backend::frame::take(input, length, work);
+        let declaration: i32 = backend::layout::record(context, context_length, kind);
+        if (declaration < 0) { return -1; }
+        if (count != context[declaration + 1]) { return -1; }
+        let size: i32 = backend::layout::words(context, context_length, kind, 0);
+        let slot: i32 = backend::frame::allocate(work, size);
+        if (slot < 0) { return -1; }
+        let keep: i32 = work[backend::frame::TOP];
+        let index: i32 = 0;
+        while (index < count) {
+            let expected: i32 = backend::layout::field_kind(context, context_length, kind, index);
+            let offset: i32 = backend::layout::field_offset(context, context_length, kind, index);
+            let actual: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+            if (actual != expected || offset < 0) { return -1; }
+            backend::value::put(context, context_length, output, capacity, work, slot - offset / 8, actual);
+            work[backend::frame::TOP] = keep;
+            index += 1;
+        }
+        backend::value::address(output, capacity, work, slot, x86::register::RAX);
+        return kind;
+    }
+    if (tag == backend::syntax::FIELD) {
+        let field: i32 = backend::frame::take(input, length, work);
+        let kind: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+        let result: i32 = backend::layout::field_kind(context, context_length, kind, field);
+        let offset: i32 = backend::layout::field_offset(context, context_length, kind, field);
+        if (result < 0 || offset < 0) { return -1; }
+        if (backend::layout::aggregate(result)) {
+            work[backend::frame::CODE] = x86::encode::address(output, capacity, work[backend::frame::CODE], x86::register::RAX, x86::register::RAX, offset);
+        } else {
+            work[backend::frame::CODE] = x86::encode::load(output, capacity, work[backend::frame::CODE], backend::layout::width(result), x86::register::RAX, x86::register::RAX, offset);
+        }
+        return result;
+    }
+    if (tag == backend::syntax::CONSTANT) {
+        let id: i32 = backend::frame::take(input, length, work);
+        let position: i32 = work[backend::frame::STRUCT_END];
+        while (position < work[backend::frame::CONST_END]) {
+            if (context[position] == id) {
+                let kind: i32 = context[position + 1];
+                if (kind == backend::syntax::STRING) {
+                    return string_value(context, context_length, position + 3, context[position + 2], work, output, capacity);
+                }
+                work[backend::frame::CODE] = x86::encode::immediate(output, capacity, work[backend::frame::CODE], backend::layout::width(kind), x86::register::RAX, context[position + 2], context[position + 3]);
+                return kind;
+            }
+            let size: i32 = backend::literal::constant_size(context, context_length, position);
+            if (size < 0) { return -1; }
+            position += size;
+        }
+        return -1;
+    }
+    if (tag == backend::syntax::CALL) {
+        let id: i32 = backend::frame::take(input, length, work);
+        let count: i32 = backend::frame::take(input, length, work);
+        let found: i32 = backend::call::find(context, work, id);
+        if (found < 0) { return -1; }
+        let position: i32 = work[backend::frame::HEADER + work[backend::frame::STRIDE] * 6 + found];
+        if (count != context[position + 4] || count < 0) { return -1; }
+        let result: i32 = context[position + 3];
+        let returned: i32 = -1;
+        let hidden: i32 = 0;
+        if (backend::layout::aggregate(result)) {
+            hidden = 1;
+            returned = backend::frame::allocate(work, backend::layout::words(context, context_length, result, 0));
+        }
+        let keep: i32 = work[backend::frame::TOP];
+        let argument_words: i32 = count + hidden;
+        if (argument_words == 0) { argument_words = 1; }
+        let staged: i32 = backend::frame::allocate(work, argument_words);
+        if (staged < 0) { return -1; }
+        if (hidden != 0) {
+            backend::value::address(output, capacity, work, returned, x86::register::RAX);
+            backend::value::save_word(output, capacity, work, staged, x86::register::RAX);
+        }
+        let index: i32 = 0;
+        while (index < count) {
+            let kind: i32 = expression(input, length, work, output, capacity, active, depth + 1, context, context_length);
+            if (kind != context[position + 7 + index * 2]) { return -1; }
+            backend::value::save_word(output, capacity, work, staged - index - hidden, x86::register::RAX);
+            index += 1;
+        }
+        backend::call::emit(output, capacity, work, staged, count + hidden, id);
+        work[backend::frame::TOP] = keep;
+        if (hidden != 0) { backend::value::address(output, capacity, work, returned, x86::register::RAX); }
+        return result;
+    }
+    return -1;
+}
+
+fn expression(input: [i32], length: i32, work: [i32], output: [i32], capacity: i32,
+    active: i32, depth: i32, context: [i32], context_length: i32) -> i32 {
+    let top: i32 = work[backend::frame::TOP];
+    let kind: i32 = emit_expression(input, length, work, output, capacity, active, depth, context, context_length);
+    if (!backend::layout::aggregate(kind)) { work[backend::frame::TOP] = top; }
+    return kind;
+}
+
+// The descriptor in RAX is an owned value snapshot. Index effects may mutate
+// its original local or backing data, but cannot change this captured value.
+fn indexed(input: [i32], length: i32, work: [i32], output: [i32], capacity: i32,
+    active: i32, depth: i32, context: [i32], context_length: i32) -> bool {
+    let saved: i32 = backend::frame::allocate(work, 1);
+    if (saved < 0) { return false; }
+    backend::value::save_word(output, capacity, work, saved, x86::register::RAX);
+    let kind: i32 = expression(input, length, work, output, capacity, active, depth, context, context_length);
+    return backend::index::address(output, capacity, work, saved, kind) >= 0;
+}
+
+// Resolve a typed assignment target once, before the RHS runs. The returned
+// RAX is an address, unlike expression's scalar value / aggregate snapshot.
+fn place(input: [i32], length: i32, work: [i32], output: [i32], capacity: i32,
+    active: i32, depth: i32, context: [i32], context_length: i32, read_old: bool) -> i32 {
+    if (depth >= MAX_DEPTH || work[backend::frame::FAILED] != 0 || work[backend::frame::CODE] < 0) { return -1; }
+    let tag: i32 = backend::frame::take(input, length, work);
+    if (tag == backend::syntax::PLACE_LOCAL) {
+        let id: i32 = backend::frame::take(input, length, work);
+        let binding: i32 = backend::frame::lookup(work, active, id);
+        if (binding < 0) { return -1; }
+        let slot: i32 = work[backend::frame::HEADER + work[backend::frame::STRIDE] * 2 + binding];
+        let kind: i32 = work[backend::frame::HEADER + work[backend::frame::STRIDE] + binding];
+        work[backend::frame::PLACE_FLAG] = -1;
+        if (kind < 0) {
+            kind = 0 - kind;
+            work[backend::frame::PLACE_FLAG] = slot - backend::layout::words(context, context_length, kind, 0);
+            if (read_old) { backend::local::require(output, capacity, work, work[backend::frame::PLACE_FLAG]); }
+        }
+        backend::value::address(output, capacity, work, slot, x86::register::RAX);
+        return kind;
+    }
+    if (tag == backend::syntax::PLACE_FIELD) {
+        let field: i32 = backend::frame::take(input, length, work);
+        let kind: i32 = place(input, length, work, output, capacity, active, depth + 1, context, context_length, true);
+        let result: i32 = backend::layout::field_kind(context, context_length, kind, field);
+        let offset: i32 = backend::layout::field_offset(context, context_length, kind, field);
+        if (result < 0 || offset < 0) { return -1; }
+        work[backend::frame::CODE] = x86::encode::address(output, capacity, work[backend::frame::CODE],
+            x86::register::RAX, x86::register::RAX, offset);
+        work[backend::frame::PLACE_FLAG] = -1;
+        return result;
+    }
+    if (tag == backend::syntax::PLACE_INDEX) {
+        if (place(input, length, work, output, capacity, active, depth + 1, context, context_length, true) != backend::syntax::SLICE) { return -1; }
+        let snapshot: i32 = backend::frame::allocate(work, 2);
+        if (snapshot < 0) { return -1; }
+        backend::value::put(context, context_length, output, capacity, work, snapshot, backend::syntax::SLICE);
+        backend::value::address(output, capacity, work, snapshot, x86::register::RAX);
+        if (!indexed(input, length, work, output, capacity, active, depth + 1, context, context_length)) { return -1; }
+        work[backend::frame::PLACE_FLAG] = -1;
+        return backend::syntax::I32;
+    }
+    return -1;
+}
+
+fn statement(input: [i32], length: i32, work: [i32], output: [i32], capacity: i32,
+    active: i32, depth: i32, loop_head: i32, context: [i32], context_length: i32) -> bool {
+    if (depth >= MAX_DEPTH || work[backend::frame::FAILED] != 0 || work[backend::frame::CODE] < 0) { return false; }
+    let tag: i32 = backend::frame::take(input, length, work);
+    if (tag == backend::syntax::SKIP) { return true; }
+    if (tag == backend::syntax::EXPRESSION) {
+        let top: i32 = work[backend::frame::TOP];
+        let kind: i32 = expression(input, length, work, output, capacity, active, 0, context, context_length);
+        work[backend::frame::TOP] = top;
+        return kind >= 0;
+    }
+    if (tag == backend::syntax::SEQUENCE) {
+        if (!statement(input, length, work, output, capacity, active, depth + 1, loop_head, context, context_length)) { return false; }
+        return statement(input, length, work, output, capacity, active, depth + 1, loop_head, context, context_length);
+    }
+    if (tag == backend::syntax::LET || tag == backend::syntax::LET_UNINITIALIZED) {
+        let id: i32 = backend::frame::take(input, length, work);
+        let kind: i32 = backend::frame::take(input, length, work);
+        let size: i32 = backend::layout::words(context, context_length, kind, 0);
+        if (id < 0 || size < 1 || active >= length) { return false; }
+        let top: i32 = work[backend::frame::TOP];
+        if (tag == backend::syntax::LET) {
+            if (expression(input, length, work, output, capacity, active, 0, context, context_length) != kind) { return false; }
+        } else { size += 1; }
+        let slot: i32 = backend::frame::allocate(work, size);
+        if (slot < 0) { return false; }
+        if (tag == backend::syntax::LET) {
+            backend::value::put(context, context_length, output, capacity, work, slot, kind);
+        } else {
+            backend::local::mark(output, capacity, work, slot - size + 1, false);
+            kind = 0 - kind;
+        }
+        work[backend::frame::HEADER + active] = id;
+        work[backend::frame::HEADER + work[backend::frame::STRIDE] + active] = kind;
+        work[backend::frame::HEADER + work[backend::frame::STRIDE] * 2 + active] = slot;
+        let result: bool = statement(input, length, work, output, capacity, active + 1, depth + 1, loop_head, context, context_length);
+        work[backend::frame::TOP] = top;
+        return result;
+    }
+    if (tag == backend::syntax::RETURN) {
+        if (backend::frame::take(input, length, work) != 1) { return false; }
+        if (expression(input, length, work, output, capacity, active, 0, context, context_length) != work[backend::frame::RESULT]) { return false; }
+        if (backend::layout::aggregate(work[backend::frame::RESULT])) {
+            backend::value::load_word(output, capacity, work, work[backend::frame::SRET], x86::register::R11);
+            backend::value::copy(output, capacity, work, backend::layout::words(context, context_length, work[backend::frame::RESULT], 0));
+            work[backend::frame::CODE] = x86::encode::move_register(output, capacity, work[backend::frame::CODE], 64, x86::register::RAX, x86::register::R11);
+        }
+        work[backend::frame::CODE] = backend::frame::return_value(output, capacity, work[backend::frame::CODE]);
+        return work[backend::frame::CODE] >= 0;
+    }
+    if (tag == backend::syntax::IF || tag == backend::syntax::WHILE) {
+        let head: i32 = work[backend::frame::CODE];
+        if (expression(input, length, work, output, capacity, active, 0, context, context_length) != backend::syntax::BOOL) { return false; }
+        work[backend::frame::CODE] = x86::encode::binary(output, capacity, work[backend::frame::CODE], 32, x86::encode::TEST, x86::register::RAX, x86::register::RAX);
+        let branch: i32 = work[backend::frame::CODE];
+        work[backend::frame::CODE] = x86::control::branch(output, capacity, branch, x86::control::EQUAL, 0);
+        let body_head: i32 = loop_head;
+        let breaks: i32 = work[backend::frame::BREAK_COUNT];
+        if (tag == backend::syntax::WHILE) { body_head = head; }
+        if (!statement(input, length, work, output, capacity, active, depth + 1, body_head, context, context_length)) { return false; }
+        let jump: i32 = work[backend::frame::CODE];
+        let target: i32 = 0;
+        if (tag == backend::syntax::WHILE) { target = head; }
+        work[backend::frame::CODE] = x86::control::jump(output, capacity, jump, target);
+        if (work[backend::frame::CODE] < 0) { return false; }
+        x86::control::patch_relative(output, work[backend::frame::CODE], branch + 2, work[backend::frame::CODE]);
+        if (tag == backend::syntax::IF) {
+            if (!statement(input, length, work, output, capacity, active, depth + 1, loop_head, context, context_length)) { return false; }
+            if (work[backend::frame::CODE] < 0) { return false; }
+            x86::control::patch_relative(output, work[backend::frame::CODE], jump + 1, work[backend::frame::CODE]);
+        } else {
+            let index: i32 = breaks;
+            while (index < work[backend::frame::BREAK_COUNT]) {
+                x86::control::patch_relative(output, work[backend::frame::CODE],
+                    work[backend::frame::HEADER + work[backend::frame::STRIDE] * 3 + index], work[backend::frame::CODE]);
+                index += 1;
+            }
+            work[backend::frame::BREAK_COUNT] = breaks;
+        }
+        return true;
+    }
+    if (tag == backend::syntax::BREAK || tag == backend::syntax::CONTINUE) {
+        if (loop_head < 0) { return false; }
+        let jump: i32 = work[backend::frame::CODE];
+        work[backend::frame::CODE] = x86::control::jump(output, capacity, jump, loop_head);
+        if (tag == backend::syntax::BREAK) {
+            let count: i32 = work[backend::frame::BREAK_COUNT];
+            if (count >= length) { return false; }
+            work[backend::frame::HEADER + work[backend::frame::STRIDE] * 3 + count] = jump + 1;
+            work[backend::frame::BREAK_COUNT] = count + 1;
+        }
+        return work[backend::frame::CODE] >= 0;
+    }
+    return false;
+}
+
+// Input, workspace, and output are separate caller-owned buffers. On failure
+// the output/workspace are scratch, never an executable or published prefix.
+// The driver publishes only a successful complete function.
+pub fn function(input: [i32], length: i32, work: [i32], work_length: i32,
+    output: [i32], capacity: i32, cursor: i32, context: [i32], context_length: i32) -> i32 {
+    if (length < 6 || length > MAX_WORDS || context_length < 6 || context_length > MAX_WORDS || work_length < backend::frame::HEADER + context_length * 8) { return -1; }
+    let fast: i32 = backend::parameter::compile(input, length, output, capacity, cursor);
+    if (fast >= 0) { return fast; }
+    if (input[0] != 1 || input[1] != 64 || input[2] < 0 || backend::layout::words(context, context_length, input[3], 0) < 1) { return -1; }
+    let count: i32 = input[4];
+    let body_length: i32 = input[5];
+    if (count <= -1) { return -1; }
+    if (count > (length - 6) / 2) { return -1; }
+    if (body_length < 1 || body_length != length - 6 - count * 2) { return -1; }
+    work[backend::frame::INPUT] = 6;
+    work[backend::frame::CODE] = cursor;
+    work[backend::frame::SLOTS] = 0;
+    work[backend::frame::RESULT] = input[3];
+    work[backend::frame::FAILED] = 0;
+    work[backend::frame::BREAK_COUNT] = 0;
+    work[backend::frame::TOP] = 0;
+    let next: i32 = x86::control::push(output, capacity, cursor, x86::register::RBP);
+    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RBP, x86::register::RSP);
+    let frame_field: i32 = next + 2; // REX.B + MOV r11d,imm32.
+    next = x86::encode::immediate(output, capacity, next, 32, x86::register::R11, 0, 0);
+    work[backend::frame::CODE] = x86::encode::binary(output, capacity, next, 64, x86::encode::SUB, x86::register::RSP, x86::register::R11);
+    let hidden: i32 = 0;
+    if (backend::layout::aggregate(input[3])) {
+        hidden = 1;
+        work[backend::frame::SRET] = backend::frame::allocate(work, 1);
+        backend::value::save_word(output, capacity, work, work[backend::frame::SRET], x86::register::RDI);
+    }
+    let index: i32 = 0;
+    while (index < count) {
+        let id: i32 = backend::frame::take(input, length, work);
+        let kind: i32 = backend::frame::take(input, length, work);
+        let size: i32 = backend::layout::words(context, context_length, kind, 0);
+        if (id < 0 || size < 1 || backend::frame::lookup(work, index, id) >= 0) { return -1; }
+        let slot: i32 = backend::frame::allocate(work, size);
+        if (slot < 0) { return -1; }
+        work[backend::frame::HEADER + index] = id;
+        work[backend::frame::HEADER + work[backend::frame::STRIDE] + index] = kind;
+        work[backend::frame::HEADER + work[backend::frame::STRIDE] * 2 + index] = slot;
+        let argument: i32 = index + hidden;
+        if (argument < 6) {
+            work[backend::frame::CODE] = x86::encode::move_register(output, capacity, work[backend::frame::CODE], 64,
+                x86::register::RAX, backend::parameter::argument_register(argument));
+        } else {
+            work[backend::frame::CODE] = x86::encode::load(output, capacity, work[backend::frame::CODE], 64,
+                x86::register::RAX, x86::register::RBP, 16 + (argument - 6) * 8);
+        }
+        if (kind == backend::syntax::BOOL) {
+            work[backend::frame::CODE] = x86::encode::immediate(output, capacity, work[backend::frame::CODE], 32, x86::register::R11, 1, 0);
+            work[backend::frame::CODE] = x86::encode::binary(output, capacity, work[backend::frame::CODE], 32, x86::encode::AND, x86::register::RAX, x86::register::R11);
+        }
+        backend::value::put(context, context_length, output, capacity, work, slot, kind);
+        index += 1;
+    }
+    if (!statement(input, length, work, output, capacity, count, 0, -1, context, context_length)) { return -1; }
+    if (work[backend::frame::FAILED] != 0 || work[backend::frame::INPUT] != length || work[backend::frame::CODE] < 0) { return -1; }
+    // Reaching the end of a non-unit Core function is missingReturn.
+    work[backend::frame::CODE] = x86::control::trap(output, capacity, work[backend::frame::CODE]);
+    if (work[backend::frame::CODE] < 0) { return -1; }
+    x86::buffer::store_word(output, frame_field, backend::frame::bytes(work[backend::frame::SLOTS]));
+    return work[backend::frame::CODE];
+}

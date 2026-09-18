@@ -1,4 +1,5 @@
 import Lanius.Extraction.Allocation.Host
+import Lanius.Semantics.I32Views.Registry
 
 namespace Lanius.Extraction.Allocation
 
@@ -14,10 +15,34 @@ structure Registry (state : State) : Prop where
     readCellProjection state view.root view.projections = .ok (.array elements) ∧
     elements.length = view.length ∧
     ∀ element ∈ elements, ∃ value, element = .signed .i32 value
+  addresses : state.i32ArrayViews.Pairwise fun left right => left.address ≠ right.address
+
+/-- Registered roots and raw addresses are distinct invariants. The latter,
+with owned heap blocks, derives the byte separation needed by host I/O. -/
+theorem Registry.disjoint (valid : Registry state) : state.i32ArrayViews.Pairwise I32ViewRangesDisjoint :=
+  i32Views_disjoint_of_distinct_addresses valid.wellFormed.heapWellFormed valid.blocks valid.addresses
+
+theorem Registry.apart (valid : Registry state) (leftMember : left ∈ state.i32ArrayViews)
+    (rightMember : right ∈ state.i32ArrayViews) (different : left.root ≠ right.root) :
+    I32ViewRangesDisjoint left right := by
+  have fromPairwise {views : List I32ArrayView} (disjoint : views.Pairwise I32ViewRangesDisjoint)
+      (leftMember : left ∈ views) (rightMember : right ∈ views) : I32ViewRangesDisjoint left right := by
+    induction views with
+    | nil => simp at leftMember
+    | cons first rest ih =>
+        obtain ⟨head, tail⟩ := List.pairwise_cons.mp disjoint
+        rcases List.mem_cons.mp leftMember with rfl | leftTail
+        · rcases List.mem_cons.mp rightMember with rfl | rightTail
+          · exact False.elim (different rfl)
+          · exact head right rightTail
+        · rcases List.mem_cons.mp rightMember with rfl | rightTail
+          · exact (head left leftTail).symm
+          · exact ih tail leftTail rightTail
+  exact fromPairwise valid.disjoint leftMember rightMember
 
 theorem Registry.of_empty_views (valid : StateWellFormed state) (empty : state.i32ArrayViews = []) :
     Registry state := by
-  refine ⟨valid, ?_, ?_, ?_, ?_⟩ <;> simp [empty]
+  refine ⟨valid, ?_, ?_, ?_, ?_, ?_⟩ <;> simp [empty]
 
 theorem Registry.root_lt_next (valid : Registry state) (member : view ∈ state.i32ArrayViews) :
     view.root < state.nextCell := by
@@ -26,59 +51,28 @@ theorem Registry.root_lt_next (valid : Registry state) (member : view ∈ state.
   | none => simp [readCellProjection, found] at read
   | some entry => exact found_cell_is_below_next state view.root entry valid.wellFormed found
 
-theorem Registry.allocate
-    {program : Program} {function : Function} {before : State}
-    {bindings : List (Lanius.VarId × Value)} (buffer : Buffer)
-    (functionFound : program.function? function.id = some function)
-    (parametersBound : bindParameters function.parameters
-      [.unsigned .usize (buffer.count * 4), .unsigned .usize 4] = some bindings)
-    (noBody : function.body = none) (host : function.external = some (.host .alloc))
-    (initial : Registry before)
-    (room : ∀ available, before.heap.remaining = some available → buffer.count * 4 ≤ available) :
-    ∃ after, Evaluates program before (hostInitializer function.id buffer)
-      (.slice (.scalar (.signed .i32)) before.nextCell [] 0 buffer.count) after ∧
-      Registry after ∧ after.world = Lanius.World.record before.world .alloc ∧
-      after.heap.remaining = before.heap.remaining.map (fun available => available - buffer.count * 4) ∧
-      after.nextCell = before.nextCell + 1 ∧ after.locals = before.locals ∧
-      (∀ cell, cell < before.nextCell → (∀ view ∈ before.i32ArrayViews, cell ≠ view.root) →
-        after.cellEntry? cell = before.cellEntry? cell) ∧
-      ∃ address elements,
-        after.i32ArrayViews = before.i32ArrayViews ++
-          [{ address, root := before.nextCell, projections := [], length := buffer.count }] ∧
-        readCellProjection after before.nextCell [] = .ok (.array elements) ∧
-        elements.length = buffer.count ∧
-        ∀ element ∈ elements, ∃ value, element = .signed .i32 value := by
-  obtain ⟨after, evaluated, valid, world, remaining, next, locals, preserved, frame,
-      arrays, address, elements, views, block, read, length, typed⟩ :=
-    hostSlice_exists buffer functionFound parametersBound noBody host initial.wellFormed room
-      initial.blocks initial.roots initial.distinct initial.arrays
-  refine ⟨after, evaluated, ⟨valid, ?_, ?_, ?_, arrays⟩, world, remaining, next, locals, frame,
-    address, elements, views, read, length, typed⟩
-  · intro view member
-    rw [views] at member
-    rcases List.mem_append.mp member with old | fresh
-    · exact preserved view old (initial.blocks view old)
-    · simp only [List.mem_singleton] at fresh
-      subst view
-      exact block
-  · intro view member
-    rw [views] at member
-    rcases List.mem_append.mp member with old | fresh
-    · exact initial.roots view old
-    · simp only [List.mem_singleton] at fresh
-      subst view
-      rfl
-  · rw [views, List.pairwise_append]
-    refine ⟨initial.distinct, by simp, ?_⟩
-    intro left member right fresh
-    simp only [List.mem_singleton] at fresh
-    subst right
-    exact Nat.ne_of_lt (initial.root_lt_next member)
+/-- A backing root identifies one registered view, including its native address. -/
+theorem Registry.view_eq (valid : Registry state) (leftMember : left ∈ state.i32ArrayViews)
+    (rightMember : right ∈ state.i32ArrayViews) (sameRoot : left.root = right.root) : left = right := by
+  have unique {views : List I32ArrayView} (distinct : views.Pairwise fun a b => a.root ≠ b.root)
+      (leftMember : left ∈ views) (rightMember : right ∈ views) : left = right := by
+    induction views with
+    | nil => simp at leftMember
+    | cons head rest ih =>
+        obtain ⟨apart, tail⟩ := List.pairwise_cons.mp distinct
+        rcases List.mem_cons.mp leftMember with rfl | leftTail
+        · rcases List.mem_cons.mp rightMember with rfl | rightTail
+          · rfl
+          · exact False.elim (apart right rightTail sameRoot)
+        · rcases List.mem_cons.mp rightMember with rfl | rightTail
+          · exact False.elim (apart left leftTail sameRoot.symm)
+          · exact ih tail leftTail rightTail
+  exact unique valid.distinct leftMember rightMember
 
 theorem Registry.bindLocal (valid : Registry state) (id : Lanius.VarId) (value : Value) :
     Registry (state.bindLocal id value) := by
   refine ⟨bindLocal_preserves_well_formed _ _ _ valid.wellFormed,
-    valid.blocks, valid.roots, valid.distinct, ?_⟩
+    valid.blocks, valid.roots, valid.distinct, ?_, valid.addresses⟩
   intro view member
   obtain ⟨elements, read, length, typed⟩ := valid.arrays view member
   refine ⟨elements, ?_, length, typed⟩
@@ -87,6 +81,16 @@ theorem Registry.bindLocal (valid : Registry state) (id : Lanius.VarId) (value :
     simpa only [State.bindLocal, State.bindCell, State.allocateTemporary, State.cellEntry?] using
       allocateTemporary_preserves_old_cell state value view.root old
   simpa only [readCellProjection, kept] using read
+
+theorem Registry.bindUninitialized (valid : Registry state) (id : Lanius.VarId) :
+    Registry (state.bindUninitialized id) := by
+  refine ⟨bindUninitialized_preserves_well_formed _ _ valid.wellFormed,
+    valid.blocks, valid.roots, valid.distinct, ?_, valid.addresses⟩
+  intro view member
+  obtain ⟨elements, read, length, typed⟩ := valid.arrays view member
+  have kept := bindCell_preserves_old_cell state id none view.root (valid.root_lt_next member)
+  exact ⟨elements, by simpa only [readCellProjection, State.bindUninitialized, kept] using read,
+    length, typed⟩
 
 theorem Registry.synchronize (valid : Registry before) :
     ∃ after, syncI32ViewsToHeap before = .ok after ∧ Registry after ∧
@@ -103,7 +107,7 @@ theorem Registry.synchronize (valid : Registry before) :
     · simpa only [CellIdsUnique, cells] using valid.wellFormed.cellIdsUnique
     · simpa only [CellIdsBelowNext, cells, next] using valid.wellFormed.cellIdsBelowNext
     · simpa only [LocalsReferenceCells, cells, locals] using valid.wellFormed.localsReferenceCells
-  refine ⟨after, synced, ⟨stateValid, ?_, ?_, ?_, ?_⟩, cells, locals, views, next,
+  refine ⟨after, synced, ⟨stateValid, ?_, ?_, ?_, ?_, ?_⟩, cells, locals, views, next,
     syncI32ViewsToHeapFrom_remaining synced, syncI32ViewsToHeap_preserves_world synced⟩
   · intro view member
     rw [views] at member
@@ -111,6 +115,7 @@ theorem Registry.synchronize (valid : Registry before) :
   · simpa only [views] using valid.roots
   · simpa only [views] using valid.distinct
   · simpa only [views, readCellProjection, State.cellEntry?, cells] using valid.arrays
+  · simpa only [views] using valid.addresses
 
 private theorem findRootView {views : List I32ArrayView} {view : I32ArrayView}
     (distinct : views.Pairwise fun left right => left.root ≠ right.root)

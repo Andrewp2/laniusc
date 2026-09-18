@@ -43,7 +43,7 @@ theorem CheckedResult.call (checked : CheckedResult program)
         .signed .i32 nodes, .signed .i32 words, .signed .i32 position] afterArguments) :
     ∃ after, Evaluates program.core before (.call checked.source.function.id arguments)
         (syntaxResult checked.typeId stage detail raw tokens nodes words position) after ∧
-      CellEffect CellSet.empty afterArguments after := by
+      CellEffect CellSet.empty afterArguments after ∧ HeapFrame afterArguments after := by
   let values : List Value := [.signed .i32 stage, .signed .i32 detail, .signed .i32 raw, .signed .i32 tokens,
     .signed .i32 nodes, .signed .i32 words, .signed .i32 position]
   let bindings := parameterBindings (fun index : Fin 7 => values.get index)
@@ -68,7 +68,8 @@ theorem CheckedResult.call (checked : CheckedResult program)
     rw [checked.signature.1]; rfl
   exact ⟨restoreLocals afterArguments callee,
     evaluatesCallReturned argumentsResult found bound checked.body body,
-    CellEffect.closeCall afterArguments bindings wellFormed (CellEffect.refl calleeWF)⟩
+    CellEffect.closeCall afterArguments bindings wellFormed (CellEffect.refl calleeWF),
+    (HeapFrame.refl callee).closeCall afterArguments bindings⟩
 
 structure FinishSymbols where
   result : FunctionId
@@ -147,7 +148,7 @@ theorem CheckedFinish.execute {visit : ParserTreeSource.CheckedVisit program}
     (bindLocal_preserves_other_local wellFormed (by decide)).trans treeLocal
   have stageOwned : (Assertion.localPointsTo 24 before.nextCell (some (.signed .i32 0))).holds entered :=
     bindLocal_owns_fresh before 24 (.signed .i32 0) wellFormed
-  obtain ⟨tested, statusCall, statusEffect⟩ := checked.status.call enteredWF (.singleton (local_read enteredTree)) rfl
+  obtain ⟨tested, statusCall, statusEffect, _⟩ := checked.status.call enteredWF (.singleton (local_read enteredTree)) rfl
   have guardRun : Evaluates program.core entered (finishCondition checked.symbols) (.boolean (decide (code ≠ 0))) tested :=
     evaluatesEagerBinary (by decide) (by decide) statusCall (evaluatesConstant visit.statuses.1)
       (by by_cases same : code = 0 <;> simp [evalBinaryValue, scalarEqual, same])
@@ -161,7 +162,7 @@ theorem CheckedFinish.execute {visit : ParserTreeSource.CheckedVisit program}
         (executesSkip _ _), ?_, statusEffect.weaken CellSet.empty_subset⟩
       simpa only [extractionTreeStage, if_pos success] using statusEffect.empty_preserves_local enteredWF
         (Assertion.localPointsTo_local _ _ _ _ stageOwned)
-    · obtain ⟨updated, assigned, updatedStage, updateEffect⟩ := evaluatesOwnedLocalUpdate (op := .set) statusEffect.wellFormed
+    · obtain ⟨updated, assigned, updatedStage, updateEffect, updateHeap⟩ := evaluatesOwnedLocalUpdate (op := .set) statusEffect.wellFormed
         (statusEffect.preserves_localPointsTo enteredWF stageOwned (by simp [CellSet.empty]))
         (evaluatesConstant checked.failure) rfl
       refine ⟨updated, executesIfTrue (by simpa [success] using guardRun)
@@ -177,11 +178,11 @@ theorem CheckedFinish.execute {visit : ParserTreeSource.CheckedVisit program}
       simpa only [entered, bindLocal_preserves_other_cellId before 24 id (.signed .i32 0) different] using binding
     exact Nat.ne_of_lt (StateWellFormed.cell_lt_next_of_local_binding id cell wellFormed oldBinding) written
   have selectedTree := preserved (by decide : 24 ≠ 23) treeLocal
-  obtain ⟨detailed, detailCall, detailEffect⟩ := checked.status.call selectEffect.wellFormed
+  obtain ⟨detailed, detailCall, detailEffect, _⟩ := checked.status.call selectEffect.wellFormed
     (.singleton (local_read selectedTree)) rfl
-  obtain ⟨counted, nodesCall, nodesEffect⟩ := checked.nodes.call detailEffect.wellFormed
+  obtain ⟨counted, nodesCall, nodesEffect, _⟩ := checked.nodes.call detailEffect.wellFormed
     (.singleton (local_read (detailEffect.empty_preserves_local selectEffect.wellFormed selectedTree))) rfl
-  obtain ⟨measured, wordsCall, wordsEffect⟩ := checked.words.call nodesEffect.wellFormed
+  obtain ⟨measured, wordsCall, wordsEffect, _⟩ := checked.words.call nodesEffect.wellFormed
     (.singleton (local_read (nodesEffect.empty_preserves_local detailEffect.wellFormed
       (detailEffect.empty_preserves_local selectEffect.wellFormed selectedTree)))) rfl
   have arguments : ArgumentsEvaluateTo program.core selected
@@ -193,7 +194,7 @@ theorem CheckedFinish.execute {visit : ParserTreeSource.CheckedVisit program}
       (.cons (local_read (detailEffect.empty_preserves_local selectEffect.wellFormed (preserved (by decide) rawLocal)))
         (.cons (local_read (detailEffect.empty_preserves_local selectEffect.wellFormed (preserved (by decide) countLocal)))
           (.cons nodesCall (.cons wordsCall (.singleton ⟨1, rfl⟩))))))
-  obtain ⟨completed, returned, returnEffect⟩ := checked.constructor.call wordsEffect.wellFormed arguments
+  obtain ⟨completed, returned, returnEffect, _⟩ := checked.constructor.call wordsEffect.wellFormed arguments
   have finalEffect := selectEffect.trans
     ((detailEffect.trans (nodesEffect.trans (wordsEffect.trans returnEffect))).weaken CellSet.empty_subset)
   refine ⟨restoreLocals before completed, ?_,

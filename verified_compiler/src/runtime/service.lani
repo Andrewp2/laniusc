@@ -1,0 +1,85 @@
+module runtime::service;
+import runtime::arguments;
+import runtime::heap;
+import runtime::io;
+import x86::encode;
+import x86::control;
+import x86::register;
+
+// Semantic transport tags. These must agree with Transport.service?, not with
+// GPU builtin IDs or Linux syscall numbers. Reject wrong signatures before emit.
+pub const ALLOC: i32 = 1;
+pub const OPEN_READ: i32 = 2;
+pub const CLOSE: i32 = 3;
+pub const READ: i32 = 4;
+pub const WRITE_STDOUT: i32 = 5;
+pub const WRITE_BYTE: i32 = 6;
+pub const ARGC: i32 = 7;
+pub const ARG_LEN: i32 = 8;
+pub const ARG_READ: i32 = 9;
+
+pub fn valid(input: [i32], first: i32, count: i32) -> bool {
+    if (count < 7 || input[first] != 2 || input[first + 1] != 64 || input[first + 5] != 1) { return false; }
+    let parameters: i32 = input[first + 4];
+    if (parameters < 0 || parameters > 3 || count != 7 + parameters * 2) { return false; }
+    let service: i32 = input[first + count - 1];
+    if (service < ALLOC || service > ARG_READ) { return false; }
+    let result: i32 = 1;
+    let arity: i32 = 0;
+    let a: i32 = 0;
+    let b: i32 = 0;
+    let c: i32 = 0;
+    if (service == ALLOC) { result = 4; arity = 2; a = 3; b = 3; }
+    if (service == OPEN_READ || service == WRITE_STDOUT) { arity = 2; a = 4; b = 3; }
+    if (service == CLOSE || service == ARG_LEN) { arity = 1; a = 1; }
+    if (service == READ || service == ARG_READ) { arity = 3; a = 1; b = 4; c = 3; }
+    if (service == WRITE_BYTE) { arity = 2; a = 1; b = 1; }
+    if (input[first + 3] != result || parameters != arity) { return false; }
+    if (arity > 0 && (input[first + 6] < 0 || input[first + 7] != a)) { return false; }
+    if (arity > 1 && (input[first + 8] < 0 || input[first + 9] != b || input[first + 8] == input[first + 6])) { return false; }
+    if (arity > 2 && (input[first + 10] < 0 || input[first + 11] != c || input[first + 10] == input[first + 6] || input[first + 10] == input[first + 8])) { return false; }
+    return true;
+}
+
+pub fn emit(output: [i32], capacity: i32, cursor: i32, service: i32) -> i32 {
+    if (service == ALLOC) { return runtime::heap::allocate(output, capacity, cursor); }
+    if (service == OPEN_READ) { return runtime::io::open_read(output, capacity, cursor); }
+    if (service == CLOSE) { return runtime::io::close(output, capacity, cursor); }
+    if (service >= ARGC && service <= ARG_READ) { return runtime::arguments::emit(output, capacity, cursor, service); }
+    let next: i32 = cursor;
+    if (service == READ) {
+        next = x86::encode::immediate(output, capacity, next, 32, x86::register::R10, 3, 0);
+        next = x86::encode::binary(output, capacity, next, 32, x86::encode::CMP, x86::register::RDI, x86::register::R10);
+        let valid: i32 = next + 2;
+        next = x86::control::branch(output, capacity, next, x86::control::GREATER_EQUAL, 0);
+        next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, -1, 0);
+        next = x86::control::return_near(output, capacity, next);
+        if (x86::control::patch_relative(output, next, valid, next) < 0) { return -1; }
+        return runtime::io::transfer(output, capacity, next, false);
+    }
+    if (service == WRITE_STDOUT) {
+        next = x86::encode::move_register(output, capacity, next, 64, x86::register::RDX, x86::register::RSI);
+        next = x86::encode::move_register(output, capacity, next, 64, x86::register::RSI, x86::register::RDI);
+        next = x86::encode::immediate(output, capacity, next, 32, x86::register::RDI, 1, 0);
+        return runtime::io::transfer(output, capacity, next, true);
+    }
+    if (service == WRITE_BYTE) {
+        next = x86::encode::binary(output, capacity, next, 32, x86::encode::TEST, x86::register::RDI, x86::register::RDI);
+        let valid: i32 = next + 2;
+        next = x86::control::branch(output, capacity, next, x86::control::GREATER, 0);
+        next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, -1, 0);
+        next = x86::control::return_near(output, capacity, next);
+        if (x86::control::patch_relative(output, next, valid, next) < 0) { return -1; }
+        // The single byte lives in a private stack word until transfer returns.
+        next = x86::control::push(output, capacity, next, x86::register::RSI);
+        next = x86::encode::move_register(output, capacity, next, 64, x86::register::RSI, x86::register::RSP);
+        next = x86::encode::immediate(output, capacity, next, 32, x86::register::RDX, 1, 0);
+        let call: i32 = next + 1;
+        next = x86::control::call(output, capacity, next, 0);
+        next = x86::control::pop(output, capacity, next, x86::register::R11);
+        next = x86::control::return_near(output, capacity, next);
+        if (x86::control::patch_relative(output, next, call, next) < 0) { return -1; }
+        return runtime::io::transfer(output, capacity, next, true);
+    }
+    return -1;
+}

@@ -279,36 +279,7 @@ theorem verifiedParser_find_constants :
         type := parserI32Type
         value := .signed .i32 4
       } := by
-  have evidence :
-      (verifiedParserCore.constant? 25).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (25, parserI32Type, some 0) ∧
-      (verifiedParserCore.constant? 28).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (28, parserI32Type, some 0) ∧
-      (verifiedParserCore.constant? 29).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (29, parserI32Type, some 1) ∧
-      (verifiedParserCore.constant? 30).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (30, parserI32Type, some 2) ∧
-      (verifiedParserCore.constant? 32).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (32, parserI32Type, some 4) := by
-    native_decide
-  exact ⟨
-    constant_eq_of_signed_i32_evidence verifiedParserCore 25 0 evidence.1,
-    constant_eq_of_signed_i32_evidence verifiedParserCore 28 0 evidence.2.1,
-    constant_eq_of_signed_i32_evidence verifiedParserCore 29 1 evidence.2.2.1,
-    constant_eq_of_signed_i32_evidence verifiedParserCore 30 2
-      evidence.2.2.2.1,
-    constant_eq_of_signed_i32_evidence verifiedParserCore 32 4
-      evidence.2.2.2.2⟩
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 def parserChartWordValue
     (target : Target) (position field : Int) : Int :=

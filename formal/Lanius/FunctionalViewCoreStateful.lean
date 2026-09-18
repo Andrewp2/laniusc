@@ -128,7 +128,7 @@ abbrev OperationEvaluator := ReadOnly.World → Operation → List Value →
     the caller.  The abstract world stays fixed to the separation-backed
     slice world, so read-only and call-capable terms can share the same
     stateful command language. -/
-def termMachine (evaluateOperation : OperationEvaluator) :
+abbrev termMachine (evaluateOperation : OperationEvaluator) :
     Lanius.FunctionalView.Machine Core.signature := {
   World := ReadOnly.World
   evalOperation := evaluateOperation

@@ -54,7 +54,7 @@ theorem initialize_step (program : Program) (memory : InitializeMemory)
   have lengthEq := initialized_length (Nat.le_of_lt room)
   have indexResult : Evaluates program before (read 12) (.signed .i32 position) before :=
     ⟨1, evalLocal_of_local 0 program before 12 _ (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
-  obtain ⟨written, assigned, contents, writeEffect⟩ := evaluatesSliceStore program before before
+  obtain ⟨written, assigned, contents, writeEffect, storeHeapFrame, _⟩ := evaluatesSliceStore program before before
     (initialized memory.original position) 8 (read 12) (negative 1) memory.outputCell position (-1)
     invariant.wellFormed (by simpa only [lengthEq] using room)
     (by simpa only [lengthEq] using invariant.outputLocal) indexResult

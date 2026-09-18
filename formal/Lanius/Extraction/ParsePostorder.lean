@@ -33,15 +33,19 @@ def children (grammar : Grammar) (view : ParseArtifactView artifact)
             children grammar view current symbols rest entry.2.position_end entries
   | _, _, _, _ => none
 
-def node (grammar : Grammar) (view : ParseArtifactView artifact)
-    (id : Nat) : ParseNode → List Entry → Bool
+def nodeWithLookup (grammar : Grammar) (view : ParseArtifactView artifact)
+    (lookup : Nat → Option Production) (id : Nat) : ParseNode → List Entry → Bool
   | ⟨productionId, nonterminal, start, finish, values⟩, entries =>
-    match grammar.production? productionId with
+    match lookup productionId with
     | none => false
     | some production =>
-      nonterminal = production.lhs && start ≤ finish &&
-      finish ≤ view.semanticKinds.size * 2 &&
-      children grammar view id production.rhs values start entries = some finish
+      nonterminal == production.lhs && Nat.ble start finish &&
+      Nat.ble finish (view.semanticKinds.size * 2) &&
+      children grammar view id production.rhs values start entries == some finish
+
+def node (grammar : Grammar) (view : ParseArtifactView artifact)
+    (id : Nat) (value : ParseNode) (entries : List Entry) : Bool :=
+  nodeWithLookup grammar view grammar.production? id value entries
 
 def childCount (value : ParseNode) : Nat :=
   value.children.countP fun child => match child with
@@ -121,9 +125,10 @@ theorem node_sound (grammar : Grammar) (view : ParseArtifactView artifact)
     checkNodeParseView grammar artifact view id value = true := by
   rcases value with ⟨productionId, nonterminal, start, finish, values⟩
   cases production : grammar.production? productionId with
-  | none => simp [node, production] at accepted
+  | none => simp [node, nodeWithLookup, production] at accepted
   | some rule =>
-    simp only [node, production, Bool.and_eq_true, decide_eq_true_eq] at accepted
+    simp only [node, nodeWithLookup, production, Bool.and_eq_true, beq_iff_eq,
+      Nat.ble_eq] at accepted
     rcases accepted with ⟨⟨⟨lhs, ordered⟩, bounded⟩, accepted⟩
     simp only [checkNodeParseView, production, Bool.and_eq_true, decide_eq_true_eq]
     exact ⟨⟨⟨lhs, ordered⟩, bounded⟩,

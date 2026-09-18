@@ -30,6 +30,19 @@ import Lean.Util.CollectAxioms
 
 namespace Lanius.Extraction.Tests.CompactOutput.Unit
 
+-- Physical source capacity affects the passed slice, never the logical count
+-- or emitted bytes. These identities cover every capacity, not one fixture.
+example (emission : Lanius.Extraction.CompactOutput.Unit.Emission) (capacity : Nat) :
+    ({ emission with sourceCapacity := capacity }.values)[2]? =
+      some (.slice Lanius.Extraction.CompactOutput.i32 emission.data.sourceCell [] 0 capacity) := rfl
+
+example (emission : Lanius.Extraction.CompactOutput.Unit.Emission) (capacity : Nat) :
+    ({ emission with sourceCapacity := capacity }.values)[3]? =
+      some (.signed .i32 emission.data.request.source.length) := rfl
+
+example (emission : Lanius.Extraction.CompactOutput.Unit.Emission) (capacity : Nat) (assignments records) :
+    { emission with sourceCapacity := capacity }.encoding assignments records = emission.encoding assignments records := rfl
+
 run_elab do
   let standard : Array Lean.Name := #[``propext, ``Classical.choice, ``Quot.sound]
   for name in #[``Lanius.Extraction.checkRawTokenTraceFrom_complete,

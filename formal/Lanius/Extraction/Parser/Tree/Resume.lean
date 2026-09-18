@@ -49,7 +49,7 @@ theorem CheckedVisit.resume_child (checked : CheckedVisit program)
       (.binary .subtract (.field (.local 17) 1) (.value (.signed .i32 1)))
       (.signed .i32 (Int.ofNat (nodes - 1))) before :=
     evaluatesNatI32Subtract (evaluatesStructureField (local_read resultLocal) rfl) ⟨1, rfl⟩ (by omega) (by omega)
-  obtain ⟨stored, store, backing, storedEffect⟩ := evaluatesSliceStore program.core before before records
+  obtain ⟨stored, store, backing, storedEffect, storeHeapFrame, _⟩ := evaluatesSliceStore program.core before before records
     5 (.binary .add (.local 16) (.value (.signed .i32 1)))
     (.binary .subtract (.field (.local 17) 1) (.value (.signed .i32 1)))
     recordsCell (slot + 1) (Int.ofNat (nodes - 1)) wellFormed room recordsLocal slotEvaluation rootEvaluation
@@ -58,7 +58,7 @@ theorem CheckedVisit.resume_child (checked : CheckedVisit program)
     (by intro impossible; cases impossible)
   have storedNodes := storedEffect.preserves_localPointsTo wellFormed nodesOwned nodesNotRecords
   have storedWords := storedEffect.preserves_localPointsTo wellFormed wordsOwned wordsNotRecords
-  obtain ⟨advanced, setNodes, advancedNodes, nodeEffect⟩ := evaluatesOwnedLocalUpdate storedEffect.wellFormed storedNodes
+  obtain ⟨advanced, setNodes, advancedNodes, nodeEffect, nodeHeap⟩ := evaluatesOwnedLocalUpdate storedEffect.wellFormed storedNodes
     (evaluatesStructureField (local_read storedResult) (show
       [Value.signed .i32 0, .signed .i32 (Int.ofNat nodes), .signed .i32 (Int.ofNat words)][1]? =
         some (.signed .i32 (Int.ofNat nodes)) from rfl))
@@ -68,7 +68,7 @@ theorem CheckedVisit.resume_child (checked : CheckedVisit program)
     (by intro impossible; cases impossible)
   have advancedWords := nodeEffect.preserves_localPointsTo storedEffect.wellFormed storedWords (Ne.symm distinctCursors)
   have advancedBacking := nodeEffect.preserves_entry storedEffect.wellFormed backing (Ne.symm nodesNotRecords)
-  obtain ⟨after, setWords, finalWords, wordEffect⟩ := evaluatesOwnedLocalUpdate nodeEffect.wellFormed advancedWords
+  obtain ⟨after, setWords, finalWords, wordEffect, wordHeap⟩ := evaluatesOwnedLocalUpdate nodeEffect.wellFormed advancedWords
     (evaluatesStructureField (local_read advancedResult) (show
       [Value.signed .i32 0, .signed .i32 (Int.ofNat nodes), .signed .i32 (Int.ofNat words)][2]? =
         some (.signed .i32 (Int.ofNat words)) from rfl))

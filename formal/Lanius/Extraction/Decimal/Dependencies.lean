@@ -68,7 +68,7 @@ theorem isDigitForBaseBody_normalizes :
 
 theorem isDigitForBaseBody_normalization_supported :
     SkipNormalizationSupported Digits.isDigitForBaseBody := by
-  native_decide
+  decide +kernel
 
 private theorem decideAnd_eq_false_of_not
     {left right : Prop} [Decidable left] [Decidable right]
@@ -263,7 +263,7 @@ theorem isDigitForBaseCall_executes
     (show extractedIsDigitForBaseFunction.body =
       some Digits.isDigitForBaseBody by rfl) bodyResult
   have sameId : extractedIsDigitForBaseFunction.id =
-      isDigitForBaseFunction.id := by native_decide
+      isDigitForBaseFunction.id := by decide +kernel
   rw [sameId] at evaluated
   simpa [callIsDigitForBase, twoI32CallState] using evaluated
 
@@ -291,10 +291,10 @@ theorem failedDigitsBody_normalizes :
   rfl
 
 theorem successfulDigitsBody_normalization_supported :
-    SkipNormalizationSupported Digits.successfulDigitsBody := by native_decide
+    SkipNormalizationSupported Digits.successfulDigitsBody := by decide +kernel
 
 theorem failedDigitsBody_normalization_supported :
-    SkipNormalizationSupported Digits.failedDigitsBody := by native_decide
+    SkipNormalizationSupported Digits.failedDigitsBody := by decide +kernel
 
 theorem successfulDigitsBlock_evaluates (offset : Nat) :
     Block.evaluate (machine verifiedFrontendCore) emptyWorld
@@ -349,7 +349,7 @@ theorem successfulDigitsBody_executes
     successfulDigitsBlock
     (toCoreStmt (identityLayout (arity := 1)) 1 successfulDigitsBlock)
     (digitScanValue (.success offset)) rfl
-    (successfulDigitsBlock_evaluates offset) (by native_decide)
+    (successfulDigitsBlock_evaluates offset) (by decide +kernel)
   rw [← successfulDigitsBody_normalizes] at normalized
   exact removeTrailingSkips_executes_complete
     successfulDigitsBody_normalization_supported normalized
@@ -365,7 +365,7 @@ theorem failedDigitsBody_executes
     failedDigitsBlock
     (toCoreStmt (identityLayout (arity := 1)) 1 failedDigitsBlock)
     (digitScanValue (.failure offset)) rfl
-    (failedDigitsBlock_evaluates offset) (by native_decide)
+    (failedDigitsBlock_evaluates offset) (by decide +kernel)
   rw [← failedDigitsBody_normalizes] at normalized
   exact removeTrailingSkips_executes_complete
     failedDigitsBody_normalization_supported normalized
@@ -396,7 +396,7 @@ theorem successfulDigitsCall_executes
     (show extractedSuccessfulDigitsFunction.body =
       some Digits.successfulDigitsBody by rfl) body
   have sameId : extractedSuccessfulDigitsFunction.id =
-      successfulDigitsFunction.id := by native_decide
+      successfulDigitsFunction.id := by decide +kernel
   rw [sameId] at evaluated
   simpa [callSuccessfulDigits, singleArgumentCallState] using evaluated
 
@@ -418,13 +418,13 @@ theorem failedDigitsCall_executes
     (show extractedFailedDigitsFunction.body =
       some Digits.failedDigitsBody by rfl) body
   have sameId : extractedFailedDigitsFunction.id =
-      failedDigitsFunction.id := by native_decide
+      failedDigitsFunction.id := by decide +kernel
   rw [sameId] at evaluated
   simpa [callFailedDigits, singleArgumentCallState] using evaluated
 
 instance verifiedFrontendCoreDigitRunCallSemantics :
     DigitRunCallSemantics verifiedFrontendCore where
-  target := by native_decide
+  target := by decide +kernel
   isDigitForBaseCall_executes := by
     intro state wellFormed byteExpr baseExpr byte base byteResult baseResult
     exact isDigitForBaseCall_executes state wellFormed byteExpr baseExpr byte
@@ -459,10 +459,10 @@ def failedTokenScanFunction : Function :=
   CoreDecode.function failedTokenScanWire
 
 theorem successfulTokenScan_body_present :
-    successfulTokenScanFunction.body.isSome := by native_decide
+    successfulTokenScanFunction.body.isSome := by rfl
 
 theorem failedTokenScan_body_present :
-    failedTokenScanFunction.body.isSome := by native_decide
+    failedTokenScanFunction.body.isSome := by rfl
 
 def successfulTokenScanBody : Stmt :=
   successfulTokenScanFunction.body.get successfulTokenScan_body_present
@@ -497,10 +497,10 @@ theorem failedTokenScanBody_normalizes :
       toCoreStmt (identityLayout (arity := 1)) 1 failedTokenScanBlock := by rfl
 
 theorem successfulTokenScanBody_normalization_supported :
-    SkipNormalizationSupported successfulTokenScanBody := by native_decide
+    SkipNormalizationSupported successfulTokenScanBody := by decide +kernel
 
 theorem failedTokenScanBody_normalization_supported :
-    SkipNormalizationSupported failedTokenScanBody := by native_decide
+    SkipNormalizationSupported failedTokenScanBody := by decide +kernel
 
 def twoOffsetEnvironment (left right : Int) : Env 2
   | ⟨0, _⟩ => .signed .i32 left
@@ -541,7 +541,7 @@ theorem successfulTokenScanBody_executes
     simp [emptyWorld] at found
   have sound := block_executes_without_locals
     (nextLocal := 2) (ReadOnly.bridge verifiedFrontendCore) represented
-    environmentMatches (by native_decide)
+    environmentMatches (by decide +kernel)
     (successfulTokenScanBlock_evaluates kind endOffset)
   rw [← successfulTokenScanBody_normalizes] at sound
   exact removeTrailingSkips_executes_complete
@@ -560,7 +560,7 @@ theorem failedTokenScanBody_executes
     failedTokenScanBlock
     (toCoreStmt (identityLayout (arity := 1)) 1 failedTokenScanBlock)
     (tokenScanValue false 0 0 errorOffset) rfl
-    (failedTokenScanBlock_evaluates errorOffset) (by native_decide)
+    (failedTokenScanBlock_evaluates errorOffset) (by decide +kernel)
   rw [← failedTokenScanBody_normalizes] at normalized
   exact removeTrailingSkips_executes_complete
     failedTokenScanBody_normalization_supported normalized

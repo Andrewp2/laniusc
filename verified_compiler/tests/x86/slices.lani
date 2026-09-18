@@ -1,0 +1,94 @@
+module examples::slices;
+
+pub struct Box { data: [i32], count: i32, }
+pub struct Pair { first: i32, second: i32, }
+
+pub fn read(data: [i32], index: i32) -> i32 { return data[index]; }
+pub fn read_wide(data: [i32], index: usize) -> i32 { return data[index]; }
+pub fn set(data: [i32], index: i32, value: i32) -> i32 {
+    data[index] = value;
+    return data[index];
+}
+fn change(data: [i32], index: i32) -> i32 {
+    data[index] = 17;
+    return 5;
+}
+pub fn compound(data: [i32], index: i32) -> i32 {
+    data[index] += change(data, index);
+    return data[index];
+}
+fn changed_index(data: [i32], index: i32) -> i32 {
+    data[index] = 23;
+    return index;
+}
+pub fn read_after_index(data: [i32], index: i32) -> i32 {
+    return data[changed_index(data, index)];
+}
+pub fn resolved_once(data: [i32], index: i32) -> i32 {
+    data[changed_index(data, index)] += change(data, index);
+    return data[index];
+}
+pub fn alias(left: [i32], right: [i32], index: i32) -> i32 {
+    left[index] = 29;
+    return right[index];
+}
+pub fn boxed(data: [i32], index: i32) -> i32 {
+    let value: Box = Box { data: data, count: 3 };
+    value.data[index] += 7;
+    value.count = value.data[index];
+    return value.count;
+}
+pub fn fields(value: i32) -> i32 {
+    let original: Pair = Pair { first: value, second: 2 };
+    let copied: Pair = original;
+    original.first += 11;
+    original.second = copied.first;
+    return original.first + original.second + copied.second;
+}
+pub fn fill(data: [i32], length: i32, start: i32) -> i32 {
+    let index: i32 = 0;
+    while (index < length) {
+        data[index] = start + index;
+        index += 1;
+    }
+    if (length > 0) { return data[length - 1]; }
+    return 0;
+}
+
+// These names resolve to the language intrinsics, not fixture implementations.
+const RAW_LENGTH: i32 = 5;
+pub fn raw_read(data: [i32], index: i32) -> i32 {
+    let raw: [i32] = i32_slice_from_raw_parts(i32_slice_data_ptr(data), RAW_LENGTH);
+    return raw[index];
+}
+pub fn raw_alias(data: [i32], index: i32) -> i32 {
+    let raw: [i32] = i32_slice_from_raw_parts(i32_slice_data_ptr(data), RAW_LENGTH);
+    raw[index] = 29;
+    return data[index];
+}
+pub fn raw_alias_reverse(data: [i32], index: i32) -> i32 {
+    let raw: [i32] = i32_slice_from_raw_parts(i32_slice_data_ptr(data), RAW_LENGTH);
+    data[index] = 31;
+    return raw[index];
+}
+pub fn raw_alias_twice(data: [i32], index: i32) -> i32 {
+    let pointer: ptr = i32_slice_data_ptr(data);
+    let first: [i32] = i32_slice_from_raw_parts(pointer, RAW_LENGTH);
+    let second: [i32] = i32_slice_from_raw_parts(pointer, RAW_LENGTH);
+    first[index] = 37;
+    return second[index];
+}
+pub fn raw_return(data: [i32], length: i32) -> [i32] {
+    return i32_slice_from_raw_parts(i32_slice_data_ptr(data), length);
+}
+pub fn data_pointer(data: [i32], index: i32) -> ptr {
+    return i32_slice_data_ptr(data);
+}
+pub fn captured_pointer(data: [i32], index: i32) -> bool {
+    return i32_slice_data_ptr(data) == i32_slice_data_ptr(data);
+}
+pub fn late_slice(data: [i32], index: i32) -> i32 {
+    let view: [i32];
+    { let captured: [i32] = data; view = captured; }
+    return view[index];
+}

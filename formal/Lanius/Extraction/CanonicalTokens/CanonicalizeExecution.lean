@@ -544,7 +544,6 @@ theorem firstIsKept_evaluates (source records : List Int)
     simp [Lanius.FunctionalView.Core.Effectful.evaluateOperation,
       ReadOnly.evaluateOperation, Lanius.Semantics.evalUnaryValue,
       bind, Except.bind]
-    rfl
 
 theorem afterKind_records (source records : List Int)
     (rawCount input output : Nat) (kind : Int) (index : Fin 7)
@@ -1028,7 +1027,6 @@ theorem firstFieldWrite_evaluates (source records current : List Int)
         Lanius.Semantics.evalSignedBinary, bind, Except.bind,
         beq_self_eq_true, if_true]
       rw [wrapped]
-      rfl
   have replacementResult :
       Term.evaluate
           (termMachine (Lanius.FunctionalView.Core.Effectful.evaluateOperation
@@ -1823,11 +1821,8 @@ theorem equalInt_evaluates (source records : List Int)
   · subst rightValue
     simp [ReadOnly.evaluateOperation, Lanius.Semantics.evalBinaryValue,
       Lanius.Semantics.scalarEqual, bind, Except.bind]
-    rfl
   · simp [ReadOnly.evaluateOperation, Lanius.Semantics.evalBinaryValue,
       Lanius.Semantics.scalarEqual, same, bind, Except.bind]
-    rw [beq_eq_false_iff_ne.mpr same]
-    rfl
 
 theorem logicalAnd_evaluates (source records : List Int)
     (environment : Env arity) (left right : Term Core.signature arity)

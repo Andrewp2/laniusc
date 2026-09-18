@@ -14,7 +14,7 @@ theorem executes_finish (table : Table program rangeTokens)
     ∃ after, Executes program before (finish rangeTokens) (.returned (some (.signed .i32 tokens.length))) after ∧
       after.cellEntry? recordsCell = some {
         id := recordsCell, value := some (.array (signedI32Values (buffer [] (retagInclusiveRanges tokens) unused))) } ∧
-      CellEffect (CellSet.singleton recordsCell) before after := by
+      CellEffect (CellSet.singleton recordsCell) before after ∧ Host.MemoryFrame before after := by
   have sourceOld := StateWellFormed.cell_lt_next_of_entry storage.wellFormed storage.sourceContents
   have recordsOld := StateWellFormed.cell_lt_next_of_entry storage.wellFormed storage.recordsContents
   let request : Request := {
@@ -48,7 +48,7 @@ theorem executes_finish (table : Table program rangeTokens)
       · exact local_cell_ne_of_distinct_value storage.recordsLocal storage.recordsContents (by intro h; cases h) oldBinding
       · exact local_cell_ne_of_distinct_value countLocal storage.recordsContents (by intro h; cases h) oldBinding
     exact fun written => written.elim notRecords (Nat.ne_of_lt old)
-  obtain ⟨completed, loop, finalStorage, finalCount, loopEffect⟩ := executes_loop table request [] tokens ready invariant
+  obtain ⟨completed, loop, finalStorage, finalCount, loopEffect, loopMemory⟩ := executes_loop table request [] tokens ready invariant
   have result : Evaluates program completed (.local 4) (.signed .i32 tokens.length) completed :=
     ⟨1, evalLocal_of_local 0 program completed 4 _ finalCount⟩
   have closed := CellEffect.closeLocal before 10 (.signed .i32 0) storage.wellFormed loopEffect
@@ -61,6 +61,7 @@ theorem executes_finish (table : Table program rangeTokens)
   exact ⟨restoreLocals before completed,
     executesLetLocal (show Evaluates program before (literal 0) (.signed .i32 0) before from ⟨1, rfl⟩)
       (executesSequence loop (executesSequenceReturned (executesReturnValue result))),
-    finalStorage.recordsContents, visible⟩
+    finalStorage.recordsContents, visible,
+    ((Host.MemoryFrame.bindLocal before 10 (.signed .i32 0)).trans loopMemory).restoreLocals before visible.wellFormed⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction.Range

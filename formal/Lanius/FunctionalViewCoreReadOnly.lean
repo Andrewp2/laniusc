@@ -232,7 +232,7 @@ def evaluateOperation (program : Program) (world : World) :
   | .call _ _ _, _ => .error .typeMismatch
   | _, _ => .error .typeMismatch
 
-def machine (program : Program) : Machine signature := {
+abbrev machine (program : Program) : Machine signature := {
   World := World
   evalOperation := evaluateOperation program
 }
@@ -588,6 +588,25 @@ theorem Term.evaluate_i32_index_as
     (Term.evaluate_i32_index baseResult indexResult found inBounds)
   exact congrArg (Value.signed .i32) same
 
+theorem Term.evaluate_i32_index_map
+    {α : Type} {values : List α} {encode : α → Int}
+    (baseResult : Term.evaluate (machine program) world environment base =
+      .ok (.slice (.scalar (.signed .i32)) cell [] 0 values.length, world))
+    (indexResult : Term.evaluate (machine program) world environment index =
+      .ok (.signed .i32 (Int.ofNat position), world))
+    (found : world.i32Slice? cell = some (values.map encode))
+    (inBounds : position < values.length) :
+    Term.evaluate (machine program) world environment
+        (.apply
+          (.index baseType indexType elementType)
+          [base, index]) =
+      .ok (.signed .i32 (encode (values.get ⟨position, inBounds⟩)), world) := by
+  apply Term.evaluate_i32_index_as (values := values.map encode)
+    (baseResult := by simpa using baseResult)
+    (indexResult := indexResult) (found := found)
+    (inBounds := by simpa using inBounds)
+  simp
+
 theorem Term.evaluate_i32_equal
     (leftResult : Term.evaluate (machine program) world environment left =
       .ok (.signed .i32 (Int.ofNat leftValue), world))
@@ -662,6 +681,18 @@ theorem Term.evaluate_i32_lessEqual_int
     (evaluateOperation_i32_lessEqual_int (leftType := leftType)
       (rightType := rightType) (outputType := outputType)
       leftValue rightValue)
+
+theorem Term.evaluate_i32_lessEqual
+    (leftResult : Term.evaluate (machine program) world environment left =
+      .ok (.signed .i32 (Int.ofNat leftValue), world))
+    (rightResult : Term.evaluate (machine program) world environment right =
+      .ok (.signed .i32 (Int.ofNat rightValue), world)) :
+    Term.evaluate (machine program) world environment
+        (.apply (.binary .lessEqual leftType rightType outputType) [left, right]) =
+      .ok (.boolean (decide (leftValue ≤ rightValue)), world) := by
+  simpa only [Int.ofNat_eq_natCast, Int.ofNat_le] using
+    (Term.evaluate_i32_lessEqual_int (leftType := leftType)
+      (rightType := rightType) (outputType := outputType) leftResult rightResult)
 
 theorem Term.evaluate_i32_less_int
     (leftResult : Term.evaluate (machine program) world environment left =
@@ -781,9 +812,7 @@ theorem Term.evaluate_logicalAnd_bool
     Term.evaluate (machine program) world environment
         (.logicalAnd left right) =
       .ok (.boolean (leftValue && rightValue), world) := by
-  cases leftValue
-  · simpa using Term.evaluate_logicalAnd_false leftResult
-  · simpa using Term.evaluate_logicalAnd_true leftResult rightResult
+  exact Term.evaluate_logicalAnd_guarded leftResult (fun _ => rightResult)
 
 /-- Read-only short-circuit disjunction. -/
 theorem Term.evaluate_logicalOr_bool
@@ -794,9 +823,7 @@ theorem Term.evaluate_logicalOr_bool
     Term.evaluate (machine program) world environment
         (.logicalOr left right) =
       .ok (.boolean (leftValue || rightValue), world) := by
-  cases leftValue
-  · simpa using Term.evaluate_logicalOr_false leftResult rightResult
-  · simpa using Term.evaluate_logicalOr_true leftResult
+  exact Term.evaluate_logicalOr_guarded leftResult (fun _ => rightResult)
 
 theorem Term.evaluate_i32_negate_one :
     Term.evaluate (machine program) world environment
@@ -853,6 +880,55 @@ section FunctionalEvalTactic
 
 open Lean Elab Tactic Meta
 
+/-- Separate list/reference evaluation from arithmetic side conditions, so a
+    local lookup does not probe every primitive-operation rule. -/
+private def stepFunctionalEvalGoal : TacticM Unit := withMainContext do
+  let target ← whnf (← (← getMainGoal).getType)
+  let lhs := if target.isAppOfArity ``Eq 3 then target.getAppArgs[1]! else target
+  let lhs := lhs.consumeMData
+  if target.isForall then
+    evalTactic (← `(tactic| intro guard; simp_all))
+  else if lhs.isAppOf ``Lanius.FunctionalView.evaluateTerms then
+    evalTactic (← `(tactic|
+      first
+      | assumption
+      | apply evaluateTerms_cons
+      | apply evaluateTerms_nil))
+  else if lhs.isAppOf ``Lanius.FunctionalView.Term.evaluate then
+    let term ← whnf lhs.appArg!
+    if term.isAppOf ``Lanius.FunctionalView.Term.reference then
+      evalTactic (← `(tactic| first | assumption | apply Term.evaluate_slot | rfl))
+    else
+      evalTactic (← `(tactic|
+        first
+        | assumption
+        | exact Term.evaluate_constant (by assumption)
+        | apply Term.evaluate_logicalAnd_guarded
+        | apply Term.evaluate_logicalOr_guarded
+        | apply Term.evaluate_bool_and
+        | apply Term.evaluate_i32_equal
+        | apply Term.evaluate_i32_notEqual_int
+        | apply Term.evaluate_i32_greaterEqual
+        | apply Term.evaluate_i32_greaterEqual_int
+        | apply Term.evaluate_i32_lessEqual
+        | apply Term.evaluate_i32_lessEqual_int
+        | apply Term.evaluate_i32_less
+        | apply Term.evaluate_i32_less_int
+        | apply Term.evaluate_i32_greater
+        | apply Term.evaluate_i32_greater_int
+        | apply Term.evaluate_i32_subtract
+        | apply Term.evaluate_i32_subtract_int
+        | apply Term.evaluate_i32_remainder_two
+        | apply Term.evaluate_i32_add
+        | apply Term.evaluate_i32_divide_two
+        | apply Term.evaluate_i32_index_as
+        | apply Term.evaluate_i32_index
+        | apply Term.evaluate_constant
+        | rfl
+        | omega))
+  else
+    evalTactic (← `(tactic| first | assumption | rfl | omega))
+
 private partial def visitFunctionalEvalGoals (deferred : List MVarId) :
     TacticM Unit := do
   match ← getGoals with
@@ -861,32 +937,7 @@ private partial def visitFunctionalEvalGoals (deferred : List MVarId) :
       setGoals [goal]
       let progressed ←
         try
-          evalTactic (← `(tactic|
-            first
-            | assumption
-            | rfl
-            | omega
-            | apply Term.evaluate_logicalAnd_bool
-            | apply Term.evaluate_logicalOr_bool
-            | apply Term.evaluate_bool_and
-            | apply Term.evaluate_i32_equal
-            | apply Term.evaluate_i32_notEqual_int
-            | apply Term.evaluate_i32_greaterEqual
-            | apply Term.evaluate_i32_greaterEqual_int
-            | apply Term.evaluate_i32_lessEqual_int
-            | apply Term.evaluate_i32_less
-            | apply Term.evaluate_i32_less_int
-            | apply Term.evaluate_i32_greater
-            | apply Term.evaluate_i32_greater_int
-            | apply Term.evaluate_i32_subtract
-            | apply Term.evaluate_i32_subtract_int
-            | apply Term.evaluate_i32_remainder_two
-            | apply Term.evaluate_i32_add
-            | apply Term.evaluate_i32_divide_two
-            | apply Term.evaluate_i32_index_as
-            | apply Term.evaluate_i32_index
-            | apply Term.evaluate_constant
-            | apply Term.evaluate_slot))
+          stepFunctionalEvalGoal
           pure true
         catch _ =>
           pure false
@@ -898,7 +949,7 @@ private partial def visitFunctionalEvalGoals (deferred : List MVarId) :
         setGoals rest
         visitFunctionalEvalGoals (goal :: deferred)
 
-/-- Evaluate a term in the supported read-only FunctionalView fragment by
+/-- Evaluate a term or argument list in the supported read-only FunctionalView fragment by
     composing its primitive semantic rules on every generated subgoal. Local
     hypotheses discharge exact constant-table contents, slice membership, and
     integer bounds. -/

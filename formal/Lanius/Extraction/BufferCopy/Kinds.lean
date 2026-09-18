@@ -64,7 +64,7 @@ theorem copy_kinds (program : Program) (before : State)
       after.local? countId = some (.signed .i32 tokens.length) ∧
       StateWellFormed after ∧
       CellEffect (CellSet.union (CellSet.singleton destinationCell) (CellSet.singleton before.nextCell))
-        (before.bindLocal cursorId (.signed .i32 0)) after := by
+        (before.bindLocal cursorId (.signed .i32 0)) after ∧ Host.MemoryFrame before after := by
   dsimp only
   let tokens := canonicalizeTokens source raw
   let locals : Locals := ⟨sourceId, destinationId, cursorId, countId, .triple, .plain⟩
@@ -90,10 +90,18 @@ theorem copy_kinds (program : Program) (before : State)
     cursorDistinct,
     cursorFresh := rfl
   }
-  obtain ⟨after, loop, complete, effect⟩ := executes_loop program locals memory [] memory.values
+  obtain ⟨after, loop, complete, effect, heap⟩ := executes_loop program locals memory [] memory.values
     (before.bindLocal cursorId (.signed .i32 0)) rfl entry.initialize
+  have native := Host.MemoryFrame.arrayAndScalar effect heap entry.initialize.destinationContents
+    complete.destinationContents (buffer_length _ _ memory.capacity) entry.initialize.cursor.2 (by
+      intro old word member
+      rcases List.mem_append.mp member with copied | kept
+      · obtain ⟨token, _, rfl⟩ := List.mem_map.mp copied
+        exact Kind.token_code_range token.kind
+      · exact old word (List.mem_of_mem_drop kept))
   refine ⟨after, ?_, complete.sourceContents, ?_, complete.destinationLocal,
-    complete.count, complete.wellFormed, effect⟩
+    complete.count, complete.wellFormed, effect,
+    (Host.MemoryFrame.bindLocal before cursorId (.signed .i32 0)).trans native⟩
   · intro rest completion final tailRun
     exact executesLetLocal
       (show Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩)

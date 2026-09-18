@@ -33,13 +33,13 @@ theorem RecognizerWorkspaceArtifact.update_cursor
         (CellSet.singleton remainingCell)) before after := by
   have previousRead : Evaluates program before (.local previousId) (.signed .i32 previous) before :=
     ⟨1, evalLocal_of_local 0 program before previousId _ previousLocal⟩
-  obtain ⟨middle, assigned, currentAfter, assignEffect⟩ :=
+  obtain ⟨middle, assigned, currentAfter, assignEffect, assignHeap⟩ :=
     evaluatesOwnedLocalUpdate wellFormed currentOwned previousRead (show
       evalAssignValue program.target .set (some (.signed .i32 current))
         (.signed .i32 previous) = .ok (.signed .i32 previous) from rfl)
   have remainingStill := assignEffect.preserves_localPointsTo wellFormed remainingOwned
     (by simpa [CellSet.singleton] using Ne.symm distinct)
-  obtain ⟨after, decremented, remainingAfter, decrementEffect⟩ :=
+  obtain ⟨after, decremented, remainingAfter, decrementEffect, decrementHeap⟩ :=
     evaluatesDecrementOwnedI32Local assignEffect.wellFormed remainingStill bounded
   have effect := (assignEffect.weaken CellSet.subset_union_left).trans
     (decrementEffect.weaken CellSet.subset_union_right)

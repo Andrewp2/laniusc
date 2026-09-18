@@ -321,6 +321,17 @@ theorem rangeEq_sound [BEq α] [LawfulBEq α]
   rw [tree.consumeRange_eq_flatten wellFormed] at consumed
   exact consumeAvailable_nil_sound consumed
 
+theorem represents_of_rangeEq [BEq α] [LawfulBEq α]
+    {tree : SeqTree α} {leafCapacity : Nat} {expected : List α}
+    (wellFormed : tree.WellFormed leafCapacity)
+    (sizeEq : tree.size = expected.length)
+    (accepted : tree.rangeEq 0 expected = true) :
+    tree.Represents expected := by
+  unfold Represents
+  have prefixEqual := rangeEq_sound wellFormed accepted
+  simpa only [List.drop_zero, ← sizeEq, size_eq_length tree wellFormed,
+    List.take_length] using prefixEqual
+
 theorem rangeEq_complete [BEq α] [LawfulBEq α]
     {tree : SeqTree α} {leafCapacity start : Nat} {expected : List α}
     (wellFormed : tree.WellFormed leafCapacity)

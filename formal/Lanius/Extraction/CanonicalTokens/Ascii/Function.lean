@@ -1,5 +1,6 @@
 import Lanius.Extraction.CanonicalTokens.Ascii.Entry
 import Lanius.Extraction.CanonicalTokens.Ascii.Loop
+import Lanius.Extraction.Host.MemoryFrame
 
 namespace Lanius.Extraction.CanonicalTokens.Ascii
 
@@ -28,10 +29,11 @@ theorem executes_sourceBody (program : Program) (before : State)
       (.returned (some (.boolean (matchesBytes source start spelling)))) after ∧
       StateWellFormed after ∧ after.locals = before.locals ∧ after.world = before.world ∧
       (∀ cell, cell < before.nextCell → after.cellEntry? cell = before.cellEntry? cell) ∧
-      CellDomainExtension before after ∧ before.nextCell ≤ after.nextCell := by
+      CellDomainExtension before after ∧ before.nextCell ≤ after.nextCell ∧
+      Host.MemoryFrame before after := by
   obtain ⟨words, ready, initializer, encoded, wordContents, readyWF, readyLocals,
-      oldCells, readyNext, readyWorld, readyDomain, readyValues⟩ :=
-    evaluates_wordView program before text spelling.length wellFormed textLocal lengthLocal countBound padded
+      oldCells, readyNext, readyWorld, readyDomain, readyValues, viewResources⟩ :=
+    evaluates_wordView program before text spelling.length 2 3 wellFormed textLocal lengthLocal countBound padded
   let view := Value.slice (.scalar (.signed .i32)) before.nextCell [] 0 words.length
   let packed := ready.bindLocal 4 view
   let entered := packed.bindLocal 5 (.signed .i32 0)
@@ -103,7 +105,7 @@ theorem executes_sourceBody (program : Program) (before : State)
   have finalWF : StateWellFormed after := by
     have result := domain.restoreLocals_wellFormed wellFormed completedWF
     simpa only [after, restoreLocals, readyLocals] using result
-  refine ⟨after, body, finalWF, readyLocals, ?_, ?_, ?_, ?_⟩
+  refine ⟨after, body, finalWF, readyLocals, ?_, ?_, ?_, ?_, ?_⟩
   · exact effect.world.trans readyWorld
   · intro cell old
     have readyOld : cell < ready.nextCell := by rw [readyNext]; exact Nat.lt_succ_of_lt old
@@ -123,5 +125,12 @@ theorem executes_sourceBody (program : Program) (before : State)
       change ready.nextCell ≤ ready.nextCell + 1 + 1
       exact Nat.le_trans (Nat.le_succ _) (Nat.le_succ _)
     exact Nat.le_trans readyLe (Nat.le_trans enteredLe effect.nextCell)
+  · have allocated := (Host.MemoryFrame.borrowed viewResources readyWF).trans
+      ((Host.MemoryFrame.bindLocal ready 4 view).trans
+        (Host.MemoryFrame.bindLocal packed 5 (.signed .i32 0)))
+    have loopFrame := Host.MemoryFrame.scalar (CellEffect.ofModifiesOnly effect completedWF)
+      (HeapFrame.ofStoreEffect effect.toStoreEffect)
+      (bindLocal_owns_fresh packed 5 (.signed .i32 0) packedWF).2
+    exact (allocated.trans loopFrame).restoreLocals ready finalWF
 
 end Lanius.Extraction.CanonicalTokens.Ascii

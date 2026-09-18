@@ -24,15 +24,17 @@ theorem executes_filter (trivia : Trivia.Checked program triviaId)
     (outputOwned : (Assertion.localPointsTo 4 outputCell (some (.signed .i32 output))).holds before)
     (distinct : recordsCell ≠ outputCell)
     (sourceBound : start + width ≤ source.length)
-    (inputBound : inputRow + 2 < records.length) (rowBound : 3 * output + 2 < records.length) :
+    (inputBound : inputRow + 2 < records.length) (rowBound : 3 * output + 2 < records.length)
+    (rawBound : -2147483648 ≤ rawKind ∧ rawKind ≤ 2147483647) :
     ∃ after, Executes program before (filterBranch triviaId kindId) .next after ∧
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array
         (signedI32Values (filteredRecords source records rawKind start width output))) } ∧
       (Assertion.localPointsTo 4 outputCell (some (.signed .i32 (filteredCount rawKind output)))).holds after ∧
-      CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton outputCell)) before after := by
+      CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton outputCell)) before after ∧
+      Host.MemoryFrame before after := by
   have argument : Evaluates program before (.local 6) (.signed .i32 rawKind) before :=
     ⟨1, evalLocal_of_local 0 program before 6 _ kindLocal⟩
-  obtain ⟨tested, called, callEffect⟩ := trivia.evaluates_call before rawKind (.local 6) storage.wellFormed argument
+  obtain ⟨tested, called, callEffect, callMemory⟩ := trivia.evaluates_call before rawKind (.local 6) storage.wellFormed argument
   have guardResult : Evaluates program before (.unary .logicalNot (.call triviaId [.local 6]))
       (.boolean (!(Trivia.result rawKind))) tested := evaluatesUnary called (by rfl)
   have testedStorage := storage.preserved callEffect
@@ -42,19 +44,19 @@ theorem executes_filter (trivia : Trivia.Checked program triviaId)
       have guardFalse : Evaluates program before (.unary .logicalNot (.call triviaId [.local 6]))
           (.boolean false) tested := by simpa only [selected, Bool.not_true] using guardResult
       refine ⟨tested, executesIfFalse guardFalse (executesSkip program tested), ?_, ?_,
-        callEffect.weaken CellSet.empty_subset⟩
+        callEffect.weaken CellSet.empty_subset, callMemory⟩
       · simpa only [filteredRecords, selected, Bool.true_eq, if_true] using testedStorage.recordsContents
       · simpa only [filteredCount, selected, Bool.true_eq, if_true] using outputStill
   | false =>
       have guardTrue : Evaluates program before (.unary .logicalNot (.call triviaId [.local 6]))
           (.boolean true) tested := by simpa only [selected, Bool.not_false] using guardResult
-      obtain ⟨after, kept, contents, owned, effect⟩ := executes_kept_body kind testedStorage
+      obtain ⟨after, kept, contents, owned, effect, memory⟩ := executes_kept_body kind testedStorage
         rawKind start width inputRow output outputCell
         (callEffect.empty_preserves_local storage.wellFormed kindLocal)
         (callEffect.empty_preserves_local storage.wellFormed inputLocal)
-        startSelected endSelected outputStill distinct sourceBound inputBound rowBound
+        startSelected endSelected outputStill distinct sourceBound inputBound rowBound rawBound
       refine ⟨after, executesIfTrue guardTrue kept, ?_, ?_,
-        (callEffect.weaken CellSet.empty_subset).trans effect⟩
+        (callEffect.weaken CellSet.empty_subset).trans effect, callMemory.trans memory⟩
       · simpa only [filteredRecords, selected, Bool.false_eq_true, if_false] using contents
       · simpa only [filteredCount, selected, Bool.false_eq_true, if_false] using owned
 

@@ -6,11 +6,11 @@ open Lanius.Core Lanius.Semantics Lanius.Properties Lanius.Separation
 
 /-- The source's output cap makes the rounding addition safe in signed i32.
 The resulting word count fits the existing 16 MiB workspace. -/
-theorem output_word_bounds (length : Nat) (bounded : length ≤ 8388608) :
+theorem output_word_bounds (length : Nat) (bounded : length ≤ 16777216) :
     length + 3 ≤ 2147483647 ∧ (length + 3) / 4 ≤ 4194304 := by omega
 
 theorem evaluates_output_words (program : Program) (state : State)
-    (lengthId : VarId) (length : Nat) (bounded : length ≤ 8388608)
+    (lengthId : VarId) (length : Nat) (bounded : length ≤ 16777216)
     (read : state.local? lengthId = some (.signed .i32 length)) :
     Evaluates program state
       (.binary .divide (.binary .add (.local lengthId) (.value (.signed .i32 3)))

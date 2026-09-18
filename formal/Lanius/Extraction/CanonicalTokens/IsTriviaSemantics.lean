@@ -132,3 +132,36 @@ theorem recovered_view_result (kind : Int) :
   exact isTriviaView_result kind
 
 end Lanius.Extraction.CanonicalTokens.IsTriviaSemantics
+
+namespace Lanius.Extraction.CanonicalTokens.Model
+
+open Lanius
+open Lanius.Compiler
+open Lanius.Compiler.Lexer
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.Effectful
+open Lanius.FunctionalView.Core.Stateful
+
+private def isTriviaRun (kind : Int) :=
+  Lanius.FunctionalView.Stateful.Acyclic.run?
+    (termMachine (evaluateOperation verifiedFrontendCore noCalls))
+    (machineWith verifiedFrontendCore
+      (evaluateOperation verifiedFrontendCore noCalls))
+    emptyWorld (isTriviaEnvironment kind)
+    Functions.isTriviaView.command
+
+/-- The exact checked `is_trivia` view computes the logical trivia
+    classifier for every encoded token kind. -/
+theorem isTriviaView_result : ∀ kind : TokenKind,
+    returnedBool? (isTriviaRun (Int.ofNat kind.gpuCode)) =
+      some (isTrivia kind) := by
+  intro kind
+  have codeMatches : IsTriviaSemantics.isTriviaCode (Int.ofNat kind.gpuCode) =
+      isTrivia kind := by
+    cases kind <;> rfl
+  rw [← codeMatches]
+  simpa [isTriviaRun] using
+    IsTriviaSemantics.recovered_view_result (Int.ofNat kind.gpuCode)
+
+end Lanius.Extraction.CanonicalTokens.Model

@@ -2244,7 +2244,3 @@ dependencies = [
  "quote",
  "syn",
 ]
-
-[[patch.unused]]
-name = "creusot-std"
-version = "0.14.0-dev"

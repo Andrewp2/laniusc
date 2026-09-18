@@ -17,7 +17,7 @@ structure Entry (data : TraversalData) (before : State) : Prop where
     id := data.outputCell, value := some (.array (signedI32Values data.original)) }
   grammarLength : before.local? 1 = some (.signed .i32 data.grammar.words.length)
   count : before.local? 3 = some (.signed .i32 data.tokens.length)
-  wordLength : before.local? 5 = some (.signed .i32 (treeFrom 0 0 data.tree).words.length)
+  wordLength : before.local? 5 = some (.signed .i32 data.recordsLimit)
   nodeCount : before.local? 7 = some (.signed .i32 data.collection.records.length)
   capacityRead : before.local? 9 = some (.signed .i32 data.original.length)
   nodesFit : data.collection.records.length ≤ 2147483647
@@ -27,7 +27,7 @@ structure Entry (data : TraversalData) (before : State) : Prop where
 theorem Entry.input_pass {data : TraversalData} (entry : Entry data before) (program : Program) :
     Evaluates program before inputGuard (.boolean false) before := by
   let input : InputScalars before := ⟨data.grammar.words.length, data.tokens.length, data.collection.records.length,
-    (treeFrom 0 0 data.tree).words.length, entry.grammarLength, entry.count, entry.nodeCount, entry.wordLength⟩
+    data.recordsLimit, entry.grammarLength, entry.count, entry.nodeCount, entry.wordLength⟩
   have result := input.evaluates program
   have header := data.grammar.encoded.headerPresent
   have tokenBound := data.tokensFit

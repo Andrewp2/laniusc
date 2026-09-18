@@ -19,16 +19,16 @@ abbrev SM := KeywordDispatchSemantics.SM
 
 /-- The mechanically recovered checked keyword command implements the logical
 keyword lookup for an arbitrary embedded spelling. -/
-theorem command_evaluates (leading spelling trailing : List Int)
+theorem command_evaluates (cell : CellId) (leading spelling trailing : List Int)
     (bounded : (leading ++ spelling ++ trailing).length ≤ 2147483647) :
     Lanius.FunctionalView.Stateful.Acyclic.run? TM SM
-      (Model.keywordWorld (leading ++ spelling ++ trailing))
-      (Model.keywordEnvironment (leading ++ spelling ++ trailing)
+      (Model.keywordWorld cell (leading ++ spelling ++ trailing))
+      (Model.keywordEnvironment cell (leading ++ spelling ++ trailing)
         leading.length (leading.length + spelling.length)) KeywordCommand.command =
     some (.returned (some (.signed .i32
         (Model.keywordKind spelling 0 spelling.length))),
-      Model.keywordWorld (leading ++ spelling ++ trailing),
-      Model.keywordEnvironment (leading ++ spelling ++ trailing)
+      Model.keywordWorld cell (leading ++ spelling ++ trailing),
+      Model.keywordEnvironment cell (leading ++ spelling ++ trailing)
         leading.length (leading.length + spelling.length)) := by
   have spellingBound : spelling.length ≤ 2147483647 := by
     have boundedLengths :
@@ -37,51 +37,51 @@ theorem command_evaluates (leading spelling trailing : List Int)
     omega
   cases spelling with
   | nil =>
-      exact KeywordExecutionUnsupported.command_evaluates leading [] trailing
+      exact KeywordExecutionUnsupported.command_evaluates cell leading [] trailing
         spellingBound (by simp) (by simp) (by simp) (by simp)
         (by simp) (by simp)
   | cons first rest1 =>
       cases rest1 with
       | nil =>
-          exact KeywordExecutionUnsupported.command_evaluates leading [first] trailing
+          exact KeywordExecutionUnsupported.command_evaluates cell leading [first] trailing
             spellingBound (by simp) (by simp) (by simp) (by simp)
             (by simp) (by simp)
       | cons second rest2 =>
           cases rest2 with
           | nil => simpa using (KeywordExecution2.command_evaluates
-              leading trailing first second bounded)
+              cell leading trailing first second bounded)
           | cons third rest3 =>
               cases rest3 with
               | nil => simpa using (KeywordExecution3.command_evaluates
-                  leading trailing first second third bounded)
+                  cell leading trailing first second third bounded)
               | cons fourth rest4 =>
                   cases rest4 with
                   | nil => simpa using (KeywordExecution4.command_evaluates
-                      leading trailing first second third fourth bounded)
+                      cell leading trailing first second third fourth bounded)
                   | cons fifth rest5 =>
                       cases rest5 with
                       | nil => simpa using (KeywordExecution5.command_evaluates
-                          leading trailing first second third fourth fifth bounded)
+                          cell leading trailing first second third fourth fifth bounded)
                       | cons sixth rest6 =>
                           cases rest6 with
                           | nil => simpa using (KeywordExecution6.command_evaluates
-                              leading trailing first second third fourth fifth sixth bounded)
+                              cell leading trailing first second third fourth fifth sixth bounded)
                           | cons seventh rest7 =>
                               cases rest7 with
                               | nil =>
                                   exact KeywordExecutionUnsupported.command_evaluates
-                                    leading
+                                    cell leading
                                     [first, second, third, fourth, fifth, sixth, seventh]
                                     trailing spellingBound (by simp) (by simp)
                                     (by simp) (by simp) (by simp) (by simp)
                               | cons eighth rest8 =>
                                   cases rest8 with
                                   | nil => simpa using (KeywordExecution8.command_evaluates
-                                      leading trailing first second third fourth fifth
+                                      cell leading trailing first second third fourth fifth
                                       sixth seventh eighth bounded)
                                   | cons ninth rest9 =>
                                       exact KeywordExecutionUnsupported.command_evaluates
-                                        leading
+                                        cell leading
                                         (first :: second :: third :: fourth :: fifth ::
                                           sixth :: seventh :: eighth :: ninth :: rest9)
                                         trailing spellingBound (by simp) (by simp) (by simp)

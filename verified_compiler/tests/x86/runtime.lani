@@ -1,0 +1,78 @@
+module examples::runtime;
+import verified::host;
+
+pub fn arguments() -> i32 {
+    if (verified::host::argc() != 3) { return 71; }
+    if (verified::host::arg_len(-1) != -1 || verified::host::arg_len(3) != -1) { return 72; }
+    if (verified::host::arg_read(-1, 0, 0) != -1 || verified::host::arg_read(3, 0, 0) != -1) { return 73; }
+    let data: ptr = verified::host::alloc(16, 4);
+    if (data == 0) { return 74; }
+    let values: [i32] = verified::host::i32_slice_from_raw_parts(data, 4);
+    values[0] = -1; values[1] = -1; values[2] = -1; values[3] = -1;
+    let length: i32 = verified::host::arg_read(1, data, 5);
+    if (length < 0 || length > 5) { return 75; }
+    let size: usize = length;
+    if (verified::host::write_stdout(data, size) != length) { return 76; }
+    if (values[2] != -1 || values[3] != -1) { return 77; }
+    if (verified::host::arg_read(2, data, 16) != 0) { return 78; }
+    return verified::host::arg_len(1);
+}
+
+pub fn allocation() -> i32 {
+    let empty: ptr = verified::host::alloc(0, 1);
+    let first: ptr = verified::host::alloc(16, 4);
+    let second: ptr = verified::host::alloc(16, 4);
+    let aligned: ptr = verified::host::alloc(1, 8192);
+    if (empty == 0 || first == 0 || second == 0 || aligned == 0 || first == second) { return 71; }
+    let a: [i32] = verified::host::i32_slice_from_raw_parts(first, 4);
+    let b: [i32] = verified::host::i32_slice_from_raw_parts(second, 4);
+    let index: i32 = 0;
+    while (index < 4) {
+        if (a[index] != 0 || b[index] != 0) { return 72; }
+        a[index] = index + 1;
+        index += 1;
+    }
+    if (b[0] != 0 || b[3] != 0) { return 73; }
+    let negative: i32 = -1;
+    let huge: usize = negative;
+    if (verified::host::alloc(huge, 1) != 0) { return 74; }
+    if (verified::host::write_byte(0, 65) != -1 || verified::host::write_byte(-1, 65) != -1) { return 75; }
+    if (verified::host::write_byte(1, -1) != 1 || verified::host::write_byte(2, 321) != 1) { return 76; }
+    return 0;
+}
+
+pub fn invalid_alignment() -> i32 {
+    let invalid: ptr = verified::host::alloc(16, 3);
+    if (invalid == 0) { return 70; }
+    return 71;
+}
+
+pub fn files() -> i32 {
+    let path: ptr = verified::host::alloc(4096, 4);
+    let data: ptr = verified::host::alloc(16, 4);
+    if (path == 0 || data == 0) { return 71; }
+    let dirty: [i32] = verified::host::i32_slice_from_raw_parts(path, 1024);
+    let index: i32 = 0;
+    while (index < 1024) { dirty[index] = -1; index += 1; }
+    let length: i32 = verified::host::arg_len(1);
+    if (length <= 0 || length > 4095) { return 72; }
+    let size: usize = length;
+    if (verified::host::arg_read(1, path, size) != length) { return 73; }
+    if (verified::host::open_read(path, 0) != -1) { return 74; }
+    if (verified::host::close(1) != -1 || verified::host::read(-1, 0, 0) != -1) { return 75; }
+    let first: i32 = verified::host::open_read(path, size);
+    if (first < 3) { return 76; }
+    let count: i32 = verified::host::read(first, data, 16);
+    if (count < 0) { return 77; }
+    let copied: usize = count;
+    if (verified::host::write_stdout(data, copied) != count) { return 78; }
+    if (verified::host::close(first) != 0 || verified::host::close(first) != -1) { return 79; }
+    if (verified::host::read(first, data, 0) != -1) { return 82; }
+    let second: i32 = verified::host::open_read(path, size);
+    if (second != first + 1 || verified::host::read(first, data, 1) != -1) { return 80; }
+    if (verified::host::read(second, data, 0) != 0) { return 83; }
+    if (verified::host::read(second, data, 1) != 1 || verified::host::close(second) != 0) { return 81; }
+    return count;
+}
+
+pub fn main() -> i32 { return arguments(); }

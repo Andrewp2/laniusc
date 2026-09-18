@@ -27,23 +27,27 @@ theorem executes_kind_store (checked : Kind.Checked program kindId keywordId mat
     (recordsContents : before.cellEntry? recordsCell = some {
       id := recordsCell, value := some (.array (signedI32Values records)) })
     (sourceBound : start + width ≤ source.length) (sourceFits : source.length ≤ 2147483647)
-    (rowBound : outputRow < records.length) :
+    (rowBound : outputRow < records.length)
+    (rawBound : -2147483648 ≤ rawKind ∧ rawKind ≤ 2147483647) :
     ∃ after, Executes program before
         (store (.local 9) (.call kindId [.local 0, .local 6, .local 7, .local 8])) .next after ∧
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array
         (signedI32Values (records.set outputRow (Kind.result source rawKind start width)))) } ∧
-      CellEffect (CellSet.singleton recordsCell) before after := by
+      CellEffect (CellSet.singleton recordsCell) before after ∧ Host.MemoryFrame before after := by
   have argumentsResult := ArgumentsEvaluateTo.cons (localResult program before 0 _ sourceLocal)
     (ArgumentsEvaluateTo.cons (localResult program before 6 _ kindLocal)
       (ArgumentsEvaluateTo.cons (localResult program before 7 _ startLocal)
         (ArgumentsEvaluateTo.singleton (localResult program before 8 _ endLocal))))
-  obtain ⟨classified, classification, classificationEffect⟩ := checked.evaluates_call
+  obtain ⟨classified, classification, classificationEffect, classificationMemory⟩ := checked.evaluates_call
     before sourceCell source rawKind start width _ wellFormed sourceContents argumentsResult sourceBound sourceFits
-  obtain ⟨after, assignment, contents, effect⟩ := evaluatesSliceStore program before classified records
+  obtain ⟨after, assignment, contents, effect, storeHeapFrame, storeEffect⟩ := evaluatesSliceStore program before classified records
     1 (.local 9) _ recordsCell outputRow (Kind.result source rawKind start width)
     wellFormed rowBound recordsLocal (localResult program before 9 _ rowLocal)
     classification classificationEffect recordsContents
-  exact ⟨after, executesExpression assignment, contents, effect⟩
+  have storeMemory := Host.MemoryFrame.arraySet storeEffect storeHeapFrame
+    (classificationEffect.empty_preserves_entry wellFormed recordsContents) contents
+    (Kind.result_range source rawKind start width rawBound)
+  exact ⟨after, executesExpression assignment, contents, effect, classificationMemory.trans storeMemory⟩
 
 private theorem executes_span_store (program : Program) (before : State) (recordsCell : CellId)
     (records : List Int) (outputRow offset : Nat) (valueId : VarId) (value : Int)
@@ -53,18 +57,20 @@ private theorem executes_span_store (program : Program) (before : State) (record
     (valueLocal : before.local? valueId = some (.signed .i32 value))
     (contents : before.cellEntry? recordsCell = some {
       id := recordsCell, value := some (.array (signedI32Values records)) })
-    (bound : outputRow + offset < records.length) (fits : records.length ≤ 2147483647) :
+    (bound : outputRow + offset < records.length) (fits : records.length ≤ 2147483647)
+    (valueBound : -2147483648 ≤ value ∧ value ≤ 2147483647) :
     ∃ after, Executes program before
         (store (add (.local 9) (literal offset)) (.local valueId)) .next after ∧
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array
         (signedI32Values (records.set (outputRow + offset) value))) } ∧
-      CellEffect (CellSet.singleton recordsCell) before after := by
+      CellEffect (CellSet.singleton recordsCell) before after ∧ Host.MemoryFrame before after := by
   have indexResult := evaluatesNatI32Add (localResult program before 9 _ rowLocal)
     (show Evaluates program before (literal offset) (.signed .i32 offset) before from ⟨1, rfl⟩) (by omega)
-  obtain ⟨after, assignment, afterContents, effect⟩ := evaluatesSliceStore program before before records
+  obtain ⟨after, assignment, afterContents, effect, storeHeapFrame, _⟩ := evaluatesSliceStore program before before records
     1 _ (.local valueId) recordsCell (outputRow + offset) value wellFormed bound recordsLocal indexResult
     (localResult program before valueId _ valueLocal) (CellEffect.refl wellFormed) contents
-  exact ⟨after, executesExpression assignment, afterContents, effect⟩
+  exact ⟨after, executesExpression assignment, afterContents, effect,
+    Host.MemoryFrame.arraySet effect storeHeapFrame contents afterContents valueBound⟩
 
 /-- All three writes of a kept token, evaluated in source order. The result
 includes the mathematical row update and the concrete caller-cell footprint. -/
@@ -83,31 +89,33 @@ theorem executes_row_stores (checked : Kind.Checked program kindId keywordId mat
     (recordsContents : before.cellEntry? recordsCell = some {
       id := recordsCell, value := some (.array (signedI32Values records)) })
     (sourceBound : start + width ≤ source.length) (sourceFits : source.length ≤ 2147483647)
-    (rowBound : outputRow + 2 < records.length) (recordsFit : records.length ≤ 2147483647) :
+    (rowBound : outputRow + 2 < records.length) (recordsFit : records.length ≤ 2147483647)
+    (rawBound : -2147483648 ≤ rawKind ∧ rawKind ≤ 2147483647) :
     ∃ after, (∀ rest completion final, Executes program after rest completion final →
         Executes program before (rowStores kindId rest) completion final) ∧
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array
         (signedI32Values (writeRow records outputRow (Kind.result source rawKind start width) start (start + width)))) } ∧
-      CellEffect (CellSet.singleton recordsCell) before after := by
-  obtain ⟨first, firstRun, firstContents, firstEffect⟩ := executes_kind_store checked before
+      CellEffect (CellSet.singleton recordsCell) before after ∧ Host.MemoryFrame before after := by
+  obtain ⟨first, firstRun, firstContents, firstEffect, firstMemory⟩ := executes_kind_store checked before
     sourceCell recordsCell source records rawKind start width outputRow wellFormed sourceLocal recordsLocal
-    kindLocal startLocal endLocal rowLocal sourceContents recordsContents sourceBound sourceFits (by omega)
+    kindLocal startLocal endLocal rowLocal sourceContents recordsContents sourceBound sourceFits (by omega) rawBound
   have firstRecords := firstEffect.preserves_local_of_distinct_value wellFormed recordsLocal recordsContents (by intro h; cases h)
   have firstRow := firstEffect.preserves_local_of_distinct_value wellFormed rowLocal recordsContents (by intro h; cases h)
   have firstStart := firstEffect.preserves_local_of_distinct_value wellFormed startLocal recordsContents (by intro h; cases h)
-  obtain ⟨second, secondRun, secondContents, secondEffect⟩ := executes_span_store program first recordsCell
+  obtain ⟨second, secondRun, secondContents, secondEffect, secondMemory⟩ := executes_span_store program first recordsCell
     (records.set outputRow (Kind.result source rawKind start width)) outputRow 1 7 start
     firstEffect.wellFormed (by simpa using firstRecords) firstRow firstStart firstContents
-    (by simpa using (show outputRow + 1 < records.length by omega)) (by simpa using recordsFit)
+    (by simpa using (show outputRow + 1 < records.length by omega)) (by simpa using recordsFit) (by omega)
   have throughSecond := firstEffect.trans secondEffect
   have secondRecords := throughSecond.preserves_local_of_distinct_value wellFormed recordsLocal recordsContents (by intro h; cases h)
   have secondRow := throughSecond.preserves_local_of_distinct_value wellFormed rowLocal recordsContents (by intro h; cases h)
   have secondEnd := throughSecond.preserves_local_of_distinct_value wellFormed endLocal recordsContents (by intro h; cases h)
-  obtain ⟨after, thirdRun, thirdContents, thirdEffect⟩ := executes_span_store program second recordsCell
+  obtain ⟨after, thirdRun, thirdContents, thirdEffect, thirdMemory⟩ := executes_span_store program second recordsCell
     ((records.set outputRow (Kind.result source rawKind start width)).set (outputRow + 1) start)
     outputRow 2 8 (start + width) secondEffect.wellFormed (by simpa using secondRecords) secondRow
-    secondEnd secondContents (by simpa using rowBound) (by simpa using recordsFit)
+    secondEnd secondContents (by simpa using rowBound) (by simpa using recordsFit) (by omega)
   exact ⟨after, fun _ _ _ tailRun => executesSequence firstRun (executesSequence secondRun
-    (executesSequence thirdRun tailRun)), thirdContents, throughSecond.trans thirdEffect⟩
+    (executesSequence thirdRun tailRun)), thirdContents, throughSecond.trans thirdEffect,
+    firstMemory.trans (secondMemory.trans thirdMemory)⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction

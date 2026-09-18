@@ -104,7 +104,7 @@ structure SyntaxData.Owns (data : SyntaxData) (state : State) : Prop where
 
 def SyntaxData.Post (data : SyntaxData) := bodyPost data.request data.raw data.canonical data.kinds
   data.treeRecords data.treeOffsets data.rawCell data.canonicalCell data.kindsCell data.workspaceCell
-  data.recordsCell data.offsetsCell data.grammarLayout data.grammar data.grammarWords data.workspaceLayout
+  data.recordsCell data.offsetsCell data.grammarLayout data.grammar data.grammarWords data.workspaceLayout data.depth
 
 def SyntaxData.RawOutput (data : SyntaxData) (after : State) : Prop :=
   (ReadOnly.World.owns (ReadOnly.World.pair data.sourceCell (sourceIntegers data.request.source) data.rawCell
@@ -166,9 +166,9 @@ theorem CheckedSyntax.body_executes (checked : CheckedSyntax materializer) (link
       Executes program.core before (syntaxFunctionBody checked.tail checked.early checked.inputs checked.parserId checked.parserType)
         (.returned (some (syntaxResult checked.tail.finish.constructor.typeId stage detail data.raw.length count nodes words position))) after ∧
       data.Post stage detail count nodes words position before after ∧ data.RawOutput after ∧
-      CellEffect data.writes before after := by
-  obtain ⟨stage, detail, count, nodes, words, position, after, run, post, buffers, effect⟩ :=
-    lex_to_return checked.tail linked.reader linked.parsedType checked.symbols checked.early checked.sameConstructor
+      CellEffect data.writes before after ∧ Host.MemoryPath before after := by
+  obtain ⟨stage, detail, count, nodes, words, position, after, run, post, buffers, effect, path⟩ :=
+    lex_to_return checked.tail checked.memory linked.reader linked.parsedType checked.symbols checked.early checked.sameConstructor
       linked.invariant linked.lexerLink linked.lexerInjective linked.lexerInverseType linked.lexerInverse linked.lexerRetained
       linked.countAccessor linked.lexerId linked.countId linked.resultType linked.canonicalizer
       linked.parserInverseType linked.parserInverse linked.parserRetained data.request data.raw rfl
@@ -184,7 +184,7 @@ theorem CheckedSyntax.body_executes (checked : CheckedSyntax materializer) (link
       (locals ⟨2, by decide⟩) (locals ⟨3, by decide⟩) (locals ⟨10, by decide⟩) (locals ⟨11, by decide⟩)
       (locals ⟨12, by decide⟩) (locals ⟨13, by decide⟩) (locals ⟨14, by decide⟩) (locals ⟨15, by decide⟩)
       (locals ⟨16, by decide⟩) owned.sourceRaw owned.canonical owned.kinds owned.grammar owned.workspace owned.records owned.offsets
-  refine ⟨stage, detail, count, nodes, words, position, after, ?_, post, buffers, effect⟩
+  refine ⟨stage, detail, count, nodes, words, position, after, ?_, post, buffers, effect, path⟩
   apply inputGuards.pass program.core _ _ inputLengths (data.lengths_nonnegative locals)
   simpa only [linked.parserId, linked.parserType] using run
 
@@ -223,10 +223,10 @@ theorem CheckedSyntax.call_evaluates (checked : CheckedSyntax materializer) (lin
       Evaluates program.core caller (.call checked.source.function.id arguments)
         (syntaxResult checked.tail.finish.constructor.typeId stage detail data.raw.length count nodes words position) after ∧
       data.Post stage detail count nodes words position before after ∧ data.RawOutput after ∧
-      CellEffect data.writes before after := by
+      CellEffect data.writes before after ∧ Host.MemoryPath before after := by
   let callee := enterCall before data.bindings
   have locals : data.Locals callee := enterCall_parameterBindings_matches wellFormed
-  obtain ⟨stage, detail, count, nodes, words, position, after, run, post, buffers, effect⟩ :=
+  obtain ⟨stage, detail, count, nodes, words, position, after, run, post, buffers, effect, path⟩ :=
     checked.body_executes linked data valid (enterCall_preserves_wellFormed wellFormed) locals (owned.entered wellFormed _)
   have identity : checked.source.function.id = checked.source.source.id := by
     simpa [Program.function?] using List.find?_some checked.source.found
@@ -237,7 +237,29 @@ theorem CheckedSyntax.call_evaluates (checked : CheckedSyntax materializer) (lin
     rfl
   exact ⟨stage, detail, count, nodes, words, position, restoreLocals before after,
     evaluatesCallReturned argumentsResult found bound checked.body run, post.closeCall wellFormed, buffers,
-    CellEffect.closeCall before data.bindings wellFormed effect⟩
+    CellEffect.closeCall before data.bindings wellFormed effect,
+    path.closeCall before data.bindings⟩
+
+/-- The public frontend's native-memory contract. The input state is typed and
+the argument expressions are checked; all final array and word-range facts are
+derived from the existing language-wide runtime preservation theorem. -/
+theorem CheckedSyntax.call_native {store : StoreTyping}
+    (checked : CheckedSyntax materializer) (linked : LinkedSyntax checked)
+    (data : SyntaxData) (valid : data.Valid)
+    (typed : RuntimeStateHasType program.core context before store)
+    (callTyped : Typing.ExprHasType program.core context (.call checked.source.function.id arguments) type)
+    (owned : data.Owns before)
+    (argumentsResult : ArgumentsEvaluateTo program.core before arguments data.values before) :
+    ∃ stage detail : Int, ∃ count nodes words : Nat, ∃ position : Int, ∃ after,
+      Evaluates program.core before (.call checked.source.function.id arguments)
+        (syntaxResult checked.tail.finish.constructor.typeId stage detail data.raw.length count nodes words position) after ∧
+      data.Post stage detail count nodes words position before after ∧ data.RawOutput after ∧
+      CellEffect data.writes before after ∧ Host.MemoryFrame before after ∧
+      ∃ afterStore, RuntimeStateHasType program.core context after afterStore := by
+  obtain ⟨stage, detail, count, nodes, words, position, after, run, post, buffers, effect, path⟩ :=
+    checked.call_evaluates linked data valid typed.typed.wellFormed owned argumentsResult
+  obtain ⟨afterStore, afterTyped, frame⟩ := Host.checked_evaluation program callTyped typed run path
+  exact ⟨stage, detail, count, nodes, words, position, after, run, post, buffers, effect, frame, afterStore, afterTyped⟩
 
 def syntaxArgumentValues (environment : Fin 17 → Value) : List Value := (List.finRange 17).map environment
 

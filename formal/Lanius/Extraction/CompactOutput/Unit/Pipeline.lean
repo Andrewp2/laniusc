@@ -16,7 +16,7 @@ private theorem literal_arguments (program : Program) (state : State) (values : 
 
 /-- Consume the proved collector continuation and execute the real unit
 emitter. The surrounding main/I/O control flow is a separate obligation. -/
-theorem collection_then_emit (emission : Emission)
+theorem collection_then_emit {tail : List Int} (emission : Emission)
     (word : Word.Checked program byte digit)
     (bytes : Bytes.Checked program byte digit hex)
     (tokens : Tokens.Checked program byte digit word)
@@ -30,7 +30,8 @@ theorem collection_then_emit (emission : Emission)
       emission.semanticCell emission.semanticOriginal before extracted)
     (valid : emission.data.Valid) (kindsFit : emission.data.grammar.grammar.n_kinds ≤ 32768)
     (post : emission.data.Post stage detail emission.count emission.nodes emission.words position before extracted)
-    (raw : emission.data.RawOutput extracted) (success : stage = 0)
+    (raw : emission.data.PaddedRawOutput tail extracted)
+    (sourceCapacity : emission.data.request.source.length + tail.length = emission.sourceCapacity) (success : stage = 0)
     (wellFormed : StateWellFormed extracted)
     (path : I32Prefix extracted emission.pathCell emission.pathCapacity (sourceIntegers emission.path))
     (output : extracted.cellEntry? emission.outputCell = some {
@@ -48,7 +49,7 @@ theorem collection_then_emit (emission : Emission)
     ∃ collection : CollectionRecords emission.data.grammar (artifactTokens emission.data.tokens) result.parse.tree 0 0,
     ∃ collected emitted,
       Evaluates program.core extracted (.call collectorId
-        ((collectorValues emission.data emission.count emission.nodes emission.words emission.semanticCell emission.semanticOriginal).map Expr.value))
+        ((collectorValues emission.data emission.count emission.nodes emission.semanticCell emission.semanticOriginal).map Expr.value))
         (.signed .i32 0) collected ∧
       Evaluates program.core collected (.call checked.source.function.id (emission.values.map Expr.value))
         (.signed .i32 (appendAll emission.capacity (emission.encoding collection.assignments collection.records)
@@ -73,7 +74,7 @@ theorem collection_then_emit (emission : Emission)
             some ((CompactDecode.emissionUnit emission path collection.assignments collection.records).artifact,
               {bytes, offset := position + (emission.encoding collection.assignments collection.records).length}) := by
   obtain ⟨result, collection, collected, _, _, _, collectorCall, contents, collectorEffect, frontendEffect⟩ := continuation
-  have storage : Storage emission result collection collected := Storage.of_collection valid kindsFit post raw success
+  have storage : Storage emission result collection collected := Storage.of_collection valid kindsFit post raw sourceCapacity success
     wellFormed collectorEffect
     (fun cell member => collectorSeparate cell (List.mem_cons_of_mem _ member))
     (by simpa only [if_pos semanticRoom] using contents)

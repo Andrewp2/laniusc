@@ -1,0 +1,57 @@
+module app::main;
+import backend::program;
+import backend::image;
+import verified::host;
+import verified::byte_io;
+
+// Read Core syntax and emit a complete Linux x86-64 ELF. --raw emits the same
+// linked program without process startup, for focused ABI/machine tests.
+fn main() -> i32 {
+    let arguments: i32 = verified::host::argc();
+    if (arguments != 2 && arguments != 3) { return 1; }
+    let path_index: i32 = arguments - 1;
+    let path_length: i32 = verified::host::arg_len(path_index);
+    if (path_length <= 0 || path_length > 1024) { return 2; }
+    let path: ptr = verified::host::alloc(1024, 4);
+    let raw: ptr = verified::host::alloc(1048576, 4);
+    let packed: ptr = verified::host::alloc(65536, 4);
+    let words: ptr = verified::host::alloc(262144, 4);
+    let function_words: ptr = verified::host::alloc(262144, 4);
+    let work: ptr = verified::host::alloc(2097216, 4);
+    let code: ptr = verified::host::alloc(8388608, 4);
+    if (path == 0 || raw == 0 || packed == 0 || words == 0 || function_words == 0 || work == 0 || code == 0) { return 3; }
+    if (arguments == 3) {
+        if (verified::host::arg_len(1) != 5 || verified::host::arg_read(1, path, 5) != 5) { return 1; }
+        let option: [i32] = verified::host::i32_slice_from_raw_parts(path, 256);
+        // Packed little-endian UTF-8 for "--raw".
+        if (option[0] != 1634872621 || (option[1] & 255) != 119) { return 1; }
+    }
+    let size: usize = path_length;
+    if (verified::host::arg_read(path_index, path, size) != path_length) { return 4; }
+    let handle: i32 = verified::host::open_read(path, size);
+    if (handle < 0) { return 5; }
+    let bytes: [i32] = verified::host::i32_slice_from_raw_parts(raw, 262144);
+    let scratch: [i32] = verified::host::i32_slice_from_raw_parts(packed, 16384);
+    let length: i32 = verified::byte_io::read_file(handle, bytes, 262144, scratch);
+    let closed: i32 = verified::host::close(handle);
+    if (length < 0 || length % 4 != 0 || closed < 0) { return 6; }
+    let input: [i32] = verified::host::i32_slice_from_raw_parts(words, 65536);
+    let index: i32 = 0;
+    while (index < length / 4) {
+        input[index] = bytes[index * 4] | (bytes[index * 4 + 1] << 8) |
+            (bytes[index * 4 + 2] << 16) | (bytes[index * 4 + 3] << 24);
+        index += 1;
+    }
+    let function_input: [i32] = verified::host::i32_slice_from_raw_parts(function_words, 65536);
+    let workspace: [i32] = verified::host::i32_slice_from_raw_parts(work, 524304);
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(code, 2097152);
+    let emitted: i32 = -1;
+    if (arguments == 3) {
+        emitted = backend::program::compile(input, length / 4, function_input, 65536, workspace, 524304, output, 2097152, 0);
+    } else {
+        emitted = backend::image::compile(input, length / 4, function_input, 65536, workspace, 524304, output, 2097152);
+    }
+    if (emitted < 0) { return 7; }
+    if (verified::byte_io::write_stdout(output, emitted, packed) != emitted) { return 8; }
+    return 0;
+}

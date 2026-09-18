@@ -64,6 +64,6 @@ theorem recovered : isTriviaView.command = command := by
   calc
     isTriviaView.command = pattern.denote := exact_of_matches (by native_decide)
     _ = command := (exact_of_matches
-      (candidate := command) (by native_decide)).symm
+      (candidate := command) (by rfl)).symm
 
 end Lanius.Extraction.CanonicalTokens.TriviaCommand

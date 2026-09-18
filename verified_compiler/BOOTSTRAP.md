@@ -5,6 +5,13 @@ removed. The supported producer is the checked-in Lanius extractor; the shell
 commands below only compile it, supply its recorded source paths, and invoke
 Lean.
 
+The production extractor now reserves 16 MiB of logical output (64 MiB of
+i32-per-byte storage). This accommodates the expanded backend in one artifact;
+the existing 16 MiB packed workspace is unchanged. Fresh backend source/Core
+validation passed. The full extractor execution-proof connection and exact
+current self-instance now pass too; the saved kernel self-certificate remains
+open. See `MILESTONE3.md`. Earlier identity records below are historical.
+
 This workflow targets an untrusted GPU-compiled x86-64 Linux ELF executable.
 The Lanius lexer, parser, derivation materializer, and compact serializer run
 natively. The executable itself emits the complete Lean module; there is no
@@ -41,11 +48,73 @@ Boolean match lowering failure, and instruction-selection assertions. These
 failures were reproduced with the corresponding pre-change lowering; they have
 not been fixed or removed from the tests.
 
-It does **not** yet prove the extractor's exact execution/output behavior for
-arbitrary supported inputs or produce code through a verified Lanius x86
-backend. See `PLAN.md` for the full goal.
+The checked Core executable now has an exact execution/output proof on the
+documented successful-input domain. Actual-main rejection also covers no
+inputs, allocation exhaustion, invalid/missing paths after a loadable prefix
+(including an empty prefix), and oversized files after any loadable prefix. The oversized-file
+proof includes mandatory close and the actual diagnostic calls before code 6.
+An earlier frontend or encoding error may return before a designated bad file.
+The unified `CheckedExecution.hostSafe` theorem now gives finite termination,
+soundness, and failure safety for every invocation in the explicit deterministic
+host domain. It does not assume that files exist, fit, or parse. The active
+whole-extractor checker now has zero nonstandard axioms; final concrete kernel
+acceptance remains open. None of this proves the bootstrap executable's native
+x86 behavior or produces code through a verified Lanius x86 backend. See `MILESTONE3.md` for the
+current proof boundary and `PLAN.md` for the full goal.
+
+The final source-to-execution interface is `Entry.checkSource`. It retains the
+exact source-checker result, source-derived Core provenance, entrypoint, and
+execution theorem in one certificate; the self-check consumes that result
+without a second parse or synthesis. The latest [acceptance audit](AUDIT.md)
+records the still-open trust boundaries. In particular, running the self-check
+in IO is not a standalone kernel-checked proof of the concrete self-instance.
 
 ## Current workflow
+
+There are now two bootstrap stages: the GPU compiler builds the Lanius backend,
+and that backend produces a whole extractor ELF. Both are untrusted until the
+compiler proof is complete. The earlier direct GPU-to-extractor route remains
+the independent bootstrap comparison; it is not a second extractor implementation.
+
+### Extractor executable emitted by the Lanius backend
+
+With the existing GPU compiler executable and validated self-pack available,
+run from the repository root (each command has a two-minute ceiling):
+
+```sh
+timeout --kill-after=1s 119s target/debug/laniusc --emit x86_64 \
+  --source-root verified_compiler/src --stdlib-root stdlib \
+  -o target/verified-compiler/lanius-backend verified_compiler/tools/backend.lani
+
+mapfile -t self_sources < verified_compiler/source-closure.txt
+timeout --kill-after=1s 119s lake -d formal env lean --run \
+  formal/Lanius/X86/Tools/Transport.lean \
+  target/verified-compiler/SelfCompactRequirements.lean \
+  target/verified-compiler/extractor.core "${self_sources[@]}"
+
+timeout --kill-after=1s 119s target/verified-compiler/lanius-backend \
+  target/verified-compiler/extractor.core \
+  > target/verified-compiler/extractor-lanius-x86
+chmod u+x target/verified-compiler/extractor-lanius-x86
+
+timeout --kill-after=1s 119s target/verified-compiler/extractor-lanius-x86 \
+  "${self_sources[@]}" > target/verified-compiler/SelfLaniusX86.lean
+cmp target/verified-compiler/SelfCompactRequirements.lean \
+  target/verified-compiler/SelfLaniusX86.lean
+```
+
+The Lean tool authenticates sources and serializes structural Core syntax;
+source-to-Core synthesis is still Lean code. Lanius owns machine lowering,
+linking, runtime bodies, ELF headers and startup. The backend CLI emits ELF by
+default; use `--raw INPUT.core` only for linked-code ABI tests. GNU as/ld appear
+in focused test harnesses, not the production emission path.
+
+The resulting extractor currently self-extracts in 2.12 seconds. This measures
+execution, **not verification**. See `BACKEND.md` for exact evidence and remaining
+runtime/storage/proof obligations. The output needs the same validation as the
+earlier bootstrap; no trust shortcut is enabled by these engineering results.
+
+### Direct GPU bootstrap and singular extraction
 
 Build the untrusted x86 bootstrap executable with the existing GPU compiler:
 
@@ -61,7 +130,7 @@ Self-extract the exact recorded closure into one compact Lean module:
 ```sh
 xargs target/verified-compiler/lanius-extractor \
   < verified_compiler/source-closure.txt \
-  > target/verified-compiler/SelfCompactExtracted.lean
+  > target/verified-compiler/SelfCompactRequirements.lean
 ```
 
 Build the fixed decoder/checker once, then validate the embedding:
@@ -69,7 +138,7 @@ Build the fixed decoder/checker once, then validate the embedding:
 ```sh
 lake -d formal build Lanius.Extraction.CoreSynthesis.Program
 xargs lake -d formal env lean --run \
-  target/verified-compiler/SelfCompactExtracted.lean \
+  target/verified-compiler/SelfCompactRequirements.lean \
   < verified_compiler/source-closure.txt
 ```
 
@@ -86,6 +155,281 @@ may return values outside the extractor's own exit-code set.
 `checkExtractorCoreSourcePack` separately links `app::main::main` to a
 well-formed executable and checks extractor-specific return codes. The
 generated module deliberately does not impose that policy on its inputs.
+
+## Parser and tree resource certificates
+
+The milestone-3 self-check also requires a finite parser envelope for each
+source file. `tools/envelope.lani` proposes these by calling the existing
+Lanius lexer/parser. It is untrusted bootstrap tooling, not another extractor
+or a second parser. Lean independently checks seed, prediction, scanning, and
+completion closure against the already authenticated grammar and tokens, then
+proves the candidate fits the source call's workspace capacity. It also
+calculates and independently checks resource budgets on those chart items,
+covering the node count, record words, and depth of every recognized tree.
+This does not add another parser or change the envelope payload.
+
+Prepare the grammar, compile the proposer to x86, and generate the ordered
+candidates. Each pipeline operation is bounded to two minutes:
+
+```sh
+LAKE="$HOME/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lake"
+timeout --kill-after=1s 119s "$LAKE" -d formal env lean --run \
+  formal/Lanius/Extraction/Tests/Parser/Prepare.lean \
+  target/verified-compiler/envelope-grammar.bin
+timeout --kill-after=1s 119s cargo run -q --bin laniusc -- --emit x86_64 \
+  --source-root verified_compiler/src --stdlib-root stdlib \
+  -o target/verified-compiler/envelope verified_compiler/tools/envelope.lani
+timeout --kill-after=1s 119s xargs target/verified-compiler/envelope \
+  target/verified-compiler/envelope-grammar.bin \
+  < verified_compiler/source-closure.txt > target/verified-compiler/self-envelopes.bin
+```
+
+Check the singular embedding and resource candidates together from the repository
+root. Lake builds the required proof modules, source validator and general
+resource checker, loads their native libraries in dependency order, and runs
+the built self driver against `source-closure.txt`. It reads and validates the
+input anew; only unchanged driver code and shared infrastructure are reused:
+
+```sh
+timeout --kill-after=1s 119s "$LAKE" -d formal run check-self \
+  target/verified-compiler/SelfCompactRequirements.lean \
+  target/verified-compiler/self-envelopes.bin
+```
+
+The September 12 measurement, with shared proof/native imports built, was 44.36 seconds;
+the same driver under the interpreter took 87.91 seconds. Parser/tree resources
+take 1.18 seconds versus 37.78 seconds. The first native helper build took
+19.85 seconds separately. These are executable-validation timings, not kernel
+self-certificate timings. The September 17 indexed-checker/shared-runner changes
+are verified on the backend closure, but the extractor-wide attempt hit the
+119-second limit while rebuilding frontend dependencies before validation.
+There is no updated self-check timing yet. No `native_decide` or trust assumption was added.
+See `self-source-lake-native.log` and `parser-resource-native-build.log` in
+`target/verified-compiler`.
+
+The internal self-check takes both artifact paths. The current saved embedding
+is `SelfCompactRequirements.lean` (identical to `SelfLaniusX86.lean`, SHA-256
+`bc11dd2187755d63eb1ad4f8de4ac547c4e753f44c5142fc15f64113e62a675e`).
+The older `SelfCompactExtracted.lean` is a different source instance; its saved
+88.78-second integration result does not accept the current 16 MiB instance.
+Regenerate or revalidate envelope candidates when the source closure changes;
+an old candidate may still pass if its authenticated token/grammar structure
+is unchanged. The current instance passes executable validation; its saved kernel
+certificate remains pending.
+
+This driver constructs `Entry.CheckedSource` inside IO. It does not persist a
+closed kernel declaration of that type. Compiling the generated IO program to
+an `.olean` alone would not prove that its concrete check succeeded. Milestone 3
+still needs a saved certificate for the exact encoded artifact and independent
+ordered source bytes, retaining the successful source-to-Core construction
+equation. The combined checker's inherited nonstandard axioms are now gone. Concrete successful
+self-extraction also needs its loading and success-domain evidence.
+
+### Fresh encoding/source-binding kernel certificate
+
+With the shared imports built, run this from the repository root:
+
+```sh
+timeout --kill-after=1s 119s "$LAKE" -d formal env lean \
+  verified_compiler/proofs/Encoding.lean \
+  -o target/verified-compiler/SelfEncoding.olean
+```
+
+This always reads the current emitted module and ordered source closure; do
+not substitute a cached Lake target when the external inputs change. The saved
+`.olean` contains the frozen structured data and the closed `encodable`,
+`decoded`, and `source_bound` theorems. It does not merely run an IO checker.
+The complete fresh invocation passed in 58.52 seconds, down from 75.51,
+including output, with 6,814,944 KB peak RSS. Typed scalar fields reuse generic
+bounds proofs; collection sizes/counts remain checked. Bounds/decoder checking
+took 21.13 seconds and source binding/final audit took 4.80 seconds.
+Phase diagnostics are in `target/verified-compiler/self-encoding-phases.log`.
+
+This is a partial certificate: it proves compact encodability, the public
+decoder round trip, and exact ordered source binding. It uses quoted structured
+data as the embedding, not a kernel equality to the bootstrap's transport
+literal. Surface/Core checking and the concrete execution/resource certificate
+remain open. The strict audit allows only standard Lean axioms. Loading and
+auditing the saved result is measured separately in `AUDIT.md`; that is not a
+fresh-check timing. The matching focused regression target is
+`Lanius.Extraction.Tests.Compact.Bounded`.
+
+### Representative Surface kernel certificate
+
+With `SelfEncoding.olean` saved, run from the repository root. The runner
+builds the shared certificate dependencies and the existing native compact
+reader before invoking the kernel-checked recipe. The certificate process uses
+four Lean workers and a 7,000 MB Lean memory limit; these are resource bounds,
+not a promise of parallel kernel checking or a performance improvement:
+
+```sh
+timeout --kill-after=1s 119s \
+  "$HOME/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lake" -d formal run certify \
+  verified_compiler/proofs/Surface.lean target/verified-compiler/SelfSurface.olean
+```
+
+This checks units 17, 14, and 2 (`host`, `token_scan`, and `byte_io`) against
+the frozen source-bound embedding and saves the original checker's acceptance.
+Native code only proposes data. Kernel equations authenticate each proposal,
+and the strict audit rejects nonstandard axioms. With shared imports and the
+native reader built, the September 17 complete invocation/output took 53.66
+seconds and 3,954,216 KB peak RSS; the preceding fresh measurement was 47.79
+seconds. The executable validation speedups do not establish a kernel speedup.
+It uses authenticated grammar/root indexes, checked path witnesses, and a
+single-pass context plan, retaining the original checker's exact result.
+Phase diagnostics are in `self-surface-phases.log`; the whole-command log is
+`scanner-spelling-kernel-fresh.log`. The recipe separates cache/token checks,
+linking/reconstruction, spelling coverage, origin validation, final proof
+assembly, and the strict audit. It stops when a retained phase declaration
+fails its axiom audit. See the current `PLAN.md` analysis.
+Native reader preparation took 0.89 seconds separately with other dependencies
+built. These are not cold whole-infrastructure timings.
+
+Reload and audit the frozen certificate with:
+
+```sh
+timeout --kill-after=1s 119s \
+  "$HOME/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lake" -d formal run certify \
+  verified_compiler/proofs/LoadSurface.lean target/verified-compiler/LoadSurface.olean
+```
+
+That invocation took 1.62 seconds, including dependency freshness checks and
+output. It is reuse, not a fresh verification of current source files.
+
+These are three representative units, not whole-pack Surface acceptance. Rebuild
+the encoding certificate for changed external inputs; an old `.olean` proves
+facts about its frozen data, not the current filesystem. A changed or malformed
+proposal cannot bypass the exact equations.
+
+To profile overlapping kernel computations on the frozen byte-I/O fixture:
+
+```sh
+timeout --kill-after=1s 59s \
+  "$HOME/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lake" -d formal run certify \
+  verified_compiler/proofs/ProfileSurface.lean target/verified-compiler/ProfileSurface.olean
+```
+
+This rechecks the diagnostic equalities, but reuses the saved input and caches.
+Do not add its phase times or present them as fresh whole-program verification.
+The September 13 investigation and rejected alternatives are recorded in `PLAN.md`.
+
+### Full Core typing kernel certificate
+
+Run from the repository root after self-extraction. `certify` builds the shared
+proof and native proposal dependencies before invoking the recipe:
+
+```sh
+timeout --kill-after=2s 115s \
+  "$HOME/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lake" -d formal run certify \
+  verified_compiler/proofs/Core.lean target/verified-compiler/SelfCore.olean
+```
+
+This freezes the complete proposed Core program and proves `wellTyped`,
+`target`, and `function_count` with only standard Lean axioms. All 125 functions
+are checked, not just the reachable executable closure. A fresh invocation with
+shared dependencies built takes 15.08 seconds, including proposals, quotation,
+proof checks, audit, and output. Typing/audit is 4.52 seconds of that; phase
+diagnostics are in `target/verified-compiler/self-core-phases.log`.
+
+The native proposal checks the source bytes and synthesizes Core, but this
+certificate **does not prove source correspondence**, extractor behavior, or
+x86 preservation. It cannot replace `Entry.CheckedSource`. That source-bound
+certificate must eventually connect this same frozen Core to the authenticated
+Surface pack. Typing alone also does not prove runtime memory safety or that
+external services behave correctly.
+
+Reload and audit the frozen typing/target certificate with:
+
+```sh
+timeout --kill-after=2s 115s \
+  "$HOME/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lake" -d formal run certify \
+  verified_compiler/proofs/LoadCore.lean target/verified-compiler/LoadCore.olean
+```
+
+This takes 1.19 seconds and is reuse, not fresh verification of current files.
+For checker regressions, build `Lanius.Extraction.Tests.Typing`,
+`Lanius.Extraction.Tests.Reification`, `Lanius.Extraction.Tests.Lowering`, and
+`Lanius.Extraction.CoreSynthesisTests`. Core quotation is shared in
+`Lanius.Core.Quote`; the temporary probe is not retained as another recipe.
+
+### Complete Surface-to-Core lowering certificate
+
+With the same `SelfCore.olean` available, run one complete fresh lowering check:
+
+```sh
+timeout --kill-after=2s 115s \
+  "$HOME/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lake" -d formal run certify \
+  verified_compiler/proofs/Lowering.lean target/verified-compiler/SelfLowering.olean
+```
+
+This proposes and quotes all 18 Surface units, authenticates preparation and
+each module's lowering, and composes the original whole-program checker
+equation for the existing 125-function Core. Constants, layouts, function order,
+target, and external policy are included. No saved lowering subproofs are used.
+The complete invocation takes 84.77 seconds and 3,397,912 KB peak RSS, with
+shared dependencies and the Core candidate available. Shared support refresh
+took 38.02 seconds separately. Phases and output are recorded in
+`self-lowering-phases.log` and `self-lowering-fresh-final.log`.
+
+Reload and audit the lowering, typing, and target certificates with:
+
+```sh
+timeout --kill-after=2s 115s \
+  "$HOME/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lake" -d formal run certify \
+  verified_compiler/proofs/LoadLowering.lean target/verified-compiler/LoadLowering.olean
+```
+
+That takes 1.54 seconds and is reuse, not a fresh check. These certificates
+still do not authenticate all Surface inputs against their source bytes:
+source-to-Surface acceptance is three of 18 units. They do not establish the
+closed extractor instance or general compiler/x86 semantic preservation.
+Rebuild candidates and certificates when inputs change; see `AUDIT.md` for
+artifact identities and `PLAN.md` for the remaining work and performance gap.
+
+### Historical resource evidence
+
+Historically, all 18 files of the earlier instance passed the source-bound
+parser and tree resource checks. Parser and tree resource obligations are
+closed on the checked domain, and
+the source-linked frontend succeeds on the checked input domains. Semantic
+collection already derives its capacity bound after frontend success. The
+source-only full-module output bound was checked as well: 7,967,185 bytes
+against that instance's 8,388,608-byte allocation. The current allocation is
+16,777,216 bytes and requires its own refreshed acceptance. The bound covers every recognized tree
+and uses retained raw-token evidence without another lexer or parser pass.
+The public `CheckedExecution.run_complete` theorem now proves successful
+termination and exact certified output on the source-only syntax/resource
+domain and explicit loading conditions. The self-source driver checks these
+conditions for the actual 18-file process world and instantiates the theorem.
+The actual checked main also rejects no-input invocations with code 1, without
+allocation or file access. Its public rejection proof and six actual-source
+cases cover pre-existing output, files, handles, and invalid handle counters.
+All 13 allocations now guard the raw pointer before constructing a slice.
+The public allocation-failure theorem covers every position and proves normal
+code-3 rejection with preserved external inputs, handles, and output. Four
+actual-main finite-budget cases and 25 small sequence budgets exercise this
+behavior. The scoped-pointer source and all source-linked proofs are checked;
+the old post-allocation guard and unsafe checker form have been removed.
+The actual-main oversized-first-file proof now covers read termination,
+mandatory close, both diagnostic calls, and code-6 rejection with unchanged
+stdout. Five external-domain worlds instantiate it in the self check; nine
+domain mutations and four diagnostic-source mutations are rejected.
+Oversized files after a nonempty prefix are now covered by the same file-loop
+proof. An exhaustive host-input partition connects all covered loading and
+rejection branches to one public safety/termination theorem. Its assumptions
+are numeric host bounds, handle freshness, an initially empty unlimited-budget
+heap, and deterministic host I/O. Finite allocation exhaustion has a separate
+proof; real OS I/O errors and short writes are not modeled here.
+Final acceptance, inherited trust obligations, and the
+verified x86 backend remain open. The latest combined check took 69.02 seconds
+with shared dependencies built, including 38.191 seconds for parser/tree
+resources, 441 microseconds for output bounds, and 16.309 milliseconds to bind
+the successful-input domain to the exact process inputs. This is one-time
+validation, not the eventual trusted fast path. Broad dependency rebuilds have
+hit the 119-second cutoff; the incremental timing does not establish a fast
+cold rebuild.
+
+## Earlier bootstrap checkpoints
 
 The Lanius process constructs the prefix, complete compact pack, and suffix in
 one output buffer, packs it into the no-longer-needed parser workspace, and

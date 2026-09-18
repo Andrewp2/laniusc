@@ -1,6 +1,7 @@
 import Lanius.Extraction.Frontend.Pipeline
 import Lanius.Extraction.Frontend.Tree
 import Lanius.Extraction.Frontend.Early
+import Lanius.Semantics.CellOnly.Region
 
 namespace Lanius.Extraction.Frontend
 
@@ -42,22 +43,96 @@ theorem syntax_source_all {body : Stmt}
 an unrelated valid parse. Parser failure leaves both tree buffers untouched;
 tree resource failure carries bounded partial counts and cannot claim success. -/
 def syntaxPost (outcome : RecognizerInitialContinuationOutcome grammarLayout grammar grammarWords codes layout completion)
-    (workspace : LogicalWorkspace) (records offsets : List Int) (recordsCell offsetsCell : CellId)
+    (workspace : LogicalWorkspace) (records offsets : List Int) (recordsCell offsetsCell : CellId) (depth : Nat)
     (stage detail : Int) (nodes words : Nat) (position : Int) (after : State) : Prop :=
   (stage = 4 ∧ (detail = 1 ∨ detail = 2) ∧ nodes = 0 ∧ words = 0 ∧
     ∃ states root, outcome.resultValue = parseResultValue detail states root position ∧
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array (signedI32Values records)) } ∧
-      after.cellEntry? offsetsCell = some { id := offsetsCell, value := some (.array (signedI32Values offsets)) }) ∨
+      after.cellEntry? offsetsCell = some { id := offsetsCell, value := some (.array (signedI32Values offsets)) } ∧
+      (detail = 1 → StartSeeded grammar workspace ∧
+        PredictionsBefore grammar workspace (finalPosition codes.length + 1) ∧
+        ScansBefore grammar codes workspace (finalPosition codes.length + 1) ∧
+        ChartClosed grammar codes workspace ∧
+        NoRootIn grammar workspace (workspace.chart (finalPosition codes.length))) ∧
+      (detail = 2 → (∃ position : Nat,
+        outcome.resultValue = parseResultValue 2 (Int.ofNat workspace.states.length) (-1) (Int.ofNat position) ∧
+        layout.capacity ≤ workspace.states.length) ∧ WorkspaceGenerated grammar codes workspace)) ∨
   (∃ root : RecognizerRootResult grammar codes workspace outcome.resultValue,
     stage = extractionTreeStage detail ∧ position = 0 ∧
-      (materializeRuntime root.root records offsets recordsCell offsetsCell).Result root.stored.tree detail nodes words after.cells)
+      (materializeRuntime root.root records offsets recordsCell offsetsCell).Result root.stored.tree detail nodes words after.cells ∧
+      (ParserTreeBounds.Fits root.stored.tree records.length offsets.length depth → detail = 0))
+
+/-- Parser rejection retains its absence witness through the frontend return
+contract. It must not be reconstructed from a bare nonzero status later. -/
+theorem syntaxPost.rejected_chart
+    {outcome : RecognizerInitialContinuationOutcome grammarLayout grammar grammarWords codes layout completion}
+    (post : syntaxPost outcome workspace records offsets recordsCell offsetsCell depth stage detail nodes words position after)
+    (parserStage : stage = 4) (rejected : detail = 1) :
+    StartSeeded grammar workspace ∧
+    PredictionsBefore grammar workspace (finalPosition codes.length + 1) ∧
+    ScansBefore grammar codes workspace (finalPosition codes.length + 1) ∧
+    ChartClosed grammar codes workspace ∧
+    NoRootIn grammar workspace (workspace.chart (finalPosition codes.length)) := by
+  rcases post with ⟨_, _, _, _, states, root, _, _, _, absent⟩ | ⟨root, stageEq, _, _⟩
+  · exact absent.1 rejected
+  · simp only [extractionTreeStage, rejected, parserStage] at stageEq
+    contradiction
+
+/-- A frontend parser-capacity error retains the actual workspace fullness
+and the exact recognizer diagnostic, even though the tree phase never ran. -/
+theorem syntaxPost.capacity_result
+    {outcome : RecognizerInitialContinuationOutcome grammarLayout grammar grammarWords codes layout completion}
+    (post : syntaxPost outcome workspace records offsets recordsCell offsetsCell depth stage detail nodes words position after)
+    (parserStage : stage = 4) (exhausted : detail = 2) :
+    ∃ position : Nat,
+      outcome.resultValue = parseResultValue 2 (Int.ofNat workspace.states.length) (-1) (Int.ofNat position) ∧
+      layout.capacity ≤ workspace.states.length := by
+  rcases post with ⟨_, _, _, _, states, root, _, _, _, _, full⟩ | ⟨root, stageEq, _, _⟩
+  · exact (full exhausted).1
+  · simp only [extractionTreeStage, exhausted, parserStage] at stageEq
+    contradiction
+
+theorem syntaxPost.capacity_generated
+    {outcome : RecognizerInitialContinuationOutcome grammarLayout grammar grammarWords codes layout completion}
+    (post : syntaxPost outcome workspace records offsets recordsCell offsetsCell depth stage detail nodes words position after)
+    (parserStage : stage = 4) (exhausted : detail = 2) :
+    WorkspaceGenerated grammar codes workspace := by
+  rcases post with ⟨_, _, _, _, states, root, _, _, _, _, full⟩ | ⟨root, stageEq, _, _⟩
+  · exact (full exhausted).2
+  · simp only [extractionTreeStage, exhausted, parserStage] at stageEq
+    contradiction
+
+/-- The actual parser's rejection branch excludes declarative validity.
+Capacity failure is deliberately not classified as invalid syntax. -/
+theorem syntaxPost.rejected_not_recognizes
+    {outcome : RecognizerInitialContinuationOutcome grammarLayout grammar grammarWords codes layout completion}
+    (post : syntaxPost outcome workspace records offsets recordsCell offsetsCell depth stage detail nodes words position after)
+    (parserStage : stage = 4) (rejected : detail = 1) :
+    ¬ RecognizesInput grammar codes := by
+  obtain ⟨_, _, _, closed, absent⟩ := post.rejected_chart parserStage rejected
+  intro recognized
+  exact absent.not_hasRoot (closed.contains_root recognized)
+
+/-- Sufficient resources for every declarative parse exclude the actual
+tree failure branch; no successful materializer result is assumed. -/
+theorem syntaxPost.no_tree_failure
+    {outcome : RecognizerInitialContinuationOutcome grammarLayout grammar grammarWords codes layout completion}
+    (post : syntaxPost outcome workspace records offsets recordsCell offsetsCell depth stage detail nodes words position after)
+    (fits : ∀ parse : MaterializedParse grammar codes,
+      ParserTreeBounds.Fits parse.tree records.length offsets.length depth) : stage ≠ 5 := by
+  rcases post with failure | ⟨root, stageEq, _, _, successWhenFits⟩
+  · have failedStage := failure.1
+    omega
+  · have zero := successWhenFits (fits root.stored.toMaterializedParse)
+    simp only [extractionTreeStage, zero, ↓reduceIte] at stageEq
+    omega
 
 /-- Observing extraction success certifies the selected complete-input parse
 and its exact serialized buffers. Neither parser rejection nor partial tree
 output can satisfy this contract. -/
 theorem syntaxPost.success
     {outcome : RecognizerInitialContinuationOutcome grammarLayout grammar grammarWords codes layout completion}
-    (post : syntaxPost outcome workspace records offsets recordsCell offsetsCell stage detail nodes words position after)
+    (post : syntaxPost outcome workspace records offsets recordsCell offsetsCell depth stage detail nodes words position after)
     (success : stage = 0) :
     ∃ root : RecognizerRootResult grammar codes workspace outcome.resultValue,
       detail = 0 ∧ position = 0 ∧
@@ -69,7 +144,7 @@ theorem syntaxPost.success
       after.cellEntry? offsetsCell = some {
         id := offsetsCell, value := some (.array (signedI32Values
           ((ParserTreeLayout.treeFrom 0 0 root.stored.tree).offsets.map Int.ofNat ++ offsets.drop nodes))) } := by
-  rcases post with failure | ⟨root, stageEq, positionEq, output⟩
+  rcases post with failure | ⟨root, stageEq, positionEq, output, _⟩
   · have failedStage := failure.1
     omega
   · have zero : detail = 0 := by
@@ -89,7 +164,8 @@ outcomes and all materializer resource outcomes are covered. Outer input guards
 and early lexer/token-storage failures are separate remaining boundaries. -/
 theorem lex_to_syntax
     {visit : CheckedVisit program} {materializer : CheckedMaterialize visit}
-    (tail : CheckedAfterParse materializer) (reader : LinkedReader visit.reader parserAllowed parserSymbols)
+    (tail : CheckedAfterParse materializer) (memory : Semantics.CellOnly.Region program.core tail.body)
+    (reader : LinkedReader visit.reader parserAllowed parserSymbols)
     (parsedType : materializer.parsedType = parserSymbols.typeId 0)
     (symbols : TokenizationSymbols)
     (invariant : ∀ rename, Semantics.CellRenaming.Execution.ProgramInvariant rename verifiedFrontendCore)
@@ -171,7 +247,7 @@ theorem lex_to_syntax
             kindsFailure tail.body))
           (.returned (some (syntaxResult tail.finish.constructor.typeId stage detail (Int.ofNat raw.length)
             (Int.ofNat tokens.length) (Int.ofNat nodes) (Int.ofNat words) position))) after) ∧
-      syntaxPost outcome finalWorkspace treeRecords treeOffsets recordsCell offsetsCell stage detail nodes words position after ∧
+      syntaxPost outcome finalWorkspace treeRecords treeOffsets recordsCell offsetsCell depth stage detail nodes words position after ∧
       RecognizerWorkspaceArtifact workspaceLayout finalWorkspace finalValues workspaceCell after ∧
       (ReadOnly.World.owns (ReadOnly.World.pair sourceCell (sourceIntegers request.source) rawCell
         (encodeTokens raw ++ records.drop (3 * raw.length)))).holds after ∧
@@ -183,12 +259,13 @@ theorem lex_to_syntax
       CellEffect (CellSet.union
         (CellSet.union (CellSet.union (CellSet.singleton rawCell) (CellSet.singleton canonicalCell))
           (CellSet.union (CellSet.singleton kindsCell) (CellSet.singleton workspaceCell)))
-        (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton offsetsCell))) before after := by
+        (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton offsetsCell))) before after ∧
+      Host.MemoryPath before after := by
   dsimp only
   let tokens := canonicalizeTokens request.source raw
   let codes := tokens.map (fun token => token.kind.gpuCode)
   obtain ⟨completion, outcome, finalWorkspace, finalValues, ready, prefixRun, readyWF, rawCount, tokenCount,
-      parsed, agreement, growth, artifact, rawBuffers, compacted, kindBuffer, localsPreserved, prefixEffect⟩ :=
+      parsed, agreement, growth, artifact, rawBuffers, compacted, kindBuffer, localsPreserved, prefixEffect, prefixMemory⟩ :=
     lex_to_recognize symbols invariant lexerLink lexerInjective lexerInverseType lexerInverse lexerRetained
       countAccessor statusAccessor lexerId countId statusId resultType successConstant canonicalizer
       reader.link reader.injective parserInverseType parserInverse parserRetained request raw successful
@@ -224,7 +301,7 @@ theorem lex_to_syntax
       Executes program.core ready tail.body
         (.returned (some (syntaxResult tail.finish.constructor.typeId stage detail (Int.ofNat raw.length)
           (Int.ofNat tokens.length) (Int.ofNat nodes) (Int.ofNat words) position))) done ∧
-      syntaxPost outcome finalWorkspace treeRecords treeOffsets recordsCell offsetsCell stage detail nodes words position done ∧
+      syntaxPost outcome finalWorkspace treeRecords treeOffsets recordsCell offsetsCell depth stage detail nodes words position done ∧
       RecognizerWorkspaceArtifact workspaceLayout finalWorkspace finalValues workspaceCell done ∧
       CellEffect outputWrites ready done := by
     by_cases accepted : parseResultStatus? outcome.resultValue = some 0
@@ -235,7 +312,7 @@ theorem lex_to_syntax
       have liveWorkspaceLength : ready.local? 11 = some (.signed .i32 (Int.ofNat finalValues.length)) := by
         rw [workspaceSize]
         exact readyLocal (by decide) workspaceLengthLocal (by intro values same; cases same)
-      obtain ⟨code, nodes, words, done, executed, tree, retained, effect⟩ :=
+      obtain ⟨code, nodes, words, done, executed, tree, successWhenFits, retained, effect⟩ :=
         tail.accepted reader parserInverseType parserInverse parsedType outcome agreement accepted ready readyWF artifact
           (by simpa only [codes, tokens, List.length_map] using workspaceTokenCount) parsed
           (by simpa only [Int.ofNat_eq_natCast] using rawCount)
@@ -249,7 +326,7 @@ theorem lex_to_syntax
           (outputSeparation workspaceCell (by simp)).1 (outputSeparation workspaceCell (by simp)).2
           outputsDistinct treeRecordsFit treeOffsetsFit depthFit
       refine ⟨extractionTreeStage code, code, nodes, words, 0, done, ?_,
-        Or.inr ⟨outcome.successRoot agreement accepted, rfl, rfl, tree⟩, retained, effect⟩
+        Or.inr ⟨outcome.successRoot agreement accepted, rfl, rfl, tree, successWhenFits⟩, retained, effect⟩
       simpa only [tokens, List.length_map, Int.ofNat_eq_natCast, Int.ofNat_zero] using executed
     · obtain ⟨code, states, root, position, done, fields, codeFailure, executed, effect⟩ :=
         tail.rejected_outcome parserSymbols parsedType outcome accepted ready readyWF parsed
@@ -257,7 +334,14 @@ theorem lex_to_syntax
           (by simpa only [codes, tokens, List.length_map, Int.ofNat_eq_natCast] using tokenCount)
       refine ⟨4, code, 0, 0, position, done, ?_,
         Or.inl ⟨rfl, codeFailure, rfl, rfl, states, root, fields,
-          effect.empty_preserves_entry readyWF recordsReady, effect.empty_preserves_entry readyWF offsetsReady⟩,
+          effect.empty_preserves_entry readyWF recordsReady, effect.empty_preserves_entry readyWF offsetsReady,
+          (fun rejected => ⟨outcome.startSeeded agreement (by simp only [fields, parseResultStatus?_parseResultValue, rejected]; decide),
+            outcome.predictionsComplete agreement (by simp only [fields, parseResultStatus?_parseResultValue, rejected]; decide),
+            outcome.scansComplete agreement (by simp only [fields, parseResultStatus?_parseResultValue, rejected]; decide),
+            outcome.chartClosed agreement (by simp only [fields, parseResultStatus?_parseResultValue, rejected]; decide),
+            outcome.rejected_noRoot agreement (by simp only [fields, parseResultStatus?_parseResultValue, rejected])⟩),
+          fun exhausted => ⟨outcome.capacity_result agreement
+            (by simp only [fields, parseResultStatus?_parseResultValue, exhausted]), outcome.generated agreement⟩⟩,
         ⟨artifact.workspaceLength, artifact.workspaceEncoded, effect.empty_preserves_entry readyWF artifact.workspaceBacking⟩,
         effect.weaken CellSet.empty_subset⟩
       simpa only [tokens, List.length_map, Int.ofNat_eq_natCast, Int.ofNat_zero] using executed
@@ -284,7 +368,8 @@ theorem lex_to_syntax
     restoreLocals before done, ?_, post, retained.transfer_cells rfl, sourceBuffers,
     preserve compacted (by simp), preserve kindBuffer (by simp),
     (prefixEffect.weaken CellSet.subset_union_left).transScoped
-      (show CellEffect _ ready (restoreLocals ready done) from by rw [restored]; exact tailEffect.weaken CellSet.subset_union_right) wellFormed⟩
+      (show CellEffect _ ready (restoreLocals ready done) from by rw [restored]; exact tailEffect.weaken CellSet.subset_union_right) wellFormed,
+    (prefixMemory.thenHeap (memory.executes executed)).restoreLocals before⟩
   intro lexicalFailure canonicalFailure kindsFailure
   simpa only [Int.ofNat_eq_natCast] using prefixRun lexicalFailure canonicalFailure kindsFailure _ _ _ executed
 

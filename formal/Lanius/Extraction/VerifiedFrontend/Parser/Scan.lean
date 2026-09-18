@@ -118,24 +118,7 @@ theorem verifiedParser_scan_terminal_constants :
         type := parserI32Type
         value := .signed .i32 7
       } := by
-  have evidence :
-      (verifiedParserCore.constant? 12).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (12, parserI32Type, some 5) ∧
-      (verifiedParserCore.constant? 13).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (13, parserI32Type, some 6) ∧
-      (verifiedParserCore.constant? 14).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (14, parserI32Type, some 7) := by
-    native_decide
-  exact ⟨
-    constant_eq_of_signed_i32_evidence verifiedParserCore 12 5 evidence.1,
-    constant_eq_of_signed_i32_evidence verifiedParserCore 13 6 evidence.2.1,
-    constant_eq_of_signed_i32_evidence verifiedParserCore 14 7 evidence.2.2⟩
+  exact ⟨rfl, rfl, rfl⟩
 
 def scanTerminalValue (result : Option Nat) : Value :=
   match result with

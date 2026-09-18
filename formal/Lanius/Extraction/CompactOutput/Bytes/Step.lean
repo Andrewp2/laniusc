@@ -48,7 +48,7 @@ theorem assign_byte (hex : CheckedHexByte program byte digit)
     capacityBound capacityFit backing
   have cursorStill := writeEffect.preserves_localPointsTo wellFormed cursorOwned
     (by simpa only [CellSet.singleton] using Ne.symm outputCursor)
-  obtain ⟨after, assigned, cursor, effect, assignmentEffect⟩ :=
+  obtain ⟨after, assigned, cursor, effect, assignmentEffect, assignmentHeap, _⟩ :=
     evaluatesOwnedLocalSet cursorOwned call writeEffect cursorStill
   have indexAfter := effect.preserves_localPointsTo wellFormed indexOwned (by
     intro changed

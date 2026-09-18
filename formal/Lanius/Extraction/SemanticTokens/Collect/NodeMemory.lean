@@ -32,7 +32,7 @@ structure NodeOwned (memory : NodeMemory) (index : Nat) (state : State) : Prop w
       (priorUses memory.data.collection.records index)))) }
   node : (Assertion.localPointsTo 13 memory.nodeCell (some (.signed .i32 index))).holds state
   count : state.local? 3 = some (.signed .i32 memory.data.tokens.length)
-  wordLength : state.local? 5 = some (.signed .i32 (treeFrom 0 0 memory.data.tree).words.length)
+  wordLength : state.local? 5 = some (.signed .i32 memory.data.recordsLimit)
   nodeCount : state.local? 7 = some (.signed .i32 memory.data.collection.records.length)
   kindCount : state.local? 10 = some (.signed .i32 memory.data.grammar.grammar.grammar.n_kinds)
   canonicalOffset : state.local? 11 = some (.signed .i32 memory.data.grammar.layout.canonicalKindsOffset)

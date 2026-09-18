@@ -35,7 +35,31 @@ theorem failed (world : World) (offset : Int) :
     calls.evaluate world failedScanFunction.id [.signed .i32 offset] =
       .ok (ScanEnd.value false 0 offset, world) := by
   have different : failedScanFunction.id ≠ successfulScanFunction.id := by
-    native_decide
+    decide +kernel
   simp [calls, different]
+
+theorem calls_success
+    (evaluated : calls.evaluate world function values =
+      .ok (value, afterWorld)) :
+    (∃ offset, function = successfulScanFunction.id ∧
+      values = [.signed .i32 offset] ∧
+      value = ScanEnd.value true offset 0 ∧ afterWorld = world) ∨
+    (∃ offset, function = failedScanFunction.id ∧
+      values = [.signed .i32 offset] ∧
+      value = ScanEnd.value false 0 offset ∧ afterWorld = world) := by
+  simp only [calls] at evaluated
+  split at evaluated
+  next offset =>
+    split at evaluated
+    next successful =>
+      obtain ⟨rfl, rfl⟩ := evaluated
+      exact .inl ⟨offset, successful, rfl, rfl, rfl⟩
+    next notSuccessful =>
+      split at evaluated
+      next failed =>
+        obtain ⟨rfl, rfl⟩ := evaluated
+        exact .inr ⟨offset, failed, rfl, rfl, rfl⟩
+      next => contradiction
+  next => contradiction
 
 end Lanius.Extraction.Lexer.ScanEndCalls

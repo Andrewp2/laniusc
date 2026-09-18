@@ -28,19 +28,22 @@ theorem executes_loop (table : Table program tokens) (request : Request)
     ∃ after, Executes program before (rangeLoop tokens) .next after ∧
       Storage after request.sourceCell request.recordsCell request.source
         (buffer [] (completed ++ retagInclusiveRanges remaining) request.unused) ∧
-      after.local? 4 = some (.signed .i32 request.count) ∧ CellEffect request.writes before after := by
+      after.local? 4 = some (.signed .i32 request.count) ∧ CellEffect request.writes before after ∧
+      Host.MemoryFrame before after := by
   have condition := condition_result program request completed remaining invariant
   cases remaining with
   | nil =>
       have done : ¬ completed.length + 1 < request.count := by have := invariant.length; simp_all
-      refine ⟨before, executesWhileFalse ?_, ?_, invariant.count, CellEffect.refl invariant.storage.wellFormed⟩
+      refine ⟨before, executesWhileFalse ?_, ?_, invariant.count, CellEffect.refl invariant.storage.wellFormed,
+        Host.MemoryFrame.refl before⟩
       · simpa only [done, decide_false] using condition
       · simpa [buffer, retagInclusiveRanges] using invariant.storage
   | cons current rest =>
       cases rest with
       | nil =>
           have done : ¬ completed.length + 1 < request.count := by have := invariant.length; simp_all
-          refine ⟨before, executesWhileFalse ?_, ?_, invariant.count, CellEffect.refl invariant.storage.wellFormed⟩
+          refine ⟨before, executesWhileFalse ?_, ?_, invariant.count, CellEffect.refl invariant.storage.wellFormed,
+            Host.MemoryFrame.refl before⟩
           · simpa only [done, decide_false] using condition
           · simpa [buffer, retagInclusiveRanges] using invariant.storage
       | cons next rest =>
@@ -51,10 +54,11 @@ theorem executes_loop (table : Table program tokens) (request : Request)
           have conditionTrue : Evaluates program before
               (.binary .less (add (.local 10) (literal 1)) (.local 4)) (.boolean true) before := by
             simpa only [more, decide_true] using condition
-          obtain ⟨middle, step, nextInvariant, stepEffect⟩ := advances table request completed current next rest invariant
-          obtain ⟨after, loop, finalStorage, count, loopEffect⟩ := executes_loop table request
+          obtain ⟨middle, step, nextInvariant, stepEffect, stepMemory⟩ := advances table request completed current next rest invariant
+          obtain ⟨after, loop, finalStorage, count, loopEffect, loopMemory⟩ := executes_loop table request
             (completed ++ [retag current next]) (next :: rest) middle nextInvariant
-          refine ⟨after, executesWhileTrue conditionTrue step loop, ?_, count, stepEffect.trans loopEffect⟩
+          refine ⟨after, executesWhileTrue conditionTrue step loop, ?_, count, stepEffect.trans loopEffect,
+            stepMemory.trans loopMemory⟩
           simpa only [retag_specification, List.append_assoc, List.singleton_append] using finalStorage
 termination_by remaining.length
 
@@ -64,10 +68,11 @@ theorem loop_sound (table : Table program tokens) (request : Request)
     (actual : Executes program before (rangeLoop tokens) completion after) :
     completion = .next ∧ Storage after request.sourceCell request.recordsCell request.source
         (buffer [] (completed ++ retagInclusiveRanges remaining) request.unused) ∧
-      after.local? 4 = some (.signed .i32 request.count) ∧ CellEffect request.writes before after := by
-  obtain ⟨expected, run, storage, count, effect⟩ := executes_loop table request completed remaining before invariant
+      after.local? 4 = some (.signed .i32 request.count) ∧ CellEffect request.writes before after ∧
+      Host.MemoryFrame before after := by
+  obtain ⟨expected, run, storage, count, effect, memory⟩ := executes_loop table request completed remaining before invariant
   obtain ⟨sameCompletion, sameState⟩ := Lanius.Fuel.executes_deterministic actual run
   subst after
-  exact ⟨sameCompletion, storage, count, effect⟩
+  exact ⟨sameCompletion, storage, count, effect, memory⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction.Range

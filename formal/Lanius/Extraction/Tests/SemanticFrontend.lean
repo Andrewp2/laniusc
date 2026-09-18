@@ -1,4 +1,4 @@
-import Lanius.Extraction.SemanticTokens.Pipeline
+import Lanius.Extraction.SemanticTokens.Padded
 import Lean.Util.CollectAxioms
 
 open Lanius.Compiler Lanius.Compiler.Lexer Lanius.Extraction Lanius.Extraction.SemanticTokens
@@ -33,6 +33,11 @@ run_elab do
     throwError "collector composition added frontend trust assumptions"
   let inherited := composed.filter (fun ax => !standard.contains ax)
   Lean.logInfo m!"Five collector/handoff theorems use only standard Lean axioms. The two-call composition retains {inherited.size} existing frontend-specific assumptions and adds none."
+  for name in #[``Frontend.CheckedSyntax.padded_call_evaluates, ``padded_frontend_then_collect] do
+    let axioms ← Lean.collectAxioms name
+    unless axioms.all (fun ax => standard.contains ax || baseline.contains ax) do
+      throwError "padded frontend composition added trust assumptions in {name}"
+  Lean.logInfo "Padded frontend and collector compositions add no axioms beyond the existing frontend baseline."
 
 #print axioms frontend_result
 #print axioms FrontendResult.collect

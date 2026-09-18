@@ -18,7 +18,7 @@ theorem CheckedSource.executes_body
         (.returned (some (.signed .i32 (canonicalizeTokens source raw).length))) after ∧
       after.cellEntry? recordsCell = some {
         id := recordsCell, value := some (.array (signedI32Values (compactedBuffer raw unused (canonicalizeTokens source raw)))) } ∧
-      CellEffect (CellSet.singleton recordsCell) before after := by
+      CellEffect (CellSet.singleton recordsCell) before after ∧ Host.MemoryFrame before after := by
   have sourceOld := StateWellFormed.cell_lt_next_of_entry storage.wellFormed storage.sourceContents
   have recordsOld := StateWellFormed.cell_lt_next_of_entry storage.wellFormed storage.recordsContents
   let request : Request := {
@@ -71,7 +71,7 @@ theorem CheckedSource.executes_body
     · exact (Nat.ne_of_lt old) input
   let table : Range.Table program checked.tokens :=
     ⟨checked.rangeFound, checked.assignFound, checked.inclusiveFound⟩
-  obtain ⟨completed, run, contents, effect⟩ := executes_passes checked.trivia checked.kind table request invariant
+  obtain ⟨completed, run, contents, effect, memory⟩ := executes_passes checked.trivia checked.kind table request invariant
   have closeOutput := CellEffect.closeLocal withInput 4 (.signed .i32 0) inputStorage.wellFormed effect
   have closeInput := CellEffect.closeLocal before 3 (.signed .i32 0) storage.wellFormed closeOutput
   have visible : CellEffect (CellSet.singleton recordsCell) before (restoreLocals before (restoreLocals withInput completed)) :=
@@ -82,6 +82,8 @@ theorem CheckedSource.executes_body
       · exact False.elim ((Nat.ne_of_lt (Nat.lt_succ_of_lt old)) output)
       · exact False.elim ((Nat.ne_of_lt old) input))
   exact ⟨_, executesLetLocal (show Evaluates program before (literal 0) (.signed .i32 0) before from ⟨1, rfl⟩)
-    (executesLetLocal (show Evaluates program withInput (literal 0) (.signed .i32 0) withInput from ⟨1, rfl⟩) run), contents, visible⟩
+    (executesLetLocal (show Evaluates program withInput (literal 0) (.signed .i32 0) withInput from ⟨1, rfl⟩) run), contents, visible,
+    ((Host.MemoryFrame.bindLocal before 3 (.signed .i32 0)).trans
+      ((Host.MemoryFrame.bindLocal withInput 4 (.signed .i32 0)).trans memory)).restoreLocals before visible.wellFormed⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction

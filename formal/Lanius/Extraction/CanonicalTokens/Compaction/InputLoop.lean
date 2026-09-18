@@ -23,23 +23,23 @@ theorem executes_input_loop (trivia : Trivia.Checked program triviaId)
     (request : Request) (processed remaining : List RawToken) (before : State)
     (shape : request.raw = processed ++ remaining) (invariant : LoopState request processed before) :
     ∃ after, Executes program before (inputLoop triviaId kindId) .next after ∧
-      LoopState request request.raw after ∧ CellEffect request.writes before after := by
+      LoopState request request.raw after ∧ CellEffect request.writes before after ∧ Host.MemoryFrame before after := by
   have condition := condition_result program request processed invariant
   cases remaining with
   | nil =>
       have complete : request.raw = processed := by simpa using shape
-      refine ⟨before, executesWhileFalse ?_, ?_, CellEffect.refl invariant.storage.wellFormed⟩
+      refine ⟨before, executesWhileFalse ?_, ?_, CellEffect.refl invariant.storage.wellFormed, Host.MemoryFrame.refl before⟩
       · simpa [complete] using condition
       · simpa [complete] using invariant
   | cons token rest =>
       have more : processed.length < request.raw.length := by simp [shape]
       have conditionTrue : Evaluates program before (.binary .less (.local 3) (.local 2)) (.boolean true) before := by
         simpa only [more, decide_true] using condition
-      obtain ⟨middle, step, next, stepEffect⟩ := advances trivia kind request processed token rest shape invariant
+      obtain ⟨middle, step, next, stepEffect, stepMemory⟩ := advances trivia kind request processed token rest shape invariant
       have nextShape : request.raw = (processed ++ [token]) ++ rest := by simpa [List.append_assoc] using shape
-      obtain ⟨after, loop, complete, loopEffect⟩ := executes_input_loop trivia kind request
+      obtain ⟨after, loop, complete, loopEffect, loopMemory⟩ := executes_input_loop trivia kind request
         (processed ++ [token]) rest middle nextShape next
-      exact ⟨after, executesWhileTrue conditionTrue step loop, complete, stepEffect.trans loopEffect⟩
+      exact ⟨after, executesWhileTrue conditionTrue step loop, complete, stepEffect.trans loopEffect, stepMemory.trans loopMemory⟩
 termination_by remaining.length
 
 theorem input_loop_sound (trivia : Trivia.Checked program triviaId)
@@ -47,10 +47,10 @@ theorem input_loop_sound (trivia : Trivia.Checked program triviaId)
     (request : Request) (processed remaining : List RawToken) (before after : State)
     (shape : request.raw = processed ++ remaining) (invariant : LoopState request processed before)
     (actual : Executes program before (inputLoop triviaId kindId) completion after) :
-    completion = .next ∧ LoopState request request.raw after ∧ CellEffect request.writes before after := by
-  obtain ⟨expected, run, complete, effect⟩ := executes_input_loop trivia kind request processed remaining before shape invariant
+    completion = .next ∧ LoopState request request.raw after ∧ CellEffect request.writes before after ∧ Host.MemoryFrame before after := by
+  obtain ⟨expected, run, complete, effect, memory⟩ := executes_input_loop trivia kind request processed remaining before shape invariant
   obtain ⟨sameCompletion, sameState⟩ := Lanius.Fuel.executes_deterministic actual run
   subst after
-  exact ⟨sameCompletion, complete, effect⟩
+  exact ⟨sameCompletion, complete, effect, memory⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction

@@ -45,7 +45,7 @@ theorem hexByte_body (byte : CheckedByte program) (digit : CheckedDigit program)
     have read := nibble_evaluates value 4 (by omega) (by decide) (local_evaluates program.core valueRead)
       (show Evaluates program.core before (number 4) (.signed .i32 4) before from ⟨1, rfl⟩)
     simpa only [digitArgument, Nat.reducePow, Nat.mod_eq_of_lt (show value / 16 < 16 by omega)] using read
-  obtain ⟨first, firstRun, firstContents, firstEffect⟩ := append_digit byte digit position capacity (value / 16)
+  obtain ⟨first, firstRun, firstContents, firstEffect, firstHeap⟩ := append_digit byte digit position capacity (value / 16)
     (by omega) wellFormed capacityBound capacityFit backing (local_evaluates program.core sliceRead)
     (local_evaluates program.core capacityRead) (local_evaluates program.core positionRead) high
   let firstOutput := appended original capacity position (hexDigit (value / 16))
@@ -70,7 +70,7 @@ theorem hexByte_body (byte : CheckedByte program) (digit : CheckedDigit program)
     evaluatesEagerBinary (by decide) (by decide) (local_evaluates program.core valueAfter)
       (show Evaluates program.core scope (number 15) (.signed .i32 15) scope from ⟨1, rfl⟩)
       (mask_nibble program.core.target value (by omega))
-  obtain ⟨completed, secondRun, contents, effect⟩ := append_digit byte digit (nextPosition capacity position)
+  obtain ⟨completed, secondRun, contents, effect, heapFrame⟩ := append_digit byte digit (nextPosition capacity position)
     capacity (value % 16) (by omega) scopeWF (by simpa only [firstOutput, appended_length] using capacityBound)
     capacityFit scopeContents (local_evaluates program.core sliceAfter) (local_evaluates program.core capacityAfter)
     (local_evaluates program.core positionAfter) low
@@ -108,39 +108,11 @@ theorem CheckedHexByte.write (checked : CheckedHexByte program byte digit)
 /-- Invalid byte values are rejected before reading even the output argument.
 No backing allocation is needed for this branch. -/
 theorem CheckedHexByte.reject (checked : CheckedHexByte program byte digit)
-    (output : Value) (capacity position value : Int)
-    (wellFormed : StateWellFormed before) (invalid : value < 0 ∨ 256 ≤ value)
-    (argumentsResult : ArgumentsEvaluateTo program.core caller arguments (byteValues output capacity position value) before) :
-    ∃ after, Evaluates program.core caller (.call checked.source.function.id arguments) (.signed .i32 (-1)) after ∧
-      CellEffect CellSet.empty before after := by
-  let bindings := byteBindings output capacity position value
-  let callee := enterCall before bindings
-  have locals (index : Fin 4) : callee.local? index.val = some ((byteValues output capacity position value).get index) :=
-    enterCall_parameterBindings_matches wellFormed index
-  have valueRead : callee.local? 3 = some (.signed .i32 value) := locals ⟨3, by decide⟩
-  have negative : Evaluates program.core callee (binary .lessEqual (read 3) negativeOne)
-      (.boolean (decide (value ≤ -1))) callee := by
-    apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program.core valueRead)
-      (negativeOne_evaluates program.core callee)
-    simp [evalBinaryValue, evalSignedBinary]
-  have tooLarge : Evaluates program.core callee (binary .greaterEqual (read 3) (number 256))
-      (.boolean (decide (256 ≤ value))) callee := by
-    apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program.core valueRead)
-      (show Evaluates program.core callee (number 256) (.signed .i32 256) callee from ⟨1, rfl⟩)
-    simp [evalBinaryValue, evalSignedBinary]
-  have guard := evaluatesPureLogicalOr negative tooLarge
-  have rejected : (decide (value ≤ -1) || decide (256 ≤ value)) = true := by
-    rcases invalid with negative | large
-    · have bad : value ≤ -1 := by omega
-      simp [bad]
-    · simp [large]
-  rw [rejected] at guard
-  have run : Executes program.core callee (hexByteBody byte.source.function.id digit.source.function.id)
-      (.returned (some (.signed .i32 (-1)))) callee :=
-    executesSequenceReturned (executesIfTrue guard
-      (executesSequenceReturned (executesReturnValue (negativeOne_evaluates program.core callee))))
-  exact ⟨restoreLocals before callee, checked.call wellFormed argumentsResult (bindings := bindings) rfl run
-    (CellEffect.refl (enterCall_preserves_wellFormed wellFormed))⟩
+    (output : Value) (capacity position value : Int) (invalid : value < 0 ∨ 256 ≤ value) :
+    checked.Spec (byteValues output capacity position value) (.signed .i32 (-1)) := by
+  apply checked.specPure rfl
+  intro callee locals
+  core_exec [byteValues]
 
 theorem hexBytePosition_success (position capacity : Nat) (room : position + 2 ≤ capacity) :
     hexBytePosition capacity position = (position + 2 : Nat) := by

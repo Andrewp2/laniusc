@@ -8,7 +8,7 @@ open Lanius Lanius.Core Lanius.Semantics Lanius.Properties Lanius.Separation Lan
 /-- Execute the actual state-child branch. The earlier-node lookup, stored
 headers, and ordered span are derived from the selected frontend tree, not
 from a caller-supplied successful read or accepted-record assumption. -/
-theorem node_child_execute {record : RecordVisit} {nodeIndex childIndex childId start finish : Nat}
+theorem node_child_execute {record : RecordVisit} {nodeIndex childIndex childId start finish recordsLimit : Nat}
     (data : CollectionRecords grammar tokens tree 0 0)
     (program : Program) (symbols : Symbols)
     (stateTag : ParserTreeSource.constantValue program symbols.childState 2)
@@ -17,17 +17,18 @@ theorem node_child_execute {record : RecordVisit} {nodeIndex childIndex childId 
     (wellFormed : StateWellFormed before)
     (recordsOwned : I32PrefixLocal before 4 recordsCell (treeFrom 0 0 tree).words)
     (offsetsOwned : I32PrefixLocal before 6 offsetsCell ((treeFrom 0 0 tree).offsets.map Int.ofNat))
-    (lengthRead : before.local? 5 = some (.signed .i32 (treeFrom 0 0 tree).words.length))
+    (lengthRead : before.local? 5 = some (.signed .i32 recordsLimit))
     (countRead : before.local? 3 = some (.signed .i32 tokens.length))
     (nodeRead : before.local? 13 = some (.signed .i32 nodeIndex))
     (payloadRead : before.local? 19 = some (.signed .i32 childId))
     (slotRead : before.local? 18 = some (.signed .i32 (record.offset + 4 + childIndex * 3)))
     (cursor : (Assertion.localPointsTo 16 cursorCell (some (.signed .i32 start))).holds before)
-    (wordsFit : (treeFrom 0 0 tree).words.length ≤ 2147483647)
+    (wordsWithin : (treeFrom 0 0 tree).words.length ≤ recordsLimit) (limitFits : recordsLimit ≤ 2147483647)
     (tokensFit : tokens.length * 2 ≤ 2147483647) :
     ∃ after, Executes program before (nodeChildBody symbols) .next after ∧
       (Assertion.localPointsTo 16 cursorCell (some (.signed .i32 finish))).holds after ∧
       CellEffect (CellSet.singleton cursorCell) before after := by
+  have wordsFit := Nat.le_trans wordsWithin limitFits
   have member := List.mem_of_getElem? found
   have childMember := List.mem_of_getElem? childFound
   obtain ⟨_, earlier, nested, nestedFound, sameStart, sameFinish⟩ :=
@@ -58,7 +59,7 @@ theorem node_child_execute {record : RecordVisit} {nodeIndex childIndex childId 
   let entered := before.bindLocal 20 (.signed .i32 nested.offset)
   have enteredWF : StateWellFormed entered := bindLocal_preserves_well_formed _ _ _ wellFormed
   have nestedRead : entered.local? 20 = some (.signed .i32 nested.offset) := bindLocal_finds_local _ _ _ wellFormed
-  have lengthStill : entered.local? 5 = some (.signed .i32 (treeFrom 0 0 tree).words.length) :=
+  have lengthStill : entered.local? 5 = some (.signed .i32 recordsLimit) :=
     (bindLocal_preserves_other_local wellFormed (by decide : (20 : VarId) ≠ 5)).trans lengthRead
   have countStill : entered.local? 3 = some (.signed .i32 tokens.length) :=
     (bindLocal_preserves_other_local wellFormed (by decide : (20 : VarId) ≠ 3)).trans countRead
@@ -66,8 +67,8 @@ theorem node_child_execute {record : RecordVisit} {nodeIndex childIndex childId 
     (.signed .i32 nested.offset) cursorCell _ wellFormed (by decide) cursor
   have recordsStill := recordsOwned.bindLocal wellFormed 20 (.signed .i32 nested.offset) (by decide)
   have room := nestedStored.bounds
-  have headerGuard := recordGuard_pass program 20 nested.offset (treeFrom 0 0 tree).words.length
-    nestedRead lengthStill (by omega) wordsFit
+  have headerGuard := recordGuard_pass program 20 nested.offset recordsLimit
+    nestedRead lengthStill (by omega) limitFits
   obtain ⟨startRead, finishRead, _⟩ := record_header_read program recordsStill nestedStored
     (read 20) (local_evaluates program nestedRead) wordsFit
   rw [sameStart] at startRead
@@ -84,7 +85,7 @@ theorem node_child_execute {record : RecordVisit} {nodeIndex childIndex childId 
   have orderedInt : (start : Int) ≤ finish := by omega
   have boundedInt : (finish : Int) ≤ (tokens.length * 2 : Nat) := by omega
   simp only [Int.ofNat_eq_natCast, orderedInt, boundedInt, decide_true, Bool.not_true, Bool.false_or] at spanGuard
-  obtain ⟨completed, assigned, cursorAfter, effect⟩ := evaluatesOwnedLocalUpdate enteredWF cursorStill finishRead
+  obtain ⟨completed, assigned, cursorAfter, effect, heapFrame⟩ := evaluatesOwnedLocalUpdate enteredWF cursorStill finishRead
     (show evalAssignValue program.target .set (some (.signed .i32 start)) (.signed .i32 finish) =
       .ok (.signed .i32 finish) from rfl)
   have nestedRun := executesSequence (executesIfFalse (thenBranch := returned (negative 1)) headerGuard (executesSkip _ _))

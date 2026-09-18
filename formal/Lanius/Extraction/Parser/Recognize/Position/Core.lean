@@ -1689,6 +1689,9 @@ structure RecognizerPositionPostFrame
     workspaceLayout workspace workspaceValues grammarCell tokensCell
     workspaceCell stateCountCell runtime position
   workspaceWithinGrammar : WorkspaceWithinGrammar grammar workspace
+  predicted : ChartPredicted grammar workspace position
+  scanned : ChartScanned grammar tokens workspace position
+  completedPairs : ChartCompleted grammar workspace position
   finalPositionLocal : runtime.local? 6 = some
     (.signed .i32 (Int.ofNat (finalPosition workspaceLayout.tokenCount)))
   kindCountLocal : runtime.local? 11 = some
@@ -1798,7 +1801,10 @@ noncomputable def RecognizerPositionStateAdvance.close
       tokens workspaceLayout beforeWorkspace nextWorkspace beforeValues
       nextValues grammarCell tokensCell workspaceCell stateCountCell
       positionCell furthestCell source position furthest sourceInvariant entry
-      stateAfter growth finished) :
+      stateAfter growth finished)
+    (predicted : ChartPredicted grammar nextWorkspace position)
+    (scanned : ChartScanned grammar tokens nextWorkspace position)
+    (completedPairs : ChartCompleted grammar nextWorkspace position) :
     RecognizerPositionClosedAdvance grammarLayout grammar words tokens
       workspaceLayout beforeWorkspace nextWorkspace beforeValues nextValues
       grammarCell tokensCell workspaceCell stateCountCell positionCell
@@ -1894,6 +1900,9 @@ noncomputable def RecognizerPositionStateAdvance.close
   exact ⟨closed, {
     appendFrame := appendFrame
     workspaceWithinGrammar := finished.chartCursor.workspaceWithinGrammar
+    predicted := predicted
+    scanned := scanned
+    completedPairs := completedPairs
     finalPositionLocal := restoredLocal 6 (by decide) _
       advance.finalPositionLocal
     kindCountLocal := restoredLocal 11 (by decide) _
@@ -2020,7 +2029,8 @@ private inductive RecognizerPositionStateScopeSynchronizedExecution
         parserRecognizePositionStateScope .next physicalAfter)
       (effect : ModifiesOnly
         (positionStateScopeRetainedCells workspaceCell stateCountCell
-          positionCell) source physicalAfter) :
+          positionCell) source physicalAfter)
+      (stable : ChartsUnchangedBefore position workspace nextWorkspace) :
       RecognizerPositionStateScopeSynchronizedExecution grammarLayout grammar
         words tokens workspaceLayout workspace workspaceValues grammarCell
         tokensCell workspaceCell stateCountCell positionCell furthestCell source
@@ -2057,7 +2067,8 @@ private inductive RecognizerPositionStateScopeSynchronizedExecution
         (parserCapacityCompletion position stateCount) physicalAfter)
       (effect : ModifiesOnly
         (positionStateScopeRetainedCells workspaceCell stateCountCell
-          positionCell) source physicalAfter) :
+          positionCell) source physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity nextWorkspace stateCount) :
       RecognizerPositionStateScopeSynchronizedExecution grammarLayout grammar
         words tokens workspaceLayout workspace workspaceValues grammarCell
         tokensCell workspaceCell stateCountCell positionCell furthestCell source
@@ -2115,9 +2126,18 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
   let renamed := entry.functional_execute_state_loop furthest
   cases completion with
   | next =>
-    cases result.outcome with
+    cases outcomeEq : result.outcome with
     | completed nextWorkspace nextValues stateAfter growth finished worldEq
-        environmentEq =>
+        environmentEq stable =>
+      have predicted := result.predictions
+        (entry.functionalConfig.predictionsReady_of_head entry.functionalConfig_candidate)
+      rw [outcomeEq] at predicted
+      have scanned := result.scans
+        (entry.functionalConfig.scansReady_of_head entry.functionalConfig_candidate)
+      rw [outcomeEq] at scanned
+      have completedPairs := result.completions
+        (entry.functionalConfig.completionsReady_of_head entry.functionalConfig_candidate)
+      rw [outcomeEq] at completedPairs
       have finishedSuffix := finished.appendFrame.recognizer.tokenStorage.unused_eq_of_backing
         (result.effect.preserves_entry entryWellFormed
           entry.functionalConfig.tokenStorage.unused_backing (by
@@ -2191,7 +2211,7 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
           Lanius.FunctionalView.Stateful.Env.pop_push] using scopedFunctionalRaw
       let advance := entry.advance_position result.physicalAfter result.execution
         result.effect nextWorkspace nextValues growth finished
-      let closed := advance.close
+      let closed := advance.close predicted scanned completedPairs
       have closedSuffix := closed.frame.appendFrame.recognizer.tokenStorage.unused_eq_of_backing
         (closed.closed.effect.preserves_entry sourceInvariant.appendFrame.recognizer.wellFormed
           sourceInvariant.appendFrame.recognizer.tokenStorage.unused_backing (by
@@ -2202,11 +2222,11 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
       exact .completed nextWorkspace nextValues closed.closed.after growth
         closed.frame (by simpa only [baseWorld, baseEnvironment, closedSuffix,
           finishedSuffix, entry.functionalConfig_suffix] using scopedFunctional)
-        closed.closed.execution closed.closed.effect
+        closed.closed.execution closed.closed.effect stable
   | returned value =>
     cases result.outcome with
     | full nextWorkspace nextValues stateAfter growth terminal stateCount
-        wellFormed =>
+        wellFormed full =>
       have sourceWorldEq :
           entry.functionalConfig.functional_run.after.world =
             functionalAfter.world := by
@@ -2254,7 +2274,7 @@ private noncomputable def RecognizerPositionStateEntry.execute_scope_synchronize
         (Lanius.FunctionalView.Stateful.Env.pop renamed.afterLarge)
         (by simpa [baseWorld, baseEnvironment, positionStateScopeCommand] using
           scopedFunctional)
-        closed.execution closed.effect
+        closed.execution closed.effect full
   | breakLoop => cases result.outcome
   | continueLoop => cases result.outcome
 
@@ -2278,14 +2298,14 @@ private def RecognizerPositionStateScopeSynchronizedExecution.physical
         outcome := .completed nextWorkspace nextValues physicalAfter growth frame
       }
   | full nextWorkspace nextValues physicalAfter growth invariant stateCount
-      wellFormed _ _ _ trace effect =>
+      wellFormed _ _ _ trace effect full =>
       exact {
         after := physicalAfter
         completion := parserCapacityCompletion position stateCount
         execution := trace
         effect := effect
         outcome := .full nextWorkspace nextValues physicalAfter growth invariant
-          stateCount wellFormed
+          stateCount wellFormed full
       }
 
 noncomputable def RecognizerPositionStateEntry.execute_scope
@@ -2330,7 +2350,8 @@ inductive RecognizerPositionStepOutcome
       (invariant : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell after)
-      (stateCount : Nat) (wellFormed : StateWellFormed after) :
+      (stateCount : Nat) (wellFormed : StateWellFormed after)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerPositionStepOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell positionCell furthestCell position after
@@ -2403,7 +2424,8 @@ private inductive RecognizerPositionStepSynchronizedExecution
         parserRecognizePositionLoopBody .next physicalAfter)
       (effect : ModifiesOnly
         (positionLoopMutableCells workspaceCell stateCountCell positionCell
-          furthestCell) before physicalAfter) :
+          furthestCell) before physicalAfter)
+      (stable : ChartsUnchangedBefore position workspace nextWorkspace) :
       RecognizerPositionStepSynchronizedExecution grammarLayout grammar words
         tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell stateCountCell positionCell furthestCell before position
@@ -2440,7 +2462,8 @@ private inductive RecognizerPositionStepSynchronizedExecution
         (parserCapacityCompletion position stateCount) physicalAfter)
       (effect : ModifiesOnly
         (positionLoopMutableCells workspaceCell stateCountCell positionCell
-          furthestCell) before physicalAfter) :
+          furthestCell) before physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity nextWorkspace stateCount) :
       RecognizerPositionStepSynchronizedExecution grammarLayout grammar words
         tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell stateCountCell positionCell furthestCell before position
@@ -2513,7 +2536,7 @@ private noncomputable def
       (by simpa only [CellSet.singleton] using invariant.furthestTokensDistinct.symm))
   cases scope with
   | completed nextWorkspace nextValues physicalAfter growth frame
-      scopeFunctional scopePhysical scopeEffect =>
+      scopeFunctional scopePhysical scopeEffect stable =>
       have functionalExecution :
           Lanius.FunctionalView.Stateful.Command.Evaluates
             (positionTermMachine workspaceLayout grammar words tokens grammarCell
@@ -2541,10 +2564,10 @@ private noncomputable def
       have effect := activity.effect.trans scopeEffect
       rw [positionActivityScopeWrites_eq] at effect
       exact .advanced nextWorkspace nextValues physicalAfter growth
-        activity.nextFurthest frame functionalExecution physicalExecution effect
+        activity.nextFurthest frame functionalExecution physicalExecution effect stable
   | full nextWorkspace nextValues physicalAfter growth terminal stateCount
       wellFormed functionalAfterWorld functionalAfterEnvironment
-      scopeFunctional scopePhysical scopeEffect =>
+      scopeFunctional scopePhysical scopeEffect full =>
       have functionalExecution :
           Lanius.FunctionalView.Stateful.Command.Evaluates
             (positionTermMachine workspaceLayout grammar words tokens grammarCell
@@ -2571,7 +2594,7 @@ private noncomputable def
       rw [positionActivityScopeWrites_eq] at effect
       exact .full nextWorkspace nextValues physicalAfter growth terminal
         stateCount wellFormed functionalAfterWorld functionalAfterEnvironment
-        functionalExecution physicalExecution effect
+        functionalExecution physicalExecution effect full
 
 private def RecognizerPositionStepSynchronizedExecution.physical
     (execution : RecognizerPositionStepSynchronizedExecution grammarLayout
@@ -2594,14 +2617,14 @@ private def RecognizerPositionStepSynchronizedExecution.physical
           nextFurthest frame
       }
   | full nextWorkspace nextValues physicalAfter growth invariant stateCount
-      wellFormed _ _ _ trace effect =>
+      wellFormed _ _ _ trace effect full =>
       exact {
         after := physicalAfter
         completion := parserCapacityCompletion position stateCount
         execution := trace
         effect := effect
         outcome := .full nextWorkspace nextValues physicalAfter growth invariant
-          stateCount wellFormed
+          stateCount wellFormed full
       }
 
 /-- Execute one complete chart-position body: record chart activity, execute
@@ -2684,7 +2707,8 @@ inductive RecognizerPositionLoopOutcome
       (invariant : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell after)
-      (wellFormed : StateWellFormed after) :
+      (wellFormed : StateWellFormed after)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerPositionLoopOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell positionCell furthestCell after
@@ -2704,9 +2728,9 @@ theorem RecognizerPositionLoopOutcome.prepend_growth
       exact .completed workspace workspaceValues after
         (growth.trans suffixGrowth) furthest invariant
   | full position stateCount after workspace workspaceValues suffixGrowth
-      invariant wellFormed =>
+      invariant wellFormed full =>
       exact .full position stateCount after workspace workspaceValues
-        (growth.trans suffixGrowth) invariant wellFormed
+        (growth.trans suffixGrowth) invariant wellFormed full
 
 /-- Algorithmic state of the position loop.  The finished constructor is a
     real state because the extracted `while` must still execute its final
@@ -2775,6 +2799,25 @@ def RecognizerPositionConfig.currentFurthest
   match config.cursor with
   | .active _ furthest _ => furthest
   | .finished furthest _ => furthest
+
+/-- Earlier charts must already be complete when resuming a position loop.
+The actual recognizer starts at zero, so it supplies the empty prefix. -/
+def RecognizerPositionConfig.predictionsReady
+    (config : RecognizerPositionConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      positionCell furthestCell) : Prop :=
+  PredictionsBefore grammar config.workspace config.currentPosition
+
+def RecognizerPositionConfig.scansReady
+    (config : RecognizerPositionConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      positionCell furthestCell) : Prop :=
+  ScansBefore grammar tokens config.workspace config.currentPosition
+
+def RecognizerPositionConfig.completionsReady
+    (config : RecognizerPositionConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell positionCell furthestCell) : Prop :=
+  CompletionsBefore grammar config.workspace config.currentPosition
 
 noncomputable def RecognizerPositionConfig.functionalRuntime
     (config : RecognizerPositionConfig grammarLayout grammar words tokens
@@ -2848,12 +2891,43 @@ inductive RecognizerPositionSynchronizedOutcome
       (invariant : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell physicalAfter)
-      (wellFormed : StateWellFormed physicalAfter) :
+      (wellFormed : StateWellFormed physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerPositionSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell positionCell furthestCell functionalAfter physicalAfter
         (.returned (some (parseResultValue 2 (Int.ofNat stateCount) (-1)
           (Int.ofNat position))))
+
+/-- A normal position-loop result has predicted every chart up to and
+including the final input position. A capacity return makes no such claim. -/
+def RecognizerPositionSynchronizedOutcome.predictionsComplete
+    (outcome : RecognizerPositionSynchronizedOutcome grammarLayout grammar
+      words tokens workspaceLayout beforeWorkspace grammarCell tokensCell
+      workspaceCell stateCountCell positionCell furthestCell functionalAfter
+      physicalAfter completion) : Prop :=
+  match outcome with
+  | .completed workspace .. =>
+      PredictionsBefore grammar workspace (finalPosition workspaceLayout.tokenCount + 1)
+  | .full .. => True
+
+def RecognizerPositionSynchronizedOutcome.scansComplete
+    (outcome : RecognizerPositionSynchronizedOutcome grammarLayout grammar
+      words tokens workspaceLayout beforeWorkspace grammarCell tokensCell
+      workspaceCell stateCountCell positionCell furthestCell functionalAfter
+      physicalAfter completion) : Prop :=
+  match outcome with
+  | .completed workspace .. =>
+      ScansBefore grammar tokens workspace (finalPosition workspaceLayout.tokenCount + 1)
+  | .full .. => True
+
+def RecognizerPositionSynchronizedOutcome.completionsComplete
+    (outcome : RecognizerPositionSynchronizedOutcome grammarLayout grammar words tokens
+      workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell stateCountCell
+      positionCell furthestCell functionalAfter physicalAfter completion) : Prop :=
+  match outcome with
+  | .completed workspace .. => CompletionsBefore grammar workspace (finalPosition workspaceLayout.tokenCount + 1)
+  | .full .. => True
 
 def RecognizerPositionSynchronizedOutcome.prepend_growth
     (outcome : RecognizerPositionSynchronizedOutcome grammarLayout grammar
@@ -2872,9 +2946,35 @@ def RecognizerPositionSynchronizedOutcome.prepend_growth
       exact .completed workspace workspaceValues physicalAfter
         (growth.trans suffix) furthest invariant worldEq environmentEq
   | full position stateCount physicalAfter workspace workspaceValues suffix
-      invariant wellFormed =>
+      invariant wellFormed full =>
       exact .full position stateCount physicalAfter workspace workspaceValues
-        (growth.trans suffix) invariant wellFormed
+        (growth.trans suffix) invariant wellFormed full
+
+@[simp] theorem RecognizerPositionSynchronizedOutcome.predictionsComplete_prepend_growth
+    (outcome : RecognizerPositionSynchronizedOutcome grammarLayout grammar
+      words tokens workspaceLayout middleWorkspace grammarCell tokensCell
+      workspaceCell stateCountCell positionCell furthestCell functionalAfter
+      physicalAfter completion)
+    (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace middleWorkspace) :
+    (outcome.prepend_growth growth).predictionsComplete = outcome.predictionsComplete := by
+  cases outcome <;> rfl
+
+@[simp] theorem RecognizerPositionSynchronizedOutcome.scansComplete_prepend_growth
+    (outcome : RecognizerPositionSynchronizedOutcome grammarLayout grammar
+      words tokens workspaceLayout middleWorkspace grammarCell tokensCell
+      workspaceCell stateCountCell positionCell furthestCell functionalAfter
+      physicalAfter completion)
+    (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace middleWorkspace) :
+    (outcome.prepend_growth growth).scansComplete = outcome.scansComplete := by
+  cases outcome <;> rfl
+
+@[simp] theorem RecognizerPositionSynchronizedOutcome.completionsComplete_prepend_growth
+    (outcome : RecognizerPositionSynchronizedOutcome grammarLayout grammar words tokens
+      workspaceLayout middleWorkspace grammarCell tokensCell workspaceCell stateCountCell
+      positionCell furthestCell functionalAfter physicalAfter completion)
+    (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace middleWorkspace) :
+    (outcome.prepend_growth growth).completionsComplete = outcome.completionsComplete := by
+  cases outcome <;> rfl
 
 def RecognizerPositionSynchronizedOutcome.physical
     (outcome : RecognizerPositionSynchronizedOutcome grammarLayout grammar
@@ -2891,9 +2991,9 @@ def RecognizerPositionSynchronizedOutcome.physical
       exact .completed workspace workspaceValues physicalAfter growth furthest
         invariant
   | full position stateCount physicalAfter workspace workspaceValues growth
-      invariant wellFormed =>
+      invariant wellFormed full =>
       exact .full position stateCount physicalAfter workspace workspaceValues
-        growth invariant wellFormed
+        growth invariant wellFormed full
 
 structure RecognizerPositionFunctionalResult
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -2920,6 +3020,9 @@ structure RecognizerPositionFunctionalResult
     tokens workspaceLayout config.workspace grammarCell tokensCell workspaceCell
     stateCountCell positionCell furthestCell functionalAfter physicalAfter
     completion
+  predictions : config.predictionsReady → outcome.predictionsComplete
+  scans : config.scansReady → outcome.scansComplete
+  completions : config.completionsReady → outcome.completionsComplete
 
 /-- One position-loop decision shared by the reified FunctionalView command
     and the exact extracted Core loop. -/
@@ -2981,6 +3084,21 @@ private noncomputable def RecognizerPositionConfig.functional_decide
                     finalPosition workspaceLayout.tokenCount + 1 by
                     simp [RecognizerPositionConfig.currentPosition,
                       cursorShape]]
+          predictions := by
+            intro prior
+            simpa only [RecognizerPositionConfig.predictionsReady,
+              RecognizerPositionConfig.currentPosition, cursorShape,
+              RecognizerPositionSynchronizedOutcome.predictionsComplete] using prior
+          scans := by
+            intro prior
+            simpa only [RecognizerPositionConfig.scansReady,
+              RecognizerPositionConfig.currentPosition, cursorShape,
+              RecognizerPositionSynchronizedOutcome.scansComplete] using prior
+          completions := by
+            intro prior
+            simpa only [RecognizerPositionConfig.completionsReady,
+              RecognizerPositionConfig.currentPosition, cursorShape,
+              RecognizerPositionSynchronizedOutcome.completionsComplete] using prior
         }
       }
   | active position furthest invariant =>
@@ -2999,7 +3117,6 @@ private noncomputable def RecognizerPositionConfig.functional_decide
               simp [RecognizerPositionConfig.currentFurthest, cursorShape],
           show config.currentPosition = position by
               simp [RecognizerPositionConfig.currentPosition, cursorShape]]
-        rfl
       have functionalTrue : Lanius.FunctionalView.Term.evaluate
           (positionTermMachine workspaceLayout grammar words tokens grammarCell
             tokensCell)
@@ -3012,7 +3129,7 @@ private noncomputable def RecognizerPositionConfig.functional_decide
       cases step with
       | full nextWorkspace nextValues physicalAfter growth nextInvariant
           stateCount wellFormed functionalAfterWorld functionalAfterEnvironment
-          functionalBody physicalBody stepEffect =>
+          functionalBody physicalBody stepEffect full =>
           apply Lanius.FunctionalView.Stateful.Loop.Decision.exit
           exact {
             completion := .returned (some (parseResultValue 2
@@ -3030,11 +3147,36 @@ private noncomputable def RecognizerPositionConfig.functional_decide
                 exact executesWhileReturned physicalTrue physicalBody
               effect := stepEffect
               outcome := .full position stateCount physicalAfter nextWorkspace
-                nextValues growth nextInvariant wellFormed
+                nextValues growth nextInvariant wellFormed full
+              predictions := fun _ => trivial
+              scans := fun _ => trivial
+              completions := fun _ => trivial
             }
           }
       | advanced nextWorkspace nextValues physicalAfter growth nextFurthest
-          frame functionalBody physicalBody stepEffect =>
+          frame functionalBody physicalBody stepEffect stable =>
+          have advancePredictions (prior : config.predictionsReady) :
+              PredictionsBefore grammar nextWorkspace (position + 1) :=
+            PredictionsBefore.advance
+              (by simpa only [RecognizerPositionConfig.predictionsReady,
+                RecognizerPositionConfig.currentPosition, cursorShape] using prior)
+              growth invariant.appendFrame.recognizer.workspaceEncoded.wellFormed.chartSound
+              stable frame.predicted
+          have advanceScans (prior : config.scansReady) :
+              ScansBefore grammar tokens nextWorkspace (position + 1) :=
+            ScansBefore.advance
+              (by simpa only [RecognizerPositionConfig.scansReady,
+                RecognizerPositionConfig.currentPosition, cursorShape] using prior)
+              growth invariant.appendFrame.recognizer.workspaceEncoded.wellFormed.chartSound
+              stable frame.scanned
+          have advanceCompletions (prior : config.completionsReady) :
+              CompletionsBefore grammar nextWorkspace (position + 1) :=
+            CompletionsBefore.advance
+              (by simpa only [RecognizerPositionConfig.completionsReady,
+                RecognizerPositionConfig.currentPosition, cursorShape] using prior)
+              growth invariant.appendFrame.recognizer.workspaceEncoded.wellFormed.chartSound
+              frame.appendFrame.recognizer.workspaceEncoded.wellFormed.chartSound
+              stable frame.completedPairs
           by_cases nextBound : position + 1 ≤
               finalPosition workspaceLayout.tokenCount
           · let nextConfig : RecognizerPositionConfig grammarLayout grammar
@@ -3081,6 +3223,21 @@ private noncomputable def RecognizerPositionConfig.functional_decide
                     result.execution
                 effect := stepEffect.trans_same result.effect
                 outcome := result.outcome.prepend_growth growth
+                predictions := by
+                  intro prior
+                  have ready : nextConfig.predictionsReady := advancePredictions prior
+                  simpa only [RecognizerPositionSynchronizedOutcome.predictionsComplete_prepend_growth]
+                    using result.predictions ready
+                scans := by
+                  intro prior
+                  have ready : nextConfig.scansReady := advanceScans prior
+                  simpa only [RecognizerPositionSynchronizedOutcome.scansComplete_prepend_growth]
+                    using result.scans ready
+                completions := by
+                  intro prior
+                  have ready : nextConfig.completionsReady := advanceCompletions prior
+                  exact (RecognizerPositionSynchronizedOutcome.completionsComplete_prepend_growth
+                    result.outcome growth).mpr (result.completions ready)
               }
           · have atFinal : position =
                 finalPosition workspaceLayout.tokenCount := by
@@ -3139,6 +3296,30 @@ private noncomputable def RecognizerPositionConfig.functional_decide
                     result.execution
                 effect := stepEffect.trans_same result.effect
                 outcome := result.outcome.prepend_growth growth
+                predictions := by
+                  intro prior
+                  have ready : nextConfig.predictionsReady := by
+                    simpa only [RecognizerPositionConfig.predictionsReady,
+                      RecognizerPositionConfig.currentPosition, nextConfig, atFinal]
+                      using advancePredictions prior
+                  simpa only [RecognizerPositionSynchronizedOutcome.predictionsComplete_prepend_growth]
+                    using result.predictions ready
+                scans := by
+                  intro prior
+                  have ready : nextConfig.scansReady := by
+                    simpa only [RecognizerPositionConfig.scansReady,
+                      RecognizerPositionConfig.currentPosition, nextConfig, atFinal]
+                      using advanceScans prior
+                  simpa only [RecognizerPositionSynchronizedOutcome.scansComplete_prepend_growth]
+                    using result.scans ready
+                completions := by
+                  intro prior
+                  have ready : nextConfig.completionsReady := by
+                    simpa only [RecognizerPositionConfig.completionsReady,
+                      RecognizerPositionConfig.currentPosition, nextConfig, atFinal]
+                      using advanceCompletions prior
+                  exact (RecognizerPositionSynchronizedOutcome.completionsComplete_prepend_growth
+                    result.outcome growth).mpr (result.completions ready)
               }
 
 noncomputable def RecognizerPositionConfig.functional_run
@@ -3215,12 +3396,12 @@ noncomputable def RecognizerPositionLoopInvariant.execute_loop
 def verifiedParserRootLoopAccessFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
-    parserRecognizeRootLoop (by native_decide)
+    parserRecognizeRootLoop (by decide)
 
 def verifiedParserRootLoopLiveFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
-    parserRecognizeRootLoop (by native_decide)
+    parserRecognizeRootLoop (by decide)
 
 theorem verifiedParser_root_loop_access_frame :
     verifiedParserRootLoopAccessFrame.map (fun access =>
@@ -3231,7 +3412,7 @@ theorem verifiedParser_root_loop_access_frame :
       ("grammar", 0, .read),
       ("start_nonterminal", 12, .read),
       ("state_count", 18, .read)] := by
-  native_decide
+  decide
 
 theorem verifiedParser_root_loop_live_frame :
     verifiedParserRootLoopLiveFrame.map (fun access =>
@@ -3243,7 +3424,7 @@ theorem verifiedParser_root_loop_live_frame :
       ("start_nonterminal", 12, .read),
       ("state_count", 18, .read),
       ("furthest_position", 22, .read)] := by
-  native_decide
+  decide
 
 /-- Locals live across root search whose cells are shared with the enclosing
     result frame.  The `root_state` cursor is excluded because `chartCursor`
@@ -3257,7 +3438,7 @@ def verifiedParserRootLoopSharedFrameIds : List VarId :=
 
 theorem verifiedParser_root_loop_shared_frame_ids :
     verifiedParserRootLoopSharedFrameIds = [4, 8, 0, 12, 18, 22] := by
-  native_decide
+  decide
 
 @[simp] theorem mem_verifiedParserRootLoopSharedFrameIds_iff
     (id : Nat) :
@@ -3278,7 +3459,10 @@ theorem verifiedParserRootLoopBindings_core_ids :
     verifiedParserRootLoopBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserRootLoopSharedFrameIds := by
-  native_decide
+  simp only [verifiedParserRootLoopBindings,
+    verifiedParserRecognizerParameterIds, verifiedParserRootLoopSharedFrameIds,
+    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
+    List.map_append]
 
 theorem RootLoopFramedLocal_source_frame (id : VarId) :
     RootLoopFramedLocal id ↔

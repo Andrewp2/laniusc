@@ -3,6 +3,7 @@ import Lanius.Relational.SemanticWP
 import Lanius.Relational.OperationRegistry
 import Lanius.Extraction.Lexer.Relational.PredicateContracts
 import Lanius.Extraction.Lexer.Relational.IdentifierEndStructure
+import Lanius.FunctionalViewRenaming
 
 namespace Lanius.Extraction.Lexer.Relational.ScannerWP
 
@@ -115,23 +116,7 @@ theorem less_result
         [cursorTerm, boundTerm]) value afterWorld) :
     value = .boolean (decide (cursor < source.length)) ∧
       afterWorld = SourceMemory.sourceWorld source := by
-  obtain ⟨values, afterArguments, argumentsResult, operationResult⟩ :=
-    evaluated.applyInversion
-  obtain ⟨cursorValue, restValues, afterCursor, valuesEq, cursorResult,
-      restResult⟩ := argumentsResult.consInversion
-  obtain ⟨boundValue, tailValues, afterBound, restValuesEq, boundResult,
-      tailResult⟩ := restResult.consInversion
-  obtain ⟨tailValuesEq, afterBoundEq⟩ := tailResult.nilInversion
-  obtain ⟨cursorValueEq, afterCursorEq⟩ := cursorResult.referenceInversion
-  obtain ⟨boundValueEq, afterBoundWorldEq⟩ := boundResult.referenceInversion
-  subst values
-  subst restValues
-  subst tailValues
-  subst cursorValue
-  subst boundValue
-  subst afterCursor
-  subst afterBound
-  subst afterArguments
+  have operationResult := evaluated.apply2ReferencesInversion
   simp [machine, registry, OperationRegistry.machine,
     loopEnvironment, Ref.evaluate, ReadOnly.evaluateOperation,
     Lanius.Semantics.evalBinaryValue,
@@ -151,23 +136,7 @@ private theorem index_result
         [sourceTerm, cursorTerm]) value afterWorld) :
     value = .signed .i32 (Int.ofNat (source.get ⟨cursor, inBounds⟩).val) ∧
       afterWorld = SourceMemory.sourceWorld source := by
-  obtain ⟨values, afterArguments, argumentsResult, operationResult⟩ :=
-    evaluated.applyInversion
-  obtain ⟨sourceValue, restValues, afterSource, valuesEq, sourceResult,
-      restResult⟩ := argumentsResult.consInversion
-  obtain ⟨cursorValue, tailValues, afterCursor, restValuesEq, cursorResult,
-      tailResult⟩ := restResult.consInversion
-  obtain ⟨tailValuesEq, afterCursorEq⟩ := tailResult.nilInversion
-  obtain ⟨sourceValueEq, afterSourceEq⟩ := sourceResult.referenceInversion
-  obtain ⟨cursorValueEq, afterCursorWorldEq⟩ := cursorResult.referenceInversion
-  subst values
-  subst restValues
-  subst tailValues
-  subst sourceValue
-  subst cursorValue
-  subst afterSource
-  subst afterCursor
-  subst afterArguments
+  have operationResult := evaluated.apply2ReferencesInversion
   have cursorNonnegative : ¬ ((cursor : Int) < 0) := by
     exact Int.not_lt_of_ge (Int.natCast_nonneg cursor)
   simp [machine, registry, OperationRegistry.machine,
@@ -198,11 +167,7 @@ private theorem predicate_result
   obtain ⟨argumentEq, argumentWorldEq⟩ :=
     index_result source function accept correct start cursor inBounds
       actualArgument
-  subst values
-  subst tailValues
-  subst argumentValue
-  subst afterArgument
-  subst afterArguments
+  subst_vars
   simp only [machine, registry, OperationRegistry.machine] at operationResult
   rcases operationResult with ⟨_functionEq, byte, before, result, after,
     argumentsEq, valueEq, pre, beforeRep, post, frame, afterRep⟩
@@ -256,7 +221,7 @@ theorem condition_in_bounds
     simp at leftEq
   · obtain ⟨_leftEq, afterLeftEq⟩ :=
       less_result source function accept correct start cursor leftResult
-    subst afterLeft
+    subst_vars
     obtain ⟨resultEq, worldEq⟩ :=
       predicate_result source function accept correct start cursor inBounds
         rightResult
@@ -308,8 +273,7 @@ theorem body_wp
   apply SemanticWP.Command.updateLocal
   intro right afterWorld rightResult
   obtain ⟨rightEq, afterWorldEq⟩ := rightResult.referenceInversion
-  subst right
-  subst afterWorld
+  subst_vars
   intro result updateResult
   have resultEq : result = .signed .i32 (Int.ofNat (cursor + 1)) := by
     change Lanius.Semantics.evalAssignValue checkedFrontend.core.target .add
@@ -327,22 +291,7 @@ theorem body_wp
   subst result
   apply SemanticWP.Command.skip
   refine ⟨rfl, rfl, ?_⟩
-  funext index
-  have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-      index.val = 3 := by omega
-  rcases cases with zero | one | two | three
-  · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-    rw [same]
-    rfl
-  · have same : index = ⟨1, by omega⟩ := Fin.ext one
-    rw [same]
-    rfl
-  · have same : index = ⟨2, by omega⟩ := Fin.ext two
-    rw [same]
-    rfl
-  · have same : index = ⟨3, by omega⟩ := Fin.ext three
-    rw [same]
-    simp [loopEnvironment, Stateful.Env.set]
+  exact Env.eq_ofFn rfl
 
 private theorem spec
     (source : List Byte)
@@ -379,37 +328,21 @@ theorem initializer_wp
         afterWorld = SourceMemory.sourceWorld source)
       (SourceMemory.sourceWorld source) (parameterEnvironment source start) := by
   intro value afterWorld evaluated
-  obtain ⟨values, afterArguments, argumentsResult, operationResult⟩ :=
-    evaluated.applyInversion
-  obtain ⟨startValue, restValues, afterStart, valuesEq, startResult,
-      restResult⟩ := argumentsResult.consInversion
-  obtain ⟨oneValue, tailValues, afterOne, restValuesEq, oneResult,
-      tailResult⟩ := restResult.consInversion
-  obtain ⟨tailValuesEq, afterArgumentsEq⟩ := tailResult.nilInversion
-  obtain ⟨startValueEq, afterStartEq⟩ := startResult.referenceInversion
-  obtain ⟨oneValueEq, afterOneEq⟩ := oneResult.referenceInversion
-  subst values
-  subst restValues
-  subst tailValues
-  subst startValue
-  subst oneValue
-  subst afterStart
-  subst afterOne
-  subst afterArguments
+  have operationResult := evaluated.apply2ReferencesInversion
   change ReadOnly.evaluateOperation checkedFrontend.core
       (SourceMemory.sourceWorld source)
       (.binary .add i32Type i32Type i32Type)
       [.signed .i32 (Int.ofNat start), .signed .i32 1] =
     .ok (value, afterWorld) at operationResult
-  simp only [ReadOnly.evaluateOperation,
-    Lanius.Semantics.evalBinaryValue, Lanius.Semantics.evalSignedBinary]
-    at operationResult
-  have addition : Int.ofNat start + 1 = Int.ofNat (start + 1) := by simp
-  rw [addition] at operationResult
-  rw [Lanius.Semantics.wrapSigned_i32_ofNat _ _
-    (Nat.le_trans (Nat.succ_le_of_lt startInBounds) sourceBound)]
-    at operationResult
-  have pairEq := Except.ok.inj operationResult
+  have expected := ReadOnly.evaluateOperation_i32_add
+    (program := checkedFrontend.core)
+    (world := SourceMemory.sourceWorld source)
+    (leftType := i32Type) (rightType := i32Type) (outputType := i32Type)
+    start 1 (Nat.le_trans (Nat.succ_le_of_lt startInBounds) sourceBound)
+  have pairEq :
+      (.signed .i32 (Int.ofNat (start + 1)),
+        SourceMemory.sourceWorld source) = (value, afterWorld) := by
+    exact Except.ok.inj (expected.symm.trans operationResult)
   exact ⟨(congrArg Prod.fst pairEq).symm,
     (congrArg Prod.snd pairEq).symm⟩
 
@@ -437,44 +370,25 @@ theorem command_wp
   obtain ⟨valueEq, worldEq⟩ :=
     initializer_wp source function accept correct start sourceBound
       startInBounds value initializedWorld evaluated
-  subst value
-  subst initializedWorld
+  subst_vars
   have pushed : (parameterEnvironment source start).push
       (.signed .i32 (Int.ofNat (start + 1))) =
       loopEnvironment source start (start + 1) := by
-    funext index
-    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-        index.val = 3 := by omega
-    rcases cases with zero | one | two | three
-    · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-      rw [same]
-      rfl
-    · have same : index = ⟨1, by omega⟩ := Fin.ext one
-      rw [same]
-      rfl
-    · have same : index = ⟨2, by omega⟩ := Fin.ext two
-      rw [same]
-      rfl
-    · have same : index = ⟨3, by omega⟩ := Fin.ext three
-      rw [same]
-      rfl
+    exact Env.eq_ofFn rfl
   rw [pushed]
   apply SemanticWP.Command.sequence
   intro completion loopWorld loopEnvironment' loopResult
-  have loopWP := SemanticWP.Command.cursorScan
-    (spec source function accept correct start sourceBound)
-    (recurrence source accept) (start + 1)
   obtain ⟨completionEq, loopWorldEq, loopEnvironmentEq⟩ :=
-    loopWP completion loopWorld loopEnvironment' loopResult
-  subst completion
-  subst loopWorld
-  subst loopEnvironment'
+    SemanticWP.Command.cursorScan
+      (spec source function accept correct start sourceBound)
+      (recurrence source accept) (start + 1)
+      completion loopWorld loopEnvironment' loopResult
+  subst_vars
   apply SemanticWP.Command.sequence
   apply SemanticWP.Command.returnSome
   intro result returnWorld returnResult
   obtain ⟨resultEq, returnWorldEq⟩ := returnResult.referenceInversion
-  subst result
-  subst returnWorld
+  subst_vars
   exact ⟨rfl, rfl⟩
 
 theorem identifierView_wp

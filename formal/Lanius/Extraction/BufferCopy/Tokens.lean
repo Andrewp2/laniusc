@@ -1,10 +1,24 @@
 import Lanius.Extraction.BufferCopy.Loop
 import Lanius.Extraction.CanonicalTokens.Compaction.Invariant
+import Lanius.Extraction.CanonicalTokens.Kind.Execution
 
 namespace Lanius.Extraction.BufferCopy
 
 open Lanius.Compiler Lanius.Compiler.Lexer
 open Lanius.Extraction.CanonicalTokens CanonicalizeModel Compaction
+
+theorem encoded_range (raw : List RawToken) (sourceLength : Nat)
+    (spans : ∀ token ∈ raw, token.start ≤ token.finish ∧ token.finish ≤ sourceLength)
+    (bounded : sourceLength ≤ 2147483647) :
+    ∀ word ∈ encodeTokens raw, -2147483648 ≤ word ∧ word ≤ 2147483647 := by
+  intro word member
+  obtain ⟨token, tokenMember, wordMember⟩ := List.mem_flatMap.mp member
+  have span := spans token tokenMember
+  simp only [encodeToken, List.mem_cons, List.not_mem_nil, or_false] at wordMember
+  rcases wordMember with rfl | rfl | rfl
+  · exact Kind.token_code_range token.kind
+  · simp only [Int.ofNat_eq_natCast]; omega
+  · simp only [Int.ofNat_eq_natCast]; omega
 
 /-- The contiguous copy reads the raw records already emitted by the lexer;
 spare source capacity is never treated as a token. -/

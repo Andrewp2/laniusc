@@ -183,7 +183,6 @@ theorem scanExponent_run
           dsimp [scanStart] at returned
           rw [returned]
           simp [encoded, scanExponent, resultEq]
-          rfl
       | failure error =>
           have resultBound := digitRunResult_bound (source := source)
             (start := scanStart) (base := 10) sourceBound scanStartBound
@@ -218,7 +217,6 @@ theorem scanExponent_run
           dsimp [scanStart] at returned
           rw [returned]
           simp [encoded, scanExponent, resultEq]
-          rfl
     · have signFalse : hasSign = false := Bool.eq_false_iff.mpr sign
       dsimp [hasSign] at signFalse
       rw [signFalse]
@@ -277,7 +275,6 @@ theorem scanExponent_run
           dsimp [scanStart] at returned
           rw [returned]
           simp [encoded, scanExponent, resultEq]
-          rfl
       | failure error =>
           have resultBound := digitRunResult_bound (source := source)
             (start := scanStart) (base := 10) sourceBound digitsStartBound
@@ -312,7 +309,6 @@ theorem scanExponent_run
           dsimp [scanStart] at returned
           rw [returned]
           simp [encoded, scanExponent, resultEq]
-          rfl
   · rw [decide_eq_false digitsInBounds]
     simp only [bind, Except.bind]
     let scanStart := digitsStart
@@ -363,7 +359,6 @@ theorem scanExponent_run
         dsimp [scanStart] at returned
         rw [returned]
         simp [Stateful.Acyclic.run?, encoded, scanExponent, resultEq]
-        rfl
     | failure error =>
         have resultBound := digitRunResult_bound (source := source)
           (start := scanStart) (base := 10) sourceBound digitsStartBound
@@ -398,7 +393,6 @@ theorem scanExponent_run
         dsimp [scanStart] at returned
         rw [returned]
         simp [Stateful.Acyclic.run?, encoded, scanExponent, resultEq]
-        rfl
 
 theorem scanExponent_evaluates
     (source : List Byte) (world : ReadOnly.World) (start : Nat)

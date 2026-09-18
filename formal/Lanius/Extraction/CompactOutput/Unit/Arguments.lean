@@ -14,6 +14,7 @@ open Lanius.Extraction.CanonicalTokens.CanonicalizeModel Lanius.FunctionalView.C
 counts are separate from physical slice capacities. -/
 structure Emission where
   data : SyntaxData
+  sourceCapacity : Nat
   path : List Byte
   pathCell : CellId
   pathCapacity : Nat
@@ -29,7 +30,7 @@ structure Emission where
 
 def Emission.values (emission : Emission) : List Value :=
   [.slice i32 emission.pathCell [] 0 emission.pathCapacity, .signed .i32 emission.path.length,
-    .slice i32 emission.data.sourceCell [] 0 emission.data.request.source.length, .signed .i32 emission.data.request.source.length,
+    .slice i32 emission.data.sourceCell [] 0 emission.sourceCapacity, .signed .i32 emission.data.request.source.length,
     .slice i32 emission.data.rawCell [] 0 emission.data.records.length, .signed .i32 emission.data.records.length,
     .signed .i32 emission.data.raw.length,
     .slice i32 emission.data.canonicalCell [] 0 emission.data.canonical.length, .signed .i32 emission.data.canonical.length,
@@ -51,7 +52,7 @@ structure Storage (emission : Emission)
   valid : emission.data.Valid
   kindsFit : emission.data.grammar.grammar.n_kinds ≤ 32768
   path : I32Prefix state emission.pathCell emission.pathCapacity (sourceIntegers emission.path)
-  source : I32Prefix state emission.data.sourceCell emission.data.request.source.length (sourceIntegers emission.data.request.source)
+  source : I32Prefix state emission.data.sourceCell emission.sourceCapacity (sourceIntegers emission.data.request.source)
   raw : I32Prefix state emission.data.rawCell emission.data.records.length (encodeTokens emission.data.raw)
   canonical : I32Prefix state emission.data.canonicalCell emission.data.canonical.length (encodeTokens emission.data.tokens)
   records : I32Prefix state emission.data.recordsCell emission.data.treeRecords.length (ParserTreeLayout.treeFrom 0 0 result.parse.tree).words
@@ -70,6 +71,23 @@ structure Storage (emission : Emission)
   separate : ∀ cell ∈ [emission.pathCell, emission.data.sourceCell, emission.data.rawCell,
     emission.data.canonicalCell, emission.semanticCell, emission.data.recordsCell, emission.data.offsetsCell],
     emission.outputCell ≠ cell
+
+/-- Argument accessors may allocate call cells while retaining all unit
+storage. No parser or collector computation needs to be repeated afterward. -/
+theorem Storage.preserved (storage : Storage emission result collection before)
+    (wellFormed : StateWellFormed before) (effect : CellEffect CellSet.empty before after) :
+    Storage emission result collection after := by
+  have untouched (cell : CellId) : ¬ CellSet.empty cell := by simp [CellSet.empty]
+  exact ⟨storage.valid, storage.kindsFit,
+    storage.path.preserved wellFormed effect (untouched _),
+    storage.source.preserved wellFormed effect (untouched _),
+    storage.raw.preserved wellFormed effect (untouched _),
+    storage.canonical.preserved wellFormed effect (untouched _),
+    storage.records.preserved wellFormed effect (untouched _),
+    storage.offsets.preserved wellFormed effect (untouched _),
+    effect.empty_preserves_entry wellFormed storage.semantic,
+    effect.empty_preserves_entry wellFormed storage.output,
+    storage.pathFit, storage.semanticFit, storage.semanticRoom, storage.capacityFit, storage.room, storage.separate⟩
 
 def Storage.inputs (storage : Storage emission result collection before)
     (wellFormed : StateWellFormed before) :
@@ -148,12 +166,13 @@ theorem Storage.inputs_encoding (storage : Storage emission result collection be
 
 /-- Establish the complete emitter storage contract using the frontend
 postcondition and the collector's actual output-only effect. -/
-theorem Storage.of_collection {emission : Emission}
+theorem Storage.of_collection {emission : Emission} {tail : List Int}
     {result : FrontendResult emission.data emission.count emission.nodes emission.words extracted}
     {collection : CollectionRecords emission.data.grammar (artifactTokens emission.data.tokens) result.parse.tree 0 0}
     (valid : emission.data.Valid) (kindsFit : emission.data.grammar.grammar.n_kinds ≤ 32768)
     (post : emission.data.Post stage detail emission.count emission.nodes emission.words position frontBefore extracted)
-    (raw : emission.data.RawOutput extracted) (success : stage = 0)
+    (raw : emission.data.PaddedRawOutput tail extracted)
+    (sourceCapacity : emission.data.request.source.length + tail.length = emission.sourceCapacity) (success : stage = 0)
     (wellFormed : StateWellFormed extracted)
     (effect : CellEffect (CellSet.singleton emission.semanticCell) extracted collected)
     (collectorSeparate : ∀ cell ∈ [emission.data.sourceCell, emission.data.rawCell, emission.data.canonicalCell,
@@ -173,7 +192,7 @@ theorem Storage.of_collection {emission : Emission}
       emission.outputCell ≠ cell) : Storage emission result collection collected := by
   obtain ⟨source, raw, canonical⟩ := lexical_storage_after_collection emission.data valid post raw success wellFormed effect
     (collectorSeparate _ (by simp)) (collectorSeparate _ (by simp)) (collectorSeparate _ (by simp))
-  exact ⟨valid, kindsFit, path, source, raw, canonical,
+  exact ⟨valid, kindsFit, path, sourceCapacity ▸ source, raw, canonical,
     result.records.preserved wellFormed effect (collectorSeparate _ (by simp)),
     result.offsets.preserved wellFormed effect (collectorSeparate _ (by simp)),
     semantic, output, pathFit, semanticFit, semanticRoom, capacityFit, room, separate⟩

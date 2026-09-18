@@ -6,7 +6,9 @@ namespace Lanius.Extraction
 /-- Primitive reads used by reconstruction.  The grammar-directed algorithm
 below is parametric in this interface, so list and checked-tree execution share
 one implementation. -/
-@[ext] class ArtifactAccess where
+-- The instance may own runtime indexes. Specializing through its constructor
+-- can move index construction into each read instead of sharing it once.
+@[ext, nospecialize] class ArtifactAccess where
   node? : Artifact → ParseNodeId → Option ParseNode
   token? : Artifact → TokenId → Option Token
   primarySourceRange? : Artifact → Nat → Nat → Option (List (Fin 256))
@@ -29,6 +31,34 @@ instance : ArtifactAccess := ArtifactAccess.canonical
     let source ← artifact.sources[0]?
     let bytes ← decodeBytes source.bytes
     pure ((bytes.drop start).take count)
+
+/-- Build each runtime index once, before the reconstruction walk. The public
+list semantics and out-of-range behavior are unchanged. -/
+@[instance_reducible] def ArtifactAccess.indexedFor (artifact : Artifact) : ArtifactAccess :=
+  let nodes := artifact.parse_nodes.toArray
+  let tokens := artifact.tokens.toArray
+  let bytes := (artifact.sources[0]?).bind fun source =>
+    (decodeBytes source.bytes).map List.toArray
+  { node? := fun _ id => nodes[id]?
+    token? := fun _ id => tokens[id]?
+    primarySourceRange? := fun _ start count =>
+      bytes.map fun values => (values.extract start (start + count)).toList }
+
+theorem ArtifactAccess.indexedFor_eq (artifact : Artifact) :
+    ArtifactAccess.indexedFor artifact = ArtifactAccess.canonicalFor artifact := by
+  apply ArtifactAccess.ext
+  · funext _ id
+    change artifact.parse_nodes.toArray[id]? = artifact.parse_nodes[id]?
+    simp
+  · funext _ id
+    change artifact.tokens.toArray[id]? = artifact.tokens[id]?
+    simp
+  · funext _ start count
+    change ((artifact.sources[0]?).bind fun source =>
+      (decodeBytes source.bytes).map List.toArray).map
+        (fun values => (values.extract start (start + count)).toList) = _
+    simp [ArtifactAccess.primarySourceRange?, List.extract, Function.comp_def,
+      Option.map_eq_bind, Option.bind_assoc]
 
 @[instance_reducible] def ArtifactAccess.ofView {artifact : Artifact}
     (view : ArtifactView artifact) : ArtifactAccess where

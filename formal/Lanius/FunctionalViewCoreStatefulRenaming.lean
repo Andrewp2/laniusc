@@ -106,7 +106,7 @@ theorem toCoreExpr_rename
     | literal =>
         simp [Term.rename, Core.toCoreExpr, Core.refToCoreExpr, Ref.rename]
   · intro operation arguments argumentsIH
-    simp only [Term.rename, Core.toCoreExpr]
+    simp only [Term.rename, Term.renameList_eq_map, Core.toCoreExpr]
     rw [argumentsIH]
   · intro left right leftIH rightIH
     simp only [Term.rename, Core.toCoreExpr, leftIH, rightIH]

@@ -1,0 +1,50 @@
+module runtime::arguments;
+import x86::register;
+import x86::encode;
+import x86::control;
+
+// R15 points to the startup context; it is preserved by every generated call.
+pub fn emit(output: [i32], capacity: i32, cursor: i32, service: i32) -> i32 {
+    let next: i32 = cursor;
+    next = x86::encode::load(output, capacity, next, 64, x86::register::R8, x86::register::R15, 0);
+    if (service == 7) {
+    next = x86::encode::load(output, capacity, next, 32, x86::register::RAX, x86::register::R8, 0);
+    next = x86::control::return_near(output, capacity, next);
+    return next;
+    }
+    next = x86::encode::sign_extend_i32(output, capacity, next, x86::register::RDI, x86::register::RDI);
+    next = x86::encode::load(output, capacity, next, 64, x86::register::R10, x86::register::R8, 0);
+    next = x86::encode::binary(output, capacity, next, 64, x86::encode::CMP, x86::register::RDI, x86::register::R10);
+    let invalid: i32 = next + 2;
+    next = x86::control::branch(output, capacity, next, x86::control::ABOVE_EQUAL, 0);
+    next = x86::encode::indexed_address(output, capacity, next, x86::register::R8, x86::register::R8, x86::register::RDI, 3, 8);
+    next = x86::encode::load(output, capacity, next, 64, x86::register::R8, x86::register::R8, 0);
+    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 0, 0);
+    let loop_start: i32 = next;
+    let full: i32 = -1;
+    if (service == 9) {
+    next = x86::encode::binary(output, capacity, next, 64, x86::encode::CMP, x86::register::RAX, x86::register::RDX);
+    full = next + 2;
+    next = x86::control::branch(output, capacity, next, x86::control::ABOVE_EQUAL, 0);
+    }
+    next = x86::encode::load_byte(output, capacity, next, x86::register::R10, x86::register::R8, 0);
+    next = x86::encode::binary(output, capacity, next, 32, x86::encode::TEST, x86::register::R10, x86::register::R10);
+    let end: i32 = next + 2;
+    next = x86::control::branch(output, capacity, next, x86::control::EQUAL, 0);
+    if (service == 9) {
+    next = x86::encode::store_byte(output, capacity, next, x86::register::R10, x86::register::RSI, 0);
+    next = x86::encode::address(output, capacity, next, x86::register::RSI, x86::register::RSI, 1);
+    }
+    next = x86::encode::address(output, capacity, next, x86::register::R8, x86::register::R8, 1);
+    next = x86::encode::address(output, capacity, next, x86::register::RAX, x86::register::RAX, 1);
+    next = x86::control::jump(output, capacity, next, loop_start);
+    if (x86::control::patch_relative(output, next, end, next) < 0) { return -1; }
+    if (full >= 0) { if (x86::control::patch_relative(output, next, full, next) < 0) { return -1; } }
+    next = x86::encode::move_register(output, capacity, next, 32, x86::register::RAX, x86::register::RAX);
+    next = x86::control::return_near(output, capacity, next);
+    if (x86::control::patch_relative(output, next, invalid, next) < 0) { return -1; }
+    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, -1, 0);
+    next = x86::control::return_near(output, capacity, next);
+    return next;
+}
+

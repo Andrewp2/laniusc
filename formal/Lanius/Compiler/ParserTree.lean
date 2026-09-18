@@ -1,4 +1,4 @@
-import Lanius.Compiler.ParserModel
+import Lanius.Compiler.Parser.Bounds
 
 namespace Lanius.Compiler.Parser
 
@@ -135,13 +135,15 @@ nine-word state encoding. Requiring referenced state IDs to be smaller than
 the current ID makes recursive materialization structurally well founded.
 -/
 
-/-- One stored Earley state is either a fresh item or is the exact advance of
-    an earlier item over the token/child named by its backpointer. -/
+/-- A fresh item comes from initialization or prediction; an advanced item
+names its earlier predecessor and token/child. The fresh witness also retains
+generation from the grammar, rather than admitting every production anywhere. -/
 inductive EarleyBackpointerStep
     (grammar : IndexedGrammar) (tokens : List Nat)
     (workspace : LogicalWorkspace) : Nat → EarleyState → Prop where
   | fresh
-      (productionBound : production < grammar.productionCount) :
+      (productionBound : production < grammar.productionCount)
+      (generated : GeneratedItem grammar tokens position ⟨production, 0, position⟩) :
       EarleyBackpointerStep grammar tokens workspace stateId
         ((freshSeed production position).atPosition position)
   | terminal
@@ -192,6 +194,38 @@ def WorkspaceBackpointersSound
     (workspace : LogicalWorkspace) : Prop :=
   ∀ stateId state, workspace.state? stateId = some state →
     EarleyBackpointerStep grammar tokens workspace stateId state
+
+/-- Decreasing stored backpointers extend the source's fresh-item generation
+witness to every state. No additional traversal invariant or parser run is
+needed: both advance rules are already recorded in the derivation evidence. -/
+theorem WorkspaceBackpointersSound.generated
+    (sound : WorkspaceBackpointersSound grammar tokens workspace) :
+    WorkspaceGenerated grammar tokens workspace := by
+  intro id
+  induction id using Nat.strongRecOn with
+  | ind id ih =>
+      intro state found
+      cases sound id state found with
+      | fresh bound generated => exact generated
+      | terminal previousFound previousBefore productionBound expected terminal scanned =>
+          rename_i previousId previous kind finish
+          have waiting := ih previousId previousBefore previous previousFound
+          have advanced := waiting.scan ⟨previous.production, productionBound⟩ expected terminal scanned
+          simpa [EarleyState.key, EarleyState.advanceSeed, StateSeed.atPosition] using advanced
+      | nonterminal previousFound previousBefore childFound childBefore
+          parentBound childBound expected lhsBound origin complete =>
+          rename_i previousId previous childId child
+          have waiting := ih previousId previousBefore previous previousFound
+          have finished := ih childId childBefore child childFound
+          change GeneratedItem grammar tokens child.position
+            ⟨child.production, child.dot, child.origin⟩ at finished
+          have childReady : GeneratedItem grammar tokens child.position
+              ⟨child.production, (grammar.productionAt ⟨child.production, childBound⟩).rhs.length,
+                previous.position⟩ := by
+            simpa only [EarleyState.key, complete, origin] using finished
+          have advanced := waiting.complete ⟨previous.production, parentBound⟩
+            ⟨child.production, childBound⟩ expected childReady
+          simpa [EarleyState.key, EarleyState.advanceSeed, StateSeed.atPosition] using advanced
 
 /-- A state prefix has been reconstructed into source-order concrete children.
     The production bound is explicit so callers can use the same indexed
@@ -411,7 +445,7 @@ theorem WorkspaceBackpointersSound.materializeStatePrefix?_complete
       | succ remainingFuel =>
           have step := sound stateId state found
           cases step with
-          | fresh freshProductionBound =>
+          | fresh freshProductionBound generated =>
               rename_i production position
               refine ⟨[], ?_, ?_⟩
               · simp [materializeStatePrefix?, found, freshSeed,
@@ -604,8 +638,8 @@ theorem EarleyBackpointerStep.afterInsert
     EarleyBackpointerStep grammar tokens
       (insertState workspace position seed) stateId state := by
   cases step with
-  | fresh productionBound =>
-      exact .fresh productionBound
+  | fresh productionBound generated =>
+      exact .fresh productionBound generated
   | terminal previousFound previousBefore previousProductionBound symbolFound
       semanticKindBound scanned =>
       rename_i previousId previous semanticKind finish

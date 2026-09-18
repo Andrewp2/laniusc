@@ -2,6 +2,7 @@ import Lanius.Memory.Borrowed
 import Lanius.Extraction.Input.Unpacking
 import Lanius.Extraction.CanonicalTokens.Ascii.Source
 import Lanius.Separation
+import Lanius.Semantics.I32Views.Borrowed
 
 namespace Lanius.Extraction.CanonicalTokens.Ascii
 
@@ -21,12 +22,14 @@ theorem string_words (before : State) (text : String) (count : Nat)
       mapRawI32Slice pointed address count =
         .done (.slice (.scalar (.signed .i32)) before.nextCell [] 0 count) after ∧
       encodeI32Array (signedI32Values words) = .ok (Lanius.World.utf8Bytes text) ∧
+      decodeI32Array count (Lanius.World.utf8Bytes text) = .ok (signedI32Values words) ∧
       after.cellEntry? before.nextCell = some {
         id := before.nextCell, value := some (.array (signedI32Values words)) } ∧
       StateWellFormed after ∧ after.locals = before.locals ∧
       (∀ cell, cell < before.nextCell → after.cellEntry? cell = before.cellEntry? cell) ∧
       after.nextCell = before.nextCell + 1 ∧ after.world = before.world ∧
-      CellDomainExtension before after ∧ (∀ id, after.local? id = before.local? id) := by
+      CellDomainExtension before after ∧ (∀ id, after.local? id = before.local? id) ∧
+      I32BorrowedResources before count after := by
   let bytes := Lanius.World.utf8Bytes text
   change bytes.length = count * 4 at size
   let address := alignUp (max before.heap.nextAddress 1) 4
@@ -61,7 +64,7 @@ theorem string_words (before : State) (text : String) (count : Nat)
     allocated with i32ArrayViews := allocated.i32ArrayViews ++ [
       { address, root := before.nextCell, projections := [], length := count }]
   }
-  refine ⟨words, address, pointed, after, length, rfl, rfl, rfl, ?_, encoded, ?_, ?_, rfl, ?_, rfl, rfl, ?_, ?_⟩
+  refine ⟨words, address, pointed, after, length, rfl, rfl, rfl, ?_, encoded, decoded, ?_, ?_, rfl, ?_, rfl, rfl, ?_, ?_, ?_⟩
   · change mapRawI32Slice pointed address (Int.ofNat count) = _
     have nonnegative : ¬ (Int.ofNat count < 0) := Int.not_lt.mpr (Int.natCast_nonneg count)
     simp only [mapRawI32Slice, nonnegative, ↓reduceIte, Int.ofNat_eq_natCast, Int.toNat_natCast]
@@ -97,17 +100,40 @@ theorem string_words (before : State) (text : String) (count : Nat)
         simpa only [Option.bind_some, State.cell?, after, allocated, pointed,
           State.allocateTemporary, State.cellEntry?] using
             congrArg (fun entry : Option Cell => entry.bind Cell.value) unchanged
+  · refine ⟨?_, ?_, rfl, ?_⟩
+    · refine ⟨address, signedI32Values words, rfl, ?_, rfl, ?_, ?_, ?_⟩
+      · exact ⟨_, found, rfl, rfl, size, rfl⟩
+      · simpa [signedI32Values] using length
+      · intro element member
+        obtain ⟨value, _, rfl⟩ := List.mem_map.mp member
+        exact ⟨value, rfl⟩
+      · exact Nat.le_trans (Nat.le_max_left _ _) (alignUp_ge _ _ (by decide))
+    · exact appendBlock_preserves_i32_array_view_blocks before.i32ArrayViews before.heap
+        { base := address, size := bytes.length, alignment := 4, bytes, owned := false }
+    · intro stored contents
+      have fresh := allocateTemporary_finds_fresh_cell pointed (.array (signedI32Values words)) pointedWF
+      have equal : signedI32Values words = signedI32Values stored := by
+        have same := fresh.symm.trans contents
+        simpa only [pointed, Option.some.injEq, Cell.mk.injEq, true_and, Value.array.injEq,
+          signedI32Values] using same
+      obtain ⟨values, valuesEq, _, range⟩ := Input.decode_i32_array_values decoded
+      have wordsEq : values = words := signedI32Values_injective valuesEq.symm
+      exact signedI32Values_injective equal ▸ (wordsEq ▸ range)
 
 /-- The source's complete initializer executes, rather than merely accepting
 a preconstructed packed buffer. The bound covers its `length + 3` arithmetic. -/
 theorem evaluates_wordView (program : Program) (before : State) (text : String) (length : Nat)
+    (textId lengthId : VarId)
     (wellFormed : StateWellFormed before)
-    (textLocal : before.local? 2 = some (.string text))
-    (lengthLocal : before.local? 3 = some (.signed .i32 length))
+    (textLocal : before.local? textId = some (.string text))
+    (lengthLocal : before.local? lengthId = some (.signed .i32 length))
     (bounded : length + 3 ≤ 2147483647)
     (padded : (Lanius.World.utf8Bytes text).length = ((length + 3) / 4) * 4) :
     ∃ words : List Int, ∃ after,
-      Evaluates program before wordView
+      Evaluates program before
+        (.i32SliceFromRawParts (.stringDataPtr (.local textId))
+          (.binary .divide (.binary .add (.local lengthId) (.value (.signed .i32 3)))
+            (.value (.signed .i32 4))))
         (.slice (.scalar (.signed .i32)) before.nextCell [] 0 words.length) after ∧
       encodeI32Array (signedI32Values words) = .ok (Lanius.World.utf8Bytes text) ∧
       after.cellEntry? before.nextCell = some {
@@ -115,18 +141,19 @@ theorem evaluates_wordView (program : Program) (before : State) (text : String) 
       StateWellFormed after ∧ after.locals = before.locals ∧
       (∀ cell, cell < before.nextCell → after.cellEntry? cell = before.cellEntry? cell) ∧
       after.nextCell = before.nextCell + 1 ∧ after.world = before.world ∧
-      CellDomainExtension before after ∧ (∀ id, after.local? id = before.local? id) := by
-  obtain ⟨words, address, pointed, after, count, pointer, locals, cells, raw, encoded,
-      contents, afterWF, afterLocals, preserved, nextCell, world, domain, localValues⟩ :=
+      CellDomainExtension before after ∧ (∀ id, after.local? id = before.local? id) ∧
+      I32BorrowedResources before ((length + 3) / 4) after := by
+  obtain ⟨words, address, pointed, after, count, pointer, locals, cells, raw, encoded, _,
+      contents, afterWF, afterLocals, preserved, nextCell, world, domain, localValues, resources⟩ :=
     string_words before text ((length + 3) / 4) wellFormed padded
-  have textResult : Evaluates program before (.local 2) (.string text) before :=
+  have textResult : Evaluates program before (.local textId) (.string text) before :=
     ⟨1, evalLocal_of_local 0 program before _ _ textLocal⟩
-  have pointedLength : pointed.local? 3 = some (.signed .i32 length) := by
+  have pointedLength : pointed.local? lengthId = some (.signed .i32 length) := by
     have sameCells : pointed.cell? = before.cell? := by
       funext cell
       simp only [State.cell?, State.cellEntry?, cells]
     simpa only [State.local?, State.cellId?, locals, sameCells] using lengthLocal
-  have lengthResult : Evaluates program pointed (.local 3) (.signed .i32 length) pointed :=
+  have lengthResult : Evaluates program pointed (.local lengthId) (.signed .i32 length) pointed :=
     ⟨1, evalLocal_of_local 0 program pointed _ _ pointedLength⟩
   have three : Evaluates program pointed (.value (.signed .i32 3)) (.signed .i32 3) pointed := ⟨1, rfl⟩
   have four : Evaluates program pointed (.value (.signed .i32 4)) (.signed .i32 4) pointed := ⟨1, rfl⟩
@@ -134,7 +161,7 @@ theorem evaluates_wordView (program : Program) (before : State) (text : String) 
   have division := evaluatesNatI32Divide (leftValue := length + 3) (rightValue := 4)
     sum four (by decide) (by omega)
   refine ⟨words, after, ?_, encoded, contents, afterWF, afterLocals, preserved,
-    nextCell, world, domain, localValues⟩
+    nextCell, world, domain, localValues, resources⟩
   rw [count]
   exact evaluatesI32SliceFromRawParts (evaluatesStringDataPtr textResult pointer) division raw
 

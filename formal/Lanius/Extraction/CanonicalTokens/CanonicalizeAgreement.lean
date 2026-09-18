@@ -1,4 +1,5 @@
 import Lanius.Extraction.CanonicalTokens.CanonicalizeExecution
+import Lanius.Extraction.CanonicalTokens.Kind.Specification
 
 namespace Lanius.Extraction.CanonicalTokens.CanonicalizeAgreement
 
@@ -6,6 +7,15 @@ open Lanius
 open Lanius.Compiler
 open Lanius.Compiler.Lexer
 open Lanius.Extraction.CanonicalTokens
+
+theorem kind_result_bridge (source : List Int) (rawKind : Int)
+    (start finish : Nat) :
+    Kind.result source rawKind start (finish - start) =
+      CanonicalKind.result source rawKind start finish := by
+  unfold Kind.result CanonicalKind.result CanonicalKind.keywordKind
+    CanonicalTokens.Model.keywordKind CanonicalTokens.Model.keywordSpan
+  simp [Dispatch.lookup_reference_lexer, TokenKind.gpuCode]
+  rfl
 
 namespace Model
 
@@ -35,40 +45,15 @@ theorem canonicalKind_result (source : List Byte) (token : RawToken) :
     CanonicalKind.result (CanonicalizeModel.sourceIntegers source)
         (Int.ofNat token.kind.gpuCode) token.start token.finish =
       Int.ofNat (canonicalKind source token).gpuCode := by
-  have identifierCode :
-      (Int.ofNat token.kind.gpuCode =
-        Int.ofNat TokenKind.identifier.gpuCode) ↔
-      token.kind = .identifier := by
-    cases token.kind <;> native_decide
-  by_cases identifier : token.kind = .identifier
-  · have codeIsIdentifier :
-        Int.ofNat token.kind.gpuCode =
-          Int.ofNat TokenKind.identifier.gpuCode :=
-      identifierCode.mpr identifier
-    unfold CanonicalKind.result
-    rw [if_pos codeIsIdentifier]
-    unfold CanonicalKind.keywordKind CanonicalTokens.Model.keywordKind
-      CanonicalTokens.Model.keywordSpan
-    rw [sourceIntegers_drop_take_toNat]
-    unfold canonicalKind tokenByteValues
-    rw [if_pos identifier]
-    cases exactKeywordKind
-        (((source.drop token.start).take
-          (token.finish - token.start)).map Fin.val) keywordRules <;> rfl
-  · have codeIsNotIdentifier :
-        Int.ofNat token.kind.gpuCode ≠
-          Int.ofNat TokenKind.identifier.gpuCode := by
-      intro same
-      exact identifier (identifierCode.mp same)
-    unfold CanonicalKind.result
-    rw [if_neg codeIsNotIdentifier]
-    unfold canonicalKind
-    rw [if_neg identifier]
+  rw [← kind_result_bridge (CanonicalizeModel.sourceIntegers source)
+    (Int.ofNat token.kind.gpuCode) token.start token.finish]
+  simpa [CanonicalizeModel.sourceIntegers] using
+    (Kind.result_canonicalKind source token)
 
 theorem isTriviaCode_gpuCode (kind : TokenKind) :
     CanonicalizeExecution.isTriviaCode (Int.ofNat kind.gpuCode) =
       isTriviaKind kind := by
-  cases kind <;> native_decide
+  cases kind <;> decide
 
 theorem writeTokens_append (records : List Int) (start : Nat)
     (left right : List RawToken) :

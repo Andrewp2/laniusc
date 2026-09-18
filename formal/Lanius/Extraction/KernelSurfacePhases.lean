@@ -1,6 +1,7 @@
 import Lanius.Extraction.SurfaceCheckerProvenance
 import Lanius.Extraction.KernelReduction
 import Lanius.Extraction.Reconstruction.Validated
+import Lanius.Extraction.Parse.Grammar
 
 namespace Lanius.Extraction
 
@@ -35,18 +36,20 @@ macro_rules
         def $reconstructed : SurfaceFile :=
           ($artifact).surface.get (by kernel_rfl)
         private theorem validatedAccepted :
-            Reconstruction.Validated.checkedView laniusGrammar $parseView =
+            Reconstruction.Validated.checkedView laniusGrammar $parseView Parse.productions.lookup =
               some $reconstructed := by
           kernel_rfl
         theorem $nodesChecked :
             checkNodesFromParseView laniusGrammar $artifact $parseView 0
               ($artifact).parse_nodes = true :=
           (Reconstruction.Validated.checkedView_sound laniusGrammar $parseView
+            Parse.productions.lookup Parse.lookup_eq
             $reconstructed validatedAccepted).1
         theorem $reconstructedFound :
             reconstructArtifactSurfaceView $artifact $view =
               some $reconstructed :=
           (Reconstruction.Validated.checkedView_sound laniusGrammar $parseView
+            Parse.productions.lookup Parse.lookup_eq
             $reconstructed validatedAccepted).2
         theorem $reconstructedPresent :
             (reconstructArtifactSurfaceView $artifact $view).isSome = true := by

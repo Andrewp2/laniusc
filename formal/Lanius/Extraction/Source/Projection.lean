@@ -3,6 +3,7 @@ import Lanius.Core.Equality
 import Lanius.CallContracts
 import Lanius.ExecutionRules
 import Lanius.Separation.CellEffect
+import Lanius.Separation.HeapFrame
 
 namespace Lanius.Extraction.Source
 
@@ -40,7 +41,7 @@ theorem CheckedProjection.call (checked : CheckedProjection program modulePath n
     (argumentsResult : ArgumentsEvaluateTo program.core before arguments [.structure typeId fields] afterArguments)
     (selected : fields[field]? = some value) :
     ∃ after, Evaluates program.core before (.call checked.source.function.id arguments) value after ∧
-      CellEffect CellSet.empty afterArguments after := by
+      CellEffect CellSet.empty afterArguments after ∧ HeapFrame afterArguments after := by
   let bindings : List (Lanius.VarId × Value) := [(0, .structure typeId fields)]
   let callee := enterCall afterArguments bindings
   have calleeWF : StateWellFormed callee := enterCall_preserves_wellFormed wellFormed
@@ -61,6 +62,7 @@ theorem CheckedProjection.call (checked : CheckedProjection program modulePath n
     rfl
   exact ⟨restoreLocals afterArguments callee,
     evaluatesCallReturned argumentsResult found bound checked.body body,
-    CellEffect.closeCall afterArguments bindings wellFormed (CellEffect.refl calleeWF)⟩
+    CellEffect.closeCall afterArguments bindings wellFormed (CellEffect.refl calleeWF),
+    (HeapFrame.refl callee).closeCall afterArguments bindings⟩
 
 end Lanius.Extraction.Source

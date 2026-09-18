@@ -16,7 +16,7 @@ structure NodeEntry (data : TraversalData) (before : State) : Prop where
   backing : before.cellEntry? data.outputCell = some {
     id := data.outputCell, value := some (.array (signedI32Values (initialized data.original (data.tokens.length * 2)))) }
   count : before.local? 3 = some (.signed .i32 data.tokens.length)
-  wordLength : before.local? 5 = some (.signed .i32 (treeFrom 0 0 data.tree).words.length)
+  wordLength : before.local? 5 = some (.signed .i32 data.recordsLimit)
   nodeCount : before.local? 7 = some (.signed .i32 data.collection.records.length)
   kindCount : before.local? 10 = some (.signed .i32 data.grammar.grammar.grammar.n_kinds)
   canonicalOffset : before.local? 11 = some (.signed .i32 data.grammar.layout.canonicalKindsOffset)

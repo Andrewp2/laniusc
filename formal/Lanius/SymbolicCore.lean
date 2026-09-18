@@ -220,11 +220,13 @@ mutual
     | .wildcard | .literal _ => []
     | .bind id => [id]
     | .enumVariant _ _ payload => listBoundLocals payload
+  termination_by structural pattern => pattern
 
   def _root_.Lanius.Core.Pattern.listBoundLocals : List Pattern → List VarId
     | [] => []
     | head :: tail =>
         boundLocals head ++ listBoundLocals tail
+  termination_by structural patterns => patterns
 end
 
 mutual
@@ -244,7 +246,9 @@ mutual
     | .matchValue scrutinee arms =>
         accesses scrutinee ++ matchArmAccesses arms
     | .assign operation place value =>
-        assignmentAccesses operation place ++ accesses value
+        (match operation with
+         | .set => writeAccesses place
+         | _ => readWriteAccesses place) ++ accesses value
     | .borrow _ place => readAccesses place
     | .realloc pointer oldSize newSize alignment =>
         accesses pointer ++ accesses oldSize ++ accesses newSize ++
@@ -253,10 +257,12 @@ mutual
         accesses pointer ++ accesses size ++ accesses alignment
     | .storeByte pointer offset value =>
         accesses pointer ++ accesses offset ++ accesses value
+  termination_by structural expression => expression
 
   def _root_.Lanius.Core.Expr.listAccesses : List Expr → List LocalAccess
     | [] => []
     | head :: tail => accesses head ++ listAccesses tail
+  termination_by structural expressions => expressions
 
   def _root_.Lanius.Core.Expr.matchArmAccesses :
       List (Pattern × Expr) → List LocalAccess
@@ -265,62 +271,65 @@ mutual
         (Pattern.boundLocals pattern).foldr LocalAccess.remove
             (accesses expression) ++
           matchArmAccesses tail
+  termination_by structural arms => arms
 
   def _root_.Lanius.Core.Place.readAccesses : Place → List LocalAccess
     | .local id => [LocalAccess.read id]
     | .field base _ => readAccesses base
     | .index base index =>
         readAccesses base ++ accesses index
+  termination_by structural place => place
 
   def _root_.Lanius.Core.Place.writeAccesses : Place → List LocalAccess
     | .local id => [LocalAccess.write id]
     | .field base _ => readWriteAccesses base
     | .index base index =>
         readWriteAccesses base ++ accesses index
+  termination_by structural place => place
 
   def _root_.Lanius.Core.Place.readWriteAccesses : Place → List LocalAccess
     | .local id => [LocalAccess.readWrite id]
     | .field base _ => readWriteAccesses base
     | .index base index =>
         readWriteAccesses base ++ accesses index
-
-  def _root_.Lanius.Core.Place.assignmentAccesses (operation : AssignOp)
-      (place : Place) : List LocalAccess :=
-    match operation with
-    | .set => writeAccesses place
-    | _ => readWriteAccesses place
+  termination_by structural place => place
 end
 
-mutual
-  /-- Accesses to locals inherited from the enclosing scope.  Accesses to a
-      binder introduced by this statement are removed at that binder. -/
-  def _root_.Lanius.Core.Stmt.freeAccesses : Stmt → List LocalAccess
-    | .skip | .breakLoop | .continueLoop => []
-    | .expression expression => Expr.accesses expression
-    | .sequence first second =>
-        freeAccesses first ++ freeAccesses second
-    | .letLocal id _ initializer body =>
-        Expr.accesses initializer ++
-          LocalAccess.remove id (freeAccesses body)
-    | .letUninitialized id _ body =>
+def _root_.Lanius.Core.Place.assignmentAccesses (operation : AssignOp)
+    (place : Place) : List LocalAccess :=
+  match operation with
+  | .set => Place.writeAccesses place
+  | _ => Place.readWriteAccesses place
+
+def _root_.Lanius.Core.Expr.optionalAccesses :
+    Option Expr → List LocalAccess
+  | none => []
+  | some expression => Expr.accesses expression
+
+/-- Accesses to locals inherited from the enclosing scope.  Accesses to a
+    binder introduced by this statement are removed at that binder. -/
+def _root_.Lanius.Core.Stmt.freeAccesses : Stmt → List LocalAccess
+  | .skip | .breakLoop | .continueLoop => []
+  | .expression expression => Expr.accesses expression
+  | .sequence first second =>
+      freeAccesses first ++ freeAccesses second
+  | .letLocal id _ initializer body =>
+      Expr.accesses initializer ++
         LocalAccess.remove id (freeAccesses body)
-    | .ifThenElse condition thenBranch elseBranch =>
-        Expr.accesses condition ++ freeAccesses thenBranch ++
-          freeAccesses elseBranch
-    | .whileLoop condition body =>
-        Expr.accesses condition ++ freeAccesses body
-    | .forValues id iterable body =>
-        Expr.accesses iterable ++ LocalAccess.remove id (freeAccesses body)
-    | .forRange id start stop _ body =>
-        Expr.accesses start ++ optionalAccesses stop ++
-          LocalAccess.remove id (freeAccesses body)
-    | .returnValue value => optionalAccesses value
-
-  def _root_.Lanius.Core.Expr.optionalAccesses :
-      Option Expr → List LocalAccess
-    | none => []
-    | some expression => Expr.accesses expression
-end
+  | .letUninitialized id _ body =>
+      LocalAccess.remove id (freeAccesses body)
+  | .ifThenElse condition thenBranch elseBranch =>
+      Expr.accesses condition ++ freeAccesses thenBranch ++
+        freeAccesses elseBranch
+  | .whileLoop condition body =>
+      Expr.accesses condition ++ freeAccesses body
+  | .forValues id iterable body =>
+      Expr.accesses iterable ++ LocalAccess.remove id (freeAccesses body)
+  | .forRange id start stop _ body =>
+      Expr.accesses start ++ Expr.optionalAccesses stop ++
+        LocalAccess.remove id (freeAccesses body)
+  | .returnValue value => Expr.optionalAccesses value
+termination_by structural statement => statement
 
 def _root_.Lanius.Core.Stmt.freeLocalIds (statement : Stmt) : List VarId :=
   LocalAccess.ids (Stmt.freeAccesses statement)
@@ -561,6 +570,13 @@ def LocalLayout.addresses (layout : LocalLayout) :
 def LocalLayout.wellFormed (layout : LocalLayout) : Bool :=
   decide layout.identities.Nodup && decide layout.addresses.Nodup
 
+def LocalLayout.WellFormed (layout : LocalLayout) : Prop :=
+  layout.identities.Nodup ∧ layout.addresses.Nodup
+
+theorem LocalLayout.wellFormed_eq_true_iff (layout : LocalLayout) :
+    layout.wellFormed = true ↔ layout.WellFormed := by
+  simp only [wellFormed, WellFormed, Bool.and_eq_true, decide_eq_true_eq]
+
 def LocalLayout.covers (layout : LocalLayout) (function : Function) : Bool :=
   layout.coreIds == function.declaredLocals
 
@@ -570,7 +586,7 @@ def LocalLayout.covers (layout : LocalLayout) (function : Function) : Bool :=
 structure FunctionView where
   core : Function
   locals : LocalLayout
-  layoutWellFormed : locals.wellFormed = true
+  layoutWellFormed : locals.WellFormed
   layoutCoversCore : locals.covers core = true
   coreWellScoped : core.wellScoped = true
 

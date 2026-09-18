@@ -97,7 +97,39 @@ inductive Value where
   | reference (referent : Ty) (cell : CellId) (projections : List ValueProjection)
 deriving Repr
 
-deriving instance BEq for Value
+/- Nested equality must be total: derived BEq for nested inductives produces
+opaque partial functions that cannot support kernel-checked closed facts. -/
+mutual
+  def Value.beq (a b : Value) : Bool :=
+    match a, b with
+    | .unit, .unit => true
+    | .boolean a, .boolean b => a == b
+    | .signed aty av, .signed bty bv => aty == bty && av == bv
+    | .unsigned aty av, .unsigned bty bv => aty == bty && av == bv
+    | .f32Bits a, .f32Bits b => a == b
+    | .f64Bits a, .f64Bits b => a == b
+    | .character a, .character b => a == b
+    | .string a, .string b => a == b
+    | .pointer a, .pointer b => a == b
+    | .array a, .array b => Value.beqList a b
+    | .slice aty ac ap axs al, .slice bty bc bp bxs bl =>
+        aty == bty && ac == bc && ap == bp && axs == bxs && al == bl
+    | .structure ai av, .structure bi bv => ai == bi && Value.beqList av bv
+    | .enumeration ai aty av, .enumeration bi bty bv =>
+        ai == bi && aty == bty && Value.beqList av bv
+    | .reference aty ac ap, .reference bty bc bp => aty == bty && ac == bc && ap == bp
+    | _, _ => false
+  termination_by structural a
+
+  def Value.beqList (a b : List Value) : Bool :=
+    match a, b with
+    | [], [] => true
+    | a :: axs, b :: bxs => Value.beq a b && Value.beqList axs bxs
+    | _, _ => false
+  termination_by structural a
+end
+
+instance : BEq Value := ⟨Value.beq⟩
 
 inductive UnaryOp where
   | positive
@@ -263,7 +295,84 @@ mutual
     | index (base : Place) (index : Expr)
 end
 
-deriving instance BEq for Pattern, Expr, Place
+mutual
+  def Pattern.beq (a b : Pattern) : Bool :=
+    match a, b with
+    | .wildcard, .wildcard => true
+    | .bind a0, .bind b0 => a0 == b0
+    | .literal a0, .literal b0 => Value.beq a0 b0
+    | .enumVariant a0 a1 a2, .enumVariant b0 b1 b2 => a0 == b0 && a1 == b1 && Pattern.beqList a2 b2
+    | _, _ => false
+  termination_by structural a
+
+  def Pattern.beqList (a b : List Pattern) : Bool :=
+    match a, b with
+    | [], [] => true
+    | x :: xs, y :: ys => Pattern.beq x y && Pattern.beqList xs ys
+    | _, _ => false
+  termination_by structural a
+end
+
+instance : BEq Pattern := ⟨Pattern.beq⟩
+
+mutual
+  def Expr.beq (a b : Expr) : Bool :=
+    match a, b with
+    | .value a0, .value b0 => Value.beq a0 b0
+    | .local a0, .local b0 => a0 == b0
+    | .cast a0 a1, .cast b0 b1 => a0 == b0 && Expr.beq a1 b1
+    | .unary a0 a1, .unary b0 b1 => a0 == b0 && Expr.beq a1 b1
+    | .binary a0 a1 a2, .binary b0 b1 b2 => a0 == b0 && Expr.beq a1 b1 && Expr.beq a2 b2
+    | .array a0 a1, .array b0 b1 => a0 == b0 && Expr.beqList a1 b1
+    | .arrayToSlice a0 a1, .arrayToSlice b0 b1 => a0 == b0 && Expr.beq a1 b1
+    | .index a0 a1, .index b0 b1 => Expr.beq a0 b0 && Expr.beq a1 b1
+    | .structValue a0 a1, .structValue b0 b1 => a0 == b0 && Expr.beqList a1 b1
+    | .field a0 a1, .field b0 b1 => Expr.beq a0 b0 && a1 == b1
+    | .enumValue a0 a1 a2, .enumValue b0 b1 b2 => a0 == b0 && a1 == b1 && Expr.beqList a2 b2
+    | .matchValue a0 a1, .matchValue b0 b1 => Expr.beq a0 b0 && Expr.beqArms a1 b1
+    | .assign a0 a1 a2, .assign b0 b1 b2 => a0 == b0 && Place.beq a1 b1 && Expr.beq a2 b2
+    | .borrow a0 a1, .borrow b0 b1 => a0 == b0 && Place.beq a1 b1
+    | .dereference a0, .dereference b0 => Expr.beq a0 b0
+    | .constant a0, .constant b0 => a0 == b0
+    | .call a0 a1, .call b0 b1 => a0 == b0 && Expr.beqList a1 b1
+    | .intrinsic a0 a1, .intrinsic b0 b1 => a0 == b0 && Expr.beq a1 b1
+    | .i32ArrayDataPtr a0, .i32ArrayDataPtr b0 => Expr.beq a0 b0
+    | .i32SliceFromRawParts a0 a1, .i32SliceFromRawParts b0 b1 => Expr.beq a0 b0 && Expr.beq a1 b1
+    | .i32SliceDataPtr a0, .i32SliceDataPtr b0 => Expr.beq a0 b0
+    | .stringDataPtr a0, .stringDataPtr b0 => Expr.beq a0 b0
+    | .alloc a0 a1, .alloc b0 b1 => Expr.beq a0 b0 && Expr.beq a1 b1
+    | .realloc a0 a1 a2 a3, .realloc b0 b1 b2 b3 => Expr.beq a0 b0 && Expr.beq a1 b1 && Expr.beq a2 b2 && Expr.beq a3 b3
+    | .dealloc a0 a1 a2, .dealloc b0 b1 b2 => Expr.beq a0 b0 && Expr.beq a1 b1 && Expr.beq a2 b2
+    | .loadByte a0 a1, .loadByte b0 b1 => Expr.beq a0 b0 && Expr.beq a1 b1
+    | .storeByte a0 a1 a2, .storeByte b0 b1 b2 => Expr.beq a0 b0 && Expr.beq a1 b1 && Expr.beq a2 b2
+    | _, _ => false
+  termination_by structural a
+  def Place.beq (a b : Place) : Bool :=
+    match a, b with
+    | .local a0, .local b0 => a0 == b0
+    | .field a0 a1, .field b0 b1 => Place.beq a0 b0 && a1 == b1
+    | .index a0 a1, .index b0 b1 => Place.beq a0 b0 && Expr.beq a1 b1
+    | _, _ => false
+  termination_by structural a
+
+  def Expr.beqList (a b : List Expr) : Bool :=
+    match a, b with
+    | [], [] => true
+    | x :: xs, y :: ys => Expr.beq x y && Expr.beqList xs ys
+    | _, _ => false
+  termination_by structural a
+
+  def Expr.beqArms (a b : List (Pattern × Expr)) : Bool :=
+    match a, b with
+    | [], [] => true
+    | (ap, ae) :: axs, (bp, be) :: bxs =>
+        Pattern.beq ap bp && Expr.beq ae be && Expr.beqArms axs bxs
+    | _, _ => false
+  termination_by structural a
+end
+
+instance : BEq Expr := ⟨Expr.beq⟩
+instance : BEq Place := ⟨Place.beq⟩
 deriving instance Repr for Pattern, Expr, Place
 
 inductive Stmt where

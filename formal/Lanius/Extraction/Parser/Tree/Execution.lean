@@ -193,7 +193,7 @@ theorem CheckedVisit.finish (checked : CheckedVisit program)
       after.cellEntry? offsetsCell = some {
         id := offsetsCell, value := some (.array (signedI32Values (offsets.set nodes (Int.ofNat parentWord)))) } ∧
       CellEffect (CellSet.singleton offsetsCell) before after := by
-  obtain ⟨written, store, backing, storeEffect⟩ := evaluatesSliceStore program.core before before offsets
+  obtain ⟨written, store, backing, storeEffect, storeHeapFrame, _⟩ := evaluatesSliceStore program.core before before offsets
     7 (.local 14) (.local 10) offsetsCell nodes (Int.ofNat parentWord) wellFormed room offsetsLocal
     (readLocal nodesLocal) (readLocal parentLocal) (CellEffect.refl wellFormed) offsetsBacking
   have nodesAfter := storeEffect.preserves_local_of_distinct_value wellFormed nodesLocal offsetsBacking (by intro impossible; cases impossible)

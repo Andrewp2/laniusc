@@ -64,7 +64,7 @@ theorem lex_to_canonical
         value ≠ .array (signedI32Values records) → value ≠ .array (signedI32Values canonical) →
         ready.local? id = some value) ∧
       CellEffect (CellSet.union (CellSet.singleton rawCell) (CellSet.singleton canonicalCell))
-        before (restoreLocals before ready) := by
+        before (restoreLocals before ready) ∧ Host.MemoryFrame before ready := by
   dsimp only
   have recordsCapacity : 3 * request.capacity ≤ records.length := by rw [wordCapacity]; omega
   have emitted : Model.emittedTokens request.outcome = raw := by rw [successful]; rfl
@@ -80,7 +80,7 @@ theorem lex_to_canonical
     .cons ⟨1, evalLocal_of_local 0 _ _ _ _ sourceLocal⟩
       (.cons ⟨1, evalLocal_of_local 0 _ _ _ _ sourceLength⟩
         (.cons ⟨1, evalLocal_of_local 0 _ _ _ _ rawLocal⟩ (.singleton (wordCapacity ▸ quotient))))
-  obtain ⟨lexed, prefixRun, lexedWF, countLocal, resultLocal, buffers, preserved, localsPreserved, prefixEffect⟩ :=
+  obtain ⟨lexed, prefixRun, lexedWF, countLocal, resultLocal, buffers, preserved, localsPreserved, prefixEffect, prefixMemory⟩ :=
     lex_then_count invariant link injective inverseType inverse retained countAccessor request records recordsCapacity
       sourceCell rawCell sourceRaw 17 18 (by decide) wellFormed owned argumentsResult
   have countReady : lexed.local? 18 = some (.signed .i32 raw.length) := by simpa only [emitted] using countLocal
@@ -91,7 +91,7 @@ theorem lex_to_canonical
   have capacityReady := localsPreserved 7 _ canonicalLength (by decide) (by decide) (by intro same; cases same)
   -- Passing the guards does not depend on the failure bodies or later code.
   let guards := tokenGuards symbols .skip .skip .skip
-  obtain ⟨guarded, pass, guardEffect⟩ := guards.pass statusAccessor statusId successConstant lexed raw.length
+  obtain ⟨guarded, pass, guardEffect, guardMemory⟩ := guards.pass statusAccessor statusId successConstant lexed raw.length
     canonical.length lexedWF resultReady countReady capacityReady canonicalFit capacity
   have guardedBuffers : (ReadOnly.World.owns (ReadOnly.World.pair sourceCell (sourceIntegers request.source)
       rawCell (encodeTokens (Model.emittedTokens request.outcome) ++
@@ -105,7 +105,7 @@ theorem lex_to_canonical
       guarded.local? id = some value := guardEffect.empty_preserves_local lexedWF
     (localsPreserved id value found (Ne.symm (Nat.ne_of_lt early))
       (Ne.symm (Nat.ne_of_lt (Nat.lt_of_lt_of_le early (by decide : 17 ≤ 18)))) notArray)
-  obtain ⟨copied, copyRun, copiedBuffers, copiedCanonical, copyEffect⟩ :=
+  obtain ⟨copied, copyRun, copiedBuffers, copiedCanonical, copyEffect, copyMemory⟩ :=
     BufferCopy.copy_emitted_then_canonicalize canonicalizer guarded request records canonical 0 4 6 19 18
       sourceCell rawCell canonicalCell guardEffect.wellFormed sourceRaw sourceCanonical rawCanonical
       (by simp) recordsCapacity recordsFit canonicalFit (by simpa only [emitted] using capacity)
@@ -138,7 +138,9 @@ theorem lex_to_canonical
   refine ⟨ready, ?_, readyWF,
     copiedLocal (guardEffect.empty_preserves_local lexedWF countReady) (by decide) (by decide)
       (by intro same; cases same), bindLocal_finds_local _ _ _ copyEffect.wellFormed,
-    (fun cell values found => readyEntry (copiedBuffers cell values found)), readyEntry copiedCanonical, ?_, ?_⟩
+    (fun cell values found => readyEntry (copiedBuffers cell values found)), readyEntry copiedCanonical, ?_, ?_,
+    prefixMemory.trans (guardMemory.trans (copyMemory.trans
+      (Host.MemoryFrame.bindLocal copied 20 (.signed .i32 (canonicalizeTokens request.source raw).length))))⟩
   · intro lexicalFailure storageFailure rest completion final tailRun
     have copyComplete := copyRun 20 rest completion final tailRun
     have guardedComplete := pass lexicalFailure storageFailure (tokenCopy symbols rest).body _ _ copyComplete

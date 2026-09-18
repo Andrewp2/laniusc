@@ -86,7 +86,6 @@ theorem evaluateActionWith_eq_of_callsSatisfy
         (program := program) (first := first) (second := second)
         (world := afterIndex) (environment := environment) agreement value
         components.2]
-      rfl
 
 namespace Command.Evaluates
 
@@ -109,6 +108,26 @@ theorem changeCallModel
       (machineWith program (Effectful.evaluateOperation program second))
       beforeWorld beforeEnvironment command completion afterWorld
       afterEnvironment := by
+  have term_eq : ∀ {arity : Nat} (world : ReadOnly.World)
+      (environment : Env arity) (term : Term Core.signature arity),
+      termCallsSatisfy allowed term = true →
+      Term.evaluate
+          (termMachine (Effectful.evaluateOperation program first)) world
+          environment term =
+        Term.evaluate
+          (termMachine (Effectful.evaluateOperation program second)) world
+          environment term := by
+    intro arity world environment term supported
+    exact termMachine_evaluate_eq_of_callsSatisfy agreement term supported
+  have action_eq : ∀ {arity : Nat} (world : ReadOnly.World)
+      (environment : Env arity) (operation : actions.Action arity),
+      Action.callsSatisfy allowed operation = true →
+      evaluateActionWith (Effectful.evaluateOperation program first) world
+          environment operation =
+        evaluateActionWith (Effectful.evaluateOperation program second) world
+          environment operation := by
+    intro arity world environment operation supported
+    exact evaluateActionWith_eq_of_callsSatisfy agreement supported
   revert supported
   let motive : {arity : Nat} →
       (beforeWorld : ReadOnly.World) →
@@ -132,167 +151,126 @@ theorem changeCallModel
           afterEnvironment
   change motive beforeWorld beforeEnvironment command completion afterWorld
     afterEnvironment evaluated
-  refine @Command.Evaluates.rec
-    Core.signature actions
+  apply @Command.Evaluates.rec Core.signature actions
     (termMachine (Effectful.evaluateOperation program first))
-    (machineWith program (Effectful.evaluateOperation program first))
-    motive ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
-    arity beforeWorld beforeEnvironment command completion afterWorld
-    afterEnvironment evaluated
-  case refine_1 =>
-      intro world x environment supported
+    (machineWith program (Effectful.evaluateOperation program first)) motive
+  case skip =>
+      intro _world _arity _environment supported
       exact .skip
-  case refine_2 =>
-      intro beforeWorld x beforeEnvironment firstCommand middleWorld
+  case sequenceNext =>
+      intro beforeWorld _arity beforeEnvironment firstCommand middleWorld
         middleEnvironment secondCommand completion afterWorld afterEnvironment
         firstResult secondResult firstIH secondIH supported
-      have components : Command.callsSatisfy allowed firstCommand = true ∧
-          Command.callsSatisfy allowed secondCommand = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
       exact .sequenceNext
-        (firstIH components.1) (secondIH components.2)
-  case refine_3 =>
-      intro beforeWorld x beforeEnvironment firstCommand completion afterWorld
-        afterEnvironment secondCommand firstResult stops firstIH supported
-      have components : Command.callsSatisfy allowed firstCommand = true ∧
-          Command.callsSatisfy allowed secondCommand = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
-      exact .sequenceStop
-        (firstIH components.1) stops
-  case refine_4 =>
-      intro beforeWorld x beforeEnvironment initializer value initializedWorld
+        (firstIH supported.1) (secondIH supported.2)
+  case sequenceStop =>
+      intro beforeWorld _arity beforeEnvironment firstCommand completion
+        afterWorld afterEnvironment secondCommand firstResult stops firstIH
+        supported
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
+      exact .sequenceStop (firstIH supported.1) stops
+  case letValue =>
+      intro beforeWorld _arity beforeEnvironment initializer value initializedWorld
         body completion afterWorld extendedEnvironment type initializerResult
         bodyResult bodyIH supported
-      have components : termCallsSatisfy allowed initializer = true ∧
-          Command.callsSatisfy allowed body = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
-      have initializerResult' := initializerResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ components.1]
-        at initializerResult'
-      exact .letValue initializerResult' (bodyIH components.2)
-  case refine_5 =>
-      intro beforeWorld x beforeEnvironment value result afterWorld target
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
+      rw [term_eq _ _ _ supported.1]
+        at initializerResult
+      exact .letValue initializerResult (bodyIH supported.2)
+  case setLocal =>
+      intro beforeWorld _arity beforeEnvironment value result afterWorld target
         valueResult supported
-      have valueResult' := valueResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ (by
-        simpa only [Command.callsSatisfy] using supported)] at valueResult'
-      exact .setLocal valueResult'
-  case refine_6 =>
-      intro beforeWorld x beforeEnvironment value right afterWorld operation
+      rw [term_eq _ _ _ (by simpa only [Command.callsSatisfy] using supported)]
+        at valueResult
+      exact .setLocal valueResult
+  case updateLocal =>
+      intro beforeWorld _arity beforeEnvironment value right afterWorld operation
         target result valueResult updateResult supported
-      have valueResult' := valueResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ (by
-        simpa only [Command.callsSatisfy] using supported)] at valueResult'
-      exact .updateLocal valueResult' updateResult
-  case refine_7 =>
-      intro beforeWorld x beforeEnvironment operation afterWorld actionResult
+      rw [term_eq _ _ _ (by simpa only [Command.callsSatisfy] using supported)]
+        at valueResult
+      exact .updateLocal valueResult updateResult
+  case action =>
+      intro beforeWorld _arity beforeEnvironment operation afterWorld actionResult
         supported
-      change ReadOnly.World at beforeWorld afterWorld
-      have actionResult' := actionResult
       change evaluateActionWith (Effectful.evaluateOperation program first)
-        _ _ _ = .ok _ at actionResult'
-      rw [evaluateActionWith_eq_of_callsSatisfy
-        (program := program) (first := first) (second := second)
-        (world := beforeWorld) (environment := beforeEnvironment) agreement (by
-        simpa only [Command.callsSatisfy] using supported)] at actionResult'
-      exact .action actionResult'
-  case refine_8 =>
-      intro beforeWorld x beforeEnvironment condition conditionWorld
+        beforeWorld beforeEnvironment operation = .ok afterWorld at actionResult
+      rw [action_eq _ _ _ (by
+        simpa only [Command.callsSatisfy] using supported)] at actionResult
+      exact .action actionResult
+  case ifTrue =>
+      intro beforeWorld _arity beforeEnvironment condition conditionWorld
         thenBranch completion afterWorld afterEnvironment elseBranch
         conditionResult branchResult branchIH supported
-      have components :
-          (termCallsSatisfy allowed condition = true ∧
-            Command.callsSatisfy allowed thenBranch = true) ∧
-          Command.callsSatisfy allowed elseBranch = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
-      have conditionResult' := conditionResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ components.1.1]
-        at conditionResult'
-      exact .ifTrue conditionResult' (branchIH components.1.2)
-  case refine_9 =>
-      intro beforeWorld x beforeEnvironment condition conditionWorld
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
+      rw [term_eq _ _ _ supported.1.1]
+        at conditionResult
+      exact .ifTrue conditionResult (branchIH supported.1.2)
+  case ifFalse =>
+      intro beforeWorld _arity beforeEnvironment condition conditionWorld
         elseBranch completion afterWorld afterEnvironment thenBranch
         conditionResult branchResult branchIH supported
-      have components :
-          (termCallsSatisfy allowed condition = true ∧
-            Command.callsSatisfy allowed thenBranch = true) ∧
-          Command.callsSatisfy allowed elseBranch = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
-      have conditionResult' := conditionResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ components.1.1]
-        at conditionResult'
-      exact .ifFalse conditionResult' (branchIH components.2)
-  case refine_10 =>
-      intro beforeWorld x beforeEnvironment condition afterWorld body
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
+      rw [term_eq _ _ _ supported.1.1]
+        at conditionResult
+      exact .ifFalse conditionResult (branchIH supported.2)
+  case whileFalse =>
+      intro beforeWorld _arity beforeEnvironment condition afterWorld body
         conditionResult supported
-      have components : termCallsSatisfy allowed condition = true ∧
-          Command.callsSatisfy allowed body = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
-      have conditionSupported := components.1
-      have conditionResult' := conditionResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _
-        conditionSupported] at conditionResult'
-      exact .whileFalse conditionResult'
-  case refine_11 =>
-      intro beforeWorld x beforeEnvironment condition conditionWorld body
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
+      rw [term_eq _ _ _ supported.1]
+        at conditionResult
+      exact .whileFalse conditionResult
+  case whileNext =>
+      intro beforeWorld _arity beforeEnvironment condition conditionWorld body
         bodyWorld bodyEnvironment completion afterWorld afterEnvironment
         conditionResult bodyResult restResult bodyIH restIH supported
-      have components : termCallsSatisfy allowed condition = true ∧
-          Command.callsSatisfy allowed body = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
-      have conditionResult' := conditionResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ components.1]
-        at conditionResult'
-      exact .whileNext conditionResult' (bodyIH components.2)
-        (restIH supported)
-  case refine_12 =>
-      intro beforeWorld x beforeEnvironment condition conditionWorld body
+      have loopSupported := supported
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
+      rw [term_eq _ _ _ supported.1]
+        at conditionResult
+      exact .whileNext conditionResult (bodyIH supported.2)
+        (restIH loopSupported)
+  case whileContinue =>
+      intro beforeWorld _arity beforeEnvironment condition conditionWorld body
         bodyWorld bodyEnvironment completion afterWorld afterEnvironment
         conditionResult bodyResult restResult bodyIH restIH supported
-      have components : termCallsSatisfy allowed condition = true ∧
-          Command.callsSatisfy allowed body = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
-      have conditionResult' := conditionResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ components.1]
-        at conditionResult'
-      exact .whileContinue conditionResult' (bodyIH components.2)
-        (restIH supported)
-  case refine_13 =>
-      intro beforeWorld x beforeEnvironment condition conditionWorld body
+      have loopSupported := supported
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
+      rw [term_eq _ _ _ supported.1]
+        at conditionResult
+      exact .whileContinue conditionResult (bodyIH supported.2)
+        (restIH loopSupported)
+  case whileBreak =>
+      intro beforeWorld _arity beforeEnvironment condition conditionWorld body
         afterWorld afterEnvironment conditionResult bodyResult bodyIH supported
-      have components : termCallsSatisfy allowed condition = true ∧
-          Command.callsSatisfy allowed body = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
-      have conditionResult' := conditionResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ components.1]
-        at conditionResult'
-      exact .whileBreak conditionResult' (bodyIH components.2)
-  case refine_14 =>
-      intro beforeWorld x beforeEnvironment condition conditionWorld body value
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
+      rw [term_eq _ _ _ supported.1]
+        at conditionResult
+      exact .whileBreak conditionResult (bodyIH supported.2)
+  case whileReturn =>
+      intro beforeWorld _arity beforeEnvironment condition conditionWorld body value
         afterWorld afterEnvironment conditionResult bodyResult bodyIH supported
-      have components : termCallsSatisfy allowed condition = true ∧
-          Command.callsSatisfy allowed body = true := by
-        simpa only [Command.callsSatisfy, Bool.and_eq_true] using supported
-      have conditionResult' := conditionResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ components.1]
-        at conditionResult'
-      exact .whileReturn conditionResult' (bodyIH components.2)
-  case refine_15 =>
-      intro world x environment supported
+      simp only [Command.callsSatisfy, Bool.and_eq_true] at supported
+      rw [term_eq _ _ _ supported.1]
+        at conditionResult
+      exact .whileReturn conditionResult (bodyIH supported.2)
+  case returnNone =>
+      intro _world _arity _environment supported
       exact .returnNone
-  case refine_16 =>
-      intro beforeWorld x beforeEnvironment value result afterWorld valueResult
+  case returnSome =>
+      intro beforeWorld _arity beforeEnvironment value result afterWorld valueResult
         supported
-      have valueResult' := valueResult
-      rw [termMachine_evaluate_eq_of_callsSatisfy agreement _ (by
-        simpa only [Command.callsSatisfy] using supported)] at valueResult'
-      exact .returnSome valueResult'
-  case refine_17 =>
-      intro world x environment supported
+      rw [term_eq _ _ _ (by simpa only [Command.callsSatisfy] using supported)]
+        at valueResult
+      exact .returnSome valueResult
+  case breakLoop =>
+      intro _world _arity _environment supported
       exact .breakLoop
-  case refine_18 =>
-      intro world x environment supported
+  case continueLoop =>
+      intro _world _arity _environment supported
       exact .continueLoop
+  exact evaluated
 
 end Command.Evaluates
 

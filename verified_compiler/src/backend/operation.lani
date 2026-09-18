@@ -1,0 +1,79 @@
+module backend::operation;
+import backend::syntax;
+import backend::frame;
+import x86::register;
+import x86::encode;
+import x86::control;
+
+pub fn condition(operation: i32) -> i32 {
+    if (operation == backend::syntax::EQUAL) { return x86::control::EQUAL; }
+    if (operation == backend::syntax::NOT_EQUAL) { return x86::control::NOT_EQUAL; }
+    if (operation == backend::syntax::LESS) { return x86::control::LESS; }
+    if (operation == backend::syntax::LESS_EQUAL) { return x86::control::LESS_EQUAL; }
+    if (operation == backend::syntax::GREATER) { return x86::control::GREATER; }
+    if (operation == backend::syntax::GREATER_EQUAL) { return x86::control::GREATER_EQUAL; }
+    return -1;
+}
+
+fn opcode(operation: i32) -> i32 {
+    if (operation == backend::syntax::ADD) { return x86::encode::ADD; }
+    if (operation == backend::syntax::SUBTRACT) { return x86::encode::SUB; }
+    if (operation == backend::syntax::BIT_AND) { return x86::encode::AND; }
+    if (operation == backend::syntax::BIT_OR) { return x86::encode::OR; }
+    if (operation == backend::syntax::BIT_XOR) { return x86::encode::XOR; }
+    return -1;
+}
+
+pub fn boolean(output: [i32], capacity: i32, cursor: i32, condition: i32) -> i32 {
+    return x86::encode::zero_extend_byte(output, capacity,
+        x86::control::set_condition(output, capacity, cursor, condition, x86::register::RAX),
+        x86::register::RAX, x86::register::RAX);
+}
+
+// The right operand is in EAX and the left operand is saved in a frame slot.
+// Keep the cursor in the call chain; callers update their workspace once.
+pub fn from_slot(output: [i32], capacity: i32, cursor: i32, slot: i32, operation: i32) -> i32 {
+    return binary(output, capacity,
+        x86::encode::load(output, capacity,
+            x86::encode::move_register(output, capacity, cursor, 32, x86::register::RCX, x86::register::RAX),
+            32, x86::register::RAX, x86::register::RBP, backend::frame::displacement(slot)),
+        operation);
+}
+
+// EAX is the left operand, ECX the right. All expression temporaries live
+// in frame slots, so these caller-saved scratch registers can be clobbered.
+pub fn binary(output: [i32], capacity: i32, cursor: i32, operation: i32) -> i32 {
+    let comparison: i32 = condition(operation);
+    if (comparison >= 0) {
+        return boolean(output, capacity,
+            x86::encode::binary(output, capacity, cursor, 32, x86::encode::CMP, x86::register::RAX, x86::register::RCX),
+            comparison);
+    }
+    let opcode: i32 = opcode(operation);
+    if (opcode >= 0) {
+        return x86::encode::binary(output, capacity, cursor, 32, opcode, x86::register::RAX, x86::register::RCX);
+    }
+    if (operation == backend::syntax::MULTIPLY) {
+        return x86::encode::multiply(output, capacity, cursor, 32, x86::register::RAX, x86::register::RCX);
+    }
+    if (operation == backend::syntax::DIVIDE || operation == backend::syntax::REMAINDER) {
+        let next: i32 = x86::control::sign_extend_dividend(output, capacity, cursor, 32);
+        next = x86::encode::divide(output, capacity, next, 32, x86::register::RCX, true);
+        if (operation == backend::syntax::REMAINDER) {
+            next = x86::encode::move_register(output, capacity, next, 32, x86::register::RAX, x86::register::RDX);
+        }
+        return next;
+    }
+    if (operation == backend::syntax::SHIFT_LEFT || operation == backend::syntax::SHIFT_RIGHT) {
+        // An unsigned comparison also rejects negative counts. Do not let
+        // hardware's masked shift count silently change Core trap behavior.
+        let next: i32 = x86::encode::immediate(output, capacity, cursor, 32, x86::register::R11, 31, 0);
+        next = x86::encode::binary(output, capacity, next, 32, x86::encode::CMP, x86::register::RCX, x86::register::R11);
+        next = x86::control::branch(output, capacity, next, x86::control::BELOW_EQUAL, next + 8);
+        next = x86::control::trap(output, capacity, next);
+        let extension: i32 = x86::encode::SHIFT_LEFT;
+        if (operation == backend::syntax::SHIFT_RIGHT) { extension = x86::encode::SHIFT_SIGNED_RIGHT; }
+        return x86::encode::shift(output, capacity, next, 32, extension, x86::register::RAX);
+    }
+    return -1;
+}

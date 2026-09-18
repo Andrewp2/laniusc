@@ -65,7 +65,7 @@ theorem read_call_words
   have fromStorage := Heap.loadBytes_prefix loaded
     (Nat.le_trans (List.length_take_le request (file.bytes.drop handle.offset)) capacity)
   have bytesEq := Except.ok.inj (fromStorage.symm.trans prefixRead)
-  obtain ⟨values, valuesEq, valuesLength⟩ := decode_i32_array_values decoded
+  obtain ⟨values, valuesEq, valuesLength, valuesRange⟩ := decode_i32_array_values decoded
   subst elements
   refine ⟨storage, values, resultEq, contents, encode_after_decode_i32_array decoded,
     bytesEq, valuesLength, ?_⟩

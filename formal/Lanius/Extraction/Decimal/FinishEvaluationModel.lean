@@ -70,7 +70,7 @@ private theorem base
         .signed .i32 start, .signed .i32 radix] =
       .ok (digitScanValue (Compiler.Lexer.scanDigitRun source start radix),
         world) := by
-  apply base (by native_decide)
+  apply base (by decide)
   exact EvaluationModel.scanDigitRun source world start radix sourceFound
     sourceBound startBound radixBound
 
@@ -80,7 +80,7 @@ private theorem base
     (helperCalls source).evaluate world extractedIsDigitForBaseFunction.id
       [.signed .i32 byte.val, .signed .i32 radix] =
       .ok (.boolean (isDigitForBase byte radix), world) := by
-  apply base (by native_decide)
+  apply base (by decide)
   simp [EvaluationModel.helperCalls, BaseCalls.callModel,
     BaseCalls.digitOperations, CallModel.route]
   exact DigitRunModel.helperCallModel_isDigit world byte radix radixBound
@@ -93,7 +93,7 @@ private theorem base
       Lexer.Digits.digitScanSucceededFunction.id [digitScanValue result] =
       .ok (.boolean (match result with
         | .success _ => true | .failure _ => false), world) := by
-  apply base (by native_decide)
+  apply base (by decide)
   exact EvaluationModel.digitSucceeded source world result resultBound
 
 @[simp] theorem digitEnd (source : List Byte) (world : ReadOnly.World)
@@ -102,7 +102,7 @@ private theorem base
       Lexer.Digits.digitScanEndOffsetFunction.id
       [digitScanValue (.success finish)] =
       .ok (.signed .i32 finish, world) := by
-  apply base (by native_decide)
+  apply base (by decide)
   exact EvaluationModel.digitEnd source world finish finishBound
 
 @[simp] theorem digitError (source : List Byte) (world : ReadOnly.World)
@@ -111,7 +111,7 @@ private theorem base
       Lexer.Digits.digitScanErrorOffsetFunction.id
       [digitScanValue (.failure error)] =
       .ok (.signed .i32 error, world) := by
-  apply base (by native_decide)
+  apply base (by decide)
   exact EvaluationModel.digitError source world error errorBound
 
 @[simp] theorem integerScan (source : List Byte) (world : ReadOnly.World)
@@ -119,7 +119,7 @@ private theorem base
     (helperCalls source).evaluate world Functions.integerScanFunction.id
       [.signed .i32 finish] =
       .ok (EvaluationModel.encoded (.success .integer finish), world) := by
-  apply base (by native_decide)
+  apply base (by decide)
   exact EvaluationModel.integerScan source world finish finishBound
 
 @[simp] theorem floatScan (source : List Byte) (world : ReadOnly.World)
@@ -127,7 +127,7 @@ private theorem base
     (helperCalls source).evaluate world Functions.floatScanFunction.id
       [.signed .i32 finish] =
       .ok (EvaluationModel.encoded (.success .float finish), world) := by
-  apply base (by native_decide)
+  apply base (by decide)
   exact EvaluationModel.floatScan source world finish finishBound
 
 @[simp] theorem numberFailure (source : List Byte) (world : ReadOnly.World)
@@ -135,7 +135,7 @@ private theorem base
     (helperCalls source).evaluate world Functions.numberFailureFunction.id
       [.signed .i32 error] =
       .ok (EvaluationModel.encoded (.failure error), world) := by
-  apply base (by native_decide)
+  apply base (by decide)
   exact EvaluationModel.numberFailure source world error errorBound
 
 noncomputable def operationEvaluator (source : List Byte) :

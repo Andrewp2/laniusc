@@ -1,4 +1,5 @@
 import Lanius.Extraction.Parser.Recognize.Root.Selection
+import Lanius.Compiler.Parser.Completion.Closure
 namespace Lanius.Extraction.ParserRecognize
 
 set_option maxRecDepth 100000
@@ -22,33 +23,38 @@ open Lanius.FunctionalView.Core.Stateful
 open Lanius.FunctionalView.Core.Stateful.Reification
 /-! ## Artifact-derived FunctionalView for final root selection -/
 
-/-- A successful outcome names the same workspace as the physical result.
-    Failure carries no selected root and imposes no such equality. -/
+/-- Both root-search outcomes refer to the physical result workspace:
+    success names its stored root, rejection certifies its root is absent. -/
 def RecognizerRootStatementOutcome.workspaceAgrees
-    (outcome : RecognizerRootStatementOutcome grammar tokens workspace completion)
+    (_outcome : RecognizerRootStatementOutcome grammar tokens workspace completion)
     (finalWorkspace : LogicalWorkspace) : Prop :=
-  match outcome with
-  | .accepted _ _ _ _ _ _ => workspace = finalWorkspace
-  | .rejected _ => True
+  workspace = finalWorkspace
 
 theorem RecognizerRootStatementOutcome.workspaceAgrees_self
     (outcome : RecognizerRootStatementOutcome grammar tokens workspace completion) :
     outcome.workspaceAgrees workspace := by
-  cases outcome <;> trivial
+  rfl
 
 inductive RecognizerPositionStatementOutcome
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
     (workspaceLayout : WorkspaceLayout) (beforeWorkspace : LogicalWorkspace) :
     Completion → Type
-  | full (position stateCount : Nat) :
+  | full (position stateCount : Nat) (workspace : LogicalWorkspace)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount)
+      (generated : WorkspaceGenerated grammar tokens workspace) :
       RecognizerPositionStatementOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace
         (parserCapacityCompletion position stateCount)
   | completed (workspace : LogicalWorkspace) (workspaceValues : List Int)
       (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace
         workspace) (completion : Completion)
-      (root : RecognizerRootStatementOutcome grammar tokens workspace completion) :
+      (root : RecognizerRootStatementOutcome grammar tokens workspace completion)
+      (seeded : StartSeeded grammar workspace)
+      (predicted : PredictionsBefore grammar workspace (finalPosition tokens.length + 1))
+      (scanned : ScansBefore grammar tokens workspace (finalPosition tokens.length + 1))
+      (closed : ChartClosed grammar tokens workspace)
+      (generated : WorkspaceGenerated grammar tokens workspace) :
       RecognizerPositionStatementOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace completion
 
@@ -56,8 +62,8 @@ def RecognizerPositionStatementOutcome.workspaceAgrees
     (outcome : RecognizerPositionStatementOutcome grammarLayout grammar words tokens
       workspaceLayout beforeWorkspace completion) (finalWorkspace : LogicalWorkspace) : Prop :=
   match outcome with
-  | .full _ _ => True
-  | .completed _ _ _ _ root => root.workspaceAgrees finalWorkspace
+  | .full _ _ workspace _ _ => workspace = finalWorkspace
+  | .completed _ _ _ _ root _ _ _ _ _ => root.workspaceAgrees finalWorkspace
 
 /-- The only caller-owned cells mutated by the position/root continuation.
     The loop's position and furthest-position cells are lexical temporaries
@@ -300,7 +306,7 @@ noncomputable def
   | returned returnedValue =>
     cases result.outcome with
     | full position stateCount physicalAfter finalWorkspace finalValues growth
-        terminal fullWellFormed =>
+        terminal fullWellFormed full =>
       have bodyExecution : Lanius.FunctionalView.Stateful.Command.Evaluates
           (positionTermMachine workspaceLayout grammar words tokens grammarCell
             tokensCell)
@@ -356,13 +362,21 @@ noncomputable def
         finalWorkspaceValues := finalValues
         growth := growth
         workspaceArtifact := artifact
-        outcome := .full position stateCount
-        outcomeWorkspace := True.intro
+        outcome := .full position stateCount finalWorkspace full terminal.derivations.backpointersSound.generated
+        outcomeWorkspace := rfl
       }
   | next =>
-    cases result.outcome with
+    cases outcomeEq : result.outcome with
     | completed nextWorkspace nextValues physicalAfter growth furthest finished
         worldEq environmentEq =>
+      have predicted := result.predictions
+        (show initial.predictionsReady from PredictionsBefore.zero)
+      rw [outcomeEq] at predicted
+      have scanned := result.scans (show initial.scansReady from ScansBefore.zero)
+      rw [outcomeEq] at scanned
+      have completedPairs := result.completions
+        (show initial.completionsReady from CompletionsBefore.zero)
+      rw [outcomeEq] at completedPairs
       let rootEntry := finished.enter_root_loop
       let root := rootEntry.functional_execute_statement
       have loopExecution' : Lanius.FunctionalView.Stateful.Command.Evaluates
@@ -438,6 +452,23 @@ noncomputable def
       have artifact : RecognizerWorkspaceArtifact workspaceLayout nextWorkspace
           nextValues workspaceCell closed.after :=
         rootArtifact.transfer_cells closed.cellsEq
+      have finalPredicted : PredictionsBefore grammar nextWorkspace (finalPosition tokens.length + 1) := by
+        simpa only [RecognizerPositionSynchronizedOutcome.predictionsComplete,
+          finished.frame.appendFrame.recognizer.workspaceTokenCount] using predicted
+      have finalScanned : ScansBefore grammar tokens nextWorkspace (finalPosition tokens.length + 1) := by
+        simpa only [RecognizerPositionSynchronizedOutcome.scansComplete,
+          finished.frame.appendFrame.recognizer.workspaceTokenCount] using scanned
+      have finalCompletions : CompletionsBefore grammar nextWorkspace (finalPosition tokens.length + 1) := by
+        simpa only [RecognizerPositionSynchronizedOutcome.completionsComplete,
+          finished.frame.appendFrame.recognizer.workspaceTokenCount] using completedPairs
+      have chartClosed : ChartClosed grammar tokens nextWorkspace :=
+        ChartClosed.of_phases (invariant.startSeeded.preserved growth)
+          finalPredicted finalScanned finalCompletions
+          finished.frame.appendFrame.recognizer.workspaceEncoded.wellFormed.chartSound
+          finished.frame.appendFrame.recognizer.languageSound (by
+            intro id state found
+            simpa only [finished.frame.appendFrame.recognizer.workspaceTokenCount] using
+              finished.frame.appendFrame.recognizer.workspaceEncoded.state_position_valid found)
       exact {
         resultValue := root.resultValue
         afterWorld := root.afterWorld
@@ -457,7 +488,8 @@ noncomputable def
         growth := growth
         workspaceArtifact := artifact
         outcome := .completed nextWorkspace nextValues growth
-          (.returned (some root.resultValue)) root.outcome
+          (.returned (some root.resultValue)) root.outcome (invariant.startSeeded.preserved growth)
+          finalPredicted finalScanned chartClosed finished.frame.appendFrame.recognizer.derivations.backpointersSound.generated
         outcomeWorkspace := root.outcome.workspaceAgrees_self
       }
   | breakLoop => cases result.outcome

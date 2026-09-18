@@ -38,9 +38,21 @@ mutual
     | .slice element => .slice element.toTy
     | .reference referent => .reference referent.toTy
     | .nominal id typeArguments constArguments =>
-        .nominal id (typeArguments.map GroundTy.toTy)
+        .nominal id (GroundTy.listToTy typeArguments)
           (constArguments.map Const.literal)
+  termination_by structural type => type
+
+  def GroundTy.listToTy : List GroundTy → List Ty
+    | [] => []
+    | head :: tail => head.toTy :: listToTy tail
+  termination_by structural types => types
 end
+
+@[simp] theorem GroundTy.listToTy_eq_map (types : List GroundTy) :
+    listToTy types = types.map toTy := by
+  induction types with
+  | nil => rfl
+  | cons head tail ih => simp [listToTy, ih]
 
 structure Substitution where
   types : TypeParameterId → Option GroundTy := fun _ => none

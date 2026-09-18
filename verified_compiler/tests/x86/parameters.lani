@@ -1,0 +1,8 @@
+module examples::parameters;
+
+pub fn first(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 { return a; }
+pub fn second(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 { return b; }
+pub fn third(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 { return c; }
+pub fn fourth(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 { return d; }
+pub fn fifth(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 { return e; }
+pub fn sixth(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 { return f; }

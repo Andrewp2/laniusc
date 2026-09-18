@@ -1,9 +1,28 @@
 import Lanius.Extraction.CompactOutput.HexByte
+import Lanius.Extraction.Tests.Automation
 import Lean.Util.CollectAxioms
 
 namespace Lanius.Extraction.Tests.CompactOutput
 
 open Lanius.Core Lanius.Semantics Lanius.Extraction.CompactOutput
+
+/-- The compact contract still implies the entire original rejection theorem,
+including finite execution and both memory frames, after argument effects. -/
+theorem rejectCall (checked : CheckedByte program) (output : Value) (capacity position value : Int)
+    (wellFormed : Properties.StateWellFormed before) (bad : byteBad capacity position value = true)
+    (argumentsResult : CallContracts.ArgumentsEvaluateTo program.core caller arguments
+      (byteValues output capacity position value) before) :
+    ∃ after, Evaluates program.core caller (.call checked.source.function.id arguments) (.signed .i32 (-1)) after ∧
+      Separation.CellEffect Separation.CellSet.empty before after ∧ Separation.HeapFrame before after := by
+  obtain ⟨after, run, _, frame⟩ := (checked.reject output capacity position value bad).call wellFormed argumentsResult
+  exact ⟨after, run, frame⟩
+
+-- The default proof argument cannot silently waive a storage precondition.
+example (_spec : CallContracts.CellSpec program function values result (requires := fun _ => False))
+    (_wellFormed : Properties.StateWellFormed before)
+    (_argumentsResult : CallContracts.ArgumentsEvaluateTo program caller arguments values before) : True := by
+  fail_if_success have _ := _spec.call _wellFormed _argumentsResult
+  trivial
 
 private def fixture : Program := { functions := [
   ⟨1, byteParameters, i32, some byteBody, none⟩,
@@ -67,6 +86,16 @@ def checkExecution (program : Program) (byteId digitId hexByteId : FunctionId) :
       match evalExpr 100 program caller (.call functionId arguments) with
       | .done (.signed .i32 (-1)) after => checkFrame caller after false
       | _ => throw (IO.userError "invalid byte accessed a buffer or failed to reject")
+  -- Argument evaluation writes a caller local. The rejecting function must
+  -- preserve that new value, not restore the state preceding the arguments.
+  let arguments := [Expr.value .unit, .assign .set (.local 7) (number 4), negativeOne, number 65]
+  let .done _ before := evalExprs 100 program caller arguments
+    | throw (IO.userError "effectful argument did not finish")
+  unless before.local? 7 == some (.signed .i32 4) do
+    throw (IO.userError "argument failed to update caller local")
+  match evalExpr 150 program caller (.call byteId arguments) with
+  | .done (.signed .i32 (-1)) after => checkFrame before after false
+  | _ => throw (IO.userError "reject failed with effectful arguments")
 
 #eval checkExecution fixture 1 2 3
 
@@ -81,10 +110,11 @@ private def checkShapes : IO Unit := do
 run_elab do
   let standard : Array Lean.Name := #[``propext, ``Classical.choice, ``Quot.sound]
   for name in #[``CheckedByte.append, ``CheckedByte.reject, ``CheckedByte.write, ``CheckedDigit.call_digit,
-      ``shift_right, ``mask_nibble, ``nibble_evaluates, ``append_digit, ``CheckedHexByte.write, ``CheckedHexByte.reject] do
+      ``shift_right, ``mask_nibble, ``nibble_evaluates, ``append_digit, ``CheckedHexByte.write, ``CheckedHexByte.reject,
+      ``rejectCall] do
     unless (← Lean.getEnv).contains name do throwError "missing writer theorem {name}"
     let axioms ← Lean.collectAxioms name
     unless axioms.all standard.contains do throwError "writer proof added trust assumptions: {name}: {axioms}"
-  Lean.logInfo "Ten byte/hex-writer theorems use only standard Lean axioms."
+  Lean.logInfo "Byte/hex-writer contracts and their call rule use only standard Lean axioms."
 
 end Lanius.Extraction.Tests.CompactOutput

@@ -402,6 +402,32 @@ theorem Term.evaluate_logicalOr_false
   rw [Term.evaluate, leftResult]
   exact rightResult
 
+/-- Guarded short-circuit composition: when the RHS is needed, its result
+    explicitly preserves `afterLeft`, so this is valid for every `Machine`. -/
+theorem Term.evaluate_logicalAnd_guarded
+    (leftResult : Term.evaluate machine world environment left =
+      .ok (.boolean leftValue, afterLeft))
+    (rightResult : leftValue = true →
+      Term.evaluate machine afterLeft environment right =
+        .ok (.boolean rightValue, afterLeft)) :
+    Term.evaluate machine world environment (.logicalAnd left right) =
+      .ok (.boolean (leftValue && rightValue), afterLeft) := by
+  cases leftValue
+  · simpa using Term.evaluate_logicalAnd_false leftResult
+  · simpa using Term.evaluate_logicalAnd_true leftResult (rightResult rfl)
+
+theorem Term.evaluate_logicalOr_guarded
+    (leftResult : Term.evaluate machine world environment left =
+      .ok (.boolean leftValue, afterLeft))
+    (rightResult : leftValue = false →
+      Term.evaluate machine afterLeft environment right =
+        .ok (.boolean rightValue, afterLeft)) :
+    Term.evaluate machine world environment (.logicalOr left right) =
+      .ok (.boolean (leftValue || rightValue), afterLeft) := by
+  cases leftValue
+  · simpa using Term.evaluate_logicalOr_false leftResult (rightResult rfl)
+  · simpa using Term.evaluate_logicalOr_true leftResult
+
 theorem Block.evaluate_sequence_next
     (firstResult : Block.evaluate machine world environment first =
       .done .next afterFirst)
@@ -448,6 +474,20 @@ theorem Block.evaluate_if_false
         (.ifThenElse condition thenBranch elseBranch) = result := by
   rw [Block.evaluate, conditionResult]
   exact branchResult
+
+/-- Evaluate a symbolic condition once and retain both checked branch results. -/
+theorem Block.evaluate_if_bool
+    {machine : Machine signature}
+    {before afterCondition : machine.World} {environment : Env arity}
+    {condition : Term signature arity} {thenBranch elseBranch : Block signature arity}
+    {value : Bool} {yes no : Result machine.World}
+    (conditionResult : Term.evaluate machine before environment condition =
+      .ok (.boolean value, afterCondition))
+    (thenResult : Block.evaluate machine afterCondition environment thenBranch = yes)
+    (elseResult : Block.evaluate machine afterCondition environment elseBranch = no) :
+    Block.evaluate machine before environment
+      (.ifThenElse condition thenBranch elseBranch) = (if value then yes else no) := by
+  cases value <;> simp [Block.evaluate, conditionResult, thenResult, elseResult]
 
 @[simp] theorem Block.evaluate_skip
     (machine : Machine signature) (world : machine.World)

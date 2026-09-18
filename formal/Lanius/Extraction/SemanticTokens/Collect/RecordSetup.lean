@@ -12,23 +12,23 @@ def recordCountGuard : Expr :=
     (binary .lessEqual (read 16) (negative 1)))
     (negate (binary .lessEqual (read 16) (binary .multiply (read 3) (number 2))))
 
-theorem record_count_guard_pass {record : RecordVisit} (program : Program)
-    (stored : record.Stored 0 words) (wordsFit : words.length ≤ 2147483647)
+theorem record_count_guard_pass {record : RecordVisit} {recordsLimit : Nat} (program : Program)
+    (stored : record.Stored 0 words) (available : words.length ≤ recordsLimit) (limitFits : recordsLimit ≤ 2147483647)
     (tokensFit : tokenCount * 2 ≤ 2147483647) (startBound : record.start ≤ tokenCount * 2)
-    (lengthRead : before.local? 5 = some (.signed .i32 words.length))
+    (lengthRead : before.local? 5 = some (.signed .i32 recordsLimit))
     (offsetRead : before.local? 14 = some (.signed .i32 record.offset))
     (childrenRead : before.local? 15 = some (.signed .i32 record.children.length))
     (startRead : before.local? 16 = some (.signed .i32 record.start))
     (tokensRead : before.local? 3 = some (.signed .i32 tokenCount)) :
     Evaluates program before recordCountGuard (.boolean false) before := by
   have room := stored.bounds
-  have leftover := evaluatesNatI32Subtract (leftValue := words.length) (rightValue := record.offset)
+  have leftover := evaluatesNatI32Subtract (leftValue := recordsLimit) (rightValue := record.offset)
     (local_evaluates program lengthRead) (local_evaluates program offsetRead) (by omega) (by omega)
-  have payload := evaluatesNatI32Subtract (leftValue := words.length - record.offset) (rightValue := 4)
+  have payload := evaluatesNatI32Subtract (leftValue := recordsLimit - record.offset) (rightValue := 4)
     leftover (show Evaluates program before (number 4) (.signed .i32 4) before from ⟨1, rfl⟩) (by omega) (by omega)
-  have slots := evaluatesNatI32Divide (leftValue := words.length - record.offset - 4) (rightValue := 3)
+  have slots := evaluatesNatI32Divide (leftValue := recordsLimit - record.offset - 4) (rightValue := 3)
     payload (show Evaluates program before (number 3) (.signed .i32 3) before from ⟨1, rfl⟩)
-    (by decide) (by have := Nat.div_le_self (words.length - record.offset - 4) 3; omega)
+    (by decide) (by have := Nat.div_le_self (recordsLimit - record.offset - 4) 3; omega)
   have count := local_evaluates program childrenRead
   have position := local_evaluates program startRead
   have negativeCount := lessEqual_evaluates count (negativeOne_evaluates program before)
@@ -39,7 +39,7 @@ theorem record_count_guard_pass {record : RecordVisit} (program : Program)
   have inRange := negate_evaluates (lessEqual_evaluates position limit)
   have all := evaluatesPureLogicalOr (evaluatesPureLogicalOr (evaluatesPureLogicalOr negativeCount enough) negativeStart) inRange
   have countNonnegative : ¬ ((record.children.length : Int) ≤ -1) := by omega
-  have countFits : (record.children.length : Int) ≤ ((words.length - record.offset - 4) / 3 : Nat) := by omega
+  have countFits : (record.children.length : Int) ≤ ((recordsLimit - record.offset - 4) / 3 : Nat) := by omega
   have startNonnegative : ¬ ((record.start : Int) ≤ -1) := by omega
   have startFits : (record.start : Int) ≤ (tokenCount * 2 : Nat) := by omega
   simpa only [recordCountGuard, Int.ofNat_eq_natCast, countNonnegative, countFits, startNonnegative, startFits,

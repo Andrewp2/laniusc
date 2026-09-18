@@ -3,6 +3,7 @@ import Lanius.Semantics.Relocation.Link
 import Lanius.Semantics.Relocation.Ownership
 import Lanius.Extraction.Parser.Recognize.Caller
 import Lanius.Separation.Relocation
+import Lanius.Extraction.Host.Typed
 
 namespace Lanius.Extraction.ParserRecognize
 
@@ -149,7 +150,7 @@ theorem recognize_region_at
       outcome.workspaceAgrees finalWorkspace ∧
       WorkspaceAppendClosure workspaceLayout.capacity emptyWorkspace finalWorkspace ∧
       RecognizerWorkspaceArtifact workspaceLayout finalWorkspace finalValues workspaceCell after ∧
-      CellEffect (CellSet.singleton workspaceCell) caller after := by
+      CellEffect (CellSet.singleton workspaceCell) caller after ∧ HeapFrame caller after := by
   let unrelocate : Core.Relocation.Symbols := ⟨inverseType, id, id⟩
   have restored : Semantics.Relocation.state symbols (Semantics.Relocation.state unrelocate caller) = caller :=
     Semantics.Relocation.state_leftInverse symbols unrelocate inverse caller
@@ -185,7 +186,8 @@ theorem recognize_region_at
   rw [restored] at effect
   refine ⟨execution.outcomeCompletion, execution.outcome, execution.finalWorkspace, execution.finalWorkspaceValues,
     Semantics.Relocation.state symbols execution.after, ?_, execution.outcomeWorkspace, execution.growth,
-    execution.linked_workspace symbols, effect⟩
-  simpa only [Core.Relocation.expression, Core.Relocation.expressions, callee] using evaluated
+    execution.linked_workspace symbols, effect, ?_⟩
+  · simpa only [Core.Relocation.expression, Core.Relocation.expressions, callee] using evaluated
+  · exact ⟨execution.effect.heap, execution.effect.views⟩
 
 end Lanius.Extraction.ParserRecognize

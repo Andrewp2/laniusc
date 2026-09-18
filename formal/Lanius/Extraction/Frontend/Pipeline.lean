@@ -100,9 +100,10 @@ theorem lex_to_recognize
         ready.local? id = some value) ∧
       CellEffect (CellSet.union (CellSet.union (CellSet.singleton rawCell) (CellSet.singleton canonicalCell))
         (CellSet.union (CellSet.singleton kindsCell) (CellSet.singleton workspaceCell)))
-        before (restoreLocals before ready) := by
+        before (restoreLocals before ready) ∧
+      Host.MemoryPath before ready := by
   dsimp only
-  obtain ⟨canonicalized, lexRun, canonicalWF, rawCount, tokenCount, rawBuffers, compacted, localsPreserved, lexerEffect⟩ :=
+  obtain ⟨canonicalized, lexRun, canonicalWF, rawCount, tokenCount, rawBuffers, compacted, localsPreserved, lexerEffect, lexerMemory⟩ :=
     lex_to_canonical symbols invariant lexerLink lexerInjective lexerInverseType lexerInverse lexerRetained
       countAccessor statusAccessor lexerId countId statusId resultType successConstant canonicalizer
       request raw successful records canonical wordCapacity recordsFit canonicalFit canonicalCapacity
@@ -121,7 +122,7 @@ theorem lex_to_recognize
     rw [canonicalSize]
     exact localsPreserved 6 _ (by decide) canonicalLocal (by intro same; cases same) (by intro same; cases same)
   obtain ⟨completion, outcome, finalWorkspace, finalValues, ready, parseRun, readyWF, parsed,
-      agreement, growth, artifact, finalCanonical, finalKinds, parseLocals, parseEffect⟩ :=
+      agreement, growth, artifact, finalCanonical, finalKinds, parseLocals, parseEffect, parseMemory⟩ :=
     canonical_to_recognize parserLink parserInjective parserInverseType parserInverse parserRetained
       request.source raw (canonical.drop (3 * raw.length)) kinds workspaceValues canonicalized canonicalWF
       canonicalCell kindsCell grammarCell workspaceCell canonicalKinds canonicalWorkspace grammarKinds grammarWorkspace
@@ -141,7 +142,8 @@ theorem lex_to_recognize
     parseLocals 20 _ (by decide) tokenCount (by intro same; cases same) (by intro same; cases same),
     parsed, agreement, growth, artifact, ?_, finalCanonical, finalKinds, ?_,
     (lexerEffect.weaken CellSet.subset_union_left).transScoped
-      (parseEffect.weaken CellSet.subset_union_right) wellFormed⟩
+      (parseEffect.weaken CellSet.subset_union_right) wellFormed,
+    parseMemory.prepend lexerMemory⟩
   · intro lexicalFailure canonicalFailure kindsFailure rest completion final continuation
     simpa only [restoreLocals] using lexRun lexicalFailure canonicalFailure _ _ _
       (parseRun kindsFailure rest completion final continuation)

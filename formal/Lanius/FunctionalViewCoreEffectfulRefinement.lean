@@ -138,7 +138,6 @@ mutual
         intro result
         obtain ⟨value, nextWorld⟩ := result
         rw [tailEq nextWorld]
-        rfl
 end
 
 namespace Term

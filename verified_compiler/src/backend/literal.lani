@@ -1,0 +1,54 @@
+module backend::literal;
+import backend::syntax;
+import x86::buffer;
+import x86::encode;
+import x86::control;
+import x86::register;
+
+// Scalar constants contain id, kind, low, high. A string instead contains
+// id, STRING, byte_count, UTF-8 bytes. Layout is selected here in Lanius.
+pub fn constant_size(input: [i32], length: i32, position: i32) -> i32 {
+    if (position < 0 || position > length - 3) { return -1; }
+    let kind: i32 = input[position + 1];
+    if (input[position] < 0 || kind < backend::syntax::I32 || kind > backend::syntax::STRING) { return -1; }
+    if (kind == backend::syntax::STRING) {
+        let count: i32 = input[position + 2];
+        if (count < 0 || count > length - position - 3) { return -1; }
+        let index: i32 = 0;
+        while (index < count) {
+            let byte: i32 = input[position + 3 + index];
+            if (byte < 0 || byte > 255) { return -1; }
+            index += 1;
+        }
+        return 3 + count;
+    }
+    if (position > length - 4) { return -1; }
+    if (kind == backend::syntax::BOOL && input[position + 2] != 0 && input[position + 2] != 1) { return -1; }
+    if ((kind == backend::syntax::I32 || kind == backend::syntax::BOOL) && input[position + 3] != 0) { return -1; }
+    return 4;
+}
+
+// Return a position-independent pointer in RAX and skip over the exact UTF-8
+// bytes in the instruction stream. The enclosing code image is four-byte
+// aligned. Padding before the data aligns raw i32 views; it is not string data.
+pub fn string(input: [i32], length: i32, start: i32, count: i32,
+    output: [i32], capacity: i32, cursor: i32) -> i32 {
+    if (start < 0 || start > length || count < 0 || count > length - start ||
+        !x86::buffer::fits(capacity, cursor, 12)) { return -1; }
+    let padding: i32 = (4 - cursor % 4) % 4;
+    if (!x86::buffer::fits(capacity, cursor + 12, padding) ||
+        !x86::buffer::fits(capacity, cursor + 12 + padding, count)) { return -1; }
+    let index: i32 = 0;
+    while (index < count) {
+        if (input[start + index] < 0 || input[start + index] > 255) { return -1; }
+        index += 1;
+    }
+    let data: i32 = cursor + 12 + padding;
+    let next: i32 = x86::encode::relative_address(output, capacity, cursor, x86::register::RAX, 5 + padding);
+    next = x86::control::jump(output, capacity, next, data + count);
+    index = 0;
+    while (index < padding) { output[next + index] = 0; index += 1; }
+    index = 0;
+    while (index < count) { output[data + index] = input[start + index]; index += 1; }
+    return data + count;
+}

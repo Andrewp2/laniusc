@@ -244,6 +244,27 @@ inductive Command.Evaluates
       Evaluates termMachine machine world environment .continueLoop
         .continueLoop world environment
 
+/-- Compose one successful loop iteration with a following sequence.  The
+    loop's condition and body may each change the abstract world and the
+    lexical environment; only the body completion is fixed to `.next`. -/
+theorem Command.Evaluates.whileNextSequence
+    (conditionResult : Term.evaluate termMachine beforeWorld
+      beforeEnvironment condition = .ok (.boolean true, conditionWorld))
+    (bodyResult : Evaluates termMachine machine conditionWorld
+      beforeEnvironment body .next bodyWorld bodyEnvironment)
+    (restResult : Evaluates termMachine machine bodyWorld bodyEnvironment
+      (.sequence (.whileLoop condition body) suffix) completion afterWorld
+      afterEnvironment) :
+    Evaluates termMachine machine beforeWorld beforeEnvironment
+      (.sequence (.whileLoop condition body) suffix) completion afterWorld
+      afterEnvironment := by
+  cases restResult with
+  | sequenceNext loopResult suffixResult =>
+      exact .sequenceNext (.whileNext conditionResult bodyResult loopResult)
+        suffixResult
+  | sequenceStop loopResult stops =>
+      exact .sequenceStop (.whileNext conditionResult bodyResult loopResult) stops
+
 /-- Stateful FunctionalView commands have at most one successful result.
     This lets simulation proofs construct the canonical functional execution
     and identify any supplied derivation with it, instead of repeatedly

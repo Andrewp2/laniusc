@@ -1,4 +1,5 @@
 import Lanius.Extraction.Frontend.Failure
+import Lanius.Extraction.Host.MemoryPath
 import Lanius.Extraction.Frontend.Canonicalize
 
 namespace Lanius.Extraction.Frontend
@@ -61,7 +62,7 @@ theorem lex_to_early_failure
       (ReadOnly.World.owns (ReadOnly.World.pair sourceCell (sourceIntegers request.source) rawCell
         (encodeTokens (Model.emittedTokens request.outcome) ++
           records.drop (3 * (Model.emittedTokens request.outcome).length)))).holds after ∧
-      CellEffect (CellSet.singleton rawCell) before after := by
+      CellEffect (CellSet.singleton rawCell) before after ∧ Host.MemoryPath before after := by
   have recordsCapacity : 3 * request.capacity ≤ records.length := by rw [wordCapacity]; omega
   have quotient := evaluatesNatI32Divide
     (show Evaluates program.core before (.local 5) (.signed .i32 records.length) before from
@@ -75,7 +76,7 @@ theorem lex_to_early_failure
     .cons ⟨1, evalLocal_of_local 0 _ _ _ _ sourceLocal⟩
       (.cons ⟨1, evalLocal_of_local 0 _ _ _ _ sourceLength⟩
         (.cons ⟨1, evalLocal_of_local 0 _ _ _ _ rawLocal⟩ (.singleton (wordCapacity ▸ quotient))))
-  obtain ⟨lexed, prefixRun, lexedWF, countLocal, resultLocal, buffers, _, localsPreserved, prefixEffect⟩ :=
+  obtain ⟨lexed, prefixRun, lexedWF, countLocal, resultLocal, buffers, _, localsPreserved, prefixEffect, prefixMemory⟩ :=
     lex_then_count invariant link injective inverseType inverse retained countAccessor request records recordsCapacity
       sourceCell rawCell sourceRaw 17 18 (by decide) wellFormed owned arguments
   suffices ∃ stage detail position after,
@@ -83,12 +84,13 @@ theorem lex_to_early_failure
       (∀ rest, Executes program.core lexed (tokenGuards symbols checked.lexicalBody checked.canonicalBody rest).body
         (.returned (some (syntaxResult checked.constructor.typeId stage detail
           (Model.emittedTokens request.outcome).length 0 0 0 position))) after) ∧
-      CellEffect CellSet.empty lexed after by
-    obtain ⟨stage, detail, position, after, post, tailRun, tailEffect⟩ := this
+      CellEffect CellSet.empty lexed after ∧ HeapFrame lexed after by
+    obtain ⟨stage, detail, position, after, post, tailRun, tailEffect, tailHeap⟩ := this
     have tailScoped : CellEffect CellSet.empty lexed (restoreLocals lexed after) := by
       simpa only [restoreLocals, ← tailEffect.locals] using tailEffect
     refine ⟨stage, detail, position, restoreLocals before after, post, ?_, ?_,
-      prefixEffect.transScoped (tailScoped.weaken CellSet.empty_subset) wellFormed⟩
+      prefixEffect.transScoped (tailScoped.weaken CellSet.empty_subset) wellFormed,
+      (prefixMemory.path.thenHeap tailHeap).restoreLocals before⟩
     · intro rest
       simpa only [tokenizationBody, LexerPrefix.body, LexerPrefix.arguments, lexerId, countId, resultType]
         using prefixRun _ _ _ (tailRun rest)
@@ -100,28 +102,28 @@ theorem lex_to_early_failure
           [.signed .i32 0, .signed .i32 raw.length, .signed .i32 0]) := by
         simpa only [outcomeEq, Model.resultValue, Core.Relocation.value, Core.Relocation.values, resultType,
           Int.ofNat_eq_natCast] using resultLocal
-      obtain ⟨after, run, effect⟩ := checked.canonical_full lexed lexedWF raw.length capacity resultReady
+      obtain ⟨after, run, effect, frame⟩ := checked.canonical_full lexed lexedWF raw.length capacity resultReady
         (by simpa only [outcomeEq, Model.emittedTokens] using countLocal)
         (localsPreserved 7 _ capacityLocal (by decide) (by decide) (by intro same; cases same))
         capacityFit (rejected raw outcomeEq)
-      refine ⟨3, 0, 0, after, ⟨rejected raw outcomeEq, rfl, rfl, rfl⟩, ?_, effect⟩
+      refine ⟨3, 0, 0, after, ⟨rejected raw outcomeEq, rfl, rfl, rfl⟩, ?_, effect, frame⟩
       simpa only [Model.emittedTokens] using run checked.lexicalBody
   | lexicalFailure accepted error =>
       have resultReady : lexed.local? 17 = some (.structure symbols.resultType
           [.signed .i32 1, .signed .i32 accepted.length, .signed .i32 error]) := by
         simpa only [outcomeEq, Model.resultValue, Core.Relocation.value, Core.Relocation.values, resultType,
           Int.ofNat_eq_natCast] using resultLocal
-      obtain ⟨after, run, effect⟩ := checked.lexer_failure lexed lexedWF resultReady
+      obtain ⟨after, run, effect, frame⟩ := checked.lexer_failure lexed lexedWF resultReady
         (by simpa only [outcomeEq, Model.emittedTokens] using countLocal) (by decide)
-      exact ⟨2, 1, error, after, ⟨rfl, rfl, rfl⟩, run checked.canonicalBody, effect⟩
+      exact ⟨2, 1, error, after, ⟨rfl, rfl, rfl⟩, run checked.canonicalBody, effect, frame⟩
   | outputFull accepted offset =>
       have resultReady : lexed.local? 17 = some (.structure symbols.resultType
           [.signed .i32 2, .signed .i32 accepted.length, .signed .i32 offset]) := by
         simpa only [outcomeEq, Model.resultValue, Core.Relocation.value, Core.Relocation.values, resultType,
           Int.ofNat_eq_natCast] using resultLocal
-      obtain ⟨after, run, effect⟩ := checked.lexer_failure lexed lexedWF resultReady
+      obtain ⟨after, run, effect, frame⟩ := checked.lexer_failure lexed lexedWF resultReady
         (by simpa only [outcomeEq, Model.emittedTokens] using countLocal) (by decide)
-      exact ⟨2, 2, offset, after, ⟨rfl, rfl, rfl⟩, run checked.canonicalBody, effect⟩
+      exact ⟨2, 2, offset, after, ⟨rfl, rfl, rfl⟩, run checked.canonicalBody, effect, frame⟩
   | impossibleFuelExhaustion accepted offset =>
       exact (Model.lexInto_ne_impossibleFuelExhaustion request.source request.capacity accepted offset outcomeEq).elim
 
@@ -172,21 +174,23 @@ theorem lex_to_kinds_failure
         (encodeTokens raw ++ records.drop (3 * raw.length)))).holds after ∧
       after.cellEntry? canonicalCell = some { id := canonicalCell, value := some (.array (signedI32Values
         (compactedBuffer raw (canonical.drop (3 * raw.length)) tokens))) } ∧
-      CellEffect (CellSet.union (CellSet.singleton rawCell) (CellSet.singleton canonicalCell)) before after := by
+      CellEffect (CellSet.union (CellSet.singleton rawCell) (CellSet.singleton canonicalCell)) before after ∧
+      Host.MemoryPath before after := by
   dsimp only
-  obtain ⟨ready, prefixRun, readyWF, rawCount, tokenCount, buffers, canonicalBuffer, localsPreserved, prefixEffect⟩ :=
+  obtain ⟨ready, prefixRun, readyWF, rawCount, tokenCount, buffers, canonicalBuffer, localsPreserved, prefixEffect, prefixMemory⟩ :=
     lex_to_canonical symbols invariant link injective inverseType inverse retained countAccessor checked.status
       lexerId countId checked.statusId resultType checked.lexerSuccess canonicalizer request raw successful
       records canonical wordCapacity recordsFit canonicalFit capacity sourceCell rawCell canonicalCell sourceRaw
       sourceCanonical rawCanonical before wellFormed sourceLocal sourceLength rawLocal rawLength
       canonicalLocal canonicalLength owned canonicalContents
-  obtain ⟨after, tailRun, tailEffect⟩ := checked.kinds_full ready readyWF _ kindCapacity rawCount tokenCount
+  obtain ⟨after, tailRun, tailEffect, tailHeap⟩ := checked.kinds_full ready readyWF _ kindCapacity rawCount tokenCount
     (localsPreserved 9 _ (by decide) kindLength (by intro same; cases same) (by intro same; cases same)) kindsFull
   have tailScoped : CellEffect CellSet.empty ready (restoreLocals ready after) := by
     simpa only [restoreLocals, ← tailEffect.locals] using tailEffect
   refine ⟨restoreLocals before after, ?_, ?_,
     tailEffect.empty_preserves_entry readyWF canonicalBuffer,
-    prefixEffect.transScoped (tailScoped.weaken CellSet.empty_subset) wellFormed⟩
+    prefixEffect.transScoped (tailScoped.weaken CellSet.empty_subset) wellFormed,
+    (prefixMemory.path.thenHeap tailHeap).restoreLocals before⟩
   · intro functionId resultType rest
     exact prefixRun _ _ _ _ _ (tailRun functionId resultType rest)
   · intro cell values found

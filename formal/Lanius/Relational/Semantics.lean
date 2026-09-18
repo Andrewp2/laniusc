@@ -94,6 +94,19 @@ theorem TermEvaluates.applyInversion
   | .apply argumentsResult operationResult =>
       ⟨_, _, argumentsResult, operationResult⟩
 
+/- Specialized inversion for the common two-reference application shape.  The
+   references leave both the argument value and world explicit, so callers can
+   use the primitive operation relation without rebuilding list inversion. -/
+theorem TermEvaluates.apply2ReferencesInversion
+    (evaluated : TermEvaluates machine world environment
+      (.apply operation [.reference left, .reference right]) value afterWorld) :
+    machine.operation world operation
+      [left.evaluate environment, right.evaluate environment] value afterWorld :=
+  match evaluated with
+  | .apply
+      (.cons (.reference _) (.cons (.reference _) .nil)) operationResult =>
+      operationResult
+
 /-- Constructor inversion for a reference term. -/
 theorem TermEvaluates.referenceInversion
     (evaluated : TermEvaluates machine world environment

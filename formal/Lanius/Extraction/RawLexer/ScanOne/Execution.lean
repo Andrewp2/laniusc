@@ -57,6 +57,23 @@ theorem classTest_evaluates
     rw [classCode]
   · exact constant_evaluates _ constant expected found
 
+private theorem dispatchClassTest_evaluates
+    (classCode : classifyStartCode first = actual)
+    (constant expected : Nat) (result : Bool)
+    (resultEq : decide (actual = expected) = result)
+    (found : verifiedFrontendCore.constant? constant = some {
+      id := constant
+      type := Commands.i32Type
+      value := .signed .i32 (Int.ofNat expected)
+    }) :
+    Term.evaluate (termMachine calls) world
+        (dispatchEnvironment source start first)
+        (Commands.comparison .equal (Commands.slot 4)
+          (Commands.constant constant)) =
+      .ok (.boolean result, world) := by
+  simpa [resultEq] using classTest_evaluates (calls := calls) (source := source)
+    (start := start) classCode found
+
 theorem scanEndScanner_evaluates
     (scanner : Function) (scan : ScanEnd)
     (evaluated : calls.evaluate world scanner.id
@@ -179,16 +196,9 @@ theorem delimitedBranch_run
       have failureRun := returned_run
         (Commands.failed (Commands.scanErrorOffset (Commands.slot (5 : Fin 6))))
         (Model.encoded (.failure error)) failedResult
-      unfold Commands.delimitedBranch
-      simp only [Stateful.Acyclic.run?]
-      rw [scannerResult]
-      simp only [bind, Except.bind]
-      rw [condition]
-      simp only [bind, Except.bind]
-      rw [failureRun]
-      simp only [bind, Except.bind]
-      simp [Model.encoded, Model.encodedDelimited]
-      rfl
+      simp only [Commands.delimitedBranch, Stateful.Acyclic.run?, scannerResult,
+        condition, failureRun, Env.pop_push,
+        Model.encoded, Model.encodedDelimited]
 
   | success finish =>
       have scanSlot : Term.evaluate (termMachine calls) world
@@ -213,25 +223,18 @@ theorem delimitedBranch_run
         (Commands.successful (Commands.constant kindConstant)
           (Commands.scanEndOffset (Commands.slot (5 : Fin 6))))
         (Model.encoded (.token ⟨kind, 0, finish⟩)) resultTerm
-      unfold Commands.delimitedBranch
-      simp only [Stateful.Acyclic.run?]
-      rw [scannerResult]
-      simp only [bind, Except.bind]
-      rw [condition]
-      simp only [bind, Except.bind]
-      rw [successRun]
-      simp only [bind, Except.bind]
-      simp [Model.encoded, Model.encodedDelimited]
-      rfl
+      simp only [Commands.delimitedBranch, Stateful.Acyclic.run?, scannerResult,
+        condition, successRun, Env.pop_push,
+        Model.encoded, Model.encodedDelimited]
 
 theorem symbolRule_exists (byte : Byte)
     (symbol : isSymbolStart byte = true) :
     ∃ rule, rule ∈ symbolRules ∧ rule.spelling = [byte.val] := by
-  have exhaustive : ∀ candidate : Fin 256,
-      symbolBytes.contains candidate.val = true →
-      ∃ rule, rule ∈ symbolRules ∧ rule.spelling = [candidate.val] := by
-    native_decide
-  exact exhaustive byte symbol
+  have covered : symbolBytes.all (fun candidate =>
+      decide (∃ rule, rule ∈ symbolRules ∧ rule.spelling = [candidate])) = true := by
+    decide +kernel
+  exact of_decide_eq_true
+    (List.all_eq_true.mp covered byte.val (List.contains_iff_mem.mp symbol))
 
 theorem matchSymbolHead_exists
     (source : List Byte) (start : Nat)
@@ -242,7 +245,8 @@ theorem matchSymbolHead_exists
   unfold matchSymbolHead
   apply bestMatching_exists_of_match (candidate := candidate) member
   unfold SymbolRule.matches
-  rw [List.drop_eq_getElem_cons startInBounds, List.map_cons, spelling]
+  rw [List.drop_eq_getElem_cons startInBounds, List.take_succ_cons,
+    List.map_cons, spelling]
   simp [startsWith]
 
 def symbolMatchEnvironment (source : List Byte) (start : Nat) (first : Byte)
@@ -554,19 +558,11 @@ theorem blockCommentBranch_run
       have failureRun := returned_run
         (Commands.failed (Commands.scanErrorOffset (Commands.slot (7 : Fin 8))))
         (Model.encoded (.failure error)) failedResult
-      unfold Commands.blockCommentBranch
-      simp only [Stateful.Acyclic.run?]
-      rw [scannerResult]
-      simp only [bind, Except.bind]
-      rw [scanResult]
-      rw [condition]
-      simp only [bind, Except.bind]
-      rw [failureRun]
-      simp only [bind, Except.bind]
-      simp [scanResult, Model.encoded, Model.encodedDelimited]
+      simp only [Commands.blockCommentBranch, Stateful.Acyclic.run?,
+        scannerResult, scanResult, condition, failureRun, Env.pop_push,
+        Model.encoded, Model.encodedDelimited]
       rw [show scanBlockCommentEnd source start = .failure error by
         simpa [scan] using scanResult]
-      rfl
   | success finish =>
       have scanSlot : Term.evaluate (termMachine calls) world
           ((symbolKindEnvironment source start first rule).push
@@ -590,19 +586,11 @@ theorem blockCommentBranch_run
         (Commands.successful (Commands.slot 6)
           (Commands.scanEndOffset (Commands.slot (7 : Fin 8))))
         (Model.encoded (.token ⟨rule.kind, 0, finish⟩)) tokenResult
-      unfold Commands.blockCommentBranch
-      simp only [Stateful.Acyclic.run?]
-      rw [scannerResult]
-      simp only [bind, Except.bind]
-      rw [scanResult]
-      rw [condition]
-      simp only [bind, Except.bind]
-      rw [successRun]
-      simp only [bind, Except.bind]
-      simp [scanResult, Model.encoded, Model.encodedDelimited]
+      simp only [Commands.blockCommentBranch, Stateful.Acyclic.run?,
+        scannerResult, scanResult, condition, successRun, Env.pop_push,
+        Model.encoded, Model.encodedDelimited]
       rw [show scanBlockCommentEnd source start = .success finish by
         simpa [scan] using scanResult]
-      rfl
 
 theorem symbolTail_run
     (contract : HelperContract calls source world)
@@ -641,7 +629,6 @@ theorem symbolTail_run
       · change Except.ok (Value.signed .i32 (Int.ofNat rule.kind.gpuCode),
           world) = _
         rw [kindCode]
-        rfl
       · exact constant_evaluates _ 16 10 (by rfl)
     have finishResult : Term.evaluate (termMachine calls)
         world (symbolKindEnvironment source start first rule)
@@ -665,22 +652,13 @@ theorem symbolTail_run
       tokenResult
     unfold symbolMatchEnvironment at kindResult
     unfold symbolKindEnvironment symbolMatchEnvironment at lineTest finishResult lineRun
-    unfold Commands.symbolTail
-    simp only [Stateful.Acyclic.run?]
-    rw [matchResult]
-    simp only [bind, Except.bind]
-    rw [kindResult]
-    simp only [bind, Except.bind]
-    rw [lineTest]
-    simp only [bind, Except.bind]
-    rw [lineRun]
-    simp only [bind, Except.bind]
+    simp only [Commands.symbolTail, Stateful.Acyclic.run?, matchResult,
+      kindResult, lineTest, lineRun, Env.pop_push]
     have logical : scanFixedSymbol source start =
         .token ⟨rule.kind, start, scanLineCommentEnd source start⟩ := by
       simp [scanFixedSymbol, matched, line]
     rw [logical]
     simp [Model.encoded]
-    rfl
   · by_cases block : rule.kind = Lanius.Compiler.TokenKind.blockComment
     · have lineCodeNe : rule.kind.gpuCode ≠ 10 := by
         intro same
@@ -712,30 +690,17 @@ theorem symbolTail_run
         · change Except.ok (Value.signed .i32
             (Int.ofNat rule.kind.gpuCode), world) = _
           rw [blockCode]
-          rfl
         · exact constant_evaluates _ 17 11 (by rfl)
       have branchRun := blockCommentBranch_run contract rule openingInBounds
         startBound block (start := start) (first := first)
       unfold symbolMatchEnvironment at kindResult
       unfold symbolKindEnvironment symbolMatchEnvironment at lineTest blockTest branchRun
-      unfold Commands.symbolTail
-      simp only [Stateful.Acyclic.run?]
-      rw [matchResult]
-      simp only [bind, Except.bind]
-      rw [kindResult]
-      simp only [bind, Except.bind]
-      rw [lineTest]
-      simp only [bind, Except.bind]
-      rw [blockTest]
-      simp only [bind, Except.bind]
-      rw [branchRun]
-      simp only [bind, Except.bind]
+      simp only [Commands.symbolTail, Stateful.Acyclic.run?, matchResult,
+        kindResult, lineTest, blockTest, branchRun, Env.pop_push]
       have logical : scanFixedSymbol source start = tokenFromDelimited rule.kind start
           (scanBlockCommentEnd source start) := by
-        simp [scanFixedSymbol, matched, line, block]
+        simp [scanFixedSymbol, matched, block]
       rw [logical, Model.encoded_tokenFromDelimited]
-      simp
-      rfl
     · have lineCodeNe : rule.kind.gpuCode ≠ 10 := by
         intro same
         apply line
@@ -799,24 +764,13 @@ theorem symbolTail_run
           start + rule.spelling.length⟩)) tokenResult
       unfold symbolMatchEnvironment at kindResult
       unfold symbolKindEnvironment symbolMatchEnvironment at lineTest blockTest lengthResult finishResult normalRun
-      unfold Commands.symbolTail
-      simp only [Stateful.Acyclic.run?]
-      rw [matchResult]
-      simp only [bind, Except.bind]
-      rw [kindResult]
-      simp only [bind, Except.bind]
-      rw [lineTest]
-      simp only [bind, Except.bind]
-      rw [blockTest]
-      simp only [bind, Except.bind]
-      rw [normalRun]
-      simp only [bind, Except.bind]
+      simp only [Commands.symbolTail, Stateful.Acyclic.run?, matchResult,
+        kindResult, lineTest, blockTest, normalRun, Env.pop_push]
       have logical : scanFixedSymbol source start =
           .token ⟨rule.kind, start, start + rule.spelling.length⟩ := by
         simp [scanFixedSymbol, matched, line, block]
       rw [logical]
       simp [Model.encoded]
-      rfl
 
 theorem symbolBranch_run
     (contract : HelperContract calls source world)
@@ -888,7 +842,6 @@ theorem symbolBranch_run
           simp [scanSymbol, List.getElem?_eq_getElem startInBounds, dot,
             List.getElem?_eq_getElem nextInBounds, decimal]
         rw [logical, Model.encoded_tokenFromNumber]
-        rfl
       · have decimalFalse : Term.evaluate (termMachine calls)
             world nextEnvironment
             (Commands.call Lexer.Functions.isDecimalDigitFunction
@@ -962,17 +915,9 @@ theorem dispatch_run
   | identifier =>
       have classCode : classifyStartCode source[start] = 1 := by
         simp [classifyStartCode, startClass, StartClass.code]
-      have firstTest : Term.evaluate (termMachine calls)
-          world (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4)
-            (Commands.constant 0)) =
-        .ok (.boolean true, world) := by
-        apply equal_evaluates (leftValue := 1) (rightValue := 1)
-        · change Except.ok (Value.signed .i32 (Int.ofNat
-              (classifyStartCode source[start])), world) = _
-          rw [classCode]
-          rfl
-        · exact constant_evaluates _ 0 1 (by rfl)
+      have firstTest := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 0 1 true (by decide) (by rfl)
       have finishResult : Term.evaluate (termMachine calls)
           world (dispatchEnvironment source start source[start])
           (Commands.call Lexer.Scanners.scanIdentifierEndFunction
@@ -1015,36 +960,12 @@ theorem dispatch_run
   | decimalNumber =>
       have classCode : classifyStartCode source[start] = 2 := by
         simp [classifyStartCode, startClass, StartClass.code]
-      have test0 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 0)) =
-        .ok (.boolean false, world) := by
-        have evaluated := equal_evaluates (calls := calls)
-          (world := world)
-          (environment := dispatchEnvironment source start source[start])
-          (Commands.slot 4) (Commands.constant 0) 2 1
-          (by
-            change Except.ok (Value.signed .i32 (Int.ofNat
-              (classifyStartCode source[start])), world) = _
-            rw [classCode]
-            rfl)
-          (constant_evaluates _ 0 1 (by rfl))
-        simpa using evaluated
-      have test1 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 1)) =
-        .ok (.boolean true, world) := by
-        have evaluated := equal_evaluates (calls := calls)
-          (world := world)
-          (environment := dispatchEnvironment source start source[start])
-          (Commands.slot 4) (Commands.constant 1) 2 2
-          (by
-            change Except.ok (Value.signed .i32 (Int.ofNat
-              (classifyStartCode source[start])), world) = _
-            rw [classCode]
-            rfl)
-          (constant_evaluates _ 1 2 (by rfl))
-        simpa using evaluated
+      have test0 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 0 1 false (by decide) (by rfl)
+      have test1 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 1 2 true (by decide) (by rfl)
       have numberResult := number_evaluates contract
         start source[start] startInBounds startBound
       have branchRun := returned_run
@@ -1062,28 +983,18 @@ theorem dispatch_run
           tokenFromNumber start (scanNumber source start) := by
         simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass]
       rw [logical, Model.encoded_tokenFromNumber]
-      rfl
   | whitespace =>
       have classCode : classifyStartCode source[start] = 3 := by
         simp [classifyStartCode, startClass, StartClass.code]
-      have test0 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 0)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 0) (expected := 1) (by rfl)
-      have test1 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 1)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 1) (expected := 2) (by rfl)
-      have test2 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 2)) =
-        .ok (.boolean true, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 2) (expected := 3) (by rfl)
+      have test0 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 0 1 false (by decide) (by rfl)
+      have test1 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 1 2 false (by decide) (by rfl)
+      have test2 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 2 3 true (by decide) (by rfl)
       have finishResult : Term.evaluate (termMachine calls)
           world (dispatchEnvironment source start source[start])
           (Commands.call Lexer.Scanners.scanWhitespaceEndFunction
@@ -1130,42 +1041,24 @@ theorem dispatch_run
   | symbol =>
       have classCode : classifyStartCode source[start] = 4 := by
         simp [classifyStartCode, startClass, StartClass.code]
-      have test0 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 0)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 0) (expected := 1) (by rfl)
-      have test1 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 1)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 1) (expected := 2) (by rfl)
-      have test2 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 2)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 2) (expected := 3) (by rfl)
-      have test4 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 4)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 4) (expected := 5) (by rfl)
-      have test5 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 5)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 5) (expected := 6) (by rfl)
-      have test3 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 3)) =
-        .ok (.boolean true, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 3) (expected := 4) (by rfl)
+      have test0 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 0 1 false (by decide) (by rfl)
+      have test1 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 1 2 false (by decide) (by rfl)
+      have test2 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 2 3 false (by decide) (by rfl)
+      have test4 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 4 5 false (by decide) (by rfl)
+      have test5 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 5 6 false (by decide) (by rfl)
+      have test3 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 3 4 true (by decide) (by rfl)
       have branchRun := symbolBranch_run contract sourceBound sourceFound
         startInBounds startClass
       unfold Commands.dispatch
@@ -1187,34 +1080,21 @@ theorem dispatch_run
           scanSymbol source start := by
         simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass]
       rw [logical]
-      rfl
   | stringLiteral =>
       have classCode : classifyStartCode source[start] = 5 := by
         simp [classifyStartCode, startClass, StartClass.code]
-      have test0 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 0)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 0) (expected := 1) (by rfl)
-      have test1 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 1)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 1) (expected := 2) (by rfl)
-      have test2 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 2)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 2) (expected := 3) (by rfl)
-      have test4 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 4)) =
-        .ok (.boolean true, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 4) (expected := 5) (by rfl)
+      have test0 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 0 1 false (by decide) (by rfl)
+      have test1 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 1 2 false (by decide) (by rfl)
+      have test2 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 2 3 false (by decide) (by rfl)
+      have test4 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 4 5 true (by decide) (by rfl)
       let scan := scanQuotedEnd source start doubleQuote
       have scannerResult : Term.evaluate (termMachine calls)
           world (dispatchEnvironment source start source[start])
@@ -1248,40 +1128,24 @@ theorem dispatch_run
           tokenFromDelimited Lanius.Compiler.TokenKind.string start scan := by
         simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass, scan]
       rw [logical, Model.encoded_tokenFromDelimited]
-      rfl
   | characterLiteral =>
       have classCode : classifyStartCode source[start] = 6 := by
         simp [classifyStartCode, startClass, StartClass.code]
-      have test0 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 0)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 0) (expected := 1) (by rfl)
-      have test1 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 1)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 1) (expected := 2) (by rfl)
-      have test2 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 2)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 2) (expected := 3) (by rfl)
-      have test4 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 4)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 4) (expected := 5) (by rfl)
-      have test5 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 5)) =
-        .ok (.boolean true, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 5) (expected := 6) (by rfl)
+      have test0 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 0 1 false (by decide) (by rfl)
+      have test1 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 1 2 false (by decide) (by rfl)
+      have test2 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 2 3 false (by decide) (by rfl)
+      have test4 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 4 5 false (by decide) (by rfl)
+      have test5 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 5 6 true (by decide) (by rfl)
       let scan := scanQuotedEnd source start singleQuote
       have scannerResult : Term.evaluate (termMachine calls)
           world (dispatchEnvironment source start source[start])
@@ -1317,46 +1181,27 @@ theorem dispatch_run
           tokenFromDelimited Lanius.Compiler.TokenKind.character start scan := by
         simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass, scan]
       rw [logical, Model.encoded_tokenFromDelimited]
-      rfl
   | invalid =>
       have classCode : classifyStartCode source[start] = 7 := by
         simp [classifyStartCode, startClass, StartClass.code]
-      have test0 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 0)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 0) (expected := 1) (by rfl)
-      have test1 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 1)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 1) (expected := 2) (by rfl)
-      have test2 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 2)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 2) (expected := 3) (by rfl)
-      have test4 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 4)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 4) (expected := 5) (by rfl)
-      have test5 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 5)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 5) (expected := 6) (by rfl)
-      have test3 : Term.evaluate (termMachine calls) world
-          (dispatchEnvironment source start source[start])
-          (Commands.comparison .equal (Commands.slot 4) (Commands.constant 3)) =
-        .ok (.boolean false, world) := by
-        simpa using classTest_evaluates (calls := calls) (source := source)
-          (start := start) classCode (constant := 3) (expected := 4) (by rfl)
+      have test0 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 0 1 false (by decide) (by rfl)
+      have test1 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 1 2 false (by decide) (by rfl)
+      have test2 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 2 3 false (by decide) (by rfl)
+      have test4 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 4 5 false (by decide) (by rfl)
+      have test5 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 5 6 false (by decide) (by rfl)
+      have test3 := dispatchClassTest_evaluates (calls := calls)
+        (source := source) (world := world) (start := start)
+        classCode 3 4 false (by decide) (by rfl)
       have resultTerm := failed_evaluates contract
         (dispatchEnvironment source start source[start]) (Commands.slot 2) start
         (by rfl)
@@ -1380,7 +1225,6 @@ theorem dispatch_run
       have logical : Lanius.Compiler.Lexer.scanOne source start = .failure start := by
         simp [scanOne_eq_scanOneAt, scanOneAt, startInBounds, startClass]
       rw [logical]
-      rfl
 
 theorem scanOne_run
     (contract : HelperContract calls source world)
@@ -1419,7 +1263,6 @@ theorem scanOne_run
     simp only [bind, Except.bind]
     rw [branchRun]
     simp only [Env.pop_push, bind, Except.bind]
-    rfl
   · have condition : Term.evaluate (termMachine calls)
         world (Model.environment source start)
         (Commands.comparison .greaterEqual (Commands.slot 2)
@@ -1439,4 +1282,3 @@ theorem scanOne_run
     have logical : Lanius.Compiler.Lexer.scanOne source start = .failure start := by
       simp [scanOne_eq_scanOneAt, scanOneAt, missing]
     rw [logical]
-    rfl

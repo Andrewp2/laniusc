@@ -1,6 +1,7 @@
 import Lanius.Extraction.Parser.Recognize.State.Symbol
 import Lanius.Extraction.Parser.Recognize.Prediction
 import Lanius.Extraction.Parser.Recognize.Nullable
+import Lanius.Semantics.Sequence
 
 namespace Lanius.Extraction.ParserRecognize
 
@@ -88,6 +89,22 @@ structure RecognizerStateNonterminalIndexBinding
     (some (.signed .i32 (Int.ofNat nonterminal)))).holds bound
   expectedCellDistinct : expectedCell ≠ workspaceCell ∧
     expectedCell ≠ stateCountCell ∧ expectedCell ≠ cursorCell
+
+/-- Connect the source's subtraction-based nonterminal index to the symbol
+expected by the selected parent, in the form used by chart completeness. -/
+theorem RecognizerStateNonterminalIndexBinding.expected
+    (binding : RecognizerStateNonterminalIndexBinding grammarLayout grammar words
+      tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell cursorCell before position current remaining
+      beforeInvariant candidate found productionBound dotBeforeEnd bindings
+      symbolBinding isNonterminal) :
+    (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs[candidate.dot]? =
+      some (grammar.grammar.n_kinds + binding.nonterminal) := by
+  rw [List.getElem?_eq_getElem dotBeforeEnd]
+  congr 1
+  have selected := binding.nonterminalEq
+  simp only [List.get_eq_getElem] at selected isNonterminal
+  omega
 
 noncomputable def RecognizerStateSymbolBinding.bind_nonterminal_index
     (symbolBinding : RecognizerStateSymbolBinding grammarLayout grammar words
@@ -241,6 +258,8 @@ structure RecognizerStatePredictionEntry
       bindings symbolBinding isNonterminal) where
   first : Nat
   count : Nat
+  rowExact : (grammar.lhsProductions.drop first).take count =
+    grammar.productionIdsFor nonterminalBinding.nonterminal
   firstEvaluation : Evaluates verifiedParserCore nonterminalBinding.bound
     (.index (.local 0) (.binary .add (.local 13) (.local 30)))
     (.signed .i32 (Int.ofNat first)) nonterminalBinding.bound
@@ -539,9 +558,17 @@ noncomputable def RecognizerStateNonterminalIndexBinding.enter_prediction
       simpa [first, row, rowId, indexId] using packedEq
     rw [selectedEq]
     exact selectedBound
+  have rowExact : (grammar.lhsProductions.drop first).take count =
+      grammar.productionIdsFor nonterminalBinding.nonterminal := by
+    have exactRow := nonterminalBinding.invariant.chartCursor.recognizer.grammarWellFormed
+      |>.lhsIndexExact nonterminal nonterminalBinding.nonterminalBound
+    have selected := grammar.lhsProductions_row rowId
+    have rowEq := Option.some.inj (rowFound.symm.trans exactRow)
+    exact selected.trans rowEq
   exact {
     first := first
     count := count
+    rowExact := rowExact
     firstEvaluation := firstEvaluation
     countEvaluation := by simpa [firstState] using countEvaluation
     indexCell := indexCell
@@ -573,7 +600,29 @@ noncomputable def RecognizerStateNonterminalIndexBinding.enter_prediction
                   countInvariant.chartCursor.recognizer.wellFormed
             indexLe := Nat.zero_le count
             rowRange := rowRange
+            seeded := by simp [Seeded]
             rowProductionBound := rowProductionBound
+            rowGenerated := by
+              intro rowIndex indexBound
+              let child := grammar.lhsProductions.get
+                ⟨first + rowIndex, by have := rowRange; omega⟩
+              have member : child ∈ grammar.productionIdsFor nonterminalBinding.nonterminal := by
+                rw [← rowExact]
+                apply List.mem_iff_getElem?.mpr
+                refine ⟨rowIndex, ?_⟩
+                rw [List.getElem?_take_of_lt indexBound, List.getElem?_drop]
+                exact List.getElem?_eq_getElem _
+              obtain ⟨childBound, lhs⟩ := IndexedGrammar.productionIdsFor_member member
+              have waiting := nonterminalBinding.invariant.chartCursor.recognizer.derivations.backpointersSound.generated
+                current candidate found
+              have candidatePosition : candidate.position = position := by
+                obtain ⟨cursorState, cursorFound, cursorPosition⟩ := beforeInvariant.chartCursor.state_at_cursor
+                have same := Option.some.inj (cursorFound.symm.trans found)
+                subst cursorState
+                exact cursorPosition
+              have predicted := waiting.predict ⟨candidate.production, productionBound⟩
+                ⟨child, childBound⟩ (by simpa only [lhs] using nonterminalBinding.expected)
+              simpa only [candidatePosition] using predicted
             persistentSeparate := by
               intro cell framed written
               obtain ⟨id, preserved, cellId⟩ := framed
@@ -673,6 +722,7 @@ structure RecognizerStatePredictionCompletedFrame
   nextRemaining : List Nat
   growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace
     workspace
+  stable : ChartsUnchangedBefore position beforeWorkspace workspace
   predictionInvariant : RecognizerPredictionLoopInvariant grammarLayout grammar
     words tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
     workspaceCell stateCountCell entry.indexCell after position entry.first
@@ -694,6 +744,20 @@ structure RecognizerStatePredictionCompletedFrame
     nonterminalBinding.expectedCell
     (some (.signed .i32 (Int.ofNat nonterminalBinding.nonterminal)))).holds after
 
+/-- A completed source prediction loop contains every production of the
+nonterminal selected by the actual parent state. This is completeness of the
+whole packed row, not merely validity of each inserted item. -/
+theorem RecognizerStatePredictionCompletedFrame.seeded
+    (completed : RecognizerStatePredictionCompletedFrame grammarLayout grammar
+      words tokens workspaceLayout beforeWorkspace beforeValues grammarCell
+      tokensCell workspaceCell stateCountCell cursorCell before position current
+      remaining beforeInvariant candidate found productionBound dotBeforeEnd
+      bindings symbolBinding isNonterminal nonterminalBinding entry) :
+    Seeded completed.workspace position
+      (grammar.productionIdsFor nonterminalBinding.nonterminal) := by
+  rw [← entry.rowExact]
+  exact completed.predictionInvariant.seeded
+
 noncomputable def RecognizerStatePredictionEntry.reframe_completed
     (entry : RecognizerStatePredictionEntry grammarLayout grammar words tokens
       workspaceLayout beforeWorkspace beforeValues grammarCell tokensCell
@@ -703,6 +767,7 @@ noncomputable def RecognizerStatePredictionEntry.reframe_completed
     (workspace : LogicalWorkspace) (workspaceValues : List Int) (after : State)
     (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace
       workspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace workspace)
     (predictionInvariant : RecognizerPredictionLoopInvariant grammarLayout
       grammar words tokens workspaceLayout workspace workspaceValues grammarCell
       tokensCell workspaceCell stateCountCell entry.indexCell after position
@@ -781,6 +846,7 @@ noncomputable def RecognizerStatePredictionEntry.reframe_completed
     after := after
     nextRemaining := stateFrame.nextRemaining
     growth := growth
+    stable := stable
     predictionInvariant := predictionInvariant
     stateInvariant := stateFrame.invariant
     progress := stateFrame.progress
@@ -919,7 +985,7 @@ noncomputable def RecognizerStatePredictionCompletedFrame.enter_nullable
         (by
           rw [LocalBindingFrame.ContainsCoreId,
             verifiedParserChartCursorBindings_core_ids]
-          native_decide)
+          simp [verifiedParserRecognizer_parameter_core_ids])
   have nullableCursorBackingDistinct : nullableCursorCell ≠ grammarCell ∧
       nullableCursorCell ≠ tokensCell ∧
       nullableCursorCell ≠ workspaceCell := by
@@ -1000,7 +1066,8 @@ noncomputable def RecognizerStatePredictionCompletedFrame.enter_nullable
         (by
           rw [LocalBindingFrame.ContainsCoreId,
             verifiedParserNullableLoopPreservedBindings_core_ids]
-          native_decide)
+          simp [verifiedParserRecognizer_parameter_core_ids,
+            verifiedParser_nullable_loop_preserved_frame_ids])
   have nullableSeparated : NullableFrameSeparated bound workspaceCell
       stateCountCell nullableCursorCell := by
     intro cell framed written
@@ -1203,6 +1270,37 @@ def RecognizerStateNullableEntry.functionalConfig
       invariant := invariant
     }
 
+theorem RecognizerStateNullableEntry.functionalConfig_candidate
+    (entry : RecognizerStateNullableEntry grammarLayout grammar words tokens
+      workspaceLayout beforeWorkspace beforeValues grammarCell tokensCell
+      workspaceCell stateCountCell cursorCell before position current remaining
+      beforeInvariant candidate found productionBound dotBeforeEnd bindings
+      symbolBinding isNonterminal nonterminalBinding predictionEntry completed) :
+    entry.functionalConfig.candidate = chartHeadValue completed.workspace position := by
+  have chartLocal : entry.bound.local? 36 =
+      some (.signed .i32 (chartHeadValue completed.workspace position)) := by
+    rw [entry.boundEq]
+    exact bindLocal_finds_local entry.headRead.after 36
+      (.signed .i32 (chartHeadValue completed.workspace position)) entry.headRead.invariant.wellFormed
+  cases cursorEq : entry.cursor with
+  | inl active =>
+      obtain ⟨child, remaining, invariant⟩ := active
+      have currentLocal : entry.bound.local? 36 = some (.signed .i32 (Int.ofNat child)) :=
+        Assertion.localPointsTo_local 36 entry.nullableCursorCell _ entry.bound
+          invariant.chartCursor.cursorOwned
+      have valueEq : Int.ofNat child = chartHeadValue completed.workspace position := by
+        have equal := Option.some.inj (currentLocal.symm.trans chartLocal)
+        injection equal
+      simpa [RecognizerStateNullableEntry.functionalConfig, RecognizerNullableConfig.candidate, cursorEq] using valueEq
+  | inr finished =>
+      have currentLocal : entry.bound.local? 36 = some (.signed .i32 (-1)) :=
+        Assertion.localPointsTo_local 36 entry.nullableCursorCell _ entry.bound
+          finished.chartCursor.cursorOwned
+      have valueEq : (-1 : Int) = chartHeadValue completed.workspace position := by
+        have equal := Option.some.inj (currentLocal.symm.trans chartLocal)
+        injection equal
+      simpa [RecognizerStateNullableEntry.functionalConfig, RecognizerNullableConfig.candidate, cursorEq] using valueEq
+
 /-- Execution inside the nullable-cursor lexical scope.  Both the empty-chart
     fast path and the active loop expose the same workspace-growing result
     contract to the scope-closing code. -/
@@ -1262,13 +1360,13 @@ structure RecognizerStateNullableInnerExecution
   effect : ModifiesOnly
     (nullableFrameMutableCells workspaceCell stateCountCell
       entry.nullableCursorCell) entry.bound after
-  outcome : RecognizerNullableSynchronizedOutcome grammarLayout grammar words
+  outcome : { outcome : RecognizerNullableSynchronizedOutcome grammarLayout grammar words
     tokens workspaceLayout completed.workspace grammarCell tokensCell
     workspaceCell stateCountCell entry.nullableCursorCell position
     candidate.production candidate.dot candidate.origin current
     nonterminalBinding.nonterminal entry.functionalConfig.functional_run.after
     after (Lanius.FunctionalView.Core.Stateful.toCoreCompletion
-      entry.functionalConfig.functional_run.completion)
+      entry.functionalConfig.functional_run.completion) // outcome.nullablesComplete }
 
 noncomputable def RecognizerStateNullableEntry.execute_inner
     (entry : RecognizerStateNullableEntry grammarLayout grammar words tokens
@@ -1282,96 +1380,42 @@ noncomputable def RecognizerStateNullableEntry.execute_inner
       beforeInvariant candidate found productionBound dotBeforeEnd bindings
       symbolBinding isNonterminal nonterminalBinding predictionEntry completed
       entry := by
-  generalize runEq : entry.functionalConfig.functional_run = loop
-  obtain ⟨completion, functionalAfter, trace, result⟩ := loop
-  have sourceCompletionEq :
-      entry.functionalConfig.functional_run.completion = completion := by
-    simpa using congrArg (fun run => run.completion) runEq
-  have sourceAfterEq : entry.functionalConfig.functional_run.after =
-      functionalAfter := by
-    simpa using congrArg (fun run => run.after) runEq
+  let run := entry.functionalConfig.functional_run
+  let result := run.result
   have runtimeEq : entry.functionalConfig.runtime = entry.bound := by
     cases cursorEq : entry.cursor <;>
       simp [RecognizerStateNullableEntry.functionalConfig, cursorEq]
   have workspaceEq : entry.functionalConfig.workspace = completed.workspace := by
     cases cursorEq : entry.cursor <;>
       simp [RecognizerStateNullableEntry.functionalConfig, cursorEq]
-  have loopExecution : Executes verifiedParserCore entry.bound
-      parserRecognizeNullableLoop
-      (Lanius.FunctionalView.Core.Stateful.toCoreCompletion completion)
-      result.physicalAfter := by
+  have ready : entry.functionalConfig.nullablesReady :=
+    entry.functionalConfig.nullablesReady_of_head (by
+      rw [workspaceEq]
+      exact entry.functionalConfig_candidate)
+  have loopExecution : Executes verifiedParserCore entry.bound parserRecognizeNullableLoop
+      (Lanius.FunctionalView.Core.Stateful.toCoreCompletion run.completion) result.physicalAfter := by
     rw [← runtimeEq]
     exact result.execution
   have loopEffect : ModifiesOnly
-      (nullableFrameMutableCells workspaceCell stateCountCell
-        entry.nullableCursorCell) entry.bound result.physicalAfter := by
+      (nullableFrameMutableCells workspaceCell stateCountCell entry.nullableCursorCell)
+      entry.bound result.physicalAfter := by
     rw [← runtimeEq]
     simpa [nullableFrameMutableCells] using result.effect
-  have existsResult : ∃ result :
-      RecognizerStateNullableInnerExecution grammarLayout grammar words tokens
-        workspaceLayout beforeWorkspace beforeValues grammarCell tokensCell
-        workspaceCell stateCountCell cursorCell before position current remaining
-        beforeInvariant candidate found productionBound dotBeforeEnd bindings
-        symbolBinding isNonterminal nonterminalBinding predictionEntry completed
-        entry, True := by
-    cases completion with
-    | next =>
-        cases result.outcome with
-        | completed workspace workspaceValues physicalAfter growth finished _ _ =>
-            have growth' := growth
-            rw [workspaceEq] at growth'
-            exact ⟨{
-              after := result.physicalAfter
-              execution := by
-                have sequenced := executesSequence
-                  (by simpa [Lanius.FunctionalView.Core.Stateful.toCoreCompletion]
-                    using loopExecution)
-                  (executesSkip verifiedParserCore result.physicalAfter)
-                rw [sourceCompletionEq]
-                simpa [Lanius.FunctionalView.Core.Stateful.toCoreCompletion]
-                  using sequenced
-              effect := loopEffect
-              outcome := by
-                have synchronized := result.outcome
-                rw [workspaceEq] at synchronized
-                simpa [sourceCompletionEq, sourceAfterEq,
-                  Lanius.FunctionalView.Core.Stateful.toCoreCompletion] using
-                  synchronized
-            }, trivial⟩
-    | returned value =>
-        cases result.outcome with
-        | full finalWorkspace finalValues physicalAfter growth terminal
-            stateCount wellFormed =>
-            have growth' := growth
-            rw [workspaceEq] at growth'
-            exact ⟨{
-              after := result.physicalAfter
-              execution := by
-                have returnedLoop : Executes verifiedParserCore entry.bound
-                    parserRecognizeNullableLoop
-                    (parserCapacityCompletion position stateCount)
-                    result.physicalAfter := by
-                  simpa [Lanius.FunctionalView.Core.Stateful.toCoreCompletion,
-                    parserCapacityCompletion] using loopExecution
-                have sequenced : Executes verifiedParserCore entry.bound
-                    (.sequence parserRecognizeNullableLoop .skip)
-                    (parserCapacityCompletion position stateCount)
-                    result.physicalAfter :=
-                  executesSequenceReturned returnedLoop
-                rw [sourceCompletionEq]
-                simpa [Lanius.FunctionalView.Core.Stateful.toCoreCompletion,
-                  parserCapacityCompletion] using sequenced
-              effect := loopEffect
-              outcome := by
-                have synchronized := result.outcome
-                rw [workspaceEq] at synchronized
-                simpa [sourceCompletionEq, sourceAfterEq,
-                  Lanius.FunctionalView.Core.Stateful.toCoreCompletion,
-                  parserCapacityCompletion] using synchronized
-            }, trivial⟩
-    | breakLoop => cases result.outcome
-    | continueLoop => cases result.outcome
-  exact Classical.choose existsResult
+  exact {
+    after := result.physicalAfter
+    execution := executesSequenceSkip loopExecution
+    effect := loopEffect
+    outcome := by
+      have covered := (⟨result.outcome, result.nullables ready⟩ :
+        { outcome // RecognizerNullableSynchronizedOutcome.nullablesComplete outcome })
+      exact Eq.mp (congrArg (fun initialWorkspace =>
+        { outcome : RecognizerNullableSynchronizedOutcome grammarLayout grammar words tokens
+            workspaceLayout initialWorkspace grammarCell tokensCell workspaceCell stateCountCell
+            entry.nullableCursorCell position candidate.production candidate.dot candidate.origin current
+            nonterminalBinding.nonterminal run.after result.physicalAfter
+            (Lanius.FunctionalView.Core.Stateful.toCoreCompletion run.completion) //
+          outcome.nullablesComplete }) workspaceEq) covered
+  }
 
 /-- Nullable replay after its source chart-head local has closed.  The normal
     result retains both the restored outer state-loop frame and the exact
@@ -1402,7 +1446,11 @@ inductive RecognizerStateNullableSynchronizedOutcome
       (environmentEq : after.environment = nullableEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
         workspace.states.length position current parentProduction parentDot
-        parentOrigin expected (-1)) :
+        parentOrigin expected (-1))
+      (seeded : Seeded workspace position (grammar.productionIdsFor expected))
+      (stable : ChartsUnchangedBefore position beforeWorkspace workspace)
+      (nullables : NullablesComplete grammar workspace position expected
+        ⟨parentProduction, parentDot + 1, parentOrigin⟩) :
       RecognizerStateNullableSynchronizedOutcome grammarLayout grammar words
         tokens workspaceLayout beforeWorkspace grammarCell tokensCell
         workspaceCell stateCountCell cursorCell position current remaining
@@ -1419,7 +1467,9 @@ inductive RecognizerStateNullableSynchronizedOutcome
       (sourceCompletionEq :
         Lanius.FunctionalView.Core.Stateful.toCoreCompletion sourceCompletion =
           parserCapacityCompletion position stateCount)
-      (sourceStops : sourceCompletion ≠ .next) :
+      (sourceStops : sourceCompletion ≠ .next)
+      (seeded : Seeded workspace position (grammar.productionIdsFor expected))
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerStateNullableSynchronizedOutcome grammarLayout grammar words
         tokens workspaceLayout beforeWorkspace grammarCell tokensCell
         workspaceCell stateCountCell cursorCell position current remaining
@@ -1437,12 +1487,12 @@ def RecognizerStateNullableSynchronizedOutcome.physical
       stateCountCell cursorCell position current remaining physicalAfter
       completion := by
   cases outcome with
-  | completed workspace workspaceValues physicalAfter growth frame _ _ _ =>
+  | completed workspace workspaceValues physicalAfter growth frame _ _ _ _ =>
       exact .completed workspace workspaceValues physicalAfter growth frame
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed _ _ =>
+      wellFormed _ _ _ full =>
       exact .full workspace workspaceValues physicalAfter growth terminal
-        stateCount wellFormed
+        stateCount wellFormed full
 
 /-- The complete nullable-replay scope, with its fresh cursor hidden again
     and its semantic growth rebased through the prediction phase. -/
@@ -1525,7 +1575,7 @@ noncomputable def RecognizerStateNullableEntry.execute
       symbolBinding isNonterminal nonterminalBinding predictionEntry completed
       entry := by
   let inner := entry.execute_inner
-  obtain ⟨innerAfter, innerExecution, innerEffect, innerSynchronized⟩ := inner
+  obtain ⟨innerAfter, innerExecution, innerEffect, ⟨innerSynchronized, innerNullables⟩⟩ := inner
   let innerCompletion :=
     Lanius.FunctionalView.Core.Stateful.toCoreCompletion
       entry.functionalConfig.functional_run.completion
@@ -1578,7 +1628,7 @@ noncomputable def RecognizerStateNullableEntry.execute
   have afterWellFormed : StateWellFormed after :=
     scopeEffect.restoreLocals_wellFormed entry.headRead.invariant.wellFormed
       (by
-        rcases innerSynchronized.view with completedResult | fullResult
+        rcases innerSynchronized.view innerNullables with completedResult | fullResult
         · rcases completedResult with ⟨_, _, _, _, finished, _, _⟩
           exact finished.chartCursor.recognizer.wellFormed
         · rcases fullResult with ⟨_, _, _, _, _, wellFormed, _⟩
@@ -1590,9 +1640,9 @@ noncomputable def RecognizerStateNullableEntry.execute
         beforeInvariant candidate found productionBound dotBeforeEnd bindings
         symbolBinding isNonterminal nonterminalBinding predictionEntry completed
         entry, True := by
-    rcases Or.comm.mp innerSynchronized.view with fullResult | completedResult
+    rcases Or.comm.mp (innerSynchronized.view innerNullables) with fullResult | completedResult
     · rcases fullResult with ⟨finalWorkspace, finalValues, growth, terminal,
-        stateCount, _, completionEq⟩
+        stateCount, _, full, completionEq⟩
       have sourceCoreCompletionEq :
           Lanius.FunctionalView.Core.Stateful.toCoreCompletion
               entry.functionalConfig.functional_run.completion =
@@ -1629,10 +1679,10 @@ noncomputable def RecognizerStateNullableEntry.execute
             (RecognizerStateNullableSynchronizedOutcome.full finalWorkspace
               finalValues after (completed.growth.trans growth)
               restoredRecognizer stateCount afterWellFormed
-              sourceCoreCompletionEq sourceStops)
+              sourceCoreCompletionEq sourceStops (completed.seeded.preserved growth) full)
       }, trivial⟩
     · rcases completedResult with ⟨completionEq, nextWorkspace, nextValues,
-        growth, finished, worldEq, environmentEq⟩
+        growth, finished, worldEq, environmentEq, stable, nullables⟩
       have sourceCompletionEq :
           entry.functionalConfig.functional_run.completion = .next := by
         generalize sourceShape :
@@ -1711,7 +1761,8 @@ noncomputable def RecognizerStateNullableEntry.execute
           simpa [completionEq] using
             (RecognizerStateNullableSynchronizedOutcome.completed nextWorkspace
               nextValues after (completed.growth.trans growth) outerFrame
-              sourceCompletionEq (by simpa only [suffixEq] using worldEq) environmentEq)
+              sourceCompletionEq (by simpa only [suffixEq] using worldEq) environmentEq
+              (completed.seeded.preserved growth) (completed.stable.trans stable) nullables)
       }, trivial⟩
   exact Classical.choose existsResult
 
@@ -1828,7 +1879,8 @@ inductive RecognizerStatePredictionSynchronizedOutcome
           entry.functionalConfig.functional_run.completion =
             parserCapacityCompletion position stateCount)
       (predictionStops : entry.functionalConfig.functional_run.completion ≠
-        .next) :
+        .next)
+      (full : WorkspaceFull workspaceLayout.capacity finalWorkspace stateCount) :
       RecognizerStatePredictionSynchronizedOutcome grammarLayout grammar words
         tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell stateCountCell cursorCell before position current remaining
@@ -1852,9 +1904,9 @@ def RecognizerStatePredictionSynchronizedOutcome.physical
       nullableOutcome =>
       exact nullableOutcome.physical
   | predictionFull finalWorkspace finalValues physicalAfter growth terminal
-      stateCount wellFormed _ _ =>
+      stateCount wellFormed _ _ full =>
       exact .full finalWorkspace finalValues physicalAfter growth terminal
-        stateCount wellFormed
+        stateCount wellFormed full
 
 /-- The three semantic exits of prediction followed by nullable replay.  This
     removes the nested sum from `RecognizerStatePredictionSynchronizedOutcome`
@@ -1941,7 +1993,12 @@ inductive RecognizerStatePredictionNullableSynchronizedOutcome
           nullableEnvironment words finalValues grammarCell workspaceCell
             workspaceLayout finalWorkspace.states.length position current
             candidate.production candidate.dot candidate.origin
-            nonterminalBinding.nonterminal (-1)) :
+            nonterminalBinding.nonterminal (-1))
+      (seeded : Seeded finalWorkspace position
+        (grammar.productionIdsFor nonterminalBinding.nonterminal))
+      (stable : ChartsUnchangedBefore position workspace finalWorkspace)
+      (nullables : NullablesComplete grammar finalWorkspace position nonterminalBinding.nonterminal
+        ⟨candidate.production, candidate.dot + 1, candidate.origin⟩) :
       RecognizerStatePredictionNullableSynchronizedOutcome grammarLayout grammar
         words tokens workspaceLayout workspace workspaceValues grammarCell
         tokensCell workspaceCell stateCountCell cursorCell before position current
@@ -1983,7 +2040,10 @@ inductive RecognizerStatePredictionNullableSynchronizedOutcome
             nullableEntry.functionalConfig.functional_run.completion =
           parserCapacityCompletion position stateCount)
       (nullableStops :
-        nullableEntry.functionalConfig.functional_run.completion ≠ .next) :
+        nullableEntry.functionalConfig.functional_run.completion ≠ .next)
+      (seeded : Seeded finalWorkspace position
+        (grammar.productionIdsFor nonterminalBinding.nonterminal))
+      (full : WorkspaceFull workspaceLayout.capacity finalWorkspace stateCount) :
       RecognizerStatePredictionNullableSynchronizedOutcome grammarLayout grammar
         words tokens workspaceLayout workspace workspaceValues grammarCell
         tokensCell workspaceCell stateCountCell cursorCell before position current
@@ -2003,7 +2063,8 @@ inductive RecognizerStatePredictionNullableSynchronizedOutcome
           entry.functionalConfig.functional_run.completion =
             parserCapacityCompletion position stateCount)
       (predictionStops : entry.functionalConfig.functional_run.completion ≠
-        .next) :
+        .next)
+      (full : WorkspaceFull workspaceLayout.capacity finalWorkspace stateCount) :
       RecognizerStatePredictionNullableSynchronizedOutcome grammarLayout grammar
         words tokens workspaceLayout workspace workspaceValues grammarCell
         tokensCell workspaceCell stateCountCell cursorCell before position current
@@ -2032,21 +2093,21 @@ def RecognizerStatePredictionSynchronizedOutcome.flatten
       nullableOutcome =>
       cases nullableOutcome with
       | completed finalWorkspace finalValues physicalAfter growth frame
-          nullableCompletionEq nullableWorldEq nullableEnvironmentEq =>
+          nullableCompletionEq nullableWorldEq nullableEnvironmentEq seeded stable nullables =>
           exact .completed predictionFrame predictionCompletionEq
             predictionWorldEq predictionEnvironmentEq nullableEntry
             nullableCompletionEq finalWorkspace finalValues physicalAfter growth
-            frame nullableWorldEq nullableEnvironmentEq
+            frame nullableWorldEq nullableEnvironmentEq seeded stable nullables
       | full finalWorkspace finalValues physicalAfter growth terminal stateCount
-          wellFormed nullableCompletionEq nullableStops =>
+          wellFormed nullableCompletionEq nullableStops seeded full =>
           exact .nullableFull predictionFrame predictionCompletionEq
             predictionWorldEq predictionEnvironmentEq nullableEntry
             finalWorkspace finalValues physicalAfter growth terminal stateCount
-            wellFormed nullableCompletionEq nullableStops
+            wellFormed nullableCompletionEq nullableStops seeded full
   | predictionFull finalWorkspace finalValues physicalAfter growth terminal
-      stateCount wellFormed predictionCompletionEq predictionStops =>
+      stateCount wellFormed predictionCompletionEq predictionStops full =>
       exact .predictionFull finalWorkspace finalValues physicalAfter growth
-        terminal stateCount wellFormed predictionCompletionEq predictionStops
+        terminal stateCount wellFormed predictionCompletionEq predictionStops full
 
 /-- What remains to be proved after the generated nonterminal locals are
     restored.  The logical workspace, growth proof, completion, and source
@@ -2073,19 +2134,67 @@ def RecognizerStatePredictionNullableSynchronizedOutcome.Restored
       nonterminalBinding entry predictionAfter innerAfter completion)
     (physicalAfter : State) : Type :=
   match outcome with
-  | .completed _ _ _ _ _ _ finalWorkspace finalValues _ _ _ _ _ =>
+  | .completed _ _ _ _ _ _ finalWorkspace finalValues _ _ _ _ _ _ _ _ =>
       RecognizerStateGrowthFrame grammarLayout grammar words tokens
         workspaceLayout workspace finalWorkspace finalValues grammarCell
         tokensCell workspaceCell stateCountCell cursorCell physicalAfter
         position current remaining
-  | .nullableFull _ _ _ _ _ finalWorkspace finalValues _ _ _ stateCount _ _ _ =>
+  | .nullableFull _ _ _ _ _ finalWorkspace finalValues _ _ _ stateCount _ _ _ _ _ =>
       RecognizerStateRestoredTerminal grammarLayout grammar words tokens
         workspaceLayout finalWorkspace finalValues grammarCell tokensCell
         workspaceCell physicalAfter
-  | .predictionFull finalWorkspace finalValues _ _ _ stateCount _ _ _ =>
+  | .predictionFull finalWorkspace finalValues _ _ _ stateCount _ _ _ _ =>
       RecognizerStateRestoredTerminal grammarLayout grammar words tokens
         workspaceLayout finalWorkspace finalValues grammarCell tokensCell
         workspaceCell physicalAfter
+
+/-- Prediction completeness survives nullable replay and restoration of the
+temporary source locals. The workspace witness is the one selected by the
+synchronized execution, not an independently assumed chart. -/
+theorem RecognizerStatePredictionNullableSynchronizedOutcome.predictions
+    (outcome : RecognizerStatePredictionNullableSynchronizedOutcome
+      grammarLayout grammar words tokens workspaceLayout workspace
+      workspaceValues grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell before position current remaining beforeInvariant candidate
+      found productionBound dotBeforeEnd bindings symbolBinding isNonterminal
+      nonterminalBinding entry predictionAfter innerAfter completion)
+    (restored : outcome.Restored physicalAfter)
+    (normal : completion = .next) :
+    ∃ finalWorkspace finalValues,
+      RecognizerInvariant grammarLayout grammar words tokens workspaceLayout
+        finalWorkspace finalValues grammarCell tokensCell workspaceCell physicalAfter ∧
+      Seeded finalWorkspace position (grammar.productionIdsFor nonterminalBinding.nonterminal) := by
+  cases outcome with
+  | completed predictionFrame predictionCompletionEq predictionWorldEq
+      predictionEnvironmentEq nullableEntry nullableCompletionEq finalWorkspace
+      finalValues innerAfter growth frame nullableWorldEq nullableEnvironmentEq seeded =>
+      exact ⟨finalWorkspace, finalValues, restored.invariant.chartCursor.recognizer, seeded⟩
+  | nullableFull => cases normal
+  | predictionFull => cases normal
+
+/-- Successful nullable replay retains its advanced parent key for every
+matching zero-width child, after all temporary locals are restored. -/
+theorem RecognizerStatePredictionNullableSynchronizedOutcome.nullables
+    (outcome : RecognizerStatePredictionNullableSynchronizedOutcome
+      grammarLayout grammar words tokens workspaceLayout workspace
+      workspaceValues grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell before position current remaining beforeInvariant candidate
+      found productionBound dotBeforeEnd bindings symbolBinding isNonterminal
+      nonterminalBinding entry predictionAfter innerAfter completion)
+    (restored : outcome.Restored physicalAfter)
+    (normal : completion = .next) :
+    ∃ finalWorkspace finalValues,
+      RecognizerInvariant grammarLayout grammar words tokens workspaceLayout
+        finalWorkspace finalValues grammarCell tokensCell workspaceCell physicalAfter ∧
+      NullablesComplete grammar finalWorkspace position nonterminalBinding.nonterminal
+        ⟨candidate.production, candidate.dot + 1, candidate.origin⟩ := by
+  cases outcome with
+  | completed predictionFrame predictionCompletionEq predictionWorldEq predictionEnvironmentEq
+      nullableEntry nullableCompletionEq finalWorkspace finalValues innerAfter growth frame
+      nullableWorldEq nullableEnvironmentEq seeded stable nullables =>
+      exact ⟨finalWorkspace, finalValues, restored.invariant.chartCursor.recognizer, nullables⟩
+  | nullableFull => cases normal
+  | predictionFull => cases normal
 
 /-- A restored physical invariant projects to the compatibility outcome using
     the same workspace witness already fixed by the synchronized source run. -/
@@ -2110,13 +2219,13 @@ private def
   | nullableFull predictionFrame predictionCompletionEq predictionWorldEq
       predictionEnvironmentEq nullableEntry finalWorkspace finalValues
       innerAfter growth terminal stateCount wellFormed nullableCompletionEq
-      nullableStops =>
+      nullableStops seeded full =>
       exact .full finalWorkspace finalValues physicalAfter growth
-        restored.invariant stateCount restored.wellFormed
+        restored.invariant stateCount restored.wellFormed full
   | predictionFull finalWorkspace finalValues innerAfter growth terminal
-      stateCount wellFormed predictionCompletionEq predictionStops =>
+      stateCount wellFormed predictionCompletionEq predictionStops full =>
       exact .full finalWorkspace finalValues physicalAfter growth
-        restored.invariant stateCount restored.wellFormed
+        restored.invariant stateCount restored.wellFormed full
 
 /-- Source-side obligation after all generated nonterminal locals have closed.
     A normal result re-establishes the decoded-state environment; a returned
@@ -2132,7 +2241,7 @@ def
     (afterWorld : Lanius.FunctionalView.Core.ReadOnly.World)
     (afterEnvironment : Lanius.FunctionalView.Env 17) : Prop :=
   match outcome with
-  | .completed _ _ _ _ _ _ finalWorkspace finalValues _ _ frame _ _ =>
+  | .completed _ _ _ _ _ _ finalWorkspace finalValues _ _ frame _ _ _ _ _ =>
       afterWorld = stateWorld words tokens
           (unused := frame.invariant.chartCursor.recognizer.tokenStorage.unused)
           finalValues grammarCell tokensCell
@@ -2172,7 +2281,7 @@ def
   cases outcome with
   | completed predictionFrame predictionCompletionEq predictionWorldEq
       predictionEnvironmentEq nullableEntry nullableCompletionEq finalWorkspace
-      finalValues innerAfter growth frame nullableWorldEq nullableEnvironmentEq =>
+      finalValues innerAfter growth frame nullableWorldEq nullableEnvironmentEq seeded stable nullables =>
       have suffixEq : physical.invariant.chartCursor.recognizer.tokenStorage.unused =
           frame.invariant.chartCursor.recognizer.tokenStorage.unused := by
         apply physical.invariant.chartCursor.recognizer.tokenStorage.unused_eq_of_backing
@@ -2180,16 +2289,20 @@ def
       exact .completed finalWorkspace finalValues physicalAfter growth physical
         (by simpa only [suffixEq] using functional.1)
         (by simpa only [suffixEq] using functional.2)
+        (seeded.predictionsComplete productionBound nonterminalBinding.expected)
+        stable
+        (ScansComplete.of_nonterminal productionBound nonterminalBinding.expected (by omega))
+        (CompletionStep.of_nonterminal productionBound nonterminalBinding.expected nullables)
   | nullableFull predictionFrame predictionCompletionEq predictionWorldEq
       predictionEnvironmentEq nullableEntry finalWorkspace finalValues
       innerAfter growth terminal stateCount wellFormed nullableCompletionEq
-      nullableStops =>
+      nullableStops seeded full =>
       exact .full finalWorkspace finalValues physicalAfter growth
-        physical.invariant stateCount physical.wellFormed
+        physical.invariant stateCount physical.wellFormed full
   | predictionFull finalWorkspace finalValues innerAfter growth terminal
-      stateCount wellFormed predictionCompletionEq predictionStops =>
+      stateCount wellFormed predictionCompletionEq predictionStops full =>
       exact .full finalWorkspace finalValues physicalAfter growth
-        physical.invariant stateCount physical.wellFormed
+        physical.invariant stateCount physical.wellFormed full
 
 /-- Prediction followed by nullable replay, before the generated nonterminal
     locals are closed.  Capacity exhaustion in prediction returns immediately;
@@ -2284,9 +2397,9 @@ noncomputable def RecognizerStatePredictionEntry.execute_nonterminal_inner
     | next =>
         cases result.outcome with
         | completed nextWorkspace nextValues physicalAfter growth finished
-            worldEq environmentEq =>
+            worldEq environmentEq stable =>
             let completed := entry.reframe_completed nextWorkspace nextValues
-              result.physicalAfter growth finished loopEffect
+              result.physicalAfter growth stable finished loopEffect
             let nullableEntry := completed.enter_nullable
             let nullable := nullableEntry.execute
             have completedAfterEq : completed.after = result.physicalAfter := by
@@ -2327,7 +2440,7 @@ noncomputable def RecognizerStatePredictionEntry.execute_nonterminal_inner
     | returned value =>
         cases result.outcome with
         | full nextWorkspace nextValues physicalAfter growth terminal stateCount
-            wellFormed =>
+            wellFormed full =>
             exact ⟨{
               after := result.physicalAfter
               completion := parserCapacityCompletion position stateCount
@@ -2351,7 +2464,7 @@ noncomputable def RecognizerStatePredictionEntry.execute_nonterminal_inner
                 (by
                   intro sourceNext
                   have impossible := sourceNext.symm.trans sourceCompletionEq
-                  cases impossible)
+                  cases impossible) full
             }, trivial⟩
     | breakLoop => cases result.outcome
     | continueLoop => cases result.outcome
@@ -2634,6 +2747,7 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
         workspaceLayout finalWorkspace finalValues grammarCell tokensCell
         workspaceCell innerAfter)
       (stateCount : Nat) (wellFormed : StateWellFormed innerAfter)
+      (full : WorkspaceFull workspaceLayout.capacity finalWorkspace stateCount)
       (completionEq : innerCompletion =
         parserCapacityCompletion position stateCount)
       (selectedFull : Executes verifiedParserCore symbolBound
@@ -2678,7 +2792,7 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
             execution := execution
             effect := by simpa [rhsScope, writes] using effect
             outcome := .full finalWorkspace finalValues after growth recognizer
-              stateCount afterWellFormed
+              stateCount afterWellFormed full
           }
           afterEq := rfl
           completionEq := completionEq.symm
@@ -2770,13 +2884,13 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
         simpa using selected)
   | nullableFull predictionFrame predictionCompletionEq predictionWorldEq
       predictionEnvironmentEq nullableEntry finalWorkspace finalValues sourceAfter
-      growth terminal stateCount wellFormed nullableCompletionEq nullableStops =>
+      growth terminal stateCount wellFormed nullableCompletionEq nullableStops seeded full =>
       exact finishFull finalWorkspace finalValues growth terminal stateCount
-        wellFormed rfl (by simpa using selected)
+        wellFormed full rfl (by simpa using selected)
   | predictionFull finalWorkspace finalValues sourceAfter growth terminal
-      stateCount wellFormed predictionCompletionEq predictionStops =>
+      stateCount wellFormed predictionCompletionEq predictionStops full =>
       exact finishFull finalWorkspace finalValues growth terminal stateCount
-        wellFormed rfl (by simpa using selected)
+        wellFormed full rfl (by simpa using selected)
 
 /-- Compatibility projection of the shared nonterminal execution. -/
 noncomputable def RecognizerStateSymbolBinding.execute_nonterminal
@@ -2855,6 +2969,41 @@ structure RecognizerStateNonterminalSynchronizedExecution
   sourceCompletionEq : completion =
     predictionEntry.execute_nonterminal_inner.completion
   restored : sourceOutcome.Restored physical.after
+
+/-- The complete actual nonterminal branch satisfies the prediction clause
+for its selected parent. Later chart-loop proofs can aggregate this result
+over the processed states without assuming a successful parse. -/
+theorem RecognizerStateNonterminalSynchronizedExecution.predictions
+    (run : RecognizerStateNonterminalSynchronizedExecution grammarLayout grammar
+      words tokens workspaceLayout workspace workspaceValues grammarCell
+      tokensCell workspaceCell stateCountCell cursorCell runtime position current
+      remaining beforeInvariant candidate found productionBound dotBeforeEnd
+      bindings symbolBinding isNonterminal)
+    (normal : run.physical.completion = .next) :
+    ∃ finalWorkspace finalValues,
+      RecognizerInvariant grammarLayout grammar words tokens workspaceLayout
+        finalWorkspace finalValues grammarCell tokensCell workspaceCell run.physical.after ∧
+      PredictionsComplete grammar finalWorkspace position candidate.production candidate.dot := by
+  obtain ⟨finalWorkspace, finalValues, invariant, seeded⟩ :=
+    run.sourceOutcome.predictions run.restored (run.completionEq.symm.trans normal)
+  exact ⟨finalWorkspace, finalValues, invariant,
+    seeded.predictionsComplete productionBound run.nonterminalBinding.expected⟩
+
+/-- The complete source nonterminal branch retains nullable replay coverage
+from the same final workspace as its restored physical invariant. -/
+theorem RecognizerStateNonterminalSynchronizedExecution.nullables
+    (run : RecognizerStateNonterminalSynchronizedExecution grammarLayout grammar
+      words tokens workspaceLayout workspace workspaceValues grammarCell
+      tokensCell workspaceCell stateCountCell cursorCell runtime position current
+      remaining beforeInvariant candidate found productionBound dotBeforeEnd
+      bindings symbolBinding isNonterminal)
+    (normal : run.physical.completion = .next) :
+    ∃ finalWorkspace finalValues,
+      RecognizerInvariant grammarLayout grammar words tokens workspaceLayout
+        finalWorkspace finalValues grammarCell tokensCell workspaceCell run.physical.after ∧
+      NullablesComplete grammar finalWorkspace position run.nonterminalBinding.nonterminal
+        ⟨candidate.production, candidate.dot + 1, candidate.origin⟩ :=
+  run.sourceOutcome.nullables run.restored (run.completionEq.symm.trans normal)
 
 /-- Closing locals 29--33 preserves exactly the logical result selected by the
     synchronized prediction/nullable run.  This is the store-framing argument

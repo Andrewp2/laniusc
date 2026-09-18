@@ -50,54 +50,16 @@ private def initialContinuationContext : Context :=
   let c14 := c13.bind 18 parserI32Type
   c14.bind 19 parserI32Type
 
-private def initialLoopReification? :=
-  reifyCommand? verifiedParserCore (.structure 0) initialContinuationContext true
-    initialContinuationLayout 20 parserRecognizeInitialLoop
-
-private theorem initialLoopReification_exists :
-    initialLoopReification?.isSome := by
-  native_decide
-
-/-- Complete start-production loop recovered from the checked recognizer. -/
-private def parserRecognizeInitialLoopView :=
-  initialLoopReification?.get initialLoopReification_exists
-
-private theorem parserRecognizeInitialLoopView_toCore_exactly :
-    Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
-      initialContinuationLayout 20 parserRecognizeInitialLoopView.command =
-      parserRecognizeInitialLoop :=
-  parserRecognizeInitialLoopView.toCoreExactly
-
 private def initialBodyReification? :=
   reifyCommand? verifiedParserCore (.structure 0) initialContinuationContext true
     initialContinuationLayout 20 parserRecognizeInitialLoopBody
 
 private theorem initialBodyReification_exists :
     initialBodyReification?.isSome := by
-  native_decide
+  decide +kernel
 
 private def parserRecognizeInitialBodyView :=
   initialBodyReification?.get initialBodyReification_exists
-
-private def initialContinuationReification? :=
-  reifyCommand? verifiedParserCore (.structure 0) initialContinuationContext false
-    initialContinuationLayout 20 parserRecognizeAfterInitialIndexBinding
-
-private theorem initialContinuationReification_exists :
-    initialContinuationReification?.isSome := by
-  native_decide
-
-/-- Complete initial-loop plus position/root continuation recovered as one
-    checked FunctionalView command. -/
-private def parserRecognizeInitialContinuationView :=
-  initialContinuationReification?.get initialContinuationReification_exists
-
-private theorem parserRecognizeInitialContinuationView_toCore_exactly :
-    Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
-      initialContinuationLayout 20
-      parserRecognizeInitialContinuationView.command =
-      parserRecognizeAfterInitialIndexBinding :=
-  parserRecognizeInitialContinuationView.toCoreExactly
 
 def positionStatementIntoInitialEmbedding :
     Lanius.FunctionalView.Embedding 13 16 where
@@ -111,13 +73,7 @@ private theorem positionStatementIntoInitialLayout_extends :
     Layout.Extends positionStatementIntoInitialEmbedding
       positionStatementLayout initialContinuationLayout := by
   apply Layout.Extends.ofFn
-  native_decide
-
-def initialLoopCommand :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 16 :=
-  parserRecognizeInitialLoopView.command
+  decide +kernel
 
 private def initialSlot {arity : Nat} (index : Fin arity) :
     Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
@@ -226,7 +182,7 @@ private def initialExpectedBodyCommand :
 private theorem initialBodyCommand_shape :
     initialBodyCommand = initialExpectedBodyCommand := by
   apply stateCommandMatches_sound
-  native_decide
+  decide +kernel
 
 private def initialLoopCondition :
     Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature 16 :=
@@ -239,15 +195,21 @@ private def initialExpectedLoopCommand :
       Lanius.FunctionalView.Core.Stateful.actions 16 :=
   .whileLoop initialLoopCondition initialBodyCommand
 
+/-- Assemble the loop from its checked body; do not reify that body twice. -/
+def initialLoopCommand :
+    Lanius.FunctionalView.Stateful.Command
+      Lanius.FunctionalView.Core.signature
+      Lanius.FunctionalView.Core.Stateful.actions 16 :=
+  initialExpectedLoopCommand
+
 private theorem initialLoopCommand_shape :
     initialLoopCommand = initialExpectedLoopCommand := by
-  apply stateCommandMatches_sound
-  native_decide
+  rfl
 
 private theorem initialLoop_calls_supported :
     Lanius.FunctionalView.Core.Stateful.Command.callsSatisfy
       predictionCallAllowedInState initialLoopCommand = true := by
-  native_decide
+  decide +kernel
 
 private abbrev initialContinuationPositionCommand :=
   Lanius.FunctionalView.Stateful.Command.rename
@@ -258,7 +220,7 @@ def initialContinuationCommand :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 16 :=
-  parserRecognizeInitialContinuationView.command
+  .sequence initialLoopCommand initialContinuationPositionCommand
 
 def initialExpectedContinuationCommand :
     Lanius.FunctionalView.Stateful.Command
@@ -268,8 +230,41 @@ def initialExpectedContinuationCommand :
 
 theorem initialContinuationCommand_shape :
     initialContinuationCommand = initialExpectedContinuationCommand := by
-  apply stateCommandMatches_sound
-  native_decide
+  rfl
+
+/-- The assembled loop is still exactly the checked source loop. -/
+theorem initialLoopCommand_toCore :
+    Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
+      initialContinuationLayout 20 initialLoopCommand = parserRecognizeInitialLoop := by
+  change Stmt.whileLoop _ (Lanius.FunctionalView.Core.Stateful.toCoreStmt
+    actionAdapter initialContinuationLayout 20 initialBodyCommand) = _
+  dsimp only [initialBodyCommand]
+  rw [parserRecognizeInitialBodyView.toCoreExactly,
+    extractedParserRecognize_initial_loop_shape,
+    extractedParserRecognize_initial_loop_body_shape]
+  rfl
+
+/-- Compose existing source equalities, including the scoped renaming, instead
+    of checking the whole initial/position/root continuation again. -/
+theorem initialContinuationCommand_toCore :
+    Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
+      initialContinuationLayout 20 initialContinuationCommand =
+      parserRecognizeAfterInitialIndexBinding := by
+  have capacity : Stateful.localCapacity actionAdapter initialLoopCommand = 2 := by
+    simp only [initialLoopCommand, initialExpectedLoopCommand, Stateful.localCapacity,
+      initialBodyCommand_shape, initialExpectedBodyCommand]
+    rfl
+  change Stmt.sequence
+    (Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
+      initialContinuationLayout 20 initialLoopCommand)
+    (Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
+      initialContinuationLayout (20 + Stateful.localCapacity actionAdapter initialLoopCommand)
+      initialContinuationPositionCommand) = _
+  rw [initialLoopCommand_toCore, capacity, extractedParserRecognize_after_initial_index_shape]
+  exact congrArg (Stmt.sequence parserRecognizeInitialLoop)
+    ((Lanius.FunctionalView.Core.Stateful.toCoreStmt_rename
+      positionStatementIntoInitialLayout_extends 22 positionStatementCommand).trans
+        parserRecognizePositionStatementView_toCore_exactly)
 
 /-- Functional state at the start-production/position continuation boundary.
     The three initial-loop-only values (`first`, `count`, and `index`) remain
@@ -390,7 +385,7 @@ private theorem RecognizerInitialLoopInvariant.functional_read_production
       (program := verifiedParserCore)
       (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
       (world := world) (environment := environment) initialProductionTerm
-      (by native_decide)
+      (by decide +kernel)
   exact agreement.trans readOnlyResult
 
 private theorem RecognizerInitialLoopInvariant.functional_seed
@@ -435,7 +430,7 @@ private theorem RecognizerInitialLoopInvariant.functional_seed
       (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
       (world := world) (environment := environment)
       (initialNegativeOne : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 17) (by native_decide)
+        Lanius.FunctionalView.Core.signature 17) (by decide +kernel)
   have negativeOneResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (initialNegativeOne : Lanius.FunctionalView.Term
         Lanius.FunctionalView.Core.signature 17) =
@@ -452,7 +447,7 @@ private theorem RecognizerInitialLoopInvariant.functional_seed
       (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
       (world := world) (environment := environment)
       (initialConstant 37 : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 17) (by native_decide)
+        Lanius.FunctionalView.Core.signature 17) (by decide +kernel)
   have childNoneResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (initialConstant 37 : Lanius.FunctionalView.Term
         Lanius.FunctionalView.Core.signature 17) =
@@ -677,7 +672,7 @@ private theorem initialFullCondition_evaluates
       (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
       (world := world)
       (environment := environment.push (appendOutcomeValue outcome))
-      initialFullCondition (by native_decide)
+      initialFullCondition (by decide +kernel)
   have readOnlyResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
       world (environment.push (appendOutcomeValue outcome))
@@ -704,7 +699,7 @@ private theorem initialStateCount_evaluates
       (world := world)
       (environment := environment.push (appendOutcomeValue outcome))
       (.apply (.field (.structure 2) 2 parserI32Type)
-        [initialSlot ⟨17, by omega⟩]) (by native_decide)
+        [initialSlot ⟨17, by omega⟩]) (by decide +kernel)
   have readOnlyResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
       world (environment.push (appendOutcomeValue outcome))
@@ -1098,7 +1093,8 @@ private inductive RecognizerInitialSynchronizedOutcome
       (terminal : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell physicalAfter)
-      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter) :
+      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerInitialSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell indexCell first count after physicalAfter
@@ -1118,9 +1114,9 @@ private theorem RecognizerInitialSynchronizedOutcome.physical
   | completed workspace workspaceValues physicalAfter growth invariant _ _ =>
       exact .completed workspace workspaceValues physicalAfter growth invariant
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter growth terminal
-        stateCount wellFormed
+        stateCount wellFormed full
 
 private def RecognizerInitialSynchronizedOutcome.prepend_growth
     {grammarLayout : PackedGrammarLayout} {grammar : IndexedGrammar}
@@ -1147,9 +1143,9 @@ private def RecognizerInitialSynchronizedOutcome.prepend_growth
       exact .completed workspace workspaceValues physicalAfter
         (growth.trans nextGrowth) invariant worldEq environmentEq
   | full workspace workspaceValues physicalAfter nextGrowth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter
-        (growth.trans nextGrowth) terminal stateCount wellFormed
+        (growth.trans nextGrowth) terminal stateCount wellFormed full
 
 structure RecognizerInitialFunctionalResult
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -1383,6 +1379,8 @@ private noncomputable def RecognizerInitialConfig.functional_decide
               exact Or.inl member)
             outcome := .full config.workspace config.workspaceValues step.after
               (.refl config.workspace) step.invariant stateCount step.wellFormed
+              (by simpa only [stateCount, logical, appendLogical_stateCount_eq] using
+                appendLogical.full_workspace statusFull)
           }
         }
 

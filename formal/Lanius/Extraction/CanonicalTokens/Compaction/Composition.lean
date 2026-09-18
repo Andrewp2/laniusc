@@ -16,8 +16,8 @@ theorem executes_passes (trivia : Trivia.Checked program triviaId)
       after.cellEntry? request.recordsCell = some {
         id := request.recordsCell, value := some (.array
           (signedI32Values (compactedBuffer request.raw request.unused (canonicalizeTokens request.source request.raw)))) } ∧
-      CellEffect request.writes before after := by
-  obtain ⟨filtered, firstPass, filteredInvariant, firstEffect⟩ := executes_input_loop trivia kind request
+      CellEffect request.writes before after ∧ Host.MemoryFrame before after := by
+  obtain ⟨filtered, firstPass, filteredInvariant, firstEffect, firstMemory⟩ := executes_input_loop trivia kind request
     [] request.raw before (by simp) invariant
   let tail := (encodeTokens request.raw ++ request.unused).drop (3 * (request.output request.raw).length)
   have bufferBridge : request.buffer request.raw = Range.buffer [] (request.output request.raw) tail := by
@@ -26,7 +26,7 @@ theorem executes_passes (trivia : Trivia.Checked program triviaId)
       (Range.buffer [] (request.output request.raw) tail) := by
     simpa only [bufferBridge] using filteredInvariant.storage
   have countLocal := Assertion.localPointsTo_local _ _ _ _ filteredInvariant.output
-  obtain ⟨after, secondPass, finalContents, secondEffect⟩ := Range.executes_finish table rangeStorage
+  obtain ⟨after, secondPass, finalContents, secondEffect, secondMemory⟩ := Range.executes_finish table rangeStorage
     request.sourceDistinct.1 countLocal
   have outputLength : (request.output request.raw).length = (canonicalizeTokens request.source request.raw).length :=
     (Range.retag_length (request.output request.raw)).symm
@@ -36,7 +36,7 @@ theorem executes_passes (trivia : Trivia.Checked program triviaId)
   have framed : CellEffect request.writes filtered after := secondEffect.weaken (by
     intro cell selected
     exact Or.inl (Or.inl selected))
-  refine ⟨after, ?_, ?_, firstEffect.trans framed⟩
+  refine ⟨after, ?_, ?_, firstEffect.trans framed, firstMemory.trans secondMemory⟩
   · simpa only [outputLength] using executesSequence firstPass secondPass
   · simpa only [finalBuffer] using finalContents
 

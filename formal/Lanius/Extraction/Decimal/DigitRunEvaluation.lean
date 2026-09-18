@@ -20,17 +20,10 @@ theorem startOutOfBounds_evaluates (source : List Byte) (start base : Nat) :
         world
         (environment source start base) DigitRunCommand.startOutOfBounds =
       .ok (.boolean (decide (source.length ≤ start)), world) := by
-  calc
-    _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
-        world (environment source start base)
-        DigitRunCommand.startOutOfBounds :=
-      Effectful.Term.evaluate_eq_readOnly_of_callFree
-        (program := verifiedFrontendCore) (calls := helperCallModel)
-        DigitRunCommand.startOutOfBounds (by native_decide)
-    _ = _ := by
-      apply ReadOnly.Term.evaluate_i32_greaterEqual
-      · rfl
-      · rfl
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree
+    (program := verifiedFrontendCore) (calls := helperCallModel)
+    DigitRunCommand.startOutOfBounds (by decide +kernel)]
+  exact ReadOnly.Term.evaluate_i32_greaterEqual (by rfl) (by rfl)
 
 theorem index_evaluates
     {arity : Nat} (currentEnvironment : Env arity)
@@ -118,17 +111,10 @@ theorem loopCondition_evaluates (source : List Byte) (start base offset : Nat) :
         (loopEnvironment source start base offset)
         DigitRunCommand.loopCondition =
       .ok (.boolean (decide (offset < source.length)), world) := by
-  calc
-    _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
-        world (loopEnvironment source start base offset)
-        DigitRunCommand.loopCondition :=
-      Effectful.Term.evaluate_eq_readOnly_of_callFree
-        (program := verifiedFrontendCore) (calls := helperCallModel)
-        DigitRunCommand.loopCondition (by native_decide)
-    _ = _ := by
-      apply ReadOnly.Term.evaluate_i32_less
-      · rfl
-      · rfl
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree
+    (program := verifiedFrontendCore) (calls := helperCallModel)
+    DigitRunCommand.loopCondition (by decide +kernel)]
+  exact ReadOnly.Term.evaluate_i32_less (by rfl) (by rfl)
 
 theorem currentByte_evaluates (source : List Byte) (start base offset : Nat)
     (inBounds : offset < source.length)
@@ -159,18 +145,10 @@ theorem currentSeparator_evaluates
         ((loopEnvironment source start base offset).push
           (.signed .i32 byte.val)) DigitRunCommand.currentSeparator =
       .ok (.boolean (decide (byte.val = 95)), world) := by
-  calc
-    _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
-        world
-        ((loopEnvironment source start base offset).push
-          (.signed .i32 byte.val)) DigitRunCommand.currentSeparator :=
-      Effectful.Term.evaluate_eq_readOnly_of_callFree
-        (program := verifiedFrontendCore) (calls := helperCallModel)
-        DigitRunCommand.currentSeparator (by native_decide)
-    _ = _ := by
-      apply ReadOnly.Term.evaluate_i32_equal
-      · rfl
-      · rfl
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree
+    (program := verifiedFrontendCore) (calls := helperCallModel)
+    DigitRunCommand.currentSeparator (by decide +kernel)]
+  exact ReadOnly.Term.evaluate_i32_equal (by rfl) (by rfl)
 
 theorem addOne_evaluates
     {arity : Nat} (world : World) (currentEnvironment : Env arity)
@@ -182,9 +160,6 @@ theorem addOne_evaluates
         (DigitRunCommand.add left (DigitRunCommand.i32 1)) =
       .ok (.signed .i32 (value + 1), world) := by
   apply Term.evaluate_apply2 leftResult (by rfl)
-  change ReadOnly.evaluateOperation verifiedFrontendCore world
-    (.binary .add Program.i32Type Program.i32Type Program.i32Type)
-    [.signed .i32 value, .signed .i32 1] = _
   exact ReadOnly.evaluateOperation_i32_add
     (program := verifiedFrontendCore) (world := world)
     (leftType := Program.i32Type) (rightType := Program.i32Type)
@@ -199,9 +174,6 @@ theorem logicalNot_evaluates
         (DigitRunCommand.unary .logicalNot term) =
       .ok (.boolean (!value), world) := by
   apply Term.evaluate_apply1 termResult
-  change ReadOnly.evaluateOperation verifiedFrontendCore world
-    (.unary .logicalNot DigitRunCommand.boolType DigitRunCommand.boolType)
-      [.boolean value] = _
   rfl
 
 theorem requiredInitializer_evaluates
@@ -223,19 +195,10 @@ theorem requiredOutOfBounds_evaluates
         DigitRunCommand.requiredOutOfBounds =
       .ok (.boolean (decide (source.length ≤ offset + 1)),
         world) := by
-  calc
-    _ = Term.evaluate (ReadOnly.machine verifiedFrontendCore)
-        world
-        (((loopEnvironment source start base offset).push
-          (.signed .i32 byte.val)).push (.signed .i32 (offset + 1)))
-        DigitRunCommand.requiredOutOfBounds :=
-      Effectful.Term.evaluate_eq_readOnly_of_callFree
-        (program := verifiedFrontendCore) (calls := helperCallModel)
-        DigitRunCommand.requiredOutOfBounds (by native_decide)
-    _ = _ := by
-      apply ReadOnly.Term.evaluate_i32_greaterEqual
-      · rfl
-      · rfl
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree
+    (program := verifiedFrontendCore) (calls := helperCallModel)
+    DigitRunCommand.requiredOutOfBounds (by decide +kernel)]
+  exact ReadOnly.Term.evaluate_i32_greaterEqual (by rfl) (by rfl)
 
 theorem requiredInvalid_evaluates
     (source : List Byte) (start base offset : Nat) (byte : Byte)
@@ -353,19 +316,9 @@ theorem loopBody_accepted_evaluates
         (.signed .i32 byte.val)) ⟨4, by omega⟩
         (.signed .i32 (offset + 1))) =
       loopEnvironment source start base (offset + 1) := by
-    funext index
-    simp only [Env.pop, Env.set]
-    split
-    next same =>
-      have last : index.val = 4 := congrArg Fin.val same
-      simp [loopEnvironment, Env.push, last]
-    next different =>
-      have before : index.val < 4 := by
-        by_cases isBefore : index.val < 4
-        · exact isBefore
-        · have last : index.val = 4 := by omega
-          exact False.elim (different (Fin.ext last))
-      simp [loopEnvironment, Env.push, before]
+    rw [Env.pop_set_of_lt]
+    simp only [Env.pop_push]
+    exact loopEnvironment_set_offset source start base offset (offset + 1)
   rw [← popped]
   unfold DigitRunCommand.loopBody
   apply Command.Evaluates.letValue (by simpa [byte] using byteResult)
@@ -563,21 +516,10 @@ theorem popPopSetOffset_eq_loopEnvironment
         (.signed .i32 byte.val)).push (.signed .i32 (oldOffset + 1)))
         ⟨4, by omega⟩ (.signed .i32 newOffset))) =
       loopEnvironment source start base newOffset := by
-  funext index
-  simp only [Env.pop, Env.set]
-  split
-  next same =>
-    have last : index.val = 4 := congrArg Fin.val same
-    simp [loopEnvironment, Env.push, last]
-  next different =>
-    have before : index.val < 4 := by
-      by_cases isBefore : index.val < 4
-      · exact isBefore
-      · have last : index.val = 4 := by omega
-        exact False.elim (different (Fin.ext last))
-    have beforeFive : index.val < 5 := by omega
-    have beforeSix : index.val < 6 := by omega
-    simp [loopEnvironment, Env.push, before, beforeFive, beforeSix]
+  rw [Env.pop_set_of_lt (before := by decide),
+    Env.pop_set_of_lt (before := by decide)]
+  simp only [Env.pop_push]
+  exact loopEnvironment_set_offset source start base oldOffset newOffset
 
 theorem loopBody_separatorAccepted_evaluates
     (source : List Byte) (start base offset : Nat)

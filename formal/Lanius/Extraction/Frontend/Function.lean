@@ -1,5 +1,6 @@
 import Lanius.Extraction.Frontend.Body
 import Lanius.Extraction.Frontend.Input
+import Lanius.Semantics.CellOnly.Region
 
 namespace Lanius.Extraction.Frontend
 
@@ -31,6 +32,7 @@ structure CheckedSyntax (materializer : CheckedMaterialize visit) where
   early : CheckedEarly program symbols
   sameConstructor : early.constructor = tail.finish.constructor
   inputs : CheckedInput tail.finish.constructor
+  memory : Semantics.CellOnly.Region program.core tail.body
   signature : source.function.parameters = syntaxParameters ∧
     source.function.returnType = .structure tail.finish.constructor.typeId ∧ source.function.external = none
   body : source.function.body = some (syntaxFunctionBody tail early inputs parserId parserType)
@@ -49,10 +51,11 @@ def checkSyntax? (materializer : CheckedMaterialize visit) : Option (CheckedSynt
     let rest := tokenizationBody tokenization.locals.symbols early.checked.lexicalBody early.checked.canonicalBody
       (recognitionBody recognition.locals.functionId recognition.locals.resultType early.checked.kindsBody tail.body)
     let ⟨inputs, full⟩ ← checkInput? tail.finish.constructor body rest
+    let memory ← Semantics.CellOnly.checkRegion? program.core tail.body
     if signature : source.function.parameters = syntaxParameters ∧
         source.function.returnType = .structure tail.finish.constructor.typeId ∧ source.function.external = none then
       pure ⟨source, tail, tokenization.locals.symbols, recognition.locals.functionId, recognition.locals.resultType,
-        early.checked, early.result, inputs, signature, present.trans (congrArg some full.equal)⟩
+        early.checked, early.result, inputs, memory, signature, present.trans (congrArg some full.equal)⟩
     else none
   | none => none
 

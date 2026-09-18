@@ -1,0 +1,302 @@
+module app::main;
+import x86::encode;
+import x86::control;
+import x86::buffer;
+import verified::host;
+import verified::byte_io;
+
+// Test protocol only: kinds select public emitter operations. The independent
+// Lean driver assembles the same operations with GNU as, not these encodings.
+fn emit_case(kind: i32, width: i32, destination: i32, source: i32, value: i32,
+    output: [i32], capacity: i32, cursor: i32) -> i32 {
+    if (kind == 0) { return x86::encode::move_register(output, capacity, cursor, width, destination, source); }
+    if (kind == 1) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::ADD, destination, source); }
+    if (kind == 2) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::SUB, destination, source); }
+    if (kind == 3) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::CMP, destination, source); }
+    if (kind == 4) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::AND, destination, source); }
+    if (kind == 5) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::OR, destination, source); }
+    if (kind == 6) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::XOR, destination, source); }
+    if (kind == 7) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::TEST, destination, source); }
+    if (kind == 8) { return x86::encode::multiply(output, capacity, cursor, width, destination, source); }
+    if (kind == 9) { return x86::encode::immediate(output, capacity, cursor, width, destination, value, 305419896); }
+    if (kind == 10) { return x86::encode::load(output, capacity, cursor, width, destination, source, value); }
+    if (kind == 11) { return x86::encode::store(output, capacity, cursor, width, destination, source, value); }
+    if (kind == 12) { return x86::encode::address(output, capacity, cursor, destination, source, value); }
+    if (kind == 13) { return x86::encode::load_byte(output, capacity, cursor, destination, source, value); }
+    if (kind == 14) { return x86::encode::store_byte(output, capacity, cursor, destination, source, value); }
+    if (kind == 15) { return x86::encode::sign_extend_i32(output, capacity, cursor, destination, source); }
+    if (kind == 16) { return x86::encode::zero_extend_byte(output, capacity, cursor, destination, source); }
+    if (kind == 17) { return x86::encode::shift(output, capacity, cursor, width, source, destination); }
+    if (kind == 18) { return x86::encode::divide(output, capacity, cursor, width, destination, source != 0); }
+    if (kind == 19) { return x86::encode::negate(output, capacity, cursor, width, destination); }
+    if (kind == 20) { return x86::control::set_condition(output, capacity, cursor, source, destination); }
+    if (kind == 21) { return x86::control::push(output, capacity, cursor, destination); }
+    if (kind == 22) { return x86::control::pop(output, capacity, cursor, destination); }
+    // Test transport packs base/index into source; width carries log2(scale).
+    if (kind == 23) { return x86::encode::indexed_address(output, capacity, cursor,
+        destination, source % 16, source / 16, width, value); }
+    if (kind == 24) { return x86::encode::relative_address(output, capacity, cursor, destination, value); }
+    return -1;
+}
+
+fn clear(scratch: [i32]) -> i32 {
+    let index: i32 = 0;
+    while (index < 32) { scratch[index] = 90; index += 1; }
+    return 0;
+}
+
+fn unchanged(scratch: [i32]) -> bool {
+    let index: i32 = 0;
+    while (index < 32) {
+        if (scratch[index] != 90) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+fn rejected(result: i32, scratch: [i32], index: i32) -> bool {
+    if (result != -1 || !unchanged(scratch)) {
+        verified::byte_io::write_stderr_natural(index);
+        verified::byte_io::write_stderr_natural(result + 1);
+        verified::byte_io::write_stderr_natural(x86::encode::ADD);
+        return false;
+    }
+    return true;
+}
+
+fn append(kind: i32, width: i32, destination: i32, source: i32, value: i32,
+    scratch: [i32], output: [i32], cursor: i32) -> i32 {
+    if (cursor < 0) { return -1; }
+    clear(scratch);
+    let end: i32 = emit_case(kind, width, destination, source, value, scratch, 32, 2);
+    if (end <= 2 || end > 17) { return -1; }
+    let index: i32 = 0;
+    while (index < 32) {
+        if (index < 2 || index >= end) {
+            if (scratch[index] != 90) { return -1; }
+        }
+        index += 1;
+    }
+    let length: i32 = end - 2;
+    if (!x86::buffer::fits(1048576, cursor, length)) { return -1; }
+    index = 0;
+    while (index < length) {
+        output[cursor + index] = scratch[index + 2];
+        index += 1;
+    }
+    // Every insufficient capacity must reject before the first write.
+    let capacity: i32 = -1;
+    while (capacity < end) {
+        clear(scratch);
+        if (emit_case(kind, width, destination, source, value, scratch, capacity, 2) != -1 ||
+            !unchanged(scratch)) { return -1; }
+        capacity += 1;
+    }
+    clear(scratch);
+    if (emit_case(kind, width, destination, source, value, scratch, end, 2) != end) { return -1; }
+    index = 0;
+    while (index < length) {
+        if (scratch[index + 2] != output[cursor + index]) { return -1; }
+        index += 1;
+    }
+    return cursor + length;
+}
+
+fn control_case(kind: i32, condition: i32, target: i32,
+    output: [i32], capacity: i32, cursor: i32) -> i32 {
+    if (kind == 0) { return x86::control::jump(output, capacity, cursor, target); }
+    if (kind == 1) { return x86::control::call(output, capacity, cursor, target); }
+    if (kind == 2) { return x86::control::branch(output, capacity, cursor, condition, target); }
+    if (kind == 3) { return x86::control::return_near(output, capacity, cursor); }
+    if (kind == 4) { return x86::control::syscall(output, capacity, cursor); }
+    if (kind == 5) { return x86::control::trap(output, capacity, cursor); }
+    return x86::control::sign_extend_dividend(output, capacity, cursor, condition);
+}
+
+fn append_control(kind: i32, condition: i32, target: i32,
+    scratch: [i32], output: [i32], cursor: i32) -> i32 {
+    if (cursor < 0) { return -1; }
+    clear(scratch);
+    let end: i32 = control_case(kind, condition, target, scratch, 32, 2);
+    if (end <= 2 || end > 17) { return -1; }
+    let index: i32 = 0;
+    while (index < 32) {
+        if (index < 2 || index >= end) {
+            if (scratch[index] != 90) { return -1; }
+        }
+        index += 1;
+    }
+    let length: i32 = end - 2;
+    if (!x86::buffer::fits(1048576, cursor, length)) { return -1; }
+    index = 0;
+    while (index < length) { output[cursor + index] = scratch[index + 2]; index += 1; }
+    let capacity: i32 = -1;
+    while (capacity < end) {
+        clear(scratch);
+        if (control_case(kind, condition, target, scratch, capacity, 2) != -1 ||
+            !unchanged(scratch)) { return -1; }
+        capacity += 1;
+    }
+    clear(scratch);
+    if (control_case(kind, condition, target, scratch, end, 2) != end) { return -1; }
+    index = 0;
+    while (index < length) {
+        if (scratch[index + 2] != output[cursor + index]) { return -1; }
+        index += 1;
+    }
+    return cursor + length;
+}
+
+fn main() -> i32 {
+    let allocation: ptr = verified::host::alloc(4194304, 4);
+    if (allocation == 0) { return 3; }
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(allocation, 1048576);
+    let temporary: ptr = verified::host::alloc(128, 4);
+    if (temporary == 0) { return 3; }
+    let scratch: [i32] = verified::host::i32_slice_from_raw_parts(temporary, 32);
+    let packed: ptr = verified::host::alloc(65536, 4);
+    if (packed == 0) { return 3; }
+    let cursor: i32 = 0;
+    let width: i32 = 32;
+    while (width <= 64) {
+        let destination: i32 = 0;
+        while (destination < 16) {
+            let source: i32 = 0;
+            while (source < 16) {
+                let kind: i32 = 0;
+                while (kind <= 16) {
+                    cursor = append(kind, width, destination, source, -2147483647, scratch, output, cursor);
+                    kind += 1;
+                }
+                source += 1;
+            }
+            let operation: i32 = 4;
+            while (operation <= 7) {
+                if (operation != 6) {
+                    cursor = append(17, width, destination, operation, 0, scratch, output, cursor);
+                }
+                operation += 1;
+            }
+            cursor = append(18, width, destination, 0, 0, scratch, output, cursor);
+            cursor = append(18, width, destination, 1, 0, scratch, output, cursor);
+            cursor = append(19, width, destination, 0, 0, scratch, output, cursor);
+            source = 0;
+            while (source < 16) {
+                cursor = append(20, width, destination, source, 0, scratch, output, cursor);
+                source += 1;
+            }
+            cursor = append(21, width, destination, 0, 0, scratch, output, cursor);
+            cursor = append(22, width, destination, 0, 0, scratch, output, cursor);
+            destination += 1;
+        }
+        width += 32;
+    }
+    // Small signed displacements still use disp32, including special bases.
+    let displacement: i32 = -129;
+    while (displacement <= 129) {
+        let base: i32 = 0;
+        while (base < 16) {
+            let kind: i32 = 10;
+            while (kind <= 14) {
+                cursor = append(kind, 64, 7, base, displacement, scratch, output, cursor);
+                kind += 1;
+            }
+            base += 1;
+        }
+        displacement += 1;
+    }
+    let condition: i32 = 0;
+    while (condition < 16) {
+        let sample: i32 = 0;
+        while (sample < 4) {
+            let target: i32 = sample * 16;
+            if (sample == 3) { target = 2147483647; }
+            let kind: i32 = 0;
+            while (kind < 6) {
+                cursor = append_control(kind, condition, target, scratch, output, cursor);
+                kind += 1;
+            }
+            sample += 1;
+        }
+        condition += 1;
+    }
+    cursor = append_control(6, 32, 0, scratch, output, cursor);
+    cursor = append_control(6, 64, 0, scratch, output, cursor);
+    let destination: i32 = 0;
+    while (destination < 16) {
+        let base: i32 = 0;
+        while (base < 16) {
+            let index: i32 = 0;
+            while (index < 16) {
+                if (index != 4) {
+                    let scale: i32 = 0;
+                    while (scale < 4) {
+                        cursor = append(23, scale, destination, base + index * 16,
+                            -2147483647, scratch, output, cursor);
+                        scale += 1;
+                    }
+                }
+                index += 1;
+            }
+            base += 1;
+        }
+        destination += 1;
+    }
+    destination = 0;
+    while (destination < 16) {
+        cursor = append(24, 64, destination, 0, -2147483647 - 1, scratch, output, cursor);
+        cursor = append(24, 64, destination, 0, -1, scratch, output, cursor);
+        cursor = append(24, 64, destination, 0, 0, scratch, output, cursor);
+        cursor = append(24, 64, destination, 0, 1, scratch, output, cursor);
+        cursor = append(24, 64, destination, 0, 2147483647, scratch, output, cursor);
+        destination += 1;
+    }
+    if (cursor < 0) { return 10; }
+    let field: i32 = 0;
+    while (field <= 28) {
+        let target: i32 = 0;
+        while (target <= 32) {
+            clear(scratch);
+            if (x86::control::patch_relative(scratch, 32, field, target) != field + 4) { return 14; }
+            let decoded: i32 = scratch[field] | (scratch[field + 1] << 8) |
+                (scratch[field + 2] << 16) | (scratch[field + 3] << 24);
+            if (decoded != target - (field + 4)) { return 15; }
+            let index: i32 = 0;
+            while (index < 32) {
+                if (index < field || index >= field + 4) {
+                    if (scratch[index] != 90) { return 16; }
+                }
+                index += 1;
+            }
+            target += 1;
+        }
+        field += 1;
+    }
+    clear(scratch);
+    if (!rejected(x86::encode::move_register(scratch, 32, 2, 16, 0, 0), scratch, 1)) { return 11; }
+    if (!rejected(x86::encode::move_register(scratch, 32, 2, 64, -1, 0), scratch, 2)) { return 11; }
+    if (!rejected(x86::encode::move_register(scratch, 32, 2, 64, 0, 16), scratch, 3)) { return 11; }
+    if (!rejected(x86::encode::binary(scratch, 32, 2, 64, 0, 0, 0), scratch, 4)) { return 11; }
+    if (!rejected(x86::encode::shift(scratch, 32, 2, 64, 6, 0), scratch, 5)) { return 11; }
+    if (!rejected(x86::control::set_condition(scratch, 32, 2, 16, 0), scratch, 6)) { return 11; }
+    if (!rejected(x86::control::branch(scratch, 32, 2, -1, 0), scratch, 7)) { return 11; }
+    if (!rejected(x86::control::jump(scratch, 32, 2, -1), scratch, 8)) { return 11; }
+    if (!rejected(x86::control::patch_relative(scratch, 5, 2, 0), scratch, 9)) { return 11; }
+    if (!rejected(x86::control::patch_relative(scratch, 32, 2, 33), scratch, 10)) { return 11; }
+    if (!rejected(x86::control::return_near(scratch, 32, -1), scratch, 11)) { return 11; }
+    if (!rejected(x86::control::syscall(scratch, 32, 2147483647), scratch, 12)) { return 11; }
+    if (!rejected(x86::encode::indexed_address(scratch, 32, 2, 0, 0, 4, 2, 0), scratch, 13)) { return 11; }
+    if (!rejected(x86::encode::indexed_address(scratch, 32, 2, 16, 0, 0, 2, 0), scratch, 14)) { return 11; }
+    if (!rejected(x86::encode::indexed_address(scratch, 32, 2, 0, -1, 0, 2, 0), scratch, 15)) { return 11; }
+    if (!rejected(x86::encode::indexed_address(scratch, 32, 2, 0, 0, 16, 2, 0), scratch, 16)) { return 11; }
+    if (!rejected(x86::encode::indexed_address(scratch, 32, 2, 0, 0, 0, -1, 0), scratch, 17)) { return 11; }
+    if (!rejected(x86::encode::indexed_address(scratch, 32, 2, 0, 0, 0, 4, 0), scratch, 18)) { return 11; }
+    if (!rejected(x86::encode::relative_address(scratch, 32, 2, -1, 0), scratch, 19)) { return 11; }
+    if (!rejected(x86::encode::relative_address(scratch, 32, 2, 16, 0), scratch, 20)) { return 11; }
+    if (!x86::buffer::fits(2147483647, 2147483643, 4) ||
+        x86::buffer::fits(2147483647, 2147483644, 4) ||
+        x86::buffer::fits(2147483647, -1, 1) ||
+        x86::buffer::fits(2147483647, 0, -1)) { return 12; }
+    if (verified::byte_io::write_stdout(output, cursor, packed) != cursor) { return 13; }
+    return 0;
+}

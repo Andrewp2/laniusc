@@ -31,7 +31,7 @@ theorem RecognizerWorkspaceArtifact.store_output
       after.local? outputId = some
         (.slice (.scalar (.signed .i32)) outputCell [] 0 values.length) ∧
       CellEffect (CellSet.singleton outputCell) before after := by
-  obtain ⟨after, executed, output, effect⟩ := evaluatesSliceStore program before afterRight
+  obtain ⟨after, executed, output, effect, storeHeapFrame, _⟩ := evaluatesSliceStore program before afterRight
     values outputId indexExpression right outputCell index replacement wellFormed inBounds
     outputLocal indexResult rightResult rightEffect backing
   have outputStill := effect.preserves_local_of_distinct_value wellFormed outputLocal backing

@@ -35,7 +35,7 @@ theorem canonicalize_emitted
           (compactedBuffer (Model.emittedTokens request.outcome)
             (records.drop (3 * (Model.emittedTokens request.outcome).length))
             (canonicalizeTokens request.source (Model.emittedTokens request.outcome))))) } ∧
-      CellEffect (CellSet.singleton recordsCell) before after := by
+      CellEffect (CellSet.singleton recordsCell) before after ∧ Host.MemoryFrame before after := by
   have countBound := Model.emittedTokens_length_le_capacity request.source request.capacity
   have bufferLength : 3 * (Model.emittedTokens request.outcome).length +
       (records.drop (3 * (Model.emittedTokens request.outcome).length)).length = records.length := by

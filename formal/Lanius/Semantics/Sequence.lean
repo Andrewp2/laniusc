@@ -2,6 +2,16 @@ import Lanius.ExecutionRules
 
 namespace Lanius.Semantics
 
+/-- A trailing skip preserves every completion, including early returns. -/
+theorem executesSequenceSkip
+    (execution : Executes program before statement completion after) :
+    Executes program before (.sequence statement .skip) completion after := by
+  cases completion with
+  | next => exact executesSequence execution (executesSkip program after)
+  | returned _ => exact executesSequenceNonNext execution (by simp)
+  | breakLoop => exact executesSequenceNonNext execution (by simp)
+  | continueLoop => exact executesSequenceNonNext execution (by simp)
+
 /-- Normal completion of a sequence exposes the intermediate runtime state. -/
 theorem executesSequenceNext_inv
     (execution : Executes program before (.sequence first second) .next after) :

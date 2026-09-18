@@ -1,0 +1,111 @@
+module x86::control;
+import x86::register;
+import x86::buffer;
+import x86::encode;
+
+// Intel condition-code low nibble, shared by Jcc and SETcc.
+pub const OVERFLOW: i32 = 0;
+pub const NO_OVERFLOW: i32 = 1;
+pub const BELOW: i32 = 2;
+pub const ABOVE_EQUAL: i32 = 3;
+pub const EQUAL: i32 = 4;
+pub const NOT_EQUAL: i32 = 5;
+pub const BELOW_EQUAL: i32 = 6;
+pub const ABOVE: i32 = 7;
+pub const SIGN: i32 = 8;
+pub const NO_SIGN: i32 = 9;
+pub const PARITY: i32 = 10;
+pub const NO_PARITY: i32 = 11;
+pub const LESS: i32 = 12;
+pub const GREATER_EQUAL: i32 = 13;
+pub const LESS_EQUAL: i32 = 14;
+pub const GREATER: i32 = 15;
+
+pub fn set_condition(output: [i32], capacity: i32, cursor: i32,
+    condition: i32, destination: i32) -> i32 {
+    if (condition < 0 || condition > 15) { return -1; }
+    return x86::encode::register_form(output, capacity, cursor,
+        32, 3984 + condition, 0, destination, destination >= 4);
+}
+
+fn relative(output: [i32], capacity: i32, cursor: i32,
+    opcode: i32, condition: i32, target: i32) -> i32 {
+    let size: i32 = 5;
+    if (opcode == 15) { size = 6; }
+    if (target < 0 || !x86::buffer::fits(capacity, cursor, size)) { return -1; }
+    let next: i32 = cursor + size;
+    output[cursor] = opcode;
+    if (opcode == 15) { output[cursor + 1] = 128 + condition; }
+    return x86::buffer::store_word(output, next - 4, target - next);
+}
+
+pub fn jump(output: [i32], capacity: i32, cursor: i32, target: i32) -> i32 {
+    return relative(output, capacity, cursor, 233, 0, target);
+}
+
+pub fn call(output: [i32], capacity: i32, cursor: i32, target: i32) -> i32 {
+    return relative(output, capacity, cursor, 232, 0, target);
+}
+
+pub fn branch(output: [i32], capacity: i32, cursor: i32, condition: i32, target: i32) -> i32 {
+    if (condition < 0 || condition > 15) { return -1; }
+    return relative(output, capacity, cursor, 15, condition, target);
+}
+
+// Patch an existing rel32 field after layout. length is the emitted prefix,
+// not the buffer capacity. A target at length can name an end/data label;
+// proving an executable target requires the later control-flow layout proof.
+pub fn patch_relative(output: [i32], length: i32, field: i32, target: i32) -> i32 {
+    if (!x86::buffer::fits(length, field, 4) || target < 0 || target > length) { return -1; }
+    return x86::buffer::store_word(output, field, target - (field + 4));
+}
+
+fn stack_register(output: [i32], capacity: i32, cursor: i32, opcode: i32, register: i32) -> i32 {
+    if (!x86::register::valid(register)) { return -1; }
+    let size: i32 = 1;
+    if (register >= 8) { size = 2; }
+    if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
+    let next: i32 = cursor;
+    if (register >= 8) { output[next] = 65; next += 1; }
+    output[next] = opcode + register % 8;
+    return next + 1;
+}
+
+pub fn push(output: [i32], capacity: i32, cursor: i32, register: i32) -> i32 {
+    return stack_register(output, capacity, cursor, 80, register);
+}
+
+pub fn pop(output: [i32], capacity: i32, cursor: i32, register: i32) -> i32 {
+    return stack_register(output, capacity, cursor, 88, register);
+}
+
+pub fn return_near(output: [i32], capacity: i32, cursor: i32) -> i32 {
+    if (!x86::buffer::fits(capacity, cursor, 1)) { return -1; }
+    output[cursor] = 195;
+    return cursor + 1;
+}
+
+pub fn syscall(output: [i32], capacity: i32, cursor: i32) -> i32 {
+    if (!x86::buffer::fits(capacity, cursor, 2)) { return -1; }
+    output[cursor] = 15;
+    output[cursor + 1] = 5;
+    return cursor + 2;
+}
+
+pub fn trap(output: [i32], capacity: i32, cursor: i32) -> i32 {
+    if (!x86::buffer::fits(capacity, cursor, 2)) { return -1; }
+    output[cursor] = 15;
+    output[cursor + 1] = 11;
+    return cursor + 2;
+}
+
+pub fn sign_extend_dividend(output: [i32], capacity: i32, cursor: i32, width: i32) -> i32 {
+    if (!x86::register::width_valid(width)) { return -1; }
+    let size: i32 = 1;
+    if (width == 64) { size = 2; }
+    if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
+    let next: i32 = cursor;
+    if (width == 64) { output[next] = 72; next += 1; }
+    output[next] = 153;
+    return next + 1;
+}

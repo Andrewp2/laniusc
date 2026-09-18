@@ -53,7 +53,7 @@ private theorem helper
       .ok (EvaluationModel.encoded
         (Compiler.Lexer.finishDecimal source integerEnd), world) := by
   simp only [callModel, CallModel.route]
-  rw [if_pos (by native_decide)]
+  rw [if_pos (by simp)]
   exact FinishSemantics.evaluate world source integerEnd sourceFound
     sourceBound startBound
 
@@ -67,7 +67,7 @@ private theorem helper
       (EvaluationModel.arguments source start) =
       .ok (EvaluationModel.encoded
         (Compiler.Lexer.scanExponent source start), world) := by
-  apply helper (by native_decide)
+  apply helper (by decide)
   exact FinishEvaluationModel.scanExponent source world start sourceFound
     sourceBound startInBounds
 
@@ -83,7 +83,7 @@ private theorem helper
         .signed .i32 start, .signed .i32 radix] =
       .ok (digitScanValue
         (Compiler.Lexer.scanDigitRun source start radix), world) := by
-  apply helper (by native_decide)
+  apply helper (by decide)
   exact FinishEvaluationModel.scanDigitRun source world start radix sourceFound
     sourceBound startBound radixBound
 
@@ -95,7 +95,7 @@ private theorem helper
       Lexer.Digits.digitScanSucceededFunction.id [digitScanValue result] =
       .ok (.boolean (match result with
         | .success _ => true | .failure _ => false), world) := by
-  apply helper (by native_decide)
+  apply helper (by decide)
   exact FinishEvaluationModel.digitSucceeded source world result resultBound
 
 @[simp] theorem digitEnd (source : List Byte) (world : ReadOnly.World)
@@ -104,7 +104,7 @@ private theorem helper
       Lexer.Digits.digitScanEndOffsetFunction.id
       [digitScanValue (.success finish)] =
       .ok (.signed .i32 finish, world) := by
-  apply helper (by native_decide)
+  apply helper (by decide)
   exact FinishEvaluationModel.digitEnd source world finish finishBound
 
 @[simp] theorem digitError (source : List Byte) (world : ReadOnly.World)
@@ -113,7 +113,7 @@ private theorem helper
       Lexer.Digits.digitScanErrorOffsetFunction.id
       [digitScanValue (.failure error)] =
       .ok (.signed .i32 error, world) := by
-  apply helper (by native_decide)
+  apply helper (by decide)
   exact FinishEvaluationModel.digitError source world error errorBound
 
 @[simp] theorem integerScan (source : List Byte) (world : ReadOnly.World)
@@ -121,7 +121,7 @@ private theorem helper
     (callModel source).evaluate world Functions.integerScanFunction.id
       [.signed .i32 finish] =
       .ok (EvaluationModel.encoded (.success .integer finish), world) := by
-  apply helper (by native_decide)
+  apply helper (by decide)
   exact FinishEvaluationModel.integerScan source world finish finishBound
 
 @[simp] theorem floatScan (source : List Byte) (world : ReadOnly.World)
@@ -129,7 +129,7 @@ private theorem helper
     (callModel source).evaluate world Functions.floatScanFunction.id
       [.signed .i32 finish] =
       .ok (EvaluationModel.encoded (.success .float finish), world) := by
-  apply helper (by native_decide)
+  apply helper (by decide)
   exact FinishEvaluationModel.floatScan source world finish finishBound
 
 @[simp] theorem numberFailure (source : List Byte) (world : ReadOnly.World)
@@ -137,7 +137,7 @@ private theorem helper
     (callModel source).evaluate world Functions.numberFailureFunction.id
       [.signed .i32 error] =
       .ok (EvaluationModel.encoded (.failure error), world) := by
-  apply helper (by native_decide)
+  apply helper (by decide)
   exact FinishEvaluationModel.numberFailure source world error errorBound
 
 end Lanius.Extraction.Decimal.ConcreteSemantics

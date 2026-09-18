@@ -1,6 +1,6 @@
 import Lanius.Compiler.LexerCanonical
 import Lanius.Extraction.CanonicalTokens.Functions
-import Lanius.FunctionalViewStatefulPattern
+import Lanius.Extraction.CanonicalTokens.Pattern
 
 namespace Lanius.Extraction.CanonicalTokens.KeywordCommand
 
@@ -12,102 +12,19 @@ open Lanius.FunctionalView.Core.Stateful
 open Lanius.FunctionalView.Stateful.Pattern
 open Lanius.Extraction.CanonicalTokens.Functions
 
-abbrev P (arity : Nat) := CommandPattern Core.signature actions arity
-abbrev T (arity : Nat) := TermPattern Core.signature arity
-
 def i32 : Ty := .scalar (.signed .i32)
 def bool : Ty := .scalar .bool
 def slice : Ty := .slice i32
-
-def operation (value : Operation) : Exact Operation :=
-  Exact.ofDecidableEq value
-
-def slot {arity : Nat} (index : Fin arity) : T arity := .slot index
-def literal {arity : Nat} (value : Int) : T arity :=
-  .literal (.signed .i32 value)
-def constant {arity : Nat} (id : ConstantId) : T arity :=
-  .apply (operation (.constant id i32)) []
-def binary {arity : Nat} (op : BinaryOp) (left right : T arity)
-    (result : Ty) : T arity :=
-  .apply (operation (.binary op i32 i32 result)) [left, right]
-def add {arity : Nat} (left right : T arity) : T arity :=
-  binary .add left right i32
-def equal {arity : Nat} (left right : T arity) : T arity :=
-  binary .equal left right bool
-def index {arity : Nat} (base offset : T arity) : T arity :=
-  .apply (operation (.index slice i32 i32)) [base, offset]
-
-def returned {arity : Nat} (value : T arity) : P arity :=
-  .sequence (.returnValue (some value)) .skip
-
-def allEqual {arity : Nat} : List (Fin arity × Int) → T arity
-  | [] => .literal (.boolean true)
-  | (position, value) :: rest =>
-      rest.foldl
-        (fun condition (nextPosition, nextValue) =>
-          .logicalAnd condition
-            (equal (slot nextPosition) (literal nextValue)))
-        (equal (slot position) (literal value))
-
-def choices {arity : Nat} : List (List (Fin arity × Int) × ConstantId) → P arity
-  | [] => .skip
-  | (bytes, kind) :: rest =>
-      .sequence
-        (.ifThenElse (allEqual bytes) (returned (constant kind)) .skip)
-        (choices rest)
-
-def load2 (body : P 6) : P 4 :=
-  .letValue i32 (index (slot 0) (slot 1))
-    (.letValue i32 (index (slot 0) (add (slot 1) (literal 1))) body)
-
-def load3 (body : P 7) : P 4 :=
-  .letValue i32 (index (slot 0) (slot 1))
-    (.letValue i32 (index (slot 0) (add (slot 1) (literal 1)))
-      (.letValue i32 (index (slot 0) (add (slot 1) (literal 2))) body))
-
-def load4 (body : P 8) : P 4 :=
-  .letValue i32 (index (slot 0) (slot 1))
-    (.letValue i32 (index (slot 0) (add (slot 1) (literal 1)))
-      (.letValue i32 (index (slot 0) (add (slot 1) (literal 2)))
-        (.letValue i32 (index (slot 0) (add (slot 1) (literal 3))) body)))
-
-def load5 (body : P 9) : P 4 :=
-  .letValue i32 (index (slot 0) (slot 1))
-    (.letValue i32 (index (slot 0) (add (slot 1) (literal 1)))
-      (.letValue i32 (index (slot 0) (add (slot 1) (literal 2)))
-        (.letValue i32 (index (slot 0) (add (slot 1) (literal 3)))
-          (.letValue i32 (index (slot 0) (add (slot 1) (literal 4))) body))))
-
-def load6 (body : P 10) : P 4 :=
-  .letValue i32 (index (slot 0) (slot 1))
-    (.letValue i32 (index (slot 0) (add (slot 1) (literal 1)))
-      (.letValue i32 (index (slot 0) (add (slot 1) (literal 2)))
-        (.letValue i32 (index (slot 0) (add (slot 1) (literal 3)))
-          (.letValue i32 (index (slot 0) (add (slot 1) (literal 4)))
-            (.letValue i32 (index (slot 0) (add (slot 1) (literal 5))) body)))))
-
-def load8 (body : P 12) : P 4 :=
-  .letValue i32 (index (slot 0) (slot 1))
-    (.letValue i32 (index (slot 0) (add (slot 1) (literal 1)))
-      (.letValue i32 (index (slot 0) (add (slot 1) (literal 2)))
-        (.letValue i32 (index (slot 0) (add (slot 1) (literal 3)))
-          (.letValue i32 (index (slot 0) (add (slot 1) (literal 4)))
-            (.letValue i32 (index (slot 0) (add (slot 1) (literal 5)))
-              (.letValue i32 (index (slot 0) (add (slot 1) (literal 6)))
-                (.letValue i32 (index (slot 0) (add (slot 1) (literal 7)))
-                  body)))))))
 
 def length2Rules : List (List (Fin 6 × Int) × ConstantId) := [
   ([(4, 102), (5, 110)], 61),
   ([(4, 105), (5, 102)], 64),
   ([(4, 105), (5, 110)], 81)]
-def length2 : P 6 := choices length2Rules
 
 def length3Rules : List (List (Fin 7 × Int) × ConstantId) := [
   ([(4, 112), (5, 117), (6, 98)], 60),
   ([(4, 108), (5, 101), (6, 116)], 62),
   ([(4, 102), (5, 111), (6, 114)], 80)]
-def length3 : P 7 := choices length3Rules
 
 def length4Rules : List (List (Fin 8 × Int) × ConstantId) := [
   ([(4, 101), (5, 108), (6, 115), (7, 101)], 65),
@@ -116,7 +33,6 @@ def length4Rules : List (List (Fin 8 × Int) × ConstantId) := [
   ([(4, 105), (5, 109), (6, 112), (7, 108)], 78),
   ([(4, 115), (5, 101), (6, 108), (7, 102)], 85),
   ([(4, 116), (5, 121), (6, 112), (7, 101)], 83)]
-def length4 : P 8 := choices length4Rules
 
 def length5Rules : List (List (Fin 9 × Int) × ConstantId) := [
   ([(4, 102), (5, 97), (6, 108), (7, 115), (8, 101)], 71),
@@ -126,7 +42,6 @@ def length5Rules : List (List (Fin 9 × Int) × ConstantId) := [
   ([(4, 119), (5, 104), (6, 101), (7, 114), (8, 101)], 84),
   ([(4, 119), (5, 104), (6, 105), (7, 108), (8, 101)], 66),
   ([(4, 98), (5, 114), (6, 101), (7, 97), (8, 107)], 67)]
-def length5 : P 9 := choices length5Rules
 
 def length6Rules : List (List (Fin 10 × Int) × ConstantId) := [
   ([(4, 114), (5, 101), (6, 116), (7, 117), (8, 114), (9, 110)], 63),
@@ -134,25 +49,10 @@ def length6Rules : List (List (Fin 10 × Int) × ConstantId) := [
   ([(4, 101), (5, 120), (6, 116), (7, 101), (8, 114), (9, 110)], 82),
   ([(4, 105), (5, 109), (6, 112), (7, 111), (8, 114), (9, 116)], 76),
   ([(4, 109), (5, 111), (6, 100), (7, 117), (8, 108), (9, 101)], 77)]
-def length6 : P 10 := choices length6Rules
 
 def length8Rules : List (List (Fin 12 × Int) × ConstantId) := [
   ([(4, 99), (5, 111), (6, 110), (7, 116), (8, 105), (9, 110),
     (10, 117), (11, 101)], 68)]
-def length8 : P 12 := choices length8Rules
-
-def lengthBranch (length : Int) (body : P 4) : P 4 :=
-  .ifThenElse (equal (slot 3) (literal length)) body .skip
-
-def pattern : P 3 :=
-  .letValue i32 (binary .subtract (slot 2) (slot 1) i32)
-    (.sequence (lengthBranch 2 (load2 length2))
-      (.sequence (lengthBranch 3 (load3 length3))
-        (.sequence (lengthBranch 4 (load4 length4))
-          (.sequence (lengthBranch 5 (load5 length5))
-            (.sequence (lengthBranch 6 (load6 length6))
-              (.sequence (lengthBranch 8 (load8 length8))
-                (returned (constant 7))))))))
 
 abbrev C (arity : Nat) :=
   Lanius.FunctionalView.Stateful.Command Core.signature actions arity
@@ -272,6 +172,9 @@ def directCommand : C 3 :=
 
 def command : Lanius.FunctionalView.Stateful.Command
     Core.signature actions 3 := directCommand
+
+def pattern : CommandPattern Core.signature actions 3 :=
+  Lanius.Extraction.CanonicalTokens.Pattern.commandPattern directCommand
 
 theorem recovered : keywordKindView.command = command := by
   calc

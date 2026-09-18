@@ -12,7 +12,7 @@ private theorem advance_by {position : Nat} (program : Program) (amount : Nat)
     ∃ after, Executes program before (.sequence (increment 16 amount) .skip) .next after ∧
       (Assertion.localPointsTo 16 cell (some (.signed .i32 (Int.ofNat (position + amount))))).holds after ∧
       CellEffect (CellSet.singleton cell) before after := by
-  obtain ⟨after, assigned, owned, effect⟩ := evaluatesOwnedLocalUpdate wellFormed cursor
+  obtain ⟨after, assigned, owned, effect, heapFrame⟩ := evaluatesOwnedLocalUpdate wellFormed cursor
     (show Evaluates program before (number amount) (.signed .i32 amount) before from ⟨1, rfl⟩)
     (show evalAssignValue program.target .add (some (.signed .i32 position)) (.signed .i32 amount) =
       .ok (.signed .i32 (Int.ofNat (position + amount))) from by

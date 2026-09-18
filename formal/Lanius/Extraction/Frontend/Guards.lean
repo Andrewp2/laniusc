@@ -64,8 +64,8 @@ theorem AfterLexer.pass (region : AfterLexer)
     ∃ after, (∀ lexicalFailure storageFailure rest completion final,
         Executes program.core after rest completion final →
         Executes program.core before ({ region with lexicalFailure, storageFailure, rest }).body completion final) ∧
-      CellEffect CellSet.empty before after := by
-  obtain ⟨after, statusCall, effect⟩ := status.call wellFormed
+      CellEffect CellSet.empty before after ∧ Host.MemoryFrame before after := by
+  obtain ⟨after, statusCall, effect, heap⟩ := status.call wellFormed
     (.singleton (show Evaluates program.core before (.local region.lexedId)
       (.structure resultType [.signed .i32 0, .signed .i32 count, .signed .i32 0]) before from
       ⟨1, evalLocal_of_local 0 _ _ _ _ resultLocal⟩)) rfl
@@ -77,7 +77,7 @@ theorem AfterLexer.pass (region : AfterLexer)
     (effect.empty_preserves_local wellFormed countLocal)
     (effect.empty_preserves_local wellFormed capacityLocal) wordsFit
   simp only [divided, decide_true, Bool.not_true] at capacityFalse
-  refine ⟨after, ?_, effect⟩
+  refine ⟨after, ?_, effect, Host.MemoryFrame.unchanged effect heap⟩
   intro lexicalFailure storageFailure rest completion final continuation
   exact executesSequence (executesIfFalse statusFalse (executesSkip _ _))
     (executesSequence (executesIfFalse capacityFalse (executesSkip _ _)) continuation)

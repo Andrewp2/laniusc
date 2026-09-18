@@ -6,29 +6,43 @@ open Lean Elab Term
 
 namespace Lanius.Extraction
 
+/-- Exact constructor expressions, scoped to the current Lean environment.
+Sharing proof-only quotations retains the original checked definitions instead
+of later asking unification to compare duplicate long constructor chains. -/
+private initialize proofQuotationCache : EnvExtension (Std.HashMap Expr Expr) ←
+  registerEnvExtension (pure {})
+
 /-- Keep constructor data below the size where native-code specialization
 repeatedly scans long constructor chains. Auxiliary definitions are ordinary
 kernel-checked definitions, so the result remains definitionally equal to the
 original quotation. No serialized data or proof is trusted by this step. -/
-private partial def boundQuotation (value : Expr) :
+private partial def boundQuotation (value : Expr) (share : Bool) :
     StateRefT (Array Name) TermElabM (Expr × Nat) := do
   if !value.isApp then return (value, 1)
   let mut args := #[]
   let mut size := 1
   for arg in value.getAppArgs do
-    let (arg, argSize) ← boundQuotation arg
+    let (arg, argSize) ← boundQuotation arg share
     args := args.push arg
     size := size + argSize
   let value := mkAppN value.getAppFn args
   if size < 512 then return (value, size)
+  let share := share && !value.hasFVar && !value.hasMVar && !value.hasLooseBVars
+  if share then
+    if let some checked := (proofQuotationCache.getState (← getEnv))[value]? then
+      return (checked, 1)
   let name ← mkAuxDeclName `quotedData
-  let value ← Meta.mkAuxDefinitionFor name value (compile := false)
+  let checked ← Meta.mkAuxDefinitionFor name value (compile := false)
+  if share then
+    modifyEnv fun env => proofQuotationCache.modifyState env (·.insert value checked)
   modify fun names => names.push name
-  return (value, 1)
+  return (checked, 1)
 
-def quoteBounded [ToExpr α] (value : α) : TermElabM Expr := do
-  let ((expression, _), declarations) ← (boundQuotation (toExpr value)).run #[]
-  compileDecls declarations
+/-- Kernel-check the bounded data declarations. Proof-only consumers can skip
+native code generation; this does not skip declaration or equality checking. -/
+def quoteBounded [ToExpr α] (value : α) (compile : Bool := true) : TermElabM Expr := do
+  let ((expression, _), declarations) ← (boundQuotation (toExpr value) (!compile)).run #[]
+  if compile then compileDecls declarations
   return expression
 
 -- One exact input, scoped to this process. The cached value is untrusted

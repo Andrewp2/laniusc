@@ -124,19 +124,7 @@ theorem verifiedParser_accessor_constants :
         type := parserI32Type
         value := .signed .i32 8
       } := by
-  have evidence :
-      (verifiedParserCore.constant? 17).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (17, parserI32Type, some 10) ∧
-      (verifiedParserCore.constant? 15).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (15, parserI32Type, some 8) := by
-    native_decide
-  exact ⟨
-    constant_eq_of_signed_i32_evidence verifiedParserCore 17 10 evidence.1,
-    constant_eq_of_signed_i32_evidence verifiedParserCore 15 8 evidence.2⟩
+  exact ⟨rfl, rfl⟩
 
 theorem verifiedParser_rhs_symbol_constants :
     verifiedParserCore.constant? 16 = some {
@@ -149,19 +137,7 @@ theorem verifiedParser_rhs_symbol_constants :
         type := parserI32Type
         value := .signed .i32 11
       } := by
-  have evidence :
-      (verifiedParserCore.constant? 16).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (16, parserI32Type, some 9) ∧
-      (verifiedParserCore.constant? 18).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (18, parserI32Type, some 11) := by
-    native_decide
-  exact ⟨
-    constant_eq_of_signed_i32_evidence verifiedParserCore 16 9 evidence.1,
-    constant_eq_of_signed_i32_evidence verifiedParserCore 18 11 evidence.2⟩
+  exact ⟨rfl, rfl⟩
 
 /-- Read one fixed header word from a caller-owned packed grammar. -/
 theorem evaluatesParserHeaderRead

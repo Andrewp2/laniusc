@@ -85,8 +85,42 @@ def symbolRules : List SymbolRule :=
     ⟨[63], .question⟩
   ]
 
+theorem startsWith_take (expected input : List Nat) (bounded : expected.length ≤ count) :
+    startsWith expected (input.take count) = startsWith expected input := by
+  induction expected generalizing input count with
+  | nil => rfl
+  | cons head rest ih =>
+    cases count with
+    | zero => simp at bounded
+    | succ count =>
+      cases input with
+      | nil => rfl
+      | cons first tail =>
+        simp only [List.take_succ_cons, startsWith]
+        rw [ih tail (by simpa using bounded)]
+
+theorem bestMatching_take (rules : List SymbolRule) (input : List Nat)
+    (bounded : ∀ rule ∈ rules, rule.spelling.length ≤ count) :
+    bestMatching rules (input.take count) = bestMatching rules input := by
+  induction rules with
+  | nil => rfl
+  | cons rule rules ih =>
+    simp only [bestMatching, SymbolRule.matches,
+      startsWith_take _ _ (bounded rule (by simp)),
+      ih (fun rule member => bounded rule (by simp [member]))]
+    rfl
+
+/-- Symbols inspect at most three bytes; do not map the unconsumed file suffix. -/
 def matchSymbolHead (input : List Byte) : Option SymbolRule :=
-  bestMatching symbolRules (input.map Fin.val)
+  bestMatching symbolRules ((input.take 3).map Fin.val)
+
+theorem matchSymbolHead_eq (input : List Byte) :
+    matchSymbolHead input = bestMatching symbolRules (input.map Fin.val) := by
+  unfold matchSymbolHead
+  rw [List.map_take]
+  apply bestMatching_take
+  exact fun rule member => of_decide_eq_true (List.all_eq_true.mp
+    (by decide : symbolRules.all (fun rule => decide (rule.spelling.length ≤ 3)) = true) rule member)
 
 def IsLongestMatch
     (rules : List SymbolRule) (input : List Nat) (result : SymbolRule) : Prop :=
@@ -211,7 +245,7 @@ theorem matchSymbolHead_spec
     {input : List Byte} {result : SymbolRule}
     (selected : matchSymbolHead input = some result) :
     IsLongestMatch symbolRules (input.map Fin.val) result := by
-  exact bestMatching_spec selected
+  exact bestMatching_spec ((matchSymbolHead_eq input).symm.trans selected)
 
 theorem startsWith_equal_spelling
     {left right input : List Nat}

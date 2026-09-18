@@ -15,7 +15,7 @@ reuse the `.olean` instead of regenerating the native checker declaration.
 /-- The first reusable stage is the parser's checked located Surface tree. -/
 theorem verifiedParser_scoped_surface_accepted :
     (ScopedSurface.checkArtifact? verifiedParserArtifact).isSome = true := by
-  native_decide
+  decide +kernel
 
 def verifiedParserScopedArtifact :
     ScopedSurface.CheckedArtifact verifiedParserArtifact :=

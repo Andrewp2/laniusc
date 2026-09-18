@@ -1,4 +1,5 @@
 import Lanius.Extraction.SemanticTokens.Frontend
+import Lanius.Extraction.Frontend.Frame
 
 namespace Lanius.Extraction.SemanticTokens
 
@@ -8,16 +9,6 @@ open Lanius.Extraction.Frontend Lanius.Extraction.ParserTreeSource Collect
 def frontendCells (data : SyntaxData) : List CellId :=
   [data.sourceCell, data.rawCell, data.canonicalCell, data.kindsCell, data.grammarCell,
     data.workspaceCell, data.recordsCell, data.offsetsCell]
-
-private theorem grammar_untouched {data : SyntaxData} (valid : data.Valid) : ¬ data.writes data.grammarCell := by
-  intro changed
-  rcases changed with ((raw | canonical) | (kinds | workspace)) | (records | offsets)
-  · exact valid.grammarRaw raw
-  · exact valid.grammarCanonical canonical
-  · exact valid.grammarKinds kinds
-  · exact valid.grammarWorkspace workspace
-  · exact (valid.outputSeparation data.grammarCell (by simp)).1 records
-  · exact (valid.outputSeparation data.grammarCell (by simp)).2 offsets
 
 private theorem output_untouched {data : SyntaxData}
     (separate : ∀ cell ∈ frontendCells data, cell ≠ outputCell) : ¬ data.writes outputCell := by
@@ -44,7 +35,7 @@ def CollectionContinuation (program : Program) (functionId : FunctionId) (data :
   ∃ collection : CollectionRecords data.grammar (artifactTokens data.tokens) result.parse.tree 0 0, ∃ after,
     count = (artifactTokens data.tokens).length ∧ nodes = collection.records.length ∧
     words = (ParserTreeLayout.treeFrom 0 0 result.parse.tree).words.length ∧
-    Evaluates program extracted (.call functionId ((collectorValues data count nodes words outputCell original).map Expr.value))
+    Evaluates program extracted (.call functionId ((collectorValues data count nodes outputCell original).map Expr.value))
       (.signed .i32 (if count * 2 ≤ original.length then 0 else -2)) after ∧
     after.cellEntry? outputCell = some {
       id := outputCell, value := some (.array (signedI32Values
@@ -57,7 +48,9 @@ from the frontend postcondition and write footprint. -/
 theorem collect_after_frontend {checkedProgram : CoreSynthesis.Program.CheckedProgram artifacts}
     (checked : CheckedCollect checkedProgram) {data : SyntaxData} (valid : data.Valid)
     (kindsFit : data.grammar.grammar.n_kinds ≤ 32768)
-    (wellFormed : StateWellFormed before) (owned : data.Owns before)
+    (wellFormed : StateWellFormed before)
+    (grammar : before.cellEntry? data.grammarCell = some {
+      id := data.grammarCell, value := some (.array (signedI32Values data.grammarWords)) })
     (output : before.cellEntry? outputCell = some {
       id := outputCell, value := some (.array (signedI32Values original)) })
     (outputFit : original.length ≤ 2147483647)
@@ -66,7 +59,7 @@ theorem collect_after_frontend {checkedProgram : CoreSynthesis.Program.CheckedPr
     (effect : CellEffect data.writes before extracted) (success : stage = 0) :
     CollectionContinuation checkedProgram.core checked.source.function.id data count nodes words outputCell original before extracted := by
   obtain ⟨result⟩ := frontend_result valid post success
-  have grammarAfter := effect.preserves_entry wellFormed owned.grammar (grammar_untouched valid)
+  have grammarAfter := effect.preserves_entry wellFormed grammar (SyntaxData.grammar_untouched valid)
   have outputAfter := effect.preserves_entry wellFormed output (output_untouched separate)
   have collectorSeparate : ∀ cell ∈ [data.grammarCell, data.kindsCell, data.recordsCell, data.offsetsCell], cell ≠ outputCell := by
     intro cell member
@@ -75,7 +68,7 @@ theorem collect_after_frontend {checkedProgram : CoreSynthesis.Program.CheckedPr
     rcases member with rfl | rfl | rfl | rfl <;> simp [frontendCells]
   obtain ⟨collection, after, call, contents, collectorEffect⟩ := result.collect checked valid kindsFit
     effect.wellFormed grammarAfter outputAfter outputFit collectorSeparate
-    (literal_arguments checkedProgram.core extracted (collectorValues data count nodes words outputCell original))
+    (literal_arguments checkedProgram.core extracted (collectorValues data count nodes outputCell original))
   have nodesEqual : nodes = collection.records.length := by
     have same := congrArg List.length collection.offsets
     simpa only [List.length_map, ← result.nodesEq] using same.symm
@@ -105,9 +98,9 @@ theorem frontend_then_collect (syntaxChecked : CheckedSyntax materializer) (link
       CellEffect data.writes before extracted ∧
       (stage = 0 → CollectionContinuation checkedProgram.core collector.source.function.id data count nodes words
         outputCell original before extracted) := by
-  obtain ⟨stage, detail, count, nodes, words, position, extracted, call, post, raw, effect⟩ :=
+  obtain ⟨stage, detail, count, nodes, words, position, extracted, call, post, raw, effect, _⟩ :=
     syntaxChecked.call_evaluates linked data valid wellFormed owned argumentsResult
   exact ⟨stage, detail, count, nodes, words, position, extracted, call, post, raw, effect,
-    fun success => collect_after_frontend collector valid kindsFit wellFormed owned output outputFit separate post effect success⟩
+    fun success => collect_after_frontend collector valid kindsFit wellFormed owned.grammar output outputFit separate post effect success⟩
 
 end Lanius.Extraction.SemanticTokens

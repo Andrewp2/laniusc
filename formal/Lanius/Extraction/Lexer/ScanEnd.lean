@@ -107,7 +107,7 @@ theorem scanSucceededBody_executes
   have execution := pureResultBlock_executes state wellFormed success
     endOffset errorOffset scanSucceededBlock (.boolean success)
     (scanSucceededBlock_evaluates success endOffset errorOffset)
-    (by native_decide)
+    (by decide +kernel)
   rw [scanSucceededBlock_toCore_exactly] at execution
   exact execution
 
@@ -122,7 +122,7 @@ theorem scanEndOffsetBody_executes
   have execution := pureResultBlock_executes state wellFormed success
     endOffset errorOffset scanEndOffsetBlock (.signed .i32 endOffset)
     (scanEndOffsetBlock_evaluates success endOffset errorOffset)
-    (by native_decide)
+    (by decide +kernel)
   rw [scanEndOffsetBlock_toCore_exactly] at execution
   exact execution
 
@@ -137,7 +137,7 @@ theorem scanErrorOffsetBody_executes
   have execution := pureResultBlock_executes state wellFormed success
     endOffset errorOffset scanErrorOffsetBlock (.signed .i32 errorOffset)
     (scanErrorOffsetBlock_evaluates success endOffset errorOffset)
-    (by native_decide)
+    (by decide +kernel)
   rw [scanErrorOffsetBlock_toCore_exactly] at execution
   exact execution
 

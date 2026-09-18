@@ -20,25 +20,87 @@ fn main() -> i32 {
     if (argument_count <= 1) {
         return 1;
     }
-    let packed_path:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(1024, 4), 256);
-    let path:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(4096, 4), 1024);
-    let source:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(262144, 4), 65536);
-    let grammar:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(8716, 4), 2179);
-    let raw:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(262144, 4), 65536);
-    let canonical:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(262144, 4), 65536);
-    let kinds:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(262144, 4), 65536);
-    let workspace:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(16777216, 4), 4194304);
-    let records:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(4194304, 4), 1048576);
-    let offsets:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(262144, 4), 65536);
-    let semantic:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(524288, 4), 131072);
-    let output:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(33554432, 4), 8388608);
-    let packed_io:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(65536, 4), 16384);
+    let packed_path:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(1024, 4);
+        if (allocation == 0) { return 3; }
+        packed_path = verified::host::i32_slice_from_raw_parts(allocation, 256);
+    }
+    let path:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(4096, 4);
+        if (allocation == 0) { return 3; }
+        path = verified::host::i32_slice_from_raw_parts(allocation, 1024);
+    }
+    let source:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        source = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let grammar:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(8716, 4);
+        if (allocation == 0) { return 3; }
+        grammar = verified::host::i32_slice_from_raw_parts(allocation, 2179);
+    }
+    let raw:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        raw = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let canonical:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        canonical = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let kinds:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        kinds = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let workspace:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(16777216, 4);
+        if (allocation == 0) { return 3; }
+        workspace = verified::host::i32_slice_from_raw_parts(allocation, 4194304);
+    }
+    let records:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(4194304, 4);
+        if (allocation == 0) { return 3; }
+        records = verified::host::i32_slice_from_raw_parts(allocation, 1048576);
+    }
+    let offsets:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        offsets = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let semantic:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(524288, 4);
+        if (allocation == 0) { return 3; }
+        semantic = verified::host::i32_slice_from_raw_parts(allocation, 131072);
+    }
+    let output:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(67108864, 4);
+        if (allocation == 0) { return 3; }
+        output = verified::host::i32_slice_from_raw_parts(allocation, 16777216);
+    }
+    let packed_io:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(65536, 4);
+        if (allocation == 0) { return 3; }
+        packed_io = verified::host::i32_slice_from_raw_parts(allocation, 16384);
+    }
     let packed_path_pointer: ptr = verified::host::i32_slice_data_ptr(packed_path);
     let packed_io_pointer: ptr = verified::host::i32_slice_data_ptr(packed_io);
     let workspace_pointer: ptr = verified::host::i32_slice_data_ptr(workspace);
-    if (packed_path_pointer == 0 || verified::host::i32_slice_data_ptr(path) == 0 || verified::host::i32_slice_data_ptr(source) == 0 || verified::host::i32_slice_data_ptr(grammar) == 0 || verified::host::i32_slice_data_ptr(raw) == 0 || verified::host::i32_slice_data_ptr(canonical) == 0 || verified::host::i32_slice_data_ptr(kinds) == 0 || workspace_pointer == 0 || verified::host::i32_slice_data_ptr(records) == 0 || verified::host::i32_slice_data_ptr(offsets) == 0 || verified::host::i32_slice_data_ptr(semantic) == 0 || verified::host::i32_slice_data_ptr(output) == 0 || packed_io_pointer == 0) {
-        return 3;
-    }
     // The exact grammar remains embedded, but as one lexical token rather
     // than thousands of array-element productions. Four hexadecimal bytes
     // encode each unsigned 16-bit grammar word from most to least significant.
@@ -50,13 +112,13 @@ fn main() -> i32 {
         grammar[grammar_index] =(hex_nibble(encoded_word&255) << 12)|(hex_nibble((encoded_word >> 8)&255) << 8)|(hex_nibble((encoded_word >> 16)&255) << 4)|hex_nibble((encoded_word >> 24)&255);
         grammar_index += 1;
     }
-    let pack_start: str = "import Lanius.Extraction.CoreSynthesis.Program\n\nopen Lanius.Extraction\nopen Lanius.Extraction.CoreSynthesis.Program\n\ndef encodedPack : String := \"";
-    let pack_end: str = "\"\n\ndef readExpectedSources (paths : List String) : IO (List SourceFile) :=\n  paths.mapM fun (path : String) =>\n    IO.FS.readBinFile path >>= fun contents =>\n      pure { path, bytes := contents.toList.map UInt8.toNat }\n\ndef main (paths : List String) : IO UInt32 :=\n  readExpectedSources paths >>= fun sources =>\n    match checkCompactCoreSourcePack encodedPack sources with\n    | .success _ => do\n      IO.println \"source, syntax, Surface, and synthesized x86 Core certificates accepted for the exact input files\"\n      pure 0\n    | .failure stage => do\n      IO.eprintln (\"compact source, Surface, or synthesized Core certificate checking failed at \" ++ stage)\n      pure 1\n";
-    let output_length: i32 = verified::output::text(output, 8388608, 0, pack_start, 146);
+    let pack_start: str = "import Lanius.Extraction.CoreSynthesis.Program\n\nopen Lanius.Extraction\nopen Lanius.Extraction.CoreSynthesis.Program\n\ndef encodedPack : String := \"\0\0";
+    let pack_end: str = "\"\n\ndef readExpectedSources (paths : List String) : IO (List SourceFile) :=\n  paths.mapM fun (path : String) =>\n    IO.FS.readBinFile path >>= fun contents =>\n      pure { path, bytes := contents.toList.map UInt8.toNat }\n\ndef main (paths : List String) : IO UInt32 :=\n  readExpectedSources paths >>= fun sources =>\n    match checkCompactCoreSourcePack encodedPack sources with\n    | .success _ => do\n      IO.println \"source, syntax, Surface, and synthesized x86 Core certificates accepted for the exact input files\"\n      pure 0\n    | .failure stage => do\n      IO.eprintln (\"compact source, Surface, or synthesized Core certificate checking failed at \" ++ stage)\n      pure 1\n\0\0\0";
+    let output_length: i32 = verified::output::text(output, 16777216, 0, pack_start, 146);
     if (output_length != 146) {
         return 23;
     }
-    output_length = verified::compact_artifact_output::emit_header(argument_count - 1, output, 8388608, output_length);
+    output_length = verified::compact_artifact_output::emit_header(argument_count - 1, output, 16777216, output_length);
     if (output_length <= -1) {
         return 26;
     }
@@ -106,14 +168,14 @@ fn main() -> i32 {
         if (verified::semantic_tokens::collect(grammar, 2179, kinds, tokens, records, 1048576, offsets, nodes, semantic, 131072) != 0) {
             return 20;
         }
-        output_length = verified::compact_artifact_output::emit_unit(path, path_length, source, source_length, raw, 65536, verified::extraction::raw_count(extracted), canonical, 65536, tokens, semantic, 131072, records, 1048576, offsets, nodes, output, 8388608, output_length);
+        output_length = verified::compact_artifact_output::emit_unit(path, path_length, source, source_length, raw, 65536, verified::extraction::raw_count(extracted), canonical, 65536, tokens, semantic, 131072, records, 1048576, offsets, nodes, output, 16777216, output_length);
         if (output_length <= -1) {
             return 21;
         }
         argument += 1;
     }
     let before_suffix: i32 = output_length;
-    output_length = verified::output::text(output, 8388608, output_length, pack_end, 677);
+    output_length = verified::output::text(output, 16777216, output_length, pack_end, 677);
     if (output_length != before_suffix + 677) {
         return 25;
     }

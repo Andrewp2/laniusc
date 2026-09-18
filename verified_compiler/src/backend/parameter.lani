@@ -1,0 +1,68 @@
+module backend::parameter;
+import x86::register;
+import x86::encode;
+import x86::control;
+import x86::buffer;
+
+// Transport of a Core function, in signed i32 words:
+// [version=1, pointer_bits=64, function_id, result_type=1(i32),
+//  parameter_count, body_word_count, (local_id, type=1)*, body...].
+// Body constructors are preorder Core syntax: skip=0, sequence=2,
+// returnValue=10 followed by option some=1 and local expression=1,id.
+// This first lowering accepts return-of-parameter bodies, with or without
+// the frontend's trailing skip. Other Core forms are explicitly unsupported.
+// The transport is input data, not a new language or an assumed proof.
+pub fn select(input: [i32], length: i32) -> i32 {
+    if (length < 6) { return -1; }
+    if (input[0] != 1 || input[1] != 64 || input[2] < 0 || input[3] != 1) { return -1; }
+    let count: i32 = input[4];
+    let body_length: i32 = input[5];
+    if (count < 1 || count > 6 || (body_length != 4 && body_length != 6)) { return -1; }
+    let body: i32 = 6 + count * 2;
+    if (length != body + body_length) { return -1; }
+    let first: i32 = body;
+    if (body_length == 6) {
+        if (input[body] != 2 || input[body + 5] != 0) { return -1; }
+        first += 1;
+    }
+    if (input[first] != 10 || input[first + 1] != 1 || input[first + 2] != 1) { return -1; }
+    let returned: i32 = input[first + 3];
+    let selected: i32 = -1;
+    let index: i32 = 0;
+    while (index < count) {
+        let id: i32 = input[6 + index * 2];
+        if (id < 0 || input[7 + index * 2] != 1) { return -1; }
+        let earlier: i32 = 0;
+        while (earlier < index) {
+            if (input[6 + earlier * 2] == id) { return -1; }
+            earlier += 1;
+        }
+        if (id == returned) { selected = index; }
+        index += 1;
+    }
+    return selected;
+}
+
+// SysV integer arguments, not DWARF register numbers.
+pub fn argument_register(position: i32) -> i32 {
+    if (position == 0) { return x86::register::RDI; }
+    if (position == 1) { return x86::register::RSI; }
+    if (position == 2) { return x86::register::RDX; }
+    if (position == 3) { return x86::register::RCX; }
+    if (position == 4) { return x86::register::R8; }
+    if (position == 5) { return x86::register::R9; }
+    return -1;
+}
+
+pub fn compile(input: [i32], length: i32, output: [i32], capacity: i32, cursor: i32) -> i32 {
+    let selected: i32 = select(input, length);
+    if (selected < 0) { return -1; }
+    let source: i32 = argument_register(selected);
+    let size: i32 = 3;
+    if (selected >= 4) { size = 4; }
+    // Reserve the entire function before emitting any bytes.
+    if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
+    let next: i32 = x86::encode::move_register(output, capacity, cursor, 32, x86::register::RAX, source);
+    if (next < 0) { return -1; }
+    return x86::control::return_near(output, capacity, next);
+}

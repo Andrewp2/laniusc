@@ -46,13 +46,13 @@ theorem call_evaluates_at
         (ScanOne.Model.sourceIntegers request.source) recordsCell
         (CanonicalTokens.CanonicalizeModel.encodeTokens (Model.emittedTokens request.outcome) ++
           records.drop (3 * (Model.emittedTokens request.outcome).length)))).holds after ∧
-      CellEffect (CellSet.singleton recordsCell) afterArguments after := by
+      CellEffect (CellSet.singleton recordsCell) afterArguments after ∧ HeapFrame afterArguments after := by
   let unrelocate : Core.Relocation.Symbols := ⟨inverseType, id, id⟩
   let bindings := parameterBindings
     (Caller.environment sourceCell recordsCell request.source records request.capacity)
   have restored : Semantics.Relocation.state symbols (Semantics.Relocation.state unrelocate afterArguments) =
       afterArguments := Semantics.Relocation.state_leftInverse symbols unrelocate inverse afterArguments
-  obtain ⟨completed, execution, buffers, effect⟩ := Caller.callee_executes invariant request records
+  obtain ⟨completed, execution, buffers, effect, heap⟩ := Caller.callee_executes invariant request records
     recordsCapacity sourceCell recordsCell distinct
     (Semantics.Relocation.state_wellFormed unrelocate wellFormed)
     (Semantics.Relocation.world_owns unrelocate owned)
@@ -72,10 +72,12 @@ theorem call_evaluates_at
     simp only [Core.Relocation.function, lexInto_has_body, Option.map_some]
   have closed := CellEffect.closeCall afterArguments bindings wellFormed linkedEffect
   refine ⟨restoreLocals afterArguments (Semantics.Relocation.state symbols completed),
-    evaluatesCallReturned argumentsResult found bound bodyExact body, linkedBuffers, closed.narrow ?_⟩
-  intro cell old written
-  rcases written with output | fresh
-  · exact output
-  · exact (Nat.not_le_of_lt old fresh).elim
+    evaluatesCallReturned argumentsResult found bound bodyExact body, linkedBuffers, closed.narrow ?_, ?_⟩
+  · intro cell old written
+    rcases written with output | fresh
+    · exact output
+    · exact (Nat.not_le_of_lt old fresh).elim
+  · have original := heap.closeCall (Semantics.Relocation.state unrelocate afterArguments) bindings
+    exact ⟨original.heap, original.views⟩
 
 end Lanius.Extraction.RawLexer.LexInto.Linked

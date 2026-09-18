@@ -37,19 +37,19 @@ theorem evaluatesSliceCopy (program : Program) (before : State)
       after.cellEntry? sourceCell = some {
         id := sourceCell,
         value := some (.array (signedI32Values source)) } ∧
-      CellEffect (CellSet.singleton destinationCell) before after := by
+      CellEffect (CellSet.singleton destinationCell) before after ∧ HeapFrame before after := by
   have sourceEvaluation : Evaluates program before (.local sourceId)
       (.slice (.scalar (.signed .i32)) sourceCell [] 0 source.length) before :=
     ⟨1, evalLocal_of_local 0 program before sourceId _ sourceLocal⟩
   have read := evaluatesSignedI32SliceIndex program before before before source
     (.local sourceId) sourceExpression sourceCell sourceIndex sourceBound
     sourceEvaluation sourceResult sourceContents
-  obtain ⟨after, copied, contents, effect⟩ := evaluatesSliceStore program before before
+  obtain ⟨after, copied, contents, effect, storeHeapFrame, _⟩ := evaluatesSliceStore program before before
     destination destinationId destinationExpression (.index (.local sourceId) sourceExpression)
     destinationCell destinationIndex (source.get ⟨sourceIndex, sourceBound⟩)
     wellFormed destinationBound destinationLocal destinationResult read
     (CellEffect.refl wellFormed) destinationContents
   exact ⟨after, copied, contents,
-    effect.preserves_entry wellFormed sourceContents distinct, effect⟩
+    effect.preserves_entry wellFormed sourceContents distinct, effect, storeHeapFrame⟩
 
 end Lanius.Separation

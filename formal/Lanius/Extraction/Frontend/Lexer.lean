@@ -51,8 +51,8 @@ theorem lex_then_count
         ready.cellEntry? cell = some { id := cell, value := value }) ∧
       (∀ id value, before.local? id = some value → lexedId ≠ id → countId ≠ id →
         value ≠ .array (signedI32Values records) → ready.local? id = some value) ∧
-      CellEffect (CellSet.singleton rawCell) before (restoreLocals before ready) := by
-  obtain ⟨lexed, lexerCall, buffers, lexerEffect⟩ := Linked.call_evaluates_at invariant link injective
+      CellEffect (CellSet.singleton rawCell) before (restoreLocals before ready) ∧ Host.MemoryFrame before ready := by
+  obtain ⟨lexed, lexerCall, buffers, lexerEffect, lexerHeap⟩ := Linked.call_evaluates_at invariant link injective
     inverseType inverse retained request records recordsCapacity sourceCell rawCell distinct
       wellFormed owned argumentsResult
   let result := Core.Relocation.value symbols (Model.resultValue request.outcome)
@@ -64,7 +64,7 @@ theorem lex_then_count
     dsimp only [result]
     cases request.outcome <;> exact ⟨_, rfl, rfl⟩
   obtain ⟨fields, resultShape, countField⟩ := projected
-  obtain ⟨counted, countCall, countEffect⟩ := accessor.call resultWF
+  obtain ⟨counted, countCall, countEffect, countHeap⟩ := accessor.call resultWF
     (.singleton (show Evaluates program.core withResult (.local lexedId)
       (.structure (symbols.typeId 4) fields) withResult from
       ⟨1, evalLocal_of_local 0 _ _ _ _ (resultShape ▸ resultLocal)⟩)) countField
@@ -80,7 +80,7 @@ theorem lex_then_count
       ready.cellEntry? cell = some { id := cell, value := value } :=
     ((bindLocal_effect counted countId _).oldCells cell
       (StateWellFormed.cell_lt_next_of_entry countEffect.wellFormed found) (by simp [CellSet.empty])).trans found
-  refine ⟨ready, ?_, readyWF, bindLocal_finds_local _ _ _ countEffect.wellFormed, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨ready, ?_, readyWF, bindLocal_finds_local _ _ _ countEffect.wellFormed, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro rest completion final tailRun
     simpa only [restoreLocals, lexerEffect.locals] using
       executesLetLocal (type := .structure (symbols.typeId 4)) lexerCall
@@ -107,5 +107,24 @@ theorem lex_then_count
       (countEffect.trans countClosed)
     have total := lexerEffect.trans (prefixClosed.weaken CellSet.empty_subset)
     simpa only [restoreLocals, lexerEffect.locals] using total
+  · have rawBefore := owned _ _ (ReadOnly.World.pair_finds_second (Ne.symm distinct))
+    have rawAfter := buffers _ _ (ReadOnly.World.pair_finds_second (Ne.symm distinct))
+    have emittedBound := Model.emittedTokens_length_le_capacity request.source request.capacity
+    have encodedLength :
+        (CanonicalTokens.CanonicalizeModel.encodeTokens (Model.emittedTokens request.outcome) ++
+          records.drop (3 * (Model.emittedTokens request.outcome).length)).length = records.length := by
+      simp only [List.length_append, CanonicalTokens.Compaction.encoded_length, List.length_drop]
+      change (Model.emittedTokens request.outcome).length ≤ request.capacity at emittedBound
+      omega
+    have lexicalMemory := Host.MemoryFrame.array lexerEffect lexerHeap rawBefore rawAfter encodedLength (by
+      intro original word member
+      rcases List.mem_append.mp member with tokenWord | untouched
+      · exact BufferCopy.encoded_range _ request.source.length
+          (Model.emittedTokens_validSpans request.source request.capacity)
+          (by have := request.sourceFitsI32; omega) word tokenWord
+      · exact original word (List.mem_of_mem_drop untouched))
+    exact lexicalMemory.trans ((Host.MemoryFrame.bindLocal lexed lexedId result).trans
+      ((Host.MemoryFrame.unchanged countEffect countHeap).trans
+        (Host.MemoryFrame.bindLocal counted countId (.signed .i32 (Model.emittedTokens request.outcome).length))))
 
 end Lanius.Extraction.Frontend

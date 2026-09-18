@@ -1,0 +1,108 @@
+module app::main;
+
+import verified::host;
+import verified::byte_io;
+import verified::raw_lexer;
+import verified::canonical_tokens;
+import verified::parser;
+
+// Untrusted, one-time resource-certificate proposer. This calls the existing
+// Lanius lexer/parser and exports its chart; it is not another recognizer or
+// production extractor. Lean independently checks closure and capacity.
+// Usage: envelope packed-grammar.bin source.lani ...
+// Little-endian u32 words: [version, file-count, 0, 0], then per file
+// [token-count, item-count, 0, 0] followed by (position, production, dot, origin).
+const VERSION: i32 = 1;
+const BUFFER_WORDS: i32 = 65536;
+const WORKSPACE_WORDS: i32 = 4194304;
+const IO_WORDS: i32 = 16384;
+
+fn write_words(output: [i32], length: i32) -> i32 {
+    let bytes: i32 = length * 4;
+    let size: usize = bytes;
+    if (verified::host::write_stdout(verified::host::i32_slice_data_ptr(output), size) != bytes) {
+        return 1;
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    let argc: i32 = verified::host::argc();
+    if (argc <= 2) { return 1; }
+    let source: [i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(262144, 4), BUFFER_WORDS);
+    let grammar: [i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(65536, 4), IO_WORDS);
+    let raw: [i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(262144, 4), BUFFER_WORDS);
+    let canonical: [i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(262144, 4), BUFFER_WORDS);
+    let kinds: [i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(262144, 4), BUFFER_WORDS);
+    let workspace: [i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(16777216, 4), WORKSPACE_WORDS);
+    let io: [i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(65536, 4), IO_WORDS);
+    let path: [i32] = verified::host::i32_slice_from_raw_parts(verified::host::alloc(2048, 4), 512);
+    let path_pointer: ptr = verified::host::i32_slice_data_ptr(path);
+    if (verified::host::i32_slice_data_ptr(source) == 0 || verified::host::i32_slice_data_ptr(grammar) == 0 ||
+        verified::host::i32_slice_data_ptr(raw) == 0 || verified::host::i32_slice_data_ptr(canonical) == 0 ||
+        verified::host::i32_slice_data_ptr(kinds) == 0 || verified::host::i32_slice_data_ptr(workspace) == 0 ||
+        verified::host::i32_slice_data_ptr(io) == 0 || path_pointer == 0) { return 2; }
+    let path_length: i32 = verified::host::arg_len(1);
+    if (path_length <= 0 || path_length > 2048) { return 3; }
+    if (verified::host::arg_read(1, path_pointer, path_length) != path_length) { return 3; }
+    let handle: i32 = verified::host::open_read(path_pointer, path_length);
+    if (handle <= -1) { return 3; }
+    let grammar_bytes: i32 = verified::byte_io::read_file(handle, source, BUFFER_WORDS, io);
+    if (verified::host::close(handle) != 0) { return 3; }
+    if (grammar_bytes <= 0 || grammar_bytes % 4 != 0) { return 3; }
+    let grammar_length: i32 = grammar_bytes / 4;
+    let word: i32 = 0;
+    while (word != grammar_length) {
+        let offset: i32 = word * 4;
+        grammar[word] = source[offset] | (source[offset + 1] << 8) |
+            (source[offset + 2] << 16) | (source[offset + 3] << 24);
+        word += 1;
+    }
+    io[0] = VERSION; io[1] = argc - 2; io[2] = 0; io[3] = 0;
+    if (write_words(io, 4) != 0) { return 4; }
+    let argument: i32 = 2;
+    while (argument != argc) {
+        let source_path_length: i32 = verified::host::arg_len(argument);
+        if (source_path_length <= 0 || source_path_length > 2048) { return 5; }
+        if (verified::host::arg_read(argument, path_pointer, source_path_length) != source_path_length) { return 5; }
+        let source_handle: i32 = verified::host::open_read(path_pointer, source_path_length);
+        if (source_handle <= -1) { return 5; }
+        let source_length: i32 = verified::byte_io::read_file(source_handle, source, BUFFER_WORDS, io);
+        if (verified::host::close(source_handle) != 0) { return 5; }
+        if (source_length <= -1) { return 5; }
+        let lexed = verified::raw_lexer::lex_into(source, source_length, raw, BUFFER_WORDS / 3);
+        if (verified::raw_lexer::lex_status(lexed) != verified::raw_lexer::LEX_SUCCESS) { return 6; }
+        let raw_count: i32 = verified::raw_lexer::lex_token_count(lexed);
+        word = 0;
+        while (word != raw_count * 3) { canonical[word] = raw[word]; word += 1; }
+        let token_count: i32 = verified::canonical_tokens::canonicalize_in_place(source, canonical, raw_count);
+        word = 0;
+        while (word != token_count) { kinds[word] = canonical[word * 3]; word += 1; }
+        let parsed = verified::parser::recognize(grammar, grammar_length, kinds, token_count, workspace, WORKSPACE_WORDS);
+        if (verified::parser::parse_status(parsed) != verified::parser::PARSE_SUCCESS) { return 7; }
+        let count: i32 = verified::parser::parse_state_count(parsed);
+        io[0] = token_count; io[1] = count; io[2] = 0; io[3] = 0;
+        if (write_words(io, 4) != 0) { return 8; }
+        let base: i32 = token_count * 4 + 2;
+        let id: i32 = 0;
+        let used: i32 = 0;
+        while (id != count) {
+            let offset: i32 = base + id * 9;
+            io[used] = workspace[offset + 3];
+            io[used + 1] = workspace[offset];
+            io[used + 2] = workspace[offset + 1];
+            io[used + 3] = workspace[offset + 2];
+            used += 4;
+            id += 1;
+            if (used == IO_WORDS) {
+                if (write_words(io, used) != 0) { return 9; }
+                used = 0;
+            }
+        }
+        if (used != 0) {
+            if (write_words(io, used) != 0) { return 10; }
+        }
+        argument += 1;
+    }
+    return 0;
+}

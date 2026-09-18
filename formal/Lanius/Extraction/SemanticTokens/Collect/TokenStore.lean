@@ -46,7 +46,7 @@ theorem token_store_execute {use : Use} {raw canonical : Nat}
   have cursorRead := Assertion.localPointsTo_local _ _ _ _ cursor
   have cursorSeparate : cursorCell ≠ outputCell :=
     local_cell_ne_of_distinct_value cursorRead backing (by intro impossible; cases impossible) cursor.1
-  obtain ⟨written, assigned, contents, writeEffect⟩ := evaluatesSliceStore program before before values 8
+  obtain ⟨written, assigned, contents, writeEffect, storeHeapFrame, _⟩ := evaluatesSliceStore program before before values 8
     (read 23) (read 20) outputCell use.slot use.kind wellFormed
     (List.getElem?_eq_some_iff.mp available).1 outputLocal slot (local_evaluates program kindRead)
     (CellEffect.refl wellFormed) backing

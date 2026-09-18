@@ -44,12 +44,13 @@ theorem Checked.executes (checked : Checked program matcher statement)
     (capacity : start + width ≤ source.length) (bounded : source.length ≤ 2147483647) :
     ∃ after, Executes program before statement
       (.returned (some (.signed .i32
-        (lookup ((source.drop start).take width) referenceRows 1)))) after ∧ CellEffect CellSet.empty before after := by
-  obtain ⟨after, executed, frame⟩ := executes_body program matcher checked.source.fallback before
+        (lookup ((source.drop start).take width) referenceRows 1)))) after ∧ CellEffect CellSet.empty before after ∧
+      Host.MemoryFrame before after := by
+  obtain ⟨after, executed, frame, memory⟩ := executes_body program matcher checked.source.fallback before
     sourceCell source start width checked.source.groups checked.matcherFound checked.rules checked.fallback
     wellFormed sourceLocal sourceContents startLocal endLocal capacity bounded
   rw [dispatched_reference program source start width checked.source.fallback checked.source.groups
     checked.rules checked.reference checked.identifier capacity] at executed
-  exact ⟨after, checked.source.exactSource ▸ executed, frame⟩
+  exact ⟨after, checked.source.exactSource ▸ executed, frame, memory⟩
 
 end Lanius.Extraction.CanonicalTokens.Dispatch

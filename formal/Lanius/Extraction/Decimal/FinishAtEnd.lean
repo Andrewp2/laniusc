@@ -41,7 +41,6 @@ private theorem finishAtEnd_run
   unfold tailBodyRun at body
   rw [body]
   simp only [Env.pop_push]
-  rfl
 
 /-- The exact checked decimal tail agrees with `finishDecimal` when the byte
 after the decimal point is out of bounds. -/

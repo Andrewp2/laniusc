@@ -699,6 +699,9 @@ theorem command_reflects
           cases value <;> simp [Stateful.toCoreStmt] at statementEq
       | breakLoop => simp [Stateful.toCoreStmt] at statementEq
       | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+  | letUninitialized _ _ =>
+      cases command <;> simp_all [Stateful.toCoreStmt, FreshSimulation.actionFree]
+      case returnValue value => cases value <;> simp [Stateful.toCoreStmt] at statementEq
   | letLocal initializerResult bodyResult bodyIH =>
       rename_i beforeCore initializerExpr initValue initialized localId bodyStmt
         completionCore completed typeCore

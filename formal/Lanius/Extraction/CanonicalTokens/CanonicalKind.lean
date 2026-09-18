@@ -1,6 +1,7 @@
 import Lanius.Compiler.LexerCanonical
 import Lanius.Extraction.CanonicalTokens.Functions
 import Lanius.Extraction.CanonicalTokens.Model
+import Lanius.Extraction.CanonicalTokens.Pattern
 import Lanius.FunctionalViewStatefulAcyclic
 import Lanius.FunctionalViewStatefulPattern
 import Lanius.FunctionalViewCoreEffectful
@@ -30,10 +31,10 @@ def result (source : List Int) (rawKind : Int) (start finish : Nat) : Int :=
   else
     rawKind
 
-def world (source : List Int) : World := World.singleton 0 source
+def world (source : List Int) : World := Model.keywordWorld 0 source
 
 def sourceValue (source : List Int) : Value :=
-  .slice (.scalar (.signed .i32)) 0 [] 0 source.length
+  Model.keywordSource 0 source
 
 def environment (source : List Int) (rawKind : Int) (start finish : Nat) : Env 4
   | ⟨0, _⟩ => sourceValue source
@@ -53,26 +54,6 @@ private theorem identifierConstant :
     } := by
   rfl
 
-private def exactOperation (operation : Operation) : Exact Operation :=
-  Exact.ofDecidableEq operation
-
-private def pattern : CommandPattern Core.signature actions 4 :=
-  .sequence
-    (.ifThenElse
-      (.apply (exactOperation (.binary .equal i32 i32 (.scalar .bool)))
-        [.slot ⟨1, by omega⟩,
-          .apply (exactOperation (.constant 7 i32)) []])
-      (.sequence
-        (.returnValue (some
-          (.apply (exactOperation
-              (.call keywordKindFunction.id [
-                .slice i32, i32, i32] i32))
-            [.slot ⟨0, by omega⟩, .slot ⟨2, by omega⟩,
-              .slot ⟨3, by omega⟩])))
-        .skip)
-      .skip)
-    (.sequence (.returnValue (some (.slot ⟨1, by omega⟩))) .skip)
-
 private def command : Lanius.FunctionalView.Stateful.Command
     Core.signature actions 4 :=
   .sequence
@@ -89,6 +70,9 @@ private def command : Lanius.FunctionalView.Stateful.Command
         .skip)
       .skip)
     (.sequence (.returnValue (some (.reference (.slot ⟨1, by omega⟩)))) .skip)
+
+private def pattern : CommandPattern Core.signature actions 4 :=
+  Pattern.commandPattern command
 
 theorem reified :
     reification4? canonicalKindFunction canonicalKindBody =
@@ -124,7 +108,7 @@ theorem view_evaluates (source : List Int) (rawKind : Int)
   by_cases identifier : rawKind = Int.ofNat TokenKind.identifier.gpuCode
   · subst rawKind
     have keywordCall :=
-      Model.callModel_keywordKind source start finish ordered inBounds sourceFitsI32
+      Model.callModel_keywordKind 0 source start finish ordered inBounds sourceFitsI32
     have keywordCall' :
         Model.callModel.evaluate (world source) keywordKindFunction.id
             [sourceValue source, .signed .i32 start, .signed .i32 finish] =
@@ -132,8 +116,8 @@ theorem view_evaluates (source : List Int) (rawKind : Int)
       simpa [Model.keywordWorld, Model.keywordSource, keywordKind, world,
         sourceValue] using keywordCall
     simp only [world, sourceValue] at keywordCall'
-    simp [run, result, world, sourceValue, environment, command, pattern,
-      exactOperation, i32, reified, calls,
+    simp [run, result, world, sourceValue, environment, command,
+      i32, reified, calls,
       CommandPattern.denote, TermPattern.denote,
       Lanius.FunctionalView.Stateful.Acyclic.run?, Term.evaluate,
       evaluateTerms, Ref.evaluate, Lanius.FunctionalView.Core.Effectful.machine,
@@ -149,8 +133,8 @@ theorem view_evaluates (source : List Int) (rawKind : Int)
     have notIdentifier :
         (rawKind == (TokenKind.identifier.gpuCode : Int)) = false :=
       beq_eq_false_iff_ne.mpr identifierCast
-    simp [run, result, world, sourceValue, environment, command, pattern,
-      exactOperation, i32, reified, calls,
+    simp [run, result, world, sourceValue, environment, command,
+      i32, reified, calls,
       CommandPattern.denote, TermPattern.denote,
       Lanius.FunctionalView.Stateful.Acyclic.run?, Term.evaluate,
       evaluateTerms, Ref.evaluate, Lanius.FunctionalView.Core.Effectful.machine,
@@ -186,7 +170,7 @@ theorem view_executes (source : List Int) (rawKind : Int)
   exact Lanius.FunctionalView.Stateful.Acyclic.run?_sound ran
 
 def sourceValueAt (cell : CellId) (source : List Int) : Value :=
-  .slice (.scalar (.signed .i32)) cell [] 0 source.length
+  Model.keywordSource cell source
 
 def environmentInWorld (cell : CellId) (source : List Int)
     (rawKind : Int) (start finish : Nat) : Env 4
@@ -215,7 +199,7 @@ private theorem callModel_keywordKind_in_world
       .ok (.signed .i32 (keywordKind source start finish), beforeWorld) := by
   have distinct : keywordKindFunction.id ≠ isTriviaFunction.id := by
     native_decide
-  simp [Model.callModel, sourceValueAt, distinct, sourceFound, ordered,
+  simp [Model.callModel, sourceValueAt, Model.keywordSource, distinct, sourceFound, ordered,
     inBounds, sourceFitsI32, keywordKind]
 
 /-- The checked `canonical_kind` view is valid for a source slice embedded in
@@ -251,13 +235,13 @@ theorem view_executes_in_world
         source start finish sourceFound ordered inBounds sourceFitsI32
       have keywordCall' :
           Model.callModel.evaluate beforeWorld keywordKindFunction.id
-              [.slice (.scalar (.signed .i32)) cell [] 0 source.length,
+              [Model.keywordSource cell source,
                 .signed .i32 start, .signed .i32 finish] =
             .ok (.signed .i32 (keywordKind source start finish),
               beforeWorld) := by
         simpa [sourceValueAt] using keywordCall
       simp [runInWorld, result, environmentInWorld, sourceValueAt, command,
-        pattern, exactOperation, i32, reified, calls,
+        i32, reified, calls,
         CommandPattern.denote, TermPattern.denote,
         Lanius.FunctionalView.Stateful.Acyclic.run?, Term.evaluate,
         evaluateTerms, Ref.evaluate,
@@ -275,7 +259,7 @@ theorem view_executes_in_world
           (rawKind == (TokenKind.identifier.gpuCode : Int)) = false :=
         beq_eq_false_iff_ne.mpr identifierCast
       simp [runInWorld, result, environmentInWorld, sourceValueAt, command,
-        pattern, exactOperation, i32, reified, calls,
+        i32, reified, calls,
         CommandPattern.denote, TermPattern.denote,
         Lanius.FunctionalView.Stateful.Acyclic.run?, Term.evaluate,
         evaluateTerms, Ref.evaluate,

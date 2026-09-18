@@ -30,6 +30,10 @@ theorem Frame.localRead (frame : Frame before after) (binding : Lanius.VarId) :
 inductive Pointer where
   | localValue (binding : Lanius.VarId)
   | slice (binding : Lanius.VarId)
+deriving DecidableEq
+
+def Pointer.name : Pointer → Lanius.VarId
+  | .localValue name | .slice name => name
 
 def Pointer.expression : Pointer → Expr
   | .localValue binding => .local binding
@@ -40,6 +44,24 @@ def Pointer.Ready (state : State) : Pointer → Prop
   | .slice binding => ∃ view ∈ state.i32ArrayViews,
       state.local? binding = some (.slice (.scalar (.signed .i32)) view.root view.projections 0 view.length)
 
+/-- Retain which registered slice supplied the actual raw address. A non-null
+pointer alone does not justify using it to read a particular buffer. -/
+def Pointer.Resolves (state : State) (address : Address) : Pointer → Prop
+  | .localValue binding => state.local? binding = some (.pointer address)
+  | .slice binding => ∃ view ∈ state.i32ArrayViews, address = view.address ∧
+      state.local? binding = some (.slice (.scalar (.signed .i32)) view.root view.projections 0 view.length)
+
+theorem Pointer.Resolves.sliceAddress (resolved : (Pointer.slice binding).Resolves state address)
+    (registry : Allocation.Registry state) (member : view ∈ state.i32ArrayViews)
+    (read : state.local? binding = some (.slice (.scalar (.signed .i32)) view.root view.projections 0 view.length)) :
+    address = view.address := by
+  obtain ⟨actual, present, selected, actualRead⟩ := resolved
+  have roots : actual.root = view.root := by
+    have same := actualRead.symm.trans read
+    injection same with same
+    injection same
+  exact selected.trans (congrArg I32ArrayView.address (registry.view_eq present member roots))
+
 theorem Pointer.Ready.transport {pointer : Pointer} (ready : pointer.Ready before)
     (frame : Frame before after) : pointer.Ready after := by
   cases pointer <;> simpa only [Pointer.Ready, frame.views, frame.localRead] using ready
@@ -47,99 +69,74 @@ theorem Pointer.Ready.transport {pointer : Pointer} (ready : pointer.Ready befor
 theorem Pointer.evaluates (pointer : Pointer) (program : Program) (registry : Allocation.Registry before)
     (ready : pointer.Ready before) :
     ∃ address after, Evaluates program before pointer.expression (.pointer address) after ∧
-      address ≠ null ∧ Allocation.Registry after ∧ Frame before after := by
+      address ≠ null ∧ Allocation.Registry after ∧ Frame before after ∧ pointer.Resolves before address := by
   cases pointer with
   | localValue binding =>
       obtain ⟨address, read, nonnull⟩ := ready
       exact ⟨address, before, ⟨1, evalLocal_of_local 0 program before binding _ read⟩,
-        nonnull, registry, Frame.refl before⟩
+        nonnull, registry, Frame.refl before, read⟩
   | slice binding =>
       obtain ⟨view, member, read⟩ := ready
       obtain ⟨after, evaluated, nonnull, valid, cells, locals, views, next, remaining, world⟩ :=
         registry.evaluatesPointer program member binding read
-      exact ⟨view.address, after, evaluated, nonnull, valid, cells, locals, views, next, remaining, world⟩
+      exact ⟨view.address, after, evaluated, nonnull, valid, ⟨cells, locals, views, next, remaining, world⟩,
+        view, member, rfl, read⟩
 
-inductive Check where
-  | isNull (pointer : Pointer)
-  | either (left right : Check)
+/-- Binding a pointer must not invalidate the slice and pointer reads used by
+the subsequent entry guard. The distinct-name premise makes shadowing explicit. -/
+theorem Pointer.Ready.bindOther {pointer : Pointer} (ready : pointer.Ready state)
+    (registry : Allocation.Registry state) (bound : Lanius.VarId) (value : Value)
+    (different : match pointer with
+      | .localValue queried | .slice queried => bound ≠ queried) :
+    pointer.Ready (state.bindLocal bound value) := by
+  cases pointer with
+  | localValue queried =>
+      simpa only [Pointer.Ready,
+        Lanius.Separation.bindLocal_preserves_other_local registry.wellFormed different] using ready
+  | slice queried =>
+      simpa only [Pointer.Ready, State.bindLocal, State.bindCell] using
+        (show ∃ view ∈ state.i32ArrayViews,
+          (state.bindLocal bound value).local? queried = some
+            (.slice (.scalar (.signed .i32)) view.root view.projections 0 view.length) from by
+          simpa only [Pointer.Ready, Lanius.Separation.bindLocal_preserves_other_local
+            registry.wellFormed different] using ready)
 
-def Check.expression : Check → Expr
-  | .isNull pointer => .binary .equal pointer.expression (.value (.pointer null))
-  | .either left right => .binary .logicalOr left.expression right.expression
-
-def Check.Ready (state : State) : Check → Prop
-  | .isNull pointer => pointer.Ready state
-  | .either left right => left.Ready state ∧ right.Ready state
-
-theorem Check.Ready.transport {check : Check} (ready : check.Ready before)
-    (frame : Frame before after) : check.Ready after := by
-  induction check with
-  | isNull pointer => exact Pointer.Ready.transport ready frame
-  | either left right leftIH rightIH => exact ⟨leftIH ready.1, rightIH ready.2⟩
-
-/-- The actual short-circuit expression evaluates false, threading heap
-synchronization through every operand without losing subsequent local reads. -/
-theorem Check.evaluatesFalse (check : Check) (program : Program) (before : State)
-    (registry : Allocation.Registry before) (ready : check.Ready before) :
-    ∃ after, Evaluates program before check.expression (.boolean false) after ∧
-      Allocation.Registry after ∧ Frame before after := by
-  induction check generalizing before with
-  | isNull pointer =>
-      obtain ⟨address, after, evaluated, nonnull, valid, frame⟩ := pointer.evaluates program registry ready
-      refine ⟨after, ?_, valid, frame⟩
-      apply evaluatesEagerBinary (by decide) (by decide) evaluated
-        (show Evaluates program after (.value (.pointer null)) (.pointer null) after from ⟨1, rfl⟩)
-      simp [evalBinaryValue, scalarEqual, nonnull]
-  | either left right leftIH rightIH =>
-      obtain ⟨middle, leftResult, middleValid, first⟩ := leftIH before registry ready.1
-      obtain ⟨after, rightResult, valid, second⟩ := rightIH middle middleValid (ready.2.transport first)
-      exact ⟨after, evaluatesLogicalOrFalse leftResult rightResult, valid, first.trans second⟩
-
-structure Guard where
-  check : Check
+/-- A source-level pointer alias, including its lexical continuation. -/
+structure Binding where
+  name : Lanius.VarId
+  source : Pointer
   continuation : Stmt
 
-def Guard.statement (guard : Guard) : Stmt :=
-  .sequence (.ifThenElse guard.check.expression
-    (.sequence (.returnValue (some (.value (.signed .i32 3)))) .skip) .skip) guard.continuation
+def Binding.statement (binding : Binding) : Stmt :=
+  .letLocal binding.name (.scalar .rawPtr) binding.source.expression binding.continuation
 
-theorem Guard.executes (guard : Guard) (program : Program) (before : State)
+theorem Binding.executes (binding : Binding) (program : Program) (before : State)
     (completion : Completion) (post : Lanius.World.State → Prop)
-    (registry : Allocation.Registry before) (ready : guard.check.Ready before)
-    (continuationRun : ∀ after, Allocation.Registry after → Frame before after →
-      ∃ finalState, Executes program after guard.continuation completion finalState ∧ post finalState.world) :
-    ∃ after, Executes program before guard.statement completion after ∧ post after.world := by
-  obtain ⟨middle, evaluated, valid, frame⟩ := guard.check.evaluatesFalse program before registry ready
-  obtain ⟨after, continued, satisfied⟩ := continuationRun middle valid frame
-  exact ⟨after, executesSequence (executesIfFalse evaluated (executesSkip program middle)) continued, satisfied⟩
+    (registry : Allocation.Registry before) (ready : binding.source.Ready before)
+    (continuationRun : ∀ queried address, Frame before queried → address ≠ null →
+      Allocation.Registry (queried.bindLocal binding.name (.pointer address)) →
+      (Pointer.localValue binding.name).Ready (queried.bindLocal binding.name (.pointer address)) →
+      ∃ after, Executes program (queried.bindLocal binding.name (.pointer address))
+        binding.continuation completion after ∧ post after.world) :
+    ∃ after, Executes program before binding.statement completion after ∧ post after.world := by
+  obtain ⟨address, queried, evaluated, nonnull, valid, frame, _resolved⟩ :=
+    binding.source.evaluates program registry ready
+  have read : (queried.bindLocal binding.name (.pointer address)).local? binding.name =
+      some (.pointer address) := by
+    have fresh := Lanius.Properties.bindCell_finds_fresh_cell queried binding.name
+      (some (.pointer address)) valid.wellFormed
+    simp only [State.bindLocal, State.local?, State.cellId?, State.bindCell,
+      List.find?_cons, beq_self_eq_true]
+    exact congrArg (fun cell => cell.bind Cell.value) fresh
+  obtain ⟨after, continued, satisfied⟩ := continuationRun queried address frame nonnull
+    (valid.bindLocal _ _) ⟨address, read, nonnull⟩
+  exact ⟨restoreLocals queried after, executesLetLocal evaluated continued, satisfied⟩
 
-structure CheckedCheck (expression : Expr) where
-  check : Check
-  exactExpression : expression = check.expression
-
-def checkCondition? : (expression : Expr) → Option (CheckedCheck expression)
-  | .binary .equal (.local binding) (.value (.pointer 0)) =>
-      some ⟨.isNull (.localValue binding), rfl⟩
-  | .binary .equal (.i32SliceDataPtr (.local binding)) (.value (.pointer 0)) =>
-      some ⟨.isNull (.slice binding), rfl⟩
-  | .binary .logicalOr left right => do
-      let leftChecked ← checkCondition? left
-      let rightChecked ← checkCondition? right
-      pure ⟨.either leftChecked.check rightChecked.check,
-        (congrArg (fun expression => Expr.binary .logicalOr expression right) leftChecked.exactExpression).trans
-          (congrArg (Expr.binary .logicalOr leftChecked.check.expression) rightChecked.exactExpression)⟩
+def checkBinding? : (source : Stmt) → Option (Source.CheckedStatement Binding.statement source)
+  | .letLocal name (.scalar .rawPtr) (.i32SliceDataPtr (.local source)) continuation =>
+      some ⟨⟨name, .slice source, continuation⟩, rfl⟩
+  | .letLocal name (.scalar .rawPtr) (.local source) continuation =>
+      some ⟨⟨name, .localValue source, continuation⟩, rfl⟩
   | _ => none
-
-def checkGuard? : (source : Stmt) → Option (Source.CheckedStatement Guard.statement source)
-  | .sequence (.ifThenElse condition
-      (.sequence (.returnValue (some (.value (.signed .i32 3)))) .skip) .skip) continuation => do
-      let checked ← checkCondition? condition
-      pure ⟨⟨checked.check, continuation⟩,
-        congrArg (fun expression => Stmt.sequence (.ifThenElse expression
-          (.sequence (.returnValue (some (.value (.signed .i32 3)))) .skip) .skip) continuation)
-          checked.exactExpression⟩
-  | _ => none
-
-def findGuard? := Source.findStatement? Guard.statement checkGuard?
 
 end Lanius.Extraction.Entry.Pointers

@@ -1,5 +1,6 @@
 import Lanius.Extraction.Decimal.DigitRunCalls
 import Lanius.Extraction.FrontendProgramExtensions
+import Lanius.FunctionalViewCoreCheckedSimulation
 
 namespace Lanius.Extraction.Decimal.DigitRunSemantics
 
@@ -115,7 +116,7 @@ theorem scanDigitRunFunction_parameters :
     extractedScanDigitRunFunction.parameters =
       [(0, .slice Program.i32Type), (1, Program.i32Type),
         (2, Program.i32Type), (3, Program.i32Type)] := by
-  native_decide
+  rfl
 
 theorem framePreservingCallSoundness (source : List Byte) :
     FramePreservingCallSoundness verifiedFrontendCore (callModel source) := by
@@ -127,82 +128,19 @@ theorem framePreservingCallSoundness (source : List Byte) :
   obtain ⟨start, base, sourceFound, rfl, rfl, sourceBound, startBound, baseBound,
       rfl, afterWorldEq⟩ := call_success evaluated
   subst afterWorld
-  let calleeEnvironment := environment source start base
-  let bindings := parameterBindings calleeEnvironment
-  let callee := enterCall afterArguments bindings
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment
-      callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
   obtain ⟨afterEnvironment, functionalEvaluation⟩ :=
     DigitRunEvaluation.command_evaluates beforeWorld source start base sourceBound
       startBound baseBound sourceFound
-  let operations := FreshSimulation.operationSoundness verifiedFrontendCore
-    helperCallModel DigitRunCalls.helperFramePreservingCallSoundness
-  have simulation := FreshSimulation.commandSoundness operations
-    functionalEvaluation (by native_decide)
-    calleeRepresented (LayoutBelow.identity (arity := 4)) calleeWellFormed
-    (frontier := afterArguments.nextCell)
+  apply CheckedSimulation.callPreservesFrame
+    DigitRunCalls.helperFramePreservingCallSoundness
+    argumentsExecution argumentsEffect verifiedFrontendCore_finds_scanDigitRun
     (by
-      intro index
-      simp [callLocalCells])
-    (by
-      simpa [callee] using
-        (enterCall_effect afterArguments bindings).nextCell)
-  obtain ⟨completed, bodyExecution, completedWellFormed,
-      completedRepresented, bodyEffect⟩ := simulation
-  rw [DigitRunCommand.toCore_exactly] at bodyExecution
-  change Executes verifiedFrontendCore callee
-    Lanius.Extraction.Lexer.Digits.scanDigitRunBody
-    (.returned (some (digitValue (scanDigitRun source start base))))
-    completed at bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call extractedScanDigitRunFunction.id
-        (toCoreExprs layout sourceArguments))
-      (digitValue (scanDigitRun source start base))
-      (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned
-      (bindings := bindings)
-      (body := Lanius.Extraction.Lexer.Digits.scanDigitRunBody)
-      argumentsExecution verifiedFrontendCore_finds_scanDigitRun
-    · rw [scanDigitRunFunction_parameters]
-      simp [bindParameters, bindings, calleeEnvironment, parameterBindings,
-        environment, arguments, sourceSlice, List.finRange]
-      rfl
-    · exact scanDigitRunFunction_has_body
-    · simpa [callee, bindings] using bodyExecution
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
-      (bindings := bindings) bodyEffect (by
-        intro cell written
-        exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same
-      (callEffect.weaken CellSet.empty_subset)⟩
-
-theorem callSoundness (source : List Byte) :
-    EffectfulStateful.CallSoundness verifiedFrontendCore (callModel source) := by
-  constructor
-  · intro arity layout localCell beforeWorld afterWorld environment before
-      afterArguments function arguments values result argumentWrites
-      afterArgumentsWellFormed represented argumentsExecution argumentsEffect
-      evaluated
-    obtain ⟨after, callExecution, afterWellFormed, afterRepresented,
-      callEffect⟩ := (framePreservingCallSoundness source).call afterArgumentsWellFormed
-        represented argumentsExecution argumentsEffect evaluated
-    exact ⟨after, argumentWrites, callExecution, afterWellFormed,
-      afterRepresented, callEffect⟩
-  · intro beforeWorld afterWorld function values result evaluated cell
-    obtain ⟨start, base, worldEq, functionEq, valuesEq, sourceBound,
-      startBound, baseBound, resultEq, afterEq⟩ := call_success evaluated
-    subst afterWorld
-    rfl
+      rw [scanDigitRunFunction_parameters]
+      simp [bindParameters, parameterBindings, environment, arguments,
+        sourceSlice, List.finRange]
+      rfl)
+    scanDigitRunFunction_has_body functionalEvaluation (by decide +kernel)
+    DigitRunCommand.toCore_exactly afterArgumentsWellFormed represented
 
 theorem worldPreserving (source : List Byte) :
     FreshSimulation.WorldPreserving (callModel source) := by
@@ -210,5 +148,10 @@ theorem worldPreserving (source : List Byte) :
   obtain ⟨start, base, sourceFound, functionEq, valuesEq, sourceBound,
       startBound, baseBound, resultEq, afterEq⟩ := call_success evaluated
   exact afterEq
+
+theorem callSoundness (source : List Byte) :
+    EffectfulStateful.CallSoundness verifiedFrontendCore (callModel source) :=
+  (framePreservingCallSoundness source).toCallSoundness
+    (worldPreserving source)
 
 end Lanius.Extraction.Decimal.DigitRunSemantics

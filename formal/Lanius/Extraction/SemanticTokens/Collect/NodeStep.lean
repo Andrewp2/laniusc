@@ -27,8 +27,8 @@ theorem node_step {memory : NodeMemory} {record : RecordVisit}
   let first := before.bindLocal 14 (.signed .i32 record.offset)
   have firstHeld : NodeOwned memory index first := held.bindLocal 14 _ (by decide)
   have offsetFirst : first.local? 14 = some (.signed .i32 record.offset) := bindLocal_finds_local _ _ _ held.wellFormed
-  have headerGuard := recordGuard_pass program 14 record.offset (treeFrom 0 0 memory.data.tree).words.length
-    offsetFirst firstHeld.wordLength (by omega) memory.data.wordsFit
+  have headerGuard := recordGuard_pass program 14 record.offset memory.data.recordsLimit
+    offsetFirst firstHeld.wordLength (by have := memory.data.wordsWithin; omega) memory.data.limitFits
   obtain ⟨_, _, countResult⟩ := record_header_read program firstHeld.records stored
     (read 14) (local_evaluates program offsetFirst) memory.data.wordsFit
   let second := first.bindLocal 15 (.signed .i32 record.children.length)
@@ -50,7 +50,7 @@ theorem node_step {memory : NodeMemory} {record : RecordVisit}
   have startBound : record.start ≤ memory.data.tokens.length * 2 := by
     simp only [finalPosition] at finishBound
     omega
-  have countGuard := record_count_guard_pass program stored memory.data.wordsFit memory.data.tokensFit startBound
+  have countGuard := record_count_guard_pass program stored memory.data.wordsWithin memory.data.limitFits memory.data.tokensFit startBound
     thirdHeld.wordLength offsetThird countThird startThird thirdHeld.count
   have children := held.children record
   have fourthHeld : NodeOwned memory index (recordEntered before record) := thirdHeld.bindLocal 17 _ (by decide)

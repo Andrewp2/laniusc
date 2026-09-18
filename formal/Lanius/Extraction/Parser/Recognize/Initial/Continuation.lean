@@ -26,7 +26,9 @@ inductive RecognizerInitialContinuationOutcome
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
     (workspaceLayout : WorkspaceLayout) : Completion → Type
-  | full (stateCount : Nat) :
+  | full (stateCount : Nat) (workspace : LogicalWorkspace)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount)
+      (generated : WorkspaceGenerated grammar tokens workspace) :
       RecognizerInitialContinuationOutcome grammarLayout grammar words tokens
         workspaceLayout
         (.returned (some (parseResultValue 2 (Int.ofNat stateCount) (-1) 0)))
@@ -41,7 +43,7 @@ def RecognizerInitialContinuationOutcome.workspaceAgrees
     (outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words tokens
       workspaceLayout completion) (finalWorkspace : LogicalWorkspace) : Prop :=
   match outcome with
-  | .full _ => True
+  | .full _ workspace _ _ => workspace = finalWorkspace
   | .seeded _ _ _ position => position.workspaceAgrees finalWorkspace
 
 structure RecognizerInitialContinuationExecution
@@ -183,7 +185,7 @@ noncomputable def
     simpa only [initialWorldEq, initialEnvironmentEq] using loopExecution
   cases result.outcome with
   | full finalWorkspace finalValues physicalAfter initialGrowth terminal
-      stateCount loopWellFormed =>
+      stateCount loopWellFormed full =>
       have functionalWhole : Lanius.FunctionalView.Stateful.Command.Evaluates
           (positionTermMachine workspaceLayout grammar words tokens grammarCell
             tokensCell)
@@ -225,8 +227,8 @@ noncomputable def
         finalWorkspaceValues := finalValues
         growth := initialGrowth
         workspaceArtifact := terminal.workspaceArtifact
-        outcome := .full stateCount
-        outcomeWorkspace := True.intro
+        outcome := .full stateCount finalWorkspace full terminal.derivations.backpointersSound.generated
+        outcomeWorkspace := rfl
       }
   | completed nextWorkspace nextValues physicalAfter initialGrowth
       completedInvariant worldEq environmentEq =>

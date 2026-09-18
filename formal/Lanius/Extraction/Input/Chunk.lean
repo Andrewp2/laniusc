@@ -23,9 +23,9 @@ structure CopyEntry (locals : UnpackLocals) (outputCell packedCell cursorCell : 
     (.slice (.scalar (.signed .i32)) packedCell [] 0 words)
   cursor : (Assertion.localPointsTo locals.cursor cursorCell
     (some (.signed .i32 0))).holds state
-  total : state.local? locals.total = some (.signed .i32 earlier.length)
+  total : locals.Offset state earlier.length
   limit : state.local? locals.length = some (.signed .i32 count)
-  stable : ∀ localId, localId ∈ [locals.output, locals.packed, locals.total, locals.length] →
+  stable : ∀ localId, localId ∈ locals.stableLocals →
     ∀ cell, state.cellId? localId = some cell →
       ¬ (CellSet.union (CellSet.singleton outputCell) (CellSet.singleton cursorCell)) cell
 

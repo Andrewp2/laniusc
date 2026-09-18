@@ -1,0 +1,100 @@
+module app::main;
+import x86::register;
+import x86::encode;
+import x86::control;
+import verified::host;
+import verified::byte_io;
+
+const CAPACITY: i32 = 4096;
+
+// Emit a comparison and retain the displacement-field offset for a failure
+// edge. All destinations are resolved after layout, using the production
+// patcher rather than precomputed instruction byte offsets.
+fn check_equal(output: [i32], cursor: i32, width: i32, left: i32, right: i32,
+    fixups: [i32], index: i32) -> i32 {
+    let next: i32 = x86::encode::binary(output, CAPACITY, cursor, width, x86::encode::CMP, left, right);
+    next = x86::control::branch(output, CAPACITY, next, x86::control::NOT_EQUAL, 0);
+    if (next < 0) { return -1; }
+    fixups[index] = next - 4;
+    return next;
+}
+
+fn main() -> i32 {
+    let allocation: ptr = verified::host::alloc(16384, 4);
+    if (allocation == 0) { return 3; }
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(allocation, CAPACITY);
+    let locations: ptr = verified::host::alloc(32, 4);
+    if (locations == 0) { return 3; }
+    let fixups: [i32] = verified::host::i32_slice_from_raw_parts(locations, 8);
+    let packed: ptr = verified::host::alloc(65536, 4);
+    if (packed == 0) { return 3; }
+
+    let cursor: i32 = x86::control::push(output, CAPACITY, 0, x86::register::RBP);
+    cursor = x86::encode::move_register(output, CAPACITY, cursor, 64, x86::register::RBP, x86::register::RSP);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RAX, 128, 0);
+    cursor = x86::encode::binary(output, CAPACITY, cursor, 64, x86::encode::SUB, x86::register::RSP, x86::register::RAX);
+    cursor = x86::encode::move_register(output, CAPACITY, cursor, 64, x86::register::R12, x86::register::RSP);
+
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 64, x86::register::RDI, -1, -1);
+    cursor = x86::encode::store(output, CAPACITY, cursor, 64, x86::register::RDI, x86::register::RSP, 8);
+    cursor = x86::encode::load(output, CAPACITY, cursor, 64, x86::register::R8, x86::register::R12, 8);
+    cursor = check_equal(output, cursor, 64, x86::register::R8, x86::register::RDI, fixups, 0);
+
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RSI, 42, 0);
+    cursor = x86::encode::store_byte(output, CAPACITY, cursor, x86::register::RSI, x86::register::R12, 1);
+    cursor = x86::encode::load_byte(output, CAPACITY, cursor, x86::register::R9, x86::register::R12, 1);
+    cursor = check_equal(output, cursor, 32, x86::register::R9, x86::register::RSI, fixups, 1);
+
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RAX, -7, 0);
+    cursor = x86::control::sign_extend_dividend(output, CAPACITY, cursor, 32);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::R10, 3, 0);
+    cursor = x86::encode::divide(output, CAPACITY, cursor, 32, x86::register::R10, true);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::R11, -2, 0);
+    cursor = check_equal(output, cursor, 32, x86::register::RAX, x86::register::R11, fixups, 2);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::R11, -1, 0);
+    cursor = check_equal(output, cursor, 32, x86::register::RDX, x86::register::R11, fixups, 3);
+
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RCX, 10, 0);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RAX, 0, 0);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RDX, 1, 0);
+    let loop: i32 = cursor;
+    cursor = x86::encode::binary(output, CAPACITY, cursor, 32, x86::encode::ADD, x86::register::RAX, x86::register::RCX);
+    cursor = x86::encode::binary(output, CAPACITY, cursor, 32, x86::encode::SUB, x86::register::RCX, x86::register::RDX);
+    cursor = x86::encode::binary(output, CAPACITY, cursor, 32, x86::encode::TEST, x86::register::RCX, x86::register::RCX);
+    cursor = x86::control::branch(output, CAPACITY, cursor, x86::control::NOT_EQUAL, loop);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::R11, 55, 0);
+    cursor = check_equal(output, cursor, 32, x86::register::RAX, x86::register::R11, fixups, 4);
+
+    cursor = x86::control::call(output, CAPACITY, cursor, 0);
+    let call_field: i32 = cursor - 4;
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::R11, 42, 0);
+    cursor = check_equal(output, cursor, 32, x86::register::RAX, x86::register::R11, fixups, 5);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RDI, 0, 0);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RAX, 60, 0);
+    cursor = x86::control::syscall(output, CAPACITY, cursor);
+
+    let failure: i32 = cursor;
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RDI, 91, 0);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RAX, 60, 0);
+    cursor = x86::control::syscall(output, CAPACITY, cursor);
+
+    let helper: i32 = cursor;
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 64, x86::register::RAX, -2147483647, 305419896);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RCX, 1, 0);
+    cursor = x86::encode::shift(output, CAPACITY, cursor, 64, x86::encode::SHIFT_LEFT, x86::register::RAX);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 64, x86::register::R11, 2, 610839793);
+    cursor = check_equal(output, cursor, 64, x86::register::RAX, x86::register::R11, fixups, 6);
+    cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RAX, 42, 0);
+    cursor = x86::control::return_near(output, CAPACITY, cursor);
+    if (cursor < 0) { return 10; }
+
+    if (x86::control::patch_relative(output, cursor, call_field, helper) != call_field + 4) { return 11; }
+    let index: i32 = 0;
+    while (index < 7) {
+        let field: i32 = fixups[index];
+        if (x86::control::patch_relative(output, cursor, field, failure) != field + 4) { return 12; }
+        index += 1;
+    }
+    if (verified::byte_io::write_stdout(output, cursor, packed) != cursor) { return 13; }
+    return 0;
+}

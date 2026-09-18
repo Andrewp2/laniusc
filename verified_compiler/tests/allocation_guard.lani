@@ -1,0 +1,16 @@
+module app::main;
+import verified::host;
+
+fn main() -> i32 {
+    let values: [i32];
+    {
+        let allocation: ptr = verified::host::alloc(16, 4);
+        if (allocation == 0) {
+            return 3;
+        }
+        values = verified::host::i32_slice_from_raw_parts(allocation, 4);
+    }
+    values[0] = 17;
+    values[3] = 25;
+    return values[0] + values[3];
+}

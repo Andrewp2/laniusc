@@ -1105,6 +1105,19 @@ omit [ArtifactAccess] in theorem reconstructArtifactSurfaceView_eq (artifact : A
   unfold reconstructArtifactSurfaceView reconstructArtifactSurface
   rw [ArtifactAccess.ofView_eq_canonicalFor view]
 
+private def reconstructArtifactSurfaceIndexed (artifact : Artifact)
+    (_view : ArtifactView artifact) : Option SurfaceFile :=
+  @reconstructArtifactSurfaceWithAccess (ArtifactAccess.indexedFor artifact) artifact
+
+omit [ArtifactAccess] in
+/-- Execution uses array indexing; the kernel-facing algorithm and result are
+exactly the same, including failure on malformed input. -/
+@[csimp] private theorem reconstructArtifactSurfaceView_indexed :
+    @reconstructArtifactSurfaceView = @reconstructArtifactSurfaceIndexed := by
+  funext artifact view
+  unfold reconstructArtifactSurfaceView reconstructArtifactSurfaceIndexed
+  rw [ArtifactAccess.ofView_eq_canonicalFor, ArtifactAccess.indexedFor_eq]
+
 /-- The formal Surface program exposed to later checkers is decoded from
     Lean's reconstruction, never directly from the untrusted proposal. -/
 def decodeReconstructedSurface (artifact : Artifact) : Option Lanius.Surface.File := do

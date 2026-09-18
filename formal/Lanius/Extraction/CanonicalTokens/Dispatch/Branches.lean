@@ -29,10 +29,11 @@ theorem executes_branches (program : Program) (matcher fallback : Nat)
     (capacity : start + width ≤ source.length) (bounded : source.length ≤ 2147483647) :
     ∃ after, Executes program before (branches matcher fallback groups)
       (.returned (some (.signed .i32 (dispatched program source start width fallback groups)))) after ∧
-      CellEffect CellSet.empty before after := by
+      CellEffect CellSet.empty before after ∧ Host.MemoryFrame before after := by
   induction groups generalizing before with
   | nil =>
-      refine ⟨before, executesSequenceReturned (executesReturnValue ?_), CellEffect.refl wellFormed⟩
+      refine ⟨before, executesSequenceReturned (executesReturnValue ?_), CellEffect.refl wellFormed,
+        Host.MemoryFrame.refl before⟩
       refine ⟨1, ?_⟩
       rw [evalExpr.eq_def]
       simp only [fallbackFound]
@@ -50,21 +51,21 @@ theorem executes_branches (program : Program) (matcher fallback : Nat)
       · have conditionTrue : Evaluates program before
             (.binary .equal (.local 3) (.value (.signed .i32 group.width))) (.boolean true) before := by
           simpa only [same, BEq.rfl] using tested
-        obtain ⟨middle, chosen, frame⟩ := executes_choices program matcher before sourceCell source start
+        obtain ⟨middle, chosen, frame, memory⟩ := executes_choices program matcher before sourceCell source start
           group.width group.rules found (valid group (by simp)) wellFormed sourceLocal sourceContents
           startLocal (by simpa only [same] using capacity) bounded
         cases choice : selected program source start group.width group.rules with
         | none =>
             simp only [choice, selectedCompletion] at chosen
-            obtain ⟨after, run, tailFrame⟩ := ih middle tailValid frame.wellFormed
+            obtain ⟨after, run, tailFrame, tailMemory⟩ := ih middle tailValid frame.wellFormed
               (frame.empty_preserves_local wellFormed sourceLocal) (frame.empty_preserves_entry wellFormed sourceContents)
               (frame.empty_preserves_local wellFormed startLocal) (frame.empty_preserves_local wellFormed lengthLocal)
-            refine ⟨after, ?_, frame.trans tailFrame⟩
+            refine ⟨after, ?_, frame.trans tailFrame, memory.trans tailMemory⟩
             simpa only [branches, dispatched, if_pos same, choice, Option.getD_none] using
               executesSequence (executesIfTrue conditionTrue chosen) run
         | some kind =>
             simp only [choice, selectedCompletion] at chosen
-            refine ⟨middle, ?_, frame⟩
+            refine ⟨middle, ?_, frame, memory⟩
             simpa only [branches, dispatched, if_pos same, choice, Option.getD_some] using
               (executesSequenceReturned (second := branches matcher fallback rest)
                 (executesIfTrue conditionTrue chosen))
@@ -72,8 +73,8 @@ theorem executes_branches (program : Program) (matcher fallback : Nat)
         have conditionFalse : Evaluates program before
             (.binary .equal (.local 3) (.value (.signed .i32 group.width))) (.boolean false) before := by
           simpa only [beq_eq_false_iff_ne.mpr different] using tested
-        obtain ⟨after, run, frame⟩ := ih before tailValid wellFormed sourceLocal sourceContents startLocal lengthLocal
-        refine ⟨after, ?_, frame⟩
+        obtain ⟨after, run, frame, memory⟩ := ih before tailValid wellFormed sourceLocal sourceContents startLocal lengthLocal
+        refine ⟨after, ?_, frame, memory⟩
         simpa only [branches, dispatched, if_neg same] using
           executesSequence (executesIfFalse conditionFalse (executesSkip program before)) run
 

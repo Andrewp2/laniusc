@@ -265,7 +265,7 @@ theorem TreeRuntime.At.state_step {runtime : TreeRuntime}
   have resumedOffsets := resumeEffect.preserves_entry nested.effect.wellFormed nested.offsets
     (show ¬ childResultWrites runtime.recordsCell runtime.nodesCell runtime.wordsCell runtime.offsetsCell by
       simp [childResultWrites, CellSet.union, CellSet.singleton, Ne.symm held.buffersDistinct, offsetsNotNodes, offsetsNotWords])
-  obtain ⟨completed, increment, cursor, incrementEffect⟩ := evaluatesOwnedLocalUpdate resumeEffect.wellFormed resumedCursor
+  obtain ⟨completed, increment, cursor, incrementEffect, incrementHeap⟩ := evaluatesOwnedLocalUpdate resumeEffect.wellFormed resumedCursor
     (show Evaluates program.core resumed (.value (.signed .i32 1)) (.signed .i32 1) resumed from ⟨1, rfl⟩)
     (show evalAssignValue program.core.target .add (some (.signed .i32 (Int.ofNat trees.length))) (.signed .i32 1) =
         .ok (.signed .i32 (Int.ofNat (trees.length + 1))) from by

@@ -1,0 +1,30 @@
+module x86::register;
+
+pub const RAX: i32 = 0;
+pub const RCX: i32 = 1;
+pub const RDX: i32 = 2;
+pub const RBX: i32 = 3;
+pub const RSP: i32 = 4;
+pub const RBP: i32 = 5;
+pub const RSI: i32 = 6;
+pub const RDI: i32 = 7;
+pub const R8: i32 = 8;
+pub const R9: i32 = 9;
+pub const R10: i32 = 10;
+pub const R11: i32 = 11;
+pub const R12: i32 = 12;
+pub const R13: i32 = 13;
+pub const R14: i32 = 14;
+pub const R15: i32 = 15;
+
+pub fn valid(value: i32) -> bool { return value >= 0 && value < 16; }
+pub fn width_valid(width: i32) -> bool { return width == 32 || width == 64; }
+
+// Intel SDM volume 2, section 2.2.1: 0100WRXB. No indexed SIB operand
+// is used here, so X is zero. A zero return means no prefix is needed.
+pub fn rex(width: i32, reg: i32, base: i32, byte_register: bool) -> i32 {
+    let value: i32 = 64 + (reg / 8) * 4 + base / 8;
+    if (width == 64) { value += 8; }
+    if (value == 64 && !byte_register) { return 0; }
+    return value;
+}

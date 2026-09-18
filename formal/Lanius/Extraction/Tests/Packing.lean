@@ -14,13 +14,91 @@ import Lanius.Extraction.Allocation.Host
 import Lanius.Extraction.Allocation.Registry
 import Lanius.Extraction.Allocation.Sequence
 import Lanius.Extraction.Entry.Arguments
-import Lanius.Extraction.Entry.Pointers
+import Lanius.Extraction.Entry.Aliases
+import Lanius.Extraction.Entry.Hex
+import Lanius.Extraction.Entry.Word
+import Lanius.Extraction.Entry.Decode
+import Lanius.Extraction.Entry.Grammar
+import Lanius.Extraction.Entry.GrammarLoop
+import Lanius.Extraction.Entry.GrammarString
+import Lanius.Extraction.Entry.GrammarCursor
+import Lanius.Extraction.Entry.GrammarSetup
+import Lanius.Extraction.Entry.GrammarLiteral
+import Lanius.Extraction.Entry.Storage
+import Lanius.Extraction.Entry.Prefix
+import Lanius.Extraction.CompactOutput.Text.Call
+import Lanius.Extraction.Entry.Framing
+import Lanius.Extraction.Entry.Emission
+import Lanius.Extraction.Entry.Header
+import Lanius.Extraction.Entry.Startup
+import Lanius.Extraction.Allocation.Borrowed
 import Lean.Util.CollectAxioms
 
 open Lanius.Core Lanius.Semantics Lanius.Extraction Lanius.Extraction.OutputPacking
 
+#eval show IO Unit from do
+  let stage : Entry.Framing.Stage := ⟨30, 31, 12, 23,
+    ExtractorContract.modulePrefix ++ "\x00\x00",
+    ExtractorContract.moduleSuffix ++ "\x00\x00\x00", 16777216, .skip⟩
+  unless stage.checkSupported?.isSome && (Entry.Framing.check? 42 (stage.statement 42)).isSome do
+    throw (IO.userError "supported exact framing rejected")
+  if (Entry.Framing.check? 43 (stage.statement 42)).isSome then
+    throw (IO.userError "framing with a different text helper accepted")
+  for invalid in [
+      { stage with prefixText := ExtractorContract.modulePrefix },
+      { stage with suffixText := ExtractorContract.moduleSuffix },
+      { stage with capacity := 145 },
+      { stage with closing := stage.opening },
+      { stage with opening := stage.output }] do
+    if invalid.checkSupported?.isSome then
+      throw (IO.userError "unsafe framing storage, capacity, or shadowing accepted")
+  let header : Entry.Header.Stage := ⟨0, 12, 23, 16777216, .skip⟩
+  unless (Entry.Header.check? 42 (header.statement 42)).isSome do
+    throw (IO.userError "exact compact-header call and guard rejected")
+  if (Entry.Header.check? 43 (header.statement 42)).isSome then
+    throw (IO.userError "compact header calling a different function accepted")
+
+#eval show IO Unit from do
+  let loop := (⟨1, 2, 3, 4, 2179⟩ : Entry.Grammar.Locals).loop 7
+  unless (Entry.Grammar.checkLoop? 7 loop).isSome do
+    throw (IO.userError "exact grammar loop rejected")
+  -- A different helper cannot inherit the checked decoder proof.
+  if (Entry.Grammar.checkLoop? 8 loop).isSome then
+    throw (IO.userError "grammar loop with wrong decoder accepted")
+
+-- Aliases may feed later aliases; shadowing a slice cannot leave it available.
+example : (Entry.Pointers.Preparation.checkSupported?
+    ⟨[⟨2, .slice 1⟩, ⟨3, .localValue 2⟩], .skip⟩
+    [.slice 1]).isSome = true := by decide
+
+example : (Entry.Pointers.Preparation.checkSupported?
+    ⟨[⟨1, .slice 1⟩, ⟨2, .slice 1⟩], .skip⟩
+    [.slice 1]).isSome = false := by decide
+
+example : (Entry.Pointers.Preparation.checkSupported?
+    ⟨[⟨2, .slice 9⟩], .skip⟩
+    [.slice 1]).isSome = false := by decide
+
 run_elab do
-  for name in #[``output_word_bounds, ``evaluates_output_words, ``clear_cursor_entry,
+  for name in #[``CompactOutput.Text.readValue, ``CompactOutput.Text.appendValue,
+      ``CompactOutput.Text.stepSuccess, ``CompactOutput.Text.advance,
+      ``CompactOutput.Text.executesLoop, ``CompactOutput.Text.executes,
+      ``CompactOutput.Text.preservesRegistry,
+      ``CompactOutput.Text.rejectsLength, ``CompactOutput.Text.Checked.append,
+      ``Entry.Framing.bytes_length, ``Entry.Framing.Stage.executes,
+      ``Entry.Framing.Stage.checkSupported?, ``Entry.Framing.check?,
+      ``Entry.initializeFraming, ``Entry.framingPreserved?, ``Entry.checkBuffer?,
+      ``Entry.Header.encoding_length, ``Entry.Header.contents_length, ``Entry.Header.Stage.executes, ``Entry.Header.check?,
+      ``Entry.Framing.Stage.withHeader, ``Entry.Framing.checkHeaderRelation?,
+      ``Entry.Arguments.readyWellFormed, ``Entry.Arguments.readyCount,
+      ``Entry.Pointers.preserveNonarray, ``Entry.Pointers.retainedBuffer,
+      ``Entry.initializeHeader, ``Entry.countPreserved?,
+      ``Allocation.Registry.borrowed,
+      ``Allocation.Registry.bindLocals, ``Allocation.Registry.enterCall, ``Allocation.Registry.restoreLocals,
+      ``Allocation.Registry.transport, ``Allocation.Registry.updateArrayAndScalar,
+      ``Allocation.Registry.unchanged, ``Allocation.Registry.arrayLength, ``Allocation.Registry.notScalar,
+      ``Entry.Grammar.preservesRegistry, ``Lanius.Separation.CellEffect.modifiesOnly,
+      ``output_word_bounds, ``evaluates_output_words, ``clear_cursor_entry,
       ``packing_cursor_entry, ``cleared_packing_entry, ``clear_then_pack,
       ``clear_cursor_frame, ``clear_cursor_input, ``clear_setup_then_pack, ``prepare_buffers,
       ``Lanius.Extraction.ExtractorContract.evaluates_workspace_stdout,
@@ -52,8 +130,8 @@ run_elab do
       ``Lanius.Memory.Heap.storeByte_remaining, ``Lanius.Memory.storeBytesFrom_remaining,
       ``syncI32ViewsToHeapFrom_remaining, ``Allocation.hostAllocation_exists,
       ``syncI32ViewsToHeapFrom_nextCell, ``syncI32RootViewsFromHeapFrom_preserves_structure,
-      ``Allocation.hostSlice_exists, ``syncI32RootViewsFromHeapFrom_arrays,
-      ``Allocation.Registry.root_lt_next, ``Allocation.Registry.allocate, ``Allocation.Registry.bindLocal,
+      ``Allocation.Step.initializes, ``Allocation.Step.rejectsExhaustion, ``syncI32RootViewsFromHeapFrom_arrays,
+      ``Allocation.Registry.root_lt_next, ``Allocation.Registry.allocateRaw, ``Allocation.Registry.allocationExhausted, ``Allocation.Registry.mapRaw, ``Allocation.Registry.bindLocal,
       ``Allocation.hostSequence_executes, ``Allocation.CheckedAllocator.executes,
       ``Allocation.Registry.of_empty_views, ``Allocation.HostReady.remaining,
       ``Allocation.HostReady.world, ``Allocation.HostReady.nextCell,
@@ -65,23 +143,38 @@ run_elab do
       ``Allocation.HostReady.preserves_local, ``Allocation.HostReady.preserves_view,
       ``Allocation.HostReady.head_read, ``Allocation.HostReady.buffer, ``Allocation.HostReady.pointer,
       ``Entry.Pointers.Frame.localRead, ``Entry.Pointers.Pointer.evaluates,
-      ``Entry.Pointers.Check.evaluatesFalse, ``Entry.Pointers.Guard.executes] do
+      ``Entry.Pointers.Pointer.Ready.bindOther, ``Entry.Pointers.Binding.executes,
+      ``Entry.Pointers.aliasesExecute, ``Entry.Pointers.Preparation.executes,
+      ``Entry.Pointers.availableOfAllocations,
+      ``Entry.Pointers.executeEntry,
+      ``Entry.Pointers.AliasFrame.allocatedLocal,
+      ``Entry.Hex.executes, ``Entry.Hex.Checked.decode,
+      ``Entry.Hex.evaluatesWord,
+      ``Entry.Hex.Checked.decodeLane, ``Entry.Hex.Checked.decodeWord,
+      ``Entry.Hex.Checked.decodePackedWord, ``Entry.Hex.Checked.decodeValue,
+      ``Entry.Hex.Checked.storeValue,
+      ``Entry.Grammar.bodyStep, ``Entry.Grammar.step, ``Entry.Grammar.executesLoop,
+      ``Entry.Grammar.loopSound,
+      ``Entry.Grammar.stringInitializer,
+      ``Entry.Grammar.cursorInvariant,
+      ``Entry.Grammar.initializeAndLoop,
+      ``Entry.Grammar.setupAndLoop,
+      ``Entry.Grammar.checkEncoding?, ``Entry.Grammar.checkLiteralData?,
+      ``Entry.Grammar.LiteralStage.executes,
+      ``Allocation.Registry.storage, ``Entry.Pointers.allocatedBuffer,
+      ``Entry.initializeGrammar,
+      ``Entry.Pointers.preservedLiveLocal,
+      ``Allocation.HostReady.rootsDistinct, ``Entry.Pointers.allocatedRootsDistinct,
+      ``Entry.Pointers.preservedBuffer,
+      ``Entry.Pointers.carryAllocatedBuffer] do
     for dependency in ← Lean.collectAxioms name do
       unless #[``propext, ``Classical.choice, ``Quot.sound].contains dependency do
         throwError "Packing preparation theorem {name} depends on {dependency}"
 
 private def locals : LoopLocals := ⟨8, 12, 36, 23⟩
 
-example : (Entry.Pointers.checkCondition? (.binary .logicalOr
-    (.binary .equal (.local 14) (.value (.pointer 0)))
-    (.binary .equal (.i32SliceDataPtr (.local 2)) (.value (.pointer 0))))).isSome = true := by decide
-example : (Entry.Pointers.checkCondition?
-    (.binary .equal (.i32SliceDataPtr (.local 2)) (.value (.pointer 1)))).isSome = false := by decide
-example : (Entry.Pointers.checkCondition?
-    (.binary .notEqual (.local 14) (.value (.pointer 0)))).isSome = false := by decide
-
-example : (Allocation.Sequence.distinctNames? ⟨[⟨1, 2⟩, ⟨2, 3⟩], .skip⟩).isSome = true := by decide
-example : (Allocation.Sequence.distinctNames? ⟨[⟨1, 2⟩, ⟨1, 3⟩], .skip⟩).isSome = false := by decide
+example : (Allocation.Sequence.distinctNames? ⟨[⟨⟨1, 2⟩, 10, by decide⟩, ⟨⟨2, 3⟩, 11, by decide⟩], .skip⟩).isSome = true := by decide
+example : (Allocation.Sequence.distinctNames? ⟨[⟨⟨1, 2⟩, 10, by decide⟩, ⟨⟨1, 3⟩, 11, by decide⟩], .skip⟩).isSome = false := by decide
 
 private def argcProgram : Program := { functions := [{
   id := 0, parameters := [], returnType := .scalar (.signed .i32), body := none,
@@ -95,14 +188,14 @@ example : (Entry.checkArguments? argcProgram
         (.sequence (.returnValue (some (.value (.signed .i32 1)))) .skip) .skip) .skip))).isSome = false := by decide
 
 example : (Allocation.checkSequence? 116 [2, 3]
-    (Allocation.hostStatement 116 [⟨1, 2⟩, ⟨2, 3⟩] .skip)).isSome = true := by decide
+    (Allocation.hostStatement 116 [⟨⟨1, 2⟩, 10, by decide⟩, ⟨⟨2, 3⟩, 11, by decide⟩] .skip)).isSome = true := by decide
 example : (Allocation.checkSequence? 116 [2, 4]
-    (Allocation.hostStatement 116 [⟨1, 2⟩, ⟨2, 3⟩] .skip)).isSome = false := by decide
+    (Allocation.hostStatement 116 [⟨⟨1, 2⟩, 10, by decide⟩, ⟨⟨2, 3⟩, 11, by decide⟩] .skip)).isSome = false := by decide
 example : (Allocation.checkSequence? 116 [2] (.letLocal 1 (.slice (.scalar (.signed .i32)))
-    (.i32SliceFromRawParts (.call 116 [.value (.unsigned .usize 7),
+    (.i32SliceFromRawParts (.call 116 [.value (.unsigned .usize 8),
       .value (.unsigned .usize 4)]) (.value (.signed .i32 2))) .skip)).isSome = false := by decide
 example : (Allocation.checkSequence? 116 [2]
-    (Allocation.hostStatement 117 [⟨1, 2⟩] .skip)).isSome = false := by decide
+    (Allocation.hostStatement 117 [⟨⟨1, 2⟩, 10, by decide⟩] .skip)).isSome = false := by decide
 
 example : (checkStdoutTail? (StdoutTail.statement ⟨37, 23, 16, 120⟩)).isSome = true := by decide
 example : (checkStdoutTail? (.returnValue (some (.value (.signed .i32 0))))).isSome = false := by decide

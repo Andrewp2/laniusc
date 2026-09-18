@@ -1,4 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Parser.Find
+import Lanius.Extraction.VerifiedFrontend.Parser.Workspace
 import Lanius.FunctionalViewCoreReadOnly
 
 namespace Lanius.Extraction.ParserAppend
@@ -1098,12 +1099,8 @@ noncomputable def AppendMutationInvariant.write_missing_next
       (Int.ofNat workspace.states.length) 4
     have one : Evaluates verifiedParserCore afterIndex
         (.value (.signed .i32 1)) (.signed .i32 1) afterIndex := ⟨1, rfl⟩
-    have wrapped : wrapSigned verifiedParserCore.target .i32 (-1) = -1 := by
-      generalize verifiedParserCore.target = target
-      rcases target with ⟨width⟩
-      cases width <;> native_decide
     apply evaluatesUnary one
-    simp [evalUnaryValue, wrapped]
+    simp [evalUnaryValue, wrapSigned_i32_neg_one]
 
 structure AppendStateRecordExecution
     (layout : WorkspaceLayout) (workspace : LogicalWorkspace)
@@ -1476,12 +1473,8 @@ theorem evaluatesParserAppendNegativeOne (runtime : State) :
       (.signed .i32 (-1)) runtime := by
   have one : Evaluates verifiedParserCore runtime
       (.value (.signed .i32 1)) (.signed .i32 1) runtime := ⟨1, rfl⟩
-  have wrapped : wrapSigned verifiedParserCore.target .i32 (-1) = -1 := by
-    generalize verifiedParserCore.target = target
-    rcases target with ⟨width⟩
-    cases width <;> native_decide
   apply evaluatesUnary one
-  simp [evalUnaryValue, wrapped]
+  simp [evalUnaryValue, wrapSigned_i32_neg_one]
 
 def parserAppendResultBindings
     (status stateId stateCount : Int) (inserted : Bool) :

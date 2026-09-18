@@ -193,7 +193,7 @@ theorem calls_at_lhs
       .ok (.signed .i32 (Int.ofNat
         (grammar.productionLhs.get ⟨production, bound⟩)), world) := by
   have notRhs : extractedParserLhsFunction.id ≠
-      extractedParserRhsLengthFunction.id := by native_decide
+      extractedParserRhsLengthFunction.id := by decide +kernel
   have lookup : grammar.productionLhs[production]? =
       some (grammar.productionLhs.get ⟨production, bound⟩) :=
     List.getElem?_eq_getElem bound
@@ -213,9 +213,9 @@ theorem calls_at_rhs_symbol
         ((grammar.productionAt ⟨production, productionBound⟩).rhs.get
           ⟨dot, dotBound⟩)), world) := by
   have notRhs : extractedParserRhsSymbolFunction.id ≠
-      extractedParserRhsLengthFunction.id := by native_decide
+      extractedParserRhsLengthFunction.id := by decide +kernel
   have notLhs : extractedParserRhsSymbolFunction.id ≠
-      extractedParserLhsFunction.id := by native_decide
+      extractedParserLhsFunction.id := by decide +kernel
   have productionLookup : grammar.grammar.productions[production]? =
       some (grammar.productionAt ⟨production, productionBound⟩) :=
     List.getElem?_eq_getElem (by

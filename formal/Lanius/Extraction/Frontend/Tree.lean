@@ -1,6 +1,8 @@
 import Lanius.Extraction.Frontend.Result
 import Lanius.Extraction.Parser.Tree.Materialize
 import Lanius.Extraction.Parser.Recognize.Linked
+import Lanius.Extraction.Parser.Tree.Bounds.Cost
+import Lanius.Fuel
 
 namespace Lanius.Extraction.Frontend
 
@@ -86,6 +88,7 @@ theorem CheckedAfterParse.accepted {visit : CheckedVisit program} {materializer 
           rawCount (Int.ofNat tokens.length) (Int.ofNat nodes) (Int.ofNat words) 0))) after ∧
       (materializeRuntime root.root recordValues offsetValues recordsCell offsetsCell).Result
         root.stored.tree code nodes words after.cells ∧
+      (ParserTreeBounds.Fits root.stored.tree recordValues.length offsetValues.length depth → code = 0) ∧
       RecognizerWorkspaceArtifact layout workspace workspaceValues workspaceCell after ∧
       CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton offsetsCell)) before after := by
   dsimp only
@@ -94,7 +97,7 @@ theorem CheckedAfterParse.accepted {visit : CheckedVisit program} {materializer 
       [.signed .i32 0, .signed .i32 (Int.ofNat workspace.states.length), .signed .i32 (Int.ofNat root.rootState), .signed .i32 0]) := by
     rw [root.resultEq] at parsedLocal
     simpa only [parseResultValue, Core.Relocation.value, Core.Relocation.values, parsedType] using parsedLocal
-  obtain ⟨guarded, statusCall, statusEffect⟩ := materializer.status.call wellFormed (.singleton (local_read parsedReady)) rfl
+  obtain ⟨guarded, statusCall, statusEffect, _⟩ := materializer.status.call wellFormed (.singleton (local_read parsedReady)) rfl
   have guardRun : Evaluates program.core before checked.condition (.boolean false) guarded :=
     evaluatesEagerBinary (by decide) (by decide) statusCall (evaluatesConstant materializer.success) rfl
   have localGuarded {id : VarId} {value : Value} (found : before.local? id = some value) :
@@ -118,6 +121,16 @@ theorem CheckedAfterParse.accepted {visit : CheckedVisit program} {materializer 
   obtain ⟨code, nodes, words, materialized, treeCall, treeResult, treeArtifact, treeEffect⟩ :=
     materializer.call_bounded linked inverseType inverse root statusEffect.wellFormed guardedArtifact layoutTokens
       guardedRecords guardedOffsets recordsSeparate offsetsSeparate buffersDistinct recordsBound offsetsBound depthBound arguments
+  have successWhenFits : ParserTreeBounds.Fits root.stored.tree recordValues.length offsetValues.length depth → code = 0 := by
+    intro fits
+    obtain ⟨successful, successfulCall, _⟩ := materializer.call linked inverseType inverse root
+      statusEffect.wellFormed guardedArtifact layoutTokens guardedRecords guardedOffsets
+      recordsSeparate offsetsSeparate buffersDistinct recordsBound offsetsBound depthBound
+      fits.1 fits.2.1 fits.2.2 arguments
+    have same := (Lanius.Fuel.evaluates_deterministic treeCall successfulCall).1
+    exact congrArg (fun value => match value with
+      | .structure _ (.signed _ status :: _) => status
+      | _ => -1) same
   let ready := materialized.bindLocal 23 (resultValue visit.symbols.resultType code (Int.ofNat nodes) (Int.ofNat words))
   have readyWF : StateWellFormed ready := bindLocal_preserves_well_formed _ _ _ treeEffect.wellFormed
   have preserved {id : VarId} {value : Value} (found : before.local? id = some value)
@@ -137,7 +150,7 @@ theorem CheckedAfterParse.accepted {visit : CheckedVisit program} {materializer 
   have finishFrame : CellEffect CellSet.empty materialized after := by
     simpa only [after, restoreLocals, treeEffect.locals] using finishClosed
   refine ⟨code, nodes, words, after, ?_, treeResult.preserved treeEffect.wellFormed finishFrame
-    (by simp [CellSet.empty]) (by simp [CellSet.empty]),
+    (by simp [CellSet.empty]) (by simp [CellSet.empty]), successWhenFits,
     ⟨treeArtifact.workspaceLength, treeArtifact.workspaceEncoded,
       finishFrame.empty_preserves_entry treeEffect.wellFormed treeArtifact.workspaceBacking⟩,
     (statusEffect.weaken CellSet.empty_subset).trans (treeEffect.trans (finishFrame.weaken CellSet.empty_subset))⟩
@@ -157,16 +170,16 @@ theorem CheckedAfterParse.reject (checked : CheckedAfterParse materializer)
     ∃ after, Executes program.core before checked.body
         (.returned (some (syntaxResult checked.finish.constructor.typeId 4 code rawCount tokenCount 0 0 position))) after ∧
       CellEffect CellSet.empty before after := by
-  obtain ⟨guarded, statusCall, statusEffect⟩ := materializer.status.call wellFormed
+  obtain ⟨guarded, statusCall, statusEffect, _⟩ := materializer.status.call wellFormed
     (.singleton (local_read parsedLocal)) rfl
   have guardRun : Evaluates program.core before checked.condition (.boolean true) guarded :=
     evaluatesEagerBinary (by decide) (by decide) statusCall (evaluatesConstant materializer.success)
       (by simp [evalBinaryValue, scalarEqual, failed])
   have guardedParse := statusEffect.empty_preserves_local wellFormed parsedLocal
-  obtain ⟨detailed, detailCall, detailEffect⟩ := materializer.status.call statusEffect.wellFormed
+  obtain ⟨detailed, detailCall, detailEffect, _⟩ := materializer.status.call statusEffect.wellFormed
     (.singleton (local_read guardedParse)) rfl
   have prefixEffect := statusEffect.trans detailEffect
-  obtain ⟨positioned, positionCall, positionEffect⟩ := checked.error.call detailEffect.wellFormed
+  obtain ⟨positioned, positionCall, positionEffect, _⟩ := checked.error.call detailEffect.wellFormed
     (.singleton (local_read (prefixEffect.empty_preserves_local wellFormed parsedLocal))) rfl
   have arguments : ArgumentsEvaluateTo program.core guarded
       [.constant checked.failureId, .call materializer.status.source.function.id [.local 22],
@@ -178,7 +191,7 @@ theorem CheckedAfterParse.reject (checked : CheckedAfterParse materializer)
     refine .cons (local_read (prefixEffect.empty_preserves_local wellFormed rawLocal)) ?_
     refine .cons (local_read (prefixEffect.empty_preserves_local wellFormed tokenLocal)) ?_
     exact .cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.singleton positionCall))
-  obtain ⟨after, returned, returnEffect⟩ := checked.finish.constructor.call positionEffect.wellFormed arguments
+  obtain ⟨after, returned, returnEffect, _⟩ := checked.finish.constructor.call positionEffect.wellFormed arguments
   exact ⟨after, executesSequenceReturned (executesIfTrue guardRun
       (executesSequenceReturned (executesReturnValue returned))),
     prefixEffect.trans (positionEffect.trans returnEffect)⟩
@@ -196,7 +209,7 @@ private theorem parser_fields
       cases root with
       | accepted rootState candidate found bounded candidateMatches stored =>
         exact ⟨0, Int.ofNat workspace.states.length, Int.ofNat rootState, 0, rfl, Or.inl rfl⟩
-      | rejected furthest => exact ⟨1, Int.ofNat workspace.states.length, -1, Int.ofNat furthest, rfl, Or.inr (Or.inl rfl)⟩
+      | rejected furthest _ => exact ⟨1, Int.ofNat workspace.states.length, -1, Int.ofNat furthest, rfl, Or.inr (Or.inl rfl)⟩
 
 /-- Derive the failure fields from the same retained outcome consumed by the
 success branch. The caller does not supply a separate parse-result shape. -/

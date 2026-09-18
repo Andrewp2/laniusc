@@ -27,7 +27,7 @@ private def lexIntoWire : CoreFunction :=
 def lexIntoFunction : Function := CoreDecode.function lexIntoWire
 
 theorem lexInto_body_present : lexIntoFunction.body.isSome := by
-  native_decide
+  rfl
 
 def lexIntoBody : Stmt :=
   lexIntoFunction.body.get lexInto_body_present
@@ -47,7 +47,7 @@ private def reification? :=
     (identityLayout (arity := 4)) 4 lexIntoBody
 
 theorem lexInto_reification_exists : reification?.isSome := by
-  native_decide
+  decide +kernel
 
 def lexIntoView :=
   reification?.get lexInto_reification_exists

@@ -92,7 +92,8 @@ def checkCollectExecution (program : Program) (functionId : Lanius.FunctionId) :
   let recordWords := layout.words ++ [444]
   let offsetWords := layout.offsets.map Int.ofNat ++ [-1]
   for capacity in [0, 1, 5, 6, 7, 8, 9] do
-    for malformed in [false, true] do
+    for (malformed, recordsLimit) in [false, true].flatMap (fun malformed =>
+        [layout.words.length, recordWords.length, 1048576, 2147483647].map (malformed, ·)) do
       -- A kind equal to kind_count is out of range. This changes a real token
       -- triple in the root record, while preserving all offsets and lengths.
       let records := if malformed then recordWords.set 6 4 else recordWords
@@ -108,13 +109,13 @@ def checkCollectExecution (program : Program) (functionId : Lanius.FunctionId) :
       let slice := fun cell length => Expr.value (Value.slice (.scalar (.signed .i32)) cell [] 0 length)
       let number := fun value : Nat => Expr.value (Value.signed .i32 value)
       let arguments := [slice 0 grammarWords.length, number grammarWords.length, slice 1 3, number 3,
-        slice 2 records.length, number records.length, slice 3 offsetWords.length, number layout.offsets.length,
+        slice 2 records.length, number recordsLimit, slice 3 offsetWords.length, number layout.offsets.length,
         slice 4 capacity, number capacity]
       let wanted : Int := if capacity < 6 then -2 else if malformed then -1 else 0
       match evalExpr 2000 program before (.call functionId arguments) with
       | .done (.signed .i32 result) after =>
         unless result == wanted && before.locals == after.locals do
-          throw (IO.userError s!"current collect returned {result}, expected {wanted}, or changed scope at capacity {capacity}")
+          throw (IO.userError s!"current collect returned {result}, expected {wanted}, or changed scope at capacity {capacity}/record limit {recordsLimit}")
         for entry in before.cells do
           if entry.id != 4 then
             let some current := after.cellEntry? entry.id

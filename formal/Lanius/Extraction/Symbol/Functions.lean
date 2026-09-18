@@ -48,17 +48,17 @@ def matchSymbolHeadFunction : Function :=
   CoreDecode.function matchSymbolHeadWire
 
 theorem tokenMatchKind_body_present : tokenMatchKindFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem tokenMatchLength_body_present :
     tokenMatchLengthFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem tokenMatch_body_present : tokenMatchFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem matchSymbolHead_body_present : matchSymbolHeadFunction.body.isSome := by
-  native_decide
+  rfl
 
 def tokenMatchKindBody : Stmt :=
   tokenMatchKindFunction.body.get tokenMatchKind_body_present
@@ -152,19 +152,19 @@ private def reification? {arity : Nat} (function : Function) (body : Stmt) :=
 
 theorem tokenMatchKind_reification_exists :
     (reification? (arity := 1) tokenMatchKindFunction tokenMatchKindBody).isSome := by
-  native_decide
+  decide +kernel
 
 theorem tokenMatchLength_reification_exists :
     (reification? (arity := 1) tokenMatchLengthFunction tokenMatchLengthBody).isSome := by
-  native_decide
+  decide +kernel
 
 theorem tokenMatch_reification_exists :
     (reification? (arity := 2) tokenMatchFunction tokenMatchBody).isSome := by
-  native_decide
+  decide +kernel
 
 theorem matchSymbolHead_reification_exists :
     (reification? (arity := 3) matchSymbolHeadFunction matchSymbolHeadBody).isSome := by
-  native_decide
+  decide +kernel
 
 def tokenMatchKindView :=
   (reification? (arity := 1) tokenMatchKindFunction tokenMatchKindBody).get

@@ -3,6 +3,7 @@ import Lanius.Extraction.RawLexer.LexInto.Buffer
 import Lanius.Semantics.CellRenaming.Execution
 import Lanius.Semantics.CellRenaming.Ownership
 import Lanius.Semantics.CellRenaming.Effects
+import Lanius.Separation.HeapFrame
 
 namespace Lanius.Extraction.RawLexer.LexInto.Caller
 open Lanius Lanius.Core Lanius.Semantics Lanius.Properties Lanius.Separation
@@ -157,7 +158,7 @@ theorem callee_executes
         (CanonicalTokens.CanonicalizeModel.encodeTokens (Model.emittedTokens request.outcome) ++
           records.drop (3 * (Model.emittedTokens request.outcome).length)))).holds completed ∧
       CellEffect (CellSet.union (CellSet.singleton recordsCell) (freshCells caller.nextCell))
-        (enterCall caller bindings) completed := by
+        (enterCall caller bindings) completed ∧ HeapFrame (enterCall caller bindings) completed := by
   let env := environment sourceCell recordsCell request.source records request.capacity
   let bindings := parameterBindings env
   have emptyRepresentation : Representation (identityLayout (arity := 0)) (fun index => Fin.elim0 index)
@@ -180,7 +181,8 @@ theorem callee_executes
       (fun index => Nat.le_add_right _ _) (enterCall_effect caller bindings).nextCell
   have buffers := completedRepresentation.worldOwned
   rw [run_records_prefix request.source request.capacity records recordsCapacity] at buffers
-  exact ⟨completed, executed, buffers, CellEffect.ofModifiesOnly effect completedWF⟩
+  exact ⟨completed, executed, buffers, CellEffect.ofModifiesOnly effect completedWF,
+    HeapFrame.ofStoreEffect effect.toStoreEffect⟩
 
 /-- Ordinary caller arguments and storage suffice for the actual lexer call
     at arbitrary buffer addresses, with exact output and an output-only frame. -/
@@ -199,9 +201,9 @@ theorem call_evaluates_at
       (ReadOnly.World.owns (ReadOnly.World.pair sourceCell (ScanOne.Model.sourceIntegers request.source) recordsCell
         (CanonicalTokens.CanonicalizeModel.encodeTokens (Model.emittedTokens request.outcome) ++
           records.drop (3 * (Model.emittedTokens request.outcome).length)))).holds after ∧
-      CellEffect (CellSet.singleton recordsCell) afterArguments after := by
+      CellEffect (CellSet.singleton recordsCell) afterArguments after ∧ HeapFrame afterArguments after := by
   let bindings := parameterBindings (environment sourceCell recordsCell request.source records request.capacity)
-  obtain ⟨completed, executed, buffers, effect⟩ :=
+  obtain ⟨completed, executed, buffers, effect, heap⟩ :=
     callee_executes invariant request records recordsCapacity sourceCell recordsCell distinct wellFormed owned
   have bound : bindParameters lexIntoFunction.parameters
       [.slice Structure.i32Type sourceCell [] 0 request.source.length, .signed .i32 request.source.length,
@@ -209,7 +211,7 @@ theorem call_evaluates_at
   have closed := CellEffect.closeCall afterArguments bindings wellFormed effect
   refine ⟨restoreLocals afterArguments completed,
     evaluatesCallReturned argumentsResult verifiedFrontendCore_finds_lexInto bound lexInto_has_body executed,
-    buffers, closed.narrow ?_⟩
+    buffers, closed.narrow ?_, heap.closeCall afterArguments bindings⟩
   intro cell old written
   rcases written with output | fresh
   · exact output

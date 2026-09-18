@@ -19,7 +19,12 @@ structure TraversalData where
   original : List Int
   capacity : tokens.length * 2 ≤ original.length
   tokensFit : tokens.length * 2 ≤ 2147483647
-  wordsFit : (treeFrom 0 0 tree).words.length ≤ 2147483647
+  recordsLimit : Nat
+  wordsWithin : (treeFrom 0 0 tree).words.length ≤ recordsLimit
+  limitFits : recordsLimit ≤ 2147483647
+
+theorem TraversalData.wordsFit (data : TraversalData) : (treeFrom 0 0 data.tree).words.length ≤ 2147483647 :=
+  Nat.le_trans data.wordsWithin data.limitFits
 
 def childWrites (output position child : CellId) : CellSet :=
   CellSet.union (CellSet.union (CellSet.singleton output) (CellSet.singleton position)) (CellSet.singleton child)
@@ -51,7 +56,7 @@ structure ChildOwned (memory : ChildMemory) (record : RecordVisit)
   cursor : (Assertion.localPointsTo 16 memory.positionCell (some (.signed .i32 position))).holds state
   child : (Assertion.localPointsTo 17 memory.childCell (some (.signed .i32 index))).holds state
   count : state.local? 3 = some (.signed .i32 memory.data.tokens.length)
-  wordLength : state.local? 5 = some (.signed .i32 (treeFrom 0 0 memory.data.tree).words.length)
+  wordLength : state.local? 5 = some (.signed .i32 memory.data.recordsLimit)
   nodeCount : state.local? 7 = some (.signed .i32 memory.data.collection.records.length)
   kindCount : state.local? 10 = some (.signed .i32 memory.data.grammar.grammar.grammar.n_kinds)
   canonicalOffset : state.local? 11 = some (.signed .i32 memory.data.grammar.layout.canonicalKindsOffset)

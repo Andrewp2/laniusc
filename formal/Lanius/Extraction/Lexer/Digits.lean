@@ -47,31 +47,31 @@ def digitScanErrorOffsetFunction : Function :=
 
 theorem digitScanSucceededFunction_body_present :
     digitScanSucceededFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem digitScanEndOffsetFunction_body_present :
     digitScanEndOffsetFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem digitScanErrorOffsetFunction_body_present :
     digitScanErrorOffsetFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem successfulDigitsFunction_body_present :
     extractedSuccessfulDigitsFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem failedDigitsFunction_body_present :
     extractedFailedDigitsFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem isDigitForBaseFunction_body_present :
     extractedIsDigitForBaseFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem scanDigitRunFunction_body_present :
     extractedScanDigitRunFunction.body.isSome := by
-  native_decide
+  rfl
 
 def digitScanSucceededBody : Stmt :=
   digitScanSucceededFunction.body.get digitScanSucceededFunction_body_present

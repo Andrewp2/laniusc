@@ -70,13 +70,14 @@ theorem canonical_to_recognize
         value ≠ .array (signedI32Values kinds) → value ≠ .array (signedI32Values workspaceValues) →
         ready.local? id = some value) ∧
       CellEffect (CellSet.union (CellSet.singleton kindsCell) (CellSet.singleton workspaceCell))
-        before (restoreLocals before ready) := by
+        before (restoreLocals before ready) ∧
+      Host.MemoryPath before ready := by
   dsimp only
   let tokens := canonicalizeTokens source raw
   let codes := tokens.map (fun token => token.kind.gpuCode)
   have guardRun := kinds_capacity_evaluates program before tokens.length kinds.length countLocal kindsLength
   simp only [tokens, capacity, decide_true, Bool.not_true] at guardRun
-  obtain ⟨copied, copyRun, canonicalCopied, kindsCopied, kindsLocalCopied, countCopied, copiedWF, copyEffect⟩ :=
+  obtain ⟨copied, copyRun, canonicalCopied, kindsCopied, kindsLocalCopied, countCopied, copiedWF, copyEffect, copyMemory⟩ :=
     BufferCopy.copy_kinds program before source raw unused kinds 6 8 21 20 canonicalCell kindsCell
       wellFormed canonicalKinds (by simp) canonicalFit kindsFit capacity canonicalLocal kindsLocal countLocal
       canonicalContents kindsContents
@@ -103,7 +104,7 @@ theorem canonical_to_recognize
     simpa only [codes, List.map_map, Function.comp_def, BufferCopy.tokenKinds] using
       BufferCopy.kind_prefix tokens kinds capacity kindsCopied
   let region := recognitionRegion (symbols.functionId extractedParserRecognizeFunction.id) (symbols.typeId 0) .skip
-  obtain ⟨completion, outcome, finalWorkspace, finalValues, parsed, callRun, agreement, growth, artifact, parseEffect⟩ :=
+  obtain ⟨completion, outcome, finalWorkspace, finalValues, parsed, callRun, agreement, growth, artifact, parseEffect, parseHeap⟩ :=
     recognize_region_at region link injective inverseType inverse retained rfl
       (copiedLocal grammarLocal (by change 2 < 21; decide) (by intro same; cases same))
       (copiedLocal grammarLengthLocal (by change 3 < 21; decide) (by intro same; cases same)) kindsLocalCopied
@@ -127,7 +128,7 @@ theorem canonical_to_recognize
     bindLocal_finds_local _ _ _ parseEffect.wellFormed, agreement, growth,
     ⟨artifact.workspaceLength, artifact.workspaceEncoded, readyEntry artifact.workspaceBacking⟩,
     readyEntry (parseEffect.preserves_entry copiedWF canonicalCopied canonicalWorkspace),
-    readyEntry (parseEffect.preserves_entry copiedWF kindsCopied kindsWorkspace), ?_, ?_⟩
+    readyEntry (parseEffect.preserves_entry copiedWF kindsCopied kindsWorkspace), ?_, ?_, ?_⟩
   · intro storageFailure rest completion final continuation
     have run := copyRun _ _ _ (executesLetLocal (type := .structure (symbols.typeId 0)) callRun continuation)
     exact executesSequence (executesIfFalse guardRun (executesSkip _ _)) run
@@ -150,5 +151,6 @@ theorem canonical_to_recognize
       simpa only [restoreLocals, parseEffect.locals] using parseClosed
     exact (copyClosed.weaken (larger := writes) CellSet.subset_union_left).transScoped
       (parseScoped.weaken CellSet.subset_union_right) wellFormed
+  · exact copyMemory.path.thenHeap (parseHeap.trans ⟨rfl, rfl⟩)
 
 end Lanius.Extraction.Frontend

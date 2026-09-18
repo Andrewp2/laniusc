@@ -13,16 +13,18 @@ theorem executes_writes_and_increment (checked : Kind.Checked program kindId key
     (rowLocal : before.local? 9 = some (.signed .i32 (3 * output)))
     (outputOwned : (Assertion.localPointsTo 4 outputCell (some (.signed .i32 output))).holds before)
     (distinct : recordsCell ≠ outputCell)
-    (sourceBound : start + width ≤ source.length) (rowBound : 3 * output + 2 < records.length) :
+    (sourceBound : start + width ≤ source.length) (rowBound : 3 * output + 2 < records.length)
+    (rawBound : -2147483648 ≤ rawKind ∧ rawKind ≤ 2147483647) :
     ∃ after, Executes program before (rowStores kindId (statements [increment 4])) .next after ∧
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array
         (signedI32Values (writeRow records (3 * output) (Kind.result source rawKind start width) start (start + width)))) } ∧
       (Assertion.localPointsTo 4 outputCell (some (.signed .i32 (output + 1 : Nat)))).holds after ∧
-      CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton outputCell)) before after := by
-  obtain ⟨stored, stores, contents, storesEffect⟩ := executes_row_stores checked before sourceCell recordsCell
+      CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton outputCell)) before after ∧
+      Host.MemoryFrame before after := by
+  obtain ⟨stored, stores, contents, storesEffect, storesMemory⟩ := executes_row_stores checked before sourceCell recordsCell
     source records rawKind start width (3 * output) storage.wellFormed storage.sourceLocal storage.recordsLocal
     kindLocal startLocal endLocal rowLocal storage.sourceContents storage.recordsContents sourceBound
-    storage.sourceFits rowBound storage.recordsFit
+    storage.sourceFits rowBound storage.recordsFit rawBound
   have ownedStill := storesEffect.preserves_localPointsTo storage.wellFormed outputOwned
     (by simpa [CellSet.singleton, eq_comm] using distinct)
   obtain ⟨after, incremented, afterWF, ownedAfter, incrementEffect⟩ := executesIncrementOwnedI32Local
@@ -32,7 +34,9 @@ theorem executes_writes_and_increment (checked : Kind.Checked program kindId key
   have combined := (storesEffect.weaken CellSet.subset_union_left).trans
     ((CellEffect.ofModifiesOnly incrementEffect afterWF).weaken CellSet.subset_union_right)
   exact ⟨after, stores _ _ _ incremented,
-    afterContents, ownedAfter, combined⟩
+    afterContents, ownedAfter, combined,
+    storesMemory.trans (Host.MemoryFrame.scalar (CellEffect.ofModifiesOnly incrementEffect afterWF)
+      (HeapFrame.ofStoreEffect incrementEffect.toStoreEffect) ownedStill.2)⟩
 
 /-- The complete kept-token branch, including its three scoped temporaries. -/
 theorem executes_kept_body (checked : Kind.Checked program kindId keywordId matcher)
@@ -45,12 +49,14 @@ theorem executes_kept_body (checked : Kind.Checked program kindId keywordId matc
     (outputOwned : (Assertion.localPointsTo 4 outputCell (some (.signed .i32 output))).holds before)
     (distinct : recordsCell ≠ outputCell)
     (sourceBound : start + width ≤ source.length)
-    (inputBound : inputRow + 2 < records.length) (rowBound : 3 * output + 2 < records.length) :
+    (inputBound : inputRow + 2 < records.length) (rowBound : 3 * output + 2 < records.length)
+    (rawBound : -2147483648 ≤ rawKind ∧ rawKind ≤ 2147483647) :
     ∃ after, Executes program before (keptBody kindId) .next after ∧
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array
         (signedI32Values (writeRow records (3 * output) (Kind.result source rawKind start width) start (start + width)))) } ∧
       (Assertion.localPointsTo 4 outputCell (some (.signed .i32 (output + 1 : Nat)))).holds after ∧
-      CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton outputCell)) before after := by
+      CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton outputCell)) before after ∧
+      Host.MemoryFrame before after := by
   let withStart := before.bindLocal 7 (.signed .i32 start)
   let withEnd := withStart.bindLocal 8 (.signed .i32 (start + width))
   let ready := withEnd.bindLocal 9 (.signed .i32 (3 * output))
@@ -93,12 +99,16 @@ theorem executes_kept_body (checked : Kind.Checked program kindId keywordId matc
       (bindLocal_finds_local withStart 8 _ startStorage.wellFormed)
   have rowReady : ready.local? 9 = some (.signed .i32 (3 * output)) :=
     bindLocal_finds_local withEnd 9 _ endStorage.wellFormed
-  obtain ⟨completed, run, contents, owned, effect⟩ := executes_writes_and_increment checked readyStorage
-    rawKind start width output outputCell kindReady startReady endReady rowReady outputReady distinct sourceBound rowBound
+  obtain ⟨completed, run, contents, owned, effect, memory⟩ := executes_writes_and_increment checked readyStorage
+    rawKind start width output outputCell kindReady startReady endReady rowReady outputReady distinct sourceBound rowBound rawBound
   have closeRow := CellEffect.closeLocal withEnd 9 (.signed .i32 (3 * output)) endStorage.wellFormed effect
   have closeEnd := CellEffect.closeLocal withStart 8 (.signed .i32 (start + width)) startStorage.wellFormed closeRow
   have closeStart := CellEffect.closeLocal before 7 (.signed .i32 start) storage.wellFormed closeEnd
   exact ⟨_, executesLetLocal startRead (executesLetLocal endRead (executesLetLocal rowRead run)),
-    contents, ⟨outputOwned.1, owned.2⟩, closeStart⟩
+    contents, ⟨outputOwned.1, owned.2⟩, closeStart,
+    ((Host.MemoryFrame.bindLocal before 7 (.signed .i32 start)).trans
+      ((Host.MemoryFrame.bindLocal withStart 8 (.signed .i32 (start + width))).trans
+        ((Host.MemoryFrame.bindLocal withEnd 9 (.signed .i32 (3 * output))).trans memory))).restoreLocals
+          before closeStart.wellFormed⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction

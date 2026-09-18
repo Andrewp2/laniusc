@@ -69,7 +69,7 @@ private theorem CheckedEarly.storage_return (checked : CheckedEarly program symb
     (tokenResult : Evaluates program.core before tokens (.signed .i32 tokenCount) before) :
     ∃ after, Evaluates program.core before (checked.storageCall detail tokens)
         (syntaxResult checked.constructor.typeId 3 detail rawCount tokenCount 0 0 0) after ∧
-      CellEffect CellSet.empty before after := by
+      CellEffect CellSet.empty before after ∧ HeapFrame before after := by
   apply checked.constructor.call wellFormed
   exact .cons (evaluatesConstant checked.storage) (.cons ⟨1, rfl⟩ (.cons (local_read rawLocal)
     (.cons tokenResult (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.singleton ⟨1, rfl⟩))))))
@@ -84,18 +84,18 @@ theorem CheckedEarly.lexer_failure (checked : CheckedEarly program symbols)
     ∃ after, (∀ storageFailure rest, Executes program.core before
         (tokenGuards symbols checked.lexicalBody storageFailure rest).body
         (.returned (some (syntaxResult checked.constructor.typeId 2 code count 0 0 0 position))) after) ∧
-      CellEffect CellSet.empty before after := by
-  obtain ⟨guarded, statusCall, statusEffect⟩ := checked.status.call wellFormed
+      CellEffect CellSet.empty before after ∧ HeapFrame before after := by
+  obtain ⟨guarded, statusCall, statusEffect, statusHeap⟩ := checked.status.call wellFormed
     (.singleton (local_read resultLocal)) rfl
   have guardRun : Evaluates program.core before
       (.binary .notEqual (.call symbols.status [.local 17]) (.constant symbols.success)) (.boolean true) guarded := by
     rw [checked.statusId]
     exact evaluatesEagerBinary (by decide) (by decide) statusCall (evaluatesConstant checked.lexerSuccess)
       (by simp [evalBinaryValue, scalarEqual, failed])
-  obtain ⟨detailed, detailCall, detailEffect⟩ := checked.status.call statusEffect.wellFormed
+  obtain ⟨detailed, detailCall, detailEffect, detailHeap⟩ := checked.status.call statusEffect.wellFormed
     (.singleton (local_read (statusEffect.empty_preserves_local wellFormed resultLocal))) rfl
   have prefixEffect := statusEffect.trans detailEffect
-  obtain ⟨positioned, errorCall, errorEffect⟩ := checked.error.call detailEffect.wellFormed
+  obtain ⟨positioned, errorCall, errorEffect, errorHeap⟩ := checked.error.call detailEffect.wellFormed
     (.singleton (local_read (prefixEffect.empty_preserves_local wellFormed resultLocal))) rfl
   have arguments : ArgumentsEvaluateTo program.core guarded
       [.constant checked.lexicalId, .call checked.status.source.function.id [.local 17], .local 18,
@@ -106,8 +106,9 @@ theorem CheckedEarly.lexer_failure (checked : CheckedEarly program symbols)
     refine .cons (evaluatesConstant checked.lexical) (.cons detailCall ?_)
     refine .cons (local_read (prefixEffect.empty_preserves_local wellFormed countLocal)) ?_
     exact .cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.singleton errorCall)))
-  obtain ⟨after, returned, returnEffect⟩ := checked.constructor.call errorEffect.wellFormed arguments
-  refine ⟨after, ?_, prefixEffect.trans (errorEffect.trans returnEffect)⟩
+  obtain ⟨after, returned, returnEffect, returnHeap⟩ := checked.constructor.call errorEffect.wellFormed arguments
+  refine ⟨after, ?_, prefixEffect.trans (errorEffect.trans returnEffect),
+    statusHeap.trans (detailHeap.trans (errorHeap.trans returnHeap))⟩
   intro storageFailure rest
   exact executesSequenceReturned (executesIfTrue guardRun (executesSequenceReturned (executesReturnValue returned)))
 
@@ -123,8 +124,8 @@ theorem CheckedEarly.canonical_full (checked : CheckedEarly program symbols)
     ∃ after, (∀ lexicalFailure rest, Executes program.core before
         (tokenGuards symbols lexicalFailure checked.canonicalBody rest).body
         (.returned (some (syntaxResult checked.constructor.typeId 3 0 count 0 0 0 0))) after) ∧
-      CellEffect CellSet.empty before after := by
-  obtain ⟨guarded, statusCall, statusEffect⟩ := checked.status.call wellFormed
+      CellEffect CellSet.empty before after ∧ HeapFrame before after := by
+  obtain ⟨guarded, statusCall, statusEffect, statusHeap⟩ := checked.status.call wellFormed
     (.singleton (local_read resultLocal)) rfl
   have statusRun : Evaluates program.core before
       (.binary .notEqual (.call symbols.status [.local 17]) (.constant symbols.success)) (.boolean false) guarded := by
@@ -135,9 +136,9 @@ theorem CheckedEarly.canonical_full (checked : CheckedEarly program symbols)
     (statusEffect.empty_preserves_local wellFormed capacityLocal) bounded
   have rejected : ¬ count ≤ capacity / 3 := by omega
   simp only [rejected, decide_false, Bool.not_false] at capacityRun
-  obtain ⟨after, returned, returnEffect⟩ := checked.storage_return statusEffect.wellFormed 0 (.value (.signed .i32 0))
+  obtain ⟨after, returned, returnEffect, returnHeap⟩ := checked.storage_return statusEffect.wellFormed 0 (.value (.signed .i32 0))
     (statusEffect.empty_preserves_local wellFormed countLocal) ⟨1, rfl⟩
-  refine ⟨after, ?_, statusEffect.trans returnEffect⟩
+  refine ⟨after, ?_, statusEffect.trans returnEffect, statusHeap.trans returnHeap⟩
   intro lexicalFailure rest
   exact executesSequence (executesIfFalse statusRun (executesSkip _ _))
     (executesSequenceReturned (executesIfTrue capacityRun (executesSequenceReturned (executesReturnValue returned))))
@@ -152,12 +153,12 @@ theorem CheckedEarly.kinds_full (checked : CheckedEarly program symbols)
     ∃ after, (∀ functionId resultType rest, Executes program.core before
         (recognitionBody functionId resultType checked.kindsBody rest)
         (.returned (some (syntaxResult checked.constructor.typeId 3 1 rawCount count 0 0 0))) after) ∧
-      CellEffect CellSet.empty before after := by
+      CellEffect CellSet.empty before after ∧ HeapFrame before after := by
   have guardRun := kinds_capacity_evaluates program.core before count capacity countLocal capacityLocal
   have rejected : ¬ count ≤ capacity := by omega
   simp only [rejected, decide_false, Bool.not_false] at guardRun
-  obtain ⟨after, returned, effect⟩ := checked.storage_return wellFormed 1 (.local 20) rawLocal (local_read countLocal)
-  refine ⟨after, ?_, effect⟩
+  obtain ⟨after, returned, effect, frame⟩ := checked.storage_return wellFormed 1 (.local 20) rawLocal (local_read countLocal)
+  refine ⟨after, ?_, effect, frame⟩
   intro functionId resultType rest
   exact executesSequenceReturned (executesIfTrue guardRun (executesSequenceReturned (executesReturnValue returned)))
 

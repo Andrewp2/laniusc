@@ -10,14 +10,14 @@ theorem advances (table : Table program tokens) (request : Request)
     (invariant : LoopState request completed (current :: next :: rest) before) :
     ∃ after, Executes program before (rangeBody tokens) .next after ∧
       LoopState request (completed ++ [retag current next]) (next :: rest) after ∧
-      CellEffect request.writes before after := by
+      CellEffect request.writes before after ∧ Host.MemoryFrame before after := by
   have selectedCurrent : (completed ++ current :: next :: rest)[completed.length]? = some current := by simp
   have selectedNext : (completed ++ current :: next :: rest)[completed.length + 1]? = some next := by simp
   obtain ⟨currentKind, _, currentEnd⟩ := encoded_row (completed ++ current :: next :: rest)
     request.unused completed.length current selectedCurrent
   obtain ⟨nextKind, nextStart, _⟩ := encoded_row (completed ++ current :: next :: rest)
     request.unused (completed.length + 1) next selectedNext
-  obtain ⟨after, run, contents, cursor, effect⟩ := executes_body table invariant.storage completed.length
+  obtain ⟨after, run, contents, cursor, effect, memory⟩ := executes_body table invariant.storage completed.length
     request.cursorCell current.kind.gpuCode next.kind.gpuCode next.start current.finish invariant.cursor request.distinct
     (by rw [buffer_length]; simp; omega) currentKind
     (by simpa [buffer, Nat.mul_succ, Int.ofNat_eq_natCast] using nextKind)
@@ -32,6 +32,6 @@ theorem advances (table : Table program tokens) (request : Request)
     simpa only [marked_buffer] using contents
   have cursorNext : (Assertion.localPointsTo 10 request.cursorCell
       (some (.signed .i32 (completed ++ [retag current next]).length))).holds after := by simpa using cursor
-  exact ⟨after, run, invariant.advance _ _ nextLength effect afterContents cursorNext, effect⟩
+  exact ⟨after, run, invariant.advance _ _ nextLength effect afterContents cursorNext, effect, memory⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction.Range

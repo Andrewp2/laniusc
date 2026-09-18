@@ -94,28 +94,10 @@ theorem Checked.success (checked : Checked program byte digit hex)
 
 /-- Negative logical lengths return before dereferencing either buffer. -/
 theorem Checked.reject (checked : Checked program byte digit hex)
-    (input output : Value) (length capacity position : Int)
-    (wellFormed : StateWellFormed before) (negative : length < 0)
-    (argumentsResult : ArgumentsEvaluateTo program.core caller arguments
-      (argumentsValues input output length capacity position) before) :
-    ∃ after, Evaluates program.core caller (.call checked.source.function.id arguments) (.signed .i32 (-1)) after ∧
-      CellEffect CellSet.empty before after := by
-  let params := bindings input output length capacity position
-  let callee := enterCall before params
-  have locals (index : Fin 5) : callee.local? index.val = some
-      ((argumentsValues input output length capacity position).get index) :=
-    enterCall_parameterBindings_matches wellFormed index
-  have lengthRead : callee.local? 1 = some (.signed .i32 length) := locals ⟨1, by decide⟩
-  have guard : Evaluates program.core callee (binary .lessEqual (read 1) negativeOne) (.boolean true) callee := by
-    apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program.core lengthRead)
-      (negativeOne_evaluates program.core callee)
-    simp [evalBinaryValue, evalSignedBinary]
-    omega
-  have run : Executes program.core callee (body hex.source.function.id)
-      (.returned (some (.signed .i32 (-1)))) callee :=
-    executesSequenceReturned (executesIfTrue guard (executesSequenceReturned
-      (executesReturnValue (negativeOne_evaluates program.core callee))))
-  exact ⟨restoreLocals before callee, checked.call wellFormed argumentsResult (bindings := params) rfl run
-    (CellEffect.refl (enterCall_preserves_wellFormed wellFormed))⟩
+    (input output : Value) (length capacity position : Int) (negative : length < 0) :
+    checked.Spec (argumentsValues input output length capacity position) (.signed .i32 (-1)) := by
+  apply checked.specPure rfl
+  intro callee locals
+  core_exec [argumentsValues]
 
 end Lanius.Extraction.CompactOutput.Bytes

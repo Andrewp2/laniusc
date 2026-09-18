@@ -105,7 +105,7 @@ theorem CheckedInput.reject {constructor : CheckedResult program} (checked : Che
             .signed .i32 0, .signed .i32 0, .signed .i32 0] before :=
         .cons (evaluatesConstant checked.badValue) (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩
           (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.singleton ⟨1, rfl⟩))))))
-      obtain ⟨after, returned, effect⟩ := constructor.call wellFormed arguments
+      obtain ⟨after, returned, effect, _⟩ := constructor.call wellFormed arguments
       exact ⟨after, fun _ => executesSequenceReturned
         (executesIfTrue guardRun (executesSequenceReturned (executesReturnValue returned))), effect⟩
   | @later id length detail other entries read nonnegative _ ih =>

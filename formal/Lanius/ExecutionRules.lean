@@ -727,8 +727,7 @@ theorem evaluatesNatI32Remainder
     literals, which elaborate as unary negation of positive one. -/
 theorem wrapSigned_i32_neg_one (target : Target) :
     wrapSigned target .i32 (-1) = -1 := by
-  cases target with
-  | mk pointerWidth => cases pointerWidth <;> native_decide
+  simp [wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
 
 def signedI32Values (values : List Int) : List Value :=
   values.map fun value => .signed .i32 value

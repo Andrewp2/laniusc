@@ -54,11 +54,13 @@ structure ReifiedTerm (program : Program) (context : Context)
 /-- A source-ordered list of mechanically recovered terms.  Keeping the
     source expressions in the index makes aggregate construction an exact
     round trip rather than an untyped list traversal hidden in a client
-    proof. -/
+    proof. Retaining the list's typing evidence lets aggregate consumers
+    check their expected types without rechecking the source expressions. -/
 structure ReifiedTerms (program : Program) (context : Context)
     (layout : Layout arity) (expressions : List Expr) where
   types : List Ty
   terms : List (Term signature arity)
+  coreTyped : ExprsHaveTypes program context expressions types
   toCoreExactly : toCoreExprs layout terms = expressions
 
 mutual
@@ -86,73 +88,82 @@ mutual
             exact congrArg Expr.local found.mapsTo
         }
     | .cast target operand => do
-        let inferred ← inferExpr program context (.cast target operand)
         let operandView ← reifyTerm? program context layout operand
-        match operandView.type with
-        | .scalar source =>
+        match sourceType : operandView.type with
+        | .scalar source => do
+            let conversion ← scalarCast? source target
             pure {
-              type := inferred.type
+              type := .scalar target
               term := apply (.cast source target) [operandView.term]
-              coreTyped := inferred.typed
+              coreTyped := .cast (sourceType ▸ operandView.coreTyped) conversion.proof
               toCoreExactly := by
                 simp only [toCoreExpr, apply, toCoreExprs, Operation.toCoreExpr]
                 rw [operandView.toCoreExactly]
             }
         | _ => none
     | .unary operation operand => do
-        let inferred ← inferExpr program context (.unary operation operand)
         let operandView ← reifyTerm? program context layout operand
+        let operationTyping ← unaryTyping? operation operandView.type
         pure {
-          type := inferred.type
-          term := apply (.unary operation operandView.type inferred.type)
+          type := operationTyping.output
+          term := apply (.unary operation operandView.type operationTyping.output)
             [operandView.term]
-          coreTyped := inferred.typed
+          coreTyped := .unary operandView.coreTyped operationTyping.typed
           toCoreExactly := by
             simp only [toCoreExpr, apply, toCoreExprs, Operation.toCoreExpr]
             rw [operandView.toCoreExactly]
         }
     | .binary .logicalAnd left right => do
-        let inferred ← inferExpr program context (.binary .logicalAnd left right)
         let leftView ← reifyTerm? program context layout left
         let rightView ← reifyTerm? program context layout right
+        let operationTyping ← binaryTyping? .logicalAnd leftView.type rightView.type
         pure {
-          type := inferred.type
+          type := operationTyping.output
           term := logicalAnd leftView.term rightView.term
-          coreTyped := inferred.typed
+          coreTyped := .binary leftView.coreTyped rightView.coreTyped operationTyping.typed
           toCoreExactly := by
             simp only [toCoreExpr, logicalAnd]
             rw [leftView.toCoreExactly, rightView.toCoreExactly]
         }
     | .binary .logicalOr left right => do
-        let inferred ← inferExpr program context (.binary .logicalOr left right)
         let leftView ← reifyTerm? program context layout left
         let rightView ← reifyTerm? program context layout right
+        let operationTyping ← binaryTyping? .logicalOr leftView.type rightView.type
         pure {
-          type := inferred.type
+          type := operationTyping.output
           term := logicalOr leftView.term rightView.term
-          coreTyped := inferred.typed
+          coreTyped := .binary leftView.coreTyped rightView.coreTyped operationTyping.typed
           toCoreExactly := by
             simp only [toCoreExpr, logicalOr]
             rw [leftView.toCoreExactly, rightView.toCoreExactly]
         }
     | .binary operation left right => do
-        let inferred ← inferExpr program context (.binary operation left right)
         let leftView ← reifyTerm? program context layout left
         let rightView ← reifyTerm? program context layout right
+        let operationTyping ← binaryTyping? operation leftView.type rightView.type
         pure {
-          type := inferred.type
+          type := operationTyping.output
           term := apply
-            (.binary operation leftView.type rightView.type inferred.type)
+            (.binary operation leftView.type rightView.type operationTyping.output)
             [leftView.term, rightView.term]
-          coreTyped := inferred.typed
+          coreTyped := .binary leftView.coreTyped rightView.coreTyped operationTyping.typed
           toCoreExactly := by
             simp only [toCoreExpr, apply, toCoreExprs, Operation.toCoreExpr]
             rw [leftView.toCoreExactly, rightView.toCoreExactly]
         }
     | .index base index => do
-        let inferred ← inferExpr program context (.index base index)
         let baseView ← reifyTerm? program context layout base
         let indexView ← reifyTerm? program context layout index
+        let integerIndex ← integer? indexView.type
+        let inferred : InferredExpr program context (.index base index) ←
+          match baseType : baseView.type with
+          | .array element length =>
+              pure ⟨element, .indexArray (baseType ▸ baseView.coreTyped)
+                indexView.coreTyped integerIndex.proof⟩
+          | .slice element =>
+              pure ⟨element, .indexSlice (baseType ▸ baseView.coreTyped)
+                indexView.coreTyped integerIndex.proof⟩
+          | _ => none
         pure {
           type := inferred.type
           term := apply (.index baseView.type indexView.type inferred.type)
@@ -163,27 +174,42 @@ mutual
             rw [baseView.toCoreExactly, indexView.toCoreExactly]
         }
     | .structValue typeId fields => do
-        let inferred ← inferExpr program context (.structValue typeId fields)
-        let fieldViews ← reifyTerms? program context layout fields
-        pure {
-          type := inferred.type
-          term := apply (.structValue typeId fieldViews.types) fieldViews.terms
-          coreTyped := inferred.typed
-          toCoreExactly := by
-            simp only [toCoreExpr, apply, Operation.toCoreExpr]
-            exact congrArg (Expr.structValue typeId) fieldViews.toCoreExactly
-        }
+        match found : program.structure? typeId with
+        | none => none
+        | some declaration =>
+            if declaration.id = typeId then do
+              let fieldViews ← reifyTerms? program context layout fields
+              if fieldsMatch : fieldViews.types = declaration.fields then
+                pure {
+                  type := .structure typeId
+                  term := apply (.structValue typeId fieldViews.types) fieldViews.terms
+                  coreTyped := .structValue declaration found
+                    (fieldsMatch ▸ fieldViews.coreTyped)
+                  toCoreExactly := by
+                    simp only [toCoreExpr, apply, Operation.toCoreExpr]
+                    exact congrArg (Expr.structValue typeId) fieldViews.toCoreExactly
+                }
+              else none
+            else none
     | .field base field => do
-        let inferred ← inferExpr program context (.field base field)
         let baseView ← reifyTerm? program context layout base
-        pure {
-          type := inferred.type
-          term := apply (.field baseView.type field inferred.type) [baseView.term]
-          coreTyped := inferred.typed
-          toCoreExactly := by
-            simp only [toCoreExpr, apply, toCoreExprs, Operation.toCoreExpr]
-            rw [baseView.toCoreExactly]
-        }
+        match baseType : baseView.type with
+        | .structure typeId =>
+            match found : program.structure? typeId with
+            | none => none
+            | some declaration =>
+                match fieldFound : declaration.fields[field]? with
+                | none => none
+                | some type => pure {
+                    type := type
+                    term := apply (.field baseView.type field type) [baseView.term]
+                    coreTyped := .field (baseType ▸ baseView.coreTyped)
+                      declaration found fieldFound
+                    toCoreExactly := by
+                      simp only [toCoreExpr, apply, toCoreExprs, Operation.toCoreExpr]
+                      rw [baseView.toCoreExactly]
+                  }
+        | _ => none
     | .constant id => do
         let inferred ← inferExpr program context (.constant id)
         pure {
@@ -193,17 +219,22 @@ mutual
           toCoreExactly := by rfl
         }
     | .call function arguments => do
-        let inferred ← inferExpr program context (.call function arguments)
-        let argumentViews ← reifyTerms? program context layout arguments
-        pure {
-          type := inferred.type
-          term := apply (.call function argumentViews.types inferred.type)
-            argumentViews.terms
-          coreTyped := inferred.typed
-          toCoreExactly := by
-            simp only [toCoreExpr, apply, Operation.toCoreExpr]
-            exact congrArg (Expr.call function) argumentViews.toCoreExactly
-        }
+        match found : program.function? function with
+        | none => none
+        | some declaration => do
+            let argumentViews ← reifyTerms? program context layout arguments
+            if argumentsMatch : argumentViews.types = declaration.parameters.map Prod.snd then
+              pure {
+                type := declaration.returnType
+                term := apply (.call function argumentViews.types declaration.returnType)
+                  argumentViews.terms
+                coreTyped := .call declaration found
+                  (argumentsMatch ▸ argumentViews.coreTyped)
+                toCoreExactly := by
+                  simp only [toCoreExpr, apply, Operation.toCoreExpr]
+                  exact congrArg (Expr.call function) argumentViews.toCoreExactly
+              }
+            else none
     | _ => none
   termination_by expression => 2 * sizeOf expression
 
@@ -214,6 +245,7 @@ mutual
     | [] => some {
         types := []
         terms := []
+        coreTyped := .nil
         toCoreExactly := by rfl
       }
     | expression :: expressions => do
@@ -222,6 +254,7 @@ mutual
         pure {
           types := head.type :: tail.types
           terms := head.term :: tail.terms
+          coreTyped := .cons head.coreTyped tail.coreTyped
           toCoreExactly := by
             simp only [toCoreExprs]
             rw [head.toCoreExactly, tail.toCoreExactly]
@@ -255,11 +288,9 @@ def reifyBlock? (program : Program) (returnType : Ty) :
         nextLocal first
       let secondView ← reifyBlock? program returnType context inLoop layout
         (nextLocal + localCapacity firstView.block) second
-      let typed ← checkStmt program returnType context inLoop
-        (.sequence first second)
       pure {
         block := .sequence firstView.block secondView.block
-        coreTyped := typed.proof
+        coreTyped := .sequence firstView.coreTyped secondView.coreTyped
         toCoreExactly := by
           simp only [toCoreStmt]
           rw [firstView.toCoreExactly, secondView.toCoreExactly]
@@ -272,11 +303,10 @@ def reifyBlock? (program : Program) (returnType : Ty) :
           let bodyView ← reifyBlock? program returnType
             (context.bind id type) inLoop (Layout.push layout id)
             (nextLocal + 1) body
-          let typed ← checkStmt program returnType context inLoop
-            (.letLocal id type initializer body)
           pure {
             block := .letValue type initializerView.term bodyView.block
-            coreTyped := typed.proof
+            coreTyped := .letLocal (typeMatches ▸ initializerView.coreTyped)
+              bodyView.coreTyped
             toCoreExactly := by
               subst id
               simp only [toCoreStmt]
@@ -292,11 +322,10 @@ def reifyBlock? (program : Program) (returnType : Ty) :
           nextLocal thenBranch
         let elseView ← reifyBlock? program returnType context inLoop layout
           nextLocal elseBranch
-        let typed ← checkStmt program returnType context inLoop
-          (.ifThenElse condition thenBranch elseBranch)
         pure {
           block := .ifThenElse conditionView.term thenView.block elseView.block
-          coreTyped := typed.proof
+          coreTyped := .ifThenElse (conditionType ▸ conditionView.coreTyped)
+            thenView.coreTyped elseView.coreTyped
           toCoreExactly := by
             simp only [toCoreStmt]
             rw [conditionView.toCoreExactly, thenView.toCoreExactly,
@@ -315,11 +344,9 @@ def reifyBlock? (program : Program) (returnType : Ty) :
       .returnValue (some value) => do
       let valueView ← reifyTerm? program context layout value
       if returnTypeMatches : valueView.type = returnType then
-        let typed ← checkStmt program returnType context inLoop
-          (.returnValue (some value))
         pure {
           block := .returnValue (some valueView.term)
-          coreTyped := typed.proof
+          coreTyped := .returnValue (returnTypeMatches ▸ valueView.coreTyped)
           toCoreExactly := by
             simp only [toCoreStmt]
             rw [valueView.toCoreExactly]

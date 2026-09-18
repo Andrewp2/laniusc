@@ -1,16 +1,34 @@
 import Lanius.Extraction.VerifiedLexerProgram
 import Lanius.FunctionalViewCoreStatefulReification
+import Lanius.FunctionalViewCoreStatefulSimulation
 
 namespace Lanius.Extraction.Lexer.Scanners
 
 open Lanius.Core
+open Lanius.Semantics
+open Lanius.Properties
 open Lanius.Typing
 open Lanius.Extraction
 open Lanius.Extraction.CoreTyping
+open Lanius.Compiler.Lexer
 open Lanius.Compiler.Lexer.Program
+open Lanius.FunctionalView
 open Lanius.FunctionalView.Core
+open Lanius.FunctionalView.Core.ReadOnly
 open Lanius.FunctionalView.Core.Stateful
 open Lanius.FunctionalView.Core.Stateful.Reification
+
+theorem sourceState_represents (source : List Byte) :
+    Representation (identityLayout (arity := 0)) Fin.elim0
+      (World.singleton 0 (source.map fun byte => Int.ofNat byte.val))
+      Fin.elim0 (sourceState source) := by
+  have wellFormed := sourceState_well_formed source
+  refine ⟨?_, fun index => index.elim0, fun index => index.elim0, ?_⟩
+  · rw [World.owns_iff_represents wellFormed]
+    apply World.singleton_represents wellFormed
+    simp [sourceValues, signedI32Values, sourceState, State.cellEntry?]
+  · rintro _ _ ⟨index, _⟩
+    exact index.elim0
 
 def scanIdentifierEndFunction : Function :=
   CoreDecode.function (artifact_pack_function%
@@ -159,26 +177,26 @@ theorem scanWhitespaceEndReification_exists :
 
 theorem scanQuotedEndReification_exists :
     (scanner4Reification? scanQuotedEndFunction scanQuotedEndBody).isSome := by
-  native_decide
+  decide +kernel
 
 theorem scanStringEndReification_exists :
     (scanner3Reification? scanStringEndFunction scanStringEndBody).isSome := by
-  native_decide
+  decide +kernel
 
 theorem scanCharacterEndReification_exists :
     (scanner3Reification? scanCharacterEndFunction
       scanCharacterEndBody).isSome := by
-  native_decide
+  decide +kernel
 
 theorem scanLineCommentEndReification_exists :
     (scanner3Reification? scanLineCommentEndFunction
       scanLineCommentEndBody).isSome := by
-  native_decide
+  decide +kernel
 
 theorem scanBlockCommentEndReification_exists :
     (scanner3Reification? scanBlockCommentEndFunction
       scanBlockCommentEndBody).isSome := by
-  native_decide
+  decide +kernel
 
 def scanIdentifierEndView :=
   (scanner3Reification? scanIdentifierEndFunction scanIdentifierEndBody).get

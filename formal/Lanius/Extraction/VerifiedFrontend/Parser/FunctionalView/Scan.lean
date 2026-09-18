@@ -102,7 +102,7 @@ private def scanTerminalReification? :=
 
 private theorem scanTerminalReification_exists :
     scanTerminalReification?.isSome := by
-  native_decide
+  decide +kernel
 
 /-- The terminal scan's functional view, mechanically recovered from the
     checked Core artifact. -/

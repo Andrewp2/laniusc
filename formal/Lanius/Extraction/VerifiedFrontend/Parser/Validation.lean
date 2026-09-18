@@ -97,7 +97,7 @@ theorem verifiedParser_grammar_guard_constants :
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
           some (5, parserI32Type, some 1) := by
-    native_decide
+    decide +kernel
   exact ⟨
     constant_eq_of_signed_i32_evidence verifiedParserCore 7 0 evidence.1,
     constant_eq_of_signed_i32_evidence verifiedParserCore 5 1 evidence.2⟩
@@ -612,42 +612,42 @@ theorem verifiedParser_range_header_constants :
       (verifiedParserCore.constant? 14).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (14, parserI32Type, some 7) := by native_decide
+          some (14, parserI32Type, some 7) := by decide +kernel
   have evidence15 :
       (verifiedParserCore.constant? 15).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (15, parserI32Type, some 8) := by native_decide
+          some (15, parserI32Type, some 8) := by decide +kernel
   have evidence16 :
       (verifiedParserCore.constant? 16).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (16, parserI32Type, some 9) := by native_decide
+          some (16, parserI32Type, some 9) := by decide +kernel
   have evidence17 :
       (verifiedParserCore.constant? 17).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (17, parserI32Type, some 10) := by native_decide
+          some (17, parserI32Type, some 10) := by decide +kernel
   have evidence18 :
       (verifiedParserCore.constant? 18).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (18, parserI32Type, some 11) := by native_decide
+          some (18, parserI32Type, some 11) := by decide +kernel
   have evidence20 :
       (verifiedParserCore.constant? 20).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (20, parserI32Type, some 13) := by native_decide
+          some (20, parserI32Type, some 13) := by decide +kernel
   have evidence21 :
       (verifiedParserCore.constant? 21).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (21, parserI32Type, some 14) := by native_decide
+          some (21, parserI32Type, some 14) := by decide +kernel
   have evidence22 :
       (verifiedParserCore.constant? 22).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (22, parserI32Type, some 15) := by native_decide
+          some (22, parserI32Type, some 15) := by decide +kernel
   exact ⟨
     constant_eq_of_signed_i32_evidence verifiedParserCore 14 7 evidence14,
     constant_eq_of_signed_i32_evidence verifiedParserCore 15 8 evidence15,
@@ -693,32 +693,32 @@ theorem verifiedParser_count_header_constants :
       (verifiedParserCore.constant? 8).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (8, parserI32Type, some 1) := by native_decide
+          some (8, parserI32Type, some 1) := by decide +kernel
   have evidence9 :
       (verifiedParserCore.constant? 9).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (9, parserI32Type, some 2) := by native_decide
+          some (9, parserI32Type, some 2) := by decide +kernel
   have evidence10 :
       (verifiedParserCore.constant? 10).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (10, parserI32Type, some 3) := by native_decide
+          some (10, parserI32Type, some 3) := by decide +kernel
   have evidence11 :
       (verifiedParserCore.constant? 11).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (11, parserI32Type, some 4) := by native_decide
+          some (11, parserI32Type, some 4) := by decide +kernel
   have evidence19 :
       (verifiedParserCore.constant? 19).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (19, parserI32Type, some 12) := by native_decide
+          some (19, parserI32Type, some 12) := by decide +kernel
   have evidence23 :
       (verifiedParserCore.constant? 23).map (fun declaration =>
         (declaration.id, declaration.type,
           signedI32ConstantValue? declaration.value)) =
-          some (23, parserI32Type, some 16) := by native_decide
+          some (23, parserI32Type, some 16) := by decide +kernel
   exact ⟨
     constant_eq_of_signed_i32_evidence verifiedParserCore 8 1 evidence8,
     constant_eq_of_signed_i32_evidence verifiedParserCore 9 2 evidence9,
@@ -1244,7 +1244,7 @@ theorem extractedParserGrammarValid_production_loop_shape :
   rfl
 
 def verifiedParserGrammarValidSymbolic : DerivedFunction :=
-  (verifiedParserSymbolicFunction? "grammar_is_valid").get (by native_decide)
+  (verifiedParserSymbolicFunction? "grammar_is_valid").get (by decide +kernel)
 
 /-- The source-linked live frame at entry to the extracted production loop.
     The unique Core-fragment lookup prevents this proof from attaching to a
@@ -1252,7 +1252,7 @@ def verifiedParserGrammarValidSymbolic : DerivedFunction :=
 def parserGrammarProductionLoopFrame :
     LocalAccessFrame :=
   verifiedParserGrammarValidSymbolic.checkedLiveFrameBeforeCore
-    parserGrammarProductionLoop (by native_decide)
+    parserGrammarProductionLoop (by decide +kernel)
 
 def parserGrammarProductionLoopFrameIds : List VarId :=
   parserGrammarProductionLoopFrame.ids
@@ -1265,9 +1265,9 @@ def parserGrammarProductionProtectedBindings : LocalBindingFrame :=
   LocalBindingFrame.union
     (parserGrammarProductionLoopFrame.excludingName "production").bindings [
       verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-        "grammar_length" (by native_decide),
+        "grammar_length" (by decide +kernel),
       verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-        "start_nonterminal" (by native_decide)]
+        "start_nonterminal" (by decide +kernel)]
 
 /-- Numeric evaluator projection of the declaration-backed production frame. -/
 def parserGrammarProductionProtectedIds : List VarId :=
@@ -1276,7 +1276,7 @@ def parserGrammarProductionProtectedIds : List VarId :=
 @[simp] theorem parserGrammarProductionProtectedBindings_core_ids :
     parserGrammarProductionProtectedBindings.coreIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5] := by
-  native_decide
+  decide +kernel
 
 theorem parserGrammarProductionLoop_source_frame :
     parserGrammarProductionLoopFrame.map (fun access =>
@@ -1292,28 +1292,28 @@ theorem parserGrammarProductionLoop_source_frame :
       ("rhs_symbols_offset", 11, .read),
       ("kind_count", 2, .read),
       ("lhs_production_count", 7, .read)] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem parserGrammarProductionProtectedIds_shape :
     parserGrammarProductionProtectedIds = [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem mem_parserGrammarProductionProtectedIds_iff (id : VarId) :
     id ∈ parserGrammarProductionProtectedIds ↔ id < 12 := by
   have same : List.Perm parserGrammarProductionProtectedIds
-      (List.range 12) := by native_decide
+      (List.range 12) := by decide +kernel
   rw [same.mem_iff]
   simp
 
 def parserGrammarSymbolLoopAccessFrame :
     LocalAccessFrame :=
   verifiedParserGrammarValidSymbolic.checkedAccessFrameForCore
-    parserGrammarSymbolLoop (by native_decide)
+    parserGrammarSymbolLoop (by decide +kernel)
 
 def parserGrammarSymbolLoopLiveFrame :
     LocalAccessFrame :=
   verifiedParserGrammarValidSymbolic.checkedLiveFrameBeforeCore
-    parserGrammarSymbolLoop (by native_decide)
+    parserGrammarSymbolLoop (by decide +kernel)
 
 theorem parserGrammarSymbolLoop_source_access_frame :
     parserGrammarSymbolLoopAccessFrame.map (fun access =>
@@ -1325,7 +1325,7 @@ theorem parserGrammarSymbolLoop_source_access_frame :
       ("rhs_offset", 14, .read),
       ("kind_count", 2, .read),
       ("nonterminal_count", 4, .read)] := by
-  native_decide
+  decide +kernel
 
 theorem parserGrammarSymbolLoop_source_live_frame :
     parserGrammarSymbolLoopLiveFrame.map (fun access =>
@@ -1338,7 +1338,7 @@ theorem parserGrammarSymbolLoop_source_live_frame :
       ("kind_count", 2, .read),
       ("nonterminal_count", 4, .read),
       ("production", 12, .readWrite)] := by
-  native_decide
+  decide +kernel
 
 /-- Bindings whose cells must remain distinct from the symbol-loop index:
     the enclosing production frame, its owned counter, and the three row
@@ -1346,13 +1346,13 @@ theorem parserGrammarSymbolLoop_source_live_frame :
 def parserGrammarSymbolProtectedBindings : LocalBindingFrame :=
   LocalBindingFrame.union parserGrammarProductionProtectedBindings [
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "production" (by native_decide),
+      "production" (by decide +kernel),
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "lhs" (by native_decide),
+      "lhs" (by decide +kernel),
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "rhs_offset" (by native_decide),
+      "rhs_offset" (by decide +kernel),
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "rhs_length" (by native_decide)]
+      "rhs_length" (by decide +kernel)]
 
 def parserGrammarSymbolProtectedIds : List VarId :=
   parserGrammarSymbolProtectedBindings.coreIds
@@ -1360,17 +1360,17 @@ def parserGrammarSymbolProtectedIds : List VarId :=
 @[simp] theorem parserGrammarSymbolProtectedBindings_core_ids :
     parserGrammarSymbolProtectedBindings.coreIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 13, 14, 15] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem parserGrammarSymbolProtectedIds_shape :
     parserGrammarSymbolProtectedIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 13, 14, 15] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem mem_parserGrammarSymbolProtectedIds_iff (id : VarId) :
     id ∈ parserGrammarSymbolProtectedIds ↔ id < 16 := by
   have same : List.Perm parserGrammarSymbolProtectedIds (List.range 16) := by
-    native_decide
+    decide +kernel
   rw [same.mem_iff]
   simp
 
@@ -1385,17 +1385,17 @@ theorem parserGrammarProductionProtectedIds_subset_symbol
 def parserGrammarNonterminalLoopAccessFrame :
     LocalAccessFrame :=
   verifiedParserGrammarValidSymbolic.checkedAccessFrameForCore
-    parserGrammarNonterminalLoop (by native_decide)
+    parserGrammarNonterminalLoop (by decide +kernel)
 
 def parserGrammarNonterminalLoopLiveFrame :
     LocalAccessFrame :=
   verifiedParserGrammarValidSymbolic.checkedLiveFrameBeforeCore
-    parserGrammarNonterminalLoop (by native_decide)
+    parserGrammarNonterminalLoop (by decide +kernel)
 
 theorem parserGrammarNonterminalLoop_source_frame :
     parserGrammarNonterminalLoopAccessFrame =
       parserGrammarNonterminalLoopLiveFrame := by
-  native_decide
+  decide +kernel
 
 theorem parserGrammarNonterminalLoop_source_access_frame :
     parserGrammarNonterminalLoopAccessFrame.map (fun access =>
@@ -1409,7 +1409,7 @@ theorem parserGrammarNonterminalLoop_source_access_frame :
       ("lhs_productions_offset", 20, .read),
       ("production_count", 3, .read),
       ("production_lhs_offset", 8, .read)] := by
-  native_decide
+  decide +kernel
 
 /-- The closed production-row temporaries 13 through 17 are deliberately
     absent: the nonterminal loop preserves the production frame, its counter,
@@ -1417,13 +1417,13 @@ theorem parserGrammarNonterminalLoop_source_access_frame :
 def parserGrammarNonterminalProtectedBindings : LocalBindingFrame :=
   LocalBindingFrame.union parserGrammarProductionProtectedBindings [
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "production" (by native_decide),
+      "production" (by decide +kernel),
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "lhs_offsets_offset" (by native_decide),
+      "lhs_offsets_offset" (by decide +kernel),
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "lhs_counts_offset" (by native_decide),
+      "lhs_counts_offset" (by decide +kernel),
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "lhs_productions_offset" (by native_decide)]
+      "lhs_productions_offset" (by decide +kernel)]
 
 def parserGrammarNonterminalProtectedIds : List VarId :=
   parserGrammarNonterminalProtectedBindings.coreIds
@@ -1431,12 +1431,12 @@ def parserGrammarNonterminalProtectedIds : List VarId :=
 @[simp] theorem parserGrammarNonterminalProtectedBindings_core_ids :
     parserGrammarNonterminalProtectedBindings.coreIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 18, 19, 20] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem parserGrammarNonterminalProtectedIds_shape :
     parserGrammarNonterminalProtectedIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 18, 19, 20] := by
-  native_decide
+  decide +kernel
 
 theorem mem_parserGrammarNonterminalProtectedIds_lt
     (id : VarId) (member : id ∈ parserGrammarNonterminalProtectedIds) :
@@ -1457,12 +1457,12 @@ theorem parserGrammarProductionProtectedIds_subset_nonterminal
 def parserGrammarListedLoopAccessFrame :
     LocalAccessFrame :=
   verifiedParserGrammarValidSymbolic.checkedAccessFrameForCore
-    parserGrammarListedLoop (by native_decide)
+    parserGrammarListedLoop (by decide +kernel)
 
 def parserGrammarListedLoopLiveFrame :
     LocalAccessFrame :=
   verifiedParserGrammarValidSymbolic.checkedLiveFrameBeforeCore
-    parserGrammarListedLoop (by native_decide)
+    parserGrammarListedLoop (by decide +kernel)
 
 theorem parserGrammarListedLoop_source_access_frame :
     parserGrammarListedLoopAccessFrame.map (fun access =>
@@ -1475,7 +1475,7 @@ theorem parserGrammarListedLoop_source_access_frame :
       ("production_count", 3, .read),
       ("production_lhs_offset", 8, .read),
       ("nonterminal", 21, .read)] := by
-  native_decide
+  decide +kernel
 
 theorem parserGrammarListedLoop_source_live_frame :
     parserGrammarListedLoopLiveFrame.map (fun access =>
@@ -1488,16 +1488,16 @@ theorem parserGrammarListedLoop_source_live_frame :
       ("production_count", 3, .read),
       ("production_lhs_offset", 8, .read),
       ("nonterminal", 21, .readWrite)] := by
-  native_decide
+  decide +kernel
 
 def parserGrammarListedProtectedBindings : LocalBindingFrame :=
   LocalBindingFrame.union parserGrammarNonterminalProtectedBindings [
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "nonterminal" (by native_decide),
+      "nonterminal" (by decide +kernel),
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "first" (by native_decide),
+      "first" (by decide +kernel),
     verifiedParserGrammarValidSymbolic.checkedUniqueBindingNamed
-      "count" (by native_decide)]
+      "count" (by decide +kernel)]
 
 def parserGrammarListedProtectedIds : List VarId :=
   parserGrammarListedProtectedBindings.coreIds
@@ -1505,12 +1505,12 @@ def parserGrammarListedProtectedIds : List VarId :=
 @[simp] theorem parserGrammarListedProtectedBindings_core_ids :
     parserGrammarListedProtectedBindings.coreIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 18, 19, 20, 21, 22, 23] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem parserGrammarListedProtectedIds_shape :
     parserGrammarListedProtectedIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 18, 19, 20, 21, 22, 23] := by
-  native_decide
+  decide +kernel
 
 theorem mem_parserGrammarListedProtectedIds_lt
     (id : VarId) (member : id ∈ parserGrammarListedProtectedIds) : id < 24 := by
@@ -4924,6 +4924,16 @@ theorem GrammarValidationInvariant.body_executes_of_after_guards
   exact executesSequence invariant.length_guard_executes
     (executesSequence invariant.version_guard_executes remainderResult)
 
+/-- Expose just the counter allocation, without unfolding the execution that
+produced the caller state when composing loop effects. -/
+theorem GrammarRangeInvariant.production_loop_entry_cell
+    (invariant : GrammarRangeInvariant layout grammar words grammarCell state) :
+    invariant.production_loop_entry.productionCell = state.nextCell + 4 := rfl
+
+theorem GrammarProductionLoopInvariant.nonterminal_loop_entry_cell
+    (invariant : GrammarProductionLoopInvariant layout grammar words grammarCell state grammar.productionCount) :
+    invariant.nonterminal_loop_entry.nonterminalCell = state.nextCell + 3 := rfl
+
 /-- Every semantically encoded, well-formed packed grammar follows the exact
     extracted `grammar_is_valid` implementation to its successful return.
     This composes both validator loops with all header, range, and scope
@@ -4962,10 +4972,8 @@ noncomputable def GrammarValidationInvariant.execute_success
       (CellSet.singleton (productionRun.after.nextCell + 3))
       (parserGrammarNonterminalState productionRun.after layout)
       nonterminalRun.after := by
-    simpa [nonterminalInvariant, GrammarProductionLoopInvariant.nonterminal_loop_entry,
-      parserGrammarNonterminalState, parserGrammarNonterminalBindings,
-      State.bindLocals, State.bindLocal, State.bindCell] using
-      nonterminalRun.effect
+    rw [← productionRun.invariant.nonterminal_loop_entry_cell]
+    exact nonterminalRun.effect
   let nonterminalScopes :=
     productionRun.invariant.execute_nonterminal_scopes nonterminalBody
       nonterminalBodyEffect
@@ -4984,10 +4992,8 @@ noncomputable def GrammarValidationInvariant.execute_success
         (CellSet.singleton (guard.after.nextCell + 4))
         (parserGrammarProductionState guard.after layout)
         productionRun.after := by
-      simpa [productionInvariant, GrammarRangeInvariant.production_loop_entry,
-        parserGrammarProductionState, parserGrammarProductionBindings,
-        State.bindLocals, State.bindLocal, State.bindCell] using
-        productionRun.effect
+      rw [← guard.invariant.production_loop_entry_cell]
+      exact productionRun.effect
     exact loopEffect.trans_same
       (nonterminalScopes.effect.weaken CellSet.empty_subset)
   let productionScopes := guard.invariant.execute_production_scopes

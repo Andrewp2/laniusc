@@ -37,7 +37,10 @@ theorem verifiedParserChartCursorBindings_core_ids :
     verifiedParserChartCursorBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         [verifiedParserRecognizerStateBase.coreId] := by
-  native_decide
+  simp only [verifiedParserChartCursorBindings,
+    verifiedParserRecognizerParameterIds, LocalBindingFrame.union,
+    LocalBindingFrame.coreIds, List.map_append, List.map_cons, List.map_nil,
+    LocalRef.coreId]
 
 theorem ChartCursorFramedLocal_source_frame (id : VarId) :
     ChartCursorFramedLocal id ↔

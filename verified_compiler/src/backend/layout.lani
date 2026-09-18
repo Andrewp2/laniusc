@@ -1,0 +1,72 @@
+module backend::layout;
+import backend::syntax;
+
+// Internal value storage uses eight-byte words. Structs concatenate fields;
+// slices/strings carry a data pointer and length. This is not the C struct ABI.
+// Packed i32 slice elements still occupy four bytes in the referenced buffer.
+pub const MAX_VALUE_WORDS: i32 = 4096;
+
+pub fn aggregate(kind: i32) -> bool {
+    return kind == backend::syntax::SLICE || kind == backend::syntax::STRING || kind >= backend::syntax::STRUCT_BASE;
+}
+
+pub fn width(kind: i32) -> i32 {
+    if (kind == backend::syntax::I32 || kind == backend::syntax::BOOL) { return 32; }
+    return 64;
+}
+
+pub fn record(input: [i32], length: i32, kind: i32) -> i32 {
+    if (length < 6 || kind < backend::syntax::STRUCT_BASE) { return -1; }
+    let position: i32 = 6;
+    let index: i32 = 0;
+    while (index < input[3]) {
+        if (position > length - 2) { return -1; }
+        let count: i32 = input[position + 1];
+        if (count < 0 || count > length - position - 2) { return -1; }
+        if (input[position] == kind - backend::syntax::STRUCT_BASE) { return position; }
+        position += 2 + count;
+        index += 1;
+    }
+    return -1;
+}
+
+pub fn words(input: [i32], length: i32, kind: i32, depth: i32) -> i32 {
+    if (depth >= 64) { return -1; }
+    if (kind >= backend::syntax::I32 && kind <= backend::syntax::POINTER) { return 1; }
+    if (kind == backend::syntax::SLICE || kind == backend::syntax::STRING) { return 2; }
+    let position: i32 = record(input, length, kind);
+    if (position < 0) { return -1; }
+    let count: i32 = input[position + 1];
+    let index: i32 = 0;
+    let total: i32 = 0;
+    while (index < count) {
+        let size: i32 = words(input, length, input[position + 2 + index], depth + 1);
+        if (size < 1 || size > MAX_VALUE_WORDS - total) { return -1; }
+        total += size;
+        index += 1;
+    }
+    if (total == 0) { return 1; }
+    return total;
+}
+
+pub fn field_kind(input: [i32], length: i32, kind: i32, field: i32) -> i32 {
+    let position: i32 = record(input, length, kind);
+    if (position < 0 || field < 0) { return -1; }
+    if (field >= input[position + 1]) { return -1; }
+    return input[position + 2 + field];
+}
+
+pub fn field_offset(input: [i32], length: i32, kind: i32, field: i32) -> i32 {
+    let position: i32 = record(input, length, kind);
+    if (position < 0 || field < 0) { return -1; }
+    if (field >= input[position + 1]) { return -1; }
+    let index: i32 = 0;
+    let offset: i32 = 0;
+    while (index < field) {
+        let size: i32 = words(input, length, input[position + 2 + index], 0);
+        if (size < 1 || size > MAX_VALUE_WORDS - offset) { return -1; }
+        offset += size;
+        index += 1;
+    }
+    return offset * 8;
+}

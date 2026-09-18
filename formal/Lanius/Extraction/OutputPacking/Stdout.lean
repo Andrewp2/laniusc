@@ -103,7 +103,7 @@ theorem stdout_from_completed_packing
     argumentsResult functionFound parametersBound noBody host readyWF disjoint member buffer validViews roots arrays
   exact ⟨after, run, by simpa only [frame.world] using world⟩
 
-theorem i32Result_byte_count {count : Nat} (bounded : count ≤ 8388608) :
+theorem i32Result_byte_count {count : Nat} (bounded : count ≤ 16777216) :
     Lanius.World.i32Result count = .signed .i32 count := by
   have lower : (0 : Int) ≤ count := Int.natCast_nonneg _
   have upper : (count : Int) < 2 ^ 32 := by omega
@@ -115,7 +115,7 @@ theorem i32Result_byte_count {count : Nat} (bounded : count ≤ 8388608) :
 The local read is in the post-call state, as required by left-to-right evaluation. -/
 theorem stdout_check_returns_zero
     {program : Program} {before after : State} {call : Expr} {length : VarId} {count : Nat}
-    (bounded : count ≤ 8388608)
+    (bounded : count ≤ 16777216)
     (called : Evaluates program before call (Lanius.World.i32Result count) after)
     (lengthRead : after.local? length = some (.signed .i32 count)) :
     Executes program before
@@ -183,7 +183,7 @@ theorem stdout_tail_returns_zero
       readCellProjection afterArguments view.root view.projections = .ok (.array elements) ∧
       elements.length = view.length ∧
       ∀ element ∈ elements, ∃ value, element = .signed .i32 value)
-    (bounded : bytes.length ≤ 8388608)
+    (bounded : bytes.length ≤ 16777216)
     (lengthRead : afterArguments.local? length = some (.signed .i32 bytes.length))
     (separate : ∀ cell, afterArguments.cellId? length = some cell →
       ∀ other ∈ afterArguments.i32ArrayViews, cell ≠ other.root) :
@@ -299,7 +299,7 @@ theorem StdoutTail.executes (source : StdoutTail) (program : Program) (state : S
     (bytes : List UInt8) (tail : List Int)
     (wellFormed : StateWellFormed state)
     (fits : bytes.length < unsignedModulus program.target .usize)
-    (bounded : bytes.length ≤ 8388608)
+    (bounded : bytes.length ≤ 16777216)
     (lengthRead : state.local? source.length = some (.signed .i32 bytes.length))
     (pointerRead : state.local? source.pointer = some (.pointer view.address))
     (differentLength : source.size ≠ source.length) (differentPointer : source.size ≠ source.pointer)

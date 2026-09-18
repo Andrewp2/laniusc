@@ -66,13 +66,7 @@ theorem verifiedParser_range_valid_constant :
       type := parserI32Type
       value := .signed .i32 17
     } := by
-  have evidence :
-      (verifiedParserCore.constant? 6).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-        some (6, parserI32Type, some 17) := by
-    native_decide
-  exact constant_eq_of_signed_i32_evidence verifiedParserCore 6 17 evidence
+  rfl
 
 /-- The exact machine-integer predicate computed by extracted `range_valid`.
     Keeping the wrapped subtraction visible makes this theorem valid for every
@@ -198,12 +192,8 @@ theorem Proof.parameterBindings_eq (offset count length : Int) :
     Lanius.FunctionalView.Core.parameterBindings
         (Proof.environment offset count length) =
       parserRangeValidBindings offset count length := by
-  have offsetId : verifiedParserRangeValidOffset.coreId = 0 := by
-    native_decide
-  have countId : verifiedParserRangeValidCount.coreId = 1 := by
-    native_decide
-  have lengthId : verifiedParserRangeValidLength.coreId = 2 := by
-    native_decide
+  obtain ⟨offsetId, countId, lengthId⟩ :=
+    verifiedParserRangeValid_parameter_core_ids
   apply List.ext_getElem
   · simp [parserRangeValidBindings]
   · intro index leftBound rightBound

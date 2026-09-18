@@ -220,14 +220,17 @@ theorem canonicalizeTokensFromTrace_eq
   simp at filtered
   rw [filtered]
 
-/-- The semantic statement certified by the first extraction checker: the
-    artifact's exact bytes have exactly the claimed canonical token stream. -/
+/-- The exact bytes have the claimed canonical stream. When raw token rows
+are supplied, retain their checked lexical meaning too: later resource proofs
+must not rerun the lexer or trust an unauthenticated raw-token count. -/
 def TokenArtifactValid (artifact : Artifact) : Prop :=
   ∃ source tokens,
     artifact.schema_version = schemaVersion ∧
     decodeSingleSource artifact.sources = some source ∧
     decodeTokens artifact.tokens = some tokens ∧
-    lexCanonical source = .success tokens
+    lexCanonical source = .success tokens ∧
+    ∀ rawRows, artifact.raw_tokens = some rawRows →
+      ∃ rawTokens, decodeTokens rawRows = some rawTokens ∧ lexRaw source = .success rawTokens
 
 
 /-- Executable checker for the source/token portion of an extraction artifact. -/
@@ -270,11 +273,18 @@ theorem checkTokenArtifact_sound {artifact : Artifact}
           unfold lexCanonical
           rw [rawResult]
           simp [canonicalizeRawResult, canonicalized]
-        exact ⟨source, tokens, versionEqual, sourceDecoded, tokensDecoded, canonical⟩
+        refine ⟨source, tokens, versionEqual, sourceDecoded, tokensDecoded, canonical, ?_⟩
+        intro rows found
+        have same := Option.some.inj (rawRowsFound.symm.trans found)
+        subst rows
+        exact ⟨rawTokens, rawTokensDecoded, rawResult⟩
       · simp at accepted
     · rename_i source tokens sourceDecoded rawRowsMissing tokensDecoded
       exact ⟨source, tokens, versionEqual, sourceDecoded, tokensDecoded,
-        by simpa using accepted⟩
+        by simpa using accepted, by
+          intro rows found
+          rw [rawRowsMissing] at found
+          cases found⟩
     · simp at accepted
 
 private def emptyArtifact (sourceBytes : List Nat) (tokens : List Token) : Artifact :=

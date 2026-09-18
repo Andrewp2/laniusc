@@ -131,7 +131,7 @@ theorem helperCalls_sound (source : List Byte) :
       [.signed .i32 finish] =
       .ok (encoded (.success .integer finish), world) := by
   simp only [helperCalls, CallModel.route]
-  rw [if_pos (by native_decide)]
+  rw [if_pos (by simp)]
   simpa [encoded] using ConstructorCalls.integerScan world finish finishBound
 
 @[simp] theorem floatScan (source : List Byte) (world : World)
@@ -140,7 +140,7 @@ theorem helperCalls_sound (source : List Byte) :
       [.signed .i32 finish] =
       .ok (encoded (.success .float finish), world) := by
   simp only [helperCalls, CallModel.route]
-  rw [if_pos (by native_decide)]
+  rw [if_pos (by simp)]
   simpa [encoded] using ConstructorCalls.floatScan world finish finishBound
 
 @[simp] theorem numberFailure (source : List Byte) (world : World)
@@ -149,7 +149,7 @@ theorem helperCalls_sound (source : List Byte) :
       [.signed .i32 error] =
       .ok (encoded (.failure error), world) := by
   simp only [helperCalls, CallModel.route]
-  rw [if_pos (by native_decide)]
+  rw [if_pos (by simp)]
   simpa [encoded] using ConstructorCalls.numberFailure world error errorBound
 
 noncomputable abbrev termMachine (source : List Byte) :=

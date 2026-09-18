@@ -16,7 +16,7 @@ structure LoopEntry (data : TraversalData) (before : State) : Prop where
   backing : before.cellEntry? data.outputCell = some {
     id := data.outputCell, value := some (.array (signedI32Values data.original)) }
   count : before.local? 3 = some (.signed .i32 data.tokens.length)
-  wordLength : before.local? 5 = some (.signed .i32 (treeFrom 0 0 data.tree).words.length)
+  wordLength : before.local? 5 = some (.signed .i32 data.recordsLimit)
   nodeCount : before.local? 7 = some (.signed .i32 data.collection.records.length)
   kindCount : before.local? 10 = some (.signed .i32 data.grammar.grammar.grammar.n_kinds)
   canonicalOffset : before.local? 11 = some (.signed .i32 data.grammar.layout.canonicalKindsOffset)
@@ -146,7 +146,7 @@ theorem LoopEntry.execute {data : TraversalData} (entry : LoopEntry data before)
   have validationOwned : ValidationOwned memory (data.tokens.length * 2) collected :=
     ⟨collectedOwned.wellFormed, collectedOwned.grammar, collectedOwned.kinds, collectedOwned.assignments,
       cursorCollected, collectedOwned.count, collectedOwned.canonicalOffset, stable⟩
-  obtain ⟨ready, reset, zeroCursor, resetEffect⟩ := evaluatesOwnedLocalUpdate validationOwned.wellFormed validationOwned.cursor
+  obtain ⟨ready, reset, zeroCursor, resetEffect, resetHeap⟩ := evaluatesOwnedLocalUpdate validationOwned.wellFormed validationOwned.cursor
     (show Evaluates program collected (number 0) (.signed .i32 0) collected from ⟨1, rfl⟩)
     (show evalAssignValue program.target .set (some (.signed .i32 (Int.ofNat (data.tokens.length * 2)))) (.signed .i32 0) =
       .ok (.signed .i32 0) from rfl)

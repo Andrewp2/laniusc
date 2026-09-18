@@ -51,73 +51,12 @@ theorem extractedParserRecognize_chart_clear_body_shape :
 
 /-! ## Stateful FunctionalView for chart clearing
 
-The layout contains exactly the two locals touched by one loop iteration.
-The command below is recovered from the checked Core statement, rather than
-being a second handwritten copy of the parser body. -/
+The body layout contains exactly the two locals touched by one iteration.
+The complete loop view is tied to the extracted Core by
+`chartClearLoopCommand_toCore`; the execution proof below uses that view. -/
 
 private def chartClearBodyLayout : Layout 2 :=
   pairLayout 4 10
-
-private def chartClearBodyContext : Context :=
-  (Context.empty.bind 4 (.slice parserI32Type)).bind 10 parserI32Type
-
-private def chartClearBodySource : Stmt :=
-  .sequence (.expression parserRecognizeChartClearWrite)
-    (parserRecognizeIncrementLocal 10)
-
-private def chartClearBodyReification? :=
-  reifyCommand? verifiedParserCore (.structure 0) chartClearBodyContext true
-    chartClearBodyLayout 11 chartClearBodySource
-
-private theorem chartClearBodyReification_exists :
-    chartClearBodyReification?.isSome := by
-  native_decide
-
-/-- Mechanically recovered mutable proof view of one chart-clear iteration. -/
-private def chartClearBodyView :=
-  chartClearBodyReification?.get chartClearBodyReification_exists
-
-private def chartClearIndexTerm :
-    Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 2 :=
-  .reference (.slot ⟨1, by omega⟩)
-
-private def chartClearNegativeOneTerm :
-    Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 2 :=
-  .apply (.unary .negate parserI32Type parserI32Type)
-    [.reference (.literal (.signed .i32 1))]
-
-private def chartClearOneTerm :
-    Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 2 :=
-  .reference (.literal (.signed .i32 1))
-
-private def chartClearBodyCommand :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 2 :=
-  .sequence
-    (.action (.setI32Index ⟨0, by omega⟩
-      chartClearIndexTerm chartClearNegativeOneTerm))
-    (.sequence
-      (.updateLocal .add ⟨1, by omega⟩
-        chartClearOneTerm)
-      .skip)
-
-private theorem chartClearBodyView_toCore :
-    Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
-      chartClearBodyLayout 11 chartClearBodyView.command =
-      parserRecognizeChartClearLoopBody := by
-  rw [chartClearBodyView.toCoreExactly]
-  exact extractedParserRecognize_chart_clear_body_shape.symm
-
-private theorem chartClearBodyCommand_toCore :
-    Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
-      chartClearBodyLayout 11 chartClearBodyCommand =
-      parserRecognizeChartClearLoopBody := by
-  rw [extractedParserRecognize_chart_clear_body_shape]
-  rfl
 
 /-! The complete loop additionally reads `state_base`.  The two mutable body
     slots stay in their original order and the read-only bound is appended. -/
@@ -195,12 +134,12 @@ def recognizerChartClearWrites
 def verifiedParserChartClearAccessFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
-    parserRecognizeChartClearLoop (by native_decide)
+    parserRecognizeChartClearLoop (by decide)
 
 def verifiedParserChartClearLiveFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
-    parserRecognizeChartClearLoop (by native_decide)
+    parserRecognizeChartClearLoop (by decide)
 
 theorem verifiedParser_chart_clear_access_frame :
     verifiedParserChartClearAccessFrame.map (fun access =>
@@ -208,7 +147,7 @@ theorem verifiedParser_chart_clear_access_frame :
       ("chart_word_index", 10, .readWrite),
       ("state_base", 8, .read),
       ("workspace", 4, .readWrite)] := by
-  native_decide
+  decide
 
 theorem verifiedParser_chart_clear_live_frame :
     verifiedParserChartClearLiveFrame.map (fun access =>
@@ -221,7 +160,7 @@ theorem verifiedParser_chart_clear_live_frame :
       ("final_position", 6, .read),
       ("tokens", 2, .read),
       ("token_count", 3, .read)] := by
-  native_decide
+  decide
 
 /-- Declarations live across chart clearing whose cells are not owned by the
     loop index.  This must come from liveness rather than the clear body's
@@ -240,13 +179,16 @@ def verifiedParserChartClearPersistentBindings : LocalBindingFrame :=
 
 theorem verifiedParser_chart_clear_shared_frame_ids :
     verifiedParserChartClearSharedFrameIds = [8, 4, 0, 9, 6, 2, 3] := by
-  native_decide
+  decide
 
 theorem verifiedParserChartClearPersistentBindings_core_ids :
     verifiedParserChartClearPersistentBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserChartClearSharedFrameIds := by
-  native_decide
+  simp only [verifiedParserChartClearPersistentBindings,
+    verifiedParserRecognizerParameterIds, verifiedParserChartClearSharedFrameIds,
+    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
+    List.map_append]
 
 @[simp] theorem mem_verifiedParserChartClearSharedFrameIds_iff
     (id : Nat) :

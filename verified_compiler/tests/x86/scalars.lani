@@ -1,0 +1,55 @@
+module examples::scalars;
+
+pub fn nested(a: i32, b: i32, c: i32) -> i32 {
+    let x: i32 = a + b * c;
+    let y: i32 = x - (a - c) * (b + 3);
+    x += y;
+    return -x;
+}
+
+pub fn bits(a: i32, b: i32) -> i32 {
+    let x: i32 = (a & b) | (a ^ b);
+    x ^= 305419896;
+    return (x << 3) + (x >> 5);
+}
+
+pub fn quotient(a: i32, b: i32) -> i32 { return a / b; }
+pub fn remainder(a: i32, b: i32) -> i32 { return a % b; }
+pub fn shift(a: i32, b: i32) -> i32 { return a << b; }
+
+pub fn short_circuit(a: i32, b: i32) -> bool {
+    return (b == 0 || a / b > 3) && !(a < 0 && b != 0);
+}
+
+pub fn branches(a: i32, b: i32) -> i32 {
+    let x: i32 = a;
+    if (a < b) { x += b; } else { x -= b; }
+    if (x == 0) { return 99; }
+    return x;
+}
+
+pub fn loops(a: i32, b: i32) -> i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < a) {
+        i += 1;
+        if (i == 2) { continue; }
+        let j: i32 = 0;
+        while (j < b) {
+            j += 1;
+            if (j == 3) { break; }
+            total += i * j;
+        }
+        if (i >= 5) { break; }
+    }
+    return total;
+}
+
+pub fn stack_arguments(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32, i: i32) -> i32 {
+    let x: i32 = a + b - c + d - e + f;
+    return x + g * h - i;
+}
+
+pub fn booleans(a: bool, b: bool, c: i32) -> bool { return a && (!b || c <= 7); }
+pub fn constant() -> i32 { return -2147483647 - 1; }
+pub fn literal() -> i32 { return 7; }

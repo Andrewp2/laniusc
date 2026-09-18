@@ -1,4 +1,4 @@
-import Lanius.Compiler.ParserModel
+import Lanius.Compiler.Parser.Storage
 import Lanius.Separation
 
 namespace Lanius.Compiler.Parser
@@ -44,7 +44,8 @@ inductive WorkspaceLoopOutcome
       (growth : WorkspaceAppendClosure capacity beforeWorkspace workspace)
       (terminal : Terminal workspace workspaceValues after)
       (stateCount : Nat)
-      (wellFormed : StateWellFormed after) :
+      (wellFormed : StateWellFormed after)
+      (full : WorkspaceFull capacity workspace stateCount) :
       WorkspaceLoopOutcome capacity beforeWorkspace fullCompletion Completed
         Terminal after (fullCompletion stateCount)
 
@@ -61,8 +62,8 @@ theorem WorkspaceLoopOutcome.prepend_growth
   | completed workspace workspaceValues after growth invariant =>
       exact .completed workspace workspaceValues after
         (firstGrowth.trans growth) invariant
-  | full workspace workspaceValues after growth terminal stateCount wellFormed =>
+  | full workspace workspaceValues after growth terminal stateCount wellFormed full =>
       exact .full workspace workspaceValues after (firstGrowth.trans growth)
-        terminal stateCount wellFormed
+        terminal stateCount wellFormed full
 
 end Lanius.Compiler.Parser

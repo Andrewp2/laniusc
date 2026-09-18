@@ -52,7 +52,6 @@ theorem directEqual_evaluates
     Lanius.FunctionalView.Core.ReadOnly.evaluateOperation,
     Lanius.Semantics.evalBinaryValue, Lanius.Semantics.scalarEqual,
     bind, Except.bind]
-  rfl
 
 private theorem directAllEqual_fold_evaluates
     (environment : Env arity)
@@ -146,7 +145,6 @@ theorem directConstant_evaluates
       (.constant constant KeywordCommand.i32) [] = _
   simp [Lanius.FunctionalView.Core.Effectful.evaluateOperation,
     Lanius.FunctionalView.Core.ReadOnly.evaluateOperation, found]
-  rfl
 
 /-- A decision list with no matching rule falls through without changing its
 world or environment. -/

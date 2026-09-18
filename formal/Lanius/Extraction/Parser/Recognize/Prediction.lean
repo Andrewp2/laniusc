@@ -1,5 +1,7 @@
 import Lanius.Extraction.Parser.Recognize.Common
 
+import Lanius.Compiler.Parser.Growth
+
 namespace Lanius.Extraction.ParserRecognize
 
 set_option maxRecDepth 100000
@@ -35,7 +37,7 @@ def parserRecognizePredictionLoopBody : Stmt :=
 def verifiedParserPredictionLoopAccessFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
-    parserRecognizePredictionLoop (by native_decide)
+    parserRecognizePredictionLoop (by decide)
 
 def verifiedParserPredictionLoopAccessFrameIds : List VarId :=
   verifiedParserPredictionLoopAccessFrame.ids
@@ -45,7 +47,7 @@ def verifiedParserPredictionLoopAccessFrameIds : List VarId :=
 def verifiedParserPredictionLoopLiveFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
-    parserRecognizePredictionLoop (by native_decide)
+    parserRecognizePredictionLoop (by decide)
 
 def verifiedParserPredictionLoopLiveFrameIds : List VarId :=
   verifiedParserPredictionLoopLiveFrame.ids
@@ -63,12 +65,12 @@ theorem verifiedParser_prediction_loop_access_frame :
       ("state_capacity", 9, .read),
       ("position", 23, .read),
       ("state_count", 18, .readWrite)] := by
-  native_decide
+  decide
 
 theorem verifiedParser_prediction_loop_access_frame_ids :
     verifiedParserPredictionLoopAccessFrameIds =
       [33, 32, 0, 15, 31, 4, 8, 9, 23, 18] := by
-  native_decide
+  decide
 
 theorem verifiedParser_prediction_loop_live_frame :
     verifiedParserPredictionLoopLiveFrame.map (fun access =>
@@ -88,12 +90,12 @@ theorem verifiedParser_prediction_loop_live_frame :
       ("dot", 26, .read),
       ("origin", 27, .read),
       ("state_id", 24, .read)] := by
-  native_decide
+  decide
 
 theorem verifiedParser_prediction_loop_live_frame_ids :
     verifiedParserPredictionLoopLiveFrameIds =
       [33, 32, 0, 15, 31, 4, 8, 9, 23, 18, 30, 25, 26, 27, 24] := by
-  native_decide
+  decide
 
 /-- Loop-access bindings whose cells are shared with the surrounding proof.
     `predicted_index` is excluded because the loop invariant owns its cell
@@ -108,7 +110,7 @@ def verifiedParserPredictionLoopSharedFrameIds : List VarId :=
 theorem verifiedParser_prediction_loop_shared_frame_ids :
     verifiedParserPredictionLoopSharedFrameIds =
       [32, 0, 15, 31, 4, 8, 9, 23, 18] := by
-  native_decide
+  decide
 
 @[simp] theorem mem_verifiedParserPredictionLoopSharedFrameIds_iff
     (id : Nat) :
@@ -139,19 +141,25 @@ def verifiedParserPredictionLoopPreservedBindings : LocalBindingFrame :=
 theorem verifiedParser_prediction_loop_preserved_frame_ids :
     verifiedParserPredictionLoopPreservedFrameIds =
       [32, 0, 15, 31, 4, 8, 9, 23] := by
-  native_decide
+  decide
 
 theorem verifiedParserPredictionLoopPersistentBindings_core_ids :
     verifiedParserPredictionLoopPersistentBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserPredictionLoopSharedFrameIds := by
-  native_decide
+  simp only [verifiedParserPredictionLoopPersistentBindings,
+    verifiedParserRecognizerParameterIds, verifiedParserPredictionLoopSharedFrameIds,
+    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
+    List.map_append]
 
 theorem verifiedParserPredictionLoopPreservedBindings_core_ids :
     verifiedParserPredictionLoopPreservedBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserPredictionLoopPreservedFrameIds := by
-  native_decide
+  simp only [verifiedParserPredictionLoopPreservedBindings,
+    verifiedParserRecognizerParameterIds, verifiedParserPredictionLoopPreservedFrameIds,
+    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
+    List.map_append]
 
 @[simp] theorem mem_verifiedParserPredictionLoopPreservedFrameIds_iff
     (id : Nat) :
@@ -211,7 +219,7 @@ private def predictionLoopReification? :=
 
 private theorem predictionLoopReification_exists :
     predictionLoopReification?.isSome := by
-  native_decide
+  decide +kernel
 
 /-- Complete mutable FunctionalView command recovered from the checked
     prediction loop. -/
@@ -230,7 +238,7 @@ private def predictionBodyReification? :=
 
 private theorem predictionBodyReification_exists :
     predictionBodyReification?.isSome := by
-  native_decide
+  decide +kernel
 
 private def parserRecognizePredictionBodyView :=
   predictionBodyReification?.get predictionBodyReification_exists
@@ -511,11 +519,16 @@ structure RecognizerPredictionLoopInvariant
     (some (.signed .i32 (Int.ofNat index)))).holds runtime
   indexLe : index ≤ count
   rowRange : first + count ≤ grammar.lhsProductions.length
+  seeded : Seeded workspace position ((grammar.lhsProductions.drop first).take index)
   rowProductionBound : ∀ (rowIndex : Nat)
     (rowIndexBound : rowIndex < count),
     grammar.lhsProductions.get ⟨first + rowIndex, by
       have := rowRange
       omega⟩ < grammar.productionCount
+  rowGenerated : ∀ (rowIndex : Nat) (rowIndexBound : rowIndex < count),
+    GeneratedItem grammar tokens position
+      ⟨grammar.lhsProductions.get ⟨first + rowIndex, by have := rowRange; omega⟩,
+        0, position⟩
   persistentSeparate : CellSet.Disjoint
     (localBindingFrameFootprint runtime
       verifiedParserPredictionLoopPreservedBindings)
@@ -818,7 +831,9 @@ theorem RecognizerPredictionLoopInvariant.after_temporary_bind
       invariant.indexOwned
     indexLe := invariant.indexLe
     rowRange := invariant.rowRange
+    seeded := invariant.seeded
     rowProductionBound := invariant.rowProductionBound
+    rowGenerated := invariant.rowGenerated
     persistentSeparate := by
       intro cell framed written
       obtain ⟨queried, preserved, cellId⟩ := framed
@@ -875,7 +890,7 @@ theorem RecognizerPredictionLoopInvariant.bind_production
           (EarleyBackpointerStep.fresh
             (grammar := grammar) (tokens := tokens) (workspace := workspace)
             (stateId := workspace.states.length) (position := position)
-            productionBound)
+            productionBound (invariant.rowGenerated index indexBound))
     }
     positionLocal := boundInvariant.positionLocal
     productionLocal := by
@@ -964,7 +979,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_read_production
       (program := verifiedParserCore)
       (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
       (world := world) (environment := environment)
-      predictionProductionTerm (by native_decide)
+      predictionProductionTerm (by decide +kernel)
   change Lanius.FunctionalView.Term.evaluate
       (predictionTermMachine workspaceLayout words grammarCell)
       world environment predictionProductionTerm =
@@ -1024,7 +1039,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_seed
       (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
       (world := world) (environment := environment)
       (predictionNegativeOne : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 11) (by native_decide)
+        Lanius.FunctionalView.Core.signature 11) (by decide +kernel)
   have negativeOneResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (predictionNegativeOne : Lanius.FunctionalView.Term
         Lanius.FunctionalView.Core.signature 11) =
@@ -1047,7 +1062,7 @@ private theorem RecognizerPredictionLoopInvariant.functional_seed
       (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
       (world := world) (environment := environment)
       (predictionConstant 37 : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 11) (by native_decide)
+        Lanius.FunctionalView.Core.signature 11) (by decide +kernel)
   have childNoneResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (predictionConstant 37 : Lanius.FunctionalView.Term
         Lanius.FunctionalView.Core.signature 11) =
@@ -1296,7 +1311,7 @@ private theorem predictionFullCondition_evaluates
       (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
       (world := world)
       (environment := environment.push (appendOutcomeValue outcome))
-      predictionFullCondition (by native_decide)
+      predictionFullCondition (by decide +kernel)
   have readOnlyResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
       world (environment.push (appendOutcomeValue outcome))
@@ -1329,7 +1344,7 @@ private theorem predictionStateCount_evaluates
       (world := world)
       (environment := environment.push (appendOutcomeValue outcome))
       (.apply (.field (.structure 2) 2 parserI32Type)
-        [predictionSlot ⟨11, by omega⟩]) (by native_decide)
+        [predictionSlot ⟨11, by omega⟩]) (by decide +kernel)
   have readOnlyResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
       world (environment.push (appendOutcomeValue outcome))
@@ -1916,7 +1931,9 @@ noncomputable def RecognizerPredictionLoopInvariant.execute_ok_step
     indexOwned := afterIndexOwned
     indexLe := by omega
     rowRange := invariant.rowRange
+    seeded := invariant.seeded.next rowBound statusOk'
     rowProductionBound := invariant.rowProductionBound
+    rowGenerated := invariant.rowGenerated
     persistentSeparate := by
       rw [outerEffect.localBindingFrameFootprint_eq
         verifiedParserPredictionLoopPreservedBindings]
@@ -2081,7 +2098,8 @@ inductive RecognizerPredictionSynchronizedOutcome
         grammarCell tokensCell workspaceCell)
       (environmentEq : after.environment = predictionEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
-        lhsProductionsOffset position first count count workspace.states.length) :
+        lhsProductionsOffset position first count count workspace.states.length)
+      (stable : ChartsUnchangedBefore position beforeWorkspace workspace) :
       RecognizerPredictionSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell indexCell lhsProductionsOffset position first count after
@@ -2093,7 +2111,8 @@ inductive RecognizerPredictionSynchronizedOutcome
       (terminal : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell physicalAfter)
-      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter) :
+      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerPredictionSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell indexCell lhsProductionsOffset position first count after
@@ -2111,9 +2130,9 @@ theorem RecognizerPredictionSynchronizedOutcome.physical
   | completed workspace workspaceValues physicalAfter growth invariant _ _ =>
       exact .completed workspace workspaceValues physicalAfter growth invariant
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter growth terminal
-        stateCount wellFormed
+        stateCount wellFormed full
 
 /-- Eliminate a synchronized prediction outcome without depending on the
     proof object itself.  The resulting data view is safe under proof
@@ -2136,7 +2155,8 @@ theorem RecognizerPredictionSynchronizedOutcome.view
           tokensCell workspaceCell ∧
         after.environment = predictionEnvironment words workspaceValues
           grammarCell workspaceCell workspaceLayout lhsProductionsOffset
-          position first count count workspace.states.length) ∨
+          position first count count workspace.states.length ∧
+        ChartsUnchangedBefore position beforeWorkspace workspace) ∨
     (∃ workspace : LogicalWorkspace,
       ∃ workspaceValues : List Int,
       ∃ growth : WorkspaceAppendClosure workspaceLayout.capacity
@@ -2146,16 +2166,17 @@ theorem RecognizerPredictionSynchronizedOutcome.view
           workspaceCell physicalAfter,
       ∃ stateCount : Nat,
       ∃ wellFormed : StateWellFormed physicalAfter,
+        WorkspaceFull workspaceLayout.capacity workspace stateCount ∧
         completion = parserCapacityCompletion position stateCount) := by
   cases outcome with
   | completed workspace workspaceValues physicalAfter growth invariant worldEq
-      environmentEq =>
+      environmentEq stable =>
       exact .inl ⟨rfl, workspace, workspaceValues, growth, invariant, worldEq,
-        environmentEq⟩
+        environmentEq, stable⟩
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .inr ⟨workspace, workspaceValues, growth, terminal, stateCount,
-        wellFormed, rfl⟩
+        wellFormed, full, rfl⟩
 
 theorem RecognizerPredictionSynchronizedOutcome.prepend_growth
     {grammarLayout : PackedGrammarLayout} {grammar : IndexedGrammar}
@@ -2173,20 +2194,21 @@ theorem RecognizerPredictionSynchronizedOutcome.prepend_growth
       workspaceCell stateCountCell indexCell lhsProductionsOffset position first
       count after physicalAfter completion)
     (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace
-      middleWorkspace) :
+      middleWorkspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace middleWorkspace) :
     RecognizerPredictionSynchronizedOutcome grammarLayout grammar words tokens
       workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
       stateCountCell indexCell lhsProductionsOffset position first count after
       physicalAfter completion := by
   cases outcome with
   | completed workspace workspaceValues physicalAfter nextGrowth invariant
-      worldEq environmentEq =>
+      worldEq environmentEq nextStable =>
       exact .completed workspace workspaceValues physicalAfter
-        (growth.trans nextGrowth) invariant worldEq environmentEq
+        (growth.trans nextGrowth) invariant worldEq environmentEq (stable.trans nextStable)
   | full workspace workspaceValues physicalAfter nextGrowth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues
-        physicalAfter (growth.trans nextGrowth) terminal stateCount wellFormed
+        physicalAfter (growth.trans nextGrowth) terminal stateCount wellFormed full
 
 structure RecognizerPredictionLoopExecution
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -2442,6 +2464,7 @@ noncomputable def RecognizerPredictionConfig.functional_decide
               grammarLayout.lhsProductionsOffset position first count
               config.index config.workspace.states.length = _
             rw [done]
+          · exact ChartsUnchangedBefore.refl
       }
     }
   · have indexBound : config.index < count := by
@@ -2545,6 +2568,7 @@ noncomputable def RecognizerPredictionConfig.functional_decide
             outcome := result.outcome.prepend_growth
               (WorkspaceAppendClosure.single workspaceLayout.capacity position
                 seed config.workspace)
+              (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed config.workspace)
           }
     | full =>
         have statusFull : (appendLogical workspaceLayout.capacity position seed
@@ -2596,6 +2620,8 @@ noncomputable def RecognizerPredictionConfig.functional_decide
               exact Or.inl member)
             outcome := .full config.workspace config.workspaceValues step.after
               (.refl config.workspace) step.invariant stateCount step.wellFormed
+              (by simpa only [stateCount, logical, appendLogical_stateCount_eq] using
+                appendLogical.full_workspace statusFull)
           }
         }
 

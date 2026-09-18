@@ -121,7 +121,6 @@ private theorem soundnessFor
   let bindings : List (VarId × Value) := [(0, .signed .i32 offset)]
   let callee := enterCall afterArguments bindings
   let completedState := completed callee offset
-  let after := restoreLocals afterArguments completedState
   have calleeEq : singleArgumentCalleeState afterArguments
       (.signed .i32 offset) = callee := by
     simp [callee, bindings, singleArgumentCalleeState, enterCall, clearLocals,
@@ -135,14 +134,6 @@ private theorem soundnessFor
     rw [← calleeEq]
     simpa [completedState, calleeEq] using
       bodyExecutes afterArguments afterArgumentsWellFormed offset
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call function.id (toCoreExprs layout arguments)) (resultFor offset)
-      after := by
-    apply evaluatesCallReturned argumentsExecution found
-    · rw [parameters]
-      rfl
-    · exact hasBody
-    · simpa [after, completedState] using bodyExecution
   have completedWellFormed : StateWellFormed completedState := by
     dsimp only [completedState]
     rw [← calleeEq]
@@ -155,12 +146,15 @@ private theorem soundnessFor
         simpa [completedState, calleeEq] using
           bodyFrame afterArguments afterArgumentsWellFormed offset)
       calleeWellFormed
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
-      (bindings := bindings) bodyEffect (by simp [CellSet.empty])
+  obtain ⟨after, callExecution, afterWellFormed, afterRepresented, callEffect⟩ :=
+    represented.callReturned (function := function) (body := body)
+      (bindings := bindings) argumentsExecution argumentsEffect found
+      (by rw [parameters]; rfl) hasBody
+      (by simpa [callee, completedState] using bodyExecution)
+      afterArgumentsWellFormed completedWellFormed bodyEffect
+      (by simp [CellSet.empty])
   exact ⟨after, callExecution, afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same
-      (callEffect.weaken CellSet.empty_subset)⟩
+    callEffect⟩
 
 theorem integerScanFramePreserving : FramePreservingCallSoundness
     verifiedFrontendCore integerScanCalls := by
@@ -239,7 +233,7 @@ theorem callSoundness : EffectfulStateful.CallSoundness
   have nonnegative : (0 : Int) ≤ (offset : Int) := by omega
   have intBound : (offset : Int) ≤ 2147483647 := by omega
   have different : Functions.floatScanFunction.id ≠
-      Functions.integerScanFunction.id := by native_decide
+      Functions.integerScanFunction.id := by decide
   simp [callModel, CallModel.route, floatScanCalls, modelFor, bound,
     nonnegative, intBound, different]
 
@@ -251,9 +245,9 @@ theorem callSoundness : EffectfulStateful.CallSoundness
   have nonnegative : (0 : Int) ≤ (offset : Int) := by omega
   have intBound : (offset : Int) ≤ 2147483647 := by omega
   have integerDifferent : Functions.numberFailureFunction.id ≠
-      Functions.integerScanFunction.id := by native_decide
+      Functions.integerScanFunction.id := by decide
   have floatDifferent : Functions.numberFailureFunction.id ≠
-      Functions.floatScanFunction.id := by native_decide
+      Functions.floatScanFunction.id := by decide
   simp [callModel, CallModel.route, numberFailureCalls, modelFor, bound,
     nonnegative, intBound, integerDifferent, floatDifferent]
 

@@ -95,7 +95,7 @@ private theorem CheckedMaterialize.with_visit {visit : CheckedVisit program}
       callee.cellEntry? cell = some { id := cell, value := some value } :=
     ((enterCall_effect afterArguments bindings).oldCells cell
       (StateWellFormed.cell_lt_next_of_entry wellFormed found) (by simp [CellSet.empty])).trans found
-  obtain ⟨afterStatus, statusCall, statusEffect⟩ := checked.status.call calleeWF
+  obtain ⟨afterStatus, statusCall, statusEffect, _⟩ := checked.status.call calleeWF
     (.cons (local_read (parameters ⟨0, by decide⟩)) (.nil _ _)) rfl
   have afterStatusParameters (index : Fin 9) : afterStatus.local? index.val = some (values.get index) :=
     statusEffect.preserves_local calleeWF (parameters index) (by simp [CellSet.empty])
@@ -108,11 +108,11 @@ private theorem CheckedMaterialize.with_visit {visit : CheckedVisit program}
   have offsetsFalse := nonnegative_check_false (program := program.core)
     (afterStatusParameters ⟨7, by decide⟩) (Int.natCast_nonneg offsetValues.length)
   have guardFalse := evaluatesLogicalOrFalse (evaluatesLogicalOrFalse statusFalse recordsFalse) offsetsFalse
-  obtain ⟨afterCount, countCall, countEffect⟩ := checked.stateCount.call statusEffect.wellFormed
+  obtain ⟨afterCount, countCall, countEffect, _⟩ := checked.stateCount.call statusEffect.wellFormed
     (.cons (local_read (afterStatusParameters ⟨0, by decide⟩)) (.nil _ _)) rfl
   have countParameters (index : Fin 9) : afterCount.local? index.val = some (values.get index) :=
     countEffect.preserves_local statusEffect.wellFormed (afterStatusParameters index) (by simp [CellSet.empty])
-  obtain ⟨afterRoot, rootCall, rootEffect⟩ := checked.rootState.call countEffect.wellFormed
+  obtain ⟨afterRoot, rootCall, rootEffect, _⟩ := checked.rootState.call countEffect.wellFormed
     (.cons (local_read (countParameters ⟨0, by decide⟩)) (.nil _ _)) rfl
   have callsEffect := statusEffect.trans (countEffect.trans rootEffect)
   have rootParameters (index : Fin 9) : afterRoot.local? index.val = some (values.get index) :=
@@ -291,7 +291,7 @@ theorem CheckedMaterialize.reject {visit : CheckedVisit program}
   have calleeWF : StateWellFormed callee := enterCall_preserves_wellFormed wellFormed
   have parameters (index : Fin 9) : callee.local? index.val = some (values.get index) :=
     enterCall_parameterBindings_matches wellFormed index
-  obtain ⟨afterStatus, statusCall, statusEffect⟩ := checked.status.call calleeWF
+  obtain ⟨afterStatus, statusCall, statusEffect, _⟩ := checked.status.call calleeWF
     (.cons (local_read (parameters ⟨0, by decide⟩)) (.nil _ _)) statusField
   have afterParameters (index : Fin 9) : afterStatus.local? index.val = some (values.get index) :=
     statusEffect.preserves_local calleeWF (parameters index) (by simp [CellSet.empty])

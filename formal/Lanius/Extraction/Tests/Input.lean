@@ -51,9 +51,12 @@ example : partialWordRoundTrip = true := by native_decide
 
 open Lanius.Extraction.Input
 
-private def unpackLocals : UnpackLocals := ⟨3, 1, 5, 10, 9⟩
+private def unpackLocals : UnpackLocals := ⟨3, 1, some 5, 10, 9⟩
 
-example : (checkUnpackLoop? unpackLocals.loop).isSome = true := by decide
+#eval show IO Unit from do
+  for locals in [unpackLocals, { unpackLocals with total := none }] do
+    unless (checkUnpackLoop? locals.loop).isSome do
+      throw (IO.userError "exact file/path unpacking loop rejected")
 
 private def wrongReadCursor : Stmt :=
   .whileLoop (.binary .notEqual (.local unpackLocals.cursor) (.local unpackLocals.length))

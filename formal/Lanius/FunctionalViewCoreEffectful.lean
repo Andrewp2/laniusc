@@ -44,7 +44,7 @@ def evaluateOperation (program : Program) (calls : CallModel)
   | operation, arguments =>
       ReadOnly.evaluateOperation program world operation arguments
 
-def machine (program : Program) (calls : CallModel) :
+abbrev machine (program : Program) (calls : CallModel) :
     Machine Core.signature := {
   World := ReadOnly.World
   evalOperation := evaluateOperation program calls
@@ -162,10 +162,21 @@ mutual
         intro result
         obtain ⟨value, nextWorld⟩ := result
         rw [tailEq nextWorld]
-        rfl
 end
 
 namespace Term
+
+/-- Keep call inputs visible to elaboration instead of asking unification to
+    recover them through the operation dispatcher and a nested call registry. -/
+theorem evaluate_call
+    (argumentsResult : evaluateTerms (machine program calls) world environment
+      arguments = .ok (values, afterArguments))
+    (callResult : calls.evaluate afterArguments function values =
+      .ok (value, afterCall)) :
+    Term.evaluate (machine program calls) world environment
+      (.apply (.call function parameterTypes resultType) arguments) =
+      .ok (value, afterCall) :=
+  Term.evaluate_apply argumentsResult callResult
 
 theorem evaluate_eq_readOnly_of_callFree
     (term : Term Core.signature arity) (free : termCallFree term = true) :

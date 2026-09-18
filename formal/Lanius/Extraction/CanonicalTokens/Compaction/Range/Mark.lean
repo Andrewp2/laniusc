@@ -20,25 +20,27 @@ theorem executes_mark (table : Table program tokens)
     ∃ after, Executes program before (rangeMark tokens) .next after ∧
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array
         (signedI32Values (marked records currentRow currentKind nextKind nextStart currentEnd))) } ∧
-      CellEffect (CellSet.singleton recordsCell) before after := by
+      CellEffect (CellSet.singleton recordsCell) before after ∧ Host.MemoryFrame before after := by
   have condition := evaluates_condition table storage currentRow nextRow currentKind nextKind nextStart currentEnd
     currentLocal nextLocal currentBound nextBound currentSelected nextSelected nextStartSelected currentEndSelected
   cases selected : isPair currentKind nextKind nextStart currentEnd with
   | false =>
       have no : Evaluates program before (rangeCondition tokens) (.boolean false) before := by
         simpa only [selected] using condition
-      refine ⟨before, executesIfFalse no (executesSkip program before), ?_, CellEffect.refl storage.wellFormed⟩
+      refine ⟨before, executesIfFalse no (executesSkip program before), ?_, CellEffect.refl storage.wellFormed,
+        Host.MemoryFrame.refl before⟩
       simpa only [marked, selected, Bool.false_eq_true, if_false] using storage.recordsContents
   | true =>
       have yes : Evaluates program before (rangeCondition tokens) (.boolean true) before := by
         simpa only [selected] using condition
       have indexResult : Evaluates program before (.local 11) (.signed .i32 currentRow) before :=
         ⟨1, evalLocal_of_local 0 program before 11 _ currentLocal⟩
-      obtain ⟨after, assignment, contents, effect⟩ := evaluatesSliceStore program before before records
+      obtain ⟨after, assignment, contents, effect, storeHeapFrame, _⟩ := evaluatesSliceStore program before before records
         1 (.local 11) (.constant tokens.inclusive) recordsCell currentRow 189 storage.wellFormed (by omega)
         storage.recordsLocal indexResult (constantResult program before tokens.inclusive 189 table.inclusiveFound)
         (CellEffect.refl storage.wellFormed) storage.recordsContents
-      refine ⟨after, executesIfTrue yes (executesSequence (executesExpression assignment) (executesSkip program after)), ?_, effect⟩
+      refine ⟨after, executesIfTrue yes (executesSequence (executesExpression assignment) (executesSkip program after)), ?_, effect,
+        Host.MemoryFrame.arraySet effect storeHeapFrame storage.recordsContents contents (by decide)⟩
       simpa only [marked, selected, Bool.true_eq, if_true] using contents
 
 end Lanius.Extraction.CanonicalTokens.Compaction.Range

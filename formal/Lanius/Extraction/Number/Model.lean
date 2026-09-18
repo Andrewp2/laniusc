@@ -104,7 +104,7 @@ theorem numberCalls_scanLeadingDotNumber
         (argumentValues source start) =
       .ok (encoded (scanLeadingDotNumber source start), world) := by
   have distinct : scanLeadingDotNumberFunction.id ≠ scanNumberFunction.id := by
-    native_decide
+    decide
   simp [numberCalls, argumentValues, sourceSlice, sourceFound, sourceBound,
     startInBounds, distinct]
 

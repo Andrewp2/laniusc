@@ -1,4 +1,5 @@
 import Lanius.Extraction.Decimal.ScanExponentEvaluation
+import Lanius.FunctionalViewCoreCheckedSimulation
 import Lanius.FunctionalViewCoreFreshSimulation
 import Lanius.FunctionalViewCoreCallFrame
 
@@ -97,7 +98,7 @@ theorem scanExponentFunction_parameters :
     Functions.scanExponentFunction.parameters =
       [(0, .slice Program.i32Type), (1, Program.i32Type),
         (2, Program.i32Type)] := by
-  native_decide
+  rfl
 
 theorem scanExponentFunction_has_body :
     Functions.scanExponentFunction.body =
@@ -113,53 +114,21 @@ theorem framePreservingCallSoundness (source : List Byte) :
     evaluated
   obtain ⟨start, sourceFound, rfl, rfl, sourceBound, startInBounds,
       rfl, rfl⟩ := call_success evaluated
-  let calleeEnvironment := environment source start
-  let bindings := parameterBindings calleeEnvironment
-  let callee := enterCall afterArguments bindings
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) afterWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
   have functionalEvaluation :=
     ScanExponentEvaluation.scanExponent_evaluates source afterWorld start
       sourceFound sourceBound startInBounds
-  let operations := operationSoundness verifiedFrontendCore
-    (helperCalls source) (helperCalls_framePreserving source)
-  have simulation := commandSoundness operations functionalEvaluation
-    (by native_decide) calleeRepresented
-    (LayoutBelow.identity (arity := 3)) calleeWellFormed
-    (frontier := afterArguments.nextCell)
-    (by intro index; simp [callLocalCells])
-    (by simpa [callee] using (enterCall_effect afterArguments bindings).nextCell)
-  obtain ⟨completed, bodyExecution, completedWellFormed,
-      completedRepresented, bodyEffect⟩ := simulation
-  rw [Commands.scanExponentReadable_toCore_exactly] at bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call Functions.scanExponentFunction.id
-        (toCoreExprs layout sourceArguments))
-      (encoded (scanExponent source start))
-      (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned (bindings := bindings)
-      (body := Functions.scanExponentBody) argumentsExecution
-      verifiedFrontendCore_finds
-    · rw [scanExponentFunction_parameters]
-      simp [bindParameters, bindings, calleeEnvironment, parameterBindings,
-        environment, arguments, EvaluationModel.sourceSlice,
-        DigitRunModel.sourceSlice, Program.i32Type, List.finRange]
-    · exact scanExponentFunction_has_body
-    · change Executes verifiedFrontendCore callee Functions.scanExponentBody
-        (.returned (some (encoded (scanExponent source start)))) completed at bodyExecution
-      simpa [callee, bindings] using bodyExecution
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
-      (bindings := bindings) bodyEffect (by intro cell written; exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+  apply CheckedSimulation.callPreservesFrame
+    (calleeEnvironment := environment source start)
+    (helperCalls_framePreserving source)
+    argumentsExecution argumentsEffect verifiedFrontendCore_finds
+    (by
+      rw [scanExponentFunction_parameters]
+      simp [bindParameters, parameterBindings, environment, arguments,
+        EvaluationModel.sourceSlice, DigitRunModel.sourceSlice,
+        Program.i32Type, List.finRange])
+    scanExponentFunction_has_body functionalEvaluation (by decide +kernel)
+    Commands.scanExponentReadable_toCore_exactly afterArgumentsWellFormed
+    represented
 
 theorem worldPreserving (source : List Byte) :
     WorldPreserving (callModel source) := by

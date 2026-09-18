@@ -39,14 +39,10 @@ def contract (source : List Byte)
   encodeResult := Value.boolean
   encodeArgs_typed := by
     intro byte before _pre
-    have targetEq : checkedFrontend.core.target = .x86_64 := by rfl
-    exact .cons (.signed .i32 _ (by
-      rw [targetEq]
-      simp [signedMin, SignedIntTy.bits]) (by
-      rw [targetEq]
-      simp only [signedMax, SignedIntTy.bits]
-      rw [Int.ofNat_eq_natCast]
-      omega)) .nil
+    have byteBound : byte.val ≤ 2147483647 := by omega
+    exact .cons
+      (SourceMemory.i32OfNat_typed checkedFrontend.core byte.val byteBound)
+      .nil
   encodeResult_typed := by
     intro _byte result _before _after _pre _post
     exact .boolean result

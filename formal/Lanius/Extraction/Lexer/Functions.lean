@@ -111,44 +111,45 @@ def failedScanFunction : Function :=
 def functionBody (function : Function) : Stmt :=
   function.body.getD .skip
 
+/-- These views have one argument. Keep that arity explicit for semantic rules;
+the reifier still checks the actual parameter context and exact source body. -/
 def reification? (function : Function) :=
   reifyBlock? verifiedFrontendLexerCore function.returnType
     (Lanius.Typing.parameterContext function.parameters) false
-    (identityLayout (arity := function.parameters.length))
-    function.parameters.length (functionBody function)
+    (identityLayout (arity := 1)) 1 (functionBody function)
 
 theorem isIdentifierStartReification_exists :
-    (reification? isIdentifierStartFunction).isSome := by native_decide
+    (reification? isIdentifierStartFunction).isSome := by decide +kernel
 
 theorem isIdentifierContinueReification_exists :
-    (reification? isIdentifierContinueFunction).isSome := by native_decide
+    (reification? isIdentifierContinueFunction).isSome := by decide +kernel
 
 theorem isDecimalDigitReification_exists :
-    (reification? isDecimalDigitFunction).isSome := by native_decide
+    (reification? isDecimalDigitFunction).isSome := by decide +kernel
 
 theorem isWhitespaceReification_exists :
-    (reification? isWhitespaceFunction).isSome := by native_decide
+    (reification? isWhitespaceFunction).isSome := by decide +kernel
 
 theorem isSymbolStartReification_exists :
-    (reification? isSymbolStartFunction).isSome := by native_decide
+    (reification? isSymbolStartFunction).isSome := by decide +kernel
 
 theorem classifyStartReification_exists :
-    (reification? classifyStartFunction).isSome := by native_decide
+    (reification? classifyStartFunction).isSome := by decide +kernel
 
 theorem scanSucceededReification_exists :
-    (reification? scanSucceededFunction).isSome := by native_decide
+    (reification? scanSucceededFunction).isSome := by decide +kernel
 
 theorem scanEndOffsetReification_exists :
-    (reification? scanEndOffsetFunction).isSome := by native_decide
+    (reification? scanEndOffsetFunction).isSome := by decide +kernel
 
 theorem scanErrorOffsetReification_exists :
-    (reification? scanErrorOffsetFunction).isSome := by native_decide
+    (reification? scanErrorOffsetFunction).isSome := by decide +kernel
 
 theorem successfulScanReification_exists :
-    (reification? successfulScanFunction).isSome := by native_decide
+    (reification? successfulScanFunction).isSome := by decide +kernel
 
 theorem failedScanReification_exists :
-    (reification? failedScanFunction).isSome := by native_decide
+    (reification? failedScanFunction).isSome := by decide +kernel
 
 def isIdentifierStartView :=
   (reification? isIdentifierStartFunction).get

@@ -11,10 +11,11 @@ open Lanius.Extraction.SurfaceElaborationChecker
 
 The historical artifact path asks an exporter to propose Core and then checks
 that proposal.  Self-extraction should not need a second untrusted program
-copy.  This module instead constructs a candidate from the authenticated
-Surface value and immediately passes it through the existing proof-producing
-checker.  Consequently every returned node carries the same authoritative
-lowering relation as an accepted external proposal.
+copy. This module constructs a candidate from Surface syntax, retaining the
+existing proof-producing checker's lowering evidence and composing it directly
+where available. Every returned node carries the same authoritative lowering
+relation as an accepted external proposal; source authentication is a separate
+requirement at the whole-program boundary.
 -/
 
 structure Inferred (context : Context) (surface : Surface.Expr) where
@@ -81,9 +82,44 @@ private def functionInstanceForPath? (context : Context)
   context.functionInstances.find? fun row =>
     row.declaration == global.symbol.declaration
 
+private def checkInferred (context : Context) (surface : Surface.Expr)
+    (expected : Static.GroundTy) (proposed : Option (Inferred context surface)) :
+    Option (Checked context surface expected) :=
+  let inferred : Option (Checked context surface expected) := do
+    let candidate ← proposed
+    match groundTypeEq? candidate.evidence.type expected with
+    | some same => pure ⟨candidate.core, same.proof ▸ .exact candidate.evidence.lowered⟩
+    | none =>
+        match shape : surface, source : candidate.evidence.type, target : expected with
+        | .path _, .scalar sourceType, .scalar targetType =>
+            if different : sourceType ≠ targetType then do
+              let conversion ← CoreTyping.scalarCast? sourceType targetType
+              pure ⟨.cast targetType candidate.core, by
+                cases target
+                exact .scalarCast (source ▸ candidate.evidence.lowered)
+                  (by simp [ContextualScalarLiteralApplies, shape]) different conversion.proof⟩
+            else none
+        | _, _, _ => none
+  match inferred with
+  | some result => some result
+  | none =>
+      match surface with
+      | .literal literal => do
+          let coreType ← expected.toCore context.monomorphization
+          let candidate ← literalCandidate context.target literal coreType
+          let evidence ← checkExpr context (.literal literal) expected candidate
+          pure ⟨candidate, evidence.proof⟩
+      | _ => none
+
 mutual
   def infer (context : Context) :
       (surface : Surface.Expr) → Option (Inferred context surface)
+    -- The emitted string is the source value itself. Retain that fact instead
+    -- of expanding a long UTF-8 literal to compare it with its own copy.
+    | .literal (.string value) =>
+        some ⟨.value (.string value), {
+          type := .scalar .string, coreType := .scalar .string, grounded := rfl
+          lowered := .literal .string rfl }⟩
     | .literal literal => do
         let candidate ← literalCandidate context.target literal
           (Elaboration.literalDefaultType literal)
@@ -96,10 +132,15 @@ mutual
               | some selected => [.local selected.binding.id]
               | none => []
           | none => []
-        let constantCandidates :=
-          context.constants.map fun entry => Core.Expr.constant entry.constant
-        firstAccepted (acceptInferred context (.path path))
-          (localCandidates ++ constantCandidates)
+        match firstAccepted (acceptInferred context (.path path)) localCandidates with
+        | some checked => some checked
+        | none => do
+            let global ← resolveGlobal? context .value path
+            let candidates := context.constants.filterMap fun entry =>
+              if entry.declaration == global.symbol.declaration then
+                some (Core.Expr.constant entry.constant)
+              else none
+            firstAccepted (acceptInferred context (.path path)) candidates
     | .unary operation operand => do
         let operandCore ← infer context operand
         acceptInferred context (.unary operation operand)
@@ -125,8 +166,10 @@ mutual
           (.binary (lowerBinaryOp operation) candidates.1 candidates.2)
     | .member base name => do
         let baseCore ← infer context base
-        let candidates := context.fields.map fun field =>
-          Core.Expr.field baseCore.core field.field
+        let candidates := context.fields.filterMap fun field =>
+          if field.name == name && groundTypeBEq field.receiver baseCore.evidence.type then
+            some (Core.Expr.field baseCore.core field.field)
+          else none
         firstAccepted (acceptInferred context (.member base name)) candidates
     | .structValue path fields => do
         let coreFields ← inferNamedValues context fields
@@ -179,6 +222,8 @@ mutual
     | .call _ _ => none
     | _ => none
 
+  termination_by structural surface => surface
+
   def inferValues (context : Context) :
       List Surface.Expr → Option (List Core.Expr)
     | [] => some []
@@ -187,6 +232,8 @@ mutual
         let tailCore ← inferValues context tail
         pure (headCore.core :: tailCore)
 
+  termination_by structural surface => surface
+
   def inferNamedValues (context : Context) :
       List (Surface.Name × Surface.Expr) → Option (List Core.Expr)
     | [] => some []
@@ -194,6 +241,8 @@ mutual
         let valueCore ← infer context value
         let tailCore ← inferNamedValues context tail
         pure (valueCore.core :: tailCore)
+
+  termination_by structural surface => surface
 
   def inferPlace (context : Context) :
       (surface : Surface.Expr) → Option (Place context surface)
@@ -206,6 +255,13 @@ mutual
               | none => []
           | none => []
         firstAccepted (acceptPlace context (.path path)) candidates
+    | .member base name => do
+        let baseCore ← inferPlace context base
+        let candidates := context.fields.filterMap fun field =>
+          if field.name == name && groundTypeBEq field.receiver baseCore.evidence.type then
+            some (Core.Place.field baseCore.core field.field)
+          else none
+        firstAccepted (acceptPlace context (.member base name)) candidates
     | .index base index => do
         let baseCore ← inferPlace context base
         let indexCore ← infer context index
@@ -213,49 +269,22 @@ mutual
           (.index baseCore.core indexCore.core)
     | _ => none
 
-  def checkOne (context : Context) (surface : Surface.Expr)
-      (expected : Static.GroundTy) : Option (Checked context surface expected) :=
-    let inferred : Option (Checked context surface expected) := do
-      let candidate ← infer context surface
-      match candidate.evidence.type, expected with
-      | .scalar sourceType, .scalar targetType =>
-          match CoreTyping.scalarCast? sourceType targetType with
-          | some _ =>
-              let core :=
-                if sourceType = targetType then candidate.core
-                else .cast targetType candidate.core
-              let evidence ← checkExpr context surface expected core
-              pure ⟨core, evidence.proof⟩
-          | none =>
-              let evidence ← checkExpr context surface expected candidate.core
-              pure ⟨candidate.core, evidence.proof⟩
-      | _, _ =>
-          let evidence ← checkExpr context surface expected candidate.core
-          pure ⟨candidate.core, evidence.proof⟩
-    match inferred with
-    | some result => some result
-    | none =>
-        match surface with
-        | .literal literal => do
-            let coreType ← expected.toCore context.monomorphization
-            let candidate ← literalCandidate context.target literal coreType
-            let evidence ← checkExpr context (.literal literal) expected candidate
-            pure ⟨candidate, evidence.proof⟩
-        | _ => none
+  termination_by structural surface => surface
 
   def checkValues (context : Context) :
       List Surface.Expr → List Static.GroundTy → Option (List Core.Expr)
     | [], [] => some []
     | surfaceHead :: surfaceTail, typeHead :: typeTail => do
-        let head ← checkOne context surfaceHead typeHead
+        let head ← checkInferred context surfaceHead typeHead (infer context surfaceHead)
         let tail ← checkValues context surfaceTail typeTail
         pure (head.core :: tail)
     | _, _ => none
+  termination_by structural surface _ => surface
 end
 
 def check (context : Context) (surface : Surface.Expr)
     (expected : Static.GroundTy) : Option (Checked context surface expected) :=
-  checkOne context surface expected
+  checkInferred context surface expected (infer context surface)
 
 structure Stmts (context : Context) (next : VarId)
     (surface : List Surface.Stmt) where
@@ -263,87 +292,90 @@ structure Stmts (context : Context) (next : VarId)
   finalNext : VarId
   evidence : StmtsLower context next surface core finalNext
 
-private structure RawStmts where
-  core : Core.Stmt
-  finalNext : VarId
+mutual
+  /-- Construct statements together with their lowering derivation. Child
+  evidence is retained; no completed body is sent through the checker again. -/
+  def stmts (returnType : Static.GroundTy) (context : Context) (next : VarId) :
+      (surface : List Surface.Stmt) → Option (Stmts context next surface)
+    | [] => some ⟨.skip, next, .nil⟩
+    | head :: tail =>
+        stmt returnType tail context next head
+          (fun context next => stmts returnType context next tail)
+  termination_by structural surface => surface
 
-private def coreType? (context : Context)
-    (ground : Static.GroundTy) : Option Core.Ty :=
-  ground.toCore context.monomorphization
-
-private def rawStmts (returnType : Static.GroundTy) :
-    (context : Context) → (next : VarId) →
-    List Surface.Stmt → Option RawStmts
-  | _, next, [] => some ⟨.skip, next⟩
-  | context, next, .expression expression :: tail => do
-      let expressionCore ← infer context expression
-      let tailCore ← rawStmts returnType context next tail
-      pure ⟨.sequence (.expression expressionCore.core) tailCore.core,
-        tailCore.finalNext⟩
-  | context, next, .letLocal name none (some initializer) :: tail => do
-      let initializerCore ← infer context initializer
-      let type ← coreType? context initializerCore.evidence.type
-      let tailCore ← rawStmts returnType
-        (context.bindLocal name next initializerCore.evidence.type) (next + 1) tail
-      pure ⟨.letLocal next type initializerCore.core tailCore.core,
-        tailCore.finalNext⟩
-  | context, next,
-      .letLocal name (some annotation) (some initializer) :: tail => do
-      let grounded ← groundType? context annotation
-      let initializerCore ← check context initializer grounded.type
-      let type ← coreType? context grounded.type
-      let tailCore ← rawStmts returnType
-        (context.bindLocal name next grounded.type) (next + 1) tail
-      pure ⟨.letLocal next type initializerCore.core tailCore.core,
-        tailCore.finalNext⟩
-  | context, next, .letLocal name (some annotation) none :: tail => do
-      let grounded ← groundType? context annotation
-      let type ← coreType? context grounded.type
-      let tailCore ← rawStmts returnType
-        (context.bindLocal name next grounded.type) (next + 1) tail
-      pure ⟨.letUninitialized next type tailCore.core, tailCore.finalNext⟩
-  | context, next, .returnValue none :: tail => do
-      let tailCore ← rawStmts returnType context next tail
-      pure ⟨.sequence (.returnValue none) tailCore.core, tailCore.finalNext⟩
-  | context, next, .returnValue (some value) :: tail => do
-      let valueCore ← check context value returnType
-      let tailCore ← rawStmts returnType context next tail
-      pure ⟨.sequence (.returnValue (some valueCore.core)) tailCore.core,
-        tailCore.finalNext⟩
-  | context, next, .ifThenElse condition thenBody elseBody :: tail => do
-      let conditionCore ← check context condition (.scalar .bool)
-      let thenCore ← rawStmts returnType context next thenBody
-      let elseCore ← rawStmts returnType context next elseBody
-      let afterBranches := Nat.max thenCore.finalNext elseCore.finalNext
-      let tailCore ← rawStmts returnType context afterBranches tail
-      pure ⟨.sequence
-        (.ifThenElse conditionCore.core thenCore.core elseCore.core)
-        tailCore.core, tailCore.finalNext⟩
-  | context, next, .whileLoop condition body :: tail => do
-      let conditionCore ← check context condition (.scalar .bool)
-      let bodyCore ← rawStmts returnType context next body
-      let tailCore ← rawStmts returnType context bodyCore.finalNext tail
-      pure ⟨.sequence (.whileLoop conditionCore.core bodyCore.core)
-        tailCore.core, tailCore.finalNext⟩
-  | context, next, .breakLoop :: tail => do
-      let tailCore ← rawStmts returnType context next tail
-      pure ⟨.sequence .breakLoop tailCore.core, tailCore.finalNext⟩
-  | context, next, .continueLoop :: tail => do
-      let tailCore ← rawStmts returnType context next tail
-      pure ⟨.sequence .continueLoop tailCore.core, tailCore.finalNext⟩
-  | context, next, .block body :: tail => do
-      let bodyCore ← rawStmts returnType context next body
-      let tailCore ← rawStmts returnType context bodyCore.finalNext tail
-      pure ⟨.sequence bodyCore.core tailCore.core, tailCore.finalNext⟩
-  | _, _, _ => none
-termination_by _ _ surface => sizeOf surface
-
-def stmts (returnType : Static.GroundTy) (context : Context)
-    (next : VarId) (surface : List Surface.Stmt) :
-    Option (Stmts context next surface) := do
-  let candidate ← rawStmts returnType context next surface
-  let accepted ← checkStmts returnType context next surface candidate.core
-  pure ⟨candidate.core, accepted.finalNext, accepted.lowered⟩
+  private def stmt (returnType : Static.GroundTy) (surfaceTail : List Surface.Stmt)
+      (context : Context) (next : VarId) :
+      (surface : Surface.Stmt) →
+      ((context : Context) → (next : VarId) → Option (Stmts context next surfaceTail)) →
+      Option (Stmts context next (surface :: surfaceTail))
+    | .expression expression, tail => do
+        let head ← infer context expression
+        let rest ← tail context next
+        pure ⟨.sequence (.expression head.core) rest.core, rest.finalNext,
+          .expression head.evidence.lowered rest.evidence⟩
+    | .letLocal name none (some initializer), tail => do
+        let fresh ← freshLocalId? context next
+        let value ← infer context initializer
+        match mapped : value.evidence.type.toCore context.monomorphization with
+        | none => none
+        | some type => do
+            let rest ← tail (context.bindLocal name next value.evidence.type) (next + 1)
+            pure ⟨.letLocal next type value.core rest.core, rest.finalNext,
+              .letInferred fresh.proof value.evidence.lowered mapped rest.evidence⟩
+    | .letLocal name (some annotation) (some initializer), tail => do
+        let fresh ← freshLocalId? context next
+        let grounded ← groundType? context annotation
+        let value ← check context initializer grounded.type
+        match mapped : grounded.type.toCore context.monomorphization with
+        | none => none
+        | some type => do
+            let rest ← tail (context.bindLocal name next grounded.type) (next + 1)
+            pure ⟨.letLocal next type value.core rest.core, rest.finalNext,
+              .letAnnotated fresh.proof grounded.grounded value.evidence mapped rest.evidence⟩
+    | .letLocal name (some annotation) none, tail => do
+        let fresh ← freshLocalId? context next
+        let grounded ← groundType? context annotation
+        match mapped : grounded.type.toCore context.monomorphization with
+        | none => none
+        | some type => do
+            let rest ← tail (context.bindLocal name next grounded.type) (next + 1)
+            pure ⟨.letUninitialized next type rest.core, rest.finalNext,
+              .letUninitialized fresh.proof grounded.grounded mapped rest.evidence⟩
+    | .returnValue none, tail => do
+        let _ ← groundTypeEq? returnType .unit
+        let rest ← tail context next
+        pure ⟨.sequence (.returnValue none) rest.core, rest.finalNext, .returnUnit rest.evidence⟩
+    | .returnValue (some value), tail => do
+        let valueCore ← check context value returnType
+        let rest ← tail context next
+        pure ⟨.sequence (.returnValue (some valueCore.core)) rest.core, rest.finalNext,
+          .returnValue valueCore.evidence rest.evidence⟩
+    | .ifThenElse condition thenBody elseBody, tail => do
+        let conditionCore ← check context condition (.scalar .bool)
+        let thenCore ← stmts returnType context next thenBody
+        let elseCore ← stmts returnType context next elseBody
+        let rest ← tail context (Nat.max thenCore.finalNext elseCore.finalNext)
+        pure ⟨.sequence (.ifThenElse conditionCore.core thenCore.core elseCore.core) rest.core,
+          rest.finalNext, .ifThenElse conditionCore.evidence thenCore.evidence elseCore.evidence rest.evidence⟩
+    | .whileLoop condition body, tail => do
+        let conditionCore ← check context condition (.scalar .bool)
+        let bodyCore ← stmts returnType context next body
+        let rest ← tail context bodyCore.finalNext
+        pure ⟨.sequence (.whileLoop conditionCore.core bodyCore.core) rest.core, rest.finalNext,
+          .whileLoop conditionCore.evidence bodyCore.evidence rest.evidence⟩
+    | .breakLoop, tail => do
+        let rest ← tail context next
+        pure ⟨.sequence .breakLoop rest.core, rest.finalNext, .breakLoop rest.evidence⟩
+    | .continueLoop, tail => do
+        let rest ← tail context next
+        pure ⟨.sequence .continueLoop rest.core, rest.finalNext, .continueLoop rest.evidence⟩
+    | .block body, tail => do
+        let bodyCore ← stmts returnType context next body
+        let rest ← tail context bodyCore.finalNext
+        pure ⟨.sequence bodyCore.core rest.core, rest.finalNext, .block bodyCore.evidence rest.evidence⟩
+    | _, _ => none
+  termination_by structural surface _ => surface
+end
 
 structure Function (context : Context) (surface : Surface.Function)
     (functionId : FunctionId) where
@@ -367,17 +399,24 @@ def function (context : Context) (surface : Surface.Function)
   let parameters ← parameterCandidates context 0 surface.parameters
   let checkedParameters ← checkParameters context 0 surface.parameters parameters
   let returned ← groundReturn? context surface.name surface.returnType
-  let returnType ← returned.type.toCore context.monomorphization
-  let body ← stmts returned.type checkedParameters.bodyContext
-    checkedParameters.finalNext surface.body
-  let core : Core.Function := {
-    id := functionId
-    parameters
-    returnType
-    body := some body.core
-  }
-  let accepted ← checkFunctionBody context surface core
-  pure ⟨core, rfl, accepted⟩
+  match mapped : returned.type.toCore context.monomorphization with
+  | none => none
+  | some returnType => do
+      let body ← stmts returned.type checkedParameters.bodyContext
+        checkedParameters.finalNext surface.body
+      let core : Core.Function := { id := functionId, parameters, returnType, body := some body.core }
+      pure ⟨core, rfl, {
+        parameterTypes := checkedParameters.groundTypes
+        bodyContext := checkedParameters.bodyContext
+        nextLocal := checkedParameters.finalNext
+        parameters := checkedParameters.lowered
+        returnType := returned.type
+        returned := returned.grounded
+        returnMapped := mapped
+        coreBody := body.core
+        bodyPresent := rfl
+        finalLocal := body.finalNext
+        bodyLowered := body.evidence }⟩
 
 private def expressionLabel : Surface.Expr → String
   | .call (.path path) _ =>

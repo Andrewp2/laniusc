@@ -2,6 +2,8 @@ import Lanius.Extraction.Lexer.Scanners
 import Lanius.Extraction.Lexer.ScanEndCalls
 import Lanius.Extraction.Lexer.Quoted
 import Lanius.FunctionalViewLoop
+import Lanius.FunctionalViewRenaming
+import Lanius.FunctionalViewCoreCallFrame
 
 namespace Lanius.Extraction.Lexer.BlockComment
 
@@ -51,6 +53,11 @@ private def closes : T 4 :=
       [addCursor 1, boundTerm]))
     (equalsI32 (sourceAt (addCursor 1)) 47)
 
+private def closeValue (source : List Byte) (cursor : Nat) : Bool :=
+  (source[cursor]?.map fun byte =>
+    decide (byte.val = 42) &&
+      (source[cursor + 1]?.map fun next => decide (next.val = 47)).getD false).getD false
+
 private def successfulTerm : T 4 :=
   apply (.call Functions.successfulScanFunction.id [i32Type]
     (.structure 0)) [addCursor 2]
@@ -92,19 +99,23 @@ def view := {
 private def sourceIntegers (source : List Byte) : List Int :=
   source.map fun byte => Int.ofNat byte.val
 
-private def world (source : List Byte) :
+private def parameterWorld (source : List Byte) :
     (Lanius.FunctionalView.Core.Effectful.machine
       verifiedFrontendLexerCore ScanEndCalls.calls).World :=
   World.singleton 0 (sourceIntegers source)
 
+private abbrev world := parameterWorld
+
+private def parameterEnvironment (source : List Byte) (start : Nat) : Env 3
+  | ⟨0, _⟩ => .slice i32Type 0 [] 0 source.length
+  | ⟨1, _⟩ => .signed .i32 (Int.ofNat source.length)
+  | ⟨2, _⟩ => .signed .i32 (Int.ofNat start)
+
 private def runtime (source : List Byte) (start cursor : Nat) :
     Runtime (Lanius.FunctionalView.Core.Effectful.machine
       verifiedFrontendLexerCore ScanEndCalls.calls) 4 :=
-  (world source, fun
-    | ⟨0, _⟩ => .slice i32Type 0 [] 0 source.length
-    | ⟨1, _⟩ => .signed .i32 (Int.ofNat source.length)
-    | ⟨2, _⟩ => .signed .i32 (Int.ofNat start)
-    | ⟨3, _⟩ => .signed .i32 (Int.ofNat cursor))
+  (parameterWorld source,
+    (parameterEnvironment source start).push (.signed .i32 (Int.ofNat cursor)))
 
 private abbrev termMachine :=
   Lanius.FunctionalView.Core.Effectful.machine
@@ -115,289 +126,101 @@ private abbrev statefulMachine :=
     (Lanius.FunctionalView.Core.Effectful.evaluateOperation
       verifiedFrontendLexerCore ScanEndCalls.calls)
 
-@[simp] private theorem sourceIntegers_length :
-    (sourceIntegers source).length = source.length := by
-  simp [sourceIntegers]
+private abbrev Runs (before : Runtime termMachine arity)
+    (command : C arity) (completion : Stateful.Completion)
+    (after : Runtime termMachine arity) : Prop :=
+  Command.Evaluates termMachine statefulMachine before.world before.environment
+    command completion after.world after.environment
+
+private abbrev Returns (before : Runtime termMachine arity)
+    (term : T arity) (value : Value) : Prop :=
+  Term.evaluate termMachine before.world before.environment term =
+    .ok (value, before.world)
 
 private theorem beforeEnd_evaluates
     (source : List Byte) (start cursor : Nat) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment beforeEnd =
-      .ok (.boolean (decide (cursor < source.length)),
-        (runtime source start cursor).world) := by
-  unfold beforeEnd apply
-  apply Term.evaluate_apply2 (by rfl) (by rfl)
-  change ReadOnly.evaluateOperation verifiedFrontendLexerCore
-      (world source)
-      (.binary .less i32Type i32Type (.scalar .bool))
-      [.signed .i32 (Int.ofNat cursor),
-        .signed .i32 (Int.ofNat source.length)] = _
-  exact ReadOnly.evaluateOperation_i32_less
-      (program := verifiedFrontendLexerCore) (world := world source)
-      (leftType := i32Type) (rightType := i32Type)
-      (outputType := .scalar .bool) cursor source.length
+    Returns (runtime source start cursor) beforeEnd
+      (.boolean (decide (cursor < source.length))) := by
+  unfold Returns
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+  exact ReadOnly.Term.evaluate_i32_less (leftValue := cursor)
+    (rightValue := source.length) rfl rfl
 
-private theorem addCursor_evaluates
-    (source : List Byte) (start cursor amount : Nat)
-    (bound : cursor + amount ≤ 2147483647) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment (addCursor amount) =
-      .ok (.signed .i32 (Int.ofNat (cursor + amount)),
-        (runtime source start cursor).world) := by
-  unfold addCursor apply
-  apply Term.evaluate_apply2 (by rfl) (by rfl)
-  change ReadOnly.evaluateOperation verifiedFrontendLexerCore (world source)
-      (.binary .add i32Type i32Type i32Type)
-      [.signed .i32 (Int.ofNat cursor),
-        .signed .i32 (Int.ofNat amount)] = _
-  exact ReadOnly.evaluateOperation_i32_add
-    (program := verifiedFrontendLexerCore) (world := world source)
-    (leftType := i32Type) (rightType := i32Type) (outputType := i32Type)
-    cursor amount bound
-
-private theorem currentByte_evaluates
-    (source : List Byte) (start cursor : Nat)
-    (inBounds : cursor < source.length) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment (sourceAt cursorTerm) =
-      .ok (.signed .i32 (Int.ofNat (source.get ⟨cursor, inBounds⟩).val),
-        (runtime source start cursor).world) := by
-  unfold sourceAt apply
-  apply Term.evaluate_apply2 (by rfl) (by rfl)
-  change ReadOnly.evaluateOperation verifiedFrontendLexerCore (world source)
-    (.index (.slice i32Type) i32Type i32Type)
-    [.slice i32Type 0 [] 0 source.length,
-      .signed .i32 (Int.ofNat cursor)] =
-    .ok (.signed .i32 (Int.ofNat (source.get ⟨cursor, inBounds⟩).val),
-      world source)
-  have evaluated := ReadOnly.evaluateOperation_i32_index
-    (program := verifiedFrontendLexerCore) (world := world source)
-    (baseType := .slice i32Type) (indexType := i32Type)
-    (elementType := i32Type) (cell := 0)
-    (values := sourceIntegers source) (position := cursor)
-    World.singleton_finds (by simpa [sourceIntegers] using inBounds)
-  simpa [sourceIntegers, i32Type] using evaluated
-
-private theorem equalsCurrent_evaluates
-    (source : List Byte) (start cursor expected : Nat)
-    (inBounds : cursor < source.length) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment
-        (equalsI32 (sourceAt cursorTerm) expected) =
-      .ok (.boolean (decide
-        ((source.get ⟨cursor, inBounds⟩).val = expected)),
-        (runtime source start cursor).world) := by
-  unfold equalsI32 apply
-  apply Term.evaluate_apply2
-    (currentByte_evaluates source start cursor inBounds) (by rfl)
-  change ReadOnly.evaluateOperation verifiedFrontendLexerCore (world source)
-    (.binary .equal i32Type i32Type (.scalar .bool))
-    [.signed .i32 (Int.ofNat (source.get ⟨cursor, inBounds⟩).val),
-      .signed .i32 (Int.ofNat expected)] = _
-  exact ReadOnly.evaluateOperation_i32_equal
-    (program := verifiedFrontendLexerCore) (world := world source)
-    (leftType := i32Type) (rightType := i32Type)
-    (outputType := .scalar .bool)
-    (source.get ⟨cursor, inBounds⟩).val expected
-
-private theorem nextBeforeEnd_evaluates
-    (source : List Byte) (start cursor : Nat)
-    (cursorBound : cursor + 1 ≤ 2147483647) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment
-        (apply (.binary .less i32Type i32Type (.scalar .bool))
-          [addCursor 1, boundTerm]) =
-      .ok (.boolean (decide (cursor + 1 < source.length)),
-        (runtime source start cursor).world) := by
-  unfold apply
-  apply Term.evaluate_apply2
-    (addCursor_evaluates source start cursor 1 cursorBound) (by rfl)
-  change ReadOnly.evaluateOperation verifiedFrontendLexerCore (world source)
-    (.binary .less i32Type i32Type (.scalar .bool))
-    [.signed .i32 (Int.ofNat (cursor + 1)),
-      .signed .i32 (Int.ofNat source.length)] = _
-  exact ReadOnly.evaluateOperation_i32_less
-    (program := verifiedFrontendLexerCore) (world := world source)
-    (leftType := i32Type) (rightType := i32Type)
-    (outputType := .scalar .bool) (cursor + 1) source.length
-
-private theorem nextByte_evaluates
-    (source : List Byte) (start cursor : Nat)
-    (nextInBounds : cursor + 1 < source.length)
-    (cursorBound : cursor + 1 ≤ 2147483647) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment (sourceAt (addCursor 1)) =
-      .ok (.signed .i32
-        (Int.ofNat (source.get ⟨cursor + 1, nextInBounds⟩).val),
-        (runtime source start cursor).world) := by
-  unfold sourceAt apply
-  apply Term.evaluate_apply2 (by rfl)
-    (addCursor_evaluates source start cursor 1 cursorBound)
-  change ReadOnly.evaluateOperation verifiedFrontendLexerCore (world source)
-    (.index (.slice i32Type) i32Type i32Type)
-    [.slice i32Type 0 [] 0 source.length,
-      .signed .i32 (Int.ofNat (cursor + 1))] =
-    .ok (.signed .i32
-      (Int.ofNat (source.get ⟨cursor + 1, nextInBounds⟩).val), world source)
-  have evaluated := ReadOnly.evaluateOperation_i32_index
-    (program := verifiedFrontendLexerCore) (world := world source)
-    (baseType := .slice i32Type) (indexType := i32Type)
-    (elementType := i32Type) (cell := 0)
-    (values := sourceIntegers source) (position := cursor + 1)
-    World.singleton_finds (by simpa [sourceIntegers] using nextInBounds)
-  simpa [sourceIntegers, i32Type] using evaluated
-
-private theorem equalsNext_evaluates
-    (source : List Byte) (start cursor expected : Nat)
-    (nextInBounds : cursor + 1 < source.length)
-    (cursorBound : cursor + 1 ≤ 2147483647) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment
-        (equalsI32 (sourceAt (addCursor 1)) expected) =
-      .ok (.boolean (decide
-        ((source.get ⟨cursor + 1, nextInBounds⟩).val = expected)),
-        (runtime source start cursor).world) := by
-  unfold equalsI32 apply
-  apply Term.evaluate_apply2
-    (nextByte_evaluates source start cursor nextInBounds cursorBound) (by rfl)
-  change ReadOnly.evaluateOperation verifiedFrontendLexerCore (world source)
-    (.binary .equal i32Type i32Type (.scalar .bool))
-    [.signed .i32
-      (Int.ofNat (source.get ⟨cursor + 1, nextInBounds⟩).val),
-      .signed .i32 (Int.ofNat expected)] = _
-  exact ReadOnly.evaluateOperation_i32_equal
-    (program := verifiedFrontendLexerCore) (world := world source)
-    (leftType := i32Type) (rightType := i32Type)
-    (outputType := .scalar .bool)
-    (source.get ⟨cursor + 1, nextInBounds⟩).val expected
-
-private theorem closes_evaluates_true
+private theorem closes_evaluates
     (source : List Byte) (start cursor : Nat)
     (inBounds : cursor < source.length)
-    (isStar : (source.get ⟨cursor, inBounds⟩).val = 42)
-    (nextInBounds : cursor + 1 < source.length)
-    (isSlash : (source.get ⟨cursor + 1, nextInBounds⟩).val = 47)
     (sourceBound : source.length ≤ 2147483647) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment closes =
-      .ok (.boolean true, (runtime source start cursor).world) := by
+    Returns (runtime source start cursor) closes
+      (.boolean (closeValue source cursor)) := by
+  unfold Returns
+  have current : Returns (runtime source start cursor)
+      (equalsI32 (sourceAt cursorTerm) 42)
+      (.boolean (decide ((source.get ⟨cursor, inBounds⟩).val = 42))) := by
+    unfold Returns
+    rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+    apply ReadOnly.Term.evaluate_i32_equal
+    · apply ReadOnly.Term.evaluate_i32_index_map
+        (cell := 0) (values := source) (encode := fun byte => Int.ofNat byte.val)
+        (position := cursor) (baseResult := by rfl) (indexResult := by rfl)
+        (found := World.singleton_finds)
+        (inBounds := by simpa [sourceIntegers] using inBounds)
+    · rfl
+  simp only [List.get_eq_getElem] at current
+  have cursorBound : cursor + 1 ≤ 2147483647 := by omega
+  have nextBound : Returns (runtime source start cursor)
+      (apply (.binary .less i32Type i32Type (.scalar .bool))
+        [addCursor 1, boundTerm])
+      (.boolean (decide (cursor + 1 < source.length))) := by
+    unfold Returns
+    rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+    exact ReadOnly.Term.evaluate_i32_less
+      (ReadOnly.Term.evaluate_i32_add rfl rfl cursorBound) rfl
   unfold closes
-  apply Term.evaluate_logicalAnd_true
-  · apply Term.evaluate_logicalAnd_true
-    · have evaluated := equalsCurrent_evaluates source start cursor 42 inBounds
-      have actual : source[cursor].val = 42 := by
-        simpa [List.get_eq_getElem] using isStar
-      have decided : decide
-          ((source.get ⟨cursor, inBounds⟩).val = 42) = true := by
-        simpa [List.get_eq_getElem] using actual
-      rw [decided] at evaluated
-      exact evaluated
-    · have cursorBound : cursor + 1 ≤ 2147483647 :=
-        Nat.le_trans (Nat.le_of_lt nextInBounds) sourceBound
-      simpa [nextInBounds] using
-        nextBeforeEnd_evaluates source start cursor cursorBound
-  · have cursorBound : cursor + 1 ≤ 2147483647 :=
-      Nat.le_trans (Nat.le_of_lt nextInBounds) sourceBound
-    have evaluated :=
-      equalsNext_evaluates source start cursor 47 nextInBounds cursorBound
-    have actual : source[cursor + 1].val = 47 := by
-      simpa [List.get_eq_getElem] using isSlash
-    have decided : decide
-        ((source.get ⟨cursor + 1, nextInBounds⟩).val = 47) = true := by
-      simpa [List.get_eq_getElem] using actual
-    rw [decided] at evaluated
-    exact evaluated
-
-private theorem closes_evaluates_not_star
-    (source : List Byte) (start cursor : Nat)
-    (inBounds : cursor < source.length)
-    (notStar : (source.get ⟨cursor, inBounds⟩).val ≠ 42) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment closes =
-      .ok (.boolean false, (runtime source start cursor).world) := by
-  unfold closes
-  apply Term.evaluate_logicalAnd_false
-  apply Term.evaluate_logicalAnd_false
-  have evaluated := equalsCurrent_evaluates source start cursor 42 inBounds
-  have actual : source[cursor].val ≠ 42 := by
-    simpa [List.get_eq_getElem] using notStar
-  have decided : decide ((source.get ⟨cursor, inBounds⟩).val = 42) = false := by
-    simpa [List.get_eq_getElem] using actual
-  rw [decided] at evaluated
-  exact evaluated
-
-private theorem closes_evaluates_no_next
-    (source : List Byte) (start cursor : Nat)
-    (inBounds : cursor < source.length)
-    (isStar : (source.get ⟨cursor, inBounds⟩).val = 42)
-    (nextOutOfBounds : ¬ cursor + 1 < source.length)
-    (sourceBound : source.length ≤ 2147483647) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment closes =
-      .ok (.boolean false, (runtime source start cursor).world) := by
-  unfold closes
-  apply Term.evaluate_logicalAnd_false
-  apply Term.evaluate_logicalAnd_true
-  · have evaluated := equalsCurrent_evaluates source start cursor 42 inBounds
-    have actual : source[cursor].val = 42 := by
-      simpa [List.get_eq_getElem] using isStar
-    have decided : decide
-        ((source.get ⟨cursor, inBounds⟩).val = 42) = true := by
-      simpa [List.get_eq_getElem] using actual
-    rw [decided] at evaluated
-    exact evaluated
-  · have cursorBound : cursor + 1 ≤ 2147483647 := by
-      exact Nat.le_trans (by omega : cursor + 1 ≤ source.length) sourceBound
-    simpa [nextOutOfBounds] using
-      nextBeforeEnd_evaluates source start cursor cursorBound
-
-private theorem closes_evaluates_not_slash
-    (source : List Byte) (start cursor : Nat)
-    (inBounds : cursor < source.length)
-    (isStar : (source.get ⟨cursor, inBounds⟩).val = 42)
-    (nextInBounds : cursor + 1 < source.length)
-    (notSlash : (source.get ⟨cursor + 1, nextInBounds⟩).val ≠ 47)
-    (sourceBound : source.length ≤ 2147483647) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment closes =
-      .ok (.boolean false, (runtime source start cursor).world) := by
-  unfold closes
-  apply Term.evaluate_logicalAnd_true
-  · apply Term.evaluate_logicalAnd_true
-    · have evaluated := equalsCurrent_evaluates source start cursor 42 inBounds
-      have actual : source[cursor].val = 42 := by
-        simpa [List.get_eq_getElem] using isStar
-      have decided : decide
-          ((source.get ⟨cursor, inBounds⟩).val = 42) = true := by
-        simpa [List.get_eq_getElem] using actual
-      rw [decided] at evaluated
-      exact evaluated
-    · have cursorBound : cursor + 1 ≤ 2147483647 :=
-        Nat.le_trans (Nat.le_of_lt nextInBounds) sourceBound
-      simpa [nextInBounds] using
-        nextBeforeEnd_evaluates source start cursor cursorBound
-  · have cursorBound : cursor + 1 ≤ 2147483647 :=
-      Nat.le_trans (Nat.le_of_lt nextInBounds) sourceBound
-    have evaluated :=
-      equalsNext_evaluates source start cursor 47 nextInBounds cursorBound
-    have actual : source[cursor + 1].val ≠ 47 := by
-      simpa [List.get_eq_getElem] using notSlash
-    have decided : decide
-        ((source.get ⟨cursor + 1, nextInBounds⟩).val = 47) = false := by
-      simpa [List.get_eq_getElem] using actual
-    rw [decided] at evaluated
-    exact evaluated
+  have inner := Term.evaluate_logicalAnd_guarded current (by
+    intro _
+    simpa using nextBound)
+  have result := Term.evaluate_logicalAnd_guarded
+    (right := equalsI32 (sourceAt (addCursor 1)) 47)
+    (rightValue :=
+      (source[cursor + 1]?.map fun next => decide (next.val = 47)).getD false)
+    inner (by
+    intro innerTrue
+    have nextInBounds : cursor + 1 < source.length := by
+      exact of_decide_eq_true (Bool.and_eq_true_iff.mp innerTrue).2
+    have next : Returns (runtime source start cursor)
+        (equalsI32 (sourceAt (addCursor 1)) 47)
+        (.boolean (decide
+          ((source.get ⟨cursor + 1, nextInBounds⟩).val = 47))) := by
+      unfold Returns
+      rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+      apply ReadOnly.Term.evaluate_i32_equal
+      · apply ReadOnly.Term.evaluate_i32_index_map
+          (cell := 0) (values := source) (encode := fun byte => Int.ofNat byte.val)
+          (position := cursor + 1) (baseResult := by rfl)
+          (indexResult := ReadOnly.Term.evaluate_i32_add rfl rfl cursorBound)
+          (found := World.singleton_finds)
+          (inBounds := by simpa [sourceIntegers] using nextInBounds)
+      · rfl
+    simpa [Returns, List.getElem?_eq_getElem nextInBounds] using next)
+  by_cases nextInBounds : cursor + 1 < source.length
+  · simpa [closeValue, List.getElem?_eq_getElem inBounds,
+      List.getElem?_eq_getElem nextInBounds, List.get_eq_getElem,
+      nextInBounds, logicalAnd] using result
+  · simpa [closeValue, List.getElem?_eq_getElem inBounds,
+      List.getElem?_eq_none (Nat.le_of_not_gt nextInBounds),
+      nextInBounds, logicalAnd] using result
 
 private theorem successfulTerm_evaluates
     (source : List Byte) (start cursor : Nat)
     (bound : cursor + 2 ≤ 2147483647) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment successfulTerm =
-      .ok (ScanEnd.value true (Int.ofNat (cursor + 2)) 0,
-        (runtime source start cursor).world) := by
-  unfold successfulTerm apply
+    Returns (runtime source start cursor) successfulTerm
+      (ScanEnd.value true (Int.ofNat (cursor + 2)) 0) := by
+  unfold Returns
+  unfold successfulTerm
   apply Term.evaluate_apply1
-    (addCursor_evaluates source start cursor 2 bound)
+  · rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+    exact ReadOnly.Term.evaluate_i32_add
+      (leftValue := cursor) (rightValue := 2) rfl rfl bound
   change ScanEndCalls.calls.evaluate (world source)
     Functions.successfulScanFunction.id
     [.signed .i32 (Int.ofNat (cursor + 2))] = _
@@ -405,10 +228,9 @@ private theorem successfulTerm_evaluates
 
 private theorem failedTerm_evaluates
     (source : List Byte) (start cursor : Nat) :
-    Term.evaluate termMachine (runtime source start cursor).world
-        (runtime source start cursor).environment failedTerm =
-      .ok (ScanEnd.value false 0 (Int.ofNat source.length),
-        (runtime source start cursor).world) := by
+    Returns (runtime source start cursor) failedTerm
+      (ScanEnd.value false 0 (Int.ofNat source.length)) := by
+  unfold Returns
   unfold failedTerm apply
   apply Term.evaluate_apply1 (by rfl)
   change ScanEndCalls.calls.evaluate (world source)
@@ -419,50 +241,20 @@ private theorem failedTerm_evaluates
 private theorem body_evaluates_close
     (source : List Byte) (start cursor : Nat)
     (sourceBound : source.length ≤ 2147483647)
-    (inBounds : cursor < source.length)
-    (isStar : (source.get ⟨cursor, inBounds⟩).val = 42)
-    (nextInBounds : cursor + 1 < source.length)
-    (isSlash : (source.get ⟨cursor + 1, nextInBounds⟩).val = 47) :
-    Command.Evaluates termMachine statefulMachine
+    (closeBound : cursor + 2 ≤ source.length)
+    (conditionResult : Term.evaluate termMachine
       (runtime source start cursor).world
-      (runtime source start cursor).environment body
+      (runtime source start cursor).environment closes =
+        .ok (.boolean true, (runtime source start cursor).world)) :
+    Runs (runtime source start cursor) body
       (.returned (some
-        (ScanEnd.value true (Int.ofNat (cursor + 2)) 0)))
-      (runtime source start cursor).world
-      (runtime source start cursor).environment := by
-  have conditionResult := closes_evaluates_true source start cursor inBounds
-    isStar nextInBounds isSlash sourceBound
-  have returnResult : Command.Evaluates termMachine statefulMachine
-      (runtime source start cursor).world
-      (runtime source start cursor).environment
-      (.returnValue (some successfulTerm))
-      (.returned (some
-        (ScanEnd.value true (Int.ofNat (cursor + 2)) 0)))
-      (runtime source start cursor).world
-      (runtime source start cursor).environment := by
-    apply Command.Evaluates.returnSome
-    apply successfulTerm_evaluates
-    exact Nat.le_trans (by omega : cursor + 2 ≤ source.length) sourceBound
-  have returnedBranch : Command.Evaluates termMachine statefulMachine
-      (runtime source start cursor).world
-      (runtime source start cursor).environment
-      (.sequence (.returnValue (some successfulTerm)) .skip)
-      (.returned (some
-        (ScanEnd.value true (Int.ofNat (cursor + 2)) 0)))
-      (runtime source start cursor).world
-      (runtime source start cursor).environment :=
-    .sequenceStop returnResult (by simp)
-  have returnedIf : Command.Evaluates termMachine statefulMachine
-      (runtime source start cursor).world
-      (runtime source start cursor).environment
-      (.ifThenElse closes
-        (.sequence (.returnValue (some successfulTerm)) .skip) .skip)
-      (.returned (some
-        (ScanEnd.value true (Int.ofNat (cursor + 2)) 0)))
-      (runtime source start cursor).world
-      (runtime source start cursor).environment :=
-    .ifTrue conditionResult returnedBranch
-  exact .sequenceStop returnedIf (by simp)
+          (ScanEnd.value true (Int.ofNat (cursor + 2)) 0)))
+      (runtime source start cursor) := by
+  exact .sequenceStop (.ifTrue conditionResult
+      (.sequenceStop
+      (.returnSome (successfulTerm_evaluates source start cursor
+        (Nat.le_trans closeBound sourceBound)))
+      (by simp))) (by simp)
 
 private theorem body_evaluates_step
     (source : List Byte) (start cursor : Nat)
@@ -472,204 +264,126 @@ private theorem body_evaluates_step
       (runtime source start cursor).world
       (runtime source start cursor).environment closes =
         .ok (.boolean false, (runtime source start cursor).world)) :
-    Command.Evaluates termMachine statefulMachine
-      (runtime source start cursor).world
-      (runtime source start cursor).environment body .next
-      (runtime source start (cursor + 1)).world
-      (runtime source start (cursor + 1)).environment := by
-  have afterWorld : (runtime source start (cursor + 1)).world =
-      (runtime source start cursor).world := by rfl
+    Runs (runtime source start cursor) body .next
+      (runtime source start (cursor + 1)) := by
+  unfold Runs
   have afterEnvironment : (runtime source start (cursor + 1)).environment =
       Env.set (runtime source start cursor).environment ⟨3, by omega⟩
         (.signed .i32 (Int.ofNat (cursor + 1))) := by
-    funext index
-    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-        index.val = 3 := by omega
-    rcases cases with zero | one | two | three
-    · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-      rw [same]
-      simp [runtime, Runtime.environment, Env.set]
-    · have same : index = ⟨1, by omega⟩ := Fin.ext one
-      rw [same]
-      simp [runtime, Runtime.environment, Env.set]
-    · have same : index = ⟨2, by omega⟩ := Fin.ext two
-      rw [same]
-      simp [runtime, Runtime.environment, Env.set]
-    · have same : index = ⟨3, by omega⟩ := Fin.ext three
-      rw [same]
-      simp [runtime, Runtime.environment, Env.set]
-  rw [afterWorld, afterEnvironment]
-  apply Command.Evaluates.sequenceNext
-  · exact .ifFalse conditionResult .skip
-  · apply Command.Evaluates.sequenceNext
-    · have oneResult : Term.evaluate termMachine
-          (runtime source start cursor).world
-          (runtime source start cursor).environment (literalI32 1) =
-          .ok (.signed .i32 1, (runtime source start cursor).world) := by rfl
-      have cursorValue :
-          (runtime source start cursor).environment ⟨3, by omega⟩ =
-          .signed .i32 (Int.ofNat cursor) := by rfl
-      have bound : cursor + 1 ≤ 2147483647 :=
-        Nat.le_trans (Nat.succ_le_of_lt inBounds) sourceBound
-      have updateResult : evalAssignValue verifiedFrontendLexerCore.target .add
-          (some ((runtime source start cursor).environment ⟨3, by omega⟩))
-          (.signed .i32 1) =
-          .ok (.signed .i32 (Int.ofNat (cursor + 1))) := by
-        have addition : Int.ofNat cursor + 1 = Int.ofNat (cursor + 1) := by
-          simp
-        rw [cursorValue]
-        simp only [evalAssignValue, assignOpBinary?, evalBinaryValue,
-          beq_self_eq_true, if_true, evalSignedBinary]
-        rw [addition]
-        rw [Lanius.Semantics.wrapSigned_i32_ofNat _ _ bound]
-      exact Command.Evaluates.updateLocal oneResult (by
-        simpa [statefulMachine, Stateful.machineWith] using updateResult)
-    · exact .skip
+    exact Env.eq_ofFn rfl
+  rw [afterEnvironment]
+  refine .sequenceNext (.ifFalse conditionResult .skip) ?_
+  refine .sequenceNext (.updateLocal rfl ?_) .skip
+  change evalAssignValue verifiedFrontendLexerCore.target .add
+    (some (.signed .i32 (Int.ofNat cursor))) (.signed .i32 1) =
+    .ok (.signed .i32 (Int.ofNat (cursor + 1)))
+  simp only [evalAssignValue, assignOpBinary?, evalBinaryValue,
+    beq_self_eq_true, if_true, evalSignedBinary]
+  rw [show Int.ofNat cursor + 1 = Int.ofNat (cursor + 1) by simp,
+    wrapSigned_i32_ofNat verifiedFrontendLexerCore.target (cursor + 1) (by omega)]
 
-private theorem loop_evaluates
+private theorem scanBlockBody_step
+    (source : List Byte) (cursor : Nat)
+    (inBounds : cursor < source.length) :
+    scanBlockBody (source.drop cursor) cursor =
+      if closeValue source cursor then .success (cursor + 2)
+      else scanBlockBody (source.drop (cursor + 1)) (cursor + 1) := by
+  have dropped := List.drop_eq_getElem_cons inBounds
+  by_cases nextInBounds : cursor + 1 < source.length
+  · have droppedNext := List.drop_eq_getElem_cons nextInBounds
+    rw [dropped, droppedNext, scanBlockBody]
+    by_cases closesAt :
+        source[cursor].val = 42 ∧ source[cursor + 1].val = 47
+    · rw [if_pos closesAt]
+      simp [closeValue, List.getElem?_eq_getElem inBounds,
+        List.getElem?_eq_getElem nextInBounds, closesAt]
+    · rw [if_neg closesAt]
+      simp [closeValue, List.getElem?_eq_getElem inBounds,
+        List.getElem?_eq_getElem nextInBounds, closesAt]
+  · have droppedNext : source.drop (cursor + 1) = [] :=
+      List.drop_eq_nil_of_le (Nat.le_of_not_gt nextInBounds)
+    rw [dropped, droppedNext, scanBlockBody]
+    simp [closeValue, List.getElem?_eq_getElem inBounds,
+      List.getElem?_eq_none (Nat.le_of_not_gt nextInBounds)]
+    rfl
+
+private theorem loop_and_fallback_evaluates
     (source : List Byte) (start cursor : Nat)
     (sourceBound : source.length ≤ 2147483647)
     (cursorBound : cursor ≤ source.length) :
-    (∃ _resultEq : scanBlockBody (source.drop cursor) cursor =
-        .failure source.length,
-      Command.Evaluates termMachine statefulMachine
-        (runtime source start cursor).world
-        (runtime source start cursor).environment loop .next
-        (runtime source start source.length).world
-        (runtime source start source.length).environment) ∨
-    (∃ finalCursor,
-      Command.Evaluates termMachine statefulMachine
-        (runtime source start cursor).world
-        (runtime source start cursor).environment loop
+    ∃ finalCursor,
+      Runs (runtime source start cursor)
+        (.sequence loop
+          (.sequence (.returnValue (some failedTerm)) .skip))
         (.returned (some
           (scanEndValue (scanBlockBody (source.drop cursor) cursor))))
-        (runtime source start finalCursor).world
-        (runtime source start finalCursor).environment) := by
+        (runtime source start finalCursor) := by
   by_cases inBounds : cursor < source.length
   · have loopCondition := beforeEnd_evaluates source start cursor
-    have loopConditionTrue : Term.evaluate termMachine
+    simp [inBounds] at loopCondition
+    have stepResult := scanBlockBody_step source cursor inBounds
+    have closeCondition := closes_evaluates source start cursor
+      inBounds sourceBound
+    by_cases closesAt : closeValue source cursor
+    · have closeBound : cursor + 2 ≤ source.length := by
+        have nextInBounds : cursor + 1 < source.length := by
+          by_cases nextInBounds : cursor + 1 < source.length
+          · exact nextInBounds
+          · have impossible := closesAt
+            simp [closeValue, List.getElem?_eq_getElem inBounds,
+              List.getElem?_eq_none (Nat.le_of_not_gt nextInBounds)] at impossible
+        omega
+      simp [closesAt] at closeCondition
+      have bodyResult := body_evaluates_close source start cursor sourceBound
+        closeBound closeCondition
+      have resultEq : scanBlockBody (source.drop cursor) cursor =
+          .success (cursor + 2) := by
+        simpa [closesAt] using stepResult
+      refine ⟨cursor, ?_⟩
+      rw [resultEq]
+      change Command.Evaluates termMachine statefulMachine
         (runtime source start cursor).world
-        (runtime source start cursor).environment beforeEnd =
-        .ok (.boolean true, (runtime source start cursor).world) := by
-      simpa [inBounds] using loopCondition
-    let byte := source.get ⟨cursor, inBounds⟩
-    have dropped := List.drop_eq_getElem_cons inBounds
-    by_cases isStar : byte.val = 42
-    · by_cases nextInBounds : cursor + 1 < source.length
-      · let nextByte := source.get ⟨cursor + 1, nextInBounds⟩
-        by_cases isSlash : nextByte.val = 47
-        · have closeCondition := closes_evaluates_true source start cursor
-            inBounds (by simpa [byte] using isStar) nextInBounds
-            (by simpa [nextByte] using isSlash) sourceBound
-          have bodyResult := body_evaluates_close source start cursor sourceBound
-            inBounds (by simpa [byte] using isStar) nextInBounds
-            (by simpa [nextByte] using isSlash)
-          have resultEq : scanBlockBody (source.drop cursor) cursor =
-              .success (cursor + 2) := by
-            rw [dropped, List.drop_eq_getElem_cons nextInBounds,
-              scanBlockBody, if_pos]
-            exact ⟨by simpa [byte] using isStar,
-              by simpa [nextByte] using isSlash⟩
-          right
-          refine ⟨cursor, ?_⟩
-          rw [resultEq]
-          change Command.Evaluates termMachine statefulMachine
-            (runtime source start cursor).world
-            (runtime source start cursor).environment loop
-            (.returned (some
-              (ScanEnd.value true (Int.ofNat (cursor + 2)) 0)))
-            (runtime source start cursor).world
-            (runtime source start cursor).environment
-          exact Command.Evaluates.whileReturn loopConditionTrue bodyResult
-        · have closeCondition := closes_evaluates_not_slash source start cursor
-            inBounds (by simpa [byte] using isStar) nextInBounds
-            (by simpa [nextByte] using isSlash) sourceBound
-          have bodyResult := body_evaluates_step source start cursor sourceBound
-            inBounds closeCondition
-          have notClose :
-              ¬(source[cursor].val = 42 ∧ source[cursor + 1].val = 47) := by
-            intro closesAt
-            apply isSlash
-            simpa [nextByte] using closesAt.2
-          have stepResult : scanBlockBody (source.drop cursor) cursor =
-              scanBlockBody (source.drop (cursor + 1)) (cursor + 1) := by
-            rw [dropped, List.drop_eq_getElem_cons nextInBounds,
-              scanBlockBody, if_neg notClose]
-          rcases loop_evaluates source start (cursor + 1) sourceBound
-              (Nat.succ_le_of_lt inBounds) with
-            ⟨resultEq, rest⟩ | ⟨finalCursor, rest⟩
-          · left
-            exact ⟨stepResult.trans resultEq,
-              Command.Evaluates.whileNext loopConditionTrue bodyResult rest⟩
-          · right
-            refine ⟨finalCursor, ?_⟩
-            rw [stepResult]
-            exact Command.Evaluates.whileNext loopConditionTrue bodyResult rest
-      · have closeCondition := closes_evaluates_no_next source start cursor
-          inBounds (by simpa [byte] using isStar) nextInBounds sourceBound
-        have bodyResult := body_evaluates_step source start cursor sourceBound
-          inBounds closeCondition
-        have droppedNext : source.drop (cursor + 1) = [] :=
-          List.drop_eq_nil_of_le (Nat.le_of_not_gt nextInBounds)
-        have stepResult : scanBlockBody (source.drop cursor) cursor =
-            scanBlockBody (source.drop (cursor + 1)) (cursor + 1) := by
-          rw [dropped, droppedNext]
-          rfl
-        rcases loop_evaluates source start (cursor + 1) sourceBound
-            (Nat.succ_le_of_lt inBounds) with
-          ⟨resultEq, rest⟩ | ⟨finalCursor, rest⟩
-        · left
-          exact ⟨stepResult.trans resultEq,
-            Command.Evaluates.whileNext loopConditionTrue bodyResult rest⟩
-        · right
-          refine ⟨finalCursor, ?_⟩
-          rw [stepResult]
-          exact Command.Evaluates.whileNext loopConditionTrue bodyResult rest
-    · have closeCondition := closes_evaluates_not_star source start cursor
-        inBounds (by simpa [byte] using isStar)
+        (runtime source start cursor).environment
+        (.sequence loop
+          (.sequence (.returnValue (some failedTerm)) .skip))
+        (.returned (some
+          (ScanEnd.value true (Int.ofNat (cursor + 2)) 0)))
+        (runtime source start cursor).world
+        (runtime source start cursor).environment
+      exact .sequenceStop
+        (.whileReturn loopCondition bodyResult) (by simp)
+    · simp [closesAt] at closeCondition
       have bodyResult := body_evaluates_step source start cursor sourceBound
         inBounds closeCondition
-      have byteNotStar : source[cursor].val ≠ 42 := by
-        simpa [byte] using isStar
       have stepResult : scanBlockBody (source.drop cursor) cursor =
           scanBlockBody (source.drop (cursor + 1)) (cursor + 1) := by
-        rw [dropped]
-        cases tail : source.drop (cursor + 1) with
-        | nil => rfl
-        | cons next rest =>
-            rw [scanBlockBody, if_neg]
-            intro closesAt
-            exact byteNotStar closesAt.1
-      rcases loop_evaluates source start (cursor + 1) sourceBound
-          (Nat.succ_le_of_lt inBounds) with
-        ⟨resultEq, rest⟩ | ⟨finalCursor, rest⟩
-      · left
-        exact ⟨stepResult.trans resultEq,
-          Command.Evaluates.whileNext loopConditionTrue bodyResult rest⟩
-      · right
-        refine ⟨finalCursor, ?_⟩
-        rw [stepResult]
-        exact Command.Evaluates.whileNext loopConditionTrue bodyResult rest
+        simpa [closesAt] using stepResult
+      obtain ⟨finalCursor, rest⟩ :=
+        loop_and_fallback_evaluates source start (cursor + 1) sourceBound
+          (Nat.succ_le_of_lt inBounds)
+      refine ⟨finalCursor, ?_⟩
+      rw [stepResult]
+      exact Command.Evaluates.whileNextSequence loopCondition
+        bodyResult rest
   · have atEnd : cursor = source.length :=
       Nat.le_antisymm cursorBound (Nat.le_of_not_gt inBounds)
     have loopCondition := beforeEnd_evaluates source start cursor
-    have loopConditionFalse : Term.evaluate termMachine
-        (runtime source start cursor).world
-        (runtime source start cursor).environment beforeEnd =
-        .ok (.boolean false, (runtime source start cursor).world) := by
-      simpa [inBounds] using loopCondition
-    left
-    refine ⟨?_, ?_⟩
-    · simp [atEnd, scanBlockBody]
-    · simpa [loop, atEnd] using
-        (Command.Evaluates.whileFalse (body := body) loopConditionFalse)
+    simp [inBounds] at loopCondition
+    have resultEq : scanBlockBody (source.drop cursor) cursor =
+        .failure source.length := by
+      simp [atEnd, scanBlockBody]
+    refine ⟨source.length, ?_⟩
+    rw [resultEq]
+    simpa [loop, atEnd, scanEndValue, ScanEnd.value, scanEndDeclaration] using
+      (Command.Evaluates.sequenceNext
+        (Command.Evaluates.whileFalse (body := body) loopCondition)
+        (.sequenceStop
+          (.returnSome (by
+            simpa [atEnd, scanEndValue, ScanEnd.value, scanEndDeclaration] using
+              failedTerm_evaluates source start source.length))
+          (by simp)))
 termination_by source.length - cursor
 decreasing_by all_goals omega
-
-private def parameterEnvironment (source : List Byte) (start : Nat) : Env 3
-  | ⟨0, _⟩ => .slice i32Type 0 [] 0 source.length
-  | ⟨1, _⟩ => .signed .i32 (Int.ofNat source.length)
-  | ⟨2, _⟩ => .signed .i32 (Int.ofNat start)
 
 theorem command_evaluates
     (source : List Byte) (start : Nat)
@@ -700,71 +414,10 @@ theorem command_evaluates
   have pushed : (parameterEnvironment source start).push
       (.signed .i32 (Int.ofNat initialCursor)) =
       (runtime source start initialCursor).environment := by
-    funext index
-    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-        index.val = 3 := by omega
-    rcases cases with zero | one | two | three
-    · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-      rw [same]
-      rfl
-    · have same : index = ⟨1, by omega⟩ := Fin.ext one
-      rw [same]
-      rfl
-    · have same : index = ⟨2, by omega⟩ := Fin.ext two
-      rw [same]
-      rfl
-    · have same : index = ⟨3, by omega⟩ := Fin.ext three
-      rw [same]
-      rfl
-  have loopResult := loop_evaluates source start initialCursor sourceBound
+    exact Env.eq_ofFn rfl
+  obtain ⟨finalCursor, bodyExecution⟩ :=
+    loop_and_fallback_evaluates source start initialCursor sourceBound
     initialCursorBound
-  have bodyResult : ∃ finalCursor,
-      Command.Evaluates termMachine statefulMachine
-        (runtime source start initialCursor).world
-        (runtime source start initialCursor).environment
-        (.sequence loop
-          (.sequence (.returnValue (some failedTerm)) .skip))
-        (.returned (some
-          (scanEndValue (scanBlockBody (source.drop initialCursor)
-            initialCursor))))
-        (runtime source start finalCursor).world
-        (runtime source start finalCursor).environment := by
-    rcases loopResult with ⟨resultEq, loopExecution⟩ |
-        ⟨finalCursor, loopExecution⟩
-    · refine ⟨source.length, ?_⟩
-      have failedResult := failedTerm_evaluates source start source.length
-      have returned : Command.Evaluates termMachine statefulMachine
-          (runtime source start source.length).world
-          (runtime source start source.length).environment
-          (.returnValue (some failedTerm))
-          (.returned (some
-            (ScanEnd.value false 0 (Int.ofNat source.length))))
-          (runtime source start source.length).world
-          (runtime source start source.length).environment :=
-        .returnSome failedResult
-      have returnedWithSkip : Command.Evaluates termMachine statefulMachine
-          (runtime source start source.length).world
-          (runtime source start source.length).environment
-          (.sequence (.returnValue (some failedTerm)) .skip)
-          (.returned (some
-            (ScanEnd.value false 0 (Int.ofNat source.length))))
-          (runtime source start source.length).world
-          (runtime source start source.length).environment :=
-        .sequenceStop returned (by simp)
-      rw [resultEq]
-      change Command.Evaluates termMachine statefulMachine
-        (runtime source start initialCursor).world
-        (runtime source start initialCursor).environment
-        (.sequence loop
-          (.sequence (.returnValue (some failedTerm)) .skip))
-        (.returned (some
-          (ScanEnd.value false 0 (Int.ofNat source.length))))
-        (runtime source start source.length).world
-        (runtime source start source.length).environment
-      exact .sequenceNext loopExecution returnedWithSkip
-    · refine ⟨finalCursor, ?_⟩
-      exact .sequenceStop loopExecution (by simp)
-  obtain ⟨finalCursor, bodyExecution⟩ := bodyResult
   have whole := Command.Evaluates.letValue (type := i32Type)
     initializerResult (by
       rw [pushed]
@@ -785,66 +438,13 @@ theorem view_evaluates
         afterWorld afterEnvironment := by
   exact command_evaluates source start sourceBound openingInBounds
 
-private def localCells : Fin 3 → CellId :=
-  fun index => index.val + 1
-
 private theorem scannerParameterState_represents
     (source : List Byte) (start : Nat) :
-    Representation identityLayout localCells (world source)
-      (parameterEnvironment source start)
+    Representation identityLayout (callLocalCells (sourceState source))
+      (parameterWorld source) (parameterEnvironment source start)
       (scannerParameterState source start) := by
-  have wellFormed := scannerParameterState_well_formed source start
-  refine {
-    worldOwned := ?_
-    localOwned := ?_
-    localCellsInjective := ?_
-    worldLocalsDisjoint := ?_
-  }
-  · change (World.owns
-      (World.singleton 0 (sourceIntegers source))).holds
-      (scannerParameterState source start)
-    rw [World.owns_iff_represents wellFormed]
-    apply World.singleton_represents wellFormed
-    simp [sourceIntegers, sourceValues, signedI32Values,
-      scannerParameterState, State.bindLocals, State.bindLocal,
-      State.bindCell, sourceState, State.cellEntry?]
-  · intro index
-    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 := by
-      omega
-    rcases cases with zero | one | two
-    · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-      rw [same]
-      simp [identityLayout, localCells, parameterEnvironment,
-        scannerParameterState, State.bindLocals, State.bindLocal,
-        State.bindCell, sourceState, Assertion.localPointsTo,
-        State.cellId?, State.cellEntry?, i32Type]
-    · have same : index = ⟨1, by omega⟩ := Fin.ext one
-      rw [same]
-      simp [identityLayout, localCells, parameterEnvironment,
-        scannerParameterState, State.bindLocals, State.bindLocal,
-        State.bindCell, sourceState, Assertion.localPointsTo,
-        State.cellId?, State.cellEntry?, i32Type]
-    · have same : index = ⟨2, by omega⟩ := Fin.ext two
-      rw [same]
-      simp [identityLayout, localCells, parameterEnvironment,
-        scannerParameterState, State.bindLocals, State.bindLocal,
-        State.bindCell, sourceState, Assertion.localPointsTo,
-        State.cellId?, State.cellEntry?, i32Type]
-  · intro left right same
-    apply Fin.ext
-    simp [localCells] at same
-    omega
-  · intro cell worldMember localMember
-    obtain ⟨values, found⟩ := worldMember
-    have cellZero : cell = 0 := by
-      by_cases same : cell = 0
-      · exact same
-      · simp [world, World.singleton, same] at found
-    subst cell
-    obtain ⟨index, localZero⟩ := localMember
-    have positive : 0 < localCells index := by
-      simp [localCells]
-    exact (Nat.ne_of_gt positive) localZero
+  exact (Scanners.sourceState_represents source).enterCallParameters
+    (sourceState_well_formed source)
 
 theorem core_body_executes
     (source : List Byte) (start : Nat)

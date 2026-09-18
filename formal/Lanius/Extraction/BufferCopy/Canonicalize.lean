@@ -41,11 +41,12 @@ theorem copy_then_canonicalize
           (compactedBuffer raw (memory.untouched.drop (3 * raw.length)) tokens))) } ∧
       after.cellEntry? sourceCell = some {
         id := sourceCell, value := some (.array (signedI32Values (sourceIntegers request.source))) } ∧
-      CellEffect memory.writes (before.bindLocal locals.cursor (.signed .i32 0)) after := by
+      CellEffect memory.writes (before.bindLocal locals.cursor (.signed .i32 0)) after ∧
+      Host.MemoryFrame before after := by
   dsimp only
   let raw := RawLexer.LexInto.Model.emittedTokens request.outcome
   have initial := entry.initialize
-  obtain ⟨copied, loop, complete, copyEffect⟩ := executes_loop program locals memory [] memory.values
+  obtain ⟨copied, loop, complete, copyEffect, copyHeap⟩ := executes_loop program locals memory [] memory.values
     (before.bindLocal locals.cursor (.signed .i32 0)) rfl initial
   have sourceOld := StateWellFormed.cell_lt_next_of_entry entry.wellFormed sourceContents
   have sourceCursor : sourceCell ≠ memory.cursorCell := by
@@ -75,16 +76,28 @@ theorem copy_then_canonicalize
     exact .cons ⟨1, evalLocal_of_local 0 program copied sourceId _ sourceLocalCopied⟩
       (.cons ⟨1, evalLocal_of_local 0 program copied locals.destination _ complete.destinationLocal⟩
         (.singleton ⟨1, evalLocal_of_local 0 program copied locals.count _ (by simpa only [rawCount] using complete.count)⟩))
-  obtain ⟨after, canonicalized, contents, canonicalEffect⟩ := checked.evaluates_call copied
+  obtain ⟨after, canonicalized, contents, canonicalEffect, canonicalMemory⟩ := checked.evaluates_call copied
     sourceCell memory.destinationCell request.source raw (memory.untouched.drop (3 * raw.length))
     _ complete.wellFormed sourceCopied recordsCopied sourceDestination
     (by have := request.sourceFitsI32; omega)
     (by rw [recordsLength]; exact memory.destinationFits)
     (RawLexer.LexInto.Model.emittedTokens_validSpans request.source request.capacity)
     (by simpa only [recordsLength] using argumentsResult)
+  have valuesRange : ∀ word ∈ memory.values, -2147483648 ≤ word ∧ word ≤ 2147483647 := by
+    rw [copiedValues]
+    exact encoded_range _ request.source.length
+      (RawLexer.LexInto.Model.emittedTokens_validSpans request.source request.capacity)
+      (by have := request.sourceFitsI32; omega)
+  have copyMemory := Host.MemoryFrame.arrayAndScalar copyEffect copyHeap initial.destinationContents
+    complete.destinationContents (buffer_length _ _ memory.capacity) initial.cursor.2 (by
+      intro old word member
+      rcases List.mem_append.mp member with copied | kept
+      · exact valuesRange word copied
+      · exact old word (List.mem_of_mem_drop kept))
   refine ⟨after, ?_, contents,
     canonicalEffect.preserves_entry complete.wellFormed sourceCopied sourceDestination,
-    copyEffect.trans (canonicalEffect.weaken CellSet.subset_union_left)⟩
+    copyEffect.trans (canonicalEffect.weaken CellSet.subset_union_left),
+    (Host.MemoryFrame.bindLocal before locals.cursor (.signed .i32 0)).trans (copyMemory.trans canonicalMemory)⟩
   intro resultId rest completion final tailRun
   have tailWithCount := executesLetLocal (type := .scalar (.signed .i32)) canonicalized tailRun
   exact executesLetLocal (show Evaluates program before (.value (.signed .i32 0))
@@ -138,7 +151,7 @@ theorem copy_emitted_then_canonicalize
         id := canonicalCell, value := some (.array (signedI32Values
           (compactedBuffer raw (untouched.drop (3 * raw.length)) tokens))) } ∧
       CellEffect (CellSet.union (CellSet.singleton canonicalCell) (CellSet.singleton before.nextCell))
-        (before.bindLocal cursorId (.signed .i32 0)) after := by
+        (before.bindLocal cursorId (.signed .i32 0)) after ∧ Host.MemoryFrame before after := by
   dsimp only
   let raw := RawLexer.LexInto.Model.emittedTokens request.outcome
   let locals : Locals := ⟨rawId, canonicalId, cursorId, countId, .plain, .triple⟩
@@ -170,7 +183,7 @@ theorem copy_emitted_then_canonicalize
     cursorDistinct := fun id member => cursorDistinct id (by simp_all [locals]),
     cursorFresh := rfl
   }
-  obtain ⟨after, continuation, canonicalAfter, sourceAfter, effect⟩ :=
+  obtain ⟨after, continuation, canonicalAfter, sourceAfter, effect, native⟩ :=
     copy_then_canonicalize checked locals memory before entry request rfl rfl sourceId sourceCell
       sourceLocal sourceContents sourceCanonical (cursorDistinct _ (by simp))
   have boundRaw := (bindLocal_effect before cursorId (.signed .i32 0)).oldCells rawCell
@@ -178,7 +191,7 @@ theorem copy_emitted_then_canonicalize
   have rawAfter := effect.preserves_entry entry.initialize.wellFormed (boundRaw.trans rawContents)
     (by simp only [Memory.writes, memory, CellSet.union, CellSet.singleton, not_or];
         exact ⟨rawCanonical, memory.source_cursor⟩)
-  refine ⟨after, continuation, ?_, canonicalAfter, effect⟩
+  refine ⟨after, continuation, ?_, canonicalAfter, effect, native⟩
   intro cell values found
   simp only [FunctionalView.Core.ReadOnly.World.pair] at found
   split at found

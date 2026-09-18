@@ -1,0 +1,25 @@
+module backend::local;
+import backend::frame;
+import x86::encode;
+import x86::control;
+import x86::register;
+
+// A negative binding kind denotes an originally uninitialized local. It has
+// one extra frame word after its value, initialized to zero at every scope
+// entry. Initialized declarations and parameters need no flag or read check.
+pub fn mark(output: [i32], capacity: i32, work: [i32], slot: i32, initialized: bool) -> i32 {
+    let value: i32 = 0;
+    if (initialized) { value = 1; }
+    work[backend::frame::CODE] = x86::encode::immediate(output, capacity, work[backend::frame::CODE],
+        32, x86::register::R11, value, 0);
+    return backend::frame::store(output, capacity, work, slot, x86::register::R11);
+}
+
+pub fn require(output: [i32], capacity: i32, work: [i32], slot: i32) -> i32 {
+    backend::frame::load(output, capacity, work, slot, x86::register::R11);
+    let next: i32 = x86::encode::binary(output, capacity, work[backend::frame::CODE], 32,
+        x86::encode::TEST, x86::register::R11, x86::register::R11);
+    next = x86::control::branch(output, capacity, next, x86::control::NOT_EQUAL, next + 8);
+    work[backend::frame::CODE] = x86::control::trap(output, capacity, next);
+    return work[backend::frame::CODE];
+}

@@ -1,5 +1,6 @@
 import Lanius.Extraction.CompleteChecker
 import Lanius.SymbolicCore
+import Lanius.Extraction.Distinct
 
 namespace Lanius.Extraction.SymbolicLocalChecker
 
@@ -240,10 +241,30 @@ mutual
     | _, _ => none
 end
 
+private def scopeKey : ScopeId → Nat
+  | .functionBody node => 6 * node
+  | .afterLocal node => 6 * node + 1
+  | .thenBody node => 6 * node + 2
+  | .elseBody node => 6 * node + 3
+  | .loopBody node => 6 * node + 4
+  | .blockBody node => 6 * node + 5
+
+/-- Cheap source-node and final-scope keys avoid all-pairs comparisons of
+names and complete scope paths. Key collisions retain the original decision. -/
+private def layoutDecision (layout : LocalLayout) : Decidable layout.WellFormed :=
+  let width := layout.coreIds.foldl Nat.max 0 + 1
+  let _ : Decidable layout.identities.Nodup :=
+    Distinct.nodupOn (fun identity => identity.declaration.node) layout.identities
+  let _ : Decidable layout.addresses.Nodup :=
+    Distinct.nodupOn (fun address =>
+      (address.1.getLast?.map scopeKey).getD 0 * width + address.2) layout.addresses
+  inferInstanceAs (Decidable (layout.identities.Nodup ∧ layout.addresses.Nodup))
+
 def buildView? (core : Function) (bindings : List LocalBinding) :
     Option FunctionView :=
   let layout : LocalLayout := ⟨bindings⟩
-  if layoutWellFormed : layout.wellFormed = true then
+  match layoutDecision layout with
+  | .isTrue layoutWellFormed =>
     if layoutCovers : layout.covers core = true then
       if coreWellScoped : core.wellScoped = true then
         some {
@@ -255,7 +276,22 @@ def buildView? (core : Function) (bindings : List LocalBinding) :
         }
       else none
     else none
-  else none
+  | .isFalse _ => none
+
+theorem buildView?_accepted_iff (core : Function) (bindings : List LocalBinding) :
+    (buildView? core bindings).isSome = true ↔
+      (LocalLayout.mk bindings).wellFormed = true ∧
+      (LocalLayout.mk bindings).covers core = true ∧ core.wellScoped = true := by
+  simp only [buildView?]
+  split <;> rename_i accepted decision
+  · have wellFormed := (LocalLayout.wellFormed_eq_true_iff _).mpr accepted
+    split
+    · split <;> simp_all
+    · simp_all
+  · have rejected : (LocalLayout.mk bindings).wellFormed ≠ true := by
+      intro valid
+      exact accepted ((LocalLayout.wellFormed_eq_true_iff _).mp valid)
+    simp_all
 
 structure DerivedFunction where
   sourceUnit : Nat
@@ -408,8 +444,8 @@ def deriveFunction? (unit : Nat) (source : ScopedSurface.CheckedFunction)
     source.graph root source.source.body coreBody
   let view ← buildView? (CoreDecode.function wire)
     (parameterBindings ++ body.bindings)
-  if statementsUnique :
-      (body.statements.map (fun statement => statement.sourceNode)).Nodup then
+  match Distinct.nodupOn id (body.statements.map (·.sourceNode)) with
+  | .isTrue statementsUnique =>
     pure {
       sourceUnit := unit
       source
@@ -417,7 +453,7 @@ def deriveFunction? (unit : Nat) (source : ScopedSurface.CheckedFunction)
       statements := body.statements
       statementsUnique
     }
-  else none
+  | .isFalse _ => none
 
 def deriveFunctions? (unit : Nat) :
     List ScopedSurface.CheckedFunction → List CoreFunction →

@@ -36,11 +36,11 @@ def scanLeadingDotNumberFunction : Function :=
   CoreDecode.function scanLeadingDotNumberWire
 
 theorem scanNumber_body_present : scanNumberFunction.body.isSome := by
-  native_decide
+  rfl
 
 theorem scanLeadingDotNumber_body_present :
     scanLeadingDotNumberFunction.body.isSome := by
-  native_decide
+  rfl
 
 def scanNumberBody : Stmt :=
   scanNumberFunction.body.get scanNumber_body_present

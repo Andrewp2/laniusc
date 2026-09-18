@@ -41,12 +41,8 @@ theorem initialEnvironment_length_congr
     (sameLength : left.length = right.length) :
     initialEnvironment source left capacity =
       initialEnvironment source right capacity := by
-  funext index
-  rcases index with ⟨index, bound⟩
-  have cases : index = 0 ∨ index = 1 ∨ index = 2 ∨ index = 3 := by
-    omega
-  rcases cases with rfl | rfl | rfl | rfl <;>
-    simp [initialEnvironment, sameLength]
+  apply Env.eq_ofFn
+  simp [initialEnvironment, sameLength]
 
 def loopEnvironment (source : List Lexer.Byte) (records : List Int)
     (capacity offset tokenCount : Nat) : Env 6 :=
@@ -63,14 +59,9 @@ theorem loopEnvironment_updated
           (Structure.offset 6) (.signed .i32 (Int.ofNat newOffset)))
         (Structure.tokenCount 6) (.signed .i32 (Int.ofNat newCount)) =
       loopEnvironment source after capacity newOffset newCount := by
-  funext index
-  rcases index with ⟨index, bound⟩
-  have cases : index = 0 ∨ index = 1 ∨ index = 2 ∨ index = 3 ∨
-      index = 4 ∨ index = 5 := by omega
-  rcases cases with rfl | rfl | rfl | rfl | rfl | rfl <;>
-    simp [loopEnvironment, initialEnvironment, Env.set, Env.push,
-      Structure.offset,
-      Structure.tokenCount, sameLength]
+  apply Env.eq_ofFn
+  simp [loopEnvironment, initialEnvironment, Env.set, Env.push,
+    Structure.offset, Structure.tokenCount, sameLength]
 
 def scannedEnvironment (source : List Lexer.Byte) (records : List Int)
     (capacity offset tokenCount : Nat) (scan : OneTokenResult) : Env 7 :=
@@ -133,31 +124,8 @@ theorem loopCondition_evaluates
         (loopEnvironment source records capacity offset tokenCount)
         Structure.loopCondition =
       .ok (.boolean (offset < source.length), world source records) := by
-  have left : Term.evaluate (TM source) (world source records)
-      (loopEnvironment source records capacity offset tokenCount)
-      (Structure.slot (Structure.offset 6)) =
-      .ok (.signed .i32 (Int.ofNat offset), world source records) := by
-    rfl
-  have right : Term.evaluate (TM source) (world source records)
-      (loopEnvironment source records capacity offset tokenCount)
-      (Structure.sourceLength 6) =
-      .ok (.signed .i32 (Int.ofNat source.length), world source records) := by
-    rfl
-  apply Term.evaluate_apply2 left right
-  change Lanius.FunctionalView.Core.Effectful.evaluateOperation
-    verifiedFrontendCore (Calls.callModel source) (world source records)
-      (.binary .less Structure.i32Type Structure.i32Type (.scalar .bool))
-      [.signed .i32 (Int.ofNat offset),
-        .signed .i32 (Int.ofNat source.length)] = _
-  change ReadOnly.evaluateOperation verifiedFrontendCore
-    (world source records)
-      (.binary .less Structure.i32Type Structure.i32Type (.scalar .bool))
-      [.signed .i32 (Int.ofNat offset),
-        .signed .i32 (Int.ofNat source.length)] = _
-  exact ReadOnly.evaluateOperation_i32_less
-    (program := verifiedFrontendCore) (world := world source records)
-    (leftType := Structure.i32Type) (rightType := Structure.i32Type)
-    (outputType := .scalar .bool) offset source.length
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+  functional_eval
 
 def completionOf : Model.Outcome →
     Lanius.FunctionalView.Stateful.Completion
@@ -275,27 +243,8 @@ theorem outputFullCondition_evaluates
         (scannedEnvironment source records capacity offset tokenCount scan)
         Structure.outputFullCondition =
       .ok (.boolean (tokenCount ≥ capacity), world source records) := by
-  have left : Term.evaluate (TM source) (world source records)
-      (scannedEnvironment source records capacity offset tokenCount scan)
-      (Structure.slot (Structure.tokenCount 7)) =
-      .ok (.signed .i32 (Int.ofNat tokenCount), world source records) := by
-    rfl
-  have right : Term.evaluate (TM source) (world source records)
-      (scannedEnvironment source records capacity offset tokenCount scan)
-      (Structure.outputCapacity 7) =
-      .ok (.signed .i32 (Int.ofNat capacity), world source records) := by
-    rfl
-  apply Term.evaluate_apply2 left right
-  change ReadOnly.evaluateOperation verifiedFrontendCore
-    (world source records)
-      (.binary .greaterEqual Structure.i32Type Structure.i32Type
-        (.scalar .bool))
-      [.signed .i32 (Int.ofNat tokenCount),
-        .signed .i32 (Int.ofNat capacity)] = _
-  exact ReadOnly.evaluateOperation_i32_greaterEqual
-    (program := verifiedFrontendCore) (world := world source records)
-    (leftType := Structure.i32Type) (rightType := Structure.i32Type)
-    (outputType := .scalar .bool) tokenCount capacity
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+  functional_eval
 
 theorem rowTerm_evaluates
     (source : List Lexer.Byte) (records : List Int)
@@ -306,61 +255,13 @@ theorem rowTerm_evaluates
           (.token token)) Structure.rowTerm =
       .ok (.signed .i32 (Int.ofNat (3 * tokenCount)),
         world source records) := by
-  have left : Term.evaluate (TM source) (world source records)
-      (scannedEnvironment source records capacity offset tokenCount
-        (.token token))
-      (Structure.slot (Structure.tokenCount 7)) =
-      .ok (.signed .i32 (Int.ofNat tokenCount), world source records) := by
-    rfl
-  have right : Term.evaluate (TM source) (world source records)
-      (scannedEnvironment source records capacity offset tokenCount
-        (.token token)) (Structure.i32 3) =
-      .ok (.signed .i32 3, world source records) := by
-    rfl
-  apply Term.evaluate_apply2 left right
-  change ReadOnly.evaluateOperation verifiedFrontendCore
-      (world source records)
-      (.binary .multiply Structure.i32Type Structure.i32Type Structure.i32Type)
-      [.signed .i32 (Int.ofNat tokenCount), .signed .i32 3] = _
-  simp [ReadOnly.evaluateOperation, evalBinaryValue, evalSignedBinary, bind,
-    Except.bind]
-  have inputEq : (Int.ofNat tokenCount * 3) =
-      Int.ofNat (3 * tokenCount) := by
-    calc
-      Int.ofNat tokenCount * 3 =
-          Int.ofNat tokenCount * Int.ofNat 3 := rfl
-      _ = Int.ofNat (tokenCount * 3) :=
-        (Int.natCast_mul tokenCount 3).symm
-      _ = Int.ofNat (3 * tokenCount) := by rw [Nat.mul_comm]
-  have wrappedEq :
-      wrapSigned verifiedFrontendCore.target .i32
-          (Int.ofNat tokenCount * 3) = Int.ofNat (3 * tokenCount) :=
-    (congrArg (wrapSigned verifiedFrontendCore.target .i32) inputEq).trans
-      (wrapSigned_i32_ofNat verifiedFrontendCore.target _ bounded)
-  have outputEq : Int.ofNat (3 * tokenCount) =
-      3 * Int.ofNat tokenCount := by
-    exact inputEq.symm.trans (Int.mul_comm _ _)
-  have integerEq := wrappedEq.trans outputEq
-  have valueEq :
-      Value.signed .i32
-          (wrapSigned verifiedFrontendCore.target .i32
-            (Int.ofNat tokenCount * 3)) =
-        Value.signed .i32 (3 * Int.ofNat tokenCount) :=
-    congrArg (Value.signed .i32) integerEq
-  have pairEq :
-      (Value.signed .i32
-          (wrapSigned verifiedFrontendCore.target .i32
-            (Int.ofNat tokenCount * 3)), world source records) =
-        (Value.signed .i32 (3 * Int.ofNat tokenCount), world source records) :=
-    congrArg (fun value : Value => (value, world source records)) valueEq
-  have resultEq :
-      (Except.ok (Value.signed .i32
-          (wrapSigned verifiedFrontendCore.target .i32
-            (Int.ofNat tokenCount * 3)), world source records) :
-          Except Trap (Value × ReadOnly.World)) =
-        .ok (Value.signed .i32 (3 * Int.ofNat tokenCount),
-          world source records) := congrArg Except.ok pairEq
-  exact resultEq
+  apply Term.evaluate_apply2 (by rfl) (by rfl)
+  change ReadOnly.evaluateOperation verifiedFrontendCore (world source records)
+    (.binary .multiply Structure.i32Type Structure.i32Type Structure.i32Type)
+    [.signed .i32 (Int.ofNat tokenCount), .signed .i32 3] = _
+  simp [ReadOnly.evaluateOperation, evalBinaryValue, evalSignedBinary, bind, Except.bind]
+  simpa [Int.natCast_mul, Nat.mul_comm, Int.mul_comm] using
+    (wrapSigned_i32_ofNat verifiedFrontendCore.target (3 * tokenCount) bounded)
 
 theorem scanKindTerm_evaluates
     (source : List Lexer.Byte) (worldRecords environmentRecords : List Int)
@@ -398,27 +299,8 @@ theorem rowPlus_evaluates
         (Structure.rowPlus (Int.ofNat amount)) =
       .ok (.signed .i32 (Int.ofNat (3 * tokenCount + amount)),
         world source worldRecords) := by
-  have left : Term.evaluate (TM source) (world source worldRecords)
-      (rowEnvironment source environmentRecords capacity offset tokenCount token)
-      (Structure.slot Structure.row) =
-      .ok (.signed .i32 (Int.ofNat (3 * tokenCount)),
-        world source worldRecords) := by
-    rfl
-  have right : Term.evaluate (TM source) (world source worldRecords)
-      (rowEnvironment source environmentRecords capacity offset tokenCount token)
-      (Structure.i32 (Int.ofNat amount)) =
-      .ok (.signed .i32 (Int.ofNat amount), world source worldRecords) := by
-    rfl
-  apply Term.evaluate_apply2 left right
-  change ReadOnly.evaluateOperation verifiedFrontendCore
-      (world source worldRecords)
-      (.binary .add Structure.i32Type Structure.i32Type Structure.i32Type)
-      [.signed .i32 (Int.ofNat (3 * tokenCount)),
-        .signed .i32 (Int.ofNat amount)] = _
-  exact ReadOnly.evaluateOperation_i32_add
-    (program := verifiedFrontendCore) (world := world source worldRecords)
-    (leftType := Structure.i32Type) (rightType := Structure.i32Type)
-    (outputType := Structure.i32Type) (3 * tokenCount) amount bounded
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+  functional_eval
 
 theorem write_evaluates
     (source : List Lexer.Byte) (records : List Int) (environment : Env 8)
@@ -447,9 +329,28 @@ theorem write_evaluates
     Except.bind]
   simp [writeI32Slice, Structure.i32Type, baseValue, world_output, inBounds,
     set_output_world]
-  split
-  · omega
-  · rfl
+
+private theorem loopBody_afterScan
+    (source : List Lexer.Byte) (records : List Int)
+    (capacity offset tokenCount : Nat) (scan : OneTokenResult)
+    (sourceBound : source.length ≤ 2147483646)
+    (offsetBound : offset ≤ 2147483647)
+    (scanned : Lexer.scanOne source offset = scan)
+    {completion : Lanius.FunctionalView.Stateful.Completion}
+    {afterWorld : ReadOnly.World} {afterEnvironment : Env 7}
+    (body : Command.Evaluates (TM source) (SM source)
+      (world source records)
+      (scannedEnvironment source records capacity offset tokenCount scan)
+      Structure.loopBodyAfterScan completion afterWorld afterEnvironment) :
+    Command.Evaluates (TM source) (SM source)
+      (world source records)
+      (loopEnvironment source records capacity offset tokenCount)
+      Structure.loopBody completion afterWorld (Env.pop afterEnvironment) := by
+  rw [Structure.loopBody]
+  exact .letValue
+    (by simpa [scanned] using
+      (scanOneTerm_evaluates source records capacity offset tokenCount
+        sourceBound offsetBound)) body
 
 theorem loopBody_lexicalFailure
     (source : List Lexer.Byte) (records : List Int)
@@ -464,7 +365,6 @@ theorem loopBody_lexicalFailure
           (Int.ofNat error))))
         (world source records)
         (loopEnvironment source records capacity offset tokenCount) := by
-  rw [Structure.loopBody]
   have body : Command.Evaluates (TM source) (SM source)
       (world source records)
       (scannedEnvironment source records capacity offset tokenCount
@@ -486,20 +386,8 @@ theorem loopBody_lexicalFailure
               tokenCount error)
         · simp
     · simp
-  have total : Command.Evaluates (TM source) (SM source)
-      (world source records)
-      (loopEnvironment source records capacity offset tokenCount)
-      (.letValue Structure.tokenScanType Structure.scanOneTerm
-        Structure.loopBodyAfterScan)
-      (.returned (some (Results.Semantics.value 1 (Int.ofNat tokenCount)
-        (Int.ofNat error))))
-      (world source records)
-      (Env.pop (scannedEnvironment source records capacity offset tokenCount
-        (.failure error))) :=
-    Command.Evaluates.letValue
-      (by simpa [scanned] using
-        (scanOneTerm_evaluates source records capacity offset tokenCount
-          sourceBound offsetBound)) body
+  have total := loopBody_afterScan source records capacity offset tokenCount
+    (.failure error) sourceBound offsetBound scanned body
   simpa only [scannedEnvironment, Env.pop_push] using total
 
 theorem loopBody_outputFull
@@ -516,7 +404,6 @@ theorem loopBody_outputFull
           (Int.ofNat offset))))
         (world source records)
         (loopEnvironment source records capacity offset tokenCount) := by
-  rw [Structure.loopBody]
   have body : Command.Evaluates (TM source) (SM source)
       (world source records)
       (scannedEnvironment source records capacity offset tokenCount
@@ -542,20 +429,8 @@ theorem loopBody_outputFull
               capacity offset tokenCount token)
           · simp
       · simp
-  have total : Command.Evaluates (TM source) (SM source)
-      (world source records)
-      (loopEnvironment source records capacity offset tokenCount)
-      (.letValue Structure.tokenScanType Structure.scanOneTerm
-        Structure.loopBodyAfterScan)
-      (.returned (some (Results.Semantics.value 2 (Int.ofNat tokenCount)
-        (Int.ofNat offset))))
-      (world source records)
-      (Env.pop (scannedEnvironment source records capacity offset tokenCount
-        (.token token))) :=
-    .letValue
-      (by simpa [scanned] using
-        (scanOneTerm_evaluates source records capacity offset tokenCount
-          sourceBound offsetBound)) body
+  have total := loopBody_afterScan source records capacity offset tokenCount
+    (.token token) sourceBound offsetBound scanned body
   simpa only [scannedEnvironment, Env.pop_push] using total
 
 theorem loopBody_token
@@ -702,44 +577,19 @@ theorem loopBody_token
           .skip)
         (.letValue (rowTerm_evaluates source records capacity offset tokenCount
           token rowBound) afterRow))
-  have total : Command.Evaluates (TM source) (SM source)
-      (world source records)
-      (loopEnvironment source records capacity offset tokenCount)
-      Structure.loopBody .next (world source records3)
-      (Env.pop (Env.pop (Env.set offsetEnv (Structure.tokenCount 8)
-        (.signed .i32 (Int.ofNat (tokenCount + 1)))))) := by
-    rw [Structure.loopBody]
-    exact .letValue
-      (by simpa [scanned] using
-        (scanOneTerm_evaluates source records capacity offset tokenCount
-          sourceBound offsetBound))
-      afterScan
+  have total := loopBody_afterScan source records capacity offset tokenCount
+    (.token token) sourceBound offsetBound scanned afterScan
   have environmentEq :
       Env.pop (Env.pop (Env.set offsetEnv (Structure.tokenCount 8)
         (.signed .i32 (Int.ofNat (tokenCount + 1))))) =
       loopEnvironment source records3 capacity token.finish
         (tokenCount + 1) := by
-    have popped :
-        Env.pop (Env.pop (Env.set offsetEnv (Structure.tokenCount 8)
-          (.signed .i32 (Int.ofNat (tokenCount + 1))))) =
-        Env.set
-          (Env.set (loopEnvironment source records capacity offset tokenCount)
-            (Structure.offset 6) (.signed .i32 (Int.ofNat token.finish)))
-          (Structure.tokenCount 6)
-          (.signed .i32 (Int.ofNat (tokenCount + 1))) := by
-      unfold offsetEnv rowEnv rowEnvironment scannedEnvironment
-      rw [Env.pop_set_of_lt (before := by change 5 < 7; omega)]
-      rw [Env.pop_set_of_lt (before := by change 5 < 6; omega)]
-      rw [Env.pop_set_of_lt (before := by change 4 < 7; omega)]
-      rw [Env.pop_set_of_lt (before := by change 4 < 6; omega)]
-      rw [Env.pop_push]
-      rw [Env.pop_push]
-      congr 2 <;> apply Fin.ext <;> rfl
-    exact popped.trans (loopEnvironment_updated source records records3
-      capacity offset tokenCount token.finish (tokenCount + 1)
-      (by
-        simpa [records3] using
-          (afterToken_length records tokenCount token).symm))
+    refine Eq.trans ?_ (loopEnvironment_updated source records records3
+      capacity offset tokenCount token.finish (tokenCount + 1) ?_)
+    · unfold offsetEnv rowEnv rowEnvironment scannedEnvironment
+      exact Env.eq_ofFn rfl
+    · simpa [records3] using
+        (afterToken_length records tokenCount token).symm
   rw [environmentEq] at total
   simpa only [records3] using total
 
@@ -785,7 +635,7 @@ theorem loop_evaluates_runFromFuel
               (loopBody_lexicalFailure source records capacity offset
                 tokenCount error sourceBound offsetBound scanned)
         | token token =>
-            simp only [scanned]
+            simp only
             by_cases full : capacity ≤ tokenCount
             · simp only [if_pos full, completionOf, Model.resultValue]
               rw [acceptedCount]
@@ -863,8 +713,6 @@ theorem command_evaluates_run
       (.returned (some (Model.resultValue result.outcome)))
       (world source result.records)
       (initialEnvironment source result.records capacity)
-  have resultLength : result.records.length = records.length := by
-    exact Model.run_records_length source capacity records
   have countMatches : result.tokenCount =
       (Model.emittedTokens result.outcome).length := by
     exact Model.run_tokenCount source capacity records
@@ -910,43 +758,11 @@ theorem command_evaluates_run
         · simp
     | impossibleFuelExhaustion tokens exhaustedAt =>
         exact False.elim (notImpossible tokens exhaustedAt outcomeEq)
-  have secondLet : Command.Evaluates (TM source) (SM source)
-      (world source records)
-      ((initialEnvironment source records capacity).push
-        (.signed .i32 (Int.ofNat 0)))
-      (.letValue Structure.i32Type (Structure.i32 0)
-        (.sequence Structure.loop
-          (.sequence (.returnValue (some Structure.completedTerm)) .skip)))
-      (.returned (some (Model.resultValue result.outcome)))
-      (world source result.records)
-      (Env.pop (loopEnvironment source result.records capacity result.offset
-        result.tokenCount)) := by
-    have zero : Term.evaluate (TM source) (world source records)
-        ((initialEnvironment source records capacity).push
-          (.signed .i32 (Int.ofNat 0)))
-        (Structure.i32 0) =
-      .ok (.signed .i32 (Int.ofNat 0), world source records) := by rfl
-    apply Command.Evaluates.letValue
-    · exact zero
-    · simpa only [loopEnvironment] using inner
-  have total : Command.Evaluates (TM source) (SM source)
-      (world source records) (initialEnvironment source records capacity)
-      Structure.command
-      (.returned (some (Model.resultValue result.outcome)))
-      (world source result.records)
-      (Env.pop (Env.pop (loopEnvironment source result.records capacity
-        result.offset result.tokenCount))) := by
-    rw [Structure.command]
-    have zero : Term.evaluate (TM source) (world source records)
-        (initialEnvironment source records capacity) (Structure.i32 0) =
-      .ok (.signed .i32 (Int.ofNat 0), world source records) := by rfl
-    exact Command.Evaluates.letValue zero secondLet
-  have environmentEq :
-      Env.pop (Env.pop (loopEnvironment source result.records capacity
-        result.offset result.tokenCount)) =
-      initialEnvironment source result.records capacity := by
-    simp [loopEnvironment]
-  simpa only [environmentEq] using total
+  simpa only [Structure.command, loopEnvironment, Env.pop_push] using
+    (Command.Evaluates.letValue (type := Structure.i32Type)
+      (initializer := Structure.i32 0) (by rfl)
+      (Command.Evaluates.letValue (type := Structure.i32Type)
+        (initializer := Structure.i32 0) (by rfl) inner))
 
 theorem command_evaluates_request
     (request : Model.Request) (records : List Int)

@@ -1,28 +1,137 @@
-import Lanius.Extraction.ExtractorContract
-import Lanius.Extraction.Allocation.Source
-import Lanius.Extraction.Allocation.Sequence
-import Lanius.Extraction.Entry.Arguments
-import Lanius.Extraction.Entry.Pointers
-import Lanius.Extraction.OutputPacking.Source
-import Lanius.Extraction.OutputPacking.Stdout
-import Lanius.Extraction.OutputPacking.Complete
-import Lanius.Extraction.Input.Source
-import Lanius.Extraction.Input.Request
-import Lanius.Extraction.CanonicalTokens.Ascii.Source
+import Lanius.Extraction.Entry.Source
+import Lanius.Extraction.Entry.Domain.Output
+import Lanius.Extraction.Tests.Path
+import Lanius.Extraction.Tests.File
+import Lanius.Extraction.Tests.Oversize
+import Lanius.Extraction.Tests.Stderr
+import Lanius.Extraction.Tests.Diagnostics
+import Lanius.Extraction.Tests.Load
+import Lanius.Extraction.Tests.FileSyntax
+import Lanius.Extraction.Tests.FileResults
+import Lanius.Extraction.Tests.FileCollect
+import Lanius.Extraction.Tests.FileEmit
+import Lanius.Extraction.Tests.FileAdvance
+import Lanius.Extraction.Tests.Next
+import Lanius.Extraction.Tests.Files
+import Lanius.Extraction.Tests.Startup
+import Lanius.Extraction.Tests.Suffix
+import Lanius.Extraction.Tests.Output
+import Lanius.Extraction.Tests.FrontendLink
+import Lanius.Extraction.Tests.SemanticTokens
+import Lanius.Extraction.Tests.Capacity
 import Lanius.Extraction.Tests.Ascii
 import Lanius.Extraction.Tests.Compaction
-import Lanius.Extraction.CanonicalTokens.Compaction.Range.Loop
+import Lanius.Extraction.Tests.Domain
+import Lanius.Extraction.Tests.Storage.Tokens
+import Lanius.Extraction.Tests.Storage.Parser
+import Lanius.Extraction.Tests.Storage.Tree
+import Lanius.Extraction.Tests.Storage.Output
+import Lanius.Extraction.Tests.Storage.Success
+import Lanius.Extraction.Tests.Parser.Completeness
+import Lanius.Extraction.Tests.Parser.Language
+import Lanius.Extraction.Tests.Parser.Bounds
+import Lanius.Extraction.Tests.Parser.Envelope
+import Lanius.Extraction.Tests.Parser.TreeBounds
+import Lanius.Extraction.Tests.Parser.Metadata
+import Lanius.Extraction.Tests.Reduction
+import Lanius.Extraction.Tests.Typing
+import Lanius.Extraction.Tests.Lowering
+import Lanius.Extraction.Tests.Quotation
+import Lanius.Extraction.Tests.Compact.RoundTrip
+import Lanius.Extraction.Tests.Compact.Bounded
+import Lanius.Extraction.Tests.Surface.Views
+import Lanius.Extraction.Tests.Equality
+import Lanius.Extraction.Tests.Accesses
+import Lanius.Extraction.Tests.Renaming
+import Lanius.Extraction.Tests.Arguments
+import Lanius.Extraction.Tests.Allocation
+import Lanius.Extraction.Tests.Later
+import Lanius.Extraction.Tests.Process
+import Lanius.Extraction.Tests.Provenance
+import Lean.Util.CollectAxioms
 
-open Lanius.Extraction
-open Lanius.Extraction.ExtractorContract
-open Lanius.Extraction.EntrypointAnalysis
-open Lanius.Extraction.OutputPacking
+open Lanius.Extraction Lanius.Extraction.ExtractorContract Lanius.Extraction.EntrypointAnalysis
 
-/-- Check one self-embedding once, retaining its checked Core body when
-checking the packing proof's source linkage. No second extraction or parse. -/
+/-- Reuse the library checker's actual stage evidence for focused execution
+and mutation tests. This driver does not assemble another correctness proof. -/
+private def checkStages (execution : Entry.CheckedExecution accepted) : IO Unit := do
+  Tests.Arguments.checkExecutable execution
+  Tests.Allocation.checkExecutable execution
+  Tests.Path.checkExecutable execution
+  Tests.Later.checkExecutable execution
+  Tests.Oversize.checkExecutable execution
+  Tests.Process.checkExecutable execution
+  let program := accepted.checked.program.core
+  let file := execution.file
+  let pipeline := file.pipeline
+  let frontend := file.syntaxProof
+  Tests.File.check program pipeline.reader.source.source.function.id
+  Tests.CompactOutput.Text.checkExecution program execution.text.source.function.id
+  Tests.Path.checkExecution program pipeline.length.function.id
+  Tests.Path.checkPrefix program pipeline.length.function.id pipeline.argumentReader.function.id
+  Tests.Path.checkOpenedPath program pipeline.length.function.id pipeline.argumentReader.function.id pipeline.opener.function.id
+  Tests.Path.checkMissing program pipeline.length.function.id pipeline.argumentReader.function.id pipeline.opener.function.id
+  Tests.Host.checkArguments program pipeline.argumentReader.function.id
+  Tests.Host.checkFile program pipeline.reader.reader.function.id
+  Tests.Host.checkSession program pipeline.argumentReader.function.id pipeline.opener.function.id
+    pipeline.reader.reader.function.id pipeline.closer.function.id
+  Tests.Stderr.check program file.diagnostics.writer.writer.function.id
+  Tests.File.checkStage program pipeline.reader.source.source.function.id pipeline.closer.function.id pipeline.read
+  Tests.Oversize.checkClose program pipeline.reader.source.source.function.id pipeline.closer.function.id pipeline.read pipeline.path.argument
+  Tests.Load.check program pipeline.length.function.id pipeline.argumentReader.function.id pipeline.opener.function.id
+    pipeline.reader.source.source.function.id pipeline.closer.function.id
+    pipeline.path pipeline.argument pipeline.unpack pipeline.opened pipeline.read
+  Tests.FrontendLink.check frontend file.linked
+  Tests.FileSyntax.checkStage frontend.source.function.id file.syntaxStage
+  Tests.FileSyntax.checkPipeline pipeline file.syntaxStage
+  Tests.FileResults.check program frontend.tail.finish.constructor.typeId file.accessors.status.source.function.id
+    file.accessors.nodes.source.function.id file.accessors.tokens.source.function.id file.resultsStage
+  Tests.FileCollect.checkStage file.collector.source.function.id file.collectStage
+  Tests.FileCollect.checkPipeline pipeline file.syntaxStage file.resultsStage file.collectStage
+  Tests.SemanticTokens.checkCollectExecution program file.collector.source.function.id
+  Tests.FileEmit.checkStage program frontend.tail.finish.constructor.typeId file.unitWriter.source.function.id
+    file.rawCount.source.function.id file.emitStage
+  Tests.FileEmit.checkPipeline pipeline file.syntaxStage file.resultsStage file.collectStage file.emitStage
+  Tests.FileAdvance.check file.argument
+  Tests.FileAdvance.checkPipeline pipeline file.syntaxStage file.resultsStage file.argument
+  Tests.Diagnostics.checkNatural program file.diagnostics.writer.source.source.function.id
+  Tests.Diagnostics.checkFrontend file.diagnostics
+  let _ ← Tests.Next.checkPipeline pipeline file.syntaxStage file.resultsStage
+  Tests.Next.checkReuse program pipeline.length.function.id pipeline.argumentReader.function.id pipeline.opener.function.id
+    pipeline.reader.source.source.function.id pipeline.closer.function.id
+    pipeline.path pipeline.argument pipeline.unpack pipeline.opened pipeline.read
+  Tests.Next.checkRejectReuse program pipeline.length.function.id pipeline.argumentReader.function.id pipeline.opener.function.id
+    pipeline.reader.source.source.function.id pipeline.closer.function.id
+    pipeline.path pipeline.argument pipeline.unpack pipeline.opened pipeline.read
+  Tests.Files.checkSource file.argument execution.arguments.entry.count file.body execution.header.continuation
+  Tests.Suffix.checkSource execution.text.source.function.id execution.framing
+    (execution.suffix.statement execution.text.source.function.id)
+  Tests.Suffix.checkExecution program execution.text.source.function.id execution.framing.suffixText
+  Tests.Output.checkSource execution.output
+  Tests.Startup.checkAllocations execution.buffers execution.aliases execution.literal execution.framing file.argument
+  Tests.Startup.checkFirstFile pipeline file.syntaxStage file.collectStage file.emitStage execution.header
+    execution.buffers execution.aliases execution.literal execution.framing
+  -- Borrow the real checked literals, including partial final packed words.
+  for (storage, expected) in [(execution.framing.prefixText, modulePrefix), (execution.framing.suffixText, moduleSuffix)] do
+    let length := expected.toUTF8.size
+    let paddedLength := ((length + 3) / 4) * 4
+    unless storage.toUTF8.size == paddedLength &&
+        storage.toUTF8.data.toList.take length == expected.toUTF8.data.toList do
+      throw (IO.userError "framing literal bytes or whole-word padding differ from the contract")
+    let .done (.pointer address) stored := Lanius.Semantics.mapStringDataPtr {} storage
+      | throw (IO.userError "framing string allocation failed")
+    let .done (.slice _ _ _ _ _) _ := Lanius.Semantics.mapRawI32Slice stored address ((length + 3) / 4)
+      | throw (IO.userError "framing string word view exceeds its actual storage")
+  Tests.Ascii.check program file.linked.matcher
+  Tests.Ascii.checkKeywords program file.linked.keywordId
+  Tests.Compaction.check program frontend.symbols.canonicalize
+  IO.println "actual checked stages passed host/file, dirty-buffer reuse, frontend, output, and framing regressions"
+
+/-- Validate one singular embedding, then retain the public execution
+certificate without a second extraction, source parse, or Core synthesis. -/
 def main (arguments : List String) : IO UInt32 := do
-  let modulePath :: paths := arguments
-    | throw (IO.userError "expected emitted-module followed by its ordered source paths")
+  let modulePath :: envelopePath :: paths := arguments
+    | throw (IO.userError "expected emitted-module, parser-envelopes, then ordered source paths")
   let emitted ← IO.FS.readFile modulePath
   unless emitted.startsWith modulePrefix && emitted.endsWith moduleSuffix do
     throw (IO.userError "emitted module framing differs from the extraction contract")
@@ -30,106 +139,78 @@ def main (arguments : List String) : IO UInt32 := do
   let sources ← paths.mapM fun (path : String) => do
     let contents ← IO.FS.readBinFile path
     pure ({ path, bytes := contents.toList.map UInt8.toNat } : SourceFile)
-  match checkExtractorCoreSourcePack encoded sources with
-  | .failure stage => throw (IO.userError ("self-embedding rejected: " ++ stage))
-  | .success checked =>
-      let some entry := Entry.checkArguments? checked.checked.program.core checked.analysis.body
-        | throw (IO.userError "checked main does not start with the proved argc/argument-guard sequence")
-      have _argumentExecution := entry.executes
-      let some allocator := checked.checked.program.core.functions.find? fun function =>
-          function.body.isNone && function.external == some (.host .alloc)
-        | throw (IO.userError "checked allocator declaration was not found")
-      let some allocatorProof := Allocation.checkAllocator? checked.checked.program.core allocator.id
-        | throw (IO.userError "host allocator declaration does not satisfy the sequence theorem")
-      let some allocations := Allocation.checkSequence? allocatorProof.function.id Allocation.extractorCounts entry.entry.continuation
-        | throw (IO.userError "checked main does not contain the exact 13-buffer host allocation sequence")
-      have _allocationExecution := allocatorProof.executes allocations.locals
-      have _entryAllocationExecution := entry.allocate allocatorProof allocations.locals allocations.exactSource
-      let some pointers := Entry.Pointers.findGuard? allocations.locals.continuation
-        | throw (IO.userError "post-allocation continuation lacks the exact pointer null-check guard")
-      have _pointerGuardExecution := pointers.locals.executes checked.checked.program.core
-      let some names := allocations.locals.distinctNames?
-        | throw (IO.userError "allocation sequence shadows a buffer binding")
-      have _bufferReads := fun (before ready : Lanius.Semantics.State)
-          (history : Allocation.HostReady allocations.locals.buffers before ready)
-          (buffer : Allocation.Buffer) (member : buffer ∈ allocations.locals.buffers) =>
-        history.buffer names.proof member
-      match findPreparation? checked.analysis.body with
-      | none => throw (IO.userError "checked main does not contain the exact count/clear/pack source sequence")
-      | some found =>
-          let preparation := found.locals
-          let some stdout := checkStdoutTail? preparation.continuation
-            | throw (IO.userError "checked packing continuation differs from the stdout tail proof")
-          unless stdout.locals.length == preparation.packing.length do
-            throw (IO.userError "stdout tail uses a different output length from packing")
-          let some stdoutFunction := checked.checked.program.core.function? stdout.locals.function
-            | throw (IO.userError "stdout tail calls a missing function")
-          unless stdoutFunction.body.isNone && stdoutFunction.external == some (.host .writeStdout) do
-            throw (IO.userError "stdout tail does not call the external stdout service")
-          have _stdoutExecution := stdout.locals.executes checked.checked.program.core
-          have _outputStatement := preparation.checked_stdout_statement stdout
-          have _outputExecution := fun before : Lanius.Semantics.State =>
-            prepare_and_write (before := before) checked.checked.program.core
-          let some reader := CoreSynthesis.Program.checkSourceFunction? checked.checked.program
-              ["verified", "byte_io"] "read_file"
-            | throw (IO.userError "checked source read_file function was not found")
-          let some readerBody := reader.function.body
-            | throw (IO.userError "checked source read_file has no body")
-          let some unpacking := Input.findUnpackLoop? readerBody
-            | throw (IO.userError "checked read_file lacks the exact unpacking-loop shape")
-          let some request := Input.findRequestAdjustment? readerBody
-            | throw (IO.userError "checked read_file lacks the exact capacity-probe adjustment")
-          let some matcher := CoreSynthesis.Program.checkSourceFunction? checked.checked.program
-              ["verified", "canonical_tokens"] "matches_ascii"
-            | throw (IO.userError "checked ASCII matcher was not found")
-          let some matcherBody := matcher.function.body
-            | throw (IO.userError "checked ASCII matcher has no body")
-          let some matchingLoop := CanonicalTokens.Ascii.findLoop? matcherBody
-            | throw (IO.userError s!"checked ASCII matcher loop differs: {reprStr matcherBody}")
-          let some _ := CanonicalTokens.Ascii.checkFunction? matcher.function
-            | throw (IO.userError "checked ASCII matcher signature/body differs")
-          Tests.Ascii.check checked.checked.program.core matcher.function.id
-          let some keywords := CoreSynthesis.Program.checkSourceFunction? checked.checked.program
-              ["verified", "canonical_tokens"] "keyword_kind"
-            | throw (IO.userError "checked keyword dispatch was not found")
-          let some table := CanonicalTokens.Dispatch.checkFunction? checked.checked.program.core
-              keywords.function.id matcher.function.id
-            | throw (IO.userError "keyword dispatcher failed its source, representation, or reference-table proof checks")
-          let some canonicalKind := CoreSynthesis.Program.checkSourceFunction? checked.checked.program
-              ["verified", "canonical_tokens"] "canonical_kind"
-            | throw (IO.userError "checked canonical_kind was not found")
-          let some kindProof := CanonicalTokens.Kind.check? checked.checked.program.core canonicalKind.function.id table
-            | throw (IO.userError "canonical_kind differs from the proved source function")
-          have _kindSound := kindProof.executes_body
-          let some trivia := CoreSynthesis.Program.checkSourceFunction? checked.checked.program
-              ["verified", "canonical_tokens"] "is_trivia"
-            | throw (IO.userError "checked is_trivia was not found")
-          let some triviaProof := CanonicalTokens.Trivia.check? checked.checked.program.core trivia.function.id
-            | throw (IO.userError "is_trivia differs from the proved source function")
-          let some compaction := CoreSynthesis.Program.checkSourceFunction? checked.checked.program
-              ["verified", "canonical_tokens"] "canonicalize_in_place"
-            | throw (IO.userError "checked canonicalize_in_place was not found")
-          let some compactionProof := CanonicalTokens.Compaction.checkSource? checked.checked.program.core
-              compaction.function.id triviaProof kindProof
-            | throw (IO.userError "canonicalize_in_place differs from the compaction source template")
-          have _firstPassSound := CanonicalTokens.Compaction.executes_input_loop compactionProof.trivia compactionProof.kind
-          let rangeTable : CanonicalTokens.Compaction.Range.Table checked.checked.program.core compactionProof.tokens :=
-            ⟨compactionProof.rangeFound, compactionProof.assignFound, compactionProof.inclusiveFound⟩
-          have _secondPassSound := CanonicalTokens.Compaction.Range.executes_loop rangeTable
-          have _canonicalizerSound := compactionProof.evaluates_call
-          Tests.Compaction.check checked.checked.program.core compaction.function.id
-          Tests.Ascii.checkKeywords checked.checked.program.core keywords.function.id
-          IO.println s!"exact self-embedding accepted ({sources.length} files); count/clear/pack sequence linked to checked main: workspace={preparation.packing.workspace}, input={preparation.packing.input}, clearCursor={preparation.clearCursor}, packCursor={preparation.packing.cursor}, length={preparation.packing.length}"
-          IO.println s!"allocation sequence linked to checked main: {allocations.locals.buffers.length} buffers, {Allocation.byteCount allocations.locals.buffers} bytes"
-          IO.println s!"read_file unpacking loop linked to checked source: packed={unpacking.locals.packed}, output={unpacking.locals.output}, total={unpacking.locals.total}, cursor={unpacking.locals.cursor}"
-          IO.println s!"read_file capacity probe linked to checked source: remaining={request.locals.remaining}, request={request.locals.request}"
-          IO.println s!"ASCII comparison loop linked to checked source: packed={matchingLoop.locals.packed}, cursor={matchingLoop.locals.cursor}, expected={matchingLoop.locals.expected}"
-          IO.println "ASCII matcher execution passed empty, all keywords, and every mismatching-byte position"
-          IO.println "source keyword dispatch agrees with the independent lexer table and rejects keyword prefixes/suffixes"
-          IO.println s!"keyword correctness linked with proof evidence: {table.correct.source.groups.length} length groups"
-          IO.println "canonical_kind correctness linked to its checked source and keyword call"
-          IO.println "is_trivia correctness and canonicalize_in_place source template linked to the self-embedding"
-          IO.println "first compaction pass linked to its total-correctness proof and independent lexer specification"
-          IO.println "second compaction pass linked to its total-correctness proof and inclusive-range specification"
-          IO.println "complete canonicalize_in_place call proof linked; execution regressions passed with zero and spare capacity"
-          return 0
+  let certified ← IO.ofExcept (Entry.checkSource encoded sources)
+  let accepted := certified.accepted
+  let execution := certified.execution
+  Tests.Provenance.checkCertified certified
+  let world : Lanius.World.State := {
+    arguments := "extractor" :: sources.map (·.path)
+    files := sources.map fun source =>
+      ⟨Lanius.World.utf8Bytes source.path, source.bytes.map UInt8.ofNat⟩ }
+  let some domain := Entry.checkLoadingDomain? world
+    | throw (IO.userError "actual self-source closure is outside the proved loading domain")
+  have _selfTerminates := execution.terminates domain.down
+  have _selfSound := execution.run_sound domain.down
+  have _selfFailureSafe := execution.run_failureSafe domain.down
+  let some hostDomain := Entry.checkHostDomain? world
+    | throw (IO.userError "self-source process violates the explicit host bounds")
+  have _selfHostSafe := execution.hostSafe hostDomain.down
+  let tokenStarted ← IO.monoNanosNow
+  let some tokenDomain := execution.checkTokenDomain?
+    | throw (IO.userError "actual self-source closure exceeds the source-checked token capacities")
+  let tokenFinished ← IO.monoNanosNow
+  have _selfTokenStorage : Entry.TokenDomain sources := tokenDomain.down
+  have _selfSyntax : Entry.SyntaxDomain sources := execution.syntaxDomain
+  let envelopeBytes ← IO.FS.readBinFile envelopePath
+  let some candidates := Lanius.Compiler.Parser.Envelope.decode? envelopeBytes
+    | throw (IO.userError "malformed parser-envelope transport")
+  let parserStarted ← IO.monoNanosNow
+  let some parserTreeDomain := execution.checkParserTreeDomain? candidates
+    | throw (IO.userError "self-source parser/tree resources are missing, not closed, cyclic, or exceed capacity")
+  let parserFinished ← IO.monoNanosNow
+  have _selfParserStorage : Entry.ParserDomain sources := parserTreeDomain.parser
+  have _selfTreeStorage : Entry.TreeDomain sources := parserTreeDomain.tree
+  let outputStarted ← IO.monoNanosNow
+  let some outputDomain := parserTreeDomain.checkOutputDomain? 16777216
+    | throw (IO.userError "self-source output bound exceeds the actual module allocation")
+  let outputFinished ← IO.monoNanosNow
+  have _selfOutputStorage : Entry.OutputDomain sources 16777216 := outputDomain.domain
+  let successStarted ← IO.monoNanosNow
+  let some successDomain := outputDomain.checkSuccessDomain? tokenDomain.down execution.syntaxDomain
+      parserTreeDomain.parser parserTreeDomain.tree world
+    | throw (IO.userError "self-source process inputs do not match the proved successful-input domain")
+  let successFinished ← IO.monoNanosNow
+  have _selfComplete := execution.run_complete domain.down
+  have _selfSuccessful := execution.succeeds domain.down successDomain.down
+  Tests.Storage.Success.checkInputs outputDomain tokenDomain.down execution.syntaxDomain
+    parserTreeDomain.parser parserTreeDomain.tree world
+  Tests.Storage.Output.checkRawEvidence accepted.checked.program.surfaceData parserTreeDomain.units
+  Tests.Storage.Output.checkCapacity outputDomain.units
+  Tests.Storage.Tree.check accepted.checked.program.surfaceData candidates
+  checkStages execution
+  IO.println s!"exact self-embedding accepted ({sources.length} files); public whole-executable certificate retained"
+  IO.println "the library checker constructs frontend links and all main phases; soundness, failure safety, and finite termination are available to consumers"
+  IO.println "the actual self-source process world satisfies the loading domain; termination and public contracts instantiated without assumed input-domain evidence"
+  IO.println "all self-source files satisfy the lexical/token-storage domain at the authenticated call capacities; file-loop lexer and token-buffer failures are excluded"
+  IO.println s!"numeric token-storage check: {(tokenFinished - tokenStarted) / 1000} microseconds (existing syntax evidence reused)"
+  IO.println s!"all {candidates.length} self-source parser/tree resource certificates checked in {(parserFinished - parserStarted) / 1000000} ms"
+  IO.println s!"source-only full-module output bound: {Entry.moduleFramingBytes + outputDomain.units.bounds.sum} / 16777216 bytes; output-domain checking took {(outputFinished - outputStarted) / 1000} microseconds"
+  IO.println "source-bound lexical, syntax, parser, and tree domains establish actual frontend success; the checked output bound covers the actual emitter and every recognized tree"
+  IO.println s!"the public RunComplete theorem is instantiated on the actual self-source world: enough fuel gives return zero and exact certified output; input binding took {(successFinished - successStarted) / 1000} microseconds"
+  IO.println "host-bounded invocations have exhaustive safety/termination coverage; persisted kernel self-acceptance, final milestone audit, native x86 correctness, and the trusted fast path remain open"
+  return 0
+
+run_elab do
+  let standard : Array Lean.Name := #[``propext, ``Classical.choice, ``Quot.sound]
+  for name in #[``Entry.CheckedExecution.run_sound, ``Entry.CheckedExecution.run_failureSafe,
+      ``Entry.CheckedExecution.terminates, ``Entry.CheckedExecution.run_complete,
+      ``Entry.CheckedExecution.succeeds] do
+    for assumption in ← Lean.collectAxioms name do
+      unless standard.contains assumption do
+        throwError "Public execution-certificate projection {name} adds unexpected axiom {assumption}"
+  for name in #[``Entry.File.step, ``Entry.File.Checked.executes, ``Entry.Files.executes,
+      ``Entry.Startup.executes, ``Entry.checkExecution, ``Entry.checkSource] do
+    for assumption in ← Lean.collectAxioms name do
+      unless standard.contains assumption do
+        throwError "Whole-extractor execution theorem {name} adds unexpected axiom {assumption}"
+  Lean.logInfo "The actual whole-extractor execution constructors and combined source checker use only standard Lean axioms. This generic audit does not certify a concrete self-instance."

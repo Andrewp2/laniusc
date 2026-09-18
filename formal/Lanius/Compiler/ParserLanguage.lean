@@ -1,4 +1,4 @@
-import Lanius.Compiler.ParserWorkspace
+import Lanius.Compiler.Parser.Workspace
 import Lanius.Compiler.ParserGrammar
 
 namespace Lanius.Compiler.Parser

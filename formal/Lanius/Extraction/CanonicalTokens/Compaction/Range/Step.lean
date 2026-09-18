@@ -20,7 +20,8 @@ theorem executes_body (table : Table program tokens)
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array
         (signedI32Values (marked records (3 * index) currentKind nextKind nextStart currentEnd))) } ∧
       (Assertion.localPointsTo 10 cursorCell (some (.signed .i32 (index + 1 : Nat)))).holds after ∧
-      CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton cursorCell)) before after := by
+      CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton cursorCell)) before after ∧
+      Host.MemoryFrame before after := by
   let withCurrent := before.bindLocal 11 (.signed .i32 (3 * index : Nat))
   let ready := withCurrent.bindLocal 12 (.signed .i32 (3 * index + 3 : Nat))
   have currentStorage : Storage withCurrent sourceCell recordsCell source records :=
@@ -50,7 +51,7 @@ theorem executes_body (table : Table program tokens)
     (.signed .i32 (3 * index : Nat)) cursorCell _ storage.wellFormed (by decide) cursor
   have cursorReady := bindLocal_preserves_localPointsTo_of_ne withCurrent 12 10
     (.signed .i32 (3 * index + 3 : Nat)) cursorCell _ currentStorage.wellFormed (by decide) cursorAtCurrent
-  obtain ⟨markedState, run, contents, markEffect⟩ := executes_mark table readyStorage
+  obtain ⟨markedState, run, contents, markEffect, markMemory⟩ := executes_mark table readyStorage
     (3 * index) (3 * index + 3) currentKind nextKind nextStart currentEnd currentReady nextReady
     (by omega) (by omega) currentSelected nextSelected (by simpa [Nat.add_assoc] using nextStartSelected) currentEndSelected
   have cursorStill := markEffect.preserves_localPointsTo readyStorage.wellFormed cursorReady
@@ -64,6 +65,10 @@ theorem executes_body (table : Table program tokens)
   have closeNext := CellEffect.closeLocal withCurrent 12 (.signed .i32 (3 * index + 3 : Nat)) currentStorage.wellFormed effect
   have closeCurrent := CellEffect.closeLocal before 11 (.signed .i32 (3 * index : Nat)) storage.wellFormed closeNext
   exact ⟨_, executesLetLocal currentRead (executesLetLocal nextRead (executesSequence run incremented)),
-    afterContents, ⟨cursor.1, cursorAfter.2⟩, closeCurrent⟩
+    afterContents, ⟨cursor.1, cursorAfter.2⟩, closeCurrent,
+    ((Host.MemoryFrame.bindLocal before 11 (.signed .i32 (3 * index : Nat))).trans
+      ((Host.MemoryFrame.bindLocal withCurrent 12 (.signed .i32 (3 * index + 3 : Nat))).trans
+        (markMemory.trans (Host.MemoryFrame.scalar (CellEffect.ofModifiesOnly incrementEffect completedWF)
+          (HeapFrame.ofStoreEffect incrementEffect.toStoreEffect) cursorStill.2)))).restoreLocals before closeCurrent.wellFormed⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction.Range

@@ -1,5 +1,6 @@
 import Lanius.Extraction.Number.Evaluation
 import Lanius.Extraction.Decimal.ConcreteSemantics
+import Lanius.FunctionalViewCoreCheckedSimulation
 import Lanius.FunctionalViewCoreFreshSimulation
 import Lanius.FunctionalViewCoreCallFrame
 
@@ -33,14 +34,14 @@ private theorem scanNumberFunction_parameters :
       [(0, .slice Compiler.Lexer.Program.i32Type),
         (1, Compiler.Lexer.Program.i32Type),
         (2, Compiler.Lexer.Program.i32Type)] := by
-  native_decide
+  rfl
 
 private theorem scanLeadingDotNumberFunction_parameters :
     Functions.scanLeadingDotNumberFunction.parameters =
       [(0, .slice Compiler.Lexer.Program.i32Type),
         (1, Compiler.Lexer.Program.i32Type),
         (2, Compiler.Lexer.Program.i32Type)] := by
-  native_decide
+  rfl
 
 private theorem parameterBindings_match
     (source : List Compiler.Lexer.Byte) (start : Nat) (function : Function)
@@ -78,116 +79,43 @@ theorem mainFramePreservingCallSoundness
     simp [start]
     omega
   let calleeEnvironment := Model.environment source start
-  let bindings := parameterBindings calleeEnvironment
-  let callee := enterCall afterArguments bindings
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
-  let operations := operationSoundness verifiedFrontendCore helpers
-    helperSoundness
+  have parametersBound : ∀ {function : Function},
+      function.parameters =
+        [(0, .slice Compiler.Lexer.Program.i32Type),
+          (1, Compiler.Lexer.Program.i32Type),
+          (2, Compiler.Lexer.Program.i32Type)] →
+      bindParameters function.parameters
+        [Model.sourceSlice source, .signed .i32 source.length,
+          .signed .i32 startInt] = some (parameterBindings calleeEnvironment) := by
+    intro function parameters
+    rw [show [Model.sourceSlice source, .signed .i32 source.length,
+        .signed .i32 startInt] = Model.argumentValues source start by
+      simp [Model.argumentValues, startEq]]
+    simpa [calleeEnvironment] using
+      parameterBindings_match source start function parameters
   rcases selected with selected | selected
   · obtain ⟨rfl, rfl⟩ := selected
-    have functionalRun := Evaluation.scanNumber_run
-      (helperContract sourceBound beforeWorld sourceFound) sourceBound sourceFound
-      startInBounds
-    have functionalEvaluation := Stateful.Acyclic.run?_sound functionalRun
-    have simulation := commandSoundness operations functionalEvaluation
-      (by native_decide)
-      calleeRepresented (LayoutBelow.identity (arity := 3)) calleeWellFormed
-      (frontier := afterArguments.nextCell)
-      (by
-        intro index
-        simp [callLocalCells])
-      (by
-        simpa [callee] using
-          (enterCall_effect afterArguments bindings).nextCell)
-    obtain ⟨completed, bodyExecution, completedWellFormed,
-        completedRepresented, bodyEffect⟩ := simulation
-    rw [Commands.scanNumber_toCore_exactly] at bodyExecution
-    change Executes verifiedFrontendCore callee Functions.scanNumberBody
-      (.returned (some (Model.encoded (Compiler.Lexer.scanNumber source start))))
-      completed at bodyExecution
-    have callExecution : Evaluates verifiedFrontendCore before
-        (.call Functions.scanNumberFunction.id
-          (toCoreExprs layout sourceArguments))
-        (Model.encoded (Compiler.Lexer.scanNumber source start))
-        (restoreLocals afterArguments completed) := by
-      apply evaluatesCallReturned
-        (bindings := bindings) (body := Functions.scanNumberBody)
-        argumentsExecution (by rfl)
-      · rw [show [Model.sourceSlice source,
-            .signed .i32 source.length, .signed .i32 startInt] =
-            Model.argumentValues source start by
-          simp [Model.argumentValues, startEq]]
-        simpa [bindings, calleeEnvironment] using
-          parameterBindings_match source start Functions.scanNumberFunction
-            scanNumberFunction_parameters
-      · rfl
-      · simpa [callee, bindings] using bodyExecution
-    obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-      represented.restoreFreshCall afterArgumentsWellFormed
-        completedWellFormed (bindings := bindings) bodyEffect (by
-          intro cell written
-          exact written)
-    exact ⟨restoreLocals afterArguments completed, callExecution,
-      afterWellFormed, afterRepresented,
-      argumentsEffect.trans_same
-        (callEffect.weaken CellSet.empty_subset)⟩
+    apply CheckedSimulation.callPreservesFrame
+      (function := Functions.scanNumberFunction)
+      (body := Functions.scanNumberBody)
+      helperSoundness argumentsExecution argumentsEffect (by rfl)
+      (parametersBound scanNumberFunction_parameters) (by rfl)
+      (Stateful.Acyclic.run?_sound
+        (Evaluation.scanNumber_run
+          (helperContract sourceBound beforeWorld sourceFound) sourceBound
+            sourceFound startInBounds))
+      (by rfl) (by rfl) afterArgumentsWellFormed represented
   · obtain ⟨rfl, rfl⟩ := selected
-    have functionalRun := Evaluation.scanLeadingDotNumber_run
-      (helperContract sourceBound beforeWorld sourceFound) sourceBound sourceFound
-      startInBounds
-    have functionalEvaluation := Stateful.Acyclic.run?_sound functionalRun
-    have simulation := commandSoundness operations functionalEvaluation
-      (by native_decide)
-      calleeRepresented (LayoutBelow.identity (arity := 3)) calleeWellFormed
-      (frontier := afterArguments.nextCell)
-      (by
-        intro index
-        simp [callLocalCells])
-      (by
-        simpa [callee] using
-          (enterCall_effect afterArguments bindings).nextCell)
-    obtain ⟨completed, bodyExecution, completedWellFormed,
-        completedRepresented, bodyEffect⟩ := simulation
-    rw [Commands.scanLeadingDotNumber_toCore_exactly] at bodyExecution
-    change Executes verifiedFrontendCore callee
-      Functions.scanLeadingDotNumberBody
-      (.returned (some
-        (Model.encoded (Compiler.Lexer.scanLeadingDotNumber source start))))
-      completed at bodyExecution
-    have callExecution : Evaluates verifiedFrontendCore before
-        (.call Functions.scanLeadingDotNumberFunction.id
-          (toCoreExprs layout sourceArguments))
-        (Model.encoded (Compiler.Lexer.scanLeadingDotNumber source start))
-        (restoreLocals afterArguments completed) := by
-      apply evaluatesCallReturned
-        (bindings := bindings) (body := Functions.scanLeadingDotNumberBody)
-        argumentsExecution (by rfl)
-      · rw [show [Model.sourceSlice source,
-            .signed .i32 source.length, .signed .i32 startInt] =
-            Model.argumentValues source start by
-          simp [Model.argumentValues, startEq]]
-        simpa [bindings, calleeEnvironment] using
-          parameterBindings_match source start
-            Functions.scanLeadingDotNumberFunction
-            scanLeadingDotNumberFunction_parameters
-      · rfl
-      · simpa [callee, bindings] using bodyExecution
-    obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-      represented.restoreFreshCall afterArgumentsWellFormed
-        completedWellFormed (bindings := bindings) bodyEffect (by
-          intro cell written
-          exact written)
-    exact ⟨restoreLocals afterArguments completed, callExecution,
-      afterWellFormed, afterRepresented,
-      argumentsEffect.trans_same
-        (callEffect.weaken CellSet.empty_subset)⟩
+    apply CheckedSimulation.callPreservesFrame
+      (function := Functions.scanLeadingDotNumberFunction)
+      (body := Functions.scanLeadingDotNumberBody)
+      helperSoundness argumentsExecution argumentsEffect (by rfl)
+      (parametersBound scanLeadingDotNumberFunction_parameters) (by rfl)
+      (Stateful.Acyclic.run?_sound
+        (Evaluation.scanLeadingDotNumber_run
+          (helperContract sourceBound beforeWorld sourceFound) sourceBound
+            sourceFound startInBounds))
+      (by rfl) (by rfl) afterArgumentsWellFormed represented
 
 /-- Ordinary checked-call soundness follows from the stronger caller-frame
 preservation theorem. -/
@@ -200,22 +128,12 @@ theorem mainCallSoundness
       FramePreservingCallSoundness verifiedFrontendCore helpers) :
     EffectfulStateful.CallSoundness verifiedFrontendCore
       (Model.numberCalls source) := by
-  constructor
-  · intro arity layout localCell beforeWorld afterWorld environment before
-      afterArguments function arguments values result argumentWrites
-      afterArgumentsWellFormed represented argumentsExecution argumentsEffect
-      evaluated
-    obtain ⟨after, callExecution, afterWellFormed, afterRepresented,
-        callEffect⟩ :=
-      (mainFramePreservingCallSoundness source helpers helperContract
-        helperSoundness).call afterArgumentsWellFormed represented
-          argumentsExecution argumentsEffect evaluated
-    exact ⟨after, argumentWrites, callExecution, afterWellFormed,
-      afterRepresented, callEffect⟩
-  · intro beforeWorld afterWorld function values result evaluated cell
-    obtain ⟨start, valuesEq, startNonnegative, sourceBound, startInBounds,
-        sourceFound, selected, rfl⟩ := Model.numberCalls_success evaluated
-    rfl
+  apply (mainFramePreservingCallSoundness source helpers helperContract
+    helperSoundness).toCallSoundness
+  intro beforeWorld afterWorld function values result evaluated
+  obtain ⟨start, valuesEq, startNonnegative, sourceBound, startInBounds,
+      sourceFound, selected, rfl⟩ := Model.numberCalls_success evaluated
+  rfl
 
 /-! ## Concrete frontend registry -/
 
@@ -325,7 +243,7 @@ theorem numberCall_soundness
         (Model.argumentValues source start) =
       .ok (Model.encoded (Compiler.Lexer.scanNumber source start), world) := by
   simp only [numberCalls, CallModel.route]
-  rw [if_pos (by native_decide)]
+  rw [if_pos (by simp [isNumberEntry])]
   exact Model.numberCalls_scanNumber source world start sourceFound sourceBound
     startInBounds
 
@@ -340,7 +258,7 @@ theorem numberCall_soundness
       .ok (Model.encoded
         (Compiler.Lexer.scanLeadingDotNumber source start), world) := by
   simp only [numberCalls, CallModel.route]
-  rw [if_pos (by native_decide)]
+  rw [if_pos (by simp [isNumberEntry])]
   exact Model.numberCalls_scanLeadingDotNumber source world start sourceFound
     sourceBound startInBounds
 

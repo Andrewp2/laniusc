@@ -9,7 +9,7 @@ and both temporary cursor scopes. The following host write is separate. -/
 theorem prepare_buffers (program : Program) (memory : LoopMemory) (locals : LoopLocals)
     (wordCount clearCursor : VarId) (original : List Int)
     (wellFormed : StateWellFormed before)
-    (bounded : memory.bytes.length ≤ 8388608) (capacity : memory.words ≤ original.length)
+    (bounded : memory.bytes.length ≤ 16777216) (capacity : memory.words ≤ original.length)
     (tailEq : memory.tail = original.drop memory.words)
     (workspaceRead : before.local? locals.workspace = some
       (.slice (.scalar (.signed .i32)) memory.workspaceCell [] 0 original.length))
@@ -125,7 +125,7 @@ theorem prepare_with_continuation (program : Program) (memory : LoopMemory) (loc
     (wordCount clearCursor : VarId) (original : List Int)
     {continuation : Stmt} {completion : Completion} {post : Lanius.World.State → Prop}
     (wellFormed : StateWellFormed before)
-    (bounded : memory.bytes.length ≤ 8388608) (capacity : memory.words ≤ original.length)
+    (bounded : memory.bytes.length ≤ 16777216) (capacity : memory.words ≤ original.length)
     (tailEq : memory.tail = original.drop memory.words)
     (workspaceRead : before.local? locals.workspace = some
       (.slice (.scalar (.signed .i32)) memory.workspaceCell [] 0 original.length))

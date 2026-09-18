@@ -1,0 +1,163 @@
+module lowering::types;
+
+import verified::host;
+
+// This is the type boundary between the existing Surface type arena and the
+// structural Core transport consumed by backend::program. A successful result
+// means representable by that transport, not that every Lanius type is supported.
+// Errors are returned as the negatives of these magnitudes.
+pub const INVALID: i32 = 1;
+pub const UNSUPPORTED: i32 = 2;
+pub const I32: i32 = 1;
+pub const BOOL: i32 = 2;
+pub const USIZE: i32 = 3;
+pub const POINTER: i32 = 4;
+pub const STRING: i32 = 5;
+pub const I32_SLICE: i32 = 6;
+pub const STRUCTURE_BASE: i32 = 16;
+
+fn represented(tag: i32) -> bool {
+    return (tag >= I32 && tag <= I32_SLICE) || tag >= STRUCTURE_BASE;
+}
+
+// The complete primitive namespace in Elaboration.builtinScalar?, with the
+// five transport-supported primitives first. `words` is the private catalog
+// prepared once by lower, not a borrowed pointer into an immutable string.
+// An unsupported builtin must never fall through to nominal/alias resolution.
+fn builtin(source: [i32], start: i32, finish: i32, words: [i32]) -> i32 {
+    let position: i32 = 0;
+    let tag: i32 = 1;
+    while (position < 68) {
+        let matched: bool = true;
+        let index: i32 = 0;
+        let byte: i32 = (words[position / 4] >> ((position % 4) * 8)) & 255;
+        while (byte != 32) {
+            if (index >= finish - start) { matched = false; }
+            else { if (source[start + index] != byte) { matched = false; } }
+            index += 1;
+            position += 1;
+            byte = (words[position / 4] >> ((position % 4) * 8)) & 255;
+        }
+        if (matched && index == finish - start) {
+            if (tag <= STRING) { return tag; }
+            return -UNSUPPORTED;
+        }
+        tag += 1;
+        position += 1;
+    }
+    return -INVALID;
+}
+
+// Name resolution is an independent compiler pass. Its result is a sparse
+// [path-arena-node, Core-type-tag] table for this arena, not a host callback or
+// a trusted proof. Qualified names and aliases are never guessed from their
+// last spelling. Rows are sorted by arena node; repeated resolutions are
+// rejected, including equal repeats and rows shadowed by builtin precedence.
+fn resolved(resolutions: [i32], length: i32, node: i32) -> i32 {
+    let answer: i32 = -INVALID;
+    let position: i32 = 0;
+    while (position < length) {
+        if (resolutions[position] == node) {
+            if (answer != -INVALID) { return -INVALID; }
+            answer = resolutions[position + 1];
+        }
+        position += 2;
+    }
+    return answer;
+}
+
+// Buffers are disjoint and lengths describe their actual storage, as at the
+// existing extractor boundary. The canonical token rows are [kind,start,end].
+// Arena rows are exactly surface_type's eight-word nodes, with count at zero.
+// Output has one slot per arena node; only type-node slots are Core type tags.
+// Failure leaves a partial output which the caller must discard. This pass
+// does not mutate source syntax or perform parsing, name lookup, or emission.
+pub fn lower(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    arena: [i32], arena_length: i32, root: i32,
+    resolutions: [i32], resolution_length: i32,
+    output: [i32], capacity: i32) -> i32 {
+    if (source_length < 0 || token_count < 0 || token_count > 715827882
+        || arena_length <= 0 || resolution_length < 0 || resolution_length % 2 != 0) {
+        return -INVALID;
+    }
+    let count: i32 = arena[0];
+    if (count <= 0 || count > (arena_length - 1) / 8 || capacity < count
+        || root < 0 || root >= count) { return -INVALID; }
+    let position: i32 = 0;
+    let previous: i32 = -1;
+    while (position < resolution_length) {
+        let path: i32 = resolutions[position];
+        if (path <= previous || path >= count || arena[1 + path * 8] != 1
+            || !represented(resolutions[position + 1])) { return -INVALID; }
+        previous = path;
+        position += 2;
+    }
+    let catalog: [i32];
+    let prepared: bool = false;
+    let node: i32 = 0;
+    while (node < count) {
+        let slot: i32 = 1 + node * 8;
+        let kind: i32 = arena[slot];
+        let first: i32 = arena[slot + 2];
+        let tag: i32 = -INVALID;
+        if (kind == 0) {
+            if (first != -1) { return -UNSUPPORTED; }
+            let token: i32 = arena[slot + 4];
+            if (token < 0 || token >= token_count) { return -INVALID; }
+            let start: i32 = tokens[token * 3 + 1];
+            let finish: i32 = tokens[token * 3 + 2];
+            if (start < 0 || finish <= start || finish > source_length) { return -INVALID; }
+            let next: i32 = arena[slot + 7];
+            if (next != -1 && (next <= node || next >= count || arena[1 + next * 8] != 0)) {
+                return -INVALID;
+            }
+        } else {
+            if (first < 0 || first >= node) { return -INVALID; }
+            if (kind == 1) {
+                let segment: i32 = first;
+                let segments: i32 = 0;
+                while (segment != -1) {
+                    if (segment < 0 || segment >= node || arena[1 + segment * 8] != 0) {
+                        return -INVALID;
+                    }
+                    segments += 1;
+                    segment = arena[1 + segment * 8 + 7];
+                }
+                if (segments == 1) {
+                    if (!prepared) {
+                        // The explicit trailing space pads this catalog to
+                        // 68 bytes, exactly 17 packed words. Materialize it
+                        // only if needed, then reuse it for this entire arena.
+                        let names: str = "i32 bool usize ptr str i8 i16 i64 isize u8 u16 u32 u64 f32 f64 char ";
+                        catalog = verified::host::i32_slice_from_raw_parts(
+                            verified::host::string_data_ptr(names), 17);
+                        prepared = true;
+                    }
+                    let token: i32 = arena[1 + first * 8 + 4];
+                    tag = builtin(source, tokens[token * 3 + 1], tokens[token * 3 + 2], catalog);
+                    if (tag == -UNSUPPORTED) { return -UNSUPPORTED; }
+                }
+                if (tag == -INVALID) { tag = resolved(resolutions, resolution_length, node); }
+                if (tag == -INVALID) { return -INVALID; }
+            } else {
+                if (kind == 2) {
+                    if (arena[1 + first * 8] != 1) { return -INVALID; }
+                    tag = output[first];
+                } else {
+                    if (kind == 4) {
+                        if (arena[1 + first * 8] < 2) { return -INVALID; }
+                        if (output[first] != I32) { return -UNSUPPORTED; }
+                        tag = I32_SLICE;
+                    } else {
+                        if (kind == 3 || kind == 5) { return -UNSUPPORTED; }
+                        return -INVALID;
+                    }
+                }
+            }
+        }
+        output[node] = tag;
+        node += 1;
+    }
+    if (arena[1 + root * 8] < 2) { return -INVALID; }
+    return output[root];
+}

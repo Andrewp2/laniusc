@@ -1,4 +1,5 @@
 import Lanius.Compiler.ParserEncoding
+import Lanius.Extraction.VerifiedFrontend.Parser.Workspace
 import Lanius.CallContracts
 
 namespace Lanius.Extraction

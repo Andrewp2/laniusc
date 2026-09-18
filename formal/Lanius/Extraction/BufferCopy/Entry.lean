@@ -82,13 +82,14 @@ theorem executes_scoped_loop (program : Program) (locals : Locals) (memory : Mem
         id := memory.sourceCell, value := some (.array (signedI32Values memory.source)) } ∧
       after.cellEntry? memory.destinationCell = some {
         id := memory.destinationCell, value := some (.array (signedI32Values (buffer memory.untouched memory.values))) } ∧
-      CellEffect (CellSet.singleton memory.destinationCell) before after := by
-  obtain ⟨completed, ran, complete, effect⟩ := executes_loop program locals memory [] memory.values
+      CellEffect (CellSet.singleton memory.destinationCell) before after ∧ HeapFrame before after := by
+  obtain ⟨completed, ran, complete, effect, heap⟩ := executes_loop program locals memory [] memory.values
     (before.bindLocal locals.cursor (.signed .i32 0)) rfl entry.initialize
   have scopedRun := executesLetLocal (type := .scalar (.signed .i32))
     (show Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩) ran
   have closed := CellEffect.closeLocal before locals.cursor (.signed .i32 0) entry.wellFormed effect
-  refine ⟨restoreLocals before completed, scopedRun, complete.sourceContents, complete.destinationContents, ?_⟩
+  refine ⟨restoreLocals before completed, scopedRun, complete.sourceContents, complete.destinationContents, ?_,
+    heap.closeLocal before locals.cursor (.signed .i32 0)⟩
   apply closed.narrow
   intro cell old written
   rcases written with destination | cursor

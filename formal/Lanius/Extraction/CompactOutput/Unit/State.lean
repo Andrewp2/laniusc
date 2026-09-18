@@ -73,7 +73,7 @@ theorem Owned.assign {result : Int} (owned : Owned memory position contents befo
     cases backing
   have cursorWritten := callEffect.preserves_localPointsTo owned.frame.wellFormed owned.cursor
     (by simpa only [CellSet.singleton] using Ne.symm distinct)
-  obtain ⟨after, run, cursor, effect, assignmentEffect⟩ := evaluatesOwnedLocalSet owned.cursor callRun callEffect cursorWritten
+  obtain ⟨after, run, cursor, effect, assignmentEffect, assignmentHeap, _⟩ := evaluatesOwnedLocalSet owned.cursor callRun callEffect cursorWritten
   have backing := assignmentEffect.preserves_entry callEffect.wellFormed output
     (by simpa only [CellSet.singleton] using distinct)
   exact ⟨after, run, ⟨owned.frame.trans effect, cursor, backing, size.trans owned.length⟩, effect⟩

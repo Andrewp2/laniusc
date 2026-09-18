@@ -57,7 +57,7 @@ theorem CheckedVisit.token_iteration (checked : CheckedVisit program)
       (.binary .equal (.index (.local 5) (.local 16)) (.constant checked.symbols.childState))
       (.boolean false) entered :=
     evaluatesEagerBinary (by decide) (by decide) tagRead (evaluatesConstant checked.childTag) rfl
-  obtain ⟨completed, increment, cursorAfter, incrementEffect⟩ := evaluatesOwnedLocalUpdate scopedWF scopedCursor
+  obtain ⟨completed, increment, cursorAfter, incrementEffect, incrementHeap⟩ := evaluatesOwnedLocalUpdate scopedWF scopedCursor
     (show Evaluates program.core entered (.value (.signed .i32 1)) (.signed .i32 1) entered from ⟨1, rfl⟩)
     (show evalAssignValue program.core.target .add (some (.signed .i32 (Int.ofNat index))) (.signed .i32 1) =
         .ok (.signed .i32 (Int.ofNat (index + 1))) from by

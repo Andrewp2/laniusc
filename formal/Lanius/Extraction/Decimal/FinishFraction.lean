@@ -55,6 +55,5 @@ theorem finishFraction
   unfold tailBodyRun at body
   rw [body]
   simp only [Env.pop_push]
-  rfl
 
 end Lanius.Extraction.Decimal.FinishEvaluation

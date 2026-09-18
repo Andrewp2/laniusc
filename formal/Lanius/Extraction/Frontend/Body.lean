@@ -22,7 +22,7 @@ def bodyPost (request : Model.Request) (raw : List RawToken)
     (canonical kinds treeRecords treeOffsets : List Int)
     (rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell : CellId)
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar) (grammarWords : List Int)
-    (workspaceLayout : WorkspaceLayout)
+    (workspaceLayout : WorkspaceLayout) (depth : Nat)
     (stage detail : Int) (count nodes words : Nat) (position : Int) (before after : State) : Prop :=
   let tokens := canonicalizeTokens request.source raw
   (lexerEarlyPost request.outcome canonical.length stage detail position ∧
@@ -38,7 +38,7 @@ def bodyPost (request : Model.Request) (raw : List RawToken)
       ∃ completion, ∃ outcome : RecognizerInitialContinuationOutcome grammarLayout grammar grammarWords
           (tokens.map (fun token => token.kind.gpuCode)) workspaceLayout completion,
         ∃ finalWorkspace finalValues,
-          syntaxPost outcome finalWorkspace treeRecords treeOffsets recordsCell offsetsCell
+          syntaxPost outcome finalWorkspace treeRecords treeOffsets recordsCell offsetsCell depth
             stage detail nodes words position after ∧
           RecognizerWorkspaceArtifact workspaceLayout finalWorkspace finalValues workspaceCell after)))
 
@@ -46,7 +46,7 @@ def bodyPost (request : Model.Request) (raw : List RawToken)
 It yields the selected complete-input parse and exact serialized tree outputs. -/
 theorem bodyPost.success
     (post : bodyPost request raw canonical kinds treeRecords treeOffsets
-      rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell grammarLayout grammar grammarWords workspaceLayout
+      rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell grammarLayout grammar grammarWords workspaceLayout depth
       stage detail count nodes words position before after) (success : stage = 0) :
     request.outcome = .completed raw ∧ count = (canonicalizeTokens request.source raw).length ∧
     ∃ completion, ∃ outcome : RecognizerInitialContinuationOutcome grammarLayout grammar grammarWords
@@ -67,13 +67,110 @@ theorem bodyPost.success
   · obtain ⟨root, fields⟩ := parsed.success success
     exact ⟨completed, countEq, completion, outcome, workspace, root, fields⟩
 
+/-- Parser rejection is distinguished from lexical and storage errors and
+retains the exact physical chart with no complete root. This evidence survives
+the public frontend call through its existing `bodyPost` contract. -/
+theorem bodyPost.parser_rejected
+    (post : bodyPost request raw canonical kinds treeRecords treeOffsets
+      rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell grammarLayout grammar grammarWords workspaceLayout depth
+      stage detail count nodes words position before after)
+    (parserStage : stage = 4) (rejected : detail = 1) :
+    request.outcome = .completed raw ∧ count = (canonicalizeTokens request.source raw).length ∧
+    ∃ workspace values,
+      RecognizerWorkspaceArtifact workspaceLayout workspace values workspaceCell after ∧
+      StartSeeded grammar workspace ∧
+      PredictionsBefore grammar workspace
+        (finalPosition (canonicalizeTokens request.source raw).length + 1) ∧
+      ScansBefore grammar ((canonicalizeTokens request.source raw).map (fun token => token.kind.gpuCode)) workspace
+        (finalPosition (canonicalizeTokens request.source raw).length + 1) ∧
+      ChartClosed grammar ((canonicalizeTokens request.source raw).map (fun token => token.kind.gpuCode)) workspace ∧
+      NoRootIn grammar workspace
+        (workspace.chart (finalPosition (canonicalizeTokens request.source raw).length)) := by
+  rcases post with early | ⟨completed, _, countEq, _, storage |
+    ⟨_, _, completion, outcome, workspace, values, parsed, artifact⟩⟩
+  · rcases early.1.stage with failed | failed <;> omega
+  · have failed := storage.2.1
+    omega
+  · refine ⟨completed, countEq, workspace, values, artifact, ?_⟩
+    simpa only [List.length_map] using parsed.rejected_chart parserStage rejected
+
+/-- A capacity error identifies an encoded, exactly full workspace at the
+actual frontend return. It is not just a possible error code in the contract. -/
+theorem bodyPost.parser_capacity
+    (post : bodyPost request raw canonical kinds treeRecords treeOffsets
+      rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell grammarLayout grammar grammarWords workspaceLayout depth
+      stage detail count nodes words position before after)
+    (parserStage : stage = 4) (exhausted : detail = 2) :
+    request.outcome = .completed raw ∧ count = (canonicalizeTokens request.source raw).length ∧
+    ∃ workspace values,
+      RecognizerWorkspaceArtifact workspaceLayout workspace values workspaceCell after ∧
+      workspace.states.length = workspaceLayout.capacity ∧
+      WorkspaceGenerated grammar ((canonicalizeTokens request.source raw).map (fun token => token.kind.gpuCode)) workspace := by
+  rcases post with early | ⟨completed, _, countEq, _, storage |
+    ⟨_, _, completion, outcome, workspace, values, parsed, artifact⟩⟩
+  · rcases early.1.stage with failed | failed <;> omega
+  · have failed := storage.2.1
+    omega
+  · obtain ⟨_, _, full⟩ := parsed.capacity_result parserStage exhausted
+    exact ⟨completed, countEq, workspace, values, artifact,
+      Nat.le_antisymm artifact.workspaceEncoded.stateCountFits full, parsed.capacity_generated parserStage exhausted⟩
+
+/-- A closed candidate chart is an input-dependent resource certificate,
+not a successful execution premise. It rules out parser-capacity failure at
+the actual frontend return, irrespective of later tree-resource outcomes. -/
+theorem bodyPost.no_parser_capacity_of_closed_bound
+    (post : bodyPost request raw canonical kinds treeRecords treeOffsets
+      rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell grammarLayout grammar grammarWords workspaceLayout depth
+      stage detail count nodes words position before after)
+    (closed : ChartClosed grammar ((canonicalizeTokens request.source raw).map (fun token => token.kind.gpuCode)) upper)
+    (upperSound : ChartSound upper) (fits : upper.states.length < workspaceLayout.capacity) :
+    ¬ (stage = 4 ∧ detail = 2) := by
+  rintro ⟨parserStage, exhausted⟩
+  obtain ⟨_, _, workspace, values, artifact, full, generated⟩ := post.parser_capacity parserStage exhausted
+  have bound := generated.length_le artifact.workspaceEncoded.wellFormed closed upperSound
+  omega
+
+/-- The tree budget is a property of the input's declarative parses and
+physical capacities. It excludes resource failure in the source-linked call. -/
+theorem bodyPost.no_tree_failure
+    (post : bodyPost request raw canonical kinds treeRecords treeOffsets
+      rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell grammarLayout grammar grammarWords workspaceLayout depth
+      stage detail count nodes words position before after)
+    (fits : ∀ parse : MaterializedParse grammar
+      ((canonicalizeTokens request.source raw).map (fun token => token.kind.gpuCode)),
+      ParserTreeBounds.Fits parse.tree treeRecords.length treeOffsets.length depth) : stage ≠ 5 := by
+  rcases post with early | ⟨_, _, _, _, storage |
+    ⟨_, _, completion, outcome, workspace, values, parsed, _⟩⟩
+  · rcases early.1.stage with failed | failed <;> omega
+  · have failed := storage.2.1
+    omega
+  · exact parsed.no_tree_failure fits
+
+/-- Source-linked frontend rejection is a proof of invalid parser input,
+not merely a nonzero result. Lexical and storage failures remain separate. -/
+theorem bodyPost.parser_rejected_invalid
+    (post : bodyPost request raw canonical kinds treeRecords treeOffsets
+      rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell grammarLayout grammar grammarWords workspaceLayout depth
+      stage detail count nodes words position before after)
+    (parserStage : stage = 4) (rejected : detail = 1) :
+    ¬ RecognizesInput grammar ((canonicalizeTokens request.source raw).map (fun token => token.kind.gpuCode)) := by
+  obtain ⟨_, _, workspace, values, artifact, _, _, _, closed, absent⟩ :=
+    post.parser_rejected parserStage rejected
+  intro recognized
+  have noRoot : NoRootIn grammar workspace
+      (workspace.chart (finalPosition ((canonicalizeTokens request.source raw).map
+        (fun token => token.kind.gpuCode)).length)) := by
+    simpa only [List.length_map] using absent
+  exact noRoot.not_hasRoot (closed.contains_root recognized)
+
 /-- The complete lexer-to-return source on ordinary caller resources, without
 assuming lexer success or sufficient canonical/kind storage. This dispatches
 logical outcomes, not caller-supplied execution certificates. Outer input guards
 and the public function-call boundary remain separate from this statement. -/
 theorem lex_to_return
     {visit : CheckedVisit program} {materializer : CheckedMaterialize visit}
-    (tail : CheckedAfterParse materializer) (reader : LinkedReader visit.reader parserAllowed parserSymbols)
+    (tail : CheckedAfterParse materializer) (memory : Semantics.CellOnly.Region program.core tail.body)
+    (reader : LinkedReader visit.reader parserAllowed parserSymbols)
     (parsedType : materializer.parsedType = parserSymbols.typeId 0)
     (symbols : TokenizationSymbols) (early : CheckedEarly program symbols)
     (sameConstructor : early.constructor = tail.finish.constructor)
@@ -148,17 +245,18 @@ theorem lex_to_return
           early.kindsBody tail.body))
         (.returned (some (syntaxResult tail.finish.constructor.typeId stage detail raw.length count nodes words position))) after ∧
       bodyPost request raw canonical kinds treeRecords treeOffsets rawCell canonicalCell kindsCell workspaceCell
-        recordsCell offsetsCell grammarLayout grammar grammarWords workspaceLayout
+        recordsCell offsetsCell grammarLayout grammar grammarWords workspaceLayout depth
         stage detail count nodes words position before after ∧
       (ReadOnly.World.owns (ReadOnly.World.pair sourceCell (sourceIntegers request.source) rawCell
         (encodeTokens raw ++ records.drop (3 * raw.length)))).holds after ∧
-      CellEffect (syntaxWrites rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell) before after := by
+      CellEffect (syntaxWrites rawCell canonicalCell kindsCell workspaceCell recordsCell offsetsCell) before after ∧
+      Host.MemoryPath before after := by
   by_cases proceed : request.outcome = .completed raw ∧ 3 * raw.length ≤ canonical.length
   · obtain ⟨successful, canonicalCapacity⟩ := proceed
     by_cases kindsCapacity : (canonicalizeTokens request.source raw).length ≤ kinds.length
     · obtain ⟨completion, outcome, workspace, finalValues, stage, detail, nodes, words, position,
-          after, run, post, artifact, buffers, compacted, copied, effect⟩ :=
-        lex_to_syntax tail reader parsedType symbols invariant lexerLink lexerInjective lexerInverseType lexerInverse
+          after, run, post, artifact, buffers, compacted, copied, effect, path⟩ :=
+        lex_to_syntax tail memory reader parsedType symbols invariant lexerLink lexerInjective lexerInverseType lexerInverse
           lexerRetained countAccessor early.status lexerId countId early.statusId resultType early.lexerSuccess canonicalizer
           parserInverseType parserInverse parserRetained request raw successful records canonical kinds workspaceValues
           treeRecords treeOffsets wordCapacity recordsFit canonicalFit canonicalCapacity kindsFit kindsCapacity
@@ -172,10 +270,10 @@ theorem lex_to_return
           grammarContents workspaceContents recordContents offsetContents
       refine ⟨stage, detail, (canonicalizeTokens request.source raw).length, nodes, words, position, after, ?_,
         Or.inr ⟨successful, canonicalCapacity, rfl, compacted,
-          Or.inr ⟨kindsCapacity, copied, completion, outcome, workspace, finalValues, post, artifact⟩⟩, buffers, effect⟩
+          Or.inr ⟨kindsCapacity, copied, completion, outcome, workspace, finalValues, post, artifact⟩⟩, buffers, effect, path⟩
       simpa only [Int.ofNat_eq_natCast] using run early.lexicalBody early.canonicalBody early.kindsBody
     · have full : kinds.length < (canonicalizeTokens request.source raw).length := by omega
-      obtain ⟨after, run, buffers, compacted, effect⟩ :=
+      obtain ⟨after, run, buffers, compacted, effect, path⟩ :=
         lex_to_kinds_failure early invariant lexerLink lexerInjective lexerInverseType lexerInverse lexerRetained countAccessor
           lexerId countId resultType canonicalizer request raw successful records canonical kinds.length
           wordCapacity recordsFit canonicalFit canonicalCapacity full sourceCell rawCell canonicalCell
@@ -183,7 +281,7 @@ theorem lex_to_return
           canonicalLocal canonicalLength kindsLength owned canonicalContents
       refine ⟨3, 1, (canonicalizeTokens request.source raw).length, 0, 0, 0, after, ?_,
         Or.inr ⟨successful, canonicalCapacity, rfl, compacted,
-          Or.inl ⟨full, rfl, rfl, rfl, rfl, rfl, effect⟩⟩, buffers, effect.weaken ?_⟩
+          Or.inl ⟨full, rfl, rfl, rfl, rfl, rfl, effect⟩⟩, buffers, effect.weaken ?_, path⟩
       · simpa [sameConstructor] using run (parserSymbols.functionId extractedParserRecognizeFunction.id)
           (parserSymbols.typeId 0) tail.body
       · exact fun _ written => Or.inl (Or.inl written)
@@ -192,12 +290,12 @@ theorem lex_to_return
       have same : tokens = raw := by simpa only [completed, Model.emittedTokens] using emitted
       subst tokens
       exact Nat.lt_of_not_ge (fun sufficient => proceed ⟨completed, sufficient⟩)
-    obtain ⟨stage, detail, position, after, post, run, buffers, effect⟩ :=
+    obtain ⟨stage, detail, position, after, post, run, buffers, effect, path⟩ :=
       lex_to_early_failure early invariant lexerLink lexerInjective lexerInverseType lexerInverse lexerRetained countAccessor
         lexerId countId resultType request records canonical.length wordCapacity recordsFit canonicalFit rejected
         sourceCell rawCell sourceRaw before wellFormed sourceLocal sourceLength rawLocal rawLength canonicalLength owned
     refine ⟨stage, detail, 0, 0, 0, position, after, ?_, Or.inl ⟨post, rfl, rfl, rfl, effect⟩, ?_,
-      effect.weaken (fun _ written => Or.inl (Or.inl (Or.inl written)))⟩
+      effect.weaken (fun _ written => Or.inl (Or.inl (Or.inl written))), path⟩
     · simpa [sameConstructor, emitted] using run
         (recognitionBody (parserSymbols.functionId extractedParserRecognizeFunction.id) (parserSymbols.typeId 0)
           early.kindsBody tail.body)

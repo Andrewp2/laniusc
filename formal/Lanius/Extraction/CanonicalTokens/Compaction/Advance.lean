@@ -13,7 +13,8 @@ theorem advances (trivia : Trivia.Checked program triviaId)
     (shape : request.raw = processed ++ token :: rest)
     (invariant : LoopState request processed before) :
     ∃ after, Executes program before (inputBody triviaId kindId) .next after ∧
-      LoopState request (processed ++ [token]) after ∧ CellEffect request.writes before after := by
+      LoopState request (processed ++ [token]) after ∧ CellEffect request.writes before after ∧
+      Host.MemoryFrame before after := by
   have rawLength : request.raw.length = processed.length + (rest.length + 1) := by simp [shape]
   have prefixBound : processed.length ≤ request.raw.length := by omega
   have nextBound : (processed ++ [token]).length ≤ request.raw.length := by simp; omega
@@ -32,13 +33,13 @@ theorem advances (trivia : Trivia.Checked program triviaId)
   have endSelected : (request.buffer processed)[3 * processed.length + 2]? =
       some (Int.ofNat (token.start + (token.finish - token.start))) := by rw [endpoint]; exact (unread 2).trans endOriginal
   have bufferLength := request.buffer_length processed prefixBound
-  obtain ⟨after, run, contents, inputAfter, outputAfter, effect⟩ := executes_input_body trivia kind invariant.storage
+  obtain ⟨after, run, contents, inputAfter, outputAfter, effect, memory⟩ := executes_input_body trivia kind invariant.storage
     (Int.ofNat token.kind.gpuCode) token.start (token.finish - token.start) processed.length
     (request.output processed).length request.inputCell request.outputCell
     kindSelected startSelected endSelected invariant.input invariant.output
     request.recordsOutput request.recordsInput request.inputOutput
     (by simpa [endpoint, sourceIntegers] using bounded)
-    (by rw [bufferLength]; omega) (by rw [bufferLength]; omega)
+    (by rw [bufferLength]; omega) (by rw [bufferLength]; omega) (Kind.token_code_range token.kind)
   have bufferStep := filtered_records_refine request.source request.raw (request.output processed)
     request.unused token ordered (by omega)
   have afterContents : after.cellEntry? request.recordsCell = some {
@@ -49,6 +50,6 @@ theorem advances (trivia : Trivia.Checked program triviaId)
   have outputNext : (Assertion.localPointsTo 4 request.outputCell
       (some (.signed .i32 (request.output (processed ++ [token])).length))).holds after := by
     simpa only [filtered_count_refine token _ request.source, request.output_step, List.length_append] using outputAfter
-  exact ⟨after, run, invariant.advance _ prefixBound nextBound effect afterContents inputNext outputNext, effect⟩
+  exact ⟨after, run, invariant.advance _ prefixBound nextBound effect afterContents inputNext outputNext, effect, memory⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction

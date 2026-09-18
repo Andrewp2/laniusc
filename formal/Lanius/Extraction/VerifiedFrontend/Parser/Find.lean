@@ -421,13 +421,9 @@ theorem executesParserFindReturnMissing (runtime : State) :
       (.returned (some (.signed .i32 (-1)))) runtime := by
   have one : Evaluates verifiedParserCore runtime
       (.value (.signed .i32 1)) (.signed .i32 1) runtime := ⟨1, rfl⟩
-  have wrapped : wrapSigned verifiedParserCore.target .i32 (-1) = -1 := by
-    generalize verifiedParserCore.target = target
-    rcases target with ⟨width⟩
-    cases width <;> native_decide
   have negateResult : evalUnaryValue verifiedParserCore.target .negate
       (.signed .i32 1) = .ok (.signed .i32 (-1)) := by
-    simp [evalUnaryValue, wrapped]
+    simp [evalUnaryValue, wrapSigned_i32_neg_one]
   have negativeOne := evaluatesUnary one negateResult
   have returned := executesReturnValue negativeOne
   simpa [parserFindReturnMissing] using

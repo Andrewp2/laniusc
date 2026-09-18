@@ -10,6 +10,7 @@ open Lanius.FunctionalView
 open Lanius.FunctionalView.Core.ReadOnly
 open Lanius.FunctionalView.Core.Stateful
 open Lanius.FunctionalView.FreshSimulation
+open Lanius.Typing
 
 /-! # Logical source representation for relational lexer proofs
 
@@ -35,6 +36,20 @@ def sourceSlice (source : List Byte) : Value :=
 def scannerArguments (source : List Byte) (start : Nat) : List Value :=
   [sourceSlice source, .signed .i32 (Int.ofNat source.length),
     .signed .i32 (Int.ofNat start)]
+
+theorem i32OfNat_typed (program : Program) (value : Nat)
+    (bounded : value ≤ 2147483647) :
+    ValueHasType program (.signed .i32 (Int.ofNat value))
+    (.scalar (.signed .i32)) := by
+  exact .signed .i32
+    _ (by
+      change (-(2 ^ (32 - 1) : Int)) ≤ Int.ofNat value
+      rw [Int.ofNat_eq_natCast]
+      omega)
+    (by
+      change Int.ofNat value ≤ (2 ^ (32 - 1) : Int) - 1
+      rw [Int.ofNat_eq_natCast]
+      omega)
 
 /-- Restrict an arbitrary represented caller world to the immutable source
 region while preserving all proof-local cells. -/

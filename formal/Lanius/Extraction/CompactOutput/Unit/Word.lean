@@ -20,7 +20,7 @@ theorem Owned.word (owned : Owned memory position contents before)
       CellEffect memory.writes before after := by
   have output : before.local? 16 = some (.slice i32 memory.outputCell [] 0 contents.length) := by
     simpa only [owned.length] using owned.local (by decide) outputRead (by intro same; cases same)
-  obtain ⟨written, run, backing, effect⟩ := word.write position capacity value owned.frame.wellFormed
+  obtain ⟨written, run, backing, effect, heapFrame⟩ := word.write position capacity value owned.frame.wellFormed
     (by simpa only [owned.length] using room) capacityFit valueFit owned.backing
     (.cons (local_evaluates program.core output) (.cons
       (local_evaluates program.core (owned.local (by decide) capacityRead (by intro same; cases same)))

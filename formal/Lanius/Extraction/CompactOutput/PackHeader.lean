@@ -34,8 +34,8 @@ theorem execute (word : Word.Checked program byte digit) (count capacity : Nat) 
       after.cellEntry? outputCell = some {
         id := outputCell, value := some (.array (signedI32Values
           (appendAll capacity (encoding count) position original).contents)) } ∧
-      CellEffect (CellSet.singleton outputCell) before after := by
-  obtain ⟨first, firstRun, firstBacking, firstEffect⟩ := word.write position capacity 1 wellFormed
+      CellEffect (CellSet.singleton outputCell) before after ∧ HeapFrame before after := by
+  obtain ⟨first, firstRun, firstBacking, firstEffect, firstHeap⟩ := word.write position capacity 1 wellFormed
     capacityBound capacityFit (by decide) backing
     (.cons (local_evaluates program.core outputRead) (.cons (local_evaluates program.core capacityRead)
       (.cons (local_evaluates program.core positionRead) (.cons
@@ -56,7 +56,7 @@ theorem execute (word : Word.Checked program byte digit) (count capacity : Nat) 
   have output : entered.local? 1 = some (.slice i32 outputCell [] 0
       (appendAll capacity (hexDigits 1 8) position original).contents.length) := by
     simpa only [appendAll_length] using keep (by decide) outputRead (by intro same; cases same)
-  obtain ⟨written, secondRun, secondBacking, secondEffect⟩ := word.write next capacity count enteredWF
+  obtain ⟨written, secondRun, secondBacking, secondEffect, secondHeap⟩ := word.write next capacity count enteredWF
     (by simpa only [appendAll_length] using capacityBound) capacityFit countFit enteredBacking
     (.cons (local_evaluates program.core output) (.cons
       (local_evaluates program.core (keep (by decide) capacityRead (by intro same; cases same)))
@@ -66,7 +66,8 @@ theorem execute (word : Word.Checked program byte digit) (count capacity : Nat) 
     (executesSequenceReturned (second := .skip) (executesReturnValue secondRun))
   have closed := CellEffect.closeLocal first 4 (.signed .i32 next) firstEffect.wellFormed secondEffect
   have combined := Word.appendAll_following_word capacity count (hexDigits 1 8) position original
-  refine ⟨restoreLocals first written, ?_, ?_, firstEffect.trans closed⟩
+  refine ⟨restoreLocals first written, ?_, ?_, firstEffect.trans closed,
+    firstHeap.trans (HeapFrame.closeLocal first 4 (.signed .i32 next) secondHeap)⟩
   · simpa only [body, returned, encoding, combined, next] using run
   · rw [encoding, combined]
     exact secondBacking
@@ -83,7 +84,7 @@ theorem Checked.write (checked : Checked program byte digit word) (count capacit
       after.cellEntry? outputCell = some {
         id := outputCell, value := some (.array (signedI32Values
           (appendAll capacity (encoding count) position original).contents)) } ∧
-      CellEffect (CellSet.singleton outputCell) before after := by
+      CellEffect (CellSet.singleton outputCell) before after ∧ HeapFrame before after := by
   let values : List Value := [.signed .i32 count, .slice i32 outputCell [] 0 original.length,
     .signed .i32 capacity, .signed .i32 position]
   let params := parameterBindings (fun index : Fin 4 => values.get index)
@@ -91,10 +92,10 @@ theorem Checked.write (checked : Checked program byte digit word) (count capacit
     enterCall_parameterBindings_matches wellFormed index
   have calleeBacking := ((enterCall_effect before params).oldCells outputCell
     (StateWellFormed.cell_lt_next_of_entry wellFormed backing) (by simp [CellSet.empty])).trans backing
-  obtain ⟨completed, run, contents, effect⟩ := execute word count capacity position
+  obtain ⟨completed, run, contents, effect, heapFrame⟩ := execute word count capacity position
     (enterCall_preserves_wellFormed wellFormed) countFit capacityBound capacityFit
     (locals ⟨0, by decide⟩) (locals ⟨1, by decide⟩) (locals ⟨2, by decide⟩) (locals ⟨3, by decide⟩) calleeBacking
   have called := checked.call wellFormed argumentsResult (bindings := params) rfl run effect
-  exact ⟨restoreLocals before completed, called.1, contents, called.2⟩
+  exact ⟨restoreLocals before completed, called.1, contents, called.2, HeapFrame.closeCall before params heapFrame⟩
 
 end Lanius.Extraction.CompactOutput.PackHeader

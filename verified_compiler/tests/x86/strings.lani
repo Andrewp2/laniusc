@@ -1,0 +1,97 @@
+module examples::strings;
+
+const WORD: str = "C\0é";
+const EMPTY: str = "";
+const BIAS: i32 = 7;
+
+pub fn literal(index: i32) -> str { return "Aλ🙂\0"; }
+pub fn constant(index: i32) -> str { return WORD; }
+pub fn empty(index: i32) -> str { return ""; }
+pub fn empty_constant(index: i32) -> str { return EMPTY; }
+pub fn choose(index: i32) -> str {
+    if (index < 0) { return "left"; }
+    return literal(index);
+}
+pub fn forward(index: i32) -> str { return choose(index); }
+pub fn literal_word(index: i32) -> i32 {
+    let words: [i32] = i32_slice_from_raw_parts(string_data_ptr(literal(index)), 2);
+    return words[index];
+}
+pub fn constant_word(index: i32) -> i32 {
+    let words: [i32] = i32_slice_from_raw_parts(string_data_ptr(WORD), 1);
+    return words[index] + BIAS;
+}
+fn consume(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, text: str) -> i32 {
+    let words: [i32] = i32_slice_from_raw_parts(string_data_ptr(text), 1);
+    return words[0] + a + b + c + d + e + f;
+}
+pub fn staged(index: i32) -> i32 { return consume(index, 2, 3, 4, 5, 6, WORD); }
+pub fn input_word(text: str, index: i32) -> i32 {
+    let words: [i32] = i32_slice_from_raw_parts(string_data_ptr(text), 2);
+    return words[index];
+}
+
+pub fn fresh_pointer(index: i32) -> i32 {
+    let text: str = "ABCD";
+    let first: ptr = string_data_ptr(text);
+    let second: ptr = string_data_ptr(text);
+    if (first == second) { return 0; }
+    let a: [i32] = i32_slice_from_raw_parts(first, 1);
+    let b: [i32] = i32_slice_from_raw_parts(second, 1);
+    a[0] = index;
+    let third: [i32] = i32_slice_from_raw_parts(string_data_ptr(text), 1);
+    if (b[0] != 1145258561 || third[0] != 1145258561) { return 0; }
+    return 1;
+}
+
+pub fn fresh_empty(index: i32) -> i32 {
+    let text: str = "";
+    let first: ptr = string_data_ptr(text);
+    let second: ptr = string_data_ptr(text);
+    if (first == 0 || second == 0 || first == second) { return 0; }
+    return 1;
+}
+
+pub struct Pair { first: i32, second: i32, }
+pub fn late(index: i32) -> i32 {
+    let value: i32;
+    if (index >= 0) { value = index; }
+    return value;
+}
+pub fn self_before_set(index: i32) -> i32 {
+    let value: i32;
+    value = value + index;
+    return value;
+}
+pub fn compound_before_set(index: i32) -> i32 {
+    let value: i32;
+    value += index;
+    return value;
+}
+pub fn field_before_set(index: i32) -> i32 {
+    let value: Pair;
+    value.first = index;
+    return value.first;
+}
+pub fn late_string(index: i32) -> str {
+    let value: str;
+    if (index >= 0) { value = choose(index); }
+    return value;
+}
+pub fn late_pair(index: i32) -> i32 {
+    let value: Pair;
+    value = Pair { first: index, second: 7 };
+    value.first += value.second;
+    return value.first;
+}
+pub fn reset_each_iteration(index: i32) -> i32 {
+    let step: i32 = 0;
+    let sum: i32 = 0;
+    while (step < index && step < 2) {
+        let value: i32;
+        if (step == 0) { value = 7; }
+        sum += value;
+        step += 1;
+    }
+    return sum;
+}

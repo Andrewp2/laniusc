@@ -22,13 +22,14 @@ theorem executes_input_body (trivia : Trivia.Checked program triviaId)
     (recordsOutput : recordsCell ≠ outputCell) (recordsInput : recordsCell ≠ inputCell)
     (inputOutput : inputCell ≠ outputCell)
     (sourceBound : start + width ≤ source.length)
-    (inputBound : 3 * input + 2 < records.length) (rowBound : 3 * output + 2 < records.length) :
+    (inputBound : 3 * input + 2 < records.length) (rowBound : 3 * output + 2 < records.length)
+    (rawBound : -2147483648 ≤ rawKind ∧ rawKind ≤ 2147483647) :
     ∃ after, Executes program before (inputBody triviaId kindId) .next after ∧
       after.cellEntry? recordsCell = some { id := recordsCell, value := some (.array
         (signedI32Values (filteredRecords source records rawKind start width output))) } ∧
       (Assertion.localPointsTo 3 inputCell (some (.signed .i32 (input + 1 : Nat)))).holds after ∧
       (Assertion.localPointsTo 4 outputCell (some (.signed .i32 (filteredCount rawKind output)))).holds after ∧
-      CellEffect (stepWrites recordsCell outputCell inputCell) before after := by
+      CellEffect (stepWrites recordsCell outputCell inputCell) before after ∧ Host.MemoryFrame before after := by
   let withRow := before.bindLocal 5 (.signed .i32 (3 * input : Nat))
   let ready := withRow.bindLocal 6 (.signed .i32 rawKind)
   have rowStorage : Storage withRow sourceCell recordsCell source records :=
@@ -68,9 +69,9 @@ theorem executes_input_body (trivia : Trivia.Checked program triviaId)
     (.signed .i32 (3 * input : Nat)) outputCell _ storage.wellFormed (by decide) outputOwned
   have outputReady := bindLocal_preserves_localPointsTo_of_ne withRow 6 4
     (.signed .i32 rawKind) outputCell _ rowStorage.wellFormed (by decide) outputAtRow
-  obtain ⟨filtered, branch, contents, outputFiltered, filterEffect⟩ := executes_filter trivia kind readyStorage
+  obtain ⟨filtered, branch, contents, outputFiltered, filterEffect, filterMemory⟩ := executes_filter trivia kind readyStorage
     rawKind start width (3 * input) output outputCell kindReady rowReady startSelected endSelected
-    outputReady recordsOutput sourceBound inputBound rowBound
+    outputReady recordsOutput sourceBound inputBound rowBound rawBound
   have inputStill := filterEffect.preserves_localPointsTo readyStorage.wellFormed inputReady
     (by simpa [CellSet.union, CellSet.singleton, eq_comm] using And.intro recordsInput inputOutput)
   obtain ⟨completed, incremented, completedWF, inputAfter, incrementEffect⟩ := executesIncrementOwnedI32Local
@@ -85,6 +86,10 @@ theorem executes_input_body (trivia : Trivia.Checked program triviaId)
   have closeKind := CellEffect.closeLocal withRow 6 (.signed .i32 rawKind) rowStorage.wellFormed effect
   have closeRow := CellEffect.closeLocal before 5 (.signed .i32 (3 * input : Nat)) storage.wellFormed closeKind
   exact ⟨_, executesLetLocal rowRead (executesLetLocal kindRead (executesSequence branch incremented)),
-    afterContents, ⟨inputOwned.1, inputAfter.2⟩, ⟨outputOwned.1, outputAfter.2⟩, closeRow⟩
+    afterContents, ⟨inputOwned.1, inputAfter.2⟩, ⟨outputOwned.1, outputAfter.2⟩, closeRow,
+    ((Host.MemoryFrame.bindLocal before 5 (.signed .i32 (3 * input : Nat))).trans
+      ((Host.MemoryFrame.bindLocal withRow 6 (.signed .i32 rawKind)).trans
+        (filterMemory.trans (Host.MemoryFrame.scalar (CellEffect.ofModifiesOnly incrementEffect completedWF)
+          (HeapFrame.ofStoreEffect incrementEffect.toStoreEffect) inputStill.2)))).restoreLocals before closeRow.wellFormed⟩
 
 end Lanius.Extraction.CanonicalTokens.Compaction

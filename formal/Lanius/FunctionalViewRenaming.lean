@@ -266,16 +266,33 @@ def Ref.rename (embedding : Embedding source target) :
   | .slot index => .slot (embedding.slot index)
   | .literal value => .literal value
 
-/-- Rename every reference in a term. -/
-def Term.rename {signature : Signature} (embedding : Embedding source target) :
-    Term signature source → Term signature target
-  | .reference ref => .reference (ref.rename embedding)
-  | .apply operation arguments =>
-      .apply operation (arguments.map (Term.rename embedding))
-  | .logicalAnd left right =>
-      .logicalAnd (left.rename embedding) (right.rename embedding)
-  | .logicalOr left right =>
-      .logicalOr (left.rename embedding) (right.rename embedding)
+mutual
+  /-- Rename every reference in a term. The explicit list traversal lets this
+      nested walk use structural recursion, including during kernel reduction. -/
+  def Term.rename {signature : Signature} (embedding : Embedding source target) :
+      Term signature source → Term signature target
+    | .reference ref => .reference (ref.rename embedding)
+    | .apply operation arguments =>
+        .apply operation (Term.renameList embedding arguments)
+    | .logicalAnd left right =>
+        .logicalAnd (left.rename embedding) (right.rename embedding)
+    | .logicalOr left right =>
+        .logicalOr (left.rename embedding) (right.rename embedding)
+  termination_by structural term => term
+
+  def Term.renameList {signature : Signature} (embedding : Embedding source target) :
+      List (Term signature source) → List (Term signature target)
+    | [] => []
+    | term :: terms => term.rename embedding :: Term.renameList embedding terms
+  termination_by structural terms => terms
+end
+
+@[simp] theorem Term.renameList_eq_map {signature : Signature}
+    (embedding : Embedding source target) (terms : List (Term signature source)) :
+    Term.renameList embedding terms = terms.map (Term.rename embedding) := by
+  induction terms with
+  | nil => rfl
+  | cons term terms ih => simp only [Term.renameList, List.map_cons, ih]
 
 @[simp] theorem Ref.evaluate_rename
     {source target : Nat} {embedding : Embedding source target}
@@ -313,7 +330,7 @@ theorem Term.evaluate_rename
     | literal =>
         simp only [Term.rename, Term.evaluate, Ref.rename, Ref.evaluate]
   · intro operation arguments argumentsIH world
-    simp only [Term.rename, Term.evaluate]
+    simp only [Term.rename, Term.renameList_eq_map, Term.evaluate]
     rw [argumentsIH world]
   · intro left right leftIH rightIH world
     simp only [Term.rename, Term.evaluate]
@@ -389,6 +406,7 @@ def Command.rename {signature : Signature}
   | .returnValue value => .returnValue (value.map (Term.rename embedding))
   | .breakLoop => .breakLoop
   | .continueLoop => .continueLoop
+termination_by structural command => command
 
 /-- Semantic naturality required of a dialect's action renaming. -/
 def ActionRenamer.Sound {signature : Signature}

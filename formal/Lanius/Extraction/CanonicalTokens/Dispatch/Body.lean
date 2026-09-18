@@ -22,7 +22,7 @@ theorem executes_body (program : Program) (matcher fallback : Nat)
     (capacity : start + width ≤ source.length) (bounded : source.length ≤ 2147483647) :
     ∃ after, Executes program before (body matcher fallback groups)
       (.returned (some (.signed .i32 (dispatched program source start width fallback groups)))) after ∧
-      CellEffect CellSet.empty before after := by
+      CellEffect CellSet.empty before after ∧ Host.MemoryFrame before after := by
   have startResult : Evaluates program before (.local 1) (.signed .i32 start) before :=
     ⟨1, evalLocal_of_local 0 program before _ _ startLocal⟩
   have endResult : Evaluates program before (.local 2) (.signed .i32 (start + width)) before :=
@@ -38,18 +38,13 @@ theorem executes_body (program : Program) (matcher fallback : Nat)
   have sourceReady : entered.cellEntry? sourceCell = some {
       id := sourceCell, value := some (.array (signedI32Values source)) } :=
     (enterEffect.oldCells sourceCell sourceOld (by simp [CellSet.empty])).trans sourceContents
-  obtain ⟨completed, run, frame⟩ := executes_branches program matcher fallback entered sourceCell source
+  obtain ⟨completed, run, frame, memory⟩ := executes_branches program matcher fallback entered sourceCell source
     start width groups found valid fallbackFound enteredWF
     ((bindLocal_preserves_other_local wellFormed (show 3 ≠ 0 by decide)).trans sourceLocal)
     sourceReady ((bindLocal_preserves_other_local wellFormed (show 3 ≠ 1 by decide)).trans startLocal)
     (bindLocal_finds_local before 3 (.signed .i32 width) wellFormed) capacity bounded
-  have domain := enterEffect.domain.trans frame.domain
-  refine ⟨restoreLocals before completed, executesLetLocal difference run, ?_⟩
-  refine ⟨domain.restoreLocals_wellFormed wellFormed frame.wellFormed, rfl,
-    frame.world.trans enterEffect.world, ?_, Nat.le_trans enterEffect.nextCell frame.nextCell,
-    domain.restoreLocals⟩
-  intro cell old _
-  exact (frame.empty_preserves_cell cell (Nat.lt_of_lt_of_le old enterEffect.nextCell)).trans
-    (enterEffect.oldCells cell old (by simp [CellSet.empty]))
+  have closed := CellEffect.closeLocal before 3 (.signed .i32 width) wellFormed frame
+  exact ⟨restoreLocals before completed, executesLetLocal difference run, closed,
+    ((Host.MemoryFrame.bindLocal before 3 (.signed .i32 width)).trans memory).restoreLocals before closed.wellFormed⟩
 
 end Lanius.Extraction.CanonicalTokens.Dispatch

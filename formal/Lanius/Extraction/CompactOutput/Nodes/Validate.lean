@@ -21,10 +21,7 @@ def validateThen (tokenTag stateTag : Lanius.ConstantId) (continuation : Stmt) :
 theorem nonnegative_payload (program : Program) (payload : Nat)
     (found : before.local? 16 = some (.signed .i32 payload)) :
     Evaluates program before payloadGuard (.boolean false) before := by
-  apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program found)
-    (negativeOne_evaluates program before)
-  simp [evalBinaryValue, evalSignedBinary]
-  omega
+  core_eval []
 
 /-- The source's token branch accepts precisely the supplied in-range token
 reference, with no writes or local changes. -/
@@ -36,17 +33,7 @@ theorem validate_token (program : Program) (payload count : Nat)
     (bound : payload < count)
     (tailRun : Executes program before continuation completion after) :
     Executes program before (validateThen tokenTag stateTag continuation) completion after := by
-  have selected : Evaluates program before (dispatch tokenTag) (.boolean true) before :=
-    evaluatesEagerBinary (by decide) (by decide) (local_evaluates program tag)
-      (evaluatesConstant tokenConstant) rfl
-  have accepted : Evaluates program before tokenGuard (.boolean false) before := by
-    apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program value)
-      (local_evaluates program countRead)
-    simp [evalBinaryValue, evalSignedBinary]
-    omega
-  exact executesSequence (executesIfFalse (nonnegative_payload program payload value) (executesSkip _ _))
-    (executesSequence
-      (executesIfTrue selected (executesSequence (executesIfFalse accepted (executesSkip _ _)) (executesSkip _ _))) tailRun)
+  core_exec []
 
 /-- State references must point backward, not to the current or a future node. -/
 theorem validate_node (program : Program) (payload node : Nat)
@@ -58,20 +45,7 @@ theorem validate_node (program : Program) (payload node : Nat)
     (bound : payload < node)
     (tailRun : Executes program before continuation completion after) :
     Executes program before (validateThen tokenTag stateTag continuation) completion after := by
-  have selected : Evaluates program before (dispatch tokenTag) (.boolean false) before :=
-    evaluatesEagerBinary (by decide) (by decide) (local_evaluates program tag)
-      (evaluatesConstant tokenConstant) rfl
-  have correctTag : Evaluates program before (binary .notEqual (read 15) (.constant stateTag)) (.boolean false) before :=
-    evaluatesEagerBinary (by decide) (by decide) (local_evaluates program tag)
-      (evaluatesConstant stateConstant) rfl
-  have earlier : Evaluates program before (binary .greaterEqual (read 16) (read 9)) (.boolean false) before := by
-    apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program value)
-      (local_evaluates program nodeRead)
-    simp [evalBinaryValue, evalSignedBinary]
-    omega
-  exact executesSequence (executesIfFalse (nonnegative_payload program payload value) (executesSkip _ _))
-    (executesSequence (executesIfFalse selected (executesSequence
-      (executesIfFalse (evaluatesPureLogicalOr correctTag earlier) (executesSkip _ _)) (executesSkip _ _))) tailRun)
+  core_exec []
 
 open Lanius.Compiler.Parser ParserTreeLayout Lanius.Extraction.SemanticTokens
 

@@ -1,5 +1,9 @@
 import Lanius.Extraction.Parser.Recognize.Common
+import Lanius.Extraction.VerifiedFrontend.Parser.Workspace
 import Lanius.Extraction.Parser.Recognize.ChartCursor
+
+import Lanius.Compiler.Parser.Growth
+import Lanius.Compiler.Parser.Completion.Nullable
 
 namespace Lanius.Extraction.ParserRecognize
 
@@ -73,7 +77,7 @@ private def nullableLoopReification? :=
 
 private theorem nullableLoopReification_exists :
     nullableLoopReification?.isSome := by
-  native_decide
+  decide +kernel
 
 /-- Complete mutable FunctionalView command recovered from the checked
     nullable-completion loop. -/
@@ -92,7 +96,7 @@ private def nullableBodyReification? :=
 
 private theorem nullableBodyReification_exists :
     nullableBodyReification?.isSome := by
-  native_decide
+  decide +kernel
 
 private def parserRecognizeNullableBodyView :=
   nullableBodyReification?.get nullableBodyReification_exists
@@ -626,12 +630,12 @@ private theorem nullableLoopCondition_evaluates
 def verifiedParserNullableLoopAccessFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
-    parserRecognizeNullableLoop (by native_decide)
+    parserRecognizeNullableLoop (by decide +kernel)
 
 def verifiedParserNullableLoopLiveFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
-    parserRecognizeNullableLoop (by native_decide)
+    parserRecognizeNullableLoop (by decide +kernel)
 
 theorem verifiedParser_nullable_loop_access_frame :
     verifiedParserNullableLoopAccessFrame.map (fun access =>
@@ -648,11 +652,11 @@ theorem verifiedParser_nullable_loop_access_frame :
       ("origin", 27, .read),
       ("state_id", 24, .read),
       ("state_count", 18, .readWrite)] := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParser_nullable_loop_live_frame :
     verifiedParserNullableLoopLiveFrame = verifiedParserNullableLoopAccessFrame := by
-  native_decide
+  decide +kernel
 
 /-- Nullable-loop accesses whose cells are shared with its enclosing frames.
     The candidate cursor is omitted because `chartCursor` owns it. -/
@@ -666,7 +670,7 @@ def verifiedParserNullableLoopSharedFrameIds : List VarId :=
 theorem verifiedParser_nullable_loop_shared_frame_ids :
     verifiedParserNullableLoopSharedFrameIds =
       [4, 8, 23, 0, 30, 9, 25, 26, 27, 24, 18] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem mem_verifiedParserNullableLoopSharedFrameIds_iff
     (id : Nat) :
@@ -694,19 +698,19 @@ def verifiedParserNullableLoopPreservedBindings : LocalBindingFrame :=
 theorem verifiedParser_nullable_loop_preserved_frame_ids :
     verifiedParserNullableLoopPreservedFrameIds =
       [4, 8, 23, 0, 30, 9, 25, 26, 27, 24] := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParserNullableLoopPersistentBindings_core_ids :
     verifiedParserNullableLoopPersistentBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserNullableLoopSharedFrameIds := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParserNullableLoopPreservedBindings_core_ids :
     verifiedParserNullableLoopPreservedBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserNullableLoopPreservedFrameIds := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem mem_verifiedParserNullableLoopPreservedFrameIds_iff
     (id : Nat) :
@@ -2657,7 +2661,7 @@ private theorem RecognizerNullableLoopInvariant.functional_seed
       (world := world) (environment := originEnvironment)
       (nullableAdd (nullableSlot ⟨8, by omega⟩) (nullableLiteral 1) :
         Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature 15)
-      (by native_decide)
+      (by decide +kernel)
   have dotSuccResult : Lanius.FunctionalView.Term.evaluate machine world
       originEnvironment
       (nullableAdd (nullableSlot ⟨8, by omega⟩) (nullableLiteral 1)) =
@@ -2685,7 +2689,7 @@ private theorem RecognizerNullableLoopInvariant.functional_seed
         words grammarCell)
       (world := world) (environment := originEnvironment)
       (nullableConstant 39 : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 15) (by native_decide)
+        Lanius.FunctionalView.Core.signature 15) (by decide +kernel)
   have childStateResult : Lanius.FunctionalView.Term.evaluate machine world
       originEnvironment (nullableConstant 39 : Lanius.FunctionalView.Term
         Lanius.FunctionalView.Core.signature 15) =
@@ -2710,7 +2714,7 @@ private theorem RecognizerNullableLoopInvariant.functional_seed
         words grammarCell)
       (world := world) (environment := originEnvironment)
       (nullableNegativeOne : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 15) (by native_decide)
+        Lanius.FunctionalView.Core.signature 15) (by decide +kernel)
   have negativeOneResult : Lanius.FunctionalView.Term.evaluate machine world
       originEnvironment (nullableNegativeOne : Lanius.FunctionalView.Term
         Lanius.FunctionalView.Core.signature 15) =
@@ -3305,7 +3309,7 @@ private theorem nullableFullCondition_evaluates
         words grammarCell)
       (world := world)
       (environment := environment.push (appendOutcomeValue outcome))
-      nullableFullCondition (by native_decide)
+      nullableFullCondition (by decide +kernel)
   have readOnlyResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
       world (environment.push (appendOutcomeValue outcome))
@@ -3337,7 +3341,7 @@ private theorem nullableStateCountTerm_evaluates
         words grammarCell)
       (world := world)
       (environment := environment.push (appendOutcomeValue outcome))
-      nullableStateCountTerm (by native_decide)
+      nullableStateCountTerm (by decide +kernel)
   have readOnlyResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
       world (environment.push (appendOutcomeValue outcome))
@@ -3790,19 +3794,19 @@ private theorem RecognizerNullableLoopInvariant.functional_ok_body
       resultEnvironment, originEnvironment, dotEnvironment,
       productionEnvironment]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 14) (before := by native_decide)]
+      (arity := 14) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 13) (before := by native_decide)]
+      (arity := 13) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 12) (before := by native_decide)]
+      (arity := 12) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 15) (before := by native_decide)]
+      (arity := 15) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 14) (before := by native_decide)]
+      (arity := 14) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 13) (before := by native_decide)]
+      (arity := 13) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 12) (before := by native_decide)]
+      (arity := 12) (before := by decide +kernel)]
     congr
     simp
   have environmentEq :
@@ -5118,6 +5122,48 @@ noncomputable def RecognizerNullableConfig.functionalRuntime
       workspaceLayout config.workspace.states.length position parentState
       parentProduction parentDot parentOrigin expected config.candidate)
 
+def RecognizerNullableConfig.nullablesReady
+    (config : RecognizerNullableConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell cursorCell
+      position parentProduction parentDot parentOrigin parentState expected) : Prop :=
+  match config with
+  | .active current => NullablesFor grammar current.workspace position expected
+      ⟨parentProduction, parentDot + 1, parentOrigin⟩ current.invariant.chartCursor.cursor.visited
+  | .sentinel done => NullablesComplete grammar done.workspace position expected
+      ⟨parentProduction, parentDot + 1, parentOrigin⟩
+
+theorem RecognizerNullableConfig.nullablesReady_of_head
+    (config : RecognizerNullableConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell cursorCell
+      position parentProduction parentDot parentOrigin parentState expected)
+    (head : config.candidate = chartHeadValue config.workspace position) : config.nullablesReady := by
+  cases config with
+  | active current =>
+      have headFound : (current.workspace.chart position).head? = some current.current := by
+        cases headEq : (current.workspace.chart position).head? with
+        | none =>
+            simp only [RecognizerNullableConfig.candidate, RecognizerNullableConfig.workspace,
+              chartHeadValue, headEq, encodeStateId, Int.ofNat_eq_natCast] at head
+            omega
+        | some first =>
+            simp only [RecognizerNullableConfig.candidate, RecognizerNullableConfig.workspace,
+              chartHeadValue, headEq, encodeStateId, Int.ofNat_eq_natCast] at head
+            exact congrArg some (by omega)
+      change NullablesFor grammar current.workspace position expected _ _
+      rw [current.invariant.chartCursor.cursor.visited_nil_of_head headFound]
+      exact NullablesFor.nil
+  | sentinel done =>
+      have empty : done.workspace.chart position = [] := by
+        cases chartEq : done.workspace.chart position with
+        | nil => rfl
+        | cons first rest =>
+            simp only [RecognizerNullableConfig.candidate, RecognizerNullableConfig.workspace,
+              chartHeadValue, chartEq, List.head?_cons, encodeStateId, Int.ofNat_eq_natCast] at head
+            omega
+      change NullablesFor grammar done.workspace position expected _ _
+      rw [empty]
+      exact NullablesFor.nil
+
 /-- Lexicographic termination measure.  Active configurations reserve one
     extra suffix step so the sentinel is strictly smaller even when no
     workspace insertion occurs on the final iteration. -/
@@ -5184,7 +5230,7 @@ inductive RecognizerNullableSynchronizedOutcome
       expected : Nat)
     (after : Lanius.FunctionalView.Stateful.Loop.Runtime
       (nullableTermMachine workspaceLayout grammar words grammarCell) 12) :
-    State → Completion → Prop where
+    State → Completion → Type where
   | completed (workspace : LogicalWorkspace) (workspaceValues : List Int)
       (physicalAfter : State)
       (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace
@@ -5198,7 +5244,8 @@ inductive RecognizerNullableSynchronizedOutcome
       (environmentEq : after.environment = nullableEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
         workspace.states.length position parentState parentProduction parentDot
-        parentOrigin expected (-1)) :
+        parentOrigin expected (-1))
+      (stable : ChartsUnchangedBefore position beforeWorkspace workspace) :
       RecognizerNullableSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position parentProduction parentDot
@@ -5210,12 +5257,33 @@ inductive RecognizerNullableSynchronizedOutcome
       (terminal : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell physicalAfter)
-      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter) :
+      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerNullableSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position parentProduction parentDot
         parentOrigin parentState expected after physicalAfter
         (parserCapacityCompletion position stateCount)
+
+def RecognizerNullableSynchronizedOutcome.nullablesComplete
+    (outcome : RecognizerNullableSynchronizedOutcome grammarLayout grammar words tokens
+      workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell stateCountCell cursorCell
+      position parentProduction parentDot parentOrigin parentState expected after physicalAfter completion) : Prop :=
+  match outcome with
+  | .completed workspace .. => NullablesComplete grammar workspace position expected
+      ⟨parentProduction, parentDot + 1, parentOrigin⟩
+  | .full .. => True
+
+theorem RecognizerNullableSynchronizedOutcome.nullablesComplete_of_advanced
+    (outcome : RecognizerNullableSynchronizedOutcome grammarLayout grammar words tokens
+      workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell stateCountCell cursorCell
+      position parentProduction parentDot parentOrigin parentState expected after physicalAfter completion)
+    (advanced : beforeWorkspace.containsKey position ⟨parentProduction, parentDot + 1, parentOrigin⟩) :
+    outcome.nullablesComplete := by
+  cases outcome with
+  | completed workspace values physical growth =>
+      exact NullablesFor.of_advanced (growth.preserves_containsKey advanced)
+  | full => trivial
 
 theorem RecognizerNullableSynchronizedOutcome.physical
     (outcome : RecognizerNullableSynchronizedOutcome grammarLayout grammar words
@@ -5231,9 +5299,9 @@ theorem RecognizerNullableSynchronizedOutcome.physical
   | completed workspace workspaceValues physicalAfter growth invariant _ _ =>
       exact .completed workspace workspaceValues physicalAfter growth invariant
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter growth terminal
-        stateCount wellFormed
+        stateCount wellFormed full
 
 /-- Proof-irrelevant data view of a synchronized nullable outcome.  Enclosing
     source-command proofs use this rather than eliminating the proof object
@@ -5243,7 +5311,8 @@ theorem RecognizerNullableSynchronizedOutcome.view
       tokens workspaceLayout beforeWorkspace grammarCell tokensCell
       workspaceCell stateCountCell cursorCell position parentProduction
       parentDot parentOrigin parentState expected after physicalAfter
-      completion) :
+      completion)
+    (nullables : outcome.nullablesComplete) :
     (completion = .next ∧
       ∃ workspace : LogicalWorkspace,
       ∃ workspaceValues : List Int,
@@ -5258,7 +5327,9 @@ theorem RecognizerNullableSynchronizedOutcome.view
         after.environment = nullableEnvironment words workspaceValues
           grammarCell workspaceCell workspaceLayout workspace.states.length
           position parentState parentProduction parentDot parentOrigin expected
-          (-1)) ∨
+          (-1) ∧
+        ChartsUnchangedBefore position beforeWorkspace workspace ∧
+        NullablesComplete grammar workspace position expected ⟨parentProduction, parentDot + 1, parentOrigin⟩) ∨
     (∃ workspace : LogicalWorkspace,
       ∃ workspaceValues : List Int,
       ∃ growth : WorkspaceAppendClosure workspaceLayout.capacity
@@ -5268,43 +5339,52 @@ theorem RecognizerNullableSynchronizedOutcome.view
           workspaceCell physicalAfter,
       ∃ stateCount : Nat,
       ∃ wellFormed : StateWellFormed physicalAfter,
+        WorkspaceFull workspaceLayout.capacity workspace stateCount ∧
         completion = parserCapacityCompletion position stateCount) := by
   cases outcome with
   | completed workspace workspaceValues physicalAfter growth invariant worldEq
-      environmentEq =>
+      environmentEq stable =>
       exact .inl ⟨rfl, workspace, workspaceValues, growth, invariant, worldEq,
-        environmentEq⟩
+        environmentEq, stable, nullables⟩
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .inr ⟨workspace, workspaceValues, growth, terminal, stateCount,
-        wellFormed, rfl⟩
+        wellFormed, full, rfl⟩
 
-theorem RecognizerNullableSynchronizedOutcome.prepend_growth
+def RecognizerNullableSynchronizedOutcome.prepend_growth
     (outcome : RecognizerNullableSynchronizedOutcome grammarLayout grammar words
       tokens workspaceLayout middleWorkspace grammarCell tokensCell
       workspaceCell stateCountCell cursorCell position parentProduction
       parentDot parentOrigin parentState expected after physicalAfter
       completion)
     (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace
-      middleWorkspace) :
+      middleWorkspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace middleWorkspace) :
     RecognizerNullableSynchronizedOutcome grammarLayout grammar words tokens
       workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
       stateCountCell cursorCell position parentProduction parentDot parentOrigin
       parentState expected after physicalAfter completion := by
   cases outcome with
   | completed workspace workspaceValues physicalAfter nextGrowth invariant
-      worldEq environmentEq =>
+      worldEq environmentEq nextStable =>
       exact .completed workspace workspaceValues physicalAfter
-        (growth.trans nextGrowth) invariant worldEq environmentEq
+        (growth.trans nextGrowth) invariant worldEq environmentEq (stable.trans nextStable)
   | full workspace workspaceValues physicalAfter nextGrowth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter
-        (growth.trans nextGrowth) terminal stateCount wellFormed
+        (growth.trans nextGrowth) terminal stateCount wellFormed full
 
-/-- Result transported by the FunctionalView nullable traversal.  The loop
-    trace is the semantic execution; the structural-Core fields connect that
-    trace to the exact extracted recognizer while the migration is in
-    progress. -/
+@[simp] theorem RecognizerNullableSynchronizedOutcome.nullablesComplete_prepend_growth
+    (outcome : RecognizerNullableSynchronizedOutcome grammarLayout grammar words tokens
+      workspaceLayout middleWorkspace grammarCell tokensCell workspaceCell stateCountCell cursorCell
+      position parentProduction parentDot parentOrigin parentState expected after physicalAfter completion)
+    (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace middleWorkspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace middleWorkspace) :
+    (outcome.prepend_growth growth stable).nullablesComplete = outcome.nullablesComplete := by
+  cases outcome <;> rfl
+
+/-- The semantic trace and structural-Core refinement retain nullable
+coverage for the same final workspace. -/
 structure RecognizerNullableFunctionalResult
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
@@ -5333,6 +5413,7 @@ structure RecognizerNullableFunctionalResult
     stateCountCell cursorCell position parentProduction parentDot parentOrigin
     parentState expected _after physicalAfter
     (Lanius.FunctionalView.Core.Stateful.toCoreCompletion completion)
+  nullables : config.nullablesReady → outcome.nullablesComplete
 
 /-- One nullable-traversal decision whose semantic edge is the exact
     artifact-derived FunctionalView body. -/
@@ -5386,7 +5467,8 @@ noncomputable def RecognizerNullableConfig.functional_decide
           effect := ModifiesOnly.reflAny writes sentinelConfig.runtime
           outcome := .completed sentinelConfig.workspace
             sentinelConfig.workspaceValues sentinelConfig.runtime
-            (.refl sentinelConfig.workspace) sentinelConfig.invariant rfl rfl
+            (.refl sentinelConfig.workspace) sentinelConfig.invariant rfl rfl ChartsUnchangedBefore.refl
+          nullables := fun prior => prior
         }
       }
   | active activeConfig =>
@@ -5499,12 +5581,18 @@ noncomputable def RecognizerNullableConfig.functional_decide
                   activeConfig.workspaceValues closed.after
                   (.refl activeConfig.workspace) closedInvariant
                   logical.1.stateCount closed.wellFormed
+                  (appendLogical.full_workspace statusFull)
+                nullables := fun _ => trivial
               }
             }
         | ok =>
             have statusOk : (appendLogical workspaceLayout.capacity position
                 seed activeConfig.workspace).1.status = .ok := by
               simpa [logical]
+            have advancedKey : logical.2.containsKey position
+                ⟨parentProduction, parentDot + 1, parentOrigin⟩ := by
+              simpa only [seed, recognizerNullableSeed, StateSeed.key] using
+                (appendLogical_refines logical rfl).containsKey_of_ok statusOk
             cases remainingEq : activeConfig.remaining with
             | nil =>
                 have caseInvariant : RecognizerNullableLoopInvariant
@@ -5604,6 +5692,14 @@ noncomputable def RecognizerNullableConfig.functional_decide
                           (WorkspaceAppendClosure.single
                             workspaceLayout.capacity position seed
                             activeConfig.workspace)
+                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
+                        nullables := by
+                          intro _
+                          exact (RecognizerNullableSynchronizedOutcome.nullablesComplete_prepend_growth
+                            result.outcome
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
+                              (result.outcome.nullablesComplete_of_advanced advancedKey)
                       }
                 | extended innerAfter innerExecution innerEffect beforeAdvance
                     innerInvariant countIncreased =>
@@ -5695,6 +5791,14 @@ noncomputable def RecognizerNullableConfig.functional_decide
                           (WorkspaceAppendClosure.single
                             workspaceLayout.capacity position seed
                             activeConfig.workspace)
+                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
+                        nullables := by
+                          intro _
+                          exact (RecognizerNullableSynchronizedOutcome.nullablesComplete_prepend_growth
+                            result.outcome
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
+                              (result.outcome.nullablesComplete_of_advanced advancedKey)
                       }
             | cons next tail =>
                 have caseInvariant : RecognizerNullableLoopInvariant
@@ -5799,6 +5903,14 @@ noncomputable def RecognizerNullableConfig.functional_decide
                           (WorkspaceAppendClosure.single
                             workspaceLayout.capacity position seed
                             activeConfig.workspace)
+                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
+                        nullables := by
+                          intro _
+                          exact (RecognizerNullableSynchronizedOutcome.nullablesComplete_prepend_growth
+                            result.outcome
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
+                              (result.outcome.nullablesComplete_of_advanced advancedKey)
                       }
                 | extended innerAfter innerExecution innerEffect beforeAdvance
                     innerInvariant countIncreased =>
@@ -5891,8 +6003,23 @@ noncomputable def RecognizerNullableConfig.functional_decide
                           (WorkspaceAppendClosure.single
                             workspaceLayout.capacity position seed
                             activeConfig.workspace)
+                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
+                        nullables := by
+                          intro _
+                          exact (RecognizerNullableSynchronizedOutcome.nullablesComplete_prepend_growth
+                            result.outcome
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
+                              (result.outcome.nullablesComplete_of_advanced advancedKey)
                       }
-      · cases remainingEq : activeConfig.remaining with
+      · have unmatched : ∀ child, activeConfig.workspace.state? activeConfig.current = some child →
+            NullableChild grammar position expected child →
+            activeConfig.workspace.containsKey position ⟨parentProduction, parentDot + 1, parentOrigin⟩ := by
+          intro child selected ⟨bound, originEq, dotEq, lhsEq⟩
+          have same := Option.some.inj (found.symm.trans selected)
+          subst child
+          exact False.elim (doesMatch ⟨originEq, dotEq, lhsEq⟩)
+        cases remainingEq : activeConfig.remaining with
         | nil =>
             have caseInvariant : RecognizerNullableLoopInvariant grammarLayout
                 grammar words tokens workspaceLayout activeConfig.workspace
@@ -5970,6 +6097,16 @@ noncomputable def RecognizerNullableConfig.functional_decide
                     exact .inr (.inr written))
                   simpa [writes] using first.trans_same result.effect
                 outcome := result.outcome
+                nullables := by
+                  intro prior
+                  have processed := NullablesFor.step (capacity := workspaceLayout.capacity)
+                    invariant.chartCursor.cursor caseInvariant.chartCursor.cursor (.refl activeConfig.workspace)
+                    invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior unmatched
+                  have ready : nextConfig.nullablesReady := by
+                    change NullablesFor grammar activeConfig.workspace position expected _ _
+                    rw [caseInvariant.chartCursor.cursor.split]
+                    exact processed
+                  exact result.nullables ready
               }
         | cons next tail =>
             have caseInvariant : RecognizerNullableLoopInvariant grammarLayout
@@ -6054,6 +6191,19 @@ noncomputable def RecognizerNullableConfig.functional_decide
                     exact .inr (.inr written))
                   simpa [writes] using first.trans_same result.effect
                 outcome := result.outcome
+                nullables := by
+                  intro prior
+                  have processed := NullablesFor.step (capacity := workspaceLayout.capacity)
+                    invariant.chartCursor.cursor caseInvariant.chartCursor.cursor (.refl activeConfig.workspace)
+                    invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior unmatched
+                  have ready : nextConfig.nullablesReady := by
+                    change NullablesFor grammar activeConfig.workspace position expected _ nextInvariant.chartCursor.cursor.visited
+                    have visited := nextInvariant.chartCursor.cursor.visited_eq
+                      (caseInvariant.chartCursor.cursor.next
+                        (caseInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartIdsUnique position))
+                    rw [visited]
+                    exact processed
+                  exact result.nullables ready
               }
 
 /-- The total compact FunctionalView execution retained independently of its

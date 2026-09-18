@@ -30,6 +30,22 @@ structure OperationsAgree (program : Program) (calls : CallModel)
     (registry.machine program).operation world operation arguments value
       afterWorld
 
+theorem OperationsAgree.ofCalls
+    (related : ∀ {world function arguments value afterWorld},
+      calls.evaluate world function arguments = .ok (value, afterWorld) →
+      registry.call world function arguments value afterWorld) :
+    OperationsAgree program calls registry := by
+  constructor
+  intro world operation arguments value afterWorld evaluated
+  cases operation with
+  | binary operation left right output =>
+      cases operation <;>
+        simp_all [Effectful.evaluateOperation]
+  | call function inputs output =>
+      exact related (by simpa [Effectful.evaluateOperation] using evaluated)
+  | _ =>
+      exact evaluated
+
 /-- Reverse pointwise evidence used for deterministic, call-free leaves.  It
 is intentionally separate from `OperationsAgree`: a relational function
 contract can admit several post-states and therefore need not have an

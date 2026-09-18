@@ -299,7 +299,12 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
     // not encode generic arguments, so this is the canonical source for a
     // call such as `Range<i32>`.
     uint function = semantic_call_target[node];
-    if (function != LIR_INVALID && function < hir_count)
+    // Only ordinary function targets index this table. Host services and
+    // intrinsics share the target field but use independent numeric IDs;
+    // interpreting one as a function can turn an integer result (e.g. a file
+    // handle) into an unrelated function's aggregate pointer.
+    if (semantic_call_kind[node] == 1u &&
+        function != LIR_INVALID && function < hir_count)
     {
         uint words = semantic_lir_functions[function].result_word_count;
         if (words != 0u) return words;

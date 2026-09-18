@@ -16,7 +16,8 @@ def isDigitForBase (byte : Byte) (base : Nat) : Bool :=
 
 theorem isDigitForBase_decimal_iff (byte : Byte) :
     isDigitForBase byte 10 = true ↔ 48 ≤ byte.val ∧ byte.val ≤ 57 := by
-  native_decide +revert
+  simp only [isDigitForBase, Bool.and_eq_true, decide_eq_true_eq]
+  (repeat' split) <;> simp_all <;> omega
 
 @[simp] theorem isDigitForBase_underscore (base : Nat) :
     isDigitForBase ⟨95, by omega⟩ base = false := by
@@ -24,7 +25,7 @@ theorem isDigitForBase_decimal_iff (byte : Byte) :
 
 /-- Continue after a required first digit has already been consumed. An
     underscore commits to a separator, so the byte after it is required. -/
-def scanDigitTail (base : Nat) (input : List Byte) (offset : Nat) : DigitScanResult :=
+@[irreducible] def scanDigitTail (base : Nat) (input : List Byte) (offset : Nat) : DigitScanResult :=
   match input with
   | [] => .success offset
   | byte :: rest =>
@@ -40,7 +41,7 @@ def scanDigitTail (base : Nat) (input : List Byte) (offset : Nat) : DigitScanRes
               .failure (offset + 1)
       else
         .success offset
-termination_by input.length
+termination_by structural input
 
 inductive DigitTailScan (base : Nat) : List Byte → Nat → DigitScanResult → Prop
   | eof (offset) : DigitTailScan base [] offset (.success offset)

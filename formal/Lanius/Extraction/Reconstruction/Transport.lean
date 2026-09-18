@@ -259,13 +259,48 @@ theorem fields_eq (fuel : Nat) :
         ParseReference.indexed_id, lift_map_bind, ih, paths_eq agrees fuel]
 
 set_option linter.unusedSimpArgs false in
+theorem generics_eq (fuel : Nat) :
+    (∀ (ref : Ref), reconstructGenericParameters fuel artifact (ParseReference.id ref) =
+      reconstructGenericParameters fuel artifact ref) ∧
+    (∀ (ref : Ref), reconstructGenericParameter fuel artifact (ParseReference.id ref) =
+      reconstructGenericParameter fuel artifact ref) ∧
+    (∀ (ref : Ref), reconstructGenericParameterTail fuel artifact (ParseReference.id ref) =
+      reconstructGenericParameterTail fuel artifact ref) ∧
+    (∀ (ref : Ref), reconstructGenericParameterTailAfterComma fuel artifact (ParseReference.id ref) =
+      reconstructGenericParameterTailAfterComma fuel artifact ref) := by
+  induction fuel with
+  | zero => exact ⟨(fun _ => rfl), (fun _ => rfl), (fun _ => rfl), (fun _ => rfl)⟩
+  | succ fuel ih =>
+    refine ⟨?_, ?_, ?_, ?_⟩
+    all_goals
+      intro ref
+      first
+      | rw [reconstructGenericParameters, reconstructGenericParameters]
+      | rw [reconstructGenericParameter, reconstructGenericParameter]
+      | rw [reconstructGenericParameterTail, reconstructGenericParameterTail]
+      | rw [reconstructGenericParameterTailAfterComma, reconstructGenericParameterTailAfterComma]
+    all_goals
+      simp only [production_eq agrees, child_eq agrees, token_eq agrees, expect_eq agrees,
+        name_eq agrees, ParseReference.indexed_id, lift_map_bind, ih, paths_eq agrees fuel]
+
+set_option linter.unusedSimpArgs false in
 theorem function_eq (fuel : Nat) (ref : Ref) (isPublic : Bool) :
     reconstructFunction fuel artifact (ParseReference.id ref) isPublic =
       reconstructFunction fuel artifact ref isPublic := by
   unfold reconstructFunction
   simp only [production_eq agrees, child_eq agrees, token_eq agrees, expect_eq agrees,
     name_eq agrees, ParseReference.indexed_id, lift_map_bind,
-    paths_eq agrees fuel, parameters_eq agrees fuel, statements_eq agrees fuel]
+    paths_eq agrees fuel, parameters_eq agrees fuel, statements_eq agrees fuel,
+    generics_eq agrees fuel]
+
+set_option linter.unusedSimpArgs false in
+theorem externFunction_eq (fuel : Nat) (ref : Ref) (isPublic : Bool) :
+    reconstructExternFunction fuel artifact (ParseReference.id ref) isPublic =
+      reconstructExternFunction fuel artifact ref isPublic := by
+  unfold reconstructExternFunction
+  simp only [production_eq agrees, child_eq agrees, token_eq agrees, expect_eq agrees,
+    name_eq agrees, ParseReference.indexed_id, lift_map_bind,
+    paths_eq agrees fuel, parameters_eq agrees fuel, generics_eq agrees fuel]
 
 set_option linter.unusedSimpArgs false in
 theorem struct_eq (fuel : Nat) (ref : Ref) (isPublic : Bool) :
@@ -294,7 +329,7 @@ theorem items_eq (fuel : Nat) :
       simp only [production_eq agrees, child_eq agrees, token_eq agrees, expect_eq agrees,
         name_eq agrees, ParseReference.indexed_id, lift_map_bind,
         paths_eq agrees fuel, expressions_eq agrees fuel, function_eq agrees fuel,
-        struct_eq agrees fuel, ih, pure_bind]
+        struct_eq agrees fuel, externFunction_eq agrees fuel, ih, pure_bind]
 
 theorem file_eq (fuel : Nat) (ref : Ref) :
     reconstructFile fuel artifact (ParseReference.id ref) =

@@ -1,8 +1,117 @@
 # Milestone 3: finish the extractor correctness proof
 
+September 17 performance checkpoint: executable validation of the complete
+22-source backend pack now takes 4.81 seconds, versus 6.84 seconds at the
+preceding checkpoint and 56.75 seconds before indexing; source-to-Core
+validation accounts for about 0.90 seconds. Bounded symbol matching and indexed
+spelling checks are proved equivalent to the previous semantics. These are
+IO results, not additional kernel source certificates. The extractor-wide
+attempt stopped at the command limit during shared frontend rebuilding, before
+validation. Kernel source-to-Surface acceptance remains **3/18**. See `PLAN.md`
+for the measured phases, tests, accounting, and remaining work. The refreshed
+kernel certificate takes 53.66 seconds, not a demonstrated kernel speedup.
+
+September 16 context integration: the fresh three-unit Surface certificate now
+uses a single-pass, kernel-proved linking plan and retains the original exact
+checker result. Fresh generation/checking/output takes 47.79 seconds versus a
+same-session unchanged baseline of 52.34 seconds. Reload/audit takes 2.02 seconds
+and is reuse. This is a modest performance improvement, not another completed
+source unit: source-to-Surface acceptance remains **3/18**, and the closed
+extractor instance remains open. See the latest `PLAN.md` evidence and size
+accounting; older timing checkpoints below are historical.
+
+The complete Surface-to-Core lowering equation is now a saved kernel
+certificate for all 18 proposed units and the same 125-function Core program.
+Fresh proposal, quotation, lowering, composition, strict audit, and output take
+84.77 seconds in one invocation with shared support and the Core candidate
+available. Reload/audit takes 1.54 seconds and is reuse, not fresh checking.
+The proof covers constants, layouts, target, function bodies/order, and external
+policy, not merely Core typing. See the latest `PLAN.md` checkpoint.
+
+This does **not** close 3.1 or 3.9: authenticating those Surface units against
+the source bytes still covers only three of 18 units. The complete source
+checker equation, closed extractor instance, general compiler preservation,
+and seconds-level fresh verification remain open.
+
+Current Core checkpoint: all 125 functions of the proposed x86 Core embedding
+now have a saved kernel typing certificate. Fresh generation/checking takes
+15.08 seconds with shared dependencies built; typing/audit is 4.52 seconds of
+that. This does not authenticate its native source-to-Core proposal. The saved
+source-bound Surface certificate still covers three of 18 units; the full
+source-checker equation and closed execution/resource instance remain open.
+See the current `PLAN.md` checkpoint and `BOOTSTRAP.md` commands.
+
+September 12 acceptance checkpoint: milestone 3.7 is complete. The rebuilt
+`Entry.checkSource`, including source validation and execution-proof construction,
+has zero nonstandard axioms. Strict audits now forbid inherited-trust exemptions.
+The exact current 18-file self-instance passes executable validation, resource
+checks, and regressions in 44.36 seconds with shared proof/native imports built,
+down from 87.91 seconds. This is an IO result, not a saved kernel certificate;
+milestone 3.9 remains open.
+
+Concrete certificate update: `proofs/Encoding.lean` now saves a kernel-checked
+encoding and exact source-binding certificate for all 18 sources, with zero
+nonstandard axioms. The complete fresh check/output now takes 58.52 seconds,
+down from 75.51, with shared imports built. Scalar bounds are retained in the
+quoted types instead of recomputed for every field. Loading/audit timings and
+the current artifact hash are in `AUDIT.md`; reuse is not a fresh check.
+This certifies the quoted structured candidate and its independently read source
+bytes, not the bootstrap's transport literal. Surface/Core acceptance, the
+source-checker result, and the concrete execution/resource certificate are still
+missing. It is progress within 3.9, not closure of the milestone.
+
+`proofs/Surface.lean` now saves original-checker acceptance for three frozen
+units: `host`, `token_scan`, and the loop-heavy `byte_io`. One reusable recipe
+replaces the former host-only file; no import-only stub remains. The combined
+fresh invocation takes 46.29 seconds (September 16 baseline: 51.82),
+including proposals, kernel checks, strict audits, and output, with the saved
+encoding and shared imports available.
+Authenticated grammar/root indexing removes repeated reference lookups without
+changing the original-checker result. This is a modest improvement over the
+current baseline; the historical measurement was 46.80 seconds.
+Loading and auditing that certificate takes 1.34 seconds, which is reuse, not a
+fresh check. All three have zero nonstandard axioms. This is three of 18 units;
+whole-pack Surface/Core acceptance and the retained source-checker/execution
+certificate remain open.
+
+The representative code is 200 Lanius lines, with 205 lines of certificate
+recipe and 17 of reload/audit tests. This does not fix the existing large
+semantic proof bodies. Typed-token checking reuses decoder lemmas, node
+validation and reconstruction share one pass, and the grammar lookup table is
+authenticated once. A dependency rebuild also closed missing reconstruction
+transport cases for generic parameters and extern functions. The largest unit
+still consumes about 31.77 seconds within the combined run, so do not scale this
+unchanged to all 125,835 nodes. Checked path witnesses now derive the original
+claims-checker result without repeating its containment search. Numeric scanning
+also no longer reduces an unused suffix to establish a termination measure;
+its general correctness proof still checks, but this change has not demonstrated
+a further whole-certificate speedup. `PLAN.md` records shared-helper growth,
+focused tests and timings. The September 13 profile ruled out several local
+reconstruction changes; all experimental production helpers were removed.
+The subsequent typed encoding certificate reduces its bounds phase from 37.18
+to 21.13 seconds; the connected Surface check above shows no overall downstream
+regression. Its generic scalar lemmas preserve the original decoder/source
+contracts. `PLAN.md` records the 208-line total code/config growth and remaining
+collection/reconstruction costs. No additional source unit is certified.
+
+The Lanius backend emits the complete extractor ELF; its earlier byte-identical
+self-extraction took 2.12 seconds. Source-to-Core remains in Lean, and the
+backend/runtime still lacks its general preservation proof. Neither the native
+executable nor its fast runtime closes the remaining proof obligations.
+
 This is the execution plan from September 7, 2026 onward. It replaces the
 chronological “next work” notes in `PLAN.md`. The seven-step user goal is
 unchanged; this document organizes its third milestone, not a smaller substitute.
+
+September 11 capacity update: the expanded backend's singular source pack is
+8,502,803 bytes, exceeding the old 8 MiB output cap. The production extractor
+now allocates 16 MiB of logical output, and the corresponding source/allocation,
+file-loop, output-domain, packing, and stdout bounds have been updated. The
+existing 16 MiB packed workspace is sufficient. The new bootstrap self-extracts
+the exact 18-source closure. After the subsequent proof cleanups, `Entry.Source`
+and the current self-instance both pass. The 77.50-second dependent build is
+incremental, not a fresh whole-infrastructure timing. The concrete saved
+certificate remains the acceptance gap; this is not closure of milestone 3.
 
 ## Done means
 
@@ -36,8 +145,10 @@ in Lanius remains part of the later compiler milestones.
 
 ## How work proceeds
 
-Only one numbered step is active. Finish its exit criteria before implementing
-the next. Helper lemmas are subtasks, not completed pipeline boundaries.
+Within an implementation track, finish the active step's exit criteria before
+starting another. The independent [x86 backend track](BACKEND.md) is now active;
+the acceptance findings below remain open, rather than blocking that engineering.
+Helper lemmas are subtasks, not completed pipeline boundaries.
 Every step's closing report names its theorem, actual-source connection,
 remaining external assumptions, focused check, and axiom audit.
 
@@ -50,21 +161,2243 @@ update this plan and explain the alternative before pursuing that expansion.
 The command limit is now two minutes, updated by the user on September 7.
 Prefer short focused checks. On a timeout, optimize the expensive
 check before retrying; do not divide one long check into artificial pieces.
-Do not run the roughly 21-second source integration check for every local
+Do not run the roughly 66-second source integration check for every local
 lemma. Run it when the source/link boundary changes or a step closes.
 
 ## Ordered completion ledger
+
+### Current milestone breakdown
+
+“Complete” means that the pipeline proof is connected to the actual checked
+source on its stated domain. It does not waive the milestone-wide trust and
+failure-coverage requirements.
+
+| Part | Deliverable | Status |
+|---|---|---|
+| 3.1 | One self-extraction, exact source binding, reconstructed embedding, and Core typing | Saved full encoding, Core typing, and 18-unit Surface-to-Core lowering; source-to-Surface acceptance is 3/18, so source-bound closure remains open |
+| 3.2 | Parser workspace and backpointers to the complete reconstructed tree | Complete |
+| 3.3 | Whole source-buffer-to-frontend execution, including stage failures | Complete on its stated caller domain |
+| 3.4 | Extracted unit to exact accepted compact encoding | Complete |
+| 3.5 | Actual main, ordered files, exact output, and preserved external inputs | Complete on the current loading/host domain |
+| 3.6 | Successful termination from source syntax and sufficient resources, instantiated on the self closure | Complete |
+| 3.7 | Remove inherited native-computation trust dependencies | Complete: current `Entry.checkSource` has zero nonstandard axioms, including both constituent checkers |
+| 3.8 | Broader failure and host coverage | Complete on the explicit modeled-host domain, with separate allocation-exhaustion coverage |
+| 3.9 | Final source/artifact, theorem, trust, and fresh-extraction acceptance audit | Audited with open findings; source provenance repaired, kernel-only acceptance remains open |
+
+The user questioned why 3.7 was a prerequisite. Native decisions extend trust
+to Lean's compilation machinery; they are not arbitrary guesses or missing
+compiler-correctness theorems. Keeping them is a possible explicit trust-policy
+choice, but that choice was not approved. The active whole-extractor checker and
+execution constructors now need only standard Lean axioms. The separate concrete
+kernel self-certificate remains open; IO validation does not replace it.
+
+### Acceptance evidence and remaining 3.9 work
+
+Current evidence: `entry-source-current-build.log`, `entry-trust-current.log`,
+`entry-resource-final-audit.log`, and `self-source-lake-native.log` under
+`target/verified-compiler`. The combined checker and whole-main execution have
+zero nonstandard assumptions. `Tests.Provenance`, `Tests.Output`, and `Tests.Self`
+now enforce that directly. The old 173-assumption inventory is superseded.
+The current artifact hash is
+`bc11dd2187755d63eb1ad4f8de4ac547c4e753f44c5142fc15f64113e62a675e`;
+all ordered source bytes, source-only success resources, and output size
+(7,967,195 of 16,777,216 bytes) passed executable validation. Parser/tree resource
+checking fell from 37.78 seconds to 1.18 seconds after compiling the same general
+checker natively. Profiling had identified interpreter dispatch as the dominant
+cost. General workspace arithmetic now lives in `Compiler/Parser/Workspace`;
+the actual-source execution lemmas live in `VerifiedFrontend/Parser/Workspace`.
+All existing declarations are unchanged, with their contents moved, not re-exported
+through compatibility files. This removes an accidental dependency on the
+concrete parser from the native helper closure. `lake -d formal run check-self`
+reproduces the validation; see `BOOTSTRAP.md` for arguments and build conditions.
+Neither native execution nor this dependency split changes the proof trust
+boundary. No `Entry.CheckedSource selfEncoded selfSources` has yet been saved
+as a kernel-checked declaration. That concrete certificate is the next step.
+
+The concrete-certificate investigation now has a shared, kernel-only
+`CompactDecode.decode_renderedPack` theorem, proved by composing the existing
+serializer/reader results (1.37-second module check with imports built).
+Proof-only quotation of the full current 18-source data takes 16.35 seconds
+after a 6.55-second untrusted decode/proposal. The equality to the large emitted
+literal remains expensive: the full probe hit 59 seconds, and even an isolated
+kernel equality joining both halves of the same payload hit 29 seconds.
+Neither probe yielded the required saved certificate. The next step is to
+resolve this representation boundary while preserving exact source binding and
+the existing source-to-execution contract, not to add another trust exemption.
+See the concrete-certificate checkpoint in `PLAN.md` for focused tests and logs.
+
+The following component notes record the preceding cleanup; their open 3.7
+and stale-inventory statements are historical, superseded by the checkpoint above.
+
+The rebuilt recognizer caller is now kernel-only: `executeRecognitionRegion`
+has only the three standard Lean axioms, with all 23 previously inherited
+native assumptions removed. The strict audit checks the actual construction,
+not merely a wrapper taking successful execution as a premise. Its explicit
+grammar/resource domain and its execution, semantic-outcome, workspace, and
+memory-preservation guarantees are unchanged. The initial-loop proof reuses
+checked subcommands and retains exact source equalities; its fresh full module
+checks in 3.14 seconds with imports built. This closes the recognizer-caller
+part of 3.7. The lexer and number-scanner call constructors now also use only
+standard Lean axioms, removing their 18 and 20 inherited native assumptions.
+The audit checks all transitive dependencies of the scanner declarations, and
+symbolic byte evaluation cuts the fresh predicate-module check from 17.27 to
+5.66 seconds with imports built. The linked raw lexer and its frontend
+result-count consumer are now also kernel-only: all 12 inherited native
+assumptions of `RawLexer.LexInto.Linked.call_evaluates_at` are removed, with
+execution, failure, exact output, spare-buffer, and frame guarantees unchanged.
+The strict scanner audit now covers 73 declarations, including canonicalizer
+execution and source authentication. Proven byte representatives replace
+the exhaustive symbol tables, and the raw-lexer execution module shrinks from
+965 to 819 lines. Its fresh check takes 1.46 seconds with imports built; the
+symbol-agreement module takes 7.38 seconds. These are component measurements,
+not whole-extractor acceptance times. Other extractor dependencies, the stale
+whole-entry build/inventory, and the concrete kernel self-instance still keep
+3.7/3.9 open. See `PLAN.md`
+for code-size counts and incremental-build timing conditions.
+
+The current connected frontend call and its source/link checkers also have zero
+nonstandard axioms. `Tests.FrontendLink` now enforces that directly for six
+declarations, including execution, typed-memory preservation, and negative-length
+rejection; it no longer permits inherited assumptions from the execution theorem.
+The existing grammar/resource domain and full postcondition are unchanged. This
+closes 3.7 through `extract_syntax`, not through the enclosing extractor.
+Profiling also led to a verified fast uniqueness decision and retained `Nodup`
+evidence: the complete symbolic-metadata module now checks in 17.84 s versus
+24.07 s with shared imports built. Its source-derivation equality is unchanged.
+The dependent frontend integration and strict audits pass, but rebuilding the
+invalidated shared closure exceeded 119 s; the later 52.87 s integration finish
+is not a fresh-check speedup. `PLAN.md` records timings, size growth, and remaining
+performance limits. Whole-entry inventory and concrete self-acceptance remain open.
+
+September 12 parser-state cleanup: ten native-generated assumptions in six
+declarations were removed by reusing `wrapSigned_i32_neg_one`, kernel-checking
+function IDs, and proving constant-table entries directly. The focused
+`Extraction.Tests.Parser.Metadata` audit now requires standard Lean axioms only
+for all seven compact source-shape theorems and their state-body,
+incomplete-branch, scan-miss, terminal-success/full, and cursor-advance semantic
+consumers. It also audits LHS accessor routing. The semantic consumers previously
+had a union of nine inherited native assumptions; all nine are gone. Their
+statements and source connections are unchanged. No new axioms or Lanius code
+were introduced. The affected dependency rebuild and audit passed in 81.79
+seconds; a fresh state-module check with imports built took 24.85 seconds,
+down from 32.33. See `lean-compact-clean-trust.log` and `lean-compact-final.log`
+under `target/verified-compiler`. This does not close 3.7 or refresh the
+whole-extractor inventory. The proof-size reduction is recorded in `PLAN.md`.
+
+The subsequent semantic-proof refactor preserves those contracts and extends
+the standard-axiom audit to environment preservation, subtraction, indexed reads,
+the position-loop condition, and its shared comparison rule. Transparent evaluator
+wrappers let these use the existing automation directly. Nine proof bodies shrank
+from 208 to 23 lines, and a fresh state-module check fell to 22.93 seconds with
+imports built. The full recognizer caller path rebuilt after the change; neither
+this refactor nor that build closes the remaining native-trust or self-instance
+acceptance obligations.
+
+The scoped-binding/call-argument follow-up removes another 422 lines from eight
+proof bodies without changing their statements. The standard-axiom audit passes,
+including the shared call rule and source-connected terminal branches. Fresh
+state-module checking is still about 26.7 seconds, with no demonstrated overall
+speedup. The combined dependency/caller rebuild reached the 119-second cutoff
+before the final setup/caller modules finished; its partial success does not
+close integration, 3.7, or 3.9. Counts and measurement conditions are in `PLAN.md`.
+
+The reifier now reuses child typing witnesses for scalar operators, casts,
+calls, structs, indexing, field reads, and read-only statement composition,
+preserving the general typed, exact-source result contract. Fresh state-module
+checking measured 24.37 seconds after scalar reuse and 23.18 after the follow-up,
+with imports built. The full caller path and transitive audits pass; the latest
+incremental integration check took 108.01 seconds. This closes the previous
+checkpoint's unfinished rebuild, not milestone acceptance. All nine
+native-decision sites in the root command module now have kernel proofs, and
+the strict transitive audit covers all nine owners. No statement was weakened.
+The whole-extractor inventory and concrete self-instance kernel acceptance
+remain outstanding. Size changes and measurement conditions are in `PLAN.md`.
+
+The ownership follow-up removes 232 program-specific proof lines without changing
+the candidate-binding or parent-entry contracts. It also replaces the two native
+accessor constant-table proofs and the three remaining root-selection native
+sites with kernel proofs. All five owners, plus the actual binding and parent-entry
+proofs, now pass the standard-axiom audit. Connected caller integration passes;
+fresh state-module checking remains about 23 seconds with imports built.
+These are local size/trust improvements, not a refreshed whole-extractor inventory
+or closure of 3.7/3.9. Exact counts and timing conditions are in `PLAN.md`.
+
+September 12 Decimal cleanup: 29 `native_decide` sites across 27 declarations
+now use kernel-checked `decide` proofs. The connected `Extraction.Tests.CallTrust`
+audit confirms that the number-scanner call proof no longer inherits native
+assumptions from those owners. All 24 routing owners have no locally generated
+native assumptions; the three ABI projections use only standard axioms. The
+final constructor-routing check passed in 22.05 seconds
+(`trust-decimal-constructor-routing.log`). Body simulation, reification, and
+the concrete self-validation boundary remain open. This local audit is not a
+new whole-extractor assumption count and does not close 3.7.
+
+The [acceptance audit](AUDIT.md) found and repaired missing source provenance
+in the returned Core certificate. `Entry.CheckedSource` now retains the exact
+source-checker result beside the actual entrypoint and execution proof.
+`SourceBound.metadata` derives the Surface/preparation/layout relationships,
+and the full construction equation binds constants and functions as well.
+`CheckedSource.coreUnique` rules out substituting a different Core for the same
+inputs. `Entry.checkSource` runs each existing stage once; the self-check now
+consumes that combined result directly. No second parse or synthesis was added.
+
+The new provenance/checker build passed in 2.04 seconds; focused checks in
+2.54 seconds. Full integration passed in 88.78 seconds, including 19.550
+seconds for wrong-path, changed-byte, and reordered-source rejection tests.
+The broader inventory of the combined source/execution checker still has 173
+native assumptions in 158 owners. New provenance proofs use standard axioms.
+Artifacts and Lanius sources are unchanged. See the audit for exact evidence.
+
+Final kernel-only acceptance has another explicit limitation: the concrete
+self-validation currently runs Lean's checker in IO. It is not a standalone
+kernel-checked proof artifact for the concrete self-source instance. Clearing
+shared `native_decide` dependencies alone would not close that boundary.
+
+The audit records the public contracts, source construction, complete trust
+footprint, artifact identities, and actual host/resource assumptions. Do not
+add more isolated failure cases without identifying a gap in the exhaustive
+host-domain partition below. The inherited native assumptions remain the
+separate open 3.7 obligation; passing source integration does not discharge them.
+Milestone 3 and the seven-step compiler goal are not complete.
+
+### Completed step: 3.8 — exhaustive modeled-host coverage
+
+`HostDomain.classify` proves that every invocation in the explicit host domain
+has no input files, satisfies the existing loading domain, or has a first
+invalid/missing/oversized file after a loadable prefix. It neither parses input
+nor assumes that any earlier file executes successfully.
+`CheckedExecution.hostSafe` combines that exhaustive partition with the actual
+main proofs. Its `ExecutionSafe` result retains a finite stable normal return,
+no traps at any fuel, and the original `RunSound` and `RunFailureSafe` contracts.
+The existing successful-input `RunComplete` theorem remains unchanged.
+
+The assumptions are explicit in `Entry/Domain/Host.lean`: argc is below 2^31,
+requested path lengths fit signed i32, all potentially opened handles fit
+signed i32, and old handles are below the next fresh handle. File availability,
+file size, source syntax, and accepted output are not assumptions. Execution
+starts from the ordinary empty, unlimited-budget heap. The separate
+`CheckedExecution.allocationFailure` theorem covers finite allocation exhaustion;
+the unified theorem does not cover arbitrary finite-budget successful heaps.
+The deterministic modeled host has no concurrent file changes, asynchronous
+read/close errors, or short stdout writes. This is not a native Linux I/O proof.
+Specialized earlier-rejection theorems still work under weaker handle conditions.
+
+The last missing repeated-file case is also connected. `File.Rejection` now
+includes oversized files, and `File.Rejection.afterFile` derives all resources
+from the real completed iteration. `Files.rejectsAfter` uses the existing
+induction for every rejection kind; `Startup.rejectsAfter` and the public
+`CheckedExecution.laterFailure` carry it through main. The public domain checker
+accounts for the additional handle required to open an oversized file. Earlier
+frontend/encoding failures may return first; otherwise overflow returns 6 after
+close and the actual diagnostics. No assumed prefix execution was introduced.
+`Next.inputNext` now supplies common loading resources without a file-fit premise;
+successful callers add that premise directly. No compatibility wrapper remains.
+
+Verification on September 10:
+
+- The changed main/checker proof built in 26.06 seconds. The host partition and
+  public execution theorem built in 2.44 seconds. The final affected self-test
+  build passed in 6.54 seconds (`host-tests.log`).
+- Later-file domains admit 19 worlds and reject 19 false prerequisites. Nine
+  interpreted loading loops cover rejection after 1, 3, and 10 preceding files,
+  including exact diagnostics and preserved dirty buffers, handles, and stdout.
+  The test scales the reader-call capacity to its eight-element buffer; an
+  initial mismatched fixture caused a bounds trap and was corrected. The reader,
+  close, and diagnostic implementations are unchanged. Twelve native x86 tests
+  retain the production capacity and pass in 1.61 seconds (`later-oversize-native.log`).
+- The host-only checker admits 19 varied worlds and rejects three invalid handle
+  states. The actual-source test instantiates the unified theorem on all 19 and
+  on the real self-source world. All new domain/resource/composition proofs use
+  standard axioms; the complete source-checker inventory remains 173 inherited
+  native assumptions in 158 owners (`host-trust-inventory.log`, 0.85 seconds).
+- Full exact-source integration passed in 69.02 seconds (`host-self-source.log`),
+  retaining successful extraction and exact output for all 18 sources. Parser/tree
+  checking took 38.191 seconds; output bounds 441 microseconds; exact input binding
+  16.309 milliseconds. Shared infrastructure was built. This is bootstrap
+  validation, not the eventual fast trusted path.
+- Fresh x86 self-extraction passed in 1.15 seconds (`host-fresh-extraction.log`)
+  and `cmp` found it byte-identical to the singular embedding. The source,
+  executable, embedding, envelope payload, and source-list identities are unchanged.
+  Every command stayed below two minutes; `git diff --check` passed.
+
+Current SHA-256 identities:
+
+- Lanius entry source: `a27bc4964928bb387a46e4f61271d7721780d3eafad6406a7fecc1facdea82c4`
+- x86 bootstrap executable: `327f8376d70478ad36e07476662c965c0139f7b15e9b07f2c63532a21c5c75b0`
+- singular embedding: `f6d7a1316a231e86588bc673ae002a1aa115afa6223b9b30c666fe1b751b5270`
+- envelope payload: `10016296f6b01b675529db80ed39ea000a4af95c3d7a01dfbb70c419e1b6d821`
+- ordered source list: `079059b1eb54011de70900c1c5a9f7d411a027c7166728a95b55aef461a77bf3`
+
+### Earlier 3.8 checkpoints
+
+`CheckedArguments.rejectsNoInputs` proves that the actual argc/guard sequence
+returns code 1 when argv has zero or one entries. Its arbitrary continuation
+never executes. The source theorem works from a well-formed state with an empty
+view registry, without file availability, handle freshness, or allocation-room
+premises.
+
+`Entry.Run.call` now supplies the shared actual-entrypoint call connection for
+both normal loading and early rejection. `CheckedExecution.noInputs` constructs
+a `RejectedExecution` for the accepted executable. It retains finite execution,
+classified failure, and memory safety. Its public `terminates`, `observations`,
+and `contracts` theorems provide a stable code-1 return above a finite fuel
+bound, exclude traps at every fuel, and establish `RunSound`/`RunFailureSafe`.
+`noInputs_world` proves that the only external change is the argc call event;
+files, handles, outputs, arguments, and other world fields are unchanged.
+The successful-input theorem and its loading conditions are unchanged.
+
+Six focused cases cover empty/singleton argv, pre-existing output, files and
+handles, collisions, and an unrepresentable future handle counter. The test
+also checks that two argv entries enter the continuation and that a modified
+guard cannot reuse the exact-source proof. All new rejection/call/contract
+proofs pass a standard-axiom-only audit. The first build caught a dependent
+rewrite error (103.42 seconds including pending dependency rebuilds); the
+corrected focused build passed in 26.45 seconds (`failure-no-inputs-check.log`).
+
+The public checker and self-test build passed in 7.85 seconds
+(`failure-self-build.log`). Actual-source integration passed in 68.59 seconds
+(`failure-self-source.log`): the exact extractor passed all six rejection cases,
+and all 18 sources still satisfy the existing successful-input guarantee.
+Parser/tree resources took 37.106 seconds; output bounds 587 microseconds;
+exact input binding 16.713 milliseconds. This is not the trusted fast path.
+The refreshed whole-checker audit is 173 nonstandard assumptions in 158 owner
+declarations (`failure-trust-inventory.log`); the decrease from 207 reflects the
+earlier parent/nullable cleanup. The new rejection proof adds none.
+
+#### Allocation exhaustion: complete, including actual-main linkage
+
+The source-order bug is fixed in all 13 allocations. Each buffer now has an
+outer slice binding and a short pointer scope: allocate raw bytes, return code
+3 if the pointer is null, then construct and assign the slice. The temporary
+pointer leaves scope before the next allocation. The old combined null guard
+after slice construction is removed, along with its checker and proof code.
+There is no fallback accepting the unsafe source form.
+
+`Registry.allocateRaw`, `allocationExhausted`, and `mapRaw` separate raw
+allocation from registration and account for both host synchronization passes.
+`Step.initializes` establishes valid buffer resources on success;
+`Step.rejectsExhaustion` proves a normal code-3 return before slice construction.
+The sequence theorem covers failure at any allocation, retaining earlier valid
+buffers and skipping the remainder. `HostReady` now records the initialized
+buffer after the pointer scope closes, so downstream buffer contracts survive
+without retaining pointer temporaries or duplicating initialization proofs.
+
+`CheckedExecution` retains the exact allocation source certificate and derives
+its buffer metadata from that certificate. Its public `allocationFailure`
+theorem connects the complete sequence to the actual checked `main`. From a
+well-formed state with empty locals/views, a representable argc greater than
+one, and an insufficient byte budget, it constructs a `RejectedExecution`
+with code 3. The existing all-fuel contracts and finite termination theorem
+apply. The world changes only by argc and the allocation-call events; files,
+handles, arguments, and both output streams are preserved. It assumes neither
+file availability nor handle freshness. This is modeled allocation exhaustion,
+not arbitrary native OS allocation or I/O faults.
+
+The source change also exposed a missing uninitialized-local case in the
+structural execution relation used by entrypoint analysis. `CoreSuccess` now
+supports that case with proofs in both directions to the authoritative
+evaluator. The prefix and return-composition rules cover the same scope.
+Slice validity and the classification of traps are unchanged.
+
+Verification:
+
+- The GPU compiler produced the updated x86-64 ELF in 2.51 seconds. Native
+  self-extraction took 1.25 seconds; regenerated parser envelopes took 0.92.
+  The canonical `lanius-extractor` executable was rebuilt and is byte-identical.
+- Twenty-five small byte budgets exercise first/second allocation failure,
+  exact capacity, and excess capacity. Mutations reject missing, changed, or
+  late guards, including the old slice-before-check form. A focused rebuild
+  and strict axiom audit passed in 1.54 seconds (`allocation-tests.log`).
+- The final shared checker/test build passed in 7.45 seconds
+  (`allocation-self-build.log`). Earlier rebuilds caught a missing prefix
+  constructor and the entrypoint support gap; neither was bypassed.
+- Full exact-source integration passed in 66.88 seconds
+  (`allocation-self-source.log`). All 18 files retain successful termination
+  and exact-output guarantees. The actual main also passed four exhausted
+  budgets, including failure after the first buffer was registered, and all
+  six no-input cases. Parser/tree resources took 36.588 seconds; the output
+  bound is 7,967,185 / 8,388,608 bytes, checked in 434 microseconds. Exact input
+  binding took 16.572 milliseconds. This remains bootstrap validation, not the
+  trusted fast path.
+- All new allocation and public rejection proofs use only standard axioms.
+  The whole-checker inventory remains 173 native assumptions in 158 owners
+  (`allocation-trust-inventory.log`); 3.7 is still open.
+
+Current artifact SHA-256 values:
+
+- `SelfCompactExtracted.lean`: `f6d7a1316a231e86588bc673ae002a1aa115afa6223b9b30c666fe1b751b5270`
+- `self-envelopes.bin`: `10016296f6b01b675529db80ed39ea000a4af95c3d7a01dfbb70c419e1b6d821`
+- `source-closure.txt`: `079059b1eb54011de70900c1c5a9f7d411a027c7166728a95b55aef461a77bf3`
+
+#### Invalid first path and missing first file: complete through main
+
+`Files.CheckedSource.reaches` enters the actual file loop. `Files.First`
+retains that prefix from the proved startup, and `First.completeReturn` lifts
+a first-body rejection through the loop and all enclosing main scopes. The
+ordinary file-loading domain is not needed to construct this evidence.
+`LoadingSource.pathBuffers` derives the two path buffers and their pointer
+from the same executed startup allocations. `CheckedExecution.firstFile`
+retains both the prefix and those buffers; it does not assume file availability
+or reconstruct an independently supplied intermediate state.
+
+`CheckedExecution.invalidPath` proves that an empty or oversized first path
+returns code 2 before argument copying or file opening. It reuses the existing
+`Path.Length.Stage.rejects` theorem. The remaining premises are a representable
+argc greater than one, selection of the first path, and a path byte count at
+most 2,147,483,647. The invalid byte count is zero or at least 1,025.
+
+`Host.File.evaluatesMissing`, `File.Open.Stage.rejectsMissing`, and
+`File.Load.Pipeline.rejectsMissing` prove the missing-file branch from the
+modeled host through the complete length/copy/unpack/open prefix.
+`CheckedExecution.missingFile` connects it to the actual accepted main: a
+first path of 1–1,024 UTF-8 bytes absent from the modeled filesystem returns
+code 5. No handle bound, handle freshness, file-size condition, or assumption
+on later arguments is required. No read or close occurs and no handle is made.
+
+Both public theorems construct `RejectedExecution`, so finite termination,
+stable return codes, all-fuel absence of traps, and the existing soundness and
+failure-safety contracts follow. They preserve every world field except the
+explicit call trace, including pre-existing output. They use the ordinary
+empty, unlimited-budget initial heap; the separate allocation-failure theorem
+continues to cover insufficient finite budgets.
+
+Focused checks cover ASCII and multibyte paths at both sides of the 1,024-byte
+limit, missing guards, changed limits, and changed return codes. Six composed
+missing-file runs cover ASCII/UTF-8 paths and handle counters 0, 2,147,483,647,
+and 2^80, with an existing negative handle and dirty output. All new proofs
+pass standard-axiom-only audits. The final affected build, including the
+public checker and self-test, passed in 6.34 seconds (`missing-tests.log`).
+
+Native x86 bootstrap smoke checks returned code 2 for empty, 1,025-byte ASCII,
+and 1,026-byte UTF-8 paths, and code 5 for absent 1,024-byte paths and an absent
+short path. All produced zero stdout bytes. These are execution tests of the
+untrusted bootstrap, not proofs of native x86 correctness.
+
+The final combined path/open integration accepted all 18 exact self sources
+in 70.30 seconds (`missing-self-source.log`), retaining successful termination
+and exact output. Both new rejection theorems were instantiated on the actual
+accepted source, and the six missing-file prefix executions used its checked
+host functions. Parser/tree resources took 39.088 seconds; output bounds took
+563 microseconds and exact input binding took 17.167 milliseconds. This is
+bootstrap validation with shared infrastructure built, not the trusted fast path.
+A fresh native self-extraction took 1.23 seconds and was byte-identical to the
+singular embedding. The source, native executable, embedding, envelope payload,
+and closure identities are unchanged.
+The whole-checker inventory remains 173 assumptions in 158 owner declarations
+(`missing-trust-inventory.log`); this work does not close 3.7.
+
+#### Invalid or missing paths after a loadable prefix: complete through main
+
+`Path.Rejection` states an external reason to reject a selected argument:
+an empty/oversized path or a valid-length path absent from the filesystem.
+It contains no assumed execution. The reason remains true when preceding
+iterations preserve argv and file contents.
+
+`File.Next.pathBuffers` derives the next path buffers from a completed file's
+existing handoff, including any additional registered views. It does not
+require that the next file exists. `Files.rejectsAfter` then executes any
+nonempty loadable prefix by induction through the actual checked file bodies.
+Each iteration either returns its existing frontend/output failure or passes
+its buffers and cursors onward. After the prefix, the bad argument takes the
+proved code-2/code-5 branch. The theorem does not assume the prefix parses or
+extracts successfully.
+
+`Startup.rejectsAfter` derives the first file resources from the existing
+startup proof and lifts the loop's return through main's actual lexical scopes.
+`Entry.checkExecution` retains the result in `CheckedExecution.rejectsLater`;
+`CheckedExecution.laterFailure` exposes a `RejectedExecution`, so the existing
+finite-termination and all-fuel contracts apply. Files, original handles, argv,
+and stdout are preserved. A preceding frontend failure may write diagnostics
+to stderr. The suffix and stdout-emission phases do not execute.
+
+The new `LaterFailureDomain` requires a representable argc, a nonempty prefix
+with valid path lengths, available files of at most 65,536 bytes, and enough
+representable fresh handles to open that prefix. It imposes no syntax or
+successful-run condition on the prefix and no conditions on arguments after
+the designated bad path. `checkLaterFailureDomain?` reuses the existing ordered
+file-loading checker to produce this proof from world data and the selected
+argument index; it neither reparses files nor adds a second extractor.
+
+Eleven accepted domain cases and ten rejected mutations cover repeated paths,
+arbitrary prefix syntax, empty source files, UTF-8/oversized paths, missing
+prefix files, false rejection claims, index errors, oversized prefix files,
+handle collisions, and counter exhaustion. A one-file prefix may consume handle
+2,147,483,647 before a missing-file rejection, which itself needs no new handle.
+Four small interpreted loading/advance loops check dirty-buffer reuse, exact
+stopping cursors, unchanged output and old handles, and absence of tail calls.
+The whole frontend/emitter behavior is supplied by the universal loop proof,
+not by those smaller fixtures. The boundary executions also run with the
+accepted source's host and reader helpers in self integration.
+
+The final affected self-test build passed in 3.04 seconds (`later-tests.log`).
+Four native x86 bootstrap runs also returned code 2 or 5 after one or three
+real preceding source files, with no stdout, in 0.28 seconds combined. These
+are bootstrap execution tests, not native x86 correctness proofs. The new
+resource/domain proofs use standard Lean axioms; loop/main composition adds
+nothing beyond the existing frontend baseline. The whole-checker inventory
+remains 173 assumptions in 158 owners (`later-trust-inventory.log`).
+
+Full source integration passed in 72.05 seconds (`later-self-source.log`).
+All 18 exact self sources retain the successful-extraction guarantee, and the
+new public rejection theorem is instantiated on all 11 admitted worlds.
+Parser/tree resources took 39.707 seconds, output bounds 884 microseconds,
+and exact input binding 17.040 milliseconds. Shared infrastructure was already
+built; this is bootstrap validation, not the eventual trusted fast path.
+The Lanius sources, native executable, singular embedding, envelope payload,
+and source-closure identities are unchanged. Every command stayed below two
+minutes and `git diff --check` passed.
+
+#### Oversized first file: complete through main, close, and diagnostics
+
+`Input.File.rejectsLoop` proves that every oversized file terminates with
+reader result -2 after consuming exactly capacity plus one bytes. It handles
+arbitrarily many preceding read chunks. The overflowing chunk is never copied;
+earlier copied chunks remain a bounded prefix of the source. The reader's
+single initialization and call proofs now cover both fitting and oversized
+files. Their shared result retains exact host consumption, buffer contents,
+caller storage, and memory safety. Successful callers still obtain all bytes.
+
+`File.Load.Available` separates physical loading resources from the file-size
+condition in `File.Load.Input`. `LoadingSource.available` derives those resources
+from the same real startup allocations; successful loading adds its size bound.
+`Pipeline.prepare` and `Stage.readClose` own the shared path/open and read/close
+prefixes. Their former success-only implementations were moved into these
+shared proofs, not copied behind compatibility wrappers.
+
+`Diagnostics.Read.Checked.oversized` executes the actual two diagnostic calls
+and conditional error-detail expression. It reuses the existing decimal
+formatter proof. `Pipeline.rejectsOversized` composes the full path, opening,
+read, mandatory close, diagnostics, and code-6 return. `Startup.rejectsOversized`
+constructs its input and closes the actual main scopes. `Entry.checkExecution`
+authenticates the diagnostic source and retains the resulting theorem.
+`CheckedExecution.oversizedFile` exposes a `RejectedExecution`, including finite
+termination, all-fuel absence of traps, classified failure, preserved files,
+argv, original handles, and stdout. Only stderr and its trace may grow after
+the file is closed.
+
+The public domain requires a representable argc, a first path of 1–1,024 UTF-8
+bytes selecting an existing file larger than 65,536 bytes, a representable new
+handle, and older handles below that counter. It starts with an empty,
+unlimited-budget heap. It imposes no syntax condition on the oversized file
+and no conditions on later arguments. `checkOversizedFileDomain?` constructs
+the domain from world data without parsing or executing the extractor.
+
+Verification:
+
+- Five admitted worlds and nine rejected mutations cover file-size boundaries,
+  invalid path byte lengths, missing files, absent arguments, handle collision,
+  and the largest representable handle. Four actual-source mutations reject
+  removed diagnostics, skipped failure handling, wrong writers, and wrong
+  count locals. Three fault-injected reader results test the caller's close,
+  diagnostic text, skipped frontend, and dirty-buffer preservation separately
+  from the universal reader proof and existing 90 reader boundary executions.
+- The final affected self-test build passed in 2.74 seconds
+  (`oversize-tests.log`). All new proofs pass standard-axiom-only audits.
+  The whole-checker inventory remains 173 native assumptions in 158 owners
+  (`oversize-trust-inventory.log`, 0.91 seconds); 3.7 remains open.
+- Eight native x86 bootstrap runs passed in 1.12 seconds combined
+  (`oversize-native.log`). Files of 65,535 and 65,536 bytes reached frontend
+  rejection (28); 65,537 and 131,073 bytes returned 6 with exact overflow
+  diagnostics. Each ran both first and after a valid file, with zero stdout.
+  The later-file runs are native smoke tests, not a later-file main proof or
+  proof of x86 code generation. Binary fixtures are generated by the Lean
+  native-test driver; no compiler source is generated.
+- Full exact-source integration passed in 67.50 seconds
+  (`oversize-self-source.log`), retaining success for all 18 files and
+  instantiating the new public rejection theorem on all five admitted worlds.
+  Parser/tree resources took 36.958 seconds; output bounds 462 microseconds;
+  exact input binding 16.564 milliseconds. This remains bootstrap validation,
+  not the trusted fast path.
+
+The Lanius sources, x86 bootstrap executable, singular embedding, envelope
+payload, and closure identities are unchanged. No command exceeded two minutes.
+Builds caught and corrected type/projection issues and a diagnostic-branch
+coverage gap; none was bypassed or replaced with an assumed execution.
+
+The later-file extension and exhaustive host-domain partition are now complete
+as recorded above. Final milestone acceptance, inherited trust cleanup,
+backend verification, and the trusted fast path remain open.
+
+### Previous checkpoint: inherited trust cleanup
+
+Whole-run successful-input completeness is now connected to the public
+executable certificate and instantiated on the actual self-source world.
+The remaining milestone-3 acceptance work is broader failure/host coverage
+and removal of the inherited nonstandard assumptions. The earlier work order
+put trust cleanup first; the current failure-coverage step above supersedes it.
+Backend verification and the trusted fast path remain later milestones.
+
+At this checkpoint the fully rebuilt whole-checker inventory contained 207 nonstandard
+assumptions in 176 owner declarations (`trust-structural-inventory.log`), down
+from the previous 328 in 249 declarations and the original 463 in 264. These
+are legacy native decisions, not new hypotheses introduced by the completeness
+proof. The combined public-checker build passed in 107.34 seconds
+(`trust-restored-checker.log`), including strict source-linked parser metadata
+audits. The existing equality-certificate API is unchanged; its implementation
+was restored byte-for-byte after an integration run caught a file-path mistake.
+New Boolean-equality lawfulness proofs live in `Core/Equality/Lawful.lean`.
+
+The shared infrastructure boundary is now closed for Core structural equality.
+Lean's derived equality for nested Value/Pattern/Expr types uses opaque partial
+definitions: native execution can compare them, but kernel reduction cannot.
+Those instances now use total structural recursion. `Core/Equality/Lawful.lean`
+proves that acceptance is equivalent to propositional equality for all inputs, then
+derives lawful equality for statements, functions, constants, and programs.
+Float literals retain exact bit identity, and every AST field participates.
+The implementation replaces the canonical instances; there is no second
+consumer-specific equality or correctness axiom. The final Core/equality/test
+build passed in 11.44 seconds; 12 closed cases also compute in the kernel and
+agree with native execution (`trust-core-structural-equality.log`).
+
+The live-frame issue needed a separate change: move non-recursive dispatch out
+of the mutual access-analysis block and use structural recursion for the actual
+tree traversals. The general assignment equation is preserved. Six focused
+cases cover reads, writes, compound places, match binders, local binders, and
+range binders. The actual parser root/caller frames and recognizer-to-extracted
+AST equality now pass strict standard-axiom audits, together with the cached
+data's exact source-derivation connection. `Symbolic.lean` checks in 2.5 seconds;
+the complete focused metadata build took 55.39 seconds
+(`trust-single-pass-metadata.log`).
+
+Cold cache construction remains about 51 seconds and produces a 29 MB module.
+An object-sharing pass did not reduce it and was removed. Retaining the optional
+derivation result avoids a separate success-first API, but did not materially
+reduce that timing. The full cold dependent build still exceeds the command
+limit in earlier attempts; the combined rebuild above now passes. The grammar
+validator now contains no native decisions; its affected build passed in 32.67
+seconds, including 13 seconds for the validator itself
+(`trust-kernel-validation.log`). Its production, symbol, nonterminal, and listed
+production loop frames pass strict standard-axiom audits. Whole-recognizer
+reification now also builds without native decisions (3.7 seconds).
+
+The state-loop conversion initially left three failures when comparing renamed
+nested commands. The first affected build failed in 82 seconds. Structural
+command renaming and command comparison alone did not resolve them (60.99-second
+failed build). Making term renaming structural too, with an explicit argument
+list traversal, resolved all three. The general term evaluation, command
+execution, and Core-correspondence theorems still check; the list traversal is
+proved equal to mapping the same renaming function. Focused kernel/native tests
+cover nested arguments and lexical binding under an enlarged environment.
+`Parser/Recognize/State/Core.lean` now has no native decisions and checks in
+48 seconds; the affected build passed in 64.79 seconds
+(`trust-structural-state-renaming.log`). The combined public-checker rebuild and
+whole-dependency axiom inventory above confirm that these removals reach the
+actual extractor theorem. Actual self-source integration now passes in 67.28
+seconds (`trust-structural-self-source.log`), after an 8.55-second test build.
+All 18 exact sources satisfy the public successful-input domain; the whole-run
+theorem, ordered file/output connection, failure classifications, and memory
+safety checks remain connected. Parser/tree resource validation took 37.412
+seconds. This checkpoint reduces native trust, not that end-to-end runtime.
+The largest remaining trust owners are parent replay, nullable replay, lexer
+calls, and initialization;
+they are next, not a reason to weaken the milestone's acceptance condition.
+
+Measure the replacements and optimize any expensive reduction before repeating
+a timed-out build. Audit the complete `Entry.checkExecution` dependency closure,
+not just certificate projections. Broader failure/host coverage remains after
+trust cleanup; this work does not replace any later compiler milestone.
+
+### Current checkpoint: successful whole-run completeness
+
+`Entry.Startup.executes` now proves a zero return on `SuccessDomain`, in
+addition to its existing soundness, failure safety, and finite termination on
+`LoadingDomain`. The source-only success domain states syntax and concrete
+token/parser/tree/output bounds for the exact ordered requested files. It
+contains no premise that a stage succeeds, an output is accepted, or a run
+has already occurred. Initial heap and host conditions remain explicit in
+the separate loading domain.
+
+`File.Progress` retains frontend success, output sufficiency, and the actual
+resulting cursor. `Files.Progress` carries those facts through every requested
+file and reserves space for the final suffix. The proof derives successful
+suffix emission from that remaining space. Existing source execution proofs
+are strengthened directly; there is no second file loop or serializer.
+Source-domain definitions and their existing file-resource proofs now live
+below the entrypoint checker, without duplicate bodies or forwarding wrappers.
+
+`CheckedExecution.run_complete` exposes the original `RunComplete` contract
+for every fuel above a finite bound. `CheckedExecution.succeeds` applies it to
+checked loading and successful-input conditions. `Entry.checkExecution`
+constructs this stronger certificate from the actual checked source entrypoint.
+`CheckedOutputDomain.checkSuccessDomain?` binds the already proved resource
+domains to the process's exact source paths and bytes; it performs no lexing,
+parsing, or resource analysis again.
+
+The affected source/checker build passed in 5.64 seconds. The self-test build
+and audits passed in 4.04 seconds (`completeness-self-build.log`). Full source
+integration passed in 67.91 seconds (`completeness-self-source.log`): all 18
+inputs satisfy the public successful-input domain, and the actual executable's
+`RunComplete` guarantee is instantiated. Parser/tree resources took 37.402
+seconds, output bounds 420 microseconds, and input binding 15.968 milliseconds.
+Eleven admission cases cover changed bytes, order, missing/repeated requests,
+host lookup precedence, and irrelevant host state. The actual file/main/checker
+construction adds no assumptions beyond the existing frontend baseline;
+the new domain and public contract proofs use only standard Lean axioms.
+
+This closes ledger step 5, not milestone 3. Broader external failure coverage
+and inherited trust obligations remain. The proof concerns the Core/host model,
+not native x86 execution. The source, executable, and artifacts are unchanged.
+The timing assumes shared infrastructure is built and is not the trusted fast
+path or evidence that a cold build stays below two minutes.
+
+### Previous checkpoint: source-only output sufficiency
+
+All 18 self-source files now have ordered output bounds. Including the exact
+module prefix, 16-byte pack header, and suffix, the proved bound is 7,899,213
+bytes against the existing 8,388,608-byte allocation. No allocation, source,
+artifact format, or executable changed. The bound happens to equal the current
+emitted module's size, but neither that size nor its selected trees are inputs
+to the resource proof.
+
+`CompactOutput/Size.lean` proves the exact wire-size algebra for the existing
+serializer. For tree records, three times the encoded byte count equals
+sixteen times the physical word count plus thirty-two times the node count.
+`emission_encoding_size` includes path/source bytes, both token streams,
+semantic assignments, and all count fields. `File.Resources.encoding_bound`
+applies the result to the actual frontend-selected tree and unit emitter.
+
+The earlier canonical-span raw-token budget overestimated total output by
+542,424 bytes and missed capacity by 53,029 bytes. `TokenArtifactValid` now
+retains the raw lexical fact already proved by `checkTokenArtifact_sound`
+when raw rows are present. The runtime token check is unchanged. Canonical-only
+syntax remains supported, but the output-budget checker requires raw evidence
+and rejects its absence. It never reruns tokenization.
+
+`CheckedParserTreeStorage` and the ordered `CheckedParserTrees` retain tight
+word/node/depth bounds along with their physical-capacity proofs. Root maxima
+are numerical proposals; the existing root checker independently validates
+them for every possible start production. Internal consumers use the new
+records directly, with no old-interface wrapper. `Frontend/Storage/Output.lean`
+derives source-only bounds for every recognized tree. `CheckedTreeDomain`
+retains this evidence for `checkOutputDomain?`, whose final pass only reads
+lengths and sums budgets.
+
+Focused tests cover serializer-size agreement for empty, wide, nested,
+split-reference, and UTF-8 fixtures; exact-fit and one-byte-short module
+capacities; and missing or forged raw evidence. The new size, resource,
+ordered-domain, and actual-emitter proofs use only standard Lean axioms.
+The existing 463-assumption frontend baseline is unchanged.
+
+The final self-test build passed in 6.55 seconds (`output-self-build.log`).
+Full source integration passed in 65.63 seconds (`output-self-source.log`),
+including 36.684 seconds for parser/tree resources and 419 microseconds for
+the output domain. This does not demonstrate the eventual trusted fast path.
+The executable, singular embedding, envelope payload, and source-list hashes
+are unchanged; `git diff --check` passed. No Rust, Python, or Wasm was added.
+
+Broad dependency rebuilds hit the 119-second cutoff. Profiling isolated a
+5.85-second kernel check in grammar-validation composition. Named counter-cell
+equalities replace broad unfolding of preceding execution records: the
+module's serial check fell from 15.80 to 10.18 seconds, kernel time from 7.23
+to 1.67 seconds, and peak RSS from 3,524,776 to 1,958,244 KiB. A subsequent
+broad rebuild still timed out; cold dependency-chain rebuild performance is
+not fixed. The final incremental build is not evidence of a sub-two-minute
+cold rebuild.
+
+### Previous checkpoint: tree resources and actual frontend success
+
+All 18 self-source files now satisfy `Entry.TreeDomain` as well as the existing
+token, syntax, and parser domains. `File.Resources.frontend_success` proves that
+the actual frontend return has stage zero on these source-only conditions.
+No successful parser/materializer result is assumed by the caller. This closes
+tree resource sufficiency, not whole-extractor successful termination.
+
+`Parser/Tree/Bounds/Cost.lean` gives the exact node, word, and depth algebra for
+the existing materializer. A child includes its three-word parent reference;
+the root's physical record size is therefore its cost minus three words.
+`treeCost_layout` and `forestCost_layout` prove this correspondence.
+`BoundedChart.root` bounds every declaratively recognized full-input tree,
+including the source-selected root, by induction through scans and completions.
+
+`Bounds/Propose.lean` calculates potentials over the existing finite chart's
+dependency graph. It adds no chart items and performs no recognition. Duplicate
+items are normalized, missing advances are rejected, and cyclic dependencies
+fail. The proposal algorithm is not trusted. `Bounds/Check.lean` independently
+checks every transition inequality, every completed item's coverage by its
+span/nonterminal summary, and every start-production root bound. A forged
+summary cannot omit an expensive alternative derivation. The array-backed
+terminal scan now lives in `Compiler/Parser/Scan.lean`, shared directly by the
+chart and resource checkers without an import-only wrapper.
+
+`Frontend/Storage/Tree.lean` turns accepted budgets into source-only bounds for
+all recognized trees. `CheckedExecution.checkParserTreeDomain?` validates chart
+closure once and retains both parser and tree domains, reusing the already
+accepted source/token evidence. It uses the existing envelope payload; no
+Lanius producer, certificate format, or buffer size changed.
+
+The public frontend postconditions now retain the actual caller's depth limit
+and the implication from sufficient resources to zero materializer status.
+`CheckedAfterParse.accepted` derives that implication from the existing
+materializer success theorem and evaluation determinism. Syntax/body contracts,
+frame restoration, capacity transport, and the semantic collector consume the
+strengthened interface directly. `syntaxPost.no_tree_failure`,
+`bodyPost.no_tree_failure`, and `File.Resources.no_tree_failure` carry the result
+to `File.Resources.frontend_success`.
+
+Focused tests cover exact fits, one-word/node/depth shortages, nullable
+alternatives, split tokens, reordered/duplicate candidates, missing transitions,
+forged summaries, and nullable cycles with arbitrarily deep derivations. The
+source-bound integration also rejects wrong token counts, zero resource limits,
+invalid productions, and missing/surplus candidates. Pure/resource/domain and
+frontend-success audits use only standard Lean axioms. Retaining materializer
+success adds no assumptions beyond its existing source proof; this does not
+discharge the separate 463-assumption frontend baseline.
+
+The final affected self-test build passed in 7.15 seconds
+(`tree-success-self-build.log`). Whole-source integration passed in 66.82
+seconds (`tree-success-self-source.log`), with shared infrastructure built,
+including 37.364 seconds for the combined parser/tree resource check. This is
+one-time validation, not the eventual trusted extraction path. Every command
+stayed below two minutes. `git diff --check` passed, and hashes of the original
+executable, singular embedding, source list, source contents, and envelope
+payload remain unchanged. No Rust, Python, Wasm, or compatibility wrapper was
+added.
+
+### Tree resource approach (now completed)
+
+Use resource budgets on the already checked chart items, not the tree emitted
+by an untrusted run. Each terminal advance and each possible completion must
+fit the next item's budget. Summation bounds nodes and words; maximum child
+depth plus one bounds recursion. An induction on declarative tree recognition
+will cover the source-selected tree without assuming a particular backpointer
+choice or rerunning the recognizer.
+
+1. Prove the resource algebra matches the existing materializer's exact layout,
+   and that budgets preserved by chart transitions bound every recognized tree.
+2. Compute candidate budgets on the finite chart dependency graph and check
+   every transition inequality independently. Cycles or insufficient budgets
+   must fail rather than become assumed resource bounds.
+3. Retain successful materialization under sufficient resources at the public
+   frontend boundary, construct the source-only tree domain, and admit all 18
+   self sources. Then move to semantic/output bounds.
+
+A diagnostic of the largest self unit found 162,515 chart items, 53,506 scan/
+completion constraints, and no dependency cycle. Its candidate root bounds
+are 31,374 nodes, 231,282 words, and depth 198, below the source capacities
+65,536 / 1,048,576 / 1,024. Graph processing took 2.28 seconds; the full probe,
+including loading the artifacts, took 13.67 seconds. These are feasibility
+measurements, not yet accepted tree-resource proofs. No source format or buffer
+size change is needed for this approach.
+
+### Previous checkpoint: parser resource domain for all self sources
+
+All 18 self-source files now have checked parser resource certificates.
+`Entry.CheckedExecution.checkParserDomain?` consumes the existing source-bound
+embedding and retains `ParserDomain sources`. `File.Resources.no_parser_capacity`
+excludes capacity failure in the actual frontend call. Together with the syntax
+and token-storage domains, `frontend_success_or_tree_resource` reduces its
+outcomes to success or tree-resource failure. The next boundary is tree storage
+and depth sufficiency, followed by semantic/output bounds. Milestone 3 remains
+open, including broader failure coverage and the 463 inherited trust assumptions.
+
+A closed candidate chart bounds the real source parser's state count.
+`Compiler.Parser.GeneratedItem` means an
+item belongs to every chart satisfying the existing `ChartClosed` rules.
+It adds neither a second recognizer nor a new set of grammar rules.
+`WorkspaceGenerated.length_le` proves the size bound using the actual
+workspace's unique position/key pairs and the candidate's sound chart links.
+Candidate state IDs, ordering, and backpointers need not match the source run.
+
+Only fresh backpointer steps needed stronger evidence. Initialization derives
+generation from the exact start-production row; prediction derives it from the
+actual waiting parent and the selected nonterminal row. The prediction loop
+retains that row evidence through its existing scope and append proofs.
+`WorkspaceBackpointersSound.generated` then derives generation of every state
+by induction on the existing decreasing backpointers. Terminal advances, parent
+completion, and nullable replay therefore require no parallel invariant family.
+
+Initial and position returns retain generation for the actual returned
+workspace, including capacity failures. The public
+`RecognizerCallExecution.states_le_closed` supplies the count bound, and
+`success_of_closed_bound` guarantees parser success from declarative syntax
+and a closed candidate strictly smaller than the authenticated capacity.
+`Frontend.bodyPost.no_parser_capacity_of_closed_bound` carries the same
+exclusion to the frontend return. No caller assumes a successful parser run.
+
+`Compiler/Parser/Envelope/Check.lean` checks finite closure with array-backed
+grammar/token lookups and balanced item/completion indexes. It validates index
+coverage before using the indexes; deleting a completed span cannot hide a
+missing completion. `checkWithIndex_closed` proves the four existing closure
+rules for arbitrary supplied indexes. Extra entries are safe but count against
+capacity; candidate state IDs, order, and backpointers need not match the run.
+
+`verified_compiler/tools/envelope.lani` is an untrusted one-time proposer that
+calls the existing Lanius lexer/parser and exports chart coordinates. It does
+not implement another recognizer or change the production extractor.
+`Tests/Parser/Prepare.lean` packs the existing grammar for its input. The binary
+decoder rejects truncation, oversized counts, unknown versions, nonzero
+reserved fields, and trailing records. The self-check now requires an envelope
+path and retains its source-only domain alongside the whole-executable
+certificate. See `BOOTSTRAP.md` for the updated command; no old-call wrapper
+or fallback was added.
+
+The proposer initially crashed because GPU lowering treated a host-service ID
+as a local function-table index and borrowed an unrelated aggregate result
+width. The fix in `shaders/codegen/lir/semantic/materialize.slang` restricts that
+lookup to ordinary function calls. Rebuilding the compiler took 10.92 seconds;
+the proposer then compiled in 2.98 seconds and exported all charts in 0.97
+seconds. A fresh build of the original extractor took 2.54 seconds and its
+1.26-second self-extraction reproduced the existing compact module byte-for-byte.
+No Rust, Python, or Wasm implementation was added.
+
+The largest envelope, for `parser.lani`, has 162,515 states against capacity
+464,305. All 18 passed source-bound checking. Focused tests cover every
+required-item deletion, nullable completion, odd split-token positions, forged
+indexes, duplicate/reordered candidates, capacity edges, and malformed
+transport. A 20,000-item sparse envelope checked in 533 ms. The full affected
+self-test build passed in 4.24 seconds (`envelope-self-build.log`), including
+standard-axiom audits of the checker and public resource-domain constructors.
+New proofs add no assumptions; the existing frontend baseline is not discharged.
+
+Whole-extractor integration passed in 44.32 seconds (`envelope-self-source.log`)
+with shared infrastructure built, including 13.97 seconds for the new parser
+resource check. This is one-time resource validation, not the eventual
+few-second trusted extraction path. Every command stayed below two minutes.
+The original executable, singular embedding, source list, and source-content
+hashes remain unchanged. The envelope payload SHA-256 is
+`242acf6e02c734918c84bd91d9d7b486f32f6943fa5e27bbfdc1d7f81335b0f4`.
+
+### Source-linked parser capacity evidence
+
+Capacity returns now prove that the actual returned parser workspace is full.
+`Compiler.Parser.WorkspaceFull` records both the reported state count and the
+capacity comparison. `appendLogical.full_workspace` derives this witness from
+the failed append. Initial seeding, prediction, parent completion, nullable
+replay, terminal scanning, state traversal, and position traversal retain it
+through their existing result types. No parser behavior or capacity changed.
+
+The initial and position continuation results no longer discard the workspace
+on failure. Their `workspaceAgrees` contracts bind capacity returns to the same
+workspace as the physical execution. The public
+`RecognizerCallExecution.capacity_result` proves the exact diagnostic fields,
+and `capacity_exhausted` combines fullness with the encoded-buffer bound to
+prove `finalWorkspace.states.length = workspaceLayout.capacity`.
+`Frontend.syntaxPost.capacity_result` and `bodyPost.parser_capacity` preserve
+that evidence through the frontend return. Existing frame restoration and
+source-buffer expansion preserve the strengthened contract unchanged.
+
+`Tests/Storage/Parser.lean` covers insertion into the final slot, duplicate
+insertion at capacity, a missing item at capacity, zero capacity, forged counts,
+both public capacity exits, and a wrong-workspace substitution. The tests and
+affected whole-extractor dependencies built in 43.96 seconds
+(`parser-full-audit.log`). New public/pure theorems use only standard Lean
+axioms. The source execution constructors add nothing beyond the inherited
+frontend baseline; this does not discharge its 463 nonstandard assumptions.
+
+The final dependent self-test build passed in 2.64 seconds
+(`parser-full-self-build.log`). The first attempt exposed one stale tuple
+destructuring in the parent-completeness regression; updating it for the new
+fullness witness preserved the test's original claim. Exact-source integration
+then accepted all 18 files and retained the whole-executable certificate in
+25.95 seconds (`parser-full-self-source.log`), with shared infrastructure built.
+The executable, singular embedding, ordered closure list, and source-content
+hashes are unchanged; `git diff --check` passes. Every command stayed below
+two minutes. No Rust, Python, Wasm, or compatibility wrapper was added.
+
+The next obligation remains a non-circular parser resource bound admitting
+the actual self closure, followed by tree, semantic, and output bounds. This
+checkpoint supplies the evidence needed to contradict capacity failure; it
+does not yet provide that bound. A naive bound containing every fresh grammar
+production at every token-lattice position is too large: `parser.lani` has
+3,889 tokens and capacity for 464,305 states, while that candidate set contains
+2,255,910 fresh states alone. A useful bound must restrict reachable states;
+counting arbitrary language-sound prefixes is insufficient. These are numeric
+inventory results, not measurements of actual parser state usage.
+
+### Certified input syntax and token storage
+
+The actual 18-file self closure now has two source-bound input conditions:
+`Entry.TokenDomain` and `Entry.SyntaxDomain`. They are stated in terms of
+lexical validity, declarative grammar recognition, and concrete buffer sizes;
+neither condition says that the extractor succeeds or accepts its own output.
+The existing singular embedding supplies syntax evidence. The only new runtime
+check inspects source lengths and already-certified token spans.
+
+`Lexer.rawTokenBudget` subtracts each canonical token's interior bytes from
+the source length. Those bytes cannot begin another raw token. The proof follows
+the complete raw-lexer trace and shows that trivia removal and kind retagging
+cannot increase the retained interior count. This gives a tighter upper bound
+than one raw token per source byte, without rerunning the lexer. The checker
+requires three words per possible raw token in both the raw and canonical
+buffers, plus one kind word per canonical token.
+
+`Frontend.checkUnitsTokenStorage?` consumes the existing checked units and
+retains source-only domain evidence for every file. The public
+`CheckedExecution.checkTokenDomain?` uses the 65,536-word capacities authenticated
+by `File.Syntax.Stage.arguments`. `File.Resources.token_storage` connects those
+bounds to the actual loaded bytes and runtime buffer lengths, including dirty
+buffers reused for later files. `File.Resources.no_token_failure` excludes
+lexer and canonical/kind-storage errors at the source-linked frontend return.
+
+The accepted parse certificates now connect to the parser's separate language
+specification. `advanceTerminal.scanTerminal` proves agreement between certified
+semantic terminals and the physical-token lattice, including both halves of a
+split token and its alternative whole-token interpretation. Earlier-child IDs
+in the validated postorder tree supply induction for
+`NodesMatchFrom.recognizes`; `RootMatches.recognizes` then covers the full input.
+`ParseArtifactValid.recognizes` reuses those proofs and decoded token identities.
+It does not run another parser or assume a successful source-parser execution.
+
+`CheckedExecution.syntaxDomain` retains that result for the exact ordered input
+sources. `File.Resources.recognizes` connects it to the actual canonical token
+stream and checked grammar. Finally,
+`File.Resources.frontend_success_or_resource` composes it with the source
+parser's completeness theorem. On this input domain the frontend can only
+succeed, report parser capacity exhaustion, or report tree-resource exhaustion.
+Lexical failure, token-buffer failure, and invalid-syntax rejection are ruled out.
+
+The next boundary is parser and tree resource sufficiency, followed by semantic
+collection and output bounds. Those conditions must admit the actual self
+closure. Broader host/failure coverage and the 463 inherited frontend assumptions
+also remain open. This checkpoint does not close milestone 3 or establish native
+x86 execution correctness.
+
+Verification:
+
+- The token-domain build and 31 exact-fit/overflow cases passed in 3.44 seconds.
+  Cases cover empty input, long identifiers/literals, trivia, inclusive-range
+  retagging, each buffer separately, forged spans, and lexical errors.
+- The tree-to-language and frontend composition tests passed in 2.34 seconds.
+  They derive recognition from an actual finite nullable/recursive tree and
+  cover whole/split terminals, invalid odd-position scans, malformed child
+  references, missing split halves, wrong nonterminals, and incomplete roots.
+- The final dependent build and both audits passed in 4.44 seconds
+  (`frontend-domain-final-build.log`). Every new theorem/checker audited here
+  uses only standard Lean axioms. The complete extractor still inherits the
+  existing frontend baseline; these local audits do not discharge it.
+- Final exact-source integration accepted all 18 files and retained both
+  input domains in 25.24 seconds (`frontend-domain-self-source.log`). The new
+  numeric token-storage check took 4,608 microseconds inside that run. This
+  measures reuse of already checked syntax evidence, not fresh extraction or
+  the eventual trusted-extraction path. Shared infrastructure was prebuilt.
+
+New domain modules live under `Entry/Domain/`, language-connection proofs under
+`Parse/Language/`, and storage checks under `Frontend/Storage/`. The files contain
+the actual proofs and checker implementations; no import-only compatibility
+files were left behind. Lanius sources, bootstrap executable, singular embedding,
+and ordered-source identities are unchanged.
+All four recorded hashes still match, `git diff --check` passes, and every
+command stayed below two minutes. No Rust, Python, or Wasm path was added.
+
+### Whole-extractor execution and parser-completeness foundation
+
+The complete `main` execution proof now covers startup, every requested file,
+the final suffix, clearing and packing, stdout, and return.
+`Entry.Startup.executes` constructs finite fuel on the stated loading/resource
+domain. Zero establishes the public `Success` contract, including an accepted
+syntax certificate for the exact ordered input files, exact rendered stdout,
+preserved inputs, restored file handles, and memory safety. Nonzero returns
+establish the public `Failure` contract. Covered errors include file-phase
+21/28 and final suffix overflow 25. No successful parse, accepted output,
+component execution, or intermediate buffer/resource invariant is assumed.
+
+The output connection uses `Files.History.rendered` to derive decoder acceptance
+and the exact module bytes from actual ordered emissions. The text writer and
+suffix theorem cover both full writes and partial-output capacity failure.
+Suffix failure returns 25 before clearing, packing, or stdout. Final workspace,
+pointer, output buffer, and separation come from startup and the file-loop
+result; they are not independently supplied to the whole-main theorem.
+
+`Entry.Run.body_typed` derives main-body typing from the accepted entrypoint.
+`Entry.Run.evaluates` invokes that exact zero-argument entrypoint and restores
+the caller's locals without weakening either public contract.
+`Entry.Run.observations` establishes `RunSound` and `RunFailureSafe` for every
+fuel bound. There is a finite bound above which every executable run returns
+the same value and final state; below it, the only alternative is fuel
+exhaustion. Traps and explicit host exits cannot replace the proved result.
+
+`Frontend.checkLinkedSyntax?` constructs the previously assumed `LinkedSyntax`
+evidence. It proposes mappings from the embedded frontend pack used by the
+existing lexer proofs, then checks dependency closure and exact relocation
+against the current Core program. It checks the separate complete canonicalizer
+proof and the actual parser/reader link, including helper and result-type
+identities. No separate external JSON input is needed. The former standalone
+link test no longer contains a second link-construction algorithm; its useful
+guard/tail regressions run against the shared checker.
+
+The actual 18-file self-source driver constructs this frontend evidence and
+instantiates the whole-executable theorem from an ordinary process world.
+Main typing, initial runtime typing, call ABI, and x86 word width are derived.
+The remaining input premises describe nonempty bounded argument paths,
+available files of at most 65,536 bytes, and representable fresh file handles.
+The initial modeled heap is empty with an unlimited allocation budget. This
+is a Core/host-model execution result, not yet a native x86 correctness proof.
+
+The complete construction now lives in the library, not in the self-test.
+`Entry.checkExecution` consumes the existing `CheckedExtractorCoreSourcePack`
+and returns `Except String (CheckedExecution accepted)`. Its result retains
+the whole-executable theorem and checked stages for inspection. It performs no
+second extraction, source parse, or Core synthesis and imports no test module.
+The source-checking and proof-assembly contents were moved from `Tests.Self`;
+the test driver now consumes that result and reuses its stages for the existing
+execution and mutation regressions. It shrank from 634 to 133 lines, with no
+compatibility wrapper or second correctness construction.
+
+The public `CheckedExecution.run_sound`, `run_failureSafe`, and `terminates`
+theorems apply to an explicit `LoadingDomain` over an ordinary process world.
+`Entry.checkLoadingDomain?` produces that domain evidence from argument paths,
+modeled files, byte-size bounds, and fresh handles. It preserves request order
+and repeated paths, accepts empty files, and does not parse or require syntax
+acceptance. Its 17 boundary cases cover missing inputs/files, UTF-8 path-byte
+limits, file-byte limits, invalid syntax as loadable data, and handle
+representability/freshness. The actual 18-file self-source world now passes this
+domain checker, and all three public theorems are instantiated from its result.
+This establishes the self closure's loading domain, not yet the stronger
+syntax/resource domain needed to guarantee successful extraction.
+
+The entrypoint bridge uses only standard Lean axioms. The link-construction
+audit adds no nonstandard assumptions beyond the existing frontend theorem;
+the inherited 463-assumption frontend trust obligation remains. New tests
+reject seven mapping/missing-body/changed-body mutations and preserve six
+guard/continuation mutations from the former link harness.
+The public theorem projections and loading-domain checker use only standard
+Lean axioms. Auditing the entire `Entry.checkExecution` construction, not just
+its projections, adds no assumptions beyond the same frontend baseline.
+
+The first language-to-chart completeness theorem is now proved in
+`Compiler/Parser/Closure.lean`. `ChartClosed.contains_root` derives a complete
+start item from `RecognizesInput`, provided the chart is seeded and closed
+under prediction, scanning, and completion. Its mutual grammar induction
+covers empty productions, recursive nonterminals, and the existing split-token
+lattice. It introduces neither another parser implementation nor a definition
+of validity based on successful execution. Chart closure must come from the
+source loops, not from a new caller assumption. The completed source connection
+is described below.
+
+The actual root-loop proof now retains `NoRootIn` on exhaustion. Each source
+iteration supplies its failed predicate; the loop composes those facts across
+the unvisited suffix. The root entry proves that suffix is the whole final
+chart. `RecognizerRootStatementOutcome.rejected` therefore carries proof that
+no candidate satisfies the root predicate, and both accepted and rejected
+outcomes refer to the actual returned workspace.
+`success_of_hasRoot` excludes rejection when the final chart contains a root;
+`success_of_closed` connects that result to the declarative grammar theorem
+and retains the source-selected `StoredRootParse`.
+
+This evidence survives the concrete parser call and the frontend contract:
+`RecognizerCallExecution.rejected_noRoot`, `syntaxPost.rejected_chart`, and
+`bodyPost.parser_rejected` expose the exact returned chart and distinguish
+syntax rejection from capacity failure. Capacity expansion and scope/frame
+preservation retain the witness. No successful result or caller-supplied
+absence proof was added to the execution constructors.
+
+Initial seeding is now proved from the source loop. Its invariant records the
+exact seeded prefix of the packed start-production row; setup proves that the
+whole row equals `productionIdsFor start`. Successful append includes both
+new insertion and duplicate detection. `StartSeeded.preserved` carries those
+items through workspace growth, and the actual parser call retains them in
+every non-capacity result. Frontend rejection therefore carries both
+`StartSeeded` and `NoRootIn` for the same returned chart. An empty-input,
+empty-start-rule regression excludes rejection from this seeding guarantee
+alone, without assuming chart closure.
+
+Prediction now has the same exact-prefix invariant. The source nonterminal
+binding proves which semantic row its offset/count select, and
+`RecognizerStatePredictionCompletedFrame.seeded` derives every production in
+that row on normal completion. Nullable replay retains these seeds, including
+when replay exhausts capacity after prediction completed. The synchronized
+outcome and restored physical result refer to the same workspace.
+
+`PredictionsComplete` states the prediction clause for one parent item.
+The actual nonterminal executor derives it from the selected row; terminal and
+finished-item branches discharge it from their source guards. The shared
+`RecognizerStateBranchSynchronizedOutcome` and full state-body iteration now
+retain it. No caller supplies a predicted chart or an accepted parse.
+
+The state loop now accumulates those results over its entire growing chart.
+`Compiler/Parser/Prediction.lean` proves that append-only growth preserves chart
+order and the visited prefix. `PredictionsFor.step` extends the certified prefix
+by the item just processed; newly appended items remain in the pending suffix.
+The existing FunctionalView loop induction retains this evidence in
+`RecognizerStateFunctionalResult.predictions`. Normal termination establishes
+`ChartPredicted` for the actual final workspace, including newly appended
+states. `ChartPredicted.predict` exposes exactly the prediction clause needed
+by `ChartClosed`.
+
+Resuming a traversal requires evidence for its already-visited prefix, but
+actual callers do not supply that assumption. The source chart-head protocol
+establishes an empty visited prefix, or an empty chart when the head is negative.
+`RecognizerStateConfig.predictionsReady_of_head` derives this from the checked
+head value. The enclosing position scope invokes it and retains `ChartPredicted`
+in `RecognizerPositionPostFrame.predicted` after restoring the temporary locals
+and advancing the position.
+
+Preservation through later positions is now proved. `ChartsUnchangedBefore`
+records equality of every earlier chart, while allowing the state table and
+current or later charts to grow. Actual prediction, nullable replay, parent
+completion, and terminal scanning establish it on normal completion. The
+state-step and complete state-loop results retain and compose that evidence.
+Capacity returns remain separate and do not claim completed charts.
+
+`PredictionsBefore.advance` preserves each earlier chart's prediction guarantee
+and adds the newly completed chart. The source position-loop induction applies
+it after each actual state traversal. `RecognizerPositionFunctionalResult.predictions`
+therefore certifies every input position in the final workspace, including the
+final position. The actual recognizer starts at zero, so the prior-chart premise
+is discharged by the empty prefix, not supplied by an extractor caller.
+
+Root search leaves that workspace unchanged. The position/root continuation
+retains its completed prediction prefix, and
+`RecognizerCallExecution.predictionsComplete` exposes it for every non-capacity
+result. Frontend rejection retains `StartSeeded`, prediction for every input
+chart, and `NoRootIn`, all for the same physical workspace. No successful
+parse or chart-closure assumption was added.
+
+Scanning now has the same source-to-public-result connection.
+`Compiler/Parser/Scanning.lean` states `ScansComplete` for a processed item:
+whenever its expected terminal matches, the advanced key is present at the
+scanner's returned position. The actual terminal branch derives this key from
+successful append, including duplicate detection. A failed match contributes
+no advance, and nonterminal or finished-item branches discharge the scan
+condition from their checked source guards. Capacity exhaustion does not
+claim scan completeness.
+
+`ScansFor.step` accumulates the guarantee over the growing state traversal.
+The actual chart-head protocol now proves `processedPrefix_empty_of_head`
+once, and both prediction and scanning initialize from that shared fact.
+`RecognizerStateFunctionalResult.scans` and `RecognizerPositionPostFrame.scanned`
+retain the completed chart result. `ScansBefore.advance` carries it through
+later positions using the already-proved earlier-chart stability.
+
+The source position loop starts at zero and constructs
+`RecognizerPositionFunctionalResult.scans` for every final-workspace input
+chart. Root search retains that workspace, and
+`RecognizerCallExecution.scansComplete` exposes the result for every
+non-capacity return. The frontend rejection contract now retains scanning as
+well as seeding, prediction, and absence of a root, for the exact canonical
+token-code stream and physical workspace. The public scan regression obtains
+its input-position bound from the matching scan itself, not an extra caller
+assumption.
+
+Parent completion now retains its entire visited prefix through the actual
+source loop. `ParentsFor.step` includes the current parent and keeps newly
+appended parents pending. Normal termination yields `ParentsComplete` for the
+origin chart in the actual final workspace. Matching appends include successful
+duplicate detection; capacity returns do not claim coverage. The real chart-head
+binding discharges the initial prefix condition. `RecognizerStateParentEntry.execute`
+retains that result after both temporary source scopes close.
+
+Nullable replay now supplies the other processing order. `NullablesComplete`
+requires the waiting parent's advanced key whenever a matching zero-width
+child is present. Once one matching append succeeds, the retained key covers
+all other matching children, including later additions. Nonmatching iterations
+accumulate their visited prefix. `RecognizerNullableFunctionalResult.nullables`
+proves coverage through every branch of the actual loop; the real chart-head
+entry supplies its initial condition. Prediction composition and restoration
+retain the same final workspace in
+`RecognizerStateNonterminalSynchronizedExecution.nullables`.
+
+Both scope executors now keep the original FunctionalView result and its
+coverage proof together, transporting only the initial-workspace identity.
+They no longer reconstruct a second dependent outcome from separately unpacked
+fields. The unused parent compatibility wrappers were removed, and the existing
+chart-head proofs now live with the source entries rather than being duplicated
+in the enclosing driver. No compatibility alias or alternate execution path
+was added.
+
+Parser-wide completion is now proved. `CompletionsFor` records processed
+parent/child pairs, including parents in earlier origin charts. Its step lemma
+preserves old pairs, uses parent replay for the newly processed child, and uses
+nullable replay for a newly processed parent of an earlier zero-width child.
+Newly appended items stay in the pending suffix. `CompletionStep` obtains both
+responsibilities from the actual terminal, nonterminal, and completed-item
+source branches.
+
+`RecognizerStateFunctionalResult.completions` accumulates these guarantees
+through the entire growing state traversal. The real chart-head entry supplies
+the empty-prefix condition. `CompletionsBefore.advance` preserves earlier
+charts and adds the completed current chart, so
+`RecognizerPositionFunctionalResult.completions` covers every input position
+in the final workspace. Position zero discharges the initial premise.
+
+`ChartClosed.of_phases` combines seeding, prediction, scanning, and completion
+on that same workspace. Physical encoding bounds every stored position;
+existing language-sound derivations prove that each child's origin precedes
+or equals its end. These are conclusions of the source invariants, not new
+extractor-caller assumptions. The actual position/root continuation constructs
+the complete closure proof before returning, and root search preserves it.
+
+`RecognizerCallExecution.success_of_recognizes` now proves that declaratively
+valid input succeeds whenever the result is not capacity exhaustion.
+`success_or_capacity` states the two alternatives without a non-capacity
+premise. `root_of_recognizes` retains the actual selected stored derivation
+and exact returned result fields. The source-linked frontend rejection
+contract carries closure and absence of a root for the same workspace;
+`bodyPost.parser_rejected_invalid` therefore proves that its canonical
+token stream is not recognized by the grammar. Syntax rejection can no
+longer remain an unexplained failure alternative for valid input.
+
+This closes the parser-completeness obligation, not the extractor's whole
+successful-input theorem. Capacity remains a real possible result. The next
+resource domain must rule it out and cover token, tree, and output limits,
+then be established for the actual self closure. In particular, a conservative
+bound that only admits tiny inputs and excludes the extractor's own sources
+would not finish this milestone.
+
+Verification of the completed parser boundary:
+
+- Pure phase assembly and span monotonicity checked in 0.93 seconds
+  (`parser-chart-closure-model.log`). The new pure lemmas use only standard
+  Lean axioms.
+- The public parser/frontend regression and assumption-audit build passed
+  in 6.74 seconds (`parser-chart-closure-public-audit.log`). It audits the
+  actual position/root proof construction as well as its public projections.
+  The source construction adds nothing beyond the inherited frontend baseline.
+- The remaining dependent whole-extractor build passed in 42.67 seconds
+  (`parser-chart-closure-self-build.log`). Exact-source integration accepted
+  all 18 files in 25.40 seconds (`parser-chart-closure-self-source.log`),
+  retaining the public whole-executable certificate and loading-domain proof.
+- A final added regression processes a nullable child before its parent is
+  even inserted, preserves the processed prefix across insertion, and closes
+  the pair through the parent's own replay. Together with the growing
+  `S → A A; A → ε` case, this exercises both outer-loop processing orders.
+  Missing-advance cases reject the incomplete chart. The final regression,
+  public audit, and dependent self-check build passed in 3.54 seconds
+  (`parser-chart-closure-order-audit.log`).
+
+No Lanius source, bootstrap executable, singular embedding, or source-closure
+identity changed. All four recorded hashes below still match. Every command
+stayed below two minutes, and `git diff --check` passes. These are separate
+proof/checking boundaries, not a claim about clean-build time or the eventual
+trusted-extraction path. The 463 inherited frontend assumptions remain open.
+
+The new completeness and rejection-projection lemmas use only standard Lean
+axioms. Focused cases cover nullable and recursive rules, both halves of a
+split token, invalid odd-position scanning, an actual closed empty-input chart,
+and a missing-root chart. Prediction cases cover both alternatives of a
+nullable/recursive nonterminal, nonzero origins, later capacity failure,
+growth in another chart, terminal/finished states, and an omitted alternative.
+The growing-chart regression starts with one parent, appends two children,
+processes both, and derives chart-wide prediction. It also rejects exhaustion
+at the original tail after those children have been appended.
+Pure prediction lemmas use only standard Lean axioms. Source invariant and
+execution theorems are audited against the existing frontend baseline, since
+their types retain its legacy source-data checks.
+
+The new preservation regression carries a completed chart through processing
+of a later chart, permits growth in the current chart, and rejects a unique
+backward insertion despite preservation of all old states. A public-outcome
+regression derives any required child prediction at an arbitrary input
+position without a caller-supplied closed chart. The new pure preservation
+lemmas and public projections use only standard Lean axioms; the actual
+source construction remains within the existing frontend assumption baseline.
+
+Scanning regressions process both halves of one split token and preserve the
+first half's completed chart while processing the second. They also cover
+duplicate insertion at capacity, missing advanced items, terminal mismatch,
+empty and final input positions, invalid odd-position scanning, and
+nonterminal/finished states. The scan cases and pure axiom audit passed in
+0.94 seconds (`parser-scanning-cases.log`). The actual source branch build
+passed in 36.36 seconds, the state driver in 9.64 seconds, and the position
+driver in 7.24 seconds. The affected proof chain through `Tests.Self`, including
+the public parser/frontend contracts, whole-extractor construction, regression
+checks, and axiom audits, passed in 82.40 seconds
+(`parser-scanning-self-build.log`). It retains the same 463 inherited
+nonstandard frontend assumptions and adds none. A further public-outcome
+regression combines seeding and scanning to exclude rejection of a valid
+terminal-only split-token input, without assuming full chart closure or parser
+success. That regression and the dependent self-check module passed in
+2.54 seconds (`parser-scanning-public-cases.log`). The exact 18-file
+self-source integration passed in 25.90 seconds (`parser-scanning-source.log`),
+retaining the public whole-extractor certificate and the existing source-link
+and execution regressions. No Lanius source, executable, or embedding changed.
+Every command stayed below two minutes, and `git diff --check` passes. These
+are proof/checking timings, not extraction-throughput measurements.
+
+At the parent-completion checkpoint, the source-entry build and growing-chart
+regressions passed in 26.75 seconds (`parser-parent-coverage-entry.log`). The
+public parser/frontend regression chain and assumption audit passed in
+60.39 seconds (`parser-parent-coverage-audit.log`), and the remaining dependent
+whole-extractor build passed in 41.47 seconds
+(`parser-parent-coverage-self-build.log`). Exact 18-file self-source integration
+passed in 25.53 seconds (`parser-parent-coverage-source.log`). The source
+construction adds no assumptions beyond the existing frontend baseline.
+These are checks of distinct proof boundaries, not a claim that a clean build
+of their union takes any one of those times.
+
+Nullable replay's pure regressions cover a child completed before its parent,
+nonmatching and unfinished children, wrong nonterminals, nonzero-width children,
+duplicate detection at full capacity, missing advances, and later chart growth.
+The loop proof passed in 9.94 seconds (`parser-nullable-coverage-loop.log`).
+After connecting its real chart-head entry, the restored nonterminal branch
+and pure regressions passed in 10.85 seconds
+(`parser-nullable-coverage-branch.log`; the regression module itself took
+0.887 seconds). The public parser/frontend chain and assumption audit passed
+in 60.49 seconds (`parser-nullable-coverage-audit.log`). The remaining dependent
+whole-extractor construction passed in 41.77 seconds
+(`parser-completion-traversals-self-build.log`). Both completed traversals use
+the exact source-linked loops, not a new logical parser. Their new pure lemmas
+use only standard Lean axioms; source proofs add nothing beyond the inherited
+463-assumption frontend baseline.
+
+Final exact 18-file self-source integration passed in 25.68 seconds
+(`parser-completion-traversals-source.log`), retaining the public executable
+certificate and source-link/execution regressions. The x86 bootstrap,
+singular self-embedding, and source-closure list retain the hashes recorded
+below. No Lanius source changed in this traversal-proof checkpoint. Every
+command stayed below two minutes, and `git diff --check` passes. These remain
+proof/checking timings, not measurements of the final trusted-extraction path.
+
+At the preceding prediction checkpoint, rebuilding the affected chain through `Tests.Self`,
+including public parser/frontend contracts and assumption audits, passed in
+78.50 seconds (`parser-forward-self-build.log`). The preservation cases and
+pure lemma audit passed in 1.04 seconds (`parser-forward-cases.log`).
+The complete state traversal checked in 9.54 seconds and the complete position
+traversal in 7.24 seconds. These checks establish prediction in the final
+workspace, including preservation through later positions, not full chart
+closure or successful-input completeness. The exact 18-file self-source
+integration passed in 24.90 seconds (`parser-forward-source.log`), retaining
+the public whole-extractor certificate and adding no assumptions beyond the
+existing frontend baseline. No Lanius source, executable, or embedding
+changed. Every command stayed below two minutes, and
+`git diff --check` passes. These are proof-build/checking timings, not
+extraction-throughput measurements.
+
+At the preceding packaging checkpoint, the public checker module built in 3.94 seconds
+(`execution-checker.log`). The affected input-domain/self-test build and audits
+passed in 2.34 seconds with shared dependencies built
+(`public-execution-domain-audit.log`). Final exact-source integration, using
+the public checker and retaining the link/guard regressions, passed in 25.69
+seconds (`public-execution-source.log`), down from the previous 33.99-second
+driver-local proof construction. These are checking timings,
+not extraction-throughput measurements. No Lanius source, bootstrap executable,
+or self-embedding changed; no Rust, Python, or Wasm path was added. All commands
+stayed below two minutes, and `git diff --check` passes.
+
+Rechecked identities:
+
+- x86 bootstrap: `6163554af500bd57e3c82e4763dad3e2412499ef22146d7d28186bf696ee7c0d`
+- singular self-embedding: `8c918c01dab6fccdd2e5ad8ac99002a979286b10c368a9638026070ac3e40328`
+- ordered closure list: `079059b1eb54011de70900c1c5a9f7d411a027c7166728a95b55aef461a77bf3`
+- ordered source-content digest: `f289195e6e968f2306f5c5d773bbd535bb867ff308bd89df8d3f1e2a056cace9`
+
+Steps 1–4 below remain completed component boundaries. Step 5 is still active:
+the whole-extractor theorem proves finite success-or-classified-error execution,
+not successful termination for every supported valid input. Parser completeness
+now excludes syntax rejection for declaratively valid tokens; resource failures
+remain separate. The syntax and token-storage parts of the noncircular input
+domain now hold for all self-source files, as recorded above. Next establish
+parser, tree, semantic-collection, and output resource bounds that guarantee
+success and admit those same files. Then cover failures outside the present
+loading domain and resolve the inherited trust obligations. Public whole-extractor proof-checker packaging
+is complete for the currently proved loading-domain contract; it is not a
+substitute for those remaining correctness obligations.
+Milestone 3 and the seven-step goal remain incomplete.
+
+### Previous checkpoints (historical)
+
+These checkpoints record the order of construction. Their “next” and “remains”
+statements describe those earlier states, not the current work queue above.
+
+The complete ordered-file loop was proved on its stated
+loading/resource domain. `Entry.Files.executes` constructs each actual file
+body with `Entry.File.Checked.executes`, rebuilds the next invocation from its
+result, and recurses over the remaining requested files. It constructs finite
+fuel for either normal loop completion or a classified frontend/output error.
+It does not assume any body execution, successful parse, or accepted output.
+The last iteration closes the loop without requiring a nonexistent next file.
+
+`Entry.File.certified_output` connects the successful frontend, collector,
+emitter guard, and cursor increment to an accepted unit for the exact loaded
+path and bytes. Its bounds follow from the actual successful append result.
+`Entry.Files.History` retains the ordered accepted units, ordered sources,
+cursor, and exact output prefix. `History.emitted` handles the last file;
+`History.afterFile` connects the same history to reconstructed next-file
+resources. Repeated paths remain repeated entries. The final output allocation
+still has 8,388,608 words; unused capacity is not treated as certificate data.
+
+The loop retains runtime typing, caller locals, external inputs, and original
+file handles on every covered return. It leaves stdout unchanged on every
+branch and stderr unchanged on normal completion. Success retains native
+registry validity, representable words, and every original registered view,
+while allowing frontend helpers to add borrowed views. The argc local survives
+each iteration; its separation from the argument cursor follows from their
+different current values. Startup now derives separation from the output
+cursor using its fresh allocation, even when argc and the cursor hold the
+same integer.
+
+`Pending.sources` connects the ordered request domain and stopping count to
+the original `ExtractorContract.requestedSources?`, not a different definition
+of the requested program. `History.certificate` constructs the public
+`CheckedCompactSyntaxSourcePack` from a completed history and its byte-buffer
+relation. Decoder success and syntax acceptance are conclusions. Final output
+packing must still supply that byte relation in the composed `main` proof.
+
+The source checker now authenticates the exact argument initialization,
+inequality condition, complete file body, and continuation in the current
+self-embedding. It also rejects changed initial indices, condition bindings,
+comparison operators, and bodies. The integration driver instantiates the
+loop theorem at these coordinates, with the existing `LinkedSyntax` evidence
+still an explicit parameter. This is not yet a constructed whole-main proof.
+
+New interval-model tests cover empty writes, zero capacity, negative and
+beyond-end cursors, partial writes, and untouched tails. Ordered wire tests
+cover UTF-8 paths, empty files, and repeated paths; these test encoding and
+decoding, not syntax validity of their artificial node fixtures. Syntax
+acceptance comes from the execution proof. All new certificate/history/request
+lemmas use standard Lean axioms. The actual composed loop retains the same
+463 nonstandard frontend assumptions and adds none.
+
+Final verification: the affected build, focused tests, and axiom audit passed
+in 2.22 seconds with shared dependencies built
+(`target/verified-compiler/files-completion-audit.log`). The final exact-source
+integration check passed on all 18 files in 25.98 seconds
+(`target/verified-compiler/files-completion-source.log`). The current bootstrap
+x86 executable, singular self-embedding, source-closure list, and ordered
+source-content hashes are unchanged. No Lanius source edit or re-extraction
+was needed; no Rust/Python implementation or Wasm path was added.
+`git diff --check` passes. All commands stayed below two minutes. These are
+proof/checking timings, not a new extraction-throughput measurement.
+
+Steps 1–4 below have completed component boundaries. Step 5 is active.
+Startup is now connected to the complete ordered-file phase.
+`Entry.Startup.reaches` derives a reached state from the actual argc,
+allocation, pointer, grammar, framing, and header executions. Its result,
+`Startup.Ready`, retains allocation history, exact grammar/header storage,
+live views, cursor separation, host-world changes, and the main execution
+prefix. It does not require the remaining main to return successfully.
+
+`Entry.Files.CheckedSource.resources` constructs the entire first
+`File.Resources`, not just the loader input. The selected file supplies the
+lexer request; its bounded token count supplies the workspace bounds.
+The actual 2,179-word decoded grammar is well formed and has a complete
+production index. Every buffer's capacity, current contents, and required
+separation follow from the executed allocation history and source bindings.
+Working arrays need not still be zeroed. The initial output history follows
+from the exact emitted header; no accepted unit is assumed.
+
+`Entry.Startup.runFiles` consumes the result of `Startup.reaches`, derives
+loop-entry and body typing from typed main entry, and runs the complete
+ordered loop through `CheckedSource.runFromStartup`. It returns finite-fuel
+execution and the ordered loop result, tied to startup's actual output cell.
+No intermediate startup state, file resource, parser invariant, component
+execution, successful parse, or accepted output is independently supplied.
+The input domain remains explicit: nonempty bounded paths, available files
+of at most 65,536 bytes, sufficient allocation and handle budgets, target
+word width, and initial runtime typing. The frontend link remains a separate
+proof parameter in the current self-source integration driver.
+
+The actual 18-file self-embedding instantiates this startup-plus-loop
+composition. Source mutations reject disconnected source or
+grammar inputs, overlapping buffers, changed grammar counts, and incorrect
+output/cursor bindings. The loop checker also rejects an argument cursor
+that shadows argc and would skip all requested files.
+
+The affected startup, packing, and self-source build and axiom audits passed
+in 10.84 seconds (`target/verified-compiler/startup-complete-file-audit.log`).
+Startup and resource construction use only standard Lean axioms. The loop
+composition adds none beyond the same 463 inherited frontend assumptions.
+Exact-source integration passed in 25.65 seconds
+(`target/verified-compiler/startup-complete-file-source.log`). The Lanius
+source, x86 bootstrap executable, and singular self-embedding hashes are
+unchanged. These are checking times, not an extraction-throughput benchmark.
+No Rust/Python implementation or Wasm path was added; all commands remained
+under two minutes. One launcher stalled before starting Lean and was stopped;
+the bounded check then used the already-installed, project-pinned v4.33.1
+toolchain directly, avoiding the root directory's floating stable launcher.
+
+The final-output connection has now advanced too. `Files.Result.carriedLocals`
+retains live non-array caller values through every successful iteration.
+`Result.carriedNonScalar` derives separation of pointers, slices, and strings
+from the two signed cursors. Startup retains the exact suffix literal and
+its output-capacity bound. `Startup.Ready.bufferAfterFiles` recovers actual
+post-loop buffers with their current contents; `suffixAfterFiles` retains the
+original suffix text. No array is assumed still to contain allocation zeros.
+
+`Startup.Ready.suffixResources` constructs the suffix call's complete inputs
+from the finished loop: the actual output cell and slice, current buffer and
+cursor, registry, original literal, and ordered certificate history. It splits
+emitted bytes from unused capacity without making that tail certificate data.
+It does not assume there is enough remaining room for the suffix.
+`Suffix.Stage.executes` proves the real append, cursor assignment, and guard
+when that remaining room is sufficient. It appends exactly 677 bytes, excludes
+literal padding, and retains the registry and scoped continuation. The full
+suffix-overflow branch remains unproved at this boundary.
+
+`CheckedSource.afterLoop` connects normal loop completion to the actual suffix
+statement. `Semantics.Prefix.Reaches.completeReturn` closes a returned prefix
+through enclosing scopes without executing later statements. `Startup.runFiles`
+now returns both facts: success reaches the suffix; a file-phase error yields
+an execution of main with the same return and final state except for closed
+local mappings. This is not yet the public all-input failure theorem.
+
+The current suffix source is checked against its actual post-loop statement,
+framing bindings, and text callee. Nine mutation cases reject changed live
+bindings, capacity, callee, and guard. Startup also rejects a cursor which
+would shadow the suffix literal. The affected startup, suffix, packing, and
+self-source build and audits pass in 9.05 seconds
+(`target/verified-compiler/suffix-final-audit.log`). New suffix/resource/scope
+proofs use standard Lean axioms; actual frontend execution retains the same
+inherited assumptions. Exact-source integration passed on all 18 files in
+25.82 seconds (`target/verified-compiler/suffix-final-source.log`), including
+the suffix/source mutations and the startup-to-main-return connection.
+The source, bootstrap executable, and singular embedding hashes remain
+unchanged. `git diff --check` passes; all commands stayed under two minutes.
+These are checking timings, not a fresh extraction benchmark.
+
+Next, handle suffix overflow and compose suffix execution with the existing
+clearing/packing/stdout theorem. Derive the packing workspace pointer, live
+bindings, and exact byte relation from these retained resources. Then apply
+the scope-completion rule and close the public main success/failure/completeness
+contracts. The frontend-link construction and inherited trust audit also
+remain open. Neither milestone 3 nor the seven-step compiler goal is complete.
+The older checkpoints below are historical; they do not supersede this one.
+
+Next-iteration checkpoint (September 10): `Entry.File.handoff` derives the
+preserved grammar, exact loaded host world, incremented original argument
+cell, nonnegative output cursor, and unchanged non-array caller values outside
+the two cursor cells. It composes the actual frontend, collector, emitter, and
+advance effects. The file-step theorem returns this handoff after closing all
+temporary scopes. This does not assert that borrowed views were absent or
+that native memory stayed byte-for-byte unchanged.
+
+`Entry.File.Next.inputNext` constructs the next argument/path/open/read input
+from that handoff and the file-step's retained registry and views. Pointer and
+slice values cannot alias the signed cursor cells; the proof derives this
+from their existing values instead of assuming distinct local names imply
+distinct cells. Its remaining premises describe the next requested file,
+path/file capacities, numeric bounds, and older initial handles. No successful
+load or intermediate ownership invariant is assumed.
+
+`Entry.File.Next.frontend` recovers the six working arrays' actual current
+contents from registered storage and proves their capacities are unchanged.
+It builds the next file's lexer request and derives the workspace layout from
+the bounded canonical token count. The grammar stays exact. Neither zeroed
+arrays nor a successful parse is assumed. `syntaxReads` preserves all eight
+frontend slice arguments. `savedBuffer` and `savedRead` recover the semantic
+and output allocations with their current contents, retaining the accumulated
+output rather than restoring an old buffer. Cursor and older-handle facts
+also survive.
+
+`Entry.File.Resources` groups precisely the ordinary dynamic resources needed
+by a file invocation. `Entry.File.Next.rebuild` assembles the complete next
+record, including the selected file/index, all loading/frontend/collector/
+emitter inputs, capacities, separations, grammar, and cursor values. Runtime
+typing is already retained separately by `Entry.File.step`. The source checker
+authenticates the reused loading/frontend bindings and instantiates this
+resource constructor at the current extractor's actual local coordinates.
+
+The next-resource proof and standard-axiom audit passed in 4.20 seconds
+(`file-next-resources.log`). The final affected test/source-check build passed
+in 7.11 seconds (`file-next-final-audit.log`). New handoff and reconstruction
+proofs use only standard Lean axioms; the composed file step retains the
+existing 463 nonstandard frontend assumptions. Focused source-linked execution
+coverage loads five files successively into the same buffers, including
+long-to-short-to-empty inputs and repeated paths, and checks exact bytes,
+argument advancement, caller locals, views, allocation budget, handles, and
+the complete host world. Binding mutations must be rejected.
+The final exact-source integration check passed on all 18 files in 26.35
+seconds (`file-next-final-source.log`), including the assembled resource
+constructor's source linkage and those five reused-buffer loads. The GPU-built
+x86 executable, singular self-embedding, closure list, and ordered source
+content hashes were reread and are unchanged. No Lanius source edit,
+re-extraction, Rust/Python addition, or Wasm path was needed. All commands
+remained under two minutes. These are proof/checking timings, not a new
+extraction-performance measurement.
+
+This closes resource reconstruction between adjacent successful file bodies,
+not the ordered-file execution theorem. The loop still needs its ordered
+certificate/output-history invariant and termination proof, followed by the
+final stdout connection and whole-main success/failure/completeness contracts.
+
+Startup checkpoint (September 9): `Entry.Pointers.executeEntry` composes argc,
+argument validation, all buffer allocations, pointer aliases, and the null
+guard. It retains allocation history and unchanged local/world facts for the
+continuation. `Entry.Grammar.LiteralStage.executes` composes the grammar literal
+binding, borrowed string view, source binding, cursor initialization, and full
+decoding loop. `checkLiteralData?` checks the actual 2,179-word literal against
+the formal parser's `EncodesGrammar` contract, including production indices.
+The new proofs pass the standard-axiom audit.
+
+`Entry.initializeGrammar` now composes these prefixes and derives the grammar
+destination buffer's typed contents and capacity from the entry allocation
+history. Its remaining execution premise starts after grammar initialization.
+`Entry.initializeFraming` extends that composition through both framing
+literals, the initial `output.text` call, and its success guard. It derives
+the output allocation and its preservation across grammar initialization,
+then establishes the exact 146-byte Lean module prefix in that buffer. It
+retains allocation history, grammar facts, cell effects, and unchanged binding
+identities for the continuation. Its remaining execution premise starts at
+compact-header output.
+
+`Entry.initializeHeader` extends this to the complete startup: the exact
+146-byte Lean prefix followed by the 16-byte compact header. It derives argc
+from the host-call entry, proves that count survives allocations and grammar
+initialization, and emits version one and the input-file count. The remaining
+execution premise starts after the compact-header guard, at ordered-file
+initialization. The prefix and header helpers are not assumed to execute
+correctly at this boundary.
+
+Startup now also returns `Allocation.Registry` after grammar initialization,
+module-prefix emission, and compact-header emission. Borrowed strings retain
+their new registered block; typed cell writes retain a separate `HeapFrame`.
+The loop/call interfaces carry this evidence through local bindings and scope
+closure. `Registry.transport` derives the resulting registry from the original
+registry and changed arrays' types and lengths. No new registry is assumed at
+the first file operation.
+
+The focused startup audit (`target/verified-compiler/startup-registry-audit.log`)
+passes with only standard Lean axioms. The exact-source integration check
+(`target/verified-compiler/startup-registry-source.log`) passes on all 18 current
+files in 21.27 seconds with shared infrastructure built. These checks establish
+source linkage and the composed startup theorem, not the whole-main contract.
+
+Next boundary: the ordered-file phase begins with argument-path length/read,
+path unpacking, file open/read/close, and per-unit extraction/emission. Its host
+calls synchronize language-level arrays and byte storage. Registry validity
+proves both passes can run; it does not prove exact contents survive them.
+`Host.evaluatesReadOnly` now derives both passes for heap-preserving services
+and retains the registry and non-array local values. `Host.readOnlyPreservesView`
+proves exact array preservation separately from disjoint ranges and bounded
+i32 values. The next resource obligation is to carry those non-aliasing/range
+facts from allocation and startup through file I/O, not assume coherence from
+registry validity. The complete constructive `read_file` call proof is now
+checked, as recorded below; the enclosing ordered-file phase still needs
+composition.
+
+`Entry.Path.Length.Stage.executes` proves the first file-body stage's argument
+length call and valid-path guard. `Stage.rejects` proves code-two rejection of
+empty or oversized paths on its representable-length domain. Both derive host
+synchronization from the input registry. The focused path audit
+(`target/verified-compiler/path-audit.log`) uses only standard Lean axioms and
+checks UTF-8 lengths, both path-capacity boundaries, unchanged registered buffer
+contents, and rejection of changed host declarations or guards. These are
+file-body components, not a completed ordered-file loop.
+
+The updated exact-source check (`target/verified-compiler/path-source.log`)
+passes in 19.94 seconds on the same 18-file embedding. It checks that the
+path-length stage begins the actual file-loop body and reads that loop's
+argument cursor, then runs the boundary cases using the checked host service.
+The affected frontend, semantic collector, unit serializer, and parser-tree
+proof consumers also rebuild successfully (`resource-consumers.log` and
+`remaining-resource-consumers.log`). No command exceeded the two-minute limit.
+
+The file-body prefix now extends through argument copying, path unpacking,
+and successful file opening. `Entry.Path.Length.Stage.withRead` composes both
+path guards and exact argument-byte copying. `Stage.withUnpack` extends it
+through zero cursor initialization and the complete unpacking loop.
+`Entry.File.prepare` extends that result through the actual open call, handle
+binding, and negative-handle guard. Its remaining execution premise begins at
+`read_file`. It retains the exact path array, the registered buffers, valid i32
+words, the opened world/handle, and preservation of other buffers and locals.
+It does not assume a successful host call or an internal unpacking invariant.
+
+The shared input-unpacking proof covers both actual index forms: `index` for
+paths and `total + index` for file chunks. Its callers use the new interface
+directly. The path stage derives destination storage from the registry and
+scratch words from `Host.Copied`. It constructs the fresh cursor's ownership
+and transports the registry through the loop. The existing file-unpacking
+proof and its boundary checks still pass.
+
+`Host.evaluatesCopy` constructs synchronization, a bounded raw-byte write, and
+refresh. Argument and file reads use this same proof. File open/read/close
+each have constructive Core-call theorems. `Copied.loadAfterSync` proves that
+opening a file reads the exact copied path. `Host.Frame` now retains
+`RepresentableViews`: refresh makes every registered word fit signed i32.
+Path unpacking preserves that fact. This is separate from range disjointness;
+it does not turn registry validity into an assumption of coherent contents.
+
+The focused audit (`target/verified-compiler/file-prepare-audit.log`) passes
+with only standard Lean axioms. The combined prefix theorem checks in 0.90
+seconds and the focused path tests/audit in 3.3 seconds. Checks cover UTF-8,
+all four byte lanes, untouched tails, unrelated buffers, pre-existing handles,
+EOF, and source/binding mismatches. A redundant large interpreted-loop test
+initially took 27 seconds; smaller lane/tail cases replace it, while the
+existing length-boundary and large unpacking tests retain that coverage.
+
+The exact-source check (`target/verified-compiler/file-prepare-source.log`)
+passes on the unchanged 18-file self-embedding in 23.52 seconds. It checks the
+complete prefix against the actual file-loop body, including the open service,
+pointer/length bindings, and handle guard. The existing file-unpacking consumers
+also pass (`input-consumers-final.log`). No command exceeded two minutes.
+
+The remaining public premises are valid registered buffers and their local
+bindings, capacities, disjoint view ranges, a selected nonempty path of at
+most 1,024 UTF-8 bytes, an existing modeled file, and a representable next
+handle. Startup already returns the registry. The main-loop composition must
+still derive non-aliasing and preserve its caller resources. The ordered-file
+loop, per-unit output-byte connection, and whole-main success/failure/completeness
+contracts remain open.
+
+`Input.File.Checked.read` now proves the complete authenticated `read_file`
+call for fitting files. It executes the capacity guard, pointer synchronization,
+pointer guard, request-size constant, capacity-plus-one probe, host reads, count
+guards, unpacking at the current destination offset, and total updates. The
+outer loop terminates by consuming the remaining file suffix. This covers
+multiple chunks and the final EOF read, not just one-chunk test inputs. The
+result returns the exact source bytes and count, retains the destination's
+unwritten tail, preserves other caller cells and registered buffers, and
+restores caller locals and allocation budget. The file handle remains open
+with the correct offset: closing it belongs to the enclosing caller.
+
+The public premises describe resources, not successful execution: registered,
+disjoint buffers with representable i32 words; sufficient destination capacity;
+at least 65,536 bytes of scratch; a readable, fresh appended handle to an
+existing modeled file; and a target usize that represents the request bound.
+The theorem does not prove native OS behavior. It does not yet cover the full
+oversized-input or host-failure call path. The actual overflow guard is proved
+and exercised, but that is not a general failure theorem for the whole reader.
+
+The shared unpack initialization now lives in `Input/Unpack/Initialize.lean`,
+with its contents moved from the path-specific location. Both path and file
+callers import it directly. The generic proof accepts a destination offset;
+the path-specific source relation still requires zero offset. No forwarding
+module remains. `Host.Effect` supplies an I/O-aware frame: it retains cells,
+bindings, views, and budget without incorrectly requiring the host world or
+raw byte heap to remain unchanged.
+
+Closing checks for this boundary:
+
+- `Input.File.Checked.read` checks in 0.95 seconds; the complete body in 1.3
+  seconds. The outer-loop proof checked in 0.95–2.8 seconds across focused runs.
+- `Tests.File` passes 180 complete reader executions covering byte lanes,
+  nonzero offsets and offsets past EOF, empty input, exact capacity, overflow,
+  untouched tails, another buffer, an older handle, and caller-local restoration.
+  Its tests and axiom audit take 1.3 seconds. Every new reader theorem uses only
+  `propext`, `Classical.choice`, and `Quot.sound` (`read-file-audit.log`).
+- The complete body, signature, and scratch-size constant match the current
+  18-file self-embedding. The source-linked reader cases and existing integration
+  checks pass in 25.60 seconds (`read-file-source-final.log`). No Lanius source
+  or emitted embedding changed at this boundary, and no command exceeded two
+  minutes.
+
+`Entry.File.Read.Stage.executes` now also composes the actual caller's
+`read_file` call, count binding, mandatory `close`, and read/close success
+guard. Its continuation starts at `extract_syntax`, with exact source bytes,
+the original handle list, the registry, representable words, and preservation
+of all buffers other than source and scratch. It also retains the source
+length, view identities, and other non-array local values. The source checker
+authenticates both callees, the fixed capacity, the complete guard, and the
+bindings that must not be shadowed.
+
+The read/close stage checks in 1.2 seconds and its expanded test/axiom audit
+in 1.7 seconds (2.58 seconds for the focused command, `read-close-audit.log`).
+The actual caller matches the current embedding and its session regression
+passes in the 25.06-second integration run (`read-close-source.log`). An initial
+production-sized interpreted fixture spent over 90 seconds synchronizing mostly
+unused buffers; it was stopped before two minutes. The replacement uses a small
+five-byte session with spare storage and another live buffer. It tests control
+flow and preservation, while the universal theorem covers production sizes.
+This was a test-workload reduction, not a claim that the interpreter itself
+became faster.
+
+Next: derive this stage's resources from `Entry.File.prepare` and connect its
+result to the existing frontend and unit-emission proofs. These adjacent
+checked stages are not yet one end-to-end ordered-file theorem. Neither this
+boundary nor its local kernel-only audit closes milestone 3 or the later
+compiler milestones; inherited native proof assumptions remain for the final
+trust audit.
+
+That connection exposed a contract mismatch: `Frontend.SyntaxData` and the
+raw-lexer call proofs describe a source array whose physical length equals the
+input length. The actual caller has a 65,536-element source buffer and passes
+the file length separately. Step 3 remains proved on its stated domain, but
+its theorem cannot yet be applied to this padded caller buffer.
+
+Before adding a new proof family, check the actual frontend call closure for
+operations that can observe or overwrite the extra capacity. If it uses only
+explicit indexing, a general buffer-extension execution theorem could retain
+the existing tightly sized proofs and preserve the unused tail. The alternative
+is to generalize the source-storage contracts throughout the lexer and frontend.
+The bounded next steps are: audit the actual syntax and call closure; choose the
+smaller sound proof boundary; prove physical/logical length transport; and apply
+it to the caller. A syntax audit alone is not a correctness theorem, and no
+unproved padding-safety premise counts as closing this connection.
+
+The syntax audit found 83 functions reachable from the actual `extract_syntax`.
+Only function 60, the keyword-string matcher, falls outside the proposed
+indexing-only fragment: it creates a raw word view of a string. The complete
+source check still passed (`buffer-extension-source.log`). The temporary audit
+module was removed after collecting this result; no unproved transport API was
+left behind. A whole-frontend transport theorem would need additional memory
+rules, so that expansion is deferred while composing the existing path/open and
+read/close theorems. The physical/logical source-length gap remains explicit.
+
+`Entry.File.Load.Pipeline.executes` now completes that composition. From the
+initial registered buffers, argument index, and existing modeled file, it
+executes path length/copy/unpack, exact-path open, the complete reader, close,
+and their success guards. It constructs the reader's handle and storage
+resources from the preceding stage. Its continuation starts at the actual
+`extract_syntax` statement with both exact byte arrays, both logical lengths,
+the source buffer's original unwritten tail, unchanged unrelated buffers and
+locals, and the original handle list. The world records the exact host-call
+sequence and next-handle increment.
+
+The path/open interface now retains the path length instead of dropping it.
+The source relations reject shadowing of that length by the handle, read
+count, or close result. The public resource domain still requires fitting
+files, representable registered storage, non-aliasing buffers, a fresh and
+representable next handle, and sufficient target/address capacity. Those
+conditions must still be derived from startup and preserved by the ordered
+file loop; they are not assumptions that any component executed successfully.
+
+The focused composition proof checks in 1.4 seconds. Six composed executions
+cover empty, zero-byte-valued, and five-byte high-bit input under ASCII and
+UTF-8 paths, with nonzero tails, separate scratch buffers, an older handle,
+and exact caller restoration. Nine binding mutations are rejected. The
+new load tests and standard-axiom audit check in 1.1 seconds; the updated path
+tests check in 3.4 seconds (`file-load-audit.log`, 5.18 seconds overall).
+The actual-source pipeline connection and source-linked cases pass on the
+unchanged 18-file embedding in 25.09 seconds (`file-load-source.log`).
+No command exceeded two minutes and no source re-extraction was required.
+
+Next: connect the loaded source's physical capacity to the frontend's logical
+input contract, complete the unit-output connection, and derive/retain these
+file-loop resources from startup. The file-loading prefix is complete on its
+stated domain; the ordered-file loop and whole-main success/failure/completeness
+theorems are still open.
+
+Resource handoff subtask: retain distinct registered addresses in the shared
+allocation registry. Heap well-formedness plus distinct addresses yields the
+byte-range separation required by file I/O; distinct language-level roots alone
+does not. Fresh allocation and string borrowing must establish the fact, and
+existing scope/heap-frame transitions must retain it. Strengthening the owning
+registry avoids adding another independent non-aliasing assumption to startup.
+
+That subtask is now proved: `Allocation.Registry` retains distinct addresses,
+and `Registry.disjoint` / `Registry.apart` derive byte-range separation. Host
+allocation proves address freshness from the allocation frontier; borrowed
+string views retain the same freshness evidence. Synchronization, refresh,
+cell writes, local scopes, and call restoration preserve the strengthened
+registry. The file-loading input contract no longer assumes global range
+separation or a separate path/source range fact; it derives these from the
+registry and distinct buffer roots. Startup already constructs and returns
+this registry, so the stronger fact is not delegated to its continuation.
+
+The initial broad consumer rebuild hit the 119-second safety timeout. Two
+small helpers had unnecessarily changed foundational memory/view modules and
+invalidated existing parser proofs. Their actual contents now live in the
+allocation layer; both foundational files are unchanged. No compatibility
+wrapper or duplicate helper remains. The focused startup, loading, packing,
+path, and compaction checks pass in 20.17 seconds, including their standard-
+axiom audits (`address-registry-focused.log`). The load composition checks in
+1.5 seconds and its tests in 1.2 seconds. A repeated-address counterexample
+confirms that fresh backing roots do not imply fresh raw addresses.
+The interrupted broader frontend-consumer rebuild is not counted as passing.
+The final exact-source check passes in 23.54 seconds on the unchanged 18-file
+self-embedding (`address-registry-source.log`). No command ran beyond two
+minutes; the broad rebuild was stopped by its configured timeout. These
+changes improve the resource handoff and avoid unnecessary dependency
+invalidation, not the runtime of the extractor or the whole-program checker.
+
+The logical-length/physical-capacity handoff is now proved. The earlier frontend
+contract used a source backing array exactly as long as the input; `main` instead
+passes a 65,536-word slice and a separate logical file length. The public theorem
+`Frontend.CheckedSyntax.padded_call_evaluates` now accepts that actual padded
+storage and derives its result from the existing lexer/parser proof. Callers
+supply ordinary buffer ownership and inputs, not successful frontend execution.
+
+The reusable proof lives in `Semantics/Capacity/`. Its fuel-inductive execution
+simulation widens the selected source backing and its reachable slice views,
+retains the original tail exactly, and leaves unreachable historical caller
+cells alone. Indexed reads/writes, loops, calls, aggregates, and fresh borrowed
+word views are covered. A proof-producing fragment checker excludes implicit
+slice iteration, array-to-slice conversion, pointer access/synchronization, and
+external calls. All 83 functions reachable from the actual `extract_syntax`
+pass this checker. Raw-view construction reads the same heap and creates a fresh
+semantic cell in both executions; this suffices for execution transport but
+does **not** prove preservation of the stronger native-view allocation registry.
+That invariant remains a separate composition obligation.
+
+The existing semantic collector now consumes only the grammar ownership it
+actually used. `SemanticTokens.padded_frontend_then_collect` reuses that proof;
+there is no duplicate collector implementation or compatibility wrapper.
+The exact current-source check instantiates both padded public call theorems
+and passes in 24.00 seconds (`padded-frontend-source.log`). The 189 small
+execution comparisons cover spare tails, nonzero slice starts, indexed source
+mutation, nested calls, borrowed string words, loop control, and untouched
+historical caller slices (`capacity-tests.log`, 0.65-second test module).
+The padded public call and collector proof modules check in about one second
+each with dependencies built. Their audit passes in 6.87 seconds and adds no
+axioms to the frontend's 463 inherited nonstandard assumptions
+(`padded-collector-audit.log`). Those assumptions remain open trust debt, not
+newly justified facts. The frontend dependency graph also completed its genuine
+rebuild in 50.86 seconds; subsequent focused checks use the resulting artifacts.
+
+`Entry/File/Frontend.lean` derives padded ownership directly from the loaded
+file bytes and preserves the other seven buffers through the reader's writes.
+`Entry/File/Syntax.lean` evaluates all 17 actual arguments, binds `extracted`,
+and composes the full path/open/read/close/frontend prefix. Its only remaining
+execution premise starts at the source continuation **after** the frontend
+call. The composed proof module checks in 1.3 seconds. The source checker rejects
+changed capacity/depth literals and disconnected or shadowed input bindings.
+Its full current-source check passes in 23.95 seconds, including 41 binding
+mutations and the reader boundary executions (`file-syntax-source.log`); the
+focused handoff audit checks in 1.4 seconds (`file-syntax-audit.log`).
+
+The same capacity distinction now reaches the unit emitter: `Emission` has a
+separate `sourceCapacity`, and its storage/collector/decoding adapters consume
+the padded frontend output directly. Changing that capacity changes only the
+passed slice, never the logical byte count or encoding. The existing serializer
+was already capacity-aware; no second serializer proof or execution simulation
+was needed. Its standard-axiom audit and exact-source instantiation pass
+(`padded-emitter-audit.log`, `padded-emitter-source.log`, 24.33 seconds for the
+source check).
+
+A second caller mismatch was found at the collector: `main` passes the record
+array's capacity, but the proof had required the exact used-word count. The
+existing traversal now admits a bounded `recordsLimit` covering the serialized
+prefix; bounds checks and state-child reads are proved under that limit. The
+public frontend/collector adapter passes the actual physical record capacity.
+The old `wordsFit` fact is derived from the limit bounds, not supplied twice.
+The collector regression now checks 56 executions across tight, padded,
+1,048,576-word and maximum-i32 limits, output capacity failures, malformed
+records, split tokens, and caller frames. The updated collector/emitter audits
+pass and the actual-source check completes in 24.74 seconds
+(`collector-record-limit.log`, `collector-record-limit-source.log`).
+
+`Entry.File.process` composes the file-loading prefix, the padded frontend,
+the status accessor/guard, and both node/token accessor bindings in one theorem.
+It constructs `FrontendReturn` observations from the reader and frontend proofs;
+callers do not supply them. The two remaining execution premises start at the
+actual diagnostic body on failure or the actual collector statement on success.
+`Results.Stage.dispatch` proves the branch decision and stops before reading
+counts on failure. On success it proves both counts and retains every old cell
+and non-shadowed local across accessor calls and fresh bindings. The composition
+checks in 1.0 seconds and adds no assumptions beyond the frontend baseline
+(`file-process-audit.log`). The whole prefix is linked to the actual self-embedding
+in 23.25 seconds (`file-process-source.log`). Twelve small accessor/control-flow executions cover
+zero/nonzero statuses, distinct count fields, and caller restoration. Diagnostics
+and the downstream collector are replaced only in these focused executions;
+their production execution is not claimed by these tests.
+
+`Entry.File.process_collect` extends that same prefix through the actual
+ten-argument collector and its error guard. It preserves the semantic buffer
+from ordinary initial resources, derives the collector's local arguments from
+the frontend bindings, and proves the 131,072-word capacity sufficient from
+the returned token bound. Callers do not assume collection succeeds. The
+remaining success continuation starts at the actual emitter statement.
+Shared frontend frame lemmas live in `Frontend/Frame.lean`; the grammar lemma
+was moved there, not duplicated or retained behind a wrapper. The new stage
+and composition modules check in about 1.3 seconds each. Focused argument,
+guard, shadowing, and axiom checks pass (`file-collect-tests.log`), and the
+current self-embedding check passes in 23.92 seconds with all 56 collector
+execution fixtures (`file-collected-source.log`). No assumptions were added
+beyond the existing frontend baseline.
+
+The emitter composition (now part of `Entry.File.step`) extends this boundary through the real 19-argument
+emitter, including the nested `raw_count(extracted)` call, `output_length`
+assignment, and return-21 guard. The loaded path, frontend prefixes, semantic
+assignments, output storage, and every argument local are derived from the
+preceding stages. On capacity failure the proof retains the precise partial
+buffer and stops before the success continuation; it does not assume the
+emitter succeeds. The new execution/storage/reads/composition modules and
+standard-axiom audit pass (`file-emit-tests.log`, 1.2-second test module).
+The exact-source check passes in 25.38 seconds (`file-emitted-source.log`),
+including nested-accessor arguments, cursor mutation, error/success branches,
+changed capacities, swapped counts/buffers, and shadowed live bindings.
+
+The file-step interface now retains complete state postconditions and the
+actual completion, rather than only a host-world predicate and a completion
+chosen before execution. `Scope.Post` closes temporary scopes without losing
+buffer, cursor, heap, or view facts. The existing path/reader/frontend/result
+proofs now also retain the physical IDs of non-shadowed caller bindings.
+`Advance.finishes` uses those IDs to increment the original argument cell and
+preserve the output cursor and emitted contents. `Entry.File.step` composes
+that final increment directly: its success branch has only a logical
+postcondition obligation, no downstream execution premise. Frontend failure
+still requires the diagnostic body; emitter failure returns 21 internally.
+The old `Emit/Process.lean` contents were moved into `File/Step.lean`, with no
+old-path wrapper or import. The complete file-step source check passes in
+24.37 seconds (`file-step-source.log`); the step module checks in 1.1 seconds
+and its axiom audit passes (`file-step.log`). The interim state/outcome checks
+also passed in 24.56/25.68 seconds (`file-state-source.log`,
+`file-branch-source.log`). All new frame and increment proofs use only the
+standard axioms; the composed step inherits the same frontend baseline.
+
+Native-memory preservation now reaches the complete source tokenization
+prefix. `Host.MemoryFrame` retains the original registered views and allocation
+budget, and transports both `Allocation.Registry` and signed-word
+representability. Fresh string borrowing, matcher calls, keyword dispatch,
+both compaction passes, raw-record copying, and parser-kind copying return
+these facts through their existing execution contracts. The complete
+`Frontend.lex_to_canonical` result includes this frame without an additional
+execution or native-registration premise. Lower typed stores now expose their
+post-right-hand-side write effect; pure copies and accessors retain their
+heap/view frame. Existing callers were updated directly, without legacy
+wrappers. The source and self-embedding did not change.
+
+The new canonicalizer regression uses registered native buffers, including
+an unrelated buffer with both signed-i32 boundary values. All 24 cases check
+the result and untouched capacity, original registrations, distinct new
+roots/addresses, unchanged allocation budget, and a complete to-heap/from-heap
+round trip for every view. The actual self-embedding check passed in 26.23
+seconds (`native-self-source.log`). The dependent file-step and frontend
+checks passed in 25.71 seconds (`native-final-tests.log`). A shared-interface
+rebuild took 60.32 seconds (`native-boundary.log`); no command exceeded the
+two-minute limit. These are validation times, not an extraction-speed gain.
+
+The next parser boundary can reuse Core's existing runtime type-preservation
+theorem instead of adding a range proof to every workspace write.
+`Host.MemoryFrame.ofRuntime` derives complete registration and representable
+words from a typed terminal state and an unchanged heap/view frame.
+`Host.checked_evaluation` gets that typed terminal state from the accepted
+program's typing proof and an already-proved evaluation. Both use only
+standard axioms. The linked recognizer now retains its heap/view frame, and
+`canonical_to_recognize`/`lex_to_recognize` compose the native-memory result
+conditional on runtime typing at their final state. This is deliberately not
+reported as unconditional native preservation for the whole frontend: runtime
+typing must still be carried from the real call entry, and the tree/result
+tail must retain its memory frame. The updated source-to-recognizer/file-step
+build and axiom audits pass (`typed-recognition-tests.log`, 34.41 seconds),
+with no assumptions beyond the inherited frontend baseline. The final
+unchanged-self-embedding check passes in 25.92 seconds
+(`typed-native-self.log`), including all registered-buffer regression cases.
+
+Native-memory preservation now reaches the next-file boundary.
+`CellOnly.Region` checks a source statement and its transitive call closure;
+its generic execution theorem proves heap/view identity without a separate
+range proof at every array write. The full frontend checker retains this
+certificate for the parser/tree/result tail. `CheckedSyntax.call_native` and
+`padded_call_native` derive the complete native memory frame from ordinary
+typed inputs and the already-proved execution. The physical padded buffer is
+not confused with the shortened logical array: `ViewLayout` separates native
+metadata from cell contents, and terminal runtime typing restores the exact
+array lengths and signed-word ranges.
+
+`Host.MemoryTail` carries that evidence through later cell-only work, without
+requiring typing at each internal boundary. File loading/frontend, result
+accessors, collection, and emission retain it directly in their existing
+interfaces. The collector call and emitter assignment have independently
+checked cell-only closures, including nested argument calls. `Entry.File.step`
+now derives final runtime typing from its typed entry and source-statement
+typing proof. Every `.next` result returns a complete `Allocation.Registry`
+and representable registered words for the next iteration. It also retains
+every original registration as a prefix of the final view list, so the next
+file's ordinary buffer-membership preconditions are available. Temporary lexical
+scope restoration retains these facts. The final typing witness is also
+returned, not discarded. At this checkpoint, frontend-failure diagnostics
+remained its only component-execution premise; the September 10 work below
+discharges it.
+
+The generic cell-only regression covers 63 recursive/range/while executions
+with slice offsets, spare capacity, signed boundary words, and unrelated native
+buffers. It rejects allocation, byte/view operations, host calls, and forbidden
+operations hidden in transitive callees or untaken branches. The strengthened
+file/frontend tests and axiom audits pass (`native-file-tests.log`, 14.80 seconds).
+All new generic memory proofs use only standard axioms; the composed file step
+adds none beyond the 463 inherited frontend assumptions. The exact 18-file
+self-embedding check passes in 26.46 seconds (`native-file-source.log`), linking
+the actual collector and emitter memory certificates and typed file-step
+theorem. These are validation times, not an extraction-speed improvement.
+No Lanius source change or re-extraction was needed for this boundary.
+
+The diagnostic branch's non-fallthrough condition is now checked from its
+source by `Source.CheckedStop.not_next`, rather than supplied with the caller's
+execution premise. `Results.Stage.checkSupported?` rejects a missing return,
+a one-sided conditional return, and a possibly skipped returning loop. The
+focused branch checks pass in 4.41 seconds (`diagnostic-stop.log`). This proves
+what a normally completing diagnostic branch does, not that all its calls
+terminate. `Host.evaluatesStderr` also proves the actual byte service preserves
+all registered arrays, stdout, arguments, files, and open handles through both
+native synchronization passes. Its 263 byte/wrapping/boundary regression cases
+and standard-axiom audit pass in 1.56 seconds (`stderr-tests.log`). This first
+checkpoint left the decimal helper and six-call failure-branch execution open;
+the September 10 checkpoint below closes them.
+
+Final acceptance rebuilt the affected self-check linkage and validated the
+exact 18-file embedding, including the retained original registrations and
+actual stderr declaration, in 30.31 seconds total
+(`file-boundary-acceptance.log`). The audit explicitly recounts 463 inherited
+nonstandard frontend assumptions and no additions from the new composition.
+The preceding shared-interface rebuild took 40.04 seconds; every command
+remained below the user's two-minute limit. `git diff --check` also passes.
+
+Current artifacts at this checkpoint (read from the workspace, not regenerated):
+
+- GPU-built x86 extractor: `6163554af500bd57e3c82e4763dad3e2412499ef22146d7d28186bf696ee7c0d`.
+- Singular self-embedding: `8c918c01dab6fccdd2e5ad8ac99002a979286b10c368a9638026070ac3e40328`.
+- Ordered source-content manifest: `f289195e6e968f2306f5c5d773bbd535bb867ff308bd89df8d3f1e2a056cace9`.
+
+The September 10 checkpoint closes frontend diagnostic execution.
+`Semantics.Prefix.Reaches` retains executions already established while lexical
+scopes remain open. Its typing theorem recovers the actual continuation's
+context and runtime store typing from the typed file entry. The path, file
+loading, frontend binding, and status guard retain this evidence in their
+existing interfaces. `Host.checked_prefix_type` and the existing memory-tail
+proof then derive the diagnostic entry's registry and representable words.
+No diagnostic run is assumed in order to obtain its own preconditions.
+
+`Diagnostics.Natural.Checked.write` proves the complete existing Lanius
+`write_stderr_natural` helper. Negative inputs return immediately. The first
+loop grows a positive divisor only while multiplication by ten fits beneath
+the input; its decreasing measure is the remaining quotient. The second loop
+writes bytes and divides the divisor by ten until it reaches zero. The proof
+uses the actual wrapping i32 counter operations and closes both fresh local
+scopes. Every old caller cell and registered buffer survives, and the native
+allocation budget and view list are unchanged. `Host.StderrOnly` states that
+only stderr and its byte-call trace may grow. This uses the current modeled
+host service; it does not prove a Linux syscall/runtime refinement. Exact
+decimal text is tested but is not needed by `RunFailureSafe`, which deliberately
+leaves stderr unconstrained.
+
+`Diagnostics.CheckedFrontend.executes` checks the complete six-call branch,
+including each result accessor, call order, caller-local identities, and the
+return-28 statement. Argument bounds follow from the original store typing,
+not extra field-range premises. `Entry.File.step` now constructs both success
+and frontend-failure executions on its stated input domain. Its remaining
+callbacks assert logical postconditions; none assumes a component execution.
+This does not cover file-loading failures outside that input domain, the
+ordered-file loop, or the whole-main contracts.
+
+The original caller-local bindings are now retained from the outer path
+scope through the complete file-step result. Together with the final runtime
+typing and original-view preservation, this lets the loop use an ordinary
+state predicate via `Scope.Post.inScope_iff`, rather than treating a projected
+caller state as the real returned state. Reconstructing the complete next
+iteration's buffer contents, grammar evidence, input data, and output history
+still needs composition.
+
+The focused diagnostic regressions cover 34 integer cases around powers of
+ten, zero, negative values, and signed-i32 extremes. They compare text against
+Lean's independent integer renderer and check caller cells, the complete host
+world, native registrations, and a to-heap/from-heap round trip. The actual
+source-linked branch also runs with three distinct six-value inputs and rejects
+missing calls, reversed calls, and a changed return code. New diagnostic and
+prefix proofs pass the standard-axiom audit. The composed file step retains
+exactly the existing 463 nonstandard frontend assumptions; none was added.
+
+The affected self-check build and regressions passed in 7.38 seconds
+(`diagnostic-acceptance-build.log`). Exact-source integration passed on the
+same 18-file self-embedding in 25.09 seconds (`diagnostic-self-source.log`).
+The later caller-scope handoff rebuild passed in 25.77 seconds
+(`file-scope-handoff.log`), and its focused scope audit passed in 20.29 seconds
+(`file-scope-final.log`). The final file-step/diagnostic dependency audit passed
+in 3.63 seconds (`diagnostic-final-audit.log`), again reporting the unchanged
+463-assumption frontend baseline. `git diff --check` passes. These are checking
+times, not extraction-speed gains.
+The x86 executable, self-embedding, and source-content hashes above were reread
+and remain unchanged. No Lanius source edit, re-extraction, Rust/Python addition,
+or Wasm path was needed. All commands remained under two minutes.
+
+Next: establish the complete next-iteration logical resources, close the
+ordered-file loop, connect final output, and prove the whole-main contracts.
+Milestone 3 and the full seven-step goal remain open.
+
+`CompactOutput.Text.Checked.append` proves the full text helper call on its
+supported capacity and padded-storage domain, including initialization,
+packed-byte reads, loop termination, and return. Its effect permits changes
+only to the output cell. Negative lengths return before any buffer access.
+The proof exposed missing word padding in the extractor's framing literals;
+the source now supplies explicit `\0` padding while preserving the emitted
+lengths. The refreshed GPU-built x86 extractor self-extracts successfully.
+
+This is not yet a whole-main theorem. Ordered-file execution still needs
+composition, along with failure paths and full heap/view invariants.
+The existing `RunSound`, `RunFailureSafe`, and `RunComplete`
+targets remain open. The older chronological notes below do not supersede this
+checkpoint.
 
 | Step | Boundary that becomes complete | Status |
 |---|---|---|
 | 1 | Successful recognizer result → callable derivation record reader | Complete; call connection checked and trust assumptions audited |
 | 2 | Retained workspace → complete materialized tree | Complete on the stated caller domain; success, resource failures, wrapper rejection, source link, and axiom audit checked |
 | 3 | Source buffer → complete `extract_syntax` result | Complete on the stated caller domain; whole public call, all stage failures, negative-length rejection, current-source links, and axiom audit checked |
-| 4 | Extracted unit → exact accepted compact unit encoding | Active: collector/emitter calls, decoding bridges, and complete syntax acceptance proved on stated domains; final output-byte connection remains |
-| 5 | Ordered files → exact successful `main` output | Open; depends on 4 |
-| 6 | Failure/completeness theorems and milestone acceptance audit | Open; depends on 1–5 |
+| 4 | Extracted unit → exact accepted compact unit encoding | Complete on the stated domain; actual file-step result returns the accepted unit, exact appended bytes, and successful cursor bounds |
+| 5 | Ordered files → exact successful `main` output | Complete on the stated domain: actual executable soundness, covered failure safety, finite termination, and successful-input completeness are packaged and instantiated on the self closure |
+| 6 | Failure/completeness theorems and milestone acceptance audit | Active: broader external failure coverage; trust cleanup and final acceptance remain open |
 
-Steps 1–3 are complete. Steps 4–6 remain open, and milestone 3 is not complete.
+Steps 1–5 are complete on their stated domains. Step 6 and milestone 3 remain open.
 Completion here records the checked pipeline boundary; the inherited native
 proof assumptions still require the final trust cleanup in step 6.
 
@@ -1766,9 +4099,45 @@ do not assume acceptance. Include record origin/span validity and capacity error
 
 ### 5. Ordered files to successful `main`
 
+Current status is recorded at the top of the ordered ledger. Whole-main and
+executable-entrypoint success/failure soundness now hold on the loading domain,
+and the frontend link is constructed. This step remains active until the
+successful-termination domain below is proved. The component notes that follow
+record the earlier construction sequence.
+
 Sources: `extractor.lani`, `byte_io.lani`, and `host.lani`.
 Reuse input chunk/read/unpacking proofs, output clear/packing proofs,
 the constructive stdout-tail proof, and the host-call memory rules.
+
+The next completeness obligation needs a new proof family: the current parser
+invariants establish sound states and append-only growth, but do not retain
+closure under prediction, scanning, and completion. The work remains inside
+step 5 and proceeds in this order:
+
+1. **Done:** prove from the existing declarative token-lattice grammar that a seeded
+   chart closed under those operations contains a complete start item for
+   every valid input. Include nullable and split-token derivations; do not
+   introduce another parser implementation or define validity by execution.
+2. **Active:** establish that closure from the actual source-loop invariants,
+   retaining failed-append/resource evidence where it is produced. Root-search
+   exhaustion, its frontend handoff, and complete initial seeding are proved.
+   Prediction and scanning completeness now cover every item in every
+   final-workspace input chart, including newly appended items and preservation
+   through later positions. Actual chart-head and position-zero entry discharge
+   the prefix preconditions; the public parser and frontend retain both results.
+   Parent traversal and nullable replay now retain their coverage through the
+   actual source entries and restored callers. Next combine those guarantees
+   over processed parent/child pairs in the state loop, then preserve them
+   through the position loop. Closure must become a conclusion, not a new
+   assumed input-domain premise.
+3. Combine parser completeness with lexer, tree, and output capacity bounds
+   to exclude rejection on the stated syntax/resource domain, then establish
+   that domain for the self-source closure.
+
+The alternative of assuming a successful parser run would make the desired
+completeness claim circular. The existing execution proofs remain the source
+of runtime behavior; the new mathematical argument supplies the missing
+language-to-chart direction.
 
 #### Output path: completed components and remaining composition
 
@@ -1979,8 +4348,9 @@ compiler and producing the verified x86 extractor are milestones 4–6.
 ## Audit evidence and limits
 
 The initial audit on September 7, 2026 found `RunSound`, `RunFailureSafe`, and
-`RunComplete` only in their contract definitions. The work recorded above does
-not yet discharge them. Whole-call `parse_tree.visit/materialize` theorems close
+`RunComplete` only in their contract definitions. The following audit records
+that historical state; the current completion ledger above supersedes it.
+Whole-call `parse_tree.visit/materialize` theorems close
 step 2; the September 8 `extract_syntax` call theorem now closes step 3 on its
 stated caller domain. The collector public call and its frontend connection
 now close step 4.2; compact emission and the whole extractor's contracts remain open.
@@ -1998,6 +4368,6 @@ The existing bootstrap and embedding identities were reread and still match
 - self embedding: `ef7858063a60a986a437b999e2da435d70c69baa806929db32591f9261272049`
 - ordered closure list: `079059b1eb54011de70900c1c5a9f7d411a027c7166728a95b55aef461a77bf3`
 
-The active implementation action is step 4, as recorded above. The reader,
+At that historical checkpoint the active implementation action was step 4. The reader,
 materializer, and whole frontend call are checked on their stated caller domains;
 the whole extractor's contracts remain open.

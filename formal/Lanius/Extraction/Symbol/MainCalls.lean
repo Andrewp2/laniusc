@@ -1,6 +1,7 @@
 import Lanius.Extraction.Symbol.Model
 import Lanius.FunctionalViewCoreFreshSimulation
 import Lanius.FunctionalViewCoreCallFrame
+import Lanius.FunctionalViewCoreCheckedSimulation
 
 namespace Lanius.Extraction.Symbol.MainCalls
 
@@ -21,7 +22,7 @@ open Lanius.FunctionalView.FreshSimulation
 private theorem function_parameters :
     Functions.matchSymbolHeadFunction.parameters =
       [(0, .slice Structure.i32), (1, Structure.i32), (2, Structure.i32)] := by
-  native_decide
+  rfl
 
 private theorem parameterBindings_match (source : List Byte) (start : Nat) :
     bindParameters Functions.matchSymbolHeadFunction.parameters
@@ -68,15 +69,6 @@ theorem mainFramePreservingCallSoundness (source : List Byte) :
     exact startInBounds
   let calleeEnvironment := Model.environment source start
   let bindings := Core.parameterBindings calleeEnvironment
-  let callee := enterCall afterArguments bindings
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
   have functionalRun := Execution.matchSymbolHeadCommand_run beforeWorld
     (Model.sourceIntegers source) start sourceFound
     (by simpa using sourceBound) (by simpa using startInBounds')
@@ -85,44 +77,19 @@ theorem mainFramePreservingCallSoundness (source : List Byte) :
   have functionalEvaluation :=
     Lanius.FunctionalView.Stateful.Acyclic.run?_sound functionalRun
   rw [← environment_match source start] at functionalEvaluation
-  let operations := operationSoundness verifiedFrontendCore Calls.helperCalls
-    Calls.helperFramePreservingCallSoundness
-  have simulation := commandSoundness operations functionalEvaluation
-    (by native_decide) calleeRepresented
-    (LayoutBelow.identity (arity := 3)) calleeWellFormed
-    (frontier := afterArguments.nextCell)
-    (by intro index; simp [callLocalCells])
+  exact CheckedSimulation.callPreservesFrame
+    Calls.helperFramePreservingCallSoundness argumentsExecution argumentsEffect
+    Functions.verifiedFrontendCore_finds_matchSymbolHead
     (by
-      simpa [callee, bindings] using
-        (enterCall_effect afterArguments bindings).nextCell)
-  obtain ⟨completed, bodyExecution, completedWellFormed,
-      completedRepresented, bodyEffect⟩ := simulation
-  rw [Functions.matchSymbolHead_toCore_exactly] at bodyExecution
-  change Executes verifiedFrontendCore callee Functions.matchSymbolHeadBody
-    (.returned (some (Model.encoded source start))) completed at bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call Functions.matchSymbolHeadFunction.id
-        (toCoreExprs layout sourceArguments))
-      (Model.encoded source start) (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned
-      (bindings := bindings) (body := Functions.matchSymbolHeadBody)
-      argumentsExecution Functions.verifiedFrontendCore_finds_matchSymbolHead
-    · rw [show [Model.sourceSlice source,
+      rw [show [Model.sourceSlice source,
           .signed .i32 source.length, .signed .i32 startInt] =
           Model.argumentValues source start by
         simp [Model.argumentValues, startEq]]
       simpa [bindings, calleeEnvironment] using
-        parameterBindings_match source start
-    · exact Functions.matchSymbolHead_has_body
-    · simpa [callee, bindings] using bodyExecution
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed
-      completedWellFormed (bindings := bindings) bodyEffect
-      (by intro cell written; exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same
-      (callEffect.weaken CellSet.empty_subset)⟩
+        parameterBindings_match source start)
+    Functions.matchSymbolHead_has_body functionalEvaluation
+    (by decide +kernel) Functions.matchSymbolHead_toCore_exactly
+    afterArgumentsWellFormed represented
 
 def callModel (source : List Byte) : CallModel :=
   CallModel.route
@@ -158,7 +125,7 @@ theorem callModel_matchSymbolHead
         (Model.argumentValues source start) =
       .ok (Model.encoded source start, world) := by
   simp only [callModel, CallModel.route]
-  rw [if_pos (by native_decide)]
+  rw [if_pos (by decide +kernel)]
   exact Model.callModel_at source world start sourceBound startInBounds sourceFound
 
 theorem callModel_tokenMatchKind (source : List Byte)

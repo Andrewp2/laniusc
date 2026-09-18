@@ -1,0 +1,164 @@
+module lowering::declarations;
+
+import verified::surface_tree;
+import verified::parser;
+
+pub const STRUCTURE: i32 = 1;
+pub const ALIAS: i32 = 2;
+pub const CONSTANT: i32 = 3;
+pub const FUNCTION: i32 = 4;
+pub const EXTERNAL: i32 = 5;
+pub const MODULE: i32 = 6;
+pub const IMPORT: i32 = 7;
+pub const HEADER: i32 = 8;
+pub const ROW: i32 = 8;
+
+fn child(records: [i32], length: i32, offsets: [i32], count: i32,
+    node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, length, offsets, count,
+        node, index, verified::parser::CHILD_STATE, 0);
+}
+
+fn declaration_kind(production: i32, is_public: bool) -> i32 {
+    if (is_public) {
+        if (production == 271) { return STRUCTURE; }
+        if (production == 269) { return ALIAS; }
+        if (production == 268) { return CONSTANT; }
+        if (production == 266) { return FUNCTION; }
+        if (production == 267) { return EXTERNAL; }
+    } else {
+        if (production == 257) { return STRUCTURE; }
+        if (production == 8) { return ALIAS; }
+        if (production == 207) { return CONSTANT; }
+        if (production == 4) { return FUNCTION; }
+        if (production == 5) { return EXTERNAL; }
+        if (production == 7) { return MODULE; }
+        if (production == 6) { return IMPORT; }
+    }
+    return -1;
+}
+
+fn declaration_production(kind: i32) -> i32 {
+    if (kind == STRUCTURE) { return 258; }
+    if (kind == ALIAS) { return 16; }
+    if (kind == CONSTANT) { return 208; }
+    if (kind == FUNCTION) { return 11; }
+    if (kind == EXTERNAL) { return 15; }
+    if (kind == MODULE) { return 46; }
+    if (kind == IMPORT) { return 43; }
+    return -1;
+}
+
+fn monomorphic(records: [i32], length: i32, offsets: [i32], count: i32,
+    declaration: i32, generic_index: i32, where_index: i32) -> bool {
+    let generic: i32 = child(records, length, offsets, count, declaration, generic_index);
+    let bounds: i32 = child(records, length, offsets, count, declaration, where_index);
+    let generic_offset: i32 = verified::surface_tree::record(records, length, offsets, count, generic);
+    let where_offset: i32 = verified::surface_tree::record(records, length, offsets, count, bounds);
+    if (generic_offset < 0 || where_offset < 0) { return false; }
+    return records[generic_offset] == 232 && records[generic_offset + 3] == 0
+        && records[where_offset] == 36 && records[where_offset + 3] == 0;
+}
+
+// Collect source-origin headers from the actual materialized file tree. This
+// does not reconstruct Lean text or accept host-assigned declaration IDs.
+// It traverses only the file's top-level item list, in source order.
+//
+// Output words 0..7 are total rows and counts by the seven kinds above.
+// Each eight-word row is:
+//   [unit, kind, public, item-node, declaration-node, name-token, target, ordinal]
+// `target` is the original type-expression node for an alias, the original
+// path node for a module/import, and -1 otherwise. Module/import names are -1.
+// `ordinal` counts earlier declarations of the same kind in this source unit.
+// These counts feed CoreSynthesis.Program's pack-level identity allocation;
+// a later Lanius pass must still construct/check cross-module name resolution.
+//
+// Buffers are disjoint, lengths describe actual storage, and the parser has
+// already authenticated the grammar. Unsupported items, generic declarations,
+// missing/duplicate module declarations, and exhausted output return -1.
+// On failure all output is partial and must be discarded.
+pub fn collect(records: [i32], length: i32, offsets: [i32], count: i32,
+    token_count: i32, root: i32, unit: i32, output: [i32], capacity: i32) -> i32 {
+    if (length < 0 || count <= 0 || token_count < 0 || unit < 0 || capacity < HEADER) {
+        return -1;
+    }
+    let root_offset: i32 = verified::surface_tree::record(records, length, offsets, count, root);
+    if (root_offset < 0 || records[root_offset] != 0 || records[root_offset + 3] != 1) { return -1; }
+    let list: i32 = child(records, length, offsets, count, root, 0);
+    let index: i32 = 0;
+    while (index < HEADER) { output[index] = 0; index += 1; }
+    while (list >= 0) {
+        let list_offset: i32 = verified::surface_tree::record(records, length, offsets, count, list);
+        if (list_offset < 0) { return -1; }
+        if (records[list_offset] == 2) {
+            if (records[list_offset + 3] != 0 || output[MODULE] != 1) { return -1; }
+            return output[0];
+        }
+        if (records[list_offset] != 1 || records[list_offset + 3] != 2
+            || output[0] >= (capacity - HEADER) / ROW) { return -1; }
+        let item: i32 = child(records, length, offsets, count, list, 0);
+        let container: i32 = item;
+        let item_offset: i32 = verified::surface_tree::record(records, length, offsets, count, item);
+        if (item_offset < 0) { return -1; }
+        let is_public: bool = records[item_offset] == 3;
+        if (is_public) {
+            container = child(records, length, offsets, count, item, 1);
+            item_offset = verified::surface_tree::record(records, length, offsets, count, container);
+            if (item_offset < 0) { return -1; }
+        }
+        let kind: i32 = declaration_kind(records[item_offset], is_public);
+        if (kind < 0) { return -1; }
+        let declaration: i32 = child(records, length, offsets, count, container, 0);
+        let declaration_offset: i32 = verified::surface_tree::record(records, length, offsets, count, declaration);
+        if (declaration_offset < 0 || records[declaration_offset] != declaration_production(kind)) { return -1; }
+        let name: i32 = -1;
+        let target: i32 = -1;
+        if (kind == MODULE || kind == IMPORT) {
+            if (kind == MODULE) {
+                if (output[MODULE] != 0) { return -1; }
+                target = child(records, length, offsets, count, declaration, 1);
+            } else {
+                let tail: i32 = child(records, length, offsets, count, declaration, 1);
+                let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
+                if (tail_offset < 0 || records[tail_offset] != 44) { return -1; }
+                target = child(records, length, offsets, count, tail, 0);
+            }
+            let target_offset: i32 = verified::surface_tree::record(records, length, offsets, count, target);
+            if (target_offset < 0 || records[target_offset] != 47) { return -1; }
+        } else {
+            let name_index: i32 = 1;
+            if (kind == EXTERNAL) { name_index = 3; }
+            name = verified::surface_tree::child(records, length, offsets, count,
+                declaration, name_index, verified::parser::CHILD_TOKEN, token_count);
+            if (name < 0) { return -1; }
+            if (kind == STRUCTURE || kind == ALIAS) {
+                if (!monomorphic(records, length, offsets, count, declaration, 2, 3)) { return -1; }
+                if (kind == ALIAS) {
+                    target = child(records, length, offsets, count, declaration, 5);
+                    if (target < 0) { return -1; }
+                }
+            } else {
+                if (kind == FUNCTION) {
+                    if (!monomorphic(records, length, offsets, count, declaration, 2, 7)) { return -1; }
+                }
+                if (kind == EXTERNAL) {
+                    if (!monomorphic(records, length, offsets, count, declaration, 4, 9)) { return -1; }
+                }
+            }
+        }
+        let slot: i32 = HEADER + output[0] * ROW;
+        output[slot] = unit;
+        output[slot + 1] = kind;
+        output[slot + 2] = 0;
+        if (is_public) { output[slot + 2] = 1; }
+        output[slot + 3] = item;
+        output[slot + 4] = declaration;
+        output[slot + 5] = name;
+        output[slot + 6] = target;
+        output[slot + 7] = output[kind];
+        output[kind] += 1;
+        output[0] += 1;
+        list = child(records, length, offsets, count, list, 1);
+    }
+    return -1;
+}

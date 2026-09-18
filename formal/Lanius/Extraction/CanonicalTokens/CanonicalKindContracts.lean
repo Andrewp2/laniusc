@@ -1,6 +1,7 @@
 import Lanius.Extraction.CanonicalTokens.CanonicalKindCallModel
 import Lanius.FunctionalViewCoreCallFrame
 import Lanius.FunctionalViewCoreFreshSimulation
+import Lanius.FunctionalViewCoreCheckedSimulation
 
 namespace Lanius.Extraction.CanonicalTokens.CanonicalKindContracts
 
@@ -59,56 +60,19 @@ theorem framePreservingCallSoundness
   let calleeEnvironment :=
     CanonicalKind.environmentInWorld cell source rawKind start finish
   let bindings := parameterBindings calleeEnvironment
-  let callee := enterCall afterArguments bindings
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
   obtain ⟨afterEnvironment, functionalEvaluation⟩ :=
     CanonicalKind.view_executes_in_world beforeWorld cell source rawKind
       start finish sourceFound ordered inBounds sourceFitsI32
-  let operations := operationSoundness verifiedFrontendCore Model.callModel
-    helperSound
-  have simulation := commandSoundness operations functionalEvaluation
-    (by native_decide) calleeRepresented
-    (LayoutBelow.identity (arity := 4)) calleeWellFormed
-    (frontier := afterArguments.nextCell)
-    (by intro index; simp [callLocalCells])
+  exact CheckedSimulation.callPreservesFrame
+    helperSound argumentsExecution argumentsEffect
+    verifiedFrontendCore_finds_canonicalKind
     (by
-      simpa [callee, bindings] using
-        (enterCall_effect afterArguments bindings).nextCell)
-  obtain ⟨completed, bodyExecution, completedWellFormed,
-      completedRepresented, bodyEffect⟩ := simulation
-  rw [canonicalKindView_toCore_exactly] at bodyExecution
-  change Executes verifiedFrontendCore callee canonicalKindBody
-    (.returned (some (.signed .i32
-      (CanonicalKind.result source rawKind start finish)))) completed
-    at bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call canonicalKindFunction.id (toCoreExprs layout sourceArguments))
-      (.signed .i32 (CanonicalKind.result source rawKind start finish))
-      (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned
-      (bindings := bindings) (body := canonicalKindBody)
-      argumentsExecution verifiedFrontendCore_finds_canonicalKind
-    · simpa [bindings, calleeEnvironment, CanonicalKindCallModel.i32,
-        CanonicalKind.sourceValueAt] using
-        parameterBindingsMatch cell source rawKind start finish
-    · exact canonicalKindFunction_has_body
-    · simpa [callee, bindings] using bodyExecution
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
-      (bindings := bindings) bodyEffect (by
-        intro writtenCell written
-        exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same
-      (callEffect.weaken CellSet.empty_subset)⟩
+      simpa [bindings, calleeEnvironment, CanonicalKindCallModel.i32,
+        CanonicalKind.sourceValueAt, Model.keywordSource] using
+        parameterBindingsMatch cell source rawKind start finish)
+    canonicalKindFunction_has_body functionalEvaluation
+    (by native_decide) canonicalKindView_toCore_exactly
+    afterArgumentsWellFormed represented
 
 theorem worldPreserving : WorldPreserving CanonicalKindCallModel.calls :=
   CanonicalKindCallModel.worldPreserving

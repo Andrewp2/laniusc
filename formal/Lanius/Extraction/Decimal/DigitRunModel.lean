@@ -101,7 +101,7 @@ theorem helperCallModel_successful (world : World) (offset : Nat)
         [.signed .i32 offset] =
       .ok (digitValue (.success offset), world) := by
   have different : extractedSuccessfulDigitsFunction.id ≠
-      extractedIsDigitForBaseFunction.id := by native_decide
+      extractedIsDigitForBaseFunction.id := by decide
   have offsetIntBound : (offset : Int) ≤ 2147483647 := by omega
   simp [helperCallModel, digitValue, digitScanValue, different, offsetIntBound,
     show digitScanDeclaration.id = 2 by rfl]
@@ -112,9 +112,9 @@ theorem helperCallModel_failed (world : World) (offset : Nat)
         [.signed .i32 offset] =
       .ok (digitValue (.failure offset), world) := by
   have first : extractedFailedDigitsFunction.id ≠
-      extractedIsDigitForBaseFunction.id := by native_decide
+      extractedIsDigitForBaseFunction.id := by decide
   have second : extractedFailedDigitsFunction.id ≠
-      extractedSuccessfulDigitsFunction.id := by native_decide
+      extractedSuccessfulDigitsFunction.id := by decide
   have offsetIntBound : (offset : Int) ≤ 2147483647 := by omega
   simp [helperCallModel, digitValue, digitScanValue, first, second,
     offsetIntBound,

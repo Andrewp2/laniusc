@@ -7,6 +7,7 @@ import Lanius.Compiler.WorkspaceLoop
 import Lanius.Compiler.ParserTree
 import Lanius.Separation.I32Prefix
 import Lanius.Extraction.Parser.Workspace.Artifact
+import Lanius.Compiler.Parser.Seeding
 
 namespace Lanius.Extraction.ParserRecognize
 
@@ -458,12 +459,12 @@ def parserRecognizeInitialLoopBody : Stmt :=
 def verifiedParserInitialLoopAccessFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
-    parserRecognizeInitialLoop (by native_decide)
+    parserRecognizeInitialLoop (by decide)
 
 def verifiedParserInitialLoopLiveFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
-    parserRecognizeInitialLoop (by native_decide)
+    parserRecognizeInitialLoop (by decide)
 
 theorem verifiedParser_initial_loop_access_frame :
     verifiedParserInitialLoopAccessFrame.map (fun access =>
@@ -477,7 +478,7 @@ theorem verifiedParser_initial_loop_access_frame :
       ("state_base", 8, .read),
       ("state_capacity", 9, .read),
       ("state_count", 18, .readWrite)] := by
-  native_decide
+  decide
 
 theorem verifiedParser_initial_loop_live_frame :
     verifiedParserInitialLoopLiveFrame.map (fun access =>
@@ -498,7 +499,7 @@ theorem verifiedParser_initial_loop_live_frame :
       ("lhs_offsets_offset", 13, .read),
       ("lhs_counts_offset", 14, .read),
       ("start_nonterminal", 12, .read)] := by
-  native_decide
+  decide
 
 /-- Locals live across the initial loop whose cells remain owned by the
     surrounding frame.  This is derived from liveness, not merely from reads
@@ -520,13 +521,16 @@ def verifiedParserInitialLoopPersistentBindings : LocalBindingFrame :=
 theorem verifiedParser_initial_loop_shared_frame_ids :
     verifiedParserInitialLoopSharedFrameIds =
       [17, 0, 15, 16, 4, 8, 9, 6, 11, 2, 3, 13, 14, 12] := by
-  native_decide
+  decide
 
 theorem verifiedParserInitialLoopPersistentBindings_core_ids :
     verifiedParserInitialLoopPersistentBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserInitialLoopSharedFrameIds := by
-  native_decide
+  simp only [verifiedParserInitialLoopPersistentBindings,
+    verifiedParserRecognizerParameterIds, verifiedParserInitialLoopSharedFrameIds,
+    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
+    List.map_append]
 
 @[simp] theorem mem_verifiedParserInitialLoopSharedFrameIds_iff
     (id : Nat) :
@@ -3885,6 +3889,9 @@ structure RecognizerInitialLoopInvariant
     (some (.signed .i32 (Int.ofNat index)))).holds runtime
   indexLe : index ≤ count
   rowRange : first + count ≤ grammar.lhsProductions.length
+  rowExact : (grammar.lhsProductions.drop first).take count =
+    grammar.productionIdsFor grammar.grammar.start_nonterminal
+  seeded : Seeded workspace 0 ((grammar.lhsProductions.drop first).take index)
   rowProductionBound : ∀ (rowIndex : Nat) (rowIndexBound : rowIndex < count),
     grammar.lhsProductions.get ⟨first + rowIndex, by
       have := rowRange
@@ -3896,6 +3903,16 @@ structure RecognizerInitialLoopInvariant
     indexCell ≠ tokensCell ∧
     indexCell ≠ workspaceCell ∧
     indexCell ≠ stateCountCell
+
+/-- Normal completion has seeded every start production from the complete
+packed row. No successful parser result or later-loop invariant is assumed. -/
+theorem RecognizerInitialLoopInvariant.startSeeded
+    (invariant : RecognizerInitialLoopInvariant grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell workspaceCell stateCountCell indexCell
+      runtime first count count) : StartSeeded grammar workspace := by
+  apply Seeded.start
+  rw [← invariant.rowExact]
+  exact invariant.seeded
 
 theorem RecognizerInitialLoopInvariant.persistentLocalsSeparate
     (invariant : RecognizerInitialLoopInvariant grammarLayout grammar words
@@ -4161,6 +4178,8 @@ theorem RecognizerInitialLoopInvariant.after_temporary_bind
       invariant.indexOwned
     indexLe := invariant.indexLe
     rowRange := invariant.rowRange
+    rowExact := invariant.rowExact
+    seeded := invariant.seeded
     rowProductionBound := invariant.rowProductionBound
     persistentSeparate := by
       unfold InitialLoopFrameSeparated
@@ -4241,11 +4260,18 @@ theorem RecognizerInitialLoopInvariant.bind_production
             (position := 0) productionBound)
       backpointer := by
         have productionBound := invariant.rowProductionBound index indexBound
+        have member : production ∈ grammar.productionIdsFor grammar.grammar.start_nonterminal := by
+          rw [← invariant.rowExact]
+          apply List.mem_iff_getElem?.mpr
+          refine ⟨index, ?_⟩
+          rw [List.getElem?_take_of_lt indexBound, List.getElem?_drop]
+          exact List.getElem?_eq_getElem _
+        obtain ⟨bound, start⟩ := IndexedGrammar.productionIdsFor_member member
         simpa [recognizerInitialSeed, freshSeed] using
           (EarleyBackpointerStep.fresh
             (grammar := grammar) (tokens := tokens) (workspace := workspace)
             (stateId := workspace.states.length) (position := 0)
-            productionBound)
+            productionBound (GeneratedItem.seed ⟨production, bound⟩ start))
     }
     productionLocal := by
       simpa [production, value] using bindLocal_finds_local runtime 20 value
@@ -4676,6 +4702,10 @@ noncomputable def RecognizerInitialLoopInvariant.execute_ok_step
     indexOwned := afterIndexOwned
     indexLe := by omega
     rowRange := invariant.rowRange
+    rowExact := invariant.rowExact
+    seeded := by
+      simpa only [nextWorkspace, recognizerInitialSeed, freshSeed, production] using
+        invariant.seeded.next rowBound statusOk'
     rowProductionBound := invariant.rowProductionBound
     persistentSeparate := by
       unfold InitialLoopFrameSeparated

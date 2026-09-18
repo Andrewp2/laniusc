@@ -41,7 +41,7 @@ private def rootLoopReification? :=
 
 private theorem rootLoopReification_exists :
     rootLoopReification?.isSome := by
-  native_decide
+  decide +kernel
 
 /-- Complete final-chart root search recovered from the checked recognizer. -/
 def parserRecognizeRootLoopView :=
@@ -59,7 +59,7 @@ private def rootBodyReification? :=
 
 private theorem rootBodyReification_exists :
     rootBodyReification?.isSome := by
-  native_decide
+  decide +kernel
 
 private def parserRecognizeRootBodyView :=
   rootBodyReification?.get rootBodyReification_exists
@@ -76,7 +76,7 @@ private def rootRejectedReification? :=
 
 private theorem rootRejectedReification_exists :
     rootRejectedReification?.isSome := by
-  native_decide
+  decide +kernel
 
 /-- Rejected-result continuation recovered directly from the checked
     recognizer after the final root loop. -/
@@ -112,7 +112,7 @@ private def rootStatementReification? :=
 
 private theorem rootStatementReification_exists :
     rootStatementReification?.isSome := by
-  native_decide
+  decide +kernel
 
 /-- The complete final root-selection statement, mechanically recovered from
     the checked `parser.lani::recognize` body. -/
@@ -211,7 +211,7 @@ def rootExpectedRejectedCommand :
 theorem rootRejectedCommand_shape :
     rootRejectedCommand = rootExpectedRejectedCommand := by
   apply stateCommandMatches_sound
-  native_decide
+  decide +kernel
 
 /-- Layout after the source `root_state` binding has extended the root
     statement's seven-slot environment. -/
@@ -232,7 +232,7 @@ private theorem rootIntoStatementLayout_extends :
     Layout.Extends rootIntoStatementEmbedding rootLoopLayout
       rootStatementBoundLayout := by
   apply Layout.Extends.ofFn
-  native_decide
+  decide +kernel
 
 abbrev rootStatementLoopCommand :=
   Lanius.FunctionalView.Stateful.Command.rename
@@ -264,7 +264,7 @@ def rootExpectedStatementCommand :
 theorem rootStatementCommand_shape :
     rootStatementCommand = rootExpectedStatementCommand := by
   apply stateCommandMatches_sound
-  native_decide
+  decide +kernel
 
 /-! The root statement starts after both position counters are bound.  Its
     seven live values are a projection of the existing fifteen-slot position
@@ -281,7 +281,7 @@ private theorem rootStatementIntoPositionLayout_extends :
     Layout.Extends rootStatementIntoPositionEmbedding rootStatementLayout
       positionLoopLayout := by
   apply Layout.Extends.ofFn
-  native_decide
+  decide +kernel
 
 abbrev positionStatementRootCommand :=
   Lanius.FunctionalView.Stateful.Command.rename
@@ -308,7 +308,7 @@ def positionExpectedStatementCommand :
 theorem positionStatementCommand_shape :
     positionStatementCommand = positionExpectedStatementCommand := by
   apply stateCommandMatches_sound
-  native_decide
+  decide +kernel
 
 
 end Lanius.Extraction.ParserRecognize

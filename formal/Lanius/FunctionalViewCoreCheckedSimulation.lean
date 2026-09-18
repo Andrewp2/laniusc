@@ -1,5 +1,7 @@
 import Lanius.FunctionalViewCoreEffectfulStateful
 import Lanius.CallContracts
+import Lanius.FunctionalViewCoreFreshSimulation
+import Lanius.FunctionalViewCoreCallFrame
 
 namespace Lanius.FunctionalView.Core.CheckedSimulation
 
@@ -92,5 +94,66 @@ theorem callExecutes
     evaluatesCallReturned argumentsResult functionFound parametersBound
       functionBody bodyExecution,
     completedWellFormed, completedRepresented, bodyEffect⟩
+
+/-- Compose a checked command execution with its source-call frame.  The
+    command runs in the canonical fresh parameter frame; the caller's
+    representation and argument effect are carried through local restoration. -/
+theorem callPreservesFrame
+    {program : Program} {calls : Effectful.CallModel}
+    {callerArity calleeArity : Nat} {callerLayout : Layout callerArity}
+    {callerCell : Fin callerArity → CellId}
+    {world afterWorld : ReadOnly.World}
+    {callerEnvironment : Env callerArity}
+    {calleeEnvironment : Env calleeArity}
+    {afterEnvironment : Env calleeArity}
+    {before afterArguments : State} {arguments : List (Term Core.signature callerArity)}
+    {values : List Value} {argumentWrites : CellSet}
+    {function : Function} {body : Stmt} {result : Value}
+    {command : Stateful.Command Core.signature Core.Stateful.actions calleeArity}
+    (callSoundness : FreshSimulation.FramePreservingCallSoundness program calls)
+    (argumentsResult : ArgumentsEvaluateTo program before
+      (Core.toCoreExprs callerLayout arguments) values afterArguments)
+    (argumentsEffect : ModifiesOnly argumentWrites before afterArguments)
+    (functionFound : program.function? function.id = some function)
+    (parametersBound : bindParameters function.parameters values =
+      some (parameterBindings calleeEnvironment))
+    (functionBody : function.body = some body)
+    (functionalEvaluation : Stateful.Command.Evaluates
+      (Effectful.machine program calls)
+      (Stateful.machineWith program (Effectful.evaluateOperation program calls))
+      world calleeEnvironment command (.returned (some result))
+      afterWorld afterEnvironment)
+    (actionFree : FreshSimulation.actionFree command = true)
+    (commandExact : Lanius.FunctionalView.Core.Stateful.toCoreStmt
+      actionAdapter identityLayout calleeArity command = body)
+    (afterArgumentsWellFormed : StateWellFormed afterArguments)
+    (represented : Representation callerLayout callerCell world callerEnvironment
+      afterArguments) :
+    ∃ after,
+      Evaluates program before
+        (.call function.id (Core.toCoreExprs callerLayout arguments)) result after ∧
+      StateWellFormed after ∧
+      Representation callerLayout callerCell world callerEnvironment after ∧
+      ModifiesOnly argumentWrites before after := by
+  let callee := enterCall afterArguments (parameterBindings calleeEnvironment)
+  let operations := FreshSimulation.operationSoundness program calls callSoundness
+  have simulation := FreshSimulation.commandSoundness operations
+    functionalEvaluation actionFree
+    (represented.enterCallParameters afterArgumentsWellFormed
+      (environment := calleeEnvironment))
+    (LayoutBelow.identity (arity := calleeArity))
+    (enterCall_preserves_wellFormed afterArgumentsWellFormed)
+    (frontier := afterArguments.nextCell)
+    (by intro index; simp [callLocalCells])
+    (by simpa [callee] using
+      (enterCall_effect afterArguments (parameterBindings calleeEnvironment)).nextCell)
+  obtain ⟨completed, bodyExecution, completedWellFormed,
+      _completedRepresented, bodyEffect⟩ := simulation
+  rw [commandExact] at bodyExecution
+  change Executes program callee body (.returned (some result)) completed at bodyExecution
+  exact represented.callReturned argumentsResult argumentsEffect functionFound
+    parametersBound functionBody (by simpa [callee] using bodyExecution)
+    afterArgumentsWellFormed completedWellFormed bodyEffect
+    (by intro cell written; exact written)
 
 end Lanius.FunctionalView.Core.CheckedSimulation

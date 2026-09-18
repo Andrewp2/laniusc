@@ -40,7 +40,7 @@ def CallStorage.values {data : TraversalData} (storage : CallStorage data state)
     (.slice i32 data.recordsCell [] 0 storage.recordsCapacity)
     (.slice i32 data.offsetsCell [] 0 storage.offsetsCapacity)
     (.slice i32 data.outputCell [] 0 data.original.length)
-    data.grammar.words.length data.tokens.length (ParserTreeLayout.treeFrom 0 0 data.tree).words.length
+    data.grammar.words.length data.tokens.length data.recordsLimit
     data.collection.records.length data.original.length
 
 def CallStorage.bindings {data : TraversalData} (storage : CallStorage data state) : List (VarId × Value) :=

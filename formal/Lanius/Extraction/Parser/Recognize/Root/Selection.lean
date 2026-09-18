@@ -1,6 +1,8 @@
 import Lanius.Extraction.Parser.Recognize.Root.Commands
+import Lanius.Extraction.VerifiedFrontend.Parser.Workspace
 import Lanius.Extraction.Parser.Recognize.Nullable
 import Lanius.Compiler.ParserRoot
+import Lanius.Compiler.Parser.Closure
 namespace Lanius.Extraction.ParserRecognize
 
 set_option maxRecDepth 100000
@@ -47,7 +49,7 @@ private def rootExpectedBodyCommand :
 private theorem rootBodyCommand_shape :
     rootBodyCommand = rootExpectedBodyCommand := by
   apply stateCommandMatches_sound
-  native_decide
+  decide +kernel
 
 private noncomputable abbrev rootTermMachine := nullableTermMachine
 
@@ -164,12 +166,12 @@ noncomputable def rootStatementExecution_in_position_environment
 private theorem rootLoop_calls_supported_in_state :
     Lanius.FunctionalView.Core.Stateful.Command.callsSatisfy
       traversalCallAllowedInState rootLoopCommand = true := by
-  native_decide
+  decide +kernel
 
 private theorem rootRejected_calls_supported_in_state :
     Lanius.FunctionalView.Core.Stateful.Command.callsSatisfy
       traversalCallAllowedInState rootRejectedCommand = true := by
-  native_decide
+  decide +kernel
 
 /-- Transport one compact root command into the full recognizer call registry
     and then place it in the lexical environment of the complete root
@@ -484,6 +486,43 @@ instance (grammar : IndexedGrammar) (candidate : EarleyState)
     Decidable (RootCandidateMatches grammar candidate productionBound) := by
   unfold RootCandidateMatches
   infer_instance
+
+/-- Every candidate in a searched chart suffix fails the actual root test.
+This is produced by exhaustive search, not assumed from parser rejection. -/
+def NoRootIn (grammar : IndexedGrammar) (workspace : LogicalWorkspace) (ids : List Nat) : Prop :=
+  ∀ id ∈ ids, ∀ candidate, workspace.state? id = some candidate →
+    ∀ bound : candidate.production < grammar.productionCount,
+      ¬ RootCandidateMatches grammar candidate bound
+
+private theorem NoRootIn.cons
+    (found : workspace.state? current = some candidate)
+    (different : ¬ RootCandidateMatches grammar candidate bound)
+    (tail : NoRootIn grammar workspace remaining) :
+    NoRootIn grammar workspace (current :: remaining) := by
+  intro id listed state lookup productionBound
+  rcases List.mem_cons.mp listed with rfl | later
+  · have same := Option.some.inj (lookup.symm.trans found)
+    subst state
+    exact different
+  · exact tail id later state lookup productionBound
+
+/-- Exhausting the actual root predicate rules out every complete start key,
+including one whose retained derivation has different backpointers. -/
+theorem NoRootIn.not_hasRoot
+    (absent : NoRootIn grammar workspace (workspace.chart (finalPosition tokens.length))) :
+    ¬ ChartClosed.HasRoot grammar tokens workspace := by
+  rintro ⟨production, lhs, id, state, listed, found, key⟩
+  have productionEq : state.production = production.val := congrArg StateKey.production key
+  have dotEq : state.dot = (grammar.productionAt production).rhs.length := congrArg StateKey.dot key
+  have originEq : state.origin = 0 := congrArg StateKey.origin key
+  have bound : state.production < grammar.productionCount := productionEq ▸ production.isLt
+  have indexEq : (⟨state.production, bound⟩ : Fin grammar.productionCount) = production := Fin.ext productionEq
+  apply absent id listed state found bound
+  refine ⟨originEq, ?_, ?_⟩
+  · rw [indexEq]
+    exact lhs
+  · rw [indexEq]
+    exact dotEq
 
 /-- Read-only state carried by the final-chart root search.  The cursor is the
     only mutable cell; the result count, start symbol, and final position stay
@@ -2507,6 +2546,14 @@ def RecognizerRootConfig.measure
   | .inl active => active.2.1.length + 1
   | .inr _ => 0
 
+private def RecognizerRootConfig.candidates
+    (config : RecognizerRootConfig grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell cursorCell) : List Nat :=
+  match config.cursor with
+  | .inl active => active.1 :: active.2.1
+  | .inr _ => []
+
 private def RecognizerRootConfig.currentCandidate
     (config : RecognizerRootConfig grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
@@ -2589,6 +2636,45 @@ private theorem RecognizerRootEntry.functionalConfig_candidate
         injection equal
       simpa [RecognizerRootEntry.functionalConfig,
         RecognizerRootConfig.currentCandidate, cursorEq] using valueEq
+
+private theorem RecognizerRootEntry.functionalConfig_candidates
+    (entry : RecognizerRootEntry grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell positionCell furthestCell source furthest sourceInvariant) :
+    entry.functionalConfig.candidates = workspace.chart (finalPosition workspaceLayout.tokenCount) := by
+  have head := entry.functionalConfig_candidate
+  cases cursorEq : entry.cursor with
+  | inl active =>
+      obtain ⟨current, remaining, invariant⟩ := active
+      have headEq : (Int.ofNat current : Int) =
+          chartHeadValue workspace (finalPosition workspaceLayout.tokenCount) := by
+        simpa only [RecognizerRootEntry.functionalConfig, RecognizerRootConfig.currentCandidate, cursorEq] using head
+      have split := invariant.chartCursor.cursor.split
+      have unseen := invariant.chartCursor.cursor.unseen
+      have visitedEmpty : invariant.chartCursor.cursor.visited = [] := by
+        cases visitedEq : invariant.chartCursor.cursor.visited with
+        | nil => rfl
+        | cons first rest =>
+            have chart := split
+            rw [visitedEq] at chart
+            have same : current = first := by
+              simp only [chartHeadValue, chart, List.cons_append, List.head?_cons, encodeStateId] at headEq
+              simp only [Int.ofNat_eq_natCast] at headEq
+              omega
+            exact False.elim (unseen (by simp only [visitedEq, List.mem_cons]; exact Or.inl same))
+      rw [visitedEmpty, List.nil_append] at split
+      simpa only [RecognizerRootEntry.functionalConfig, RecognizerRootConfig.candidates, cursorEq] using split.symm
+  | inr finished =>
+      have headEq : (-1 : Int) = chartHeadValue workspace (finalPosition workspaceLayout.tokenCount) := by
+        simpa only [RecognizerRootEntry.functionalConfig, RecognizerRootConfig.currentCandidate, cursorEq] using head
+      have empty : workspace.chart (finalPosition workspaceLayout.tokenCount) = [] := by
+        cases chart : workspace.chart (finalPosition workspaceLayout.tokenCount) with
+        | nil => rfl
+        | cons first rest =>
+            simp only [chartHeadValue, chart, List.head?_cons, encodeStateId] at headEq
+            simp only [Int.ofNat_eq_natCast] at headEq
+            omega
+      simpa only [RecognizerRootEntry.functionalConfig, RecognizerRootConfig.candidates, cursorEq] using empty.symm
 
 private theorem RecognizerRootEntry.functionalConfig_furthest
     (entry : RecognizerRootEntry grammarLayout grammar words tokens
@@ -2778,6 +2864,7 @@ private structure RecognizerRootFunctionalResult
     workspaceLayout workspace workspaceValues grammarCell tokensCell
     workspaceCell stateCountCell cursorCell functionalAfter physicalAfter
     completion
+  exhausted : completion = .next → NoRootIn grammar workspace config.candidates
 
 /-- One root-loop decision shared by the mechanically reified FunctionalView
     command and the exact extracted Core loop. -/
@@ -2817,6 +2904,9 @@ private noncomputable def RecognizerRootConfig.functional_decide
             exact executesWhileFalse finished.chartCursor.condition_negative
           effect := ModifiesOnly.reflAny (CellSet.singleton cursorCell)
             config.runtime
+          exhausted := by
+            intro _ id listed
+            simp only [RecognizerRootConfig.candidates, cursorShape, List.not_mem_nil] at listed
           outcome := by
             apply RecognizerRootSynchronizedOutcome.exhausted config.runtime
               finished
@@ -2875,6 +2965,7 @@ private noncomputable def RecognizerRootConfig.functional_decide
               effect := stepEffect
               outcome := .accepted current candidate found productionBound
                 candidateMatches materializedParse physicalAfter wellFormed
+              exhausted := by intro impossible; cases impossible
             }
           }
       | advanced candidate found productionBound candidateDoesNotMatch next
@@ -2933,6 +3024,13 @@ private noncomputable def RecognizerRootConfig.functional_decide
                   result.execution
               effect := stepEffect.trans_same result.effect
               outcome := result.outcome
+              exhausted := by
+                intro next
+                have tail : NoRootIn grammar workspace remaining := by
+                  rw [← suffix]
+                  exact result.exhausted next
+                simpa only [RecognizerRootConfig.candidates, cursorShape] using
+                  NoRootIn.cons found candidateDoesNotMatch tail
             }
       | exhausted candidate found productionBound candidateDoesNotMatch empty
           physicalAfter finished furthestEq functionalBody physicalBody
@@ -2984,6 +3082,13 @@ private noncomputable def RecognizerRootConfig.functional_decide
                   result.execution
               effect := stepEffect.trans_same result.effect
               outcome := result.outcome
+              exhausted := by
+                intro _
+                have tail : NoRootIn grammar workspace remaining := by
+                  intro id listed
+                  simp only [empty, List.not_mem_nil] at listed
+                simpa only [RecognizerRootConfig.candidates, cursorShape] using
+                  NoRootIn.cons found candidateDoesNotMatch tail
             }
 
 private noncomputable def RecognizerRootConfig.functional_run
@@ -3164,10 +3269,35 @@ inductive RecognizerRootStatementOutcome
       RecognizerRootStatementOutcome grammar tokens workspace
         (.returned (some (parseResultValue 0
           (Int.ofNat workspace.states.length) (Int.ofNat rootState) 0)))
-  | rejected (furthest : Nat) :
+  | rejected (furthest : Nat)
+      (absent : NoRootIn grammar workspace (workspace.chart (finalPosition tokens.length))) :
       RecognizerRootStatementOutcome grammar tokens workspace
         (.returned (some (parseResultValue 1
           (Int.ofNat workspace.states.length) (-1) (Int.ofNat furthest))))
+
+/-- Root search cannot reject a complete start item that is present in its
+actual final chart. The result retains the source-selected stored tree. -/
+theorem RecognizerRootStatementOutcome.success_of_hasRoot
+    (outcome : RecognizerRootStatementOutcome grammar tokens workspace completion)
+    (root : ChartClosed.HasRoot grammar tokens workspace) :
+    ∃ rootState : Nat,
+      completion = .returned (some (parseResultValue 0 workspace.states.length rootState 0)) ∧
+      Nonempty (StoredRootParse grammar tokens workspace rootState) := by
+  cases outcome with
+  | accepted rootState candidate found bound matched stored =>
+      exact ⟨rootState, rfl, ⟨stored⟩⟩
+  | rejected furthest absent => exact False.elim (absent.not_hasRoot root)
+
+/-- Declarative validity suffices at root selection once the preceding
+source loops establish chart closure. No successful parse result is assumed. -/
+theorem RecognizerRootStatementOutcome.success_of_closed
+    (outcome : RecognizerRootStatementOutcome grammar tokens workspace completion)
+    (closed : ChartClosed grammar tokens workspace)
+    (recognized : RecognizesInput grammar tokens) :
+    ∃ rootState : Nat,
+      completion = .returned (some (parseResultValue 0 workspace.states.length rootState 0)) ∧
+      Nonempty (StoredRootParse grammar tokens workspace rootState) :=
+  outcome.success_of_hasRoot (closed.contains_root recognized)
 
 /-- Functional execution of the complete, mechanically reified root
     statement.  Both outcomes are terminal, so the returned value is exposed
@@ -3496,7 +3626,11 @@ noncomputable def RecognizerRootEntry.functional_execute_statement
           exact scopedStore.restoreLocals_wellFormed
             entry.chartEntry.headRead.invariant.wellFormed
             physicalRejected.wellFormed
-        outcome := .rejected finished.furthestPosition
+        outcome := .rejected finished.furthestPosition (by
+          have absent := result.exhausted rfl
+          rw [entry.functionalConfig_candidates,
+            sourceInvariant.frame.appendFrame.recognizer.workspaceTokenCount] at absent
+          exact absent)
       }
   | breakLoop =>
     cases result.outcome

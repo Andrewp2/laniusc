@@ -1,0 +1,20 @@
+module x86::buffer;
+
+// Capacities are bounded by the actual slice length by the owning caller.
+// Subtract only after checking the cursor, avoiding signed-i32 overflow.
+pub fn fits(capacity: i32, cursor: i32, count: i32) -> bool {
+    if (capacity < 0 || cursor < 0 || count < 0 || cursor > capacity) {
+        return false;
+    }
+    return count <= capacity - cursor;
+}
+
+// Internal storage primitive: the caller has reserved all four positions.
+// Arithmetic right shift followed by masking also handles negative words.
+pub fn store_word(output: [i32], cursor: i32, value: i32) -> i32 {
+    output[cursor] = value & 255;
+    output[cursor + 1] = (value >> 8) & 255;
+    output[cursor + 2] = (value >> 16) & 255;
+    output[cursor + 3] = (value >> 24) & 255;
+    return cursor + 4;
+}

@@ -68,7 +68,7 @@ theorem Checked.evaluates_call (checked : Checked program functionId)
     (before : State) (kind : Int) (expression : Expr) (wellFormed : StateWellFormed before)
     (argument : Evaluates program before expression (.signed .i32 kind) before) :
     ∃ after, Evaluates program before (.call functionId [expression]) (.boolean (result kind)) after ∧
-      CellEffect CellSet.empty before after := by
+      CellEffect CellSet.empty before after ∧ Host.MemoryFrame before after := by
   let bindings : List (VarId × Value) := [(0, .signed .i32 kind)]
   let entered := enterCall before bindings
   have localValue : entered.local? 0 = some (.signed .i32 kind) :=
@@ -86,8 +86,8 @@ theorem Checked.evaluates_call (checked : Checked program functionId)
       [.signed .i32 kind] = some bindings := rfl
   have called := evaluatesCallReturned (ArgumentsEvaluateTo.singleton argument) checked.found parameters rfl executed
   have effect := enterCall_effect before bindings
-  refine ⟨restoreLocals before entered, called, ?_⟩
-  exact CellEffect.ofModifiesOnly effect.restoreLocals
-    (effect.restoreLocals_wellFormed wellFormed (enterCall_preserves_wellFormed wellFormed))
+  have finalWF := effect.restoreLocals_wellFormed wellFormed (enterCall_preserves_wellFormed wellFormed)
+  exact ⟨restoreLocals before entered, called, CellEffect.ofModifiesOnly effect.restoreLocals finalWF,
+    (Host.MemoryFrame.enterCall before bindings).restoreLocals before finalWF⟩
 
 end Lanius.Extraction.CanonicalTokens.Trivia

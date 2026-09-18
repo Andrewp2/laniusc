@@ -165,10 +165,7 @@ theorem finishDecimal_digitFailure
     (decimal : 48 ≤ first ∧ first ≤ 57)
     (digits : scanDigitRun source (integerEnd + 1) 10 = .failure error) :
     finishDecimal source integerEnd = .failure error := by
-  have firstNotDot : first ≠ 46 := by
-    intro equal
-    apply notDoubleDot
-    simpa [equal] using firstAt
+  have firstNotDot : first ≠ 46 := by simpa [firstAt] using notDoubleDot
   simp [finishDecimal, dotAt, firstAt, firstNotDot, decimal, digits]
 
 theorem finishDecimal_digitSuccessExponent
@@ -181,10 +178,7 @@ theorem finishDecimal_digitSuccessExponent
     (exponentAt : byteValueAt source finish = some exponentByte)
     (hasExponent : isExponentByte exponentByte) :
     finishDecimal source integerEnd = scanExponent source finish := by
-  have firstNotDot : first ≠ 46 := by
-    intro equal
-    apply notDoubleDot
-    simpa [equal] using firstAt
+  have firstNotDot : first ≠ 46 := by simpa [firstAt] using notDoubleDot
   simp [finishDecimal, dotAt, firstAt, firstNotDot, decimal, digits,
     exponentAt, beqOr_eq_true exponentByte hasExponent]
 
@@ -198,10 +192,7 @@ theorem finishDecimal_digitSuccessNoExponent
     (exponentAt : byteValueAt source finish = some exponentByte)
     (notExponent : ¬ isExponentByte exponentByte) :
     finishDecimal source integerEnd = .success .float finish := by
-  have firstNotDot : first ≠ 46 := by
-    intro equal
-    apply notDoubleDot
-    simpa [equal] using firstAt
+  have firstNotDot : first ≠ 46 := by simpa [firstAt] using notDoubleDot
   simp [finishDecimal, dotAt, firstAt, firstNotDot, decimal, digits,
     exponentAt, beqOr_eq_false exponentByte notExponent]
 
@@ -214,10 +205,7 @@ theorem finishDecimal_digitSuccessAtEnd
     (digits : scanDigitRun source (integerEnd + 1) 10 = .success finish)
     (atEnd : byteValueAt source finish = none) :
     finishDecimal source integerEnd = .success .float finish := by
-  have firstNotDot : first ≠ 46 := by
-    intro equal
-    apply notDoubleDot
-    simpa [equal] using firstAt
+  have firstNotDot : first ≠ 46 := by simpa [firstAt] using notDoubleDot
   simp [finishDecimal, dotAt, firstAt, firstNotDot, decimal, digits, atEnd]
 
 theorem finishDecimal_nonDigitExponent
@@ -229,10 +217,7 @@ theorem finishDecimal_nonDigitExponent
     (exponent : isExponentByte first) :
     finishDecimal source integerEnd =
       scanExponent source (integerEnd + 1) := by
-  have firstNotDot : first ≠ 46 := by
-    intro equal
-    apply notDoubleDot
-    simpa [equal] using firstAt
+  have firstNotDot : first ≠ 46 := by simpa [firstAt] using notDoubleDot
   simp [finishDecimal, dotAt, firstAt, firstNotDot, notDecimal,
     beqOr_eq_true first exponent]
 
@@ -244,10 +229,7 @@ theorem finishDecimal_nonDigitNoExponent
     (notDecimal : ¬ (48 ≤ first ∧ first ≤ 57))
     (notExponent : ¬ isExponentByte first) :
     finishDecimal source integerEnd = .success .float (integerEnd + 1) := by
-  have firstNotDot : first ≠ 46 := by
-    intro equal
-    apply notDoubleDot
-    simpa [equal] using firstAt
+  have firstNotDot : first ≠ 46 := by simpa [firstAt] using notDoubleDot
   simp [finishDecimal, dotAt, firstAt, firstNotDot, notDecimal,
     beqOr_eq_false first notExponent]
 

@@ -7,6 +7,7 @@ open Lanius.Core
 open Lanius.Properties
 open Lanius.Semantics
 open Lanius.Separation
+open Lanius.CallContracts
 open Lanius.FunctionalView
 open Lanius.FunctionalView.Core
 
@@ -162,6 +163,38 @@ theorem Representation.restoreFreshCall
     worldLocalsDisjoint := represented.worldLocalsDisjoint
   }
   exact ⟨afterWellFormed, afterRepresented, effect⟩
+
+/-- Compose argument evaluation, fresh-frame body execution, and caller-frame
+    restoration into the call result consumed by frame-preserving registries. -/
+theorem Representation.callReturned
+    (argumentsResult : ArgumentsEvaluateTo program before arguments values
+      afterArguments)
+    (argumentsEffect : ModifiesOnly argumentWrites before afterArguments)
+    (functionFound : program.function? function.id = some function)
+    (parametersBound : bindParameters function.parameters values = some bindings)
+    (functionBody : function.body = some body)
+    (bodyExecution : Executes program (enterCall afterArguments bindings) body
+      (.returned (some result)) completed)
+    (afterArgumentsWellFormed : StateWellFormed afterArguments)
+    (completedWellFormed : StateWellFormed completed)
+    (represented : Representation layout localCell world environment afterArguments)
+    (bodyEffect : ModifiesOnly bodyWrites
+      (enterCall afterArguments bindings) completed)
+    (writesFresh : ∀ cell, bodyWrites cell → afterArguments.nextCell ≤ cell) :
+    ∃ after,
+      Evaluates program before (.call function.id arguments) result after ∧
+      StateWellFormed after ∧
+      Representation layout localCell world environment after ∧
+      ModifiesOnly argumentWrites before after := by
+  let after := restoreLocals afterArguments completed
+  have execution := evaluatesCallReturned argumentsResult functionFound
+    parametersBound functionBody bodyExecution
+  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
+    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
+      bodyEffect writesFresh
+  exact ⟨after, by simpa [after] using execution, afterWellFormed,
+    afterRepresented, argumentsEffect.trans_same
+      (callEffect.weaken CellSet.empty_subset)⟩
 
 /-- Common specialization for a body whose writes are exactly bounded by the
 canonical dense parameter cells. -/

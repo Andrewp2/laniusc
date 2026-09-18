@@ -3,8 +3,6 @@ import Lanius.Extraction.Decimal.FinishAtEndReturn
 
 namespace Lanius.Extraction.Decimal.FinishEvaluation
 
-set_option maxRecDepth 200000
-
 open Lanius
 open Lanius.Core
 open Lanius.Compiler.Lexer

@@ -1131,7 +1131,7 @@ noncomputable def RecognizerStateSymbolBinding.execute_terminal
               exact Or.inl written)
             outcome := .full workspace workspaceValues full.after
               (.refl workspace) full.invariant logical.1.stateCount
-              full.wellFormed
+              full.wellFormed (appendLogical.full_workspace (by simpa only [logical] using statusEq))
           }
 
 /-- One terminal branch execution viewed simultaneously through the immutable
@@ -1239,6 +1239,10 @@ noncomputable def
     productionBound⟩).rhs.get ⟨candidate.dot, dotBeforeEnd⟩
   have isTerminal' : symbol < grammar.grammar.n_kinds := by
     simpa [symbol] using isTerminal
+  have predictions (result : LogicalWorkspace) :
+      PredictionsComplete grammar result position candidate.production candidate.dot :=
+    PredictionsComplete.of_terminal productionBound
+      (by simp only [List.getElem?_eq_getElem dotBeforeEnd, List.get_eq_getElem]) isTerminal
   have bindingSuffix : binding.invariant.chartCursor.recognizer.tokenStorage.unused =
       bindings.invariant.chartCursor.recognizer.tokenStorage.unused := by
     have readBacking := binding.effect.empty_preserves_entry
@@ -1298,6 +1302,12 @@ noncomputable def
             miss.invariant.appendFrame.stateCountOwned writes terminalEffect
             frameDisjoint cursorNotWritten)
           (by simp only [missSuffix]) (by simpa only [missSuffix] using locals)
+          (predictions workspace)
+          ChartsUnchangedBefore.refl
+          (ScansComplete.of_miss productionBound
+            (by simp only [symbol, List.getElem?_eq_getElem dotBeforeEnd, List.get_eq_getElem]) scanEq)
+          (CompletionStep.of_terminal productionBound
+            (by simp only [symbol, List.getElem?_eq_getElem dotBeforeEnd, List.get_eq_getElem]) isTerminal')
       }
   | some nextPosition =>
       have nextPositionBound : nextPosition ≤
@@ -1363,6 +1373,21 @@ noncomputable def
                 writes (by simpa [writes] using success.effect)
                 frameDisjoint cursorNotWritten)
               (by simp only [successSuffix]) (by simpa only [successSuffix] using afterLocals)
+              (predictions logical.2)
+              ((appendLogical_refines _ rfl).chartsUnchangedBefore
+                (Nat.le_of_lt (scanTerminal_some_gt scanEq)))
+              (by
+                apply ScansComplete.of_terminal productionBound
+                  (show (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs[candidate.dot]? =
+                    some symbol from by
+                      simp only [symbol, List.getElem?_eq_getElem dotBeforeEnd, List.get_eq_getElem])
+                intro finish matched
+                have same : nextPosition = finish := Option.some.inj (scanEq.symm.trans matched)
+                subst finish
+                simpa only [seed, recognizerTerminalSeed, StateSeed.key] using
+                  (appendLogical_refines logical rfl).containsKey_of_ok statusOk)
+              (CompletionStep.of_terminal productionBound
+                (by simp only [symbol, List.getElem?_eq_getElem dotBeforeEnd, List.get_eq_getElem]) isTerminal')
           }
       | full =>
           have statusFull : (appendLogical workspaceLayout.capacity nextPosition
@@ -1397,7 +1422,7 @@ noncomputable def
               exact Or.inl written)
             outcome := .full workspace workspaceValues full.after
               (.refl workspace) full.invariant logical.1.stateCount
-              full.wellFormed
+              full.wellFormed (appendLogical.full_workspace statusFull)
           }
 
 

@@ -28,7 +28,6 @@ private theorem returned_run
       some (.returned (some value), world, currentEnvironment) := by
   unfold Commands.returned
   simp [Stateful.Acyclic.run?, evaluated]
-  rfl
 
 /-- The checked return command at the end of a fractional literal produces
 the logical floating-point scan result without changing the source world. -/

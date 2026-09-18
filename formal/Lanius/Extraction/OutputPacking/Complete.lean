@@ -1,13 +1,14 @@
 import Lanius.Extraction.OutputPacking.Setup
 import Lanius.Extraction.OutputPacking.Stdout
+import Lanius.Extraction.Allocation.Transport
 
 namespace Lanius.Extraction.OutputPacking
 open Lanius Lanius.Core Lanius.Semantics Lanius.Properties Lanius.Separation
 
 theorem prepare_and_write (program : Program) (memory : LoopMemory) (locals : LoopLocals)
     (wordCount clearCursor : VarId) (original : List Int)
-    (wellFormed : StateWellFormed before)
-    (bounded : memory.bytes.length ≤ 8388608) (capacity : memory.words ≤ original.length)
+    (registry : Allocation.Registry before)
+    (bounded : memory.bytes.length ≤ 16777216) (capacity : memory.words ≤ original.length)
     (tailEq : memory.tail = original.drop memory.words)
     (workspaceRead : before.local? locals.workspace = some
       (.slice (.scalar (.signed .i32)) memory.workspaceCell [] 0 original.length))
@@ -26,31 +27,43 @@ theorem prepare_and_write (program : Program) (memory : LoopMemory) (locals : Lo
     (fits : memory.bytes.length < unsignedModulus program.target .usize)
     (pointerRead : before.local? source.pointer = some (.pointer view.address))
     (pointerDistinct : wordCount ≠ source.pointer ∧ clearCursor ≠ source.pointer ∧ locals.cursor ≠ source.pointer)
-    (pointerSeparate : ∀ cell, before.cellId? source.pointer = some cell → cell ≠ memory.workspaceCell)
     (sizeLength : source.size ≠ source.length) (sizePointer : source.size ≠ source.pointer)
     (functionId : function.id = source.function)
     (functionFound : program.function? function.id = some function)
     (parametersBound : bindParameters function.parameters
       [.pointer view.address, .unsigned .usize memory.bytes.length] = some bindings)
     (noBody : function.body = none) (host : function.external = some (.host .writeStdout))
-    (member : view ∈ before.i32ArrayViews) (viewRoot : view.root = memory.workspaceCell)
-    (blocks : ∀ view ∈ before.i32ArrayViews, I32ArrayViewBlockWellFormed before.heap view)
-    (disjoint : before.i32ArrayViews.Pairwise I32ViewRangesDisjoint)
-    (roots : ∀ view ∈ before.i32ArrayViews, view.projections = [])
-    (metadata : ∀ view ∈ before.i32ArrayViews, view.root = memory.workspaceCell →
-      view.length = memory.words + memory.tail.length)
-    (arrays : ∀ view ∈ before.i32ArrayViews, view.root ≠ memory.workspaceCell → ∃ elements,
-      readCellProjection before view.root view.projections = .ok (.array elements) ∧
-      elements.length = view.length ∧
-      ∀ element ∈ elements, ∃ value, element = .signed .i32 value)
-    (lengthSeparate : ∀ cell, before.cellId? locals.length = some cell →
-      ∀ view ∈ before.i32ArrayViews, cell ≠ view.root) :
+    (member : view ∈ before.i32ArrayViews) (viewRoot : view.root = memory.workspaceCell) :
     ∃ after, Executes program before
       (Preparation.statement ⟨locals, wordCount, clearCursor, source.statement⟩)
       (.returned (some (.signed .i32 0))) after ∧
       after.world = { before.world with
         standardOutput := before.world.standardOutput ++ memory.bytes
         calls := before.world.calls ++ [.writeStdout] } := by
+  have wellFormed := registry.wellFormed
+  have pointerSeparate : ∀ cell, before.cellId? source.pointer = some cell → cell ≠ memory.workspaceCell := by
+    intro cell binding
+    exact local_cell_ne_of_distinct_value pointerRead workspaceContents (by intro same; cases same) binding
+  have lengthSeparate : ∀ cell, before.cellId? locals.length = some cell →
+      ∀ view ∈ before.i32ArrayViews, cell ≠ view.root := by
+    obtain ⟨lengthCell, owned⟩ := Assertion.exists_localPointsTo_of_local _ _ _ lengthRead
+    intro cell binding other present same
+    have identity := Option.some.inj (binding.symm.trans owned.1)
+    exact registry.notScalar present ((identity.symm.trans same).symm ▸ owned.2)
+  have metadata : ∀ view ∈ before.i32ArrayViews, view.root = memory.workspaceCell →
+      view.length = memory.words + memory.tail.length := by
+    intro other present same
+    have size := registry.arrayLength present (same.symm ▸ workspaceContents)
+    rw [tailEq, List.length_drop]
+    omega
+  have blocks := registry.blocks
+  have disjoint := registry.disjoint
+  have roots := registry.roots
+  have arrays : ∀ view ∈ before.i32ArrayViews, view.root ≠ memory.workspaceCell → ∃ elements,
+      readCellProjection before view.root view.projections = .ok (.array elements) ∧
+      elements.length = view.length ∧
+      ∀ element ∈ elements, ∃ value, element = .signed .i32 value :=
+    fun other present _ => registry.arrays other present
   apply prepare_with_continuation program memory locals wordCount clearCursor original wellFormed
     (continuation := source.statement) (completion := .returned (some (.signed .i32 0)))
     (post := fun world => world = { before.world with

@@ -1,6 +1,7 @@
 import Lanius.Extraction.CanonicalTokens.CallModelContracts
-import Lanius.Extraction.CanonicalTokens.KeywordWorldSemantics
+import Lanius.Extraction.CanonicalTokens.KeywordSpanSemantics
 import Lanius.FunctionalViewCoreCallFrame
+import Lanius.FunctionalViewCoreCheckedSimulation
 
 namespace Lanius.Extraction.CanonicalTokens.CheckedCalls
 
@@ -39,12 +40,12 @@ private theorem keywordKindBindings (cell : CellId) (source : List Int)
     (start finish : Nat) :
     bindParameters keywordKindFunction.parameters [
         .slice i32 cell [] 0 source.length,
-        .signed .i32 start, .signed .i32 finish] =
+      .signed .i32 start, .signed .i32 finish] =
       some (parameterBindings
-        (KeywordWorldSemantics.environment cell source start finish)) := by
+        (Model.keywordEnvironment cell source start finish)) := by
   rw [keywordKindParameters]
   simp [bindParameters, parameterBindings,
-    KeywordWorldSemantics.environment, List.finRange, i32]
+    Model.keywordEnvironment, Model.keywordSource, List.finRange, i32]
 
 private theorem noCallsSound :
     FramePreservingCallSoundness verifiedFrontendCore Model.noCalls := by
@@ -109,54 +110,17 @@ private theorem isTriviaCall_executes
       ModifiesOnly argumentWrites before after := by
   let calleeEnvironment := Model.isTriviaEnvironment kind
   let bindings := parameterBindings calleeEnvironment
-  let callee := enterCall afterArguments bindings
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
   have functionalRun :=
     IsTriviaSemantics.recovered_command_evaluates beforeWorld kind
   have functionalEvaluation :=
     Lanius.FunctionalView.Stateful.Acyclic.run?_sound functionalRun
-  let operations := operationSoundness verifiedFrontendCore Model.noCalls
-    noCallsSound
-  have simulation := commandSoundness operations functionalEvaluation
-    (by native_decide) calleeRepresented
-    (LayoutBelow.identity (arity := 1)) calleeWellFormed
-    (frontier := afterArguments.nextCell)
-    (by intro index; simp [callLocalCells])
-    (by
-      simpa [callee, bindings] using
-        (enterCall_effect afterArguments bindings).nextCell)
-  obtain ⟨completed, bodyExecution, completedWellFormed,
-      completedRepresented, bodyEffect⟩ := simulation
-  rw [isTriviaView_toCore_exactly] at bodyExecution
-  change Executes verifiedFrontendCore callee isTriviaBody
-    (.returned (some (.boolean (IsTriviaSemantics.isTriviaCode kind))))
-    completed at bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call isTriviaFunction.id (Core.toCoreExprs layout sourceArguments))
-      (.boolean (IsTriviaSemantics.isTriviaCode kind))
-      (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned
-      (bindings := bindings) (body := isTriviaBody)
-      argumentsExecution verifiedFrontendCore_finds_isTrivia
-    · simpa [bindings, calleeEnvironment] using isTriviaBindings kind
-    · exact isTriviaFunction_has_body
-    · simpa [callee, bindings] using bodyExecution
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
-      (bindings := bindings) bodyEffect (by
-        intro writtenCell written
-        exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same
-      (callEffect.weaken CellSet.empty_subset)⟩
+  exact CheckedSimulation.callPreservesFrame
+    noCallsSound argumentsExecution argumentsEffect
+    verifiedFrontendCore_finds_isTrivia
+    (by simpa [bindings, calleeEnvironment] using isTriviaBindings kind)
+    isTriviaFunction_has_body functionalEvaluation
+    (by decide +kernel) isTriviaView_toCore_exactly
+    afterArgumentsWellFormed represented
 
 private theorem keywordKindCall_executes
     {arity : Nat} {layout : Layout arity}
@@ -186,7 +150,7 @@ private theorem keywordKindCall_executes
       Representation layout localCell beforeWorld callerEnvironment after ∧
       ModifiesOnly argumentWrites before after := by
   let calleeEnvironment :=
-    KeywordWorldSemantics.environment cell source start finish
+    Model.keywordEnvironment cell source start finish
   let bindings := parameterBindings calleeEnvironment
   let callee := enterCall afterArguments bindings
   have singletonRepresented : Representation layout localCell
@@ -202,7 +166,7 @@ private theorem keywordKindCall_executes
     simpa [callee, bindings] using
       enterCall_preserves_wellFormed afterArgumentsWellFormed
   have functionalRun :=
-    KeywordWorldSemantics.command_evaluates_singleton cell source start finish
+    KeywordSpanSemantics.command_evaluates cell source start finish
       ordered inBounds sourceFitsI32
   have functionalEvaluation :=
     Lanius.FunctionalView.Stateful.Acyclic.run?_sound functionalRun
@@ -223,26 +187,15 @@ private theorem keywordKindCall_executes
   change Executes verifiedFrontendCore callee keywordKindBody
     (.returned (some (.signed .i32
       (Model.keywordKind source start finish)))) completed at bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call keywordKindFunction.id (Core.toCoreExprs layout sourceArguments))
-      (.signed .i32 (Model.keywordKind source start finish))
-      (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned
-      (bindings := bindings) (body := keywordKindBody)
-      argumentsExecution verifiedFrontendCore_finds_keywordKind
-    · simpa [bindings, calleeEnvironment] using
-        keywordKindBindings cell source start finish
-    · exact keywordKindFunction_has_body
-    · simpa [callee, bindings] using bodyExecution
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed completedWellFormed
-      (bindings := bindings) bodyEffect (by
-        intro writtenCell written
-        exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same
-      (callEffect.weaken CellSet.empty_subset)⟩
+  exact represented.callReturned argumentsExecution argumentsEffect
+    verifiedFrontendCore_finds_keywordKind
+    (by simpa [bindings, calleeEnvironment] using
+      keywordKindBindings cell source start finish)
+    keywordKindFunction_has_body
+    (by simpa [callee, bindings] using bodyExecution)
+    afterArgumentsWellFormed completedWellFormed bodyEffect (by
+      intro writtenCell written
+      exact written)
 
 /-- Premise-free checked-call correctness for the two canonical-token query
 functions.  Each route is tied to the exact recovered source function. -/

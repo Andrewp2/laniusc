@@ -259,11 +259,8 @@ private theorem digitEnd_evaluates
         currentEnvironment (Commands.digitEnd resultTerm) =
       .ok (.signed .i32 finish, world) := by
   unfold Commands.digitEnd Commands.call
-  apply Term.evaluate_apply1 resultEvaluation
-  change calls.evaluate world
-    Lexer.Digits.digitScanEndOffsetFunction.id
-      [digitScanValue (.success finish)] = _
-  exact contract.digitEnd finish finishBound
+  exact Term.evaluate_apply1 resultEvaluation
+    (contract.digitEnd finish finishBound)
 
 private theorem digitError_evaluates
     (contract : HelperContract calls source world)
@@ -277,11 +274,8 @@ private theorem digitError_evaluates
         currentEnvironment (Commands.digitError resultTerm) =
       .ok (.signed .i32 error, world) := by
   unfold Commands.digitError Commands.call
-  apply Term.evaluate_apply1 resultEvaluation
-  change calls.evaluate world
-    Lexer.Digits.digitScanErrorOffsetFunction.id
-      [digitScanValue (.failure error)] = _
-  exact contract.digitError error errorBound
+  exact Term.evaluate_apply1 resultEvaluation
+    (contract.digitError error errorBound)
 
 private theorem numberFailure_evaluates
     (contract : HelperContract calls source world)
@@ -295,10 +289,8 @@ private theorem numberFailure_evaluates
         currentEnvironment (Commands.numberFailure offsetTerm) =
       .ok (Model.encoded (.failure error), world) := by
   unfold Commands.numberFailure Commands.call
-  apply Term.evaluate_apply1 offsetEvaluation
-  change calls.evaluate world
-    Decimal.Functions.numberFailureFunction.id [.signed .i32 error] = _
-  exact contract.numberFailure error errorBound
+  exact Term.evaluate_apply1 offsetEvaluation
+    (contract.numberFailure error errorBound)
 
 private theorem floatScan_evaluates
     (contract : HelperContract calls source world)
@@ -312,10 +304,8 @@ private theorem floatScan_evaluates
         currentEnvironment (Commands.floatScan offsetTerm) =
       .ok (Model.encoded (.success .float finish), world) := by
   unfold Commands.floatScan Commands.call
-  apply Term.evaluate_apply1 offsetEvaluation
-  change calls.evaluate world
-    Decimal.Functions.floatScanFunction.id [.signed .i32 finish] = _
-  exact contract.floatScan finish finishBound
+  exact Term.evaluate_apply1 offsetEvaluation
+    (contract.floatScan finish finishBound)
 
 private theorem integerScan_evaluates
     (contract : HelperContract calls source world)
@@ -329,10 +319,8 @@ private theorem integerScan_evaluates
         currentEnvironment (Commands.integerScan offsetTerm) =
       .ok (Model.encoded (.success .integer finish), world) := by
   unfold Commands.integerScan Commands.call
-  apply Term.evaluate_apply1 offsetEvaluation
-  change calls.evaluate world
-    Decimal.Functions.integerScanFunction.id [.signed .i32 finish] = _
-  exact contract.integerScan finish finishBound
+  exact Term.evaluate_apply1 offsetEvaluation
+    (contract.integerScan finish finishBound)
 
 private theorem finishDecimal_evaluates
     (contract : HelperContract calls source world)
@@ -465,19 +453,12 @@ private theorem notEqualLiteral_evaluates
     verifiedFrontendCore world
     (.binary .notEqual i32Type i32Type Commands.boolType)
     [.signed .i32 value, .signed .i32 literalValue] = _
-  rw [Lanius.FunctionalView.Core.ReadOnly.evaluateOperation_i32_notEqual_int]
-  congr 2
-  congr 1
-  apply Bool.eq_iff_iff.mpr
-  constructor
-  · intro different
-    apply decide_eq_true
-    intro same
-    exact of_decide_eq_true different (congrArg Int.ofNat same)
-  · intro different
-    apply decide_eq_true
-    intro same
-    exact of_decide_eq_true different (Int.ofNat_inj.mp same)
+  simpa [Int.ofNat_inj] using
+    (Lanius.FunctionalView.Core.ReadOnly.evaluateOperation_i32_notEqual_int
+      (program := verifiedFrontendCore) (world := world)
+      (leftType := i32Type) (rightType := i32Type)
+      (outputType := Commands.boolType)
+      (Int.ofNat value) (Int.ofNat literalValue))
 
 private theorem eitherLiteral_evaluates
     (calls : CallModel) (world : World) (currentEnvironment : Env arity)
@@ -493,13 +474,11 @@ private theorem eitherLiteral_evaluates
       .ok (.boolean (decide (value = left ∨ value = right)), world) := by
   have leftEvaluation := equalLiteral_evaluates calls world
     currentEnvironment value valueTerm left valueEvaluation
-  by_cases isLeft : value = left
-  · simpa [isLeft] using Term.evaluate_logicalOr_true
-      (by simpa [isLeft] using leftEvaluation)
-  · have rightEvaluation := equalLiteral_evaluates calls world
-      currentEnvironment value valueTerm right valueEvaluation
-    simpa [isLeft] using Term.evaluate_logicalOr_false
-      (by simpa [isLeft] using leftEvaluation) rightEvaluation
+  have rightEvaluation := equalLiteral_evaluates calls world
+    currentEnvironment value valueTerm right valueEvaluation
+  simpa using Term.evaluate_logicalOr_guarded
+    (by simpa using leftEvaluation)
+    (fun _ => by simpa using rightEvaluation)
 
 private theorem addLiteral_evaluates
     (calls : CallModel) (world : World) (currentEnvironment : Env arity)
@@ -606,19 +585,16 @@ private theorem initialCondition_evaluates
   have equal := equalLiteral_evaluates calls world
     (Model.environment source start) source[start].val
     (Commands.index (Commands.slot 0) (Commands.slot 2)) 48 indexed
-  by_cases zero : source[start].val = 48
-  · have sumBound : start + 1 ≤ 2147483647 := by omega
-    have added := addLiteral_evaluates calls world
-      (Model.environment source start) start 1 (Commands.slot 2)
-      (by rfl) sumBound
-    have less := lessNat_evaluates calls world
-      (Model.environment source start) (start + 1) source.length
-      (Commands.add (Commands.slot 2) (Commands.i32 1)) (Commands.slot 1)
-      added (by rfl)
-    simpa [zero] using Term.evaluate_logicalAnd_true
-      (by simpa [zero] using equal) less
-  · simpa [zero] using Term.evaluate_logicalAnd_false
-      (by simpa [zero] using equal)
+  have sumBound : start + 1 ≤ 2147483647 := by omega
+  have added := addLiteral_evaluates calls world
+    (Model.environment source start) start 1 (Commands.slot 2)
+    (by rfl) sumBound
+  have less := lessNat_evaluates calls world
+    (Model.environment source start) (start + 1) source.length
+    (Commands.add (Commands.slot 2) (Commands.i32 1)) (Commands.slot 1)
+    added (by rfl)
+  simpa using Term.evaluate_logicalAnd_guarded
+    (by simpa using equal) (fun _ => less)
 
 theorem scanLeadingDotNumber_run
     (contract : HelperContract calls source world)
@@ -654,7 +630,6 @@ theorem scanLeadingDotNumber_run
       simp [failedCondition, Stateful.Acyclic.run?,
         Commands.returned, failureEvaluation]
       simp [scanLeadingDotNumber, digits]
-      rfl
   | success finish =>
       rw [digits] at digitBound
       have passedCondition := successfulDigitCondition_evaluates contract
@@ -674,17 +649,12 @@ theorem scanLeadingDotNumber_run
               (digitScanValue (.success finish))).push (.signed .i32 finish))
             (Commands.comparison .less (Commands.slot 4) (Commands.slot 1)) =
           .ok (.boolean true, world) := by
-          unfold Commands.comparison Commands.binary
-          apply Term.evaluate_apply2 (by rfl) (by rfl)
-          change Lanius.FunctionalView.Core.ReadOnly.evaluateOperation
-            verifiedFrontendCore world
-            (.binary .less i32Type i32Type Commands.boolType)
-            [.signed .i32 finish, .signed .i32 source.length] = _
-          simp [Lanius.FunctionalView.Core.ReadOnly.evaluateOperation,
-            Lanius.Semantics.evalBinaryValue,
-            Lanius.Semantics.evalSignedBinary,
-            finishInBounds, bind, Except.bind]
-          rfl
+          simpa [finishInBounds] using
+            (lessNat_evaluates calls world
+              (((Model.environment source start).push
+                (digitScanValue (.success finish))).push (.signed .i32 finish))
+              finish source.length (Commands.slot 4) (Commands.slot 1)
+              (by rfl) (by rfl))
         rw [boundCondition]
         simp only [bind, Except.bind]
         have indexEvaluation := sourceIndex_evaluates calls source start finish
@@ -740,7 +710,6 @@ theorem scanLeadingDotNumber_run
           simp [Stateful.Acyclic.run?, Commands.returned]
           simp [scanLeadingDotNumber, digits, byteValueAt, finishInBounds,
             exponent]
-          rfl
         · have byteNotExponent : ¬(byte.val = 101 ∨ byte.val = 69) := by
             simpa [byte] using exponent
           have exponentCondition : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
@@ -781,24 +750,18 @@ theorem scanLeadingDotNumber_run
             floatEvaluation]
           simp [scanLeadingDotNumber, digits, byteValueAt, finishInBounds,
             exponent]
-          rfl
       · have boundCondition : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
             world
             (((Model.environment source start).push
               (digitScanValue (.success finish))).push (.signed .i32 finish))
             (Commands.comparison .less (Commands.slot 4) (Commands.slot 1)) =
           .ok (.boolean false, world) := by
-          unfold Commands.comparison Commands.binary
-          apply Term.evaluate_apply2 (by rfl) (by rfl)
-          change Lanius.FunctionalView.Core.ReadOnly.evaluateOperation
-            verifiedFrontendCore world
-            (.binary .less i32Type i32Type Commands.boolType)
-            [.signed .i32 finish, .signed .i32 source.length] = _
-          simp [Lanius.FunctionalView.Core.ReadOnly.evaluateOperation,
-            Lanius.Semantics.evalBinaryValue,
-            Lanius.Semantics.evalSignedBinary,
-            finishInBounds, bind, Except.bind]
-          rfl
+          simpa [finishInBounds] using
+            (lessNat_evaluates calls world
+              (((Model.environment source start).push
+                (digitScanValue (.success finish))).push (.signed .i32 finish))
+              finish source.length (Commands.slot 4) (Commands.slot 1)
+              (by rfl) (by rfl))
         rw [boundCondition]
         simp only [bind, Except.bind]
         have floatEvaluation := floatScan_evaluates contract
@@ -808,7 +771,6 @@ theorem scanLeadingDotNumber_run
         simp [Stateful.Acyclic.run?, Commands.returned,
           floatEvaluation]
         simp [scanLeadingDotNumber, digits, byteValueAt, finishInBounds]
-        rfl
 
 private theorem decimalBranch_run
     (contract : HelperContract calls source world)
@@ -842,7 +804,6 @@ private theorem decimalBranch_run
         (Commands.digitError (Commands.slot 3)) error digitBound errorEvaluation
       simp [failedCondition, Stateful.Acyclic.run?, Commands.returned,
         failureEvaluation, digits]
-      rfl
   | success finish =>
       rw [digits] at digitBound
       have passedCondition := successfulDigitCondition_evaluates contract
@@ -859,7 +820,6 @@ private theorem decimalBranch_run
         (by rfl) (by rfl) finishEvaluation
       simp [passedCondition, Stateful.Acyclic.run?, Commands.returned,
         decimalEvaluation, digits]
-      rfl
 
 private def selectedPrefixBase (prefixValue : Nat) : Nat :=
   if prefixValue = 120 ∨ prefixValue = 88 then 16
@@ -913,7 +873,6 @@ private theorem chooseBase_run
           (.signed .i32 0)) (Commands.i32 16) =
       .ok (.signed .i32 16, world) by rfl]
     simp [Stateful.Acyclic.run?, selectedPrefixBase, isHex]
-    rfl
   · have decided : decide (prefixValue = 120 ∨ prefixValue = 88) = false :=
       decide_eq_false isHex
     rw [decided]
@@ -941,7 +900,6 @@ private theorem chooseBase_run
             (.signed .i32 0)) (Commands.i32 2) =
         .ok (.signed .i32 2, world) by rfl]
       simp [Stateful.Acyclic.run?, selectedPrefixBase, isHex, isBinary]
-      rfl
     · have binaryDecided : decide (prefixValue = 98 ∨ prefixValue = 66) = false :=
         decide_eq_false isBinary
       rw [binaryDecided]
@@ -971,13 +929,11 @@ private theorem chooseBase_run
           .ok (.signed .i32 8, world) by rfl]
         simp [Stateful.Acyclic.run?, selectedPrefixBase,
           isHex, isBinary, isOctal]
-        rfl
       · have octalDecided : decide (prefixValue = 111 ∨ prefixValue = 79) = false :=
           decide_eq_false isOctal
         rw [octalDecided]
         simp [Stateful.Acyclic.run?, Commands.statement, Commands.i32, selectedPrefixBase,
           isHex, isBinary, isOctal]
-        rfl
 
 private theorem prefixedReturn_run
     (contract : HelperContract calls source world)
@@ -1043,7 +999,6 @@ private theorem prefixedReturn_run
         (Commands.digitError (Commands.slot 5)) error digitBound errorEvaluation
       simp [failedCondition, Stateful.Acyclic.run?, Commands.returned,
         failureEvaluation, digits]
-      rfl
   | success finish =>
       rw [digits] at digitBound
       have passedCondition := successfulDigitCondition_evaluates contract
@@ -1060,7 +1015,6 @@ private theorem prefixedReturn_run
         (Commands.digitEnd (Commands.slot 5)) finish digitBound finishEvaluation
       simp [passedCondition, Stateful.Acyclic.run?, Commands.returned,
         integerEvaluation, digits]
-      rfl
 
 private theorem prefixedBranch_run
     (contract : HelperContract calls source world)
@@ -1118,12 +1072,10 @@ private theorem prefixedBranch_run
     have decided : decide (base ≠ 0) = false := decide_eq_false (by omega)
     rw [decided]
     simp [Stateful.Acyclic.run?, base, baseZero]
-    rfl
   · rw [prefixedReturn_run contract sourceBound nextInBounds
       source[start + 1].val base baseZero
       (Nat.le_trans (selectedPrefixBase_bound source[start + 1].val) (by omega))]
     simp [Stateful.Acyclic.run?, base, baseZero]
-    rfl
 
 private theorem prefixedBase_eq_selected
     (source : List Byte) (start : Nat)

@@ -1621,6 +1621,55 @@ def outputGround? (context : Context) (type : Ty) :
   | .unit => some ⟨.unit, rfl⟩
   | _ => none
 
+private def checkPathCast (context : Context) (path : Surface.Path)
+    (targetType coreTarget : ScalarTy) (coreExpression : Expr)
+    (candidate : Option (InferredExprLowering context (.path path) coreExpression)) :
+    Option (Evidence (ExprChecks context (.path path) (.scalar targetType)
+      (.cast coreTarget coreExpression))) := do
+  if sameTarget : coreTarget = targetType then
+    let inferred ← candidate
+    match inferredType : inferred.type with
+    | .scalar sourceType => do
+        if different : sourceType ≠ targetType then
+          let conversion ← CoreTyping.scalarCast? sourceType targetType
+          pure ⟨by
+            subst coreTarget
+            exact .scalarCast (inferredType ▸ inferred.lowered)
+              (by simp [ContextualScalarLiteralApplies])
+              different conversion.proof⟩
+        else none
+    | _ => none
+  else none
+
+private def checkInferredExpr (context : Context) (surface : Surface.Expr)
+    (expected : Static.GroundTy) (core : Expr)
+    (candidate : Option (InferredExprLowering context surface core)) :
+    Option (Evidence (ExprChecks context surface expected core)) :=
+  match candidate with
+  | some inferred =>
+      match groundTypeEq? inferred.type expected with
+      | some same => some ⟨same.proof ▸ ExprChecks.exact inferred.lowered⟩
+      | none =>
+          match surface with
+          | .literal literal =>
+              match grounded : expected.toCore context.monomorphization with
+              | none => none
+              | some coreType => do
+                  let lowered ← literalElaborates? context.target literal
+                    coreType core
+                  pure ⟨.literal coreType lowered.proof grounded⟩
+          | _ => none
+  | none =>
+      match surface with
+      | .literal literal =>
+          match grounded : expected.toCore context.monomorphization with
+          | none => none
+          | some coreType => do
+              let lowered ← literalElaborates? context.target literal
+                coreType core
+              pure ⟨.literal coreType lowered.proof grounded⟩
+      | _ => none
+
 mutual
   def inferExpr (context : Context) :
       (surface : Surface.Expr) → (core : Expr) →
@@ -1909,6 +1958,8 @@ mutual
                 }
     | _, _ => none
 
+  termination_by structural _ core => core
+
   def inferPlace (context : Context) :
       (surface : Surface.Expr) → (core : Place) →
         Option (InferredPlaceLowering context surface core)
@@ -1930,6 +1981,20 @@ mutual
                       exact .local name single resolved.resolved
                   }
             else none
+    | .member surfaceBase name, .field coreBase field => do
+        let base ← inferPlace context surfaceBase coreBase
+        let selected ← selectField? context base.type name field
+        match grounded : selected.entry.type.toCore context.monomorphization with
+        | none => none
+        | some coreType =>
+            pure {
+              type := selected.entry.type
+              coreType
+              grounded
+              lowered := by
+                have lowering := PlaceLowers.field base.lowered selected.selected
+                simpa only [selected.sameField] using lowering
+            }
     | .index surfaceBase surfaceIndex, .index coreBase coreIndex => do
         let base ← inferPlace context surfaceBase coreBase
         let index ← inferExpr context surfaceIndex coreIndex
@@ -1960,6 +2025,8 @@ mutual
         | _ => none
     | _, _ => none
 
+  termination_by structural _ core => core
+
   def inferExprs (context : Context) :
       (surface : List Surface.Expr) → (core : List Expr) →
         Option (InferredExprsLowering context surface core)
@@ -1970,6 +2037,8 @@ mutual
         pure ⟨head.type :: tail.types,
           .cons (.exact head.lowered) tail.lowered⟩
     | _, _ => none
+
+  termination_by structural _ core => core
 
   def checkOrderedStructFields (context : Context) :
       (schemes : List StructFieldScheme) →
@@ -1995,50 +2064,8 @@ mutual
         else none
     | _, _, _ => none
 
-  def checkExprAgainst (context : Context) :
-      (surface : Surface.Expr) → (expected : Static.GroundTy) →
-      (core : Expr) → Option (Evidence (ExprChecks context surface expected core))
-    | .path path, .scalar targetType,
-        .cast coreTarget coreExpression => do
-        if sameTarget : coreTarget = targetType then
-          let inferred ← inferExpr context (.path path) coreExpression
-          match inferredType : inferred.type with
-          | .scalar sourceType => do
-              if different : sourceType ≠ targetType then
-                let conversion ← CoreTyping.scalarCast? sourceType targetType
-                pure ⟨by
-                  subst coreTarget
-                  exact .scalarCast (inferredType ▸ inferred.lowered)
-                    (by simp [ContextualScalarLiteralApplies])
-                    different conversion.proof⟩
-              else none
-          | _ => none
-        else none
-    | surface, expected, core =>
-        match inferExpr context surface core with
-        | some inferred =>
-            match groundTypeEq? inferred.type expected with
-            | some same => some ⟨same.proof ▸ ExprChecks.exact inferred.lowered⟩
-            | none =>
-                match surface with
-                | .literal literal =>
-                    match grounded : expected.toCore context.monomorphization with
-                    | none => none
-                    | some coreType => do
-                        let lowered ← literalElaborates? context.target literal
-                          coreType core
-                        pure ⟨.literal coreType lowered.proof grounded⟩
-                | _ => none
-        | none =>
-            match surface with
-            | .literal literal =>
-                match grounded : expected.toCore context.monomorphization with
-                | none => none
-                | some coreType => do
-                    let lowered ← literalElaborates? context.target literal
-                      coreType core
-                    pure ⟨.literal coreType lowered.proof grounded⟩
-            | _ => none
+
+  termination_by structural _ _ core => core
 
   def checkExprsAgainst (context : Context) :
       (surface : List Surface.Expr) → (types : List Static.GroundTy) →
@@ -2046,11 +2073,27 @@ mutual
     | [], [], [] => some ⟨.nil⟩
     | surfaceHead :: surfaceTail, typeHead :: typeTail,
         coreHead :: coreTail => do
-        let head ← checkExprAgainst context surfaceHead typeHead coreHead
+        let head : Evidence (ExprChecks context surfaceHead typeHead coreHead) ←
+          (match surfaceHead, typeHead, coreHead with
+          | .path path, .scalar target, .cast actual operand =>
+              checkPathCast context path target actual operand
+                (inferExpr context (.path path) operand)
+          | surface, expected, core =>
+              checkInferredExpr context surface expected core
+                (inferExpr context surface core))
         let tail ← checkExprsAgainst context surfaceTail typeTail coreTail
         pure ⟨.cons head.proof tail.lowered⟩
     | _, _, _ => none
+  termination_by structural _ _ core => core
 end
+
+def checkExprAgainst (context : Context) :
+    (surface : Surface.Expr) → (expected : Static.GroundTy) →
+    (core : Expr) → Option (Evidence (ExprChecks context surface expected core))
+  | .path path, .scalar target, .cast actual operand =>
+      checkPathCast context path target actual operand (inferExpr context (.path path) operand)
+  | surface, expected, core =>
+      checkInferredExpr context surface expected core (inferExpr context surface core)
 
 def checkContextualExpr? (context : Context)
     (surface : Surface.Expr) (expected : Static.GroundTy) (core : Expr) :
@@ -2248,7 +2291,7 @@ def checkStmts (returnType : Static.GroundTy) :
       let tail ← checkStmts returnType context body.finalNext surfaceTail coreTail
       pure ⟨tail.finalNext, .block body.lowered tail.lowered⟩
   | _, _, _, _ => none
-termination_by _ _ surface _ => sizeOf surface
+termination_by structural _ _ _ core => core
 
 structure CheckedFunctionBody
     (context : Context) (surface : Surface.Function) (core : Core.Function) where

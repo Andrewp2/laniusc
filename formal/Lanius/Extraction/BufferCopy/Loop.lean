@@ -83,7 +83,7 @@ theorem body_step (program : Program) (locals : Locals) (memory : Memory locals)
     (source : memory.values = processed ++ value :: remaining)
     (invariant : Invariant memory processed before) :
     ∃ after, Executes program before locals.body .next after ∧
-      Invariant memory (processed ++ [value]) after ∧ CellEffect memory.writes before after := by
+      Invariant memory (processed ++ [value]) after ∧ CellEffect memory.writes before after ∧ HeapFrame before after := by
   have valuesLength : memory.values.length = processed.length + 1 + remaining.length := by
     simp [source]; omega
   have room : processed.length < memory.untouched.length := by have := memory.capacity; omega
@@ -101,7 +101,7 @@ theorem body_step (program : Program) (locals : Locals) (memory : Memory locals)
   have readResult := scaled_result program before locals.readScale locals.cursor processed.length cursorLocal
     (by have := memory.sourceFits; omega)
   have length := buffer_length memory.untouched processed (by omega)
-  obtain ⟨copied, assignment, contents, _, copyEffect⟩ := evaluatesSliceCopy program before
+  obtain ⟨copied, assignment, contents, _, copyEffect, copyHeap⟩ := evaluatesSliceCopy program before
     memory.source (buffer memory.untouched processed) locals.source locals.destination
     memory.sourceCell memory.destinationCell (processed.length * locals.readScale.factor) processed.length
     (locals.readScale.expression locals.cursor) (.local locals.cursor) invariant.wellFormed
@@ -117,7 +117,8 @@ theorem body_step (program : Program) (locals : Locals) (memory : Memory locals)
   have effect : CellEffect memory.writes before after :=
     (copyEffect.weaken CellSet.subset_union_left).trans
       ((CellEffect.ofModifiesOnly incrementEffect afterWF).weaken CellSet.subset_union_right)
-  refine ⟨after, executesSequence (executesExpression assignment) incremented, ?_, effect⟩
+  refine ⟨after, executesSequence (executesExpression assignment) incremented, ?_, effect,
+    copyHeap.trans (HeapFrame.ofStoreEffect incrementEffect.toStoreEffect)⟩
   refine ⟨afterWF, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact effect.preserves_local invariant.wellFormed invariant.sourceLocal (invariant.stable _ (by simp))
   · exact effect.preserves_local invariant.wellFormed invariant.destinationLocal (invariant.stable _ (by simp))
@@ -135,7 +136,7 @@ theorem executes_loop (program : Program) (locals : Locals) (memory : Memory loc
     (source : memory.values = processed ++ remaining)
     (invariant : Invariant memory processed before) :
     ∃ after, Executes program before locals.loop .next after ∧
-      Invariant memory memory.values after ∧ CellEffect memory.writes before after := by
+      Invariant memory memory.values after ∧ CellEffect memory.writes before after ∧ HeapFrame before after := by
   have cursorResult : Evaluates program before (.local locals.cursor) (.signed .i32 processed.length) before :=
     ⟨1, evalLocal_of_local 0 program before locals.cursor _
       (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
@@ -150,7 +151,7 @@ theorem executes_loop (program : Program) (locals : Locals) (memory : Memory loc
   cases remaining with
   | nil =>
       have complete : memory.values = processed := by simpa using source
-      refine ⟨before, executesWhileFalse ?_, ?_, CellEffect.refl invariant.wellFormed⟩
+      refine ⟨before, executesWhileFalse ?_, ?_, CellEffect.refl invariant.wellFormed, HeapFrame.refl before⟩
       · simpa [complete] using condition
       · simpa [complete] using invariant
   | cons value rest =>
@@ -164,11 +165,11 @@ theorem executes_loop (program : Program) (locals : Locals) (memory : Memory loc
           (.boolean true) before := by
         rw [beq_eq_false_iff_ne.mpr different] at condition
         exact condition
-      obtain ⟨middle, body, nextInvariant, bodyEffect⟩ :=
+      obtain ⟨middle, body, nextInvariant, bodyEffect, bodyHeap⟩ :=
         body_step program locals memory processed rest value before source invariant
-      obtain ⟨after, loop, complete, loopEffect⟩ := executes_loop program locals memory
+      obtain ⟨after, loop, complete, loopEffect, loopHeap⟩ := executes_loop program locals memory
         (processed ++ [value]) rest middle (by simpa [List.append_assoc] using source) nextInvariant
-      exact ⟨after, executesWhileTrue conditionTrue body loop, complete, bodyEffect.trans loopEffect⟩
+      exact ⟨after, executesWhileTrue conditionTrue body loop, complete, bodyEffect.trans loopEffect, bodyHeap.trans loopHeap⟩
 termination_by remaining.length
 
 /-- Any successful observed execution agrees with the total loop contract,
@@ -179,19 +180,19 @@ theorem loop_sound (program : Program) (locals : Locals) (memory : Memory locals
     (invariant : Invariant memory processed before)
     (actual : Executes program before locals.loop completion after) :
     completion = .next ∧ Invariant memory memory.values after ∧
-      CellEffect memory.writes before after := by
-  obtain ⟨expected, executed, complete, effect⟩ :=
+      CellEffect memory.writes before after ∧ HeapFrame before after := by
+  obtain ⟨expected, executed, complete, effect, heap⟩ :=
     executes_loop program locals memory processed remaining before source invariant
   obtain ⟨sameCompletion, sameState⟩ := Lanius.Fuel.executes_deterministic actual executed
   subst after
-  exact ⟨sameCompletion, complete, effect⟩
+  exact ⟨sameCompletion, complete, effect, heap⟩
 
 theorem checked_loop_executes (program : Program)
     (checked : Source.CheckedStatement Locals.loop statement)
     (memory : Memory checked.locals) (before : State)
     (invariant : Invariant memory [] before) :
     ∃ after, Executes program before statement .next after ∧
-      Invariant memory memory.values after ∧ CellEffect memory.writes before after := by
+      Invariant memory memory.values after ∧ CellEffect memory.writes before after ∧ HeapFrame before after := by
   rcases checked with ⟨locals, rfl⟩
   exact executes_loop program locals memory [] memory.values before rfl invariant
 

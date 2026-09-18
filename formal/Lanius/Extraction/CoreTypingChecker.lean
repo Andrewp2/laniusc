@@ -339,6 +339,15 @@ def inferValue (program : Program) (value : Value) : Option (InferredValue progr
   | .reference referent cell projections =>
       some ⟨.reference referent, .reference referent cell projections⟩
 
+/-- Compare a retained inference result without traversing its expression again. -/
+def InferredExpr.check (inferred : InferredExpr program context expression) (expected : Ty) :
+    Option (Evidence (ExprHasType program context expression expected)) :=
+  if same : inferred.type = expected then some ⟨same ▸ inferred.typed⟩ else none
+
+def InferredPlace.check (inferred : InferredPlace program context place) (expected : Ty) :
+    Option (Evidence (PlaceHasType program context place expected)) :=
+  if same : inferred.type = expected then some ⟨same ▸ inferred.typed⟩ else none
+
 mutual
   def inferExpr (program : Program) (context : Context) :
       (expression : Expr) → Option (InferredExpr program context expression)
@@ -352,13 +361,12 @@ mutual
         | some type => some ⟨type, .local found⟩
         | none => none
     | .cast target operand => do
-        let ⟨operandType, _⟩ ← inferExpr program context operand
-        match operandType with
-        | .scalar source => do
-            let operandTyped ← checkExpr program context operand (.scalar source)
+        let ⟨operandType, operandTyped⟩ ← inferExpr program context operand
+        match operandType, operandTyped with
+        | .scalar source, operandTyped => do
             let conversion ← scalarCast? source target
-            pure ⟨.scalar target, .cast operandTyped.proof conversion.proof⟩
-        | _ => none
+            pure ⟨.scalar target, .cast operandTyped conversion.proof⟩
+        | _, _ => none
     | .unary operation operand => do
         let ⟨input, operandTyped⟩ ← inferExpr program context operand
         let ⟨output, operationTyped⟩ ← unaryTyping? operation input
@@ -373,28 +381,23 @@ mutual
           (List.replicate elements.length elementType)
         pure ⟨.array elementType elements.length, .array typed⟩
     | .arrayToSlice elementType array => do
-        let ⟨arrayType, _⟩ ← inferExpr program context array
-        match arrayType with
-        | .array actual length =>
+        let ⟨arrayType, arrayTyped⟩ ← inferExpr program context array
+        match arrayType, arrayTyped with
+        | .array actual length, arrayTyped =>
             if same : actual = elementType then do
-              let arrayTyped ← checkExpr program context array (.array elementType length)
-              pure ⟨.slice elementType, .arrayToSlice arrayTyped.proof⟩
+              pure ⟨.slice elementType, .arrayToSlice (same ▸ arrayTyped)⟩
             else none
-        | _ => none
+        | _, _ => none
     | .index base index => do
-        let ⟨baseType, _⟩ ← inferExpr program context base
+        let ⟨baseType, baseTyped⟩ ← inferExpr program context base
         let ⟨indexType, indexTyped⟩ ← inferExpr program context index
         let integerIndex ← integer? indexType
-        match baseType with
-        | .array elementType length => do
-            let baseTyped ← checkExpr program context base (.array elementType length)
-            pure ⟨elementType, .indexArray
-              baseTyped.proof indexTyped integerIndex.proof⟩
-        | .slice elementType => do
-            let baseTyped ← checkExpr program context base (.slice elementType)
-            pure ⟨elementType, .indexSlice
-              baseTyped.proof indexTyped integerIndex.proof⟩
-        | _ => none
+        match baseType, baseTyped with
+        | .array elementType _, baseTyped =>
+            pure ⟨elementType, .indexArray baseTyped indexTyped integerIndex.proof⟩
+        | .slice elementType, baseTyped =>
+            pure ⟨elementType, .indexSlice baseTyped indexTyped integerIndex.proof⟩
+        | _, _ => none
     | .structValue id fields => do
         match found : program.structure? id with
         | none => none
@@ -408,19 +411,17 @@ mutual
                 ExprHasType.structValue declaration foundAtDeclaration typed⟩
             else none
     | .field base field => do
-        let ⟨baseType, _⟩ ← inferExpr program context base
-        match baseType with
-        | .structure id => do
+        let ⟨baseType, baseTyped⟩ ← inferExpr program context base
+        match baseType, baseTyped with
+        | .structure id, baseTyped => do
             match found : program.structure? id with
             | none => none
             | some declaration =>
                 match fieldFound : declaration.fields[field]? with
                 | none => none
                 | some type =>
-                    pure ⟨type, .field
-                      (← checkExpr program context base (.structure id))
-                      declaration found fieldFound⟩
-        | _ => none
+                    pure ⟨type, .field baseTyped declaration found fieldFound⟩
+        | _, _ => none
     | .enumValue id variant payload => do
         match found : program.enumeration? id with
         | none => none
@@ -443,17 +444,16 @@ mutual
         pure ⟨resultType, .matchValue scrutineeTyped armsTyped⟩
     | .assign operation place value => do
         let ⟨type, placeTyped⟩ ← inferPlace program context place
-        let valueTyped ← checkExpr program context value type
+        let valueTyped ← (← inferExpr program context value).check type
         pure ⟨.unit, .assign placeTyped valueTyped (← assignTyping? operation type)⟩
     | .borrow referent place => do
-        let placeTyped ← checkPlace program context place referent
+        let placeTyped ← (← inferPlace program context place).check referent
         pure ⟨.reference referent, .borrow placeTyped⟩
     | .dereference reference => do
-        let ⟨type, _⟩ ← inferExpr program context reference
-        match type with
-        | .reference referent => pure ⟨referent, .dereference
-            (← checkExpr program context reference (.reference referent))⟩
-        | _ => none
+        let ⟨type, referenceTyped⟩ ← inferExpr program context reference
+        match type, referenceTyped with
+        | .reference referent, referenceTyped => pure ⟨referent, .dereference referenceTyped⟩
+        | _, _ => none
     | .constant id => do
         match found : program.constant? id with
         | none => none
@@ -466,71 +466,61 @@ mutual
               (function.parameters.map Prod.snd)
             pure ⟨function.returnType, .call function found typed⟩
     | .intrinsic .printI32 argument => do
-        pure ⟨.unit, .printI32 (← checkExpr program context argument
+        pure ⟨.unit, .printI32 (← (← inferExpr program context argument).check
           (.scalar (.signed .i32)))⟩
     | .intrinsic .assert argument => do
-        pure ⟨.unit, .assert (← checkExpr program context argument (.scalar .bool))⟩
+        pure ⟨.unit, .assert (← (← inferExpr program context argument).check (.scalar .bool))⟩
     | .i32ArrayDataPtr array => do
-        let ⟨type, _⟩ ← inferExpr program context array
-        match type with
-        | .array (.scalar (.signed .i32)) length =>
-            let arrayTyped ← checkExpr program context array
-              (.array (.scalar (.signed .i32)) length)
-            pure ⟨.scalar .rawPtr, .i32ArrayDataPtr arrayTyped.proof⟩
-        | _ => none
+        let ⟨type, arrayTyped⟩ ← inferExpr program context array
+        match type, arrayTyped with
+        | .array (.scalar (.signed .i32)) _, arrayTyped =>
+            pure ⟨.scalar .rawPtr, .i32ArrayDataPtr arrayTyped⟩
+        | _, _ => none
     | .i32SliceFromRawParts pointer length => do
         pure ⟨.slice (.scalar (.signed .i32)), .i32SliceFromRawParts
-          (← checkExpr program context pointer (.scalar .rawPtr))
-          (← checkExpr program context length (.scalar (.signed .i32)))⟩
+          (← (← inferExpr program context pointer).check (.scalar .rawPtr))
+          (← (← inferExpr program context length).check (.scalar (.signed .i32)))⟩
     | .i32SliceDataPtr slice => do
         pure ⟨.scalar .rawPtr, .i32SliceDataPtr
-          (← checkExpr program context slice (.slice (.scalar (.signed .i32))))⟩
+          (← (← inferExpr program context slice).check (.slice (.scalar (.signed .i32))))⟩
     | .stringDataPtr string => do
         pure ⟨.scalar .rawPtr, .stringDataPtr
-          (← checkExpr program context string (.scalar .string))⟩
+          (← (← inferExpr program context string).check (.scalar .string))⟩
     | .alloc size alignment => do
         pure ⟨.scalar .rawPtr, .alloc
-          (← checkExpr program context size (.scalar (.unsigned .usize)))
-          (← checkExpr program context alignment (.scalar (.unsigned .usize)))⟩
+          (← (← inferExpr program context size).check (.scalar (.unsigned .usize)))
+          (← (← inferExpr program context alignment).check (.scalar (.unsigned .usize)))⟩
     | .realloc pointer oldSize newSize alignment => do
         pure ⟨.scalar .rawPtr, .realloc
-          (← checkExpr program context pointer (.scalar .rawPtr))
-          (← checkExpr program context oldSize (.scalar (.unsigned .usize)))
-          (← checkExpr program context newSize (.scalar (.unsigned .usize)))
-          (← checkExpr program context alignment (.scalar (.unsigned .usize)))⟩
+          (← (← inferExpr program context pointer).check (.scalar .rawPtr))
+          (← (← inferExpr program context oldSize).check (.scalar (.unsigned .usize)))
+          (← (← inferExpr program context newSize).check (.scalar (.unsigned .usize)))
+          (← (← inferExpr program context alignment).check (.scalar (.unsigned .usize)))⟩
     | .dealloc pointer size alignment => do
         pure ⟨.unit, .dealloc
-          (← checkExpr program context pointer (.scalar .rawPtr))
-          (← checkExpr program context size (.scalar (.unsigned .usize)))
-          (← checkExpr program context alignment (.scalar (.unsigned .usize)))⟩
+          (← (← inferExpr program context pointer).check (.scalar .rawPtr))
+          (← (← inferExpr program context size).check (.scalar (.unsigned .usize)))
+          (← (← inferExpr program context alignment).check (.scalar (.unsigned .usize)))⟩
     | .loadByte pointer offset => do
         pure ⟨.scalar (.unsigned .u8), .loadByte
-          (← checkExpr program context pointer (.scalar .rawPtr))
-          (← checkExpr program context offset (.scalar (.unsigned .usize)))⟩
+          (← (← inferExpr program context pointer).check (.scalar .rawPtr))
+          (← (← inferExpr program context offset).check (.scalar (.unsigned .usize)))⟩
     | .storeByte pointer offset value => do
         pure ⟨.unit, .storeByte
-          (← checkExpr program context pointer (.scalar .rawPtr))
-          (← checkExpr program context offset (.scalar (.unsigned .usize)))
-          (← checkExpr program context value (.scalar (.unsigned .u8)))⟩
-  termination_by expression => 2 * sizeOf expression
-
-  def checkExpr (program : Program) (context : Context) :
-      (expression : Expr) → (expected : Ty) →
-        Option (Evidence (ExprHasType program context expression expected))
-    | expression, expected => do
-        let ⟨actual, typed⟩ ← inferExpr program context expression
-        if same : actual = expected then pure ⟨same ▸ typed⟩ else none
-  termination_by expression _ => 2 * sizeOf expression + 1
+          (← (← inferExpr program context pointer).check (.scalar .rawPtr))
+          (← (← inferExpr program context offset).check (.scalar (.unsigned .usize)))
+          (← (← inferExpr program context value).check (.scalar (.unsigned .u8)))⟩
+  termination_by structural expression => expression
 
   def checkExprs (program : Program) (context : Context) :
       (expressions : List Expr) → (types : List Ty) →
         Option (Evidence (ExprsHaveTypes program context expressions types))
     | [], [] => some ⟨.nil⟩
     | expression :: expressions, type :: types => do
-        pure ⟨.cons (← checkExpr program context expression type)
+        pure ⟨.cons (← (← inferExpr program context expression).check type)
           (← checkExprs program context expressions types)⟩
     | _, _ => none
-  termination_by expressions _ => 2 * sizeOf expressions + 1
+  termination_by structural expressions _ => expressions
 
   def inferPlace (program : Program) (context : Context) :
       (place : Place) → Option (InferredPlace program context place)
@@ -539,41 +529,28 @@ mutual
         | some type => some ⟨type, .local found⟩
         | none => none
     | .field base field => do
-        let ⟨baseType, _⟩ ← inferPlace program context base
-        match baseType with
-        | .structure id => do
+        let ⟨baseType, baseTyped⟩ ← inferPlace program context base
+        match baseType, baseTyped with
+        | .structure id, baseTyped => do
             match found : program.structure? id with
             | none => none
             | some declaration =>
                 match fieldFound : declaration.fields[field]? with
                 | none => none
                 | some type => do
-                    let baseTyped ← checkPlace program context base (.structure id)
-                    pure ⟨type, .field baseTyped.proof declaration found fieldFound⟩
-        | _ => none
+                    pure ⟨type, .field baseTyped declaration found fieldFound⟩
+        | _, _ => none
     | .index base index => do
-        let ⟨baseType, _⟩ ← inferPlace program context base
+        let ⟨baseType, baseTyped⟩ ← inferPlace program context base
         let ⟨indexType, indexTyped⟩ ← inferExpr program context index
         let integerIndex ← integer? indexType
-        match baseType with
-        | .array elementType length => do
-            let baseTyped ← checkPlace program context base (.array elementType length)
-            pure ⟨elementType, .indexArray
-              baseTyped.proof indexTyped integerIndex.proof⟩
-        | .slice elementType => do
-            let baseTyped ← checkPlace program context base (.slice elementType)
-            pure ⟨elementType, .indexSlice
-              baseTyped.proof indexTyped integerIndex.proof⟩
-        | _ => none
-  termination_by place => 2 * sizeOf place
-
-  def checkPlace (program : Program) (context : Context) :
-      (place : Place) → (expected : Ty) →
-        Option (Evidence (PlaceHasType program context place expected))
-    | place, expected => do
-        let ⟨actual, typed⟩ ← inferPlace program context place
-        if same : actual = expected then pure ⟨same ▸ typed⟩ else none
-  termination_by place _ => 2 * sizeOf place + 1
+        match baseType, baseTyped with
+        | .array elementType _, baseTyped =>
+            pure ⟨elementType, .indexArray baseTyped indexTyped integerIndex.proof⟩
+        | .slice elementType, baseTyped =>
+            pure ⟨elementType, .indexSlice baseTyped indexTyped integerIndex.proof⟩
+        | _, _ => none
+  termination_by structural place => place
 
   def inferPattern (program : Program) :
       (pattern : Pattern) → (expected : Ty) →
@@ -613,17 +590,17 @@ mutual
           (MatchArmsHaveType program context arms scrutineeType resultType))
     | [(pattern, body)], scrutineeType, resultType => do
         let ⟨bindings, patternTyped⟩ ← inferPattern program pattern scrutineeType
-        let bodyTyped ← checkExpr program (context.bindAll bindings) body resultType
+        let bodyTyped ← (← inferExpr program (context.bindAll bindings) body).check resultType
         pure ⟨.one patternTyped bodyTyped⟩
     | (pattern, body) :: (nextPattern, nextBody) :: rest,
         scrutineeType, resultType => do
         let ⟨bindings, patternTyped⟩ ← inferPattern program pattern scrutineeType
-        let bodyTyped ← checkExpr program (context.bindAll bindings) body resultType
+        let bodyTyped ← (← inferExpr program (context.bindAll bindings) body).check resultType
         let tailTyped ← checkMatchArms program context
           ((nextPattern, nextBody) :: rest) scrutineeType resultType
         pure ⟨.cons patternTyped bodyTyped.proof tailTyped.proof⟩
     | _, _, _ => none
-  termination_by arms _ _ => 2 * sizeOf arms + 1
+  termination_by structural arms _ _ => arms
 
   def inferMatchArms (program : Program) (context : Context) :
       (arms : List (Pattern × Expr)) → (scrutineeType : Ty) →
@@ -639,8 +616,16 @@ mutual
           ((nextPattern, nextBody) :: rest) scrutineeType resultType
         pure ⟨resultType, .cons patternTyped bodyTyped tailTyped.proof⟩
     | _, _ => none
-  termination_by arms _ => 2 * sizeOf arms
+  termination_by structural arms _ => arms
 end
+
+def checkExpr (program : Program) (context : Context) (expression : Expr) (expected : Ty) :
+    Option (Evidence (ExprHasType program context expression expected)) := do
+  (← inferExpr program context expression).check expected
+
+def checkPlace (program : Program) (context : Context) (place : Place) (expected : Ty) :
+    Option (Evidence (PlaceHasType program context place expected)) := do
+  (← inferPlace program context place).check expected
 
 def checkOptionalExpr (program : Program) (context : Context) (type : Ty) :
     (expression : Option Expr) →
@@ -677,20 +662,17 @@ def checkStmt (program : Program) (returnType : Ty) :
         (← checkExpr program context condition (.scalar .bool))
         (← checkStmt program returnType context true body)⟩
   | context, _, .forValues id iterable body => do
-      let ⟨iterableType, _⟩ ← inferExpr program context iterable
-      match iterableType with
-      | .array elementType length =>
-          let iterableTyped ← checkExpr program context iterable
-            (.array elementType length)
+      let ⟨iterableType, iterableTyped⟩ ← inferExpr program context iterable
+      match iterableType, iterableTyped with
+      | .array elementType _, iterableTyped =>
           let bodyTyped ← checkStmt program returnType
             (context.bind id elementType) true body
-          pure ⟨.forArray iterableTyped.proof bodyTyped.proof⟩
-      | .slice elementType =>
-          let iterableTyped ← checkExpr program context iterable (.slice elementType)
+          pure ⟨.forArray iterableTyped bodyTyped.proof⟩
+      | .slice elementType, iterableTyped =>
           let bodyTyped ← checkStmt program returnType
             (context.bind id elementType) true body
-          pure ⟨.forSlice iterableTyped.proof bodyTyped.proof⟩
-      | _ => none
+          pure ⟨.forSlice iterableTyped bodyTyped.proof⟩
+      | _, _ => none
   | context, _, .forRange id start stop _inclusive body => do
       pure ⟨.forRange
         (← checkExpr program context start (.scalar (.signed .i32)))

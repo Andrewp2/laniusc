@@ -54,11 +54,11 @@ def numberFailureFunction : Function := CoreDecode.function numberFailureWire
 def scanExponentFunction : Function := CoreDecode.function scanExponentWire
 def finishDecimalFunction : Function := CoreDecode.function finishDecimalWire
 
-theorem integerScan_body_present : integerScanFunction.body.isSome := by native_decide
-theorem floatScan_body_present : floatScanFunction.body.isSome := by native_decide
-theorem numberFailure_body_present : numberFailureFunction.body.isSome := by native_decide
-theorem scanExponent_body_present : scanExponentFunction.body.isSome := by native_decide
-theorem finishDecimal_body_present : finishDecimalFunction.body.isSome := by native_decide
+theorem integerScan_body_present : integerScanFunction.body.isSome := by rfl
+theorem floatScan_body_present : floatScanFunction.body.isSome := by rfl
+theorem numberFailure_body_present : numberFailureFunction.body.isSome := by rfl
+theorem scanExponent_body_present : scanExponentFunction.body.isSome := by rfl
+theorem finishDecimal_body_present : finishDecimalFunction.body.isSome := by rfl
 
 def integerScanBody : Stmt := integerScanFunction.body.get integerScan_body_present
 def floatScanBody : Stmt := floatScanFunction.body.get floatScan_body_present

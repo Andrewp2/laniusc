@@ -1,0 +1,61 @@
+module backend::image;
+import backend::program;
+import backend::call;
+import backend::frame;
+import x86::buffer;
+import x86::encode;
+import x86::control;
+import x86::register;
+
+// ELF64 little-endian Linux ET_EXEC: one RX load segment and a non-executable
+// RW stack. No interpreter, libc, assembler, external linker, or writable code.
+// Startup context at R15: [original Linux stack, next file handle]. Regular
+// generated functions preserve R15; only the runtime updates context memory.
+pub const BASE: i32 = 4194304;
+pub const ENTRY: i32 = 256;
+pub const CODE: i32 = 512;
+
+pub fn compile(input: [i32], length: i32, function_input: [i32], function_capacity: i32,
+    work: [i32], work_length: i32, output: [i32], capacity: i32) -> i32 {
+    if (!x86::buffer::fits(capacity, 0, CODE)) { return -1; }
+    let index: i32 = 0;
+    while (index < CODE) { output[index] = 0; index += 1; }
+    let end: i32 = backend::program::compile(input, length, function_input, function_capacity,
+        work, work_length, output, capacity, CODE);
+    if (end < 0) { return -1; }
+    let entry: i32 = backend::call::find(input, work, input[2]);
+    if (entry < 0) { return -1; }
+    let first: i32 = work[backend::frame::HEADER + length * 6 + entry];
+    if (input[first] != 1 || input[first + 3] != 1 || input[first + 4] != 0) { return -1; }
+    let next: i32 = x86::encode::move_register(output, CODE, ENTRY, 64, x86::register::R10, x86::register::RSP);
+    next = x86::encode::immediate(output, CODE, next, 32, x86::register::RAX, 3, 0);
+    next = x86::control::push(output, CODE, next, x86::register::RAX);
+    next = x86::control::push(output, CODE, next, x86::register::R10);
+    next = x86::encode::move_register(output, CODE, next, 64, x86::register::R15, x86::register::RSP);
+    next = x86::encode::binary(output, CODE, next, 32, x86::encode::XOR, x86::register::RBP, x86::register::RBP);
+    next = x86::control::call(output, CODE, next, CODE);
+    next = x86::encode::move_register(output, CODE, next, 32, x86::register::RDI, x86::register::RAX);
+    next = x86::encode::immediate(output, CODE, next, 32, x86::register::RAX, 60, 0);
+    next = x86::control::syscall(output, CODE, next);
+    next = x86::control::trap(output, CODE, next);
+    if (next < 0) { return -1; }
+    // ELF identification, fixed-width header fields, and program headers.
+    output[0] = 127; output[1] = 69; output[2] = 76; output[3] = 70;
+    output[4] = 2; output[5] = 1; output[6] = 1;
+    output[16] = 2; output[18] = 62;
+    x86::buffer::store_word(output, 20, 1);
+    x86::buffer::store_word(output, 24, BASE + ENTRY);
+    x86::buffer::store_word(output, 32, 64);
+    output[52] = 64; output[54] = 56; output[56] = 2;
+    x86::buffer::store_word(output, 64, 1); // PT_LOAD
+    x86::buffer::store_word(output, 68, 5); // PF_R | PF_X
+    x86::buffer::store_word(output, 80, BASE);
+    x86::buffer::store_word(output, 88, BASE);
+    x86::buffer::store_word(output, 96, end);
+    x86::buffer::store_word(output, 104, end);
+    x86::buffer::store_word(output, 112, 4096);
+    x86::buffer::store_word(output, 120, 1685382481); // PT_GNU_STACK
+    x86::buffer::store_word(output, 124, 6); // PF_R | PF_W, no PF_X
+    x86::buffer::store_word(output, 168, 16);
+    return end;
+}

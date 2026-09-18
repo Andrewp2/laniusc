@@ -1,6 +1,8 @@
 import Lanius.Extraction.Parser.Recognize.State.Core
 import Lanius.Extraction.Parser.Recognize.State.Terminal
 import Lanius.Extraction.Parser.Recognize.State.Nonterminal
+import Lanius.Compiler.Parser.Completion.Pairs
+import Lanius.Compiler.Parser.Prediction
 
 namespace Lanius.Extraction.ParserRecognize
 
@@ -187,7 +189,8 @@ inductive RecognizerStateStepOutcome
       (invariant : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell after)
-      (stateCount : Nat) (wellFormed : StateWellFormed after) :
+      (stateCount : Nat) (wellFormed : StateWellFormed after)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerStateStepOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position current remaining after
@@ -253,7 +256,7 @@ noncomputable def RecognizerStateLoopInvariant.execute_step
         workspaceCell stateCountCell cursorCell runtime position current
         remaining invariant, True := by
     cases branchOutcome with
-    | full nextWorkspace nextValues _ growth terminal stateCount wellFormed =>
+    | full nextWorkspace nextValues _ growth terminal stateCount wellFormed full =>
         have innerExecution : Executes verifiedParserCore
             (bindings.afterRhsLengthRead.bindLocal 28 (.signed .i32 (Int.ofNat
               (grammar.productionAt ⟨candidate.production,
@@ -272,7 +275,7 @@ noncomputable def RecognizerStateLoopInvariant.execute_step
           execution := closed.execution
           effect := by simpa [writes] using closed.effect
           outcome := .full nextWorkspace nextValues closed.after growth restored
-            stateCount closed.wellFormed
+            stateCount closed.wellFormed full
         }, trivial⟩
     | completed nextWorkspace nextValues _ growth frame =>
         cases suffixEq : frame.nextRemaining with
@@ -389,6 +392,32 @@ structure RecognizerStateConfig
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell stateCountCell cursorCell runtime position
 
+/-- The exact prefix already processed by a resumed traversal. -/
+def RecognizerStateConfig.processedPrefix
+    (config : RecognizerStateConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position) : List Nat :=
+  match config.cursor with
+  | .inl active => active.2.2.chartCursor.cursor.visited
+  | .inr _ => config.workspace.chart position
+
+def RecognizerStateConfig.predictionsReady
+    (config : RecognizerStateConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position) : Prop :=
+  PredictionsFor grammar config.workspace position config.processedPrefix
+
+def RecognizerStateConfig.scansReady
+    (config : RecognizerStateConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position) : Prop :=
+  ScansFor grammar tokens config.workspace position config.processedPrefix
+
+def RecognizerStateConfig.completionsReady
+    (config : RecognizerStateConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell cursorCell position) : Prop :=
+  CompletionsFor grammar config.workspace position config.processedPrefix
+
 theorem RecognizerStateConfig.tokenStorage
     (config : RecognizerStateConfig grammarLayout grammar words tokens
       workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
@@ -416,6 +445,68 @@ def RecognizerStateConfig.measure
   match config.cursor with
   | .inl active => Int.ofNat active.1
   | .inr _ => -1
+
+/-- The actual chart-head protocol establishes the traversal precondition:
+an active head has no visited items, and a negative head denotes an empty chart. -/
+theorem RecognizerStateConfig.processedPrefix_empty_of_head
+    (config : RecognizerStateConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position)
+    (head : config.candidate = chartHeadValue config.workspace position) :
+    config.processedPrefix = [] := by
+  cases cursorEq : config.cursor with
+  | inl active =>
+      obtain ⟨current, remaining, invariant⟩ := active
+      have valueEq : Int.ofNat current = chartHeadValue config.workspace position := by
+        simpa only [RecognizerStateConfig.candidate, cursorEq] using head
+      simp only [RecognizerStateConfig.processedPrefix, cursorEq]
+      have headFound : (config.workspace.chart position).head? = some current := by
+        cases headEq : (config.workspace.chart position).head? with
+        | none =>
+            simp only [chartHeadValue, headEq, encodeStateId, Int.ofNat_eq_natCast] at valueEq
+            omega
+        | some first =>
+            simp only [chartHeadValue, headEq, encodeStateId, Int.ofNat_eq_natCast] at valueEq
+            have same : first = current := by omega
+            exact congrArg some same
+      rw [invariant.chartCursor.cursor.visited_nil_of_head headFound]
+  | inr finished =>
+      have valueEq : (-1 : Int) = chartHeadValue config.workspace position := by
+        simpa only [RecognizerStateConfig.candidate, cursorEq] using head
+      simp only [RecognizerStateConfig.processedPrefix, cursorEq]
+      have empty : config.workspace.chart position = [] := by
+        cases chartEq : config.workspace.chart position with
+        | nil => rfl
+        | cons first rest =>
+            simp only [chartHeadValue, chartEq, List.head?_cons, encodeStateId, Int.ofNat_eq_natCast] at valueEq
+            omega
+      exact empty
+
+theorem RecognizerStateConfig.predictionsReady_of_head
+    (config : RecognizerStateConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell cursorCell position)
+    (head : config.candidate = chartHeadValue config.workspace position) :
+    config.predictionsReady := by
+  unfold RecognizerStateConfig.predictionsReady
+  rw [config.processedPrefix_empty_of_head head]
+  exact PredictionsFor.nil
+
+theorem RecognizerStateConfig.scansReady_of_head
+    (config : RecognizerStateConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell cursorCell position)
+    (head : config.candidate = chartHeadValue config.workspace position) :
+    config.scansReady := by
+  unfold RecognizerStateConfig.scansReady
+  rw [config.processedPrefix_empty_of_head head]
+  exact ScansFor.nil
+
+theorem RecognizerStateConfig.completionsReady_of_head
+    (config : RecognizerStateConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell cursorCell position)
+    (head : config.candidate = chartHeadValue config.workspace position) : config.completionsReady := by
+  unfold RecognizerStateConfig.completionsReady
+  rw [config.processedPrefix_empty_of_head head]
+  exact CompletionsFor.nil
 
 /-! ### Inner-loop call models inside the state machine
 
@@ -474,17 +565,17 @@ theorem predictionCalls_agree_state :
 private theorem predictionLoop_calls_supported :
     Lanius.FunctionalView.Core.Stateful.Command.callsSatisfy
       predictionCallAllowedInState statePredictionLoopCommand = true := by
-  native_decide
+  decide +kernel
 
 private theorem nullableLoop_calls_supported :
     Lanius.FunctionalView.Core.Stateful.Command.callsSatisfy
       traversalCallAllowedInState stateNullableLoopCommand = true := by
-  native_decide
+  decide +kernel
 
 private theorem parentLoop_calls_supported :
     Lanius.FunctionalView.Core.Stateful.Command.callsSatisfy
       traversalCallAllowedInState stateParentLoopCommand = true := by
-  native_decide
+  decide +kernel
 
 /-- Prediction executes under the actual state-loop call registry. -/
 private noncomputable def RecognizerPredictionConfig.evaluates_in_state_machine
@@ -622,44 +713,6 @@ private noncomputable def RecognizerParentConfig.evaluates_in_state_machine
     entry.functionalConfig.runtime = entry.chartEntry.bound := by
   cases cursorEq : entry.cursor <;>
     simp [RecognizerStateParentEntry.functionalConfig, cursorEq]
-
-private theorem RecognizerStateParentEntry.functionalConfig_candidate
-    (entry : RecognizerStateParentEntry grammarLayout grammar words tokens
-      workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell stateCountCell stateCursorCell before position current
-      remaining beforeInvariant candidate found productionBound bindings
-      completedLhs) :
-    entry.functionalConfig.candidate =
-      chartHeadValue workspace candidate.origin := by
-  have sourceValue : entry.chartEntry.bound.local? 30 =
-      some (.signed .i32
-        (chartHeadValue workspace candidate.origin)) := by
-    rw [entry.chartEntry.boundEq]
-    exact bindLocal_finds_local entry.chartEntry.headRead.after 30
-      (.signed .i32 (chartHeadValue workspace candidate.origin))
-      entry.chartEntry.headRead.invariant.wellFormed
-  cases cursorEq : entry.cursor with
-  | inl active =>
-      obtain ⟨parent, parentRemaining, invariant⟩ := active
-      have cursorValue : entry.chartEntry.bound.local? 30 =
-          some (.signed .i32 (Int.ofNat parent)) :=
-        Assertion.localPointsTo_local 30 entry.chartEntry.cursorCell _
-          entry.chartEntry.bound invariant.chartCursor.cursorOwned
-      have valueEq := Option.some.inj (sourceValue.symm.trans cursorValue)
-      have integerEq : chartHeadValue workspace candidate.origin =
-          Int.ofNat parent := by injection valueEq
-      simpa [RecognizerStateParentEntry.functionalConfig, cursorEq] using
-        integerEq.symm
-  | inr invariant =>
-      have cursorValue : entry.chartEntry.bound.local? 30 =
-          some (.signed .i32 (-1)) :=
-        Assertion.localPointsTo_local 30 entry.chartEntry.cursorCell _
-          entry.chartEntry.bound invariant.chartCursor.cursorOwned
-      have valueEq := Option.some.inj (sourceValue.symm.trans cursorValue)
-      have integerEq : chartHeadValue workspace candidate.origin = -1 := by
-        injection valueEq
-      simpa [RecognizerStateParentEntry.functionalConfig, cursorEq] using
-        integerEq.symm
 
 private theorem
     RecognizerStateParentEntry.functionalConfig_environment_extends
@@ -971,47 +1024,47 @@ private theorem StateAfterBindingsEnvironment.after_parent_projection
   exact {
     grammarEq := by
       change afterParent 0 = parserGrammarValue words grammarCell
-      simpa [parentEnvironment] using mapped 0 0 (by native_decide)
-    tokensEq := (preservedOld 1 (by native_decide)).trans meaning.tokensEq
+      simpa [parentEnvironment] using mapped 0 0 (by decide)
+    tokensEq := (preservedOld 1 (by decide)).trans meaning.tokensEq
     tokenCountEq :=
-      (preservedOld 2 (by native_decide)).trans meaning.tokenCountEq
+      (preservedOld 2 (by decide)).trans meaning.tokenCountEq
     workspaceEq := by
       change afterParent 3 = workspaceValue workspaceValues workspaceCell
-      simpa [parentEnvironment] using mapped 1 3 (by native_decide)
+      simpa [parentEnvironment] using mapped 1 3 (by decide)
     stateBaseEq := by
       change afterParent 4 =
         .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount))
-      simpa [parentEnvironment] using mapped 2 4 (by native_decide)
+      simpa [parentEnvironment] using mapped 2 4 (by decide)
     capacityEq := by
       change afterParent 5 =
         .signed .i32 (Int.ofNat workspaceLayout.capacity)
-      simpa [parentEnvironment] using mapped 3 5 (by native_decide)
+      simpa [parentEnvironment] using mapped 3 5 (by decide)
     kindCountEq := by
       change afterParent 6 =
         .signed .i32 (Int.ofNat grammar.grammar.n_kinds)
-      simpa [parentEnvironment] using mapped 5 6 (by native_decide)
+      simpa [parentEnvironment] using mapped 5 6 (by decide)
     lhsOffsetsEq :=
-      (preservedOld 7 (by native_decide)).trans meaning.lhsOffsetsEq
+      (preservedOld 7 (by decide)).trans meaning.lhsOffsetsEq
     lhsCountsEq :=
-      (preservedOld 8 (by native_decide)).trans meaning.lhsCountsEq
+      (preservedOld 8 (by decide)).trans meaning.lhsCountsEq
     lhsProductionsEq :=
-      (preservedOld 9 (by native_decide)).trans meaning.lhsProductionsEq
+      (preservedOld 9 (by decide)).trans meaning.lhsProductionsEq
     stateCountEq := by
       change afterParent 10 =
         .signed .i32 (Int.ofNat workspace.states.length)
-      simpa [parentEnvironment] using mapped 4 10 (by native_decide)
+      simpa [parentEnvironment] using mapped 4 10 (by decide)
     positionEq := by
       change afterParent 11 = .signed .i32 (Int.ofNat position)
-      simpa [parentEnvironment] using mapped 6 11 (by native_decide)
+      simpa [parentEnvironment] using mapped 6 11 (by decide)
     currentEq := by
       change afterParent 12 = .signed .i32 (Int.ofNat current)
-      simpa [parentEnvironment] using mapped 7 12 (by native_decide)
+      simpa [parentEnvironment] using mapped 7 12 (by decide)
     productionEq :=
-      (preservedOld 13 (by native_decide)).trans meaning.productionEq
-    dotEq := (preservedOld 14 (by native_decide)).trans meaning.dotEq
-    originEq := (preservedOld 15 (by native_decide)).trans meaning.originEq
+      (preservedOld 13 (by decide)).trans meaning.productionEq
+    dotEq := (preservedOld 14 (by decide)).trans meaning.dotEq
+    originEq := (preservedOld 15 (by decide)).trans meaning.originEq
     rhsLengthEq :=
-      (preservedOld 16 (by native_decide)).trans meaning.rhsLengthEq
+      (preservedOld 16 (by decide)).trans meaning.rhsLengthEq
   }
 
 /-- The completed recognizer-state branch viewed once through the exact
@@ -1086,6 +1139,8 @@ private noncomputable def RecognizerStateParentEntry.functional_execute_complete
       workspaceCell stateCountCell stateCursorCell before position current
       remaining beforeInvariant candidate found productionBound bindings
       completedLhs)
+    (completed : candidate.dot =
+      (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs.length)
     (environment : Lanius.FunctionalView.Env 17)
     (meaning : StateAfterBindingsEnvironment (tokenCapacity := tokens.length + bindings.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
@@ -1121,7 +1176,7 @@ private noncomputable def RecognizerStateParentEntry.functional_execute_complete
         completedLhs entry environment, True := by
     rcases operation.outcome.view with completedResult | fullResult
     · rcases completedResult with ⟨completionEq, nextWorkspace, nextValues,
-        growth, frame, worldEq, environmentEq⟩
+        growth, frame, worldEq, environmentEq, stable, parents⟩
       have relatedFinal : Lanius.FunctionalView.Env.Extends
           parentIntoStateEmbedding
           (parentEnvironment words nextValues grammarCell workspaceCell
@@ -1165,10 +1220,15 @@ private noncomputable def RecognizerStateParentEntry.functional_execute_complete
               operation.after .next :=
             .completed nextWorkspace nextValues operation.after growth frame
               worldEq (by simpa only [suffixEq] using afterMeaning)
+              (PredictionsComplete.of_finished productionBound (by omega))
+              stable
+              (ScansComplete.of_finished productionBound (by omega))
+              (CompletionStep.of_finished productionBound completed
+                (by simpa only [entry.completedLhsEq] using parents candidate found))
           simpa [completionEq] using shared
       }, trivial⟩
     · rcases fullResult with ⟨finalWorkspace, finalValues, growth, terminal,
-        stateCount, wellFormed, completionEq⟩
+        stateCount, wellFormed, full, completionEq⟩
       exact ⟨{
         afterWorld := entry.functionalConfig.functional_run.after.world
         afterEnvironment := Lanius.FunctionalView.Stateful.Env.pop
@@ -1192,7 +1252,7 @@ private noncomputable def RecognizerStateParentEntry.functional_execute_complete
               operation.after
               (parserCapacityCompletion position stateCount) :=
             .full finalWorkspace finalValues operation.after growth terminal
-              stateCount wellFormed
+              stateCount wellFormed full
           simpa [completionEq] using shared
       }, trivial⟩
   exact Classical.choose existsResult
@@ -1807,49 +1867,6 @@ private theorem RecognizerStateNullableEntry.functionalConfig_suffix
   rw [← entry.boundEq, ← entry.functionalConfig_runtime] at boundBacking
   exact entry.functionalConfig.tokenStorage.unused_eq_of_backing boundBacking
 
-/-- The compact nullable cursor is the value bound by the real chart-head
-    source expression.  This rules out a second, independently chosen logical
-    cursor at the source-to-FunctionalView boundary. -/
-private theorem RecognizerStateNullableEntry.functionalConfig_candidate
-    (entry : RecognizerStateNullableEntry grammarLayout grammar words tokens
-      workspaceLayout beforeWorkspace beforeValues grammarCell tokensCell
-      workspaceCell stateCountCell cursorCell before position current remaining
-      beforeInvariant candidate found productionBound dotBeforeEnd bindings
-      symbolBinding isNonterminal nonterminalBinding predictionEntry completed) :
-    entry.functionalConfig.candidate =
-      chartHeadValue completed.workspace position := by
-  have headLocal : entry.bound.local? 36 = some (.signed .i32
-      (chartHeadValue completed.workspace position)) := by
-    rw [entry.boundEq]
-    exact bindLocal_finds_local entry.headRead.after 36
-      (.signed .i32 (chartHeadValue completed.workspace position))
-      entry.headRead.invariant.wellFormed
-  cases cursorEq : entry.cursor with
-  | inl active =>
-      obtain ⟨nullableCurrent, nullableRemaining, invariant⟩ := active
-      have cursorLocal : entry.bound.local? 36 =
-          some (.signed .i32 (Int.ofNat nullableCurrent)) :=
-        Assertion.localPointsTo_local 36 entry.nullableCursorCell
-          (.signed .i32 (Int.ofNat nullableCurrent)) entry.bound
-          invariant.chartCursor.cursorOwned
-      have valueEq : Int.ofNat nullableCurrent =
-          chartHeadValue completed.workspace position := by
-        have same := Option.some.inj (cursorLocal.symm.trans headLocal)
-        injection same
-      simpa only [RecognizerStateNullableEntry.functionalConfig, cursorEq,
-        RecognizerNullableConfig.candidate] using valueEq
-  | inr invariant =>
-      have cursorLocal : entry.bound.local? 36 =
-          some (.signed .i32 (-1)) :=
-        Assertion.localPointsTo_local 36 entry.nullableCursorCell
-          (.signed .i32 (-1)) entry.bound invariant.chartCursor.cursorOwned
-      have valueEq : (-1 : Int) =
-          chartHeadValue completed.workspace position := by
-        have same := Option.some.inj (cursorLocal.symm.trans headLocal)
-        injection same
-      simpa only [RecognizerStateNullableEntry.functionalConfig, cursorEq,
-        RecognizerNullableConfig.candidate] using valueEq
-
 /-- After prediction, the compact nullable environment is exactly the
     projection of the real source frame with its chart-head local appended.
     Mutable prediction slots come from the prediction postcondition; parent
@@ -2271,60 +2288,60 @@ private theorem StateAfterBindingsEnvironment.after_nonterminal_projection
   exact {
     grammarEq := by
       change afterNullable 0 = parserGrammarValue words grammarCell
-      simpa [nullableEnvironment] using nullableMapped 0 0 (by native_decide)
-    tokensEq := (preservedOld 1 (by native_decide) (by native_decide)).trans
+      simpa [nullableEnvironment] using nullableMapped 0 0 (by decide)
+    tokensEq := (preservedOld 1 (by decide) (by decide)).trans
       meaning.tokensEq
     tokenCountEq :=
-      (preservedOld 2 (by native_decide) (by native_decide)).trans
+      (preservedOld 2 (by decide) (by decide)).trans
         meaning.tokenCountEq
     workspaceEq := by
       change afterNullable 3 = workspaceValue finalValues workspaceCell
-      simpa [nullableEnvironment] using nullableMapped 1 3 (by native_decide)
+      simpa [nullableEnvironment] using nullableMapped 1 3 (by decide)
     stateBaseEq := by
       change afterNullable 4 =
         .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount))
-      simpa [nullableEnvironment] using nullableMapped 2 4 (by native_decide)
+      simpa [nullableEnvironment] using nullableMapped 2 4 (by decide)
     capacityEq := by
       change afterNullable 5 =
         .signed .i32 (Int.ofNat workspaceLayout.capacity)
-      simpa [nullableEnvironment] using nullableMapped 3 5 (by native_decide)
+      simpa [nullableEnvironment] using nullableMapped 3 5 (by decide)
     kindCountEq :=
-      (preservedOld 6 (by native_decide) (by native_decide)).trans
+      (preservedOld 6 (by decide) (by decide)).trans
         meaning.kindCountEq
     lhsOffsetsEq :=
-      (preservedOld 7 (by native_decide) (by native_decide)).trans
+      (preservedOld 7 (by decide) (by decide)).trans
         meaning.lhsOffsetsEq
     lhsCountsEq :=
-      (preservedOld 8 (by native_decide) (by native_decide)).trans
+      (preservedOld 8 (by decide) (by decide)).trans
         meaning.lhsCountsEq
     lhsProductionsEq := by
       calc
         afterEnvironment 9 = afterPrediction 9 :=
-          nullablePreservedAt 9 (by native_decide)
+          nullablePreservedAt 9 (by decide)
         _ = .signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset) := by
           simpa [predictionEnvironment] using
-            predictionMapped 4 9 (by native_decide)
+            predictionMapped 4 9 (by decide)
     stateCountEq := by
       change afterNullable 10 =
         .signed .i32 (Int.ofNat finalWorkspace.states.length)
-      simpa [nullableEnvironment] using nullableMapped 4 10 (by native_decide)
+      simpa [nullableEnvironment] using nullableMapped 4 10 (by decide)
     positionEq := by
       change afterNullable 11 = .signed .i32 (Int.ofNat position)
-      simpa [nullableEnvironment] using nullableMapped 5 11 (by native_decide)
+      simpa [nullableEnvironment] using nullableMapped 5 11 (by decide)
     currentEq := by
       change afterNullable 12 = .signed .i32 (Int.ofNat current)
-      simpa [nullableEnvironment] using nullableMapped 6 12 (by native_decide)
+      simpa [nullableEnvironment] using nullableMapped 6 12 (by decide)
     productionEq := by
       change afterNullable 13 = .signed .i32 (Int.ofNat production)
-      simpa [nullableEnvironment] using nullableMapped 7 13 (by native_decide)
+      simpa [nullableEnvironment] using nullableMapped 7 13 (by decide)
     dotEq := by
       change afterNullable 14 = .signed .i32 (Int.ofNat dot)
-      simpa [nullableEnvironment] using nullableMapped 8 14 (by native_decide)
+      simpa [nullableEnvironment] using nullableMapped 8 14 (by decide)
     originEq := by
       change afterNullable 15 = .signed .i32 (Int.ofNat origin)
-      simpa [nullableEnvironment] using nullableMapped 9 15 (by native_decide)
+      simpa [nullableEnvironment] using nullableMapped 9 15 (by decide)
     rhsLengthEq :=
-      (preservedOld 16 (by native_decide) (by native_decide)).trans
+      (preservedOld 16 (by decide) (by decide)).trans
         meaning.rhsLengthEq
   }
 
@@ -2969,7 +2986,8 @@ private noncomputable def
     let prepared := bindings.execute_complete (by
       simpa [rhsLength] using completedDot)
     obtain ⟨completedLhs, entry, physical⟩ := prepared
-    let operation := entry.functional_execute_complete environment meaning
+    let operation := entry.functional_execute_complete (by simpa [rhsLength] using completedDot)
+      environment meaning
     exact {
       afterWorld := operation.afterWorld
       afterEnvironment := operation.afterEnvironment
@@ -3145,7 +3163,17 @@ private inductive RecognizerStateStepSynchronizedOutcome
           workspaceCell workspaceLayout grammar.grammar.n_kinds
           grammarLayout.lhsOffsetsOffset grammarLayout.lhsCountsOffset
           grammarLayout.lhsProductionsOffset workspace.states.length position
-          (Int.ofNat next)) :
+          (Int.ofNat next))
+      (predictions : ∀ cursor : ChartCursor (beforeWorkspace.chart position) current remaining,
+        PredictionsFor grammar beforeWorkspace position cursor.visited →
+        PredictionsFor grammar workspace position invariant.chartCursor.cursor.visited)
+      (stable : ChartsUnchangedBefore position beforeWorkspace workspace)
+      (scans : ∀ cursor : ChartCursor (beforeWorkspace.chart position) current remaining,
+        ScansFor grammar tokens beforeWorkspace position cursor.visited →
+        ScansFor grammar tokens workspace position invariant.chartCursor.cursor.visited)
+      (completions : ∀ cursor : ChartCursor (beforeWorkspace.chart position) current remaining,
+        CompletionsFor grammar beforeWorkspace position cursor.visited →
+        CompletionsFor grammar workspace position invariant.chartCursor.cursor.visited) :
       RecognizerStateStepSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position current remaining afterWorld
@@ -3168,7 +3196,17 @@ private inductive RecognizerStateStepSynchronizedOutcome
           workspaceCell workspaceLayout grammar.grammar.n_kinds
           grammarLayout.lhsOffsetsOffset grammarLayout.lhsCountsOffset
           grammarLayout.lhsProductionsOffset workspace.states.length position
-          (-1)) :
+          (-1))
+      (predictions : ∀ cursor : ChartCursor (beforeWorkspace.chart position) current remaining,
+        PredictionsFor grammar beforeWorkspace position cursor.visited →
+        ChartPredicted grammar workspace position)
+      (stable : ChartsUnchangedBefore position beforeWorkspace workspace)
+      (scans : ∀ cursor : ChartCursor (beforeWorkspace.chart position) current remaining,
+        ScansFor grammar tokens beforeWorkspace position cursor.visited →
+        ChartScanned grammar tokens workspace position)
+      (completions : ∀ cursor : ChartCursor (beforeWorkspace.chart position) current remaining,
+        CompletionsFor grammar beforeWorkspace position cursor.visited →
+        ChartCompleted grammar workspace position) :
       RecognizerStateStepSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position current remaining afterWorld
@@ -3180,7 +3218,8 @@ private inductive RecognizerStateStepSynchronizedOutcome
       (invariant : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell physicalAfter)
-      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter) :
+      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerStateStepSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position current remaining afterWorld
@@ -3207,9 +3246,9 @@ private def RecognizerStateStepSynchronizedOutcome.physical
       exact .exhausted workspace workspaceValues physicalAfter growth invariant
         progress
   | full workspace workspaceValues physicalAfter growth invariant stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter growth invariant
-        stateCount wellFormed
+        stateCount wellFormed full
 
 private structure RecognizerStateStepFunctionalExecution
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -3425,7 +3464,7 @@ private noncomputable def RecognizerStateConfig.functional_execute_step
     rcases semantic.outcome.view with fullResult | completedResult
     ·
         rcases fullResult with ⟨finalWorkspace, finalValues, stateCount,
-          growth, terminal, wellFormed, coreCompletionEq⟩
+          growth, terminal, wellFormed, full, coreCompletionEq⟩
         have sourceStops : semantic.completion ≠ .next := by
           intro sourceNext
           rw [sourceNext] at coreCompletionEq
@@ -3495,12 +3534,30 @@ private noncomputable def RecognizerStateConfig.functional_execute_step
                 (.returned (some (parseResultValue 2 (Int.ofNat stateCount)
                   (-1) (Int.ofNat position)))) :=
               .full finalWorkspace finalValues closed.after growth restored
-                stateCount closed.wellFormed
+                stateCount closed.wellFormed full
             simpa [sourceCompletionEq] using synchronized
         }, trivial⟩
     ·
         rcases completedResult with ⟨nextWorkspace, nextValues,
-          growth, frame, coreCompletionEq, worldEq, environmentMeaning⟩
+          growth, frame, coreCompletionEq, worldEq, environmentMeaning, predicted, stable, scanned, completedPairs⟩
+        have selectedPrediction : ∀ item, config.workspace.state? current = some item →
+            PredictionsComplete grammar nextWorkspace position item.production item.dot := by
+          intro item selected
+          have same := Option.some.inj (found.symm.trans selected)
+          subst item
+          exact predicted
+        have selectedScan : ∀ item, config.workspace.state? current = some item →
+            ScansComplete grammar tokens nextWorkspace position item.production item.dot item.origin := by
+          intro item selected
+          have same := Option.some.inj (found.symm.trans selected)
+          subst item
+          exact scanned
+        have selectedCompletion : ∀ item, config.workspace.state? current = some item →
+            CompletionStep grammar nextWorkspace position item.production item.dot item.origin := by
+          intro item selected
+          have same := Option.some.inj (found.symm.trans selected)
+          subst item
+          exact completedPairs
         have frameSuffix := frame.invariant.chartCursor.recognizer.tokenStorage.unused_eq_of_backing
           (semanticEffect.preserves_entry bindings.invariant.chartCursor.recognizer.wellFormed
             bindings.invariant.chartCursor.recognizer.tokenStorage.unused_backing tokensUntouched)
@@ -3609,7 +3666,31 @@ private noncomputable def RecognizerStateConfig.functional_execute_step
               physicalExecution := closed.execution
               physicalEffect := by simpa [writes] using closed.effect
               outcome := .exhausted nextWorkspace nextValues closed.after growth
-                restored progress rfl rfl
+                restored progress rfl rfl (by
+                  intro beforeCursor prior
+                  have processed := PredictionsFor.step beforeCursor stateInvariant.chartCursor.cursor
+                    growth invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound
+                    prior selectedPrediction
+                  change PredictionsFor grammar nextWorkspace position (nextWorkspace.chart position)
+                  rw [stateInvariant.chartCursor.cursor.split]
+                  exact processed) stable
+                  (by
+                    intro beforeCursor prior
+                    have processed := ScansFor.step beforeCursor stateInvariant.chartCursor.cursor
+                      growth invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound
+                      prior selectedScan
+                    change ScansFor grammar tokens nextWorkspace position (nextWorkspace.chart position)
+                    rw [stateInvariant.chartCursor.cursor.split]
+                    exact processed)
+                  (by
+                    intro beforeCursor prior
+                    have processed := CompletionsFor.step beforeCursor stateInvariant.chartCursor.cursor growth
+                      invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound
+                      stateInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound
+                      stable prior selectedCompletion
+                    change CompletionsFor grammar nextWorkspace position (nextWorkspace.chart position)
+                    rw [stateInvariant.chartCursor.cursor.split]
+                    exact processed)
             }, trivial⟩
         | cons next nextRemaining =>
             have stateInvariant : RecognizerStateLoopInvariant grammarLayout
@@ -3710,7 +3791,37 @@ private noncomputable def RecognizerStateConfig.functional_execute_step
               physicalExecution := closed.execution
               physicalEffect := by simpa [writes] using closed.effect
               outcome := .advanced nextWorkspace nextValues closed.after growth
-                next nextRemaining restored progress rfl rfl
+                next nextRemaining restored progress rfl rfl (by
+                  intro beforeCursor prior
+                  have processed := PredictionsFor.step beforeCursor stateInvariant.chartCursor.cursor
+                    growth invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound
+                    prior selectedPrediction
+                  have visited := restored.chartCursor.cursor.visited_eq
+                    (stateInvariant.chartCursor.cursor.next
+                      (stateInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartIdsUnique position))
+                  rw [visited]
+                  exact processed) stable
+                  (by
+                    intro beforeCursor prior
+                    have processed := ScansFor.step beforeCursor stateInvariant.chartCursor.cursor
+                      growth invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound
+                      prior selectedScan
+                    have visited := restored.chartCursor.cursor.visited_eq
+                      (stateInvariant.chartCursor.cursor.next
+                        (stateInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartIdsUnique position))
+                    rw [visited]
+                    exact processed)
+                  (by
+                    intro beforeCursor prior
+                    have processed := CompletionsFor.step beforeCursor stateInvariant.chartCursor.cursor growth
+                      invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound
+                      stateInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound
+                      stable prior selectedCompletion
+                    have visited := restored.chartCursor.cursor.visited_eq
+                      (stateInvariant.chartCursor.cursor.next
+                        (stateInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartIdsUnique position))
+                    rw [visited]
+                    exact processed)
             }, trivial⟩
   exact Classical.choose existsResult
 
@@ -3783,7 +3894,8 @@ inductive RecognizerStateSynchronizedOutcome
           workspaceCell workspaceLayout grammar.grammar.n_kinds
           grammarLayout.lhsOffsetsOffset grammarLayout.lhsCountsOffset
           grammarLayout.lhsProductionsOffset workspace.states.length position
-          (-1)) :
+          (-1))
+      (stable : ChartsUnchangedBefore position beforeWorkspace workspace) :
       RecognizerStateSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position functionalAfter physicalAfter .next
@@ -3794,12 +3906,39 @@ inductive RecognizerStateSynchronizedOutcome
       (invariant : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell physicalAfter)
-      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter) :
+      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerStateSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position functionalAfter physicalAfter
         (.returned (some (parseResultValue 2 (Int.ofNat stateCount) (-1)
           (Int.ofNat position))))
+
+/-- Prediction completeness of the actual final chart, when the loop returns
+normally. Capacity exhaustion remains a distinct result, not a complete chart. -/
+def RecognizerStateSynchronizedOutcome.predictionsComplete
+    (outcome : RecognizerStateSynchronizedOutcome grammarLayout grammar words
+      tokens workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
+      stateCountCell cursorCell position functionalAfter physicalAfter completion) : Prop :=
+  match outcome with
+  | .completed workspace .. => ChartPredicted grammar workspace position
+  | .full .. => True
+
+def RecognizerStateSynchronizedOutcome.scansComplete
+    (outcome : RecognizerStateSynchronizedOutcome grammarLayout grammar words
+      tokens workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
+      stateCountCell cursorCell position functionalAfter physicalAfter completion) : Prop :=
+  match outcome with
+  | .completed workspace .. => ChartScanned grammar tokens workspace position
+  | .full .. => True
+
+def RecognizerStateSynchronizedOutcome.completionsComplete
+    (outcome : RecognizerStateSynchronizedOutcome grammarLayout grammar words tokens
+      workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell stateCountCell cursorCell
+      position functionalAfter physicalAfter completion) : Prop :=
+  match outcome with
+  | .completed workspace .. => ChartCompleted grammar workspace position
+  | .full .. => True
 
 def RecognizerStateSynchronizedOutcome.prepend_growth
     (outcome : RecognizerStateSynchronizedOutcome grammarLayout grammar words
@@ -3807,20 +3946,48 @@ def RecognizerStateSynchronizedOutcome.prepend_growth
       workspaceCell stateCountCell cursorCell position functionalAfter
       physicalAfter completion)
     (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace
-      middleWorkspace) :
+      middleWorkspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace middleWorkspace) :
     RecognizerStateSynchronizedOutcome grammarLayout grammar words tokens
       workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
       stateCountCell cursorCell position functionalAfter physicalAfter
       completion := by
   cases outcome with
   | completed workspace workspaceValues physicalAfter suffix invariant worldEq
-      environmentEq =>
+      environmentEq nextStable =>
       exact .completed workspace workspaceValues physicalAfter
-        (growth.trans suffix) invariant worldEq environmentEq
+        (growth.trans suffix) invariant worldEq environmentEq (stable.trans nextStable)
   | full workspace workspaceValues physicalAfter suffix invariant stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter (growth.trans suffix)
-        invariant stateCount wellFormed
+        invariant stateCount wellFormed full
+
+@[simp] theorem RecognizerStateSynchronizedOutcome.predictionsComplete_prepend_growth
+    (outcome : RecognizerStateSynchronizedOutcome grammarLayout grammar words
+      tokens workspaceLayout middleWorkspace grammarCell tokensCell workspaceCell
+      stateCountCell cursorCell position functionalAfter physicalAfter completion)
+    (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace middleWorkspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace middleWorkspace) :
+    (outcome.prepend_growth growth stable).predictionsComplete = outcome.predictionsComplete := by
+  cases outcome <;> rfl
+
+@[simp] theorem RecognizerStateSynchronizedOutcome.scansComplete_prepend_growth
+    (outcome : RecognizerStateSynchronizedOutcome grammarLayout grammar words
+      tokens workspaceLayout middleWorkspace grammarCell tokensCell workspaceCell
+      stateCountCell cursorCell position functionalAfter physicalAfter completion)
+    (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace middleWorkspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace middleWorkspace) :
+    (outcome.prepend_growth growth stable).scansComplete = outcome.scansComplete := by
+  cases outcome <;> rfl
+
+@[simp] theorem RecognizerStateSynchronizedOutcome.completionsComplete_prepend_growth
+    (outcome : RecognizerStateSynchronizedOutcome grammarLayout grammar words tokens
+      workspaceLayout middleWorkspace grammarCell tokensCell workspaceCell stateCountCell cursorCell
+      position functionalAfter physicalAfter completion)
+    (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace middleWorkspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace middleWorkspace) :
+    (outcome.prepend_growth growth stable).completionsComplete = outcome.completionsComplete := by
+  cases outcome <;> rfl
 
 abbrev RecognizerStateLoopOutcome
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -3865,9 +4032,9 @@ def RecognizerStateSynchronizedOutcome.physical
   | completed workspace workspaceValues physicalAfter growth invariant _ _ =>
       exact .completed workspace workspaceValues physicalAfter growth invariant
   | full workspace workspaceValues physicalAfter growth invariant stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter growth invariant
-        stateCount wellFormed
+        stateCount wellFormed full
 
 /-- Result transported by the synchronized FunctionalView state-loop driver.
     The functional trace owns control flow; the physical execution is its
@@ -3896,6 +4063,9 @@ structure RecognizerStateFunctionalResult
   outcome : RecognizerStateSynchronizedOutcome grammarLayout grammar words
     tokens workspaceLayout config.workspace grammarCell tokensCell workspaceCell
     stateCountCell cursorCell position functionalAfter physicalAfter completion
+  predictions : config.predictionsReady → outcome.predictionsComplete
+  scans : config.scansReady → outcome.scansComplete
+  completions : config.completionsReady → outcome.completionsComplete
 
 /-- One state-loop decision shared by the FunctionalView command and the
     exact extracted Core loop. -/
@@ -3948,6 +4118,19 @@ private noncomputable def RecognizerStateConfig.functional_decide
               have candidateEq : config.candidate = -1 := by
                 simp [RecognizerStateConfig.candidate, cursorShape]
               rw [candidateEq]
+            · exact ChartsUnchangedBefore.refl
+          predictions := by
+            intro prior
+            simpa only [RecognizerStateConfig.predictionsReady, RecognizerStateConfig.processedPrefix, cursorShape,
+              RecognizerStateSynchronizedOutcome.predictionsComplete, ChartPredicted] using prior
+          scans := by
+            intro prior
+            simpa only [RecognizerStateConfig.scansReady, RecognizerStateConfig.processedPrefix, cursorShape,
+              RecognizerStateSynchronizedOutcome.scansComplete, ChartScanned] using prior
+          completions := by
+            intro prior
+            simpa only [RecognizerStateConfig.completionsReady, RecognizerStateConfig.processedPrefix, cursorShape,
+              RecognizerStateSynchronizedOutcome.completionsComplete, ChartCompleted] using prior
         }
       }
   | inl active =>
@@ -3968,7 +4151,7 @@ private noncomputable def RecognizerStateConfig.functional_decide
       have physicalTrue := invariant.chartCursor.condition_nonnegative
       cases stepOutcome with
       | advanced nextWorkspace nextValues physicalAfter growth next
-          nextRemaining nextInvariant progress worldEq environmentEq =>
+          nextRemaining nextInvariant progress worldEq environmentEq predictions stable scans completions =>
           let nextConfig : RecognizerStateConfig grammarLayout grammar words
               tokens workspaceLayout grammarCell tokensCell workspaceCell
               stateCountCell cursorCell position := {
@@ -4022,10 +4205,31 @@ private noncomputable def RecognizerStateConfig.functional_decide
                 exact executesWhileTrueThen physicalTrue physicalBody
                   result.execution
               effect := stepPhysicalEffect.trans_same result.effect
-              outcome := result.outcome.prepend_growth growth
+              outcome := result.outcome.prepend_growth growth stable
+              predictions := by
+                intro prior
+                have ready : nextConfig.predictionsReady :=
+                  predictions invariant.chartCursor.cursor (by
+                    simpa only [RecognizerStateConfig.predictionsReady, RecognizerStateConfig.processedPrefix, cursorShape] using prior)
+                simpa only [RecognizerStateSynchronizedOutcome.predictionsComplete_prepend_growth]
+                  using result.predictions ready
+              scans := by
+                intro prior
+                have ready : nextConfig.scansReady :=
+                  scans invariant.chartCursor.cursor (by
+                    simpa only [RecognizerStateConfig.scansReady, RecognizerStateConfig.processedPrefix, cursorShape] using prior)
+                simpa only [RecognizerStateSynchronizedOutcome.scansComplete_prepend_growth]
+                  using result.scans ready
+              completions := by
+                intro prior
+                have ready : nextConfig.completionsReady :=
+                  completions invariant.chartCursor.cursor (by
+                    simpa only [RecognizerStateConfig.completionsReady, RecognizerStateConfig.processedPrefix, cursorShape] using prior)
+                exact (RecognizerStateSynchronizedOutcome.completionsComplete_prepend_growth
+                  result.outcome growth stable).mpr (result.completions ready)
             }
       | exhausted nextWorkspace nextValues physicalAfter growth nextInvariant
-          progress worldEq environmentEq =>
+          progress worldEq environmentEq predictions stable scans completions =>
           let nextConfig : RecognizerStateConfig grammarLayout grammar words
               tokens workspaceLayout grammarCell tokensCell workspaceCell
               stateCountCell cursorCell position := {
@@ -4074,10 +4278,31 @@ private noncomputable def RecognizerStateConfig.functional_decide
                 exact executesWhileTrueThen physicalTrue physicalBody
                   result.execution
               effect := stepPhysicalEffect.trans_same result.effect
-              outcome := result.outcome.prepend_growth growth
+              outcome := result.outcome.prepend_growth growth stable
+              predictions := by
+                intro prior
+                have ready : nextConfig.predictionsReady :=
+                  predictions invariant.chartCursor.cursor (by
+                    simpa only [RecognizerStateConfig.predictionsReady, RecognizerStateConfig.processedPrefix, cursorShape] using prior)
+                simpa only [RecognizerStateSynchronizedOutcome.predictionsComplete_prepend_growth]
+                  using result.predictions ready
+              scans := by
+                intro prior
+                have ready : nextConfig.scansReady :=
+                  scans invariant.chartCursor.cursor (by
+                    simpa only [RecognizerStateConfig.scansReady, RecognizerStateConfig.processedPrefix, cursorShape] using prior)
+                simpa only [RecognizerStateSynchronizedOutcome.scansComplete_prepend_growth]
+                  using result.scans ready
+              completions := by
+                intro prior
+                have ready : nextConfig.completionsReady :=
+                  completions invariant.chartCursor.cursor (by
+                    simpa only [RecognizerStateConfig.completionsReady, RecognizerStateConfig.processedPrefix, cursorShape] using prior)
+                exact (RecognizerStateSynchronizedOutcome.completionsComplete_prepend_growth
+                  result.outcome growth stable).mpr (result.completions ready)
             }
       | full nextWorkspace nextValues physicalAfter growth nextInvariant
-          stateCount wellFormed =>
+          stateCount wellFormed full =>
           have functionalBody := stepFunctionalExecution
           have physicalBody : Executes verifiedParserCore config.runtime
               parserRecognizeStateLoopBody
@@ -4099,7 +4324,10 @@ private noncomputable def RecognizerStateConfig.functional_decide
                 exact executesWhileReturned physicalTrue physicalBody
               effect := stepPhysicalEffect
               outcome := .full nextWorkspace nextValues stepPhysicalAfter
-                growth nextInvariant stateCount wellFormed
+                growth nextInvariant stateCount wellFormed full
+              predictions := fun _ => trivial
+              scans := fun _ => trivial
+              completions := fun _ => trivial
             }
           }
 
@@ -4207,7 +4435,7 @@ noncomputable def RecognizerStateConfig.decide
         stepOutcome⟩ := step
       have condition := invariant.chartCursor.condition_nonnegative
       cases stepOutcome with
-      | full nextWorkspace nextValues _ growth terminal stateCount wellFormed =>
+      | full nextWorkspace nextValues _ growth terminal stateCount wellFormed full =>
           apply LoopVerification.Decision.exit
           exact {
             completion := parserCapacityCompletion position stateCount
@@ -4217,7 +4445,7 @@ noncomputable def RecognizerStateConfig.decide
               effect := stepEffect
             }
             result := .full nextWorkspace nextValues stepAfter growth terminal
-              stateCount wellFormed
+              stateCount wellFormed full
           }
       | advanced nextWorkspace nextValues _ growth next nextRemaining
           nextInvariant progress =>

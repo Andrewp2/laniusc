@@ -1,0 +1,173 @@
+module x86::encode;
+import x86::register;
+import x86::buffer;
+
+// Operation constants are architectural opcodes, not private IR tags.
+pub const ADD: i32 = 1;
+pub const OR: i32 = 9;
+pub const AND: i32 = 33;
+pub const SUB: i32 = 41;
+pub const XOR: i32 = 49;
+pub const CMP: i32 = 57;
+pub const TEST: i32 = 133;
+pub const SHIFT_LEFT: i32 = 4;
+pub const SHIFT_RIGHT: i32 = 5;
+pub const SHIFT_SIGNED_RIGHT: i32 = 7;
+
+pub fn register_form(output: [i32], capacity: i32, cursor: i32,
+    width: i32, opcode: i32, reg: i32, rm: i32, byte_register: bool) -> i32 {
+    if (!x86::register::valid(reg) || !x86::register::valid(rm) ||
+        !x86::register::width_valid(width)) { return -1; }
+    let rex_byte: i32 = x86::register::rex(width, reg, rm, byte_register);
+    let size: i32 = 2;
+    if (rex_byte != 0) { size += 1; }
+    if (opcode > 255) { size += 1; }
+    if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
+    let next: i32 = cursor;
+    if (rex_byte != 0) { output[next] = rex_byte; next += 1; }
+    if (opcode > 255) { output[next] = 15; next += 1; }
+    output[next] = opcode & 255;
+    output[next + 1] = 192 + (reg % 8) * 8 + rm % 8;
+    return next + 2;
+}
+
+pub fn move_register(output: [i32], capacity: i32, cursor: i32,
+    width: i32, destination: i32, source: i32) -> i32 {
+    return register_form(output, capacity, cursor, width, 137, source, destination, false);
+}
+
+pub fn binary(output: [i32], capacity: i32, cursor: i32,
+    width: i32, operation: i32, destination: i32, source: i32) -> i32 {
+    if (operation != ADD && operation != OR && operation != AND &&
+        operation != SUB && operation != XOR && operation != CMP && operation != TEST) {
+        return -1;
+    }
+    return register_form(output, capacity, cursor, width, operation, source, destination, false);
+}
+
+pub fn multiply(output: [i32], capacity: i32, cursor: i32,
+    width: i32, destination: i32, source: i32) -> i32 {
+    return register_form(output, capacity, cursor, width, 4015, destination, source, false);
+}
+
+pub fn sign_extend_i32(output: [i32], capacity: i32, cursor: i32,
+    destination: i32, source: i32) -> i32 {
+    return register_form(output, capacity, cursor, 64, 99, destination, source, false);
+}
+
+pub fn zero_extend_byte(output: [i32], capacity: i32, cursor: i32,
+    destination: i32, source: i32) -> i32 {
+    return register_form(output, capacity, cursor, 32, 4022, destination, source, source >= 4);
+}
+
+pub fn immediate(output: [i32], capacity: i32, cursor: i32,
+    width: i32, destination: i32, low: i32, high: i32) -> i32 {
+    if (!x86::register::valid(destination) || !x86::register::width_valid(width)) { return -1; }
+    let rex_byte: i32 = x86::register::rex(width, 0, destination, false);
+    let size: i32 = 5;
+    if (width == 64) { size += 4; }
+    if (rex_byte != 0) { size += 1; }
+    if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
+    let next: i32 = cursor;
+    if (rex_byte != 0) { output[next] = rex_byte; next += 1; }
+    output[next] = 184 + destination % 8;
+    next = x86::buffer::store_word(output, next + 1, low);
+    if (width == 64) { next = x86::buffer::store_word(output, next, high); }
+    return next;
+}
+
+// RIP-relative LEA uses mod=00,r/m=101 and a signed displacement from the
+// end of this seven-byte instruction (Intel SDM 2A, 2.2.1.6 and LEA).
+pub fn relative_address(output: [i32], capacity: i32, cursor: i32,
+    destination: i32, displacement: i32) -> i32 {
+    if (!x86::register::valid(destination) || !x86::buffer::fits(capacity, cursor, 7)) { return -1; }
+    output[cursor] = 72 + (destination / 8) * 4;
+    output[cursor + 1] = 141;
+    output[cursor + 2] = (destination % 8) * 8 + 5;
+    return x86::buffer::store_word(output, cursor + 3, displacement);
+}
+
+// Always use disp32. rsp/r12 require a SIB byte with no index; mod=10
+// also makes rbp/r13 ordinary bases rather than RIP-relative encodings.
+fn memory_form(output: [i32], capacity: i32, cursor: i32, width: i32,
+    opcode: i32, reg: i32, base: i32, displacement: i32, byte_register: bool) -> i32 {
+    if (!x86::register::valid(reg) || !x86::register::valid(base) ||
+        !x86::register::width_valid(width)) { return -1; }
+    let rex_byte: i32 = x86::register::rex(width, reg, base, byte_register);
+    let size: i32 = 6;
+    if (rex_byte != 0) { size += 1; }
+    if (opcode > 255) { size += 1; }
+    if (base % 8 == 4) { size += 1; }
+    if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
+    let next: i32 = cursor;
+    if (rex_byte != 0) { output[next] = rex_byte; next += 1; }
+    if (opcode > 255) { output[next] = 15; next += 1; }
+    output[next] = opcode & 255;
+    output[next + 1] = 128 + (reg % 8) * 8 + base % 8;
+    next += 2;
+    if (base % 8 == 4) { output[next] = 36; next += 1; }
+    return x86::buffer::store_word(output, next, displacement);
+}
+
+pub fn load(output: [i32], capacity: i32, cursor: i32, width: i32,
+    destination: i32, base: i32, displacement: i32) -> i32 {
+    return memory_form(output, capacity, cursor, width, 139, destination, base, displacement, false);
+}
+
+pub fn store(output: [i32], capacity: i32, cursor: i32, width: i32,
+    source: i32, base: i32, displacement: i32) -> i32 {
+    return memory_form(output, capacity, cursor, width, 137, source, base, displacement, false);
+}
+
+pub fn address(output: [i32], capacity: i32, cursor: i32,
+    destination: i32, base: i32, displacement: i32) -> i32 {
+    return memory_form(output, capacity, cursor, 64, 141, destination, base, displacement, false);
+}
+
+// LEA with a base, scaled index, and signed disp32. RSP cannot be an index;
+// R12 can, because REX.X distinguishes it from the no-index SIB encoding.
+pub fn indexed_address(output: [i32], capacity: i32, cursor: i32,
+    destination: i32, base: i32, index: i32, scale_log2: i32, displacement: i32) -> i32 {
+    if (!x86::register::valid(destination) || !x86::register::valid(base) ||
+        !x86::register::valid(index) || index == x86::register::RSP ||
+        scale_log2 < 0 || scale_log2 > 3) { return -1; }
+    if (!x86::buffer::fits(capacity, cursor, 8)) { return -1; }
+    let rex_byte: i32 = x86::register::rex(64, destination, base, false);
+    if (index >= 8) { rex_byte += 2; }
+    output[cursor] = rex_byte;
+    output[cursor + 1] = 141;
+    output[cursor + 2] = 132 + (destination % 8) * 8;
+    output[cursor + 3] = scale_log2 * 64 + (index % 8) * 8 + base % 8;
+    return x86::buffer::store_word(output, cursor + 4, displacement);
+}
+
+pub fn load_byte(output: [i32], capacity: i32, cursor: i32,
+    destination: i32, base: i32, displacement: i32) -> i32 {
+    return memory_form(output, capacity, cursor, 32, 4022, destination, base, displacement, false);
+}
+
+pub fn store_byte(output: [i32], capacity: i32, cursor: i32,
+    source: i32, base: i32, displacement: i32) -> i32 {
+    return memory_form(output, capacity, cursor, 32, 136, source, base, displacement, source >= 4);
+}
+
+// Count is in CL. Core lowering must separately implement language rules
+// for shift counts; x86 masks the hardware count to five or six bits.
+pub fn shift(output: [i32], capacity: i32, cursor: i32,
+    width: i32, operation: i32, destination: i32) -> i32 {
+    if (operation != SHIFT_LEFT && operation != SHIFT_RIGHT && operation != SHIFT_SIGNED_RIGHT) { return -1; }
+    return register_form(output, capacity, cursor, width, 211, operation, destination, false);
+}
+
+// Dividend is edx:eax or rdx:rax. Division-by-zero and quotient overflow
+// trap in hardware; callers must establish the Core operation's preconditions.
+pub fn divide(output: [i32], capacity: i32, cursor: i32,
+    width: i32, divisor: i32, signed: bool) -> i32 {
+    let extension: i32 = 6;
+    if (signed) { extension = 7; }
+    return register_form(output, capacity, cursor, width, 247, extension, divisor, false);
+}
+
+pub fn negate(output: [i32], capacity: i32, cursor: i32, width: i32, register: i32) -> i32 {
+    return register_form(output, capacity, cursor, width, 247, 3, register, false);
+}

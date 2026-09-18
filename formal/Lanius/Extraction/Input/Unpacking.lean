@@ -1,5 +1,6 @@
 import Lanius.Extraction.OutputPacking.Prefix
 import Lanius.ExecutionRules
+import Lanius.Properties
 
 namespace Lanius.Extraction.Input
 
@@ -193,11 +194,12 @@ theorem decode_i32_array_of_encoding (values : List Int)
 signed words. This supplies the typed list and capacity used by the loop. -/
 theorem decode_i32_array_values
     (decoded : decodeI32Array count bytes = .ok elements) :
-    ∃ values : List Int, elements = signedI32Values values ∧ values.length = count := by
+    ∃ values : List Int, elements = signedI32Values values ∧ values.length = count ∧
+      ∀ value ∈ values, -2147483648 ≤ value ∧ value ≤ 2147483647 := by
   induction count generalizing bytes elements with
   | zero =>
       cases bytes with
-      | nil => simp [decodeI32Array] at decoded; subst elements; exact ⟨[], rfl, rfl⟩
+      | nil => simp [decodeI32Array] at decoded; subst elements; exact ⟨[], rfl, rfl, by simp⟩
       | cons byte rest => simp [decodeI32Array] at decoded
   | succ count induction =>
       match bytes with
@@ -212,9 +214,17 @@ theorem decode_i32_array_values
           | ok tail =>
               have result : Value.signed .i32 (decodeI32 [a, b, c, d]) :: tail = elements := by
                 simpa [decodeI32Array, remaining, enough] using decoded
-              obtain ⟨values, valuesEq, lengthEq⟩ := induction remaining
+              obtain ⟨values, valuesEq, lengthEq, range⟩ := induction remaining
               subst elements
               exact ⟨decodeI32 [a, b, c, d] :: values,
-                by simp [signedI32Values, valuesEq], by simp [lengthEq]⟩
+                by simp [signedI32Values, valuesEq], by simp [lengthEq], by
+                  intro value member
+                  rcases List.mem_cons.mp member with same | present
+                  · subst value
+                    have limits : Lanius.Typing.signedMin .x86_64 .i32 = -2147483648 ∧
+                        Lanius.Typing.signedMax .x86_64 .i32 = 2147483647 := by decide +kernel
+                    simpa only [limits.1, limits.2] using
+                      Lanius.Properties.decodeI32_in_range .x86_64 [a, b, c, d]
+                  · exact range value present⟩
 
 end Lanius.Extraction.Input

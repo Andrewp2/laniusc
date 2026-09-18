@@ -1,5 +1,6 @@
 import Lanius.Extraction.ParsePostorder
 import Lanius.Extraction.KernelReduction
+import Lean.Util.CollectAxioms
 
 namespace Lanius.Extraction.ParsePostorderTests
 
@@ -19,8 +20,10 @@ private def referenceNode (grammar : Grammar) (view : ParseArtifactView artifact
 theorem node_eq_reference (grammar : Grammar) (view : ParseArtifactView artifact)
     (id : Nat) (value : ParseNode) (entries : List ParsePostorder.Entry) :
     ParsePostorder.node grammar view id value entries = referenceNode grammar view id value entries := by
-  cases value
-  rfl
+  rcases value with ⟨production, nonterminal, start, finish, children⟩
+  cases found : grammar.production? production <;> apply Bool.eq_iff_iff.mpr <;>
+    simp [ParsePostorder.node, ParsePostorder.nodeWithLookup, referenceNode,
+      found, beq_iff_eq, Nat.ble_eq]
 
 private def referenceCheck (grammar : Grammar) (view : ParseArtifactView artifact) :
     Nat → List ParseNode → List ParsePostorder.Entry → Bool
@@ -59,7 +62,9 @@ private def casesPass : Bool :=
       !ParsePostorder.node grammar view 0 value []
 example : casesPass = true := by kernel_rfl
 #guard casesPass
-#print axioms node_eq_reference
-#print axioms check_eq_reference
-#print axioms ParsePostorder.check_all_sound
+run_elab do
+  for name in #[``node_eq_reference, ``check_eq_reference, ``ParsePostorder.check_all_sound] do
+    for assumption in ← Lean.collectAxioms name do
+      unless #[``propext, ``Classical.choice, ``Quot.sound].contains assumption do
+        throwError "postorder check {name} uses unexpected assumption {assumption}"
 end Lanius.Extraction.ParsePostorderTests

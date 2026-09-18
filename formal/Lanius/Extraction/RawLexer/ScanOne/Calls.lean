@@ -5,6 +5,7 @@ import Lanius.Extraction.Symbol.CompilerAgreement
 import Lanius.Extraction.Number.Calls
 import Lanius.FunctionalViewCoreFreshSimulation
 import Lanius.FunctionalViewCoreCallFrame
+import Lanius.FunctionalViewCoreCheckedSimulation
 
 namespace Lanius.Extraction.RawLexer.ScanOne.Calls
 
@@ -27,7 +28,7 @@ private theorem scanOneFunction_parameters :
       [(0, .slice Compiler.Lexer.Program.i32Type),
         (1, Compiler.Lexer.Program.i32Type),
         (2, Compiler.Lexer.Program.i32Type)] := by
-  native_decide
+  decide
 
 private theorem parameterBindings_match
     (source : List Compiler.Lexer.Byte) (start : Nat) :
@@ -137,65 +138,65 @@ theorem helperContract
   constructor
   · intro offset
     rw [helperCallModel_tokenScan (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     exact TokenScan.Semantics.constructorCallModel_failed world offset
   · intro kind finish
     rw [helperCallModel_tokenScan (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     exact TokenScan.Semantics.constructorCallModel_successful world
       kind.gpuCode finish
   · intro byte
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     exact Lexer.Calls.callModel_classifyStart source world byte
   · intro byte
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     exact Lexer.Calls.callModel_decimalDigit source world byte
   · intro start startInBounds startBound
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     simpa [Model.argumentValues, Lexer.Calls.scannerArguments,
       Model.sourceSlice, Lexer.Calls.sourceSlice] using
       Lexer.Calls.callModel_identifier_in_world source world start
         sourceI32Bound startInBounds startBound sourceFound
   · intro start startInBounds startBound
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     simpa [Model.argumentValues, Lexer.Calls.scannerArguments,
       Model.sourceSlice, Lexer.Calls.sourceSlice] using
       Lexer.Calls.callModel_whitespace_in_world source world start
         sourceI32Bound startInBounds startBound sourceFound
   · intro start startInBounds startBound
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     simpa [Model.argumentValues, Lexer.Calls.scannerArguments,
       Model.sourceSlice, Lexer.Calls.sourceSlice,
       lexerEncodedScanEnd_eq,
-      (by native_decide : Compiler.Lexer.Program.doubleQuoteByte =
+      (by decide : Compiler.Lexer.Program.doubleQuoteByte =
         Compiler.Lexer.doubleQuote)] using
       Lexer.Calls.callModel_string_in_world source world start
         sourceI32Bound startInBounds startBound sourceFound
   · intro start startInBounds startBound
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     simpa [Model.argumentValues, Lexer.Calls.scannerArguments,
       Model.sourceSlice, Lexer.Calls.sourceSlice,
       lexerEncodedScanEnd_eq,
-      (by native_decide : Compiler.Lexer.Program.singleQuoteByte =
+      (by decide : Compiler.Lexer.Program.singleQuoteByte =
         Compiler.Lexer.singleQuote)] using
       Lexer.Calls.callModel_character_in_world source world start
         sourceI32Bound startInBounds startBound sourceFound
   · intro start openingInBounds startBound
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     simpa [Model.argumentValues, Lexer.Calls.scannerArguments,
       Model.sourceSlice, Lexer.Calls.sourceSlice] using
       Lexer.Calls.callModel_lineComment_in_world source world start
         sourceI32Bound openingInBounds startBound sourceFound
   · intro start openingInBounds startBound
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     simpa [Model.argumentValues, Lexer.Calls.scannerArguments,
       Model.sourceSlice, Lexer.Calls.sourceSlice,
       lexerEncodedScanEnd_eq] using
@@ -203,24 +204,24 @@ theorem helperContract
         sourceI32Bound openingInBounds startBound sourceFound
   · intro result
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     cases result <;> exact Lexer.Calls.callModel_scanSucceeded source world _ _ _
   · intro finish
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     exact Lexer.Calls.callModel_scanEndOffset source world true finish 0
   · intro error
     rw [helperCallModel_lexer (source := source)
-      (by native_decide) (by native_decide) (by native_decide)]
+      (by decide) (by decide) (by decide)]
     exact Lexer.Calls.callModel_scanErrorOffset source world false 0 error
   · intro start startInBounds startBound
-    rw [helperCallModel_number (source := source) (by native_decide)]
+    rw [helperCallModel_number (source := source) (by decide)]
     simpa [Model.argumentValues, Number.Model.argumentValues,
       Model.sourceSlice, Number.Model.sourceSlice, numberEncoded_eq] using
       Number.Calls.numberCalls_scanNumber source world start
         sourceFound sourceI32Bound startInBounds
   · intro start openingInBounds startBound
-    rw [helperCallModel_number (source := source) (by native_decide)]
+    rw [helperCallModel_number (source := source) (by decide)]
     have startInBounds : start < source.length := by omega
     simpa [Model.argumentValues, Number.Model.argumentValues,
       Model.sourceSlice, Number.Model.sourceSlice, numberEncoded_eq] using
@@ -228,7 +229,7 @@ theorem helperContract
         sourceFound sourceI32Bound startInBounds
   · intro start rule startInBounds startBound selected
     rw [helperCallModel_symbol (source := source)
-      (by native_decide) (by native_decide)]
+      (by decide) (by decide)]
     have evaluated := Symbol.MainCalls.callModel_matchSymbolHead
       source world start sourceBound startInBounds sourceFound
     rw [Symbol.CompilerAgreement.encoded_eq_selected selected] at evaluated
@@ -236,11 +237,11 @@ theorem helperContract
       Model.sourceSlice, Symbol.Model.sourceSlice] using evaluated
   · intro kind length
     rw [helperCallModel_symbol (source := source)
-      (by native_decide) (by native_decide)]
+      (by decide) (by decide)]
     exact Symbol.MainCalls.callModel_tokenMatchKind source world kind length
   · intro kind length
     rw [helperCallModel_symbol (source := source)
-      (by native_decide) (by native_decide)]
+      (by decide) (by decide)]
     exact Symbol.MainCalls.callModel_tokenMatchLength source world kind length
 
 /-- The exact checked `scan_one` body preserves every caller-visible cell
@@ -273,64 +274,24 @@ theorem mainFramePreservingCallSoundness
     omega
   let calleeEnvironment := Model.environment source start
   let bindings := parameterBindings calleeEnvironment
-  let callee := enterCall afterArguments bindings
-  have calleeRepresented : Representation identityLayout
-      (callLocalCells afterArguments) beforeWorld calleeEnvironment callee := by
-    simpa [callee, bindings] using
-      represented.enterCallParameters afterArgumentsWellFormed
-        (environment := calleeEnvironment)
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, bindings] using
-      enterCall_preserves_wellFormed afterArgumentsWellFormed
+  have parametersBound : bindParameters Functions.scanOneFunction.parameters values =
+      some bindings := by
+    rw [valuesEq]
+    rw [show [Model.sourceSlice source,
+        .signed .i32 (Int.ofNat source.length), .signed .i32 startInt] =
+        Model.argumentValues source start by
+      simp [Model.argumentValues, startEq]]
+    simpa [bindings, calleeEnvironment] using
+      parameterBindings_match source start
   have sourceI32Bound : source.length ≤ 2147483647 := by omega
-  have functionalRun := Evaluation.scanOne_run
-    (helperContract sourceBound beforeWorld sourceFound) sourceI32Bound sourceFound
-    startBound
-  have functionalEvaluation := Stateful.Acyclic.run?_sound functionalRun
-  let operations := operationSoundness verifiedFrontendCore helpers
-    helperSoundness
-  have simulation := commandSoundness operations functionalEvaluation
-    (by native_decide)
-    calleeRepresented (LayoutBelow.identity (arity := 3)) calleeWellFormed
-    (frontier := afterArguments.nextCell)
-    (by
-      intro index
-      simp [callLocalCells])
-    (by
-      simpa [callee] using
-        (enterCall_effect afterArguments bindings).nextCell)
-  obtain ⟨completed, bodyExecution, completedWellFormed,
-      completedRepresented, bodyEffect⟩ := simulation
-  rw [Commands.scanOne_toCore_exactly] at bodyExecution
-  change Executes verifiedFrontendCore callee Functions.scanOneBody
-    (.returned (some (Model.encoded
-      (Compiler.Lexer.scanOne source start)))) completed at bodyExecution
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call Functions.scanOneFunction.id
-        (toCoreExprs layout sourceArguments))
-      (Model.encoded (Compiler.Lexer.scanOne source start))
-      (restoreLocals afterArguments completed) := by
-    apply evaluatesCallReturned
-      (bindings := bindings) (body := Functions.scanOneBody)
-      argumentsExecution (by rfl)
-    · rw [valuesEq]
-      rw [show [Model.sourceSlice source,
-          .signed .i32 (Int.ofNat source.length), .signed .i32 startInt] =
-          Model.argumentValues source start by
-        simp [Model.argumentValues, startEq]]
-      simpa [bindings, calleeEnvironment] using
-        parameterBindings_match source start
-    · rfl
-    · simpa [callee, bindings] using bodyExecution
-  obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-    represented.restoreFreshCall afterArgumentsWellFormed
-      completedWellFormed (bindings := bindings) bodyEffect (by
-        intro cell written
-        exact written)
-  exact ⟨restoreLocals afterArguments completed, callExecution,
-    afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same
-      (callEffect.weaken CellSet.empty_subset)⟩
+  have functionalEvaluation := Stateful.Acyclic.run?_sound
+    (Evaluation.scanOne_run
+      (helperContract sourceBound beforeWorld sourceFound) sourceI32Bound
+      sourceFound startBound)
+  exact FunctionalView.Core.CheckedSimulation.callPreservesFrame
+    helperSoundness argumentsExecution argumentsEffect (by rfl) parametersBound
+    (by rfl) functionalEvaluation (by decide)
+    Commands.scanOne_toCore_exactly afterArgumentsWellFormed represented
 
 /-- Ordinary checked-call soundness follows from caller-frame preservation. -/
 theorem mainCallSoundness
@@ -342,23 +303,12 @@ theorem mainCallSoundness
       FramePreservingCallSoundness verifiedFrontendCore helpers) :
     EffectfulStateful.CallSoundness verifiedFrontendCore
       (Model.callModel source) := by
-  constructor
-  · intro arity layout localCell beforeWorld afterWorld environment before
-      afterArguments function arguments values result argumentWrites
-      afterArgumentsWellFormed represented argumentsExecution argumentsEffect
-      evaluated
-    obtain ⟨after, callExecution, afterWellFormed, afterRepresented,
-        callEffect⟩ :=
-      (mainFramePreservingCallSoundness source helpers helperContract
-        helperSoundness).call afterArgumentsWellFormed represented
-          argumentsExecution argumentsEffect evaluated
-    exact ⟨after, argumentWrites, callExecution, afterWellFormed,
-      afterRepresented, callEffect⟩
-  · intro beforeWorld afterWorld function values result evaluated cell
-    obtain ⟨start, rfl, valuesEq, sourceBound, startNonnegative,
-        startBound, sourceFound, rfl, rfl⟩ :=
-      Model.callModel_success evaluated
-    rfl
+  apply (mainFramePreservingCallSoundness source helpers helperContract
+    helperSoundness).toCallSoundness
+  intro beforeWorld afterWorld function values result evaluated
+  obtain ⟨start, rfl, valuesEq, sourceBound, startNonnegative,
+      startBound, sourceFound, rfl, rfl⟩ := Model.callModel_success evaluated
+  rfl
 
 theorem framePreservingCallSoundnessOfNumber
     (source : List Compiler.Lexer.Byte)

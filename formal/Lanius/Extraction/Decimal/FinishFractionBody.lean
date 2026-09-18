@@ -2,8 +2,6 @@ import Lanius.Extraction.Decimal.FinishEvaluationFlags
 
 namespace Lanius.Extraction.Decimal.FinishEvaluation
 
-set_option maxRecDepth 200000
-
 open Lanius
 open Lanius.Core
 open Lanius.Compiler.Lexer
@@ -122,7 +120,6 @@ theorem finishFraction_command_run
         rw [finishDecimal_digitFailure source integerEnd first.val error dotAt
           notDoubleDot firstValueAt acceptedLogical (by
             simpa [fractionStart] using resultEq)]
-        rfl
     | success finish =>
         have resultBound := digitRunResult_bound (source := source)
           (start := fractionStart) (base := 10) sourceBound fractionBound
@@ -200,7 +197,6 @@ theorem finishFraction_command_run
               finish source[finish].val dotAt notDoubleDot firstValueAt
               acceptedLogical (by simpa [fractionStart] using resultEq)
               exponentAt exponentProp]
-            rfl
           · have exponentFalse : hasExponent = false := Bool.eq_false_iff.mpr exponent
             rw [show
                 (decide (source[finish].val = 101) ||
@@ -226,7 +222,6 @@ theorem finishFraction_command_run
               finish source[finish].val dotAt notDoubleDot firstValueAt
               acceptedLogical (by simpa [fractionStart] using resultEq)
               exponentAt notExponent]
-            rfl
         · rw [decide_eq_false endInBounds]
           simp only [Stateful.Acyclic.run?, bind, Except.bind]
           have returned := floatScan_evaluates (source := source)
@@ -246,7 +241,6 @@ theorem finishFraction_command_run
             endInBounds, nextAt, firstAt, isDot, notTwoDots,
             logicalNoExponent, accepted, acceptedLogical, resultEq,
             fractionStart, firstEq]
-          rfl
   · have rejected : isDigitForBase first 10 = false := by
       exact Bool.eq_false_iff.mpr accepted
     have rejectedLogical : ¬(48 ≤ first.val ∧ first.val ≤ 57) := by
@@ -254,15 +248,8 @@ theorem finishFraction_command_run
       exact accepted ((isDigitForBase_decimal_iff first).mpr decimal)
     rw [rejected]
     simp only [Stateful.Acyclic.run?, bind, Except.bind]
-    have firstAgain := index_evaluates (source := source) (world := world)
-      fractionEnvironment (Commands.slot 0) (Commands.slot 4)
-      fractionStart (by simpa [fractionStart] using fractionInBounds)
-      sourceFound (by rfl) (by rfl)
-    rw [show (source.get ⟨fractionStart, by
-      simpa [fractionStart] using fractionInBounds⟩).val = first.val by
-        exact congrArg Fin.val firstEq] at firstAgain
-    dsimp [fractionStart, fractionEnvironment] at firstAgain
-    rw [firstAgain]
+    dsimp [fractionStart, fractionEnvironment] at firstResult
+    rw [firstResult]
     simp only [bind, Except.bind]
     have exponentTest := exponentFlag_evaluates source world
       (fractionEnvironment.push (.signed .i32 first.val))
@@ -296,8 +283,7 @@ theorem finishFraction_command_run
       have exponentProp : isExponentByte first.val := by
         apply (exponentFlag_eq_true_iff first.val).mp
         simpa only [exponentFlag_eq_decideOr] using exponent
-      rw [if_pos (show first.val = 101 ∨ first.val = 69 from exponentProp)]
-      rfl
+      exact exponentProp.resolve_left
 
     · have exponentFalse : hasExponent = false := Bool.eq_false_iff.mpr exponent
       rw [show (decide (first.val = 101) || decide (first.val = 69)) = false
@@ -306,7 +292,6 @@ theorem finishFraction_command_run
         exponentFlag_eq_decideOr, exponentFalse, Bool.false_eq_true, if_false]
       rw [if_neg (by simpa [hasExponent] using exponent)]
       simp only [Env.pop_push]
-      rfl
 
 
 end Lanius.Extraction.Decimal.FinishEvaluation

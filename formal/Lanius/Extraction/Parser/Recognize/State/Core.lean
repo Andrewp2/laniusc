@@ -1,6 +1,10 @@
 import Lanius.Extraction.Parser.Recognize.Prediction
+import Lanius.Extraction.VerifiedFrontend.Parser.Workspace
 import Lanius.Extraction.Parser.Recognize.Nullable
 import Lanius.Extraction.Parser.Recognize.Parent
+import Lanius.Compiler.Parser.Scanning
+import Lanius.Compiler.Parser.Completion.Step
+import Lanius.Semantics.Sequence
 
 namespace Lanius.Extraction.ParserRecognize
 
@@ -242,15 +246,20 @@ theorem extractedParserRecognize_rejected_return_shape :
         .skip := by
   rfl
 
-def verifiedParserPositionLoopAccessFrame :
-    LocalAccessFrame :=
-  verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
-    parserRecognizePositionLoop (by native_decide)
+/- Retain the exact source-derived frames once. The subtype equality is checked
+by the kernel; numeric projections below consume the cached constructor data. -/
+private def positionLoopFrameData :=
+  reduce_data% (
+    verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
+      parserRecognizePositionLoop (by decide +kernel),
+    verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
+      parserRecognizePositionLoop (by decide +kernel))
 
-def verifiedParserPositionLoopLiveFrame :
-    LocalAccessFrame :=
-  verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
-    parserRecognizePositionLoop (by native_decide)
+def verifiedParserPositionLoopAccessFrame : LocalAccessFrame :=
+  positionLoopFrameData.val.1
+
+def verifiedParserPositionLoopLiveFrame : LocalAccessFrame :=
+  positionLoopFrameData.val.2
 
 theorem verifiedParser_position_loop_access_frame :
     verifiedParserPositionLoopAccessFrame.map (fun access =>
@@ -269,7 +278,7 @@ theorem verifiedParser_position_loop_access_frame :
       ("lhs_offsets_offset", 13, .read),
       ("lhs_counts_offset", 14, .read),
       ("lhs_productions_offset", 15, .read)] := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParser_position_loop_live_frame :
     verifiedParserPositionLoopLiveFrame.map (fun access =>
@@ -289,7 +298,7 @@ theorem verifiedParser_position_loop_live_frame :
       ("lhs_counts_offset", 14, .read),
       ("lhs_productions_offset", 15, .read),
       ("start_nonterminal", 12, .read)] := by
-  native_decide
+  decide +kernel
 
 /-- Locals whose mappings survive every position iteration.  The three
     loop-owned scalars have dedicated ownership fields. -/
@@ -304,7 +313,7 @@ def verifiedParserPositionLoopPreservedFrameIds : List VarId :=
 theorem verifiedParser_position_loop_preserved_frame_ids :
     verifiedParserPositionLoopPreservedFrameIds =
       [6, 4, 8, 0, 11, 2, 3, 9, 13, 14, 15, 12] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem mem_verifiedParserPositionLoopPreservedFrameIds_iff
     (id : VarId) :
@@ -322,7 +331,7 @@ theorem verifiedParserPositionLoopPreservedBindings_core_ids :
     verifiedParserPositionLoopPreservedBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserPositionLoopPreservedFrameIds := by
-  native_decide
+  decide +kernel
 
 def PositionLoopPreservedLocal (id : VarId) : Prop :=
   id ∈ verifiedParserRecognizerParameterIds ∨
@@ -361,15 +370,18 @@ def PositionLoopFrameSeparated (runtime : State)
     (positionLoopMutableCells workspaceCell stateCountCell positionCell
       furthestCell)
 
-def verifiedParserStateLoopAccessFrame :
-    LocalAccessFrame :=
-  verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
-    parserRecognizeStateLoop (by native_decide)
+private def stateLoopFrameData :=
+  reduce_data% (
+    verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
+      parserRecognizeStateLoop (by decide +kernel),
+    verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
+      parserRecognizeStateLoop (by decide +kernel))
 
-def verifiedParserStateLoopLiveFrame :
-    LocalAccessFrame :=
-  verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
-    parserRecognizeStateLoop (by native_decide)
+def verifiedParserStateLoopAccessFrame : LocalAccessFrame :=
+  stateLoopFrameData.val.1
+
+def verifiedParserStateLoopLiveFrame : LocalAccessFrame :=
+  stateLoopFrameData.val.2
 
 theorem verifiedParser_state_loop_access_frame :
     verifiedParserStateLoopAccessFrame.map (fun access =>
@@ -387,7 +399,7 @@ theorem verifiedParser_state_loop_access_frame :
       ("lhs_offsets_offset", 13, .read),
       ("lhs_counts_offset", 14, .read),
       ("lhs_productions_offset", 15, .read)] := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParser_state_loop_live_frame :
     verifiedParserStateLoopLiveFrame.map (fun access =>
@@ -405,7 +417,7 @@ theorem verifiedParser_state_loop_live_frame :
       ("lhs_offsets_offset", 13, .read),
       ("lhs_counts_offset", 14, .read),
       ("lhs_productions_offset", 15, .read)] := by
-  native_decide
+  decide +kernel
 
 /-- State-loop accesses shared with its surrounding position frame.  The
     mutable `state_id` cursor is omitted because `chartCursor` owns it. -/
@@ -419,7 +431,7 @@ def verifiedParserStateLoopSharedFrameIds : List VarId :=
 theorem verifiedParser_state_loop_shared_frame_ids :
     verifiedParserStateLoopSharedFrameIds =
       [4, 8, 0, 11, 2, 3, 23, 9, 18, 13, 14, 15] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem mem_verifiedParserStateLoopSharedFrameIds_iff
     (id : Nat) :
@@ -440,7 +452,7 @@ def verifiedParserStateLoopPreservedFrameIds : List VarId :=
 theorem verifiedParser_state_loop_preserved_frame_ids :
     verifiedParserStateLoopPreservedFrameIds =
       [4, 8, 0, 11, 2, 3, 23, 9, 13, 14, 15] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem mem_verifiedParserStateLoopPreservedFrameIds_iff
     (id : Nat) :
@@ -470,13 +482,13 @@ theorem verifiedParserStateLoopPersistentBindings_core_ids :
     verifiedParserStateLoopPersistentBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserStateLoopSharedFrameIds := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParserStateLoopPreservedBindings_core_ids :
     verifiedParserStateLoopPreservedBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserStateLoopPreservedFrameIds := by
-  native_decide
+  decide +kernel
 
 theorem StateLoopPersistentLocal_source_frame (id : VarId) :
     StateLoopPersistentLocal id ↔
@@ -649,23 +661,6 @@ private def stateLoopContext : Context :=
   let c11 := c10.bind 23 parserI32Type
   c11.bind 24 parserI32Type
 
-private def stateLoopReification? :=
-  reifyCommand? verifiedParserCore (.structure 0) stateLoopContext true
-    stateLoopLayout 25 parserRecognizeStateLoop
-
-private theorem stateLoopReification_exists :
-    stateLoopReification?.isSome := by
-  native_decide
-
-/-- Complete state-chain command recovered from the checked recognizer. -/
-def parserRecognizeStateLoopView :=
-  stateLoopReification?.get stateLoopReification_exists
-
-theorem parserRecognizeStateLoopView_toCore_exactly :
-    Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
-      stateLoopLayout 25 parserRecognizeStateLoopView.command =
-      parserRecognizeStateLoop :=
-  parserRecognizeStateLoopView.toCoreExactly
 
 private def stateBodyReification? :=
   reifyCommand? verifiedParserCore (.structure 0) stateLoopContext true
@@ -673,7 +668,7 @@ private def stateBodyReification? :=
 
 private theorem stateBodyReification_exists :
     stateBodyReification?.isSome := by
-  native_decide
+  decide +kernel
 
 private def parserRecognizeStateBodyView :=
   stateBodyReification?.get stateBodyReification_exists
@@ -712,23 +707,6 @@ private def positionLoopContext : Context :=
   let c13 := c12.bind 22 parserI32Type
   c13.bind 23 parserI32Type
 
-private def positionLoopReification? :=
-  reifyCommand? verifiedParserCore (.structure 0) positionLoopContext true
-    positionLoopLayout 24 parserRecognizePositionLoop
-
-private theorem positionLoopReification_exists :
-    positionLoopReification?.isSome := by
-  native_decide
-
-/-- Complete chart-position command recovered from the checked recognizer. -/
-def parserRecognizePositionLoopView :=
-  positionLoopReification?.get positionLoopReification_exists
-
-theorem parserRecognizePositionLoopView_toCore_exactly :
-    Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
-      positionLoopLayout 24 parserRecognizePositionLoopView.command =
-      parserRecognizePositionLoop :=
-  parserRecognizePositionLoopView.toCoreExactly
 
 private def positionBodyReification? :=
   reifyCommand? verifiedParserCore (.structure 0) positionLoopContext true
@@ -736,7 +714,7 @@ private def positionBodyReification? :=
 
 private theorem positionBodyReification_exists :
     positionBodyReification?.isSome := by
-  native_decide
+  decide +kernel
 
 private def parserRecognizePositionBodyView :=
   positionBodyReification?.get positionBodyReification_exists
@@ -777,7 +755,7 @@ private def positionStatementReification? :=
 
 private theorem positionStatementReification_exists :
     positionStatementReification?.isSome := by
-  native_decide
+  decide +kernel
 
 /-- Complete position/root continuation recovered from the checked recognizer
     body before either scoped counter has been introduced. -/
@@ -796,12 +774,20 @@ def positionLoopCondition :
     .reference (.slot ⟨14, by omega⟩),
     .reference (.slot ⟨4, by omega⟩)]
 
-/-- The body remains the command recovered from the checked Core artifact. -/
+private def positionBodyCommandData :=
+  reduce_data% parserRecognizePositionBodyView.command
+
+/-- The body is materialized from the checked Core artifact, retaining the
+    exact reification equality instead of reconstructing it for every check. -/
 def positionBodyCommand :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 15 :=
-  parserRecognizePositionBodyView.command
+  positionBodyCommandData.val
+
+private theorem positionBodyCommand_derived :
+    positionBodyCommand = parserRecognizePositionBodyView.command :=
+  positionBodyCommandData.property
 
 def positionLoopCommand :
     Lanius.FunctionalView.Stateful.Command
@@ -814,7 +800,7 @@ theorem positionLoopCommand_toCore :
       positionLoopLayout 24 positionLoopCommand =
       parserRecognizePositionLoop := by
   rw [positionLoopCommand, Lanius.FunctionalView.Core.Stateful.toCoreStmt,
-    positionLoopCondition, positionBodyCommand,
+    positionLoopCondition, positionBodyCommand_derived,
     parserRecognizePositionBodyView_toCore_exactly]
   exact extractedParserRecognize_position_loop_shape.symm
 
@@ -831,13 +817,20 @@ def stateLoopCondition :
   .apply (.binary .greaterEqual parserI32Type parserI32Type (.scalar .bool))
     [stateSlot ⟨12, by omega⟩, stateLiteral 0]
 
-/-- The body is used directly from the checked reification. It is deliberately
-    not copied into a second handwritten FunctionalView tree. -/
+private def stateBodyCommandData :=
+  reduce_data% parserRecognizeStateBodyView.command
+
+/-- The mechanically reified body is cached with its exact source equality;
+    no second handwritten FunctionalView tree supplies the command. -/
 def stateBodyCommand :
     Lanius.FunctionalView.Stateful.Command
       Lanius.FunctionalView.Core.signature
       Lanius.FunctionalView.Core.Stateful.actions 13 :=
-  parserRecognizeStateBodyView.command
+  stateBodyCommandData.val
+
+private theorem stateBodyCommand_derived :
+    stateBodyCommand = parserRecognizeStateBodyView.command :=
+  stateBodyCommandData.property
 
 /-- Layout after the state body has decoded production, dot, origin, and RHS
     length. -/
@@ -916,67 +909,6 @@ def stateIncompleteCommand := stateIncompleteBranch stateAfterBindingsCommand
 def stateCompleteCommand := stateCompleteBranch stateAfterBindingsCommand
 def stateAdvanceCommand := stateAdvanceBranch stateAfterBindingsCommand
 
-private def stateLessTermMatches {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (left right : Fin arity) : Bool :=
-  match term with
-  | .apply (.binary .less leftType rightType resultType)
-      [.reference (.slot left'), .reference (.slot right')] =>
-      leftType == parserI32Type && rightType == parserI32Type &&
-      resultType == .scalar .bool && left' == left && right' == right
-  | _ => false
-
-private theorem stateLessTermMatches_sound {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (left right : Fin arity)
-    (matched : stateLessTermMatches term left right = true) :
-    term = stateLessTerm left right := by
-  simp only [stateLessTermMatches] at matched
-  split at matched <;> simp_all [stateLessTerm]
-
-private def stateAfterBindingsCommandMatches :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 17 → Bool
-  | .sequence (.ifThenElse condition _ _) _ =>
-      stateLessTermMatches condition ⟨14, by omega⟩ ⟨16, by omega⟩
-  | _ => false
-
-private theorem stateAfterBindingsCommand_matches :
-    stateAfterBindingsCommandMatches stateAfterBindingsCommand = true := by
-  native_decide
-
-/-- Exact branch decomposition recovered from the executable constructor
-    check, while retaining each branch by projection from the source command. -/
-private theorem stateAfterBindingsCommandMatches_shape
-    (command : Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 17)
-    (matched : stateAfterBindingsCommandMatches command = true) :
-    command =
-      .sequence
-        (.ifThenElse (stateLessTerm ⟨14, by omega⟩ ⟨16, by omega⟩)
-          (stateIncompleteBranch command) (stateCompleteBranch command))
-        (stateAdvanceBranch command) := by
-  cases command <;> simp [stateAfterBindingsCommandMatches] at matched
-  case sequence first advance =>
-    cases first <;> simp [stateAfterBindingsCommandMatches] at matched
-    case ifThenElse condition incomplete complete =>
-      have conditionEq := stateLessTermMatches_sound condition
-        ⟨14, by omega⟩ ⟨16, by omega⟩ matched
-      simp_all [stateIncompleteBranch, stateCompleteBranch, stateAdvanceBranch]
-
-theorem stateAfterBindingsCommand_shape :
-    stateAfterBindingsCommand =
-      .sequence
-        (.ifThenElse (stateLessTerm ⟨14, by omega⟩ ⟨16, by omega⟩)
-          stateIncompleteCommand stateCompleteCommand)
-        stateAdvanceCommand :=
-  stateAfterBindingsCommandMatches_shape stateAfterBindingsCommand
-    stateAfterBindingsCommand_matches
-
 def stateValueTerm {arity : Nat} (workspace base state : Fin arity)
     (field : ConstantId) :
     Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity :=
@@ -1047,12 +979,10 @@ def stateLhsTerm {arity : Nat} (grammar production : Fin arity) :
       [.slice parserI32Type, parserI32Type] parserI32Type)
     [.reference (.slot grammar), .reference (.slot production)]
 
-/-! The generated FunctionalView syntax does not expose a lawful equality
-    instance because arbitrary runtime `Value`s may occur as literals.  Parser
-    commands use only scalar literals, so this checked relation deliberately
-    recognizes that closed subset.  Its soundness theorem lets executable
-    source-shape checks yield ordinary Lean equalities without trusting an
-    unchecked boolean comparison. -/
+/-! Generic FunctionalView syntax has no signature-independent equality
+    instance. This parser-specific relation recognizes scalar literals and the
+    supported stateful commands. Its soundness theorem turns accepted shape
+    checks into Lean equalities; unsupported constructors return false. -/
 
 private def stateLiteralMatches : Value → Value → Bool
   | .unit, .unit => true
@@ -1101,8 +1031,9 @@ mutual
     | .logicalOr leftFirst leftSecond,
         .logicalOr rightFirst rightSecond =>
         stateTermMatches leftFirst rightFirst &&
-          stateTermMatches leftSecond rightSecond
+        stateTermMatches leftSecond rightSecond
     | _, _ => false
+  termination_by structural left _ => left
 
   private def stateTermsMatch {arity : Nat} :
       List (Lanius.FunctionalView.Term
@@ -1113,6 +1044,7 @@ mutual
     | left :: leftRest, right :: rightRest =>
         stateTermMatches left right && stateTermsMatch leftRest rightRest
     | _, _ => false
+  termination_by structural left _ => left
 end
 
 mutual
@@ -1243,6 +1175,7 @@ private def stateCommandMatches {arity : Nat} :
   | .returnValue (some left), .returnValue (some right) =>
       stateTermMatches left right
   | _, _ => false
+termination_by structural left _ => left
 
 theorem stateCommandMatches_sound {arity : Nat}
     (left right : Lanius.FunctionalView.Stateful.Command
@@ -1334,6 +1267,17 @@ theorem parserFunctionalCommandMatches_sound {arity : Nat}
     (matched : parserFunctionalCommandMatches left right = true) :
     left = right :=
   stateCommandMatches_sound left right matched
+
+/-- Exact branch decomposition of the source-derived command, checked by
+    the shared syntax matcher. The branches remain source projections. -/
+theorem stateAfterBindingsCommand_shape :
+    stateAfterBindingsCommand =
+      .sequence
+        (.ifThenElse (stateLessTerm ⟨14, by omega⟩ ⟨16, by omega⟩)
+          stateIncompleteCommand stateCompleteCommand)
+        stateAdvanceCommand := by
+  apply stateCommandMatches_sound
+  decide +kernel
 
 /-- Branches retained by projection from the incomplete-state command. -/
 private def stateTerminalBranch (command :
@@ -1450,357 +1394,13 @@ private def stateTerminalStateCountTerm :
   .apply (.field (.structure 2) 2 parserI32Type)
     [stateSlot ⟨19, by omega⟩]
 
-private def stateTerminalSeedTermMatches :
-    Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 19 → Bool
-  | .apply (.call function argumentTypes resultType) [
-      .reference (.slot production),
-      .apply (.binary .add addLeft addRight addResult) [
-        .reference (.slot dot),
-        .reference (.literal (.signed .i32 one))],
-      .reference (.slot origin),
-      .reference (.slot current),
-      .apply (.constant childTag childTagType) [],
-      .apply (.binary .divide divideLeft divideRight divideResult) [
-        .reference (.slot position),
-        .reference (.literal (.signed .i32 two))],
-      .reference (.slot symbol)] =>
-      function == extractedParserStateSeedFunction.id &&
-      argumentTypes == List.replicate 7 parserI32Type &&
-      resultType == .structure 1 && production == ⟨13, by omega⟩ &&
-      addLeft == parserI32Type && addRight == parserI32Type &&
-      addResult == parserI32Type && dot == ⟨14, by omega⟩ && one == 1 &&
-      origin == ⟨15, by omega⟩ && current == ⟨12, by omega⟩ &&
-      childTag == 38 && childTagType == parserI32Type &&
-      divideLeft == parserI32Type && divideRight == parserI32Type &&
-      divideResult == parserI32Type && position == ⟨11, by omega⟩ &&
-      two == 2 && symbol == ⟨17, by omega⟩
-  | _ => false
-
-private theorem stateTerminalSeedTermMatches_sound
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 19)
-    (matched : stateTerminalSeedTermMatches term = true) :
-    term = stateTerminalSeedTerm := by
-  simp only [stateTerminalSeedTermMatches] at matched
-  split at matched <;>
-    simp_all [stateTerminalSeedTerm, stateSlot, stateLiteral]
-
-private def stateTerminalAppendTermMatches :
-    Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 19 → Bool
-  | .apply (.call function argumentTypes resultType) [
-      .reference (.slot workspace),
-      .reference (.slot stateBase),
-      .reference (.slot capacity),
-      .reference (.slot nextPosition),
-      seed,
-      .reference (.slot stateCount)] =>
-      function == extractedParserAppendStateFunction.id &&
-      argumentTypes == [.slice parserI32Type, parserI32Type, parserI32Type,
-        parserI32Type, .structure 1, parserI32Type] &&
-      resultType == .structure 2 && workspace == ⟨3, by omega⟩ &&
-      stateBase == ⟨4, by omega⟩ && capacity == ⟨5, by omega⟩ &&
-      nextPosition == ⟨18, by omega⟩ &&
-      stateTerminalSeedTermMatches seed && stateCount == ⟨10, by omega⟩
-  | _ => false
-
-private theorem stateTerminalAppendTermMatches_sound
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 19)
-    (matched : stateTerminalAppendTermMatches term = true) :
-    term = stateTerminalAppendTerm := by
-  simp only [stateTerminalAppendTermMatches] at matched
-  split at matched <;> try contradiction
-  rename_i function argumentTypes resultType workspace stateBase capacity
-    nextPosition seed stateCount
-  simp only [Bool.and_eq_true] at matched
-  have seedEq := stateTerminalSeedTermMatches_sound seed matched.1.2
-  simp_all [stateTerminalAppendTerm, stateTerminalAppendArguments, stateSlot]
-
-private def stateTerminalFullConditionMatches :
-    Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 20 → Bool
-  | .apply (.binary .equal leftType rightType resultType) [
-      .apply (.field structureType field fieldType)
-        [.reference (.slot outcome)],
-      .apply (.constant fullConstant constantType) []] =>
-      leftType == parserI32Type && rightType == parserI32Type &&
-      resultType == .scalar .bool && structureType == .structure 2 &&
-      field == 0 && fieldType == parserI32Type &&
-      outcome == ⟨19, by omega⟩ && fullConstant == 41 &&
-      constantType == parserI32Type
-  | _ => false
-
-private theorem stateTerminalFullConditionMatches_sound
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 20)
-    (matched : stateTerminalFullConditionMatches term = true) :
-    term = stateTerminalFullCondition := by
-  simp only [stateTerminalFullConditionMatches] at matched
-  split at matched <;>
-    simp_all [stateTerminalFullCondition, stateSlot]
-
-private def stateTerminalFullResultMatches :
-    Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 20 → Bool
-  | .apply (.call function argumentTypes resultType) [
-      .reference (.slot outcome), .reference (.slot position)] =>
-      function == extractedParserAppendOrFullFunction.id &&
-      argumentTypes == [.structure 2, parserI32Type] &&
-      resultType == .structure 0 && outcome == ⟨19, by omega⟩ &&
-      position == ⟨11, by omega⟩
-  | _ => false
-
-private theorem stateTerminalFullResultMatches_sound
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 20)
-    (matched : stateTerminalFullResultMatches term = true) :
-    term = stateTerminalFullResult := by
-  simp only [stateTerminalFullResultMatches] at matched
-  split at matched <;> simp_all [stateTerminalFullResult, stateSlot]
-
-private def stateTerminalStateCountTermMatches :
-    Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 20 → Bool
-  | .apply (.field structureType field fieldType)
-      [.reference (.slot outcome)] =>
-      structureType == .structure 2 && field == 2 &&
-      fieldType == parserI32Type && outcome == ⟨19, by omega⟩
-  | _ => false
-
-private theorem stateTerminalStateCountTermMatches_sound
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 20)
-    (matched : stateTerminalStateCountTermMatches term = true) :
-    term = stateTerminalStateCountTerm := by
-  simp only [stateTerminalStateCountTermMatches] at matched
-  split at matched <;>
-    simp_all [stateTerminalStateCountTerm, stateSlot]
-
-/-- Executable recognition of the exact state-value term shape.  This avoids
-    requiring equality on all Core values merely to inspect a mechanically
-    reified command. -/
-private def stateValueTermMatches {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (workspace base state : Fin arity) (field : ConstantId) : Bool :=
-  match term with
-  | .apply (.call function arguments result)
-      [.reference (.slot workspace'), .reference (.slot base'),
-        .reference (.slot state'),
-        .apply (.constant field' fieldType) []] =>
-      function == extractedParserStateValueFunction.id &&
-      arguments ==
-        [.slice parserI32Type, parserI32Type, parserI32Type, parserI32Type] &&
-      result == parserI32Type && workspace' == workspace && base' == base &&
-      state' == state && field' == field && fieldType == parserI32Type
-  | _ => false
-
-private def stateRhsLengthTermMatches {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (grammar production : Fin arity) : Bool :=
-  match term with
-  | .apply (.call function arguments result)
-      [.reference (.slot grammar'), .reference (.slot production')] =>
-      function == extractedParserRhsLengthFunction.id &&
-      arguments == [.slice parserI32Type, parserI32Type] &&
-      result == parserI32Type && grammar' == grammar &&
-      production' == production
-  | _ => false
-
-private def stateRhsSymbolTermMatches {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (grammar production dot : Fin arity) : Bool :=
-  match term with
-  | .apply (.call function arguments result)
-      [.reference (.slot grammar'), .reference (.slot production'),
-        .reference (.slot dot')] =>
-      function == extractedParserRhsSymbolFunction.id &&
-      arguments == [.slice parserI32Type, parserI32Type, parserI32Type] &&
-      result == parserI32Type && grammar' == grammar &&
-      production' == production && dot' == dot
-  | _ => false
-
-private def stateScanTerminalTermMatches {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (grammar tokens tokenCount position symbol : Fin arity) : Bool :=
-  match term with
-  | .apply (.call function arguments result)
-      [.reference (.slot grammar'), .reference (.slot tokens'),
-        .reference (.slot tokenCount'), .reference (.slot position'),
-        .reference (.slot symbol')] =>
-      function == extractedParserScanTerminalFunction.id &&
-      arguments == [.slice parserI32Type, .slice parserI32Type, parserI32Type,
-        parserI32Type, parserI32Type] && result == parserI32Type &&
-      grammar' == grammar && tokens' == tokens && tokenCount' == tokenCount &&
-      position' == position && symbol' == symbol
-  | _ => false
-
-private def stateGreaterEqualZeroTermMatches {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (value : Fin arity) : Bool :=
-  match term with
-  | .apply (.binary .greaterEqual leftType rightType resultType)
-      [.reference (.slot value'),
-        .reference (.literal (.signed .i32 zero))] =>
-      leftType == parserI32Type && rightType == parserI32Type &&
-      resultType == .scalar .bool && value' == value && zero == 0
-  | _ => false
-
-private theorem stateValueTermMatches_sound {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (workspace base state : Fin arity) (field : ConstantId)
-    (matched : stateValueTermMatches term workspace base state field = true) :
-    term = stateValueTerm workspace base state field := by
-  simp only [stateValueTermMatches] at matched
-  split at matched <;> simp_all [stateValueTerm]
-
-private theorem stateRhsLengthTermMatches_sound {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (grammar production : Fin arity)
-    (matched : stateRhsLengthTermMatches term grammar production = true) :
-    term = stateRhsLengthTerm grammar production := by
-  simp only [stateRhsLengthTermMatches] at matched
-  split at matched <;> simp_all [stateRhsLengthTerm]
-
-private theorem stateRhsSymbolTermMatches_sound {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (grammar production dot : Fin arity)
-    (matched : stateRhsSymbolTermMatches term grammar production dot = true) :
-    term = stateRhsSymbolTerm grammar production dot := by
-  simp only [stateRhsSymbolTermMatches] at matched
-  split at matched <;> simp_all [stateRhsSymbolTerm]
-
-private theorem stateScanTerminalTermMatches_sound {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (grammar tokens tokenCount position symbol : Fin arity)
-    (matched : stateScanTerminalTermMatches term grammar tokens tokenCount
-      position symbol = true) :
-    term = stateScanTerminalTerm grammar tokens tokenCount position symbol := by
-  simp only [stateScanTerminalTermMatches] at matched
-  split at matched <;> simp_all [stateScanTerminalTerm]
-
-private theorem stateGreaterEqualZeroTermMatches_sound {arity : Nat}
-    (term : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity)
-    (value : Fin arity)
-    (matched : stateGreaterEqualZeroTermMatches term value = true) :
-    term = stateGreaterEqualZeroTerm value := by
-  simp only [stateGreaterEqualZeroTermMatches] at matched
-  split at matched <;> simp_all [stateGreaterEqualZeroTerm]
-
-private def stateCommandIsSkip {arity : Nat} :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions arity → Bool
-  | .skip => true
-  | _ => false
-
-private theorem stateCommandIsSkip_sound {arity : Nat}
-    (command : Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions arity)
-    (matched : stateCommandIsSkip command = true) : command = .skip := by
-  cases command <;> simp_all [stateCommandIsSkip]
-
-private def stateTerminalFullCommandMatches :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 20 → Bool
-  | .sequence (.returnValue (some result)) trailing =>
-      stateTerminalFullResultMatches result && stateCommandIsSkip trailing
-  | _ => false
-
-private theorem stateTerminalFullCommand_matches :
-    stateTerminalFullCommandMatches stateTerminalFullCommand = true := by
-  native_decide
-
+/- Use the shared, proved-sound syntax matcher for these source projections;
+    the semantic contracts do not need a separate validator for every shape. -/
 private theorem stateTerminalFullCommand_shape :
     stateTerminalFullCommand =
       .sequence (.returnValue (some stateTerminalFullResult)) .skip := by
-  have matched := stateTerminalFullCommand_matches
-  generalize commandEq : stateTerminalFullCommand = command at matched ⊢
-  cases command <;> try { simp [stateTerminalFullCommandMatches] at matched }
-  case sequence first trailing =>
-    cases first <;> try { simp [stateTerminalFullCommandMatches] at matched }
-    case returnValue result =>
-      cases result <;> try { simp [stateTerminalFullCommandMatches] at matched }
-      case some result =>
-        simp only [stateTerminalFullCommandMatches, Bool.and_eq_true]
-          at matched
-        have resultEq := stateTerminalFullResultMatches_sound result matched.1
-        have trailingEq := stateCommandIsSkip_sound trailing matched.2
-        simp_all
-
-private def stateTerminalSuccessCommandMatches :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 19 → Bool
-  | .letValue appendType appendTerm
-      (.sequence (.ifThenElse fullCondition _ notFull)
-        (.sequence (.setLocal target stateCountTerm) trailing)) =>
-      appendType == .structure 2 &&
-      stateTerminalAppendTermMatches appendTerm &&
-      stateTerminalFullConditionMatches fullCondition &&
-      stateCommandIsSkip notFull && target == ⟨10, by omega⟩ &&
-      stateTerminalStateCountTermMatches stateCountTerm &&
-      stateCommandIsSkip trailing
-  | _ => false
-
-private theorem stateTerminalSuccessCommand_matches :
-    stateTerminalSuccessCommandMatches stateTerminalSuccessCommand = true := by
-  native_decide
-
-/-- Exact append-control structure projected from `parser.lani::recognize`.
-    The full branch remains a projection of the same command rather than an
-    independently maintained copy. -/
-private theorem stateTerminalSuccessCommandMatches_shape
-    (command : Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 19)
-    (matched : stateTerminalSuccessCommandMatches command = true) :
-    command =
-      .letValue (.structure 2) stateTerminalAppendTerm
-        (.sequence
-          (.ifThenElse stateTerminalFullCondition
-            (stateTerminalFullBranch command) .skip)
-          (.sequence
-            (.setLocal ⟨10, by omega⟩ stateTerminalStateCountTerm)
-            .skip)) := by
-  cases command <;> try { simp [stateTerminalSuccessCommandMatches] at matched }
-  case letValue appendType appendTerm body =>
-    cases body <;> try { simp [stateTerminalSuccessCommandMatches] at matched }
-    case sequence control continuation =>
-      cases control <;>
-        try { simp [stateTerminalSuccessCommandMatches] at matched }
-      case ifThenElse fullCondition full notFull =>
-        cases continuation <;>
-          try { simp [stateTerminalSuccessCommandMatches] at matched }
-        case sequence assignment trailing =>
-          cases assignment <;>
-            try { simp [stateTerminalSuccessCommandMatches] at matched }
-          case setLocal target stateCountTerm =>
-            simp only [stateTerminalSuccessCommandMatches,
-              Bool.and_eq_true] at matched
-            have appendEq := stateTerminalAppendTermMatches_sound appendTerm
-              matched.1.1.1.1.1.2
-            have conditionEq := stateTerminalFullConditionMatches_sound
-              fullCondition matched.1.1.1.1.2
-            have notFullEq := stateCommandIsSkip_sound notFull
-              matched.1.1.1.2
-            have stateCountEq := stateTerminalStateCountTermMatches_sound
-              stateCountTerm matched.1.2
-            have trailingEq := stateCommandIsSkip_sound trailing matched.2
-            simp_all [stateTerminalFullBranch]
+  apply stateCommandMatches_sound
+  decide +kernel
 
 private theorem stateTerminalSuccessCommand_shape :
     stateTerminalSuccessCommand =
@@ -1810,58 +1410,9 @@ private theorem stateTerminalSuccessCommand_shape :
             stateTerminalFullCommand .skip)
           (.sequence
             (.setLocal ⟨10, by omega⟩ stateTerminalStateCountTerm)
-            .skip)) :=
-  stateTerminalSuccessCommandMatches_shape stateTerminalSuccessCommand stateTerminalSuccessCommand_matches
-
-private def stateIncompleteCommandMatches :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 17 → Bool
-  | .letValue symbolType symbolTerm
-      (.sequence (.ifThenElse terminalTest _ _) trailing) =>
-      symbolType == parserI32Type &&
-      stateRhsSymbolTermMatches symbolTerm ⟨0, by omega⟩ ⟨13, by omega⟩
-        ⟨14, by omega⟩ &&
-      stateLessTermMatches terminalTest ⟨17, by omega⟩ ⟨6, by omega⟩ &&
-      stateCommandIsSkip trailing
-  | _ => false
-
-private theorem stateIncompleteCommand_matches :
-    stateIncompleteCommandMatches stateIncompleteCommand = true := by
-  native_decide
-
-/-- Exact constructor-level shape of the incomplete-state branch projected
-    from `parser.lani::recognize`. -/
-private theorem stateIncompleteCommandMatches_shape
-    (command : Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 17)
-    (matched : stateIncompleteCommandMatches command = true) :
-    command =
-      .letValue parserI32Type
-        (stateRhsSymbolTerm ⟨0, by omega⟩ ⟨13, by omega⟩
-          ⟨14, by omega⟩)
-        (.sequence
-          (.ifThenElse (stateLessTerm ⟨17, by omega⟩ ⟨6, by omega⟩)
-            (stateTerminalBranch command) (stateNonterminalBranch command))
-          .skip) := by
-  cases command <;> try { simp [stateIncompleteCommandMatches] at matched }
-  case letValue symbolType symbolTerm body =>
-    cases body <;> try { simp [stateIncompleteCommandMatches] at matched }
-    case sequence first second =>
-      cases first <;> try { simp [stateIncompleteCommandMatches] at matched }
-      case ifThenElse terminalTest terminal nonterminal =>
-        simp only [stateIncompleteCommandMatches, Bool.and_eq_true] at matched
-        have symbolTypeEq := matched.1.1.1
-        have symbolMatched := matched.1.1.2
-        have testMatched := matched.1.2
-        have trailingMatched := matched.2
-        have symbolEq := stateRhsSymbolTermMatches_sound symbolTerm
-          ⟨0, by omega⟩ ⟨13, by omega⟩ ⟨14, by omega⟩ symbolMatched
-        have testEq := stateLessTermMatches_sound terminalTest
-          ⟨17, by omega⟩ ⟨6, by omega⟩ testMatched
-        have trailingEq := stateCommandIsSkip_sound second trailingMatched
-        simp_all [stateTerminalBranch, stateNonterminalBranch]
+            .skip)) := by
+  apply stateCommandMatches_sound
+  decide +kernel
 
 private theorem stateIncompleteCommand_shape :
     stateIncompleteCommand =
@@ -1871,61 +1422,9 @@ private theorem stateIncompleteCommand_shape :
         (.sequence
           (.ifThenElse (stateLessTerm ⟨17, by omega⟩ ⟨6, by omega⟩)
             stateTerminalCommand stateNonterminalCommand)
-          .skip) :=
-  stateIncompleteCommandMatches_shape stateIncompleteCommand stateIncompleteCommand_matches
-
-private def stateTerminalCommandMatches :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 18 → Bool
-  | .letValue nextType nextTerm
-      (.sequence (.ifThenElse matchedTest _ miss) trailing) =>
-      nextType == parserI32Type &&
-      stateScanTerminalTermMatches nextTerm ⟨0, by omega⟩ ⟨1, by omega⟩
-        ⟨2, by omega⟩ ⟨11, by omega⟩ ⟨17, by omega⟩ &&
-      stateGreaterEqualZeroTermMatches matchedTest ⟨18, by omega⟩ &&
-      stateCommandIsSkip miss && stateCommandIsSkip trailing
-  | _ => false
-
-private theorem stateTerminalCommand_matches :
-    stateTerminalCommandMatches stateTerminalCommand = true := by
-  native_decide
-
-/-- Exact outer control shape of the terminal branch.  The successful append
-    path remains projected from the source command. -/
-private theorem stateTerminalCommandMatches_shape
-    (command : Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 18)
-    (matched : stateTerminalCommandMatches command = true) :
-    command =
-      .letValue parserI32Type
-        (stateScanTerminalTerm ⟨0, by omega⟩ ⟨1, by omega⟩
-          ⟨2, by omega⟩ ⟨11, by omega⟩ ⟨17, by omega⟩)
-        (.sequence
-          (.ifThenElse (stateGreaterEqualZeroTerm ⟨18, by omega⟩)
-            (stateTerminalSuccessBranch command) .skip)
           .skip) := by
-  cases command <;> try { simp [stateTerminalCommandMatches] at matched }
-  case letValue nextType nextTerm body =>
-    cases body <;> try { simp [stateTerminalCommandMatches] at matched }
-    case sequence first trailing =>
-      cases first <;> try { simp [stateTerminalCommandMatches] at matched }
-      case ifThenElse matchedTest success miss =>
-        simp only [stateTerminalCommandMatches, Bool.and_eq_true] at matched
-        have nextTypeEq := matched.1.1.1.1
-        have nextMatched := matched.1.1.1.2
-        have testMatched := matched.1.1.2
-        have missMatched := matched.1.2
-        have trailingMatched := matched.2
-        have nextEq := stateScanTerminalTermMatches_sound nextTerm
-          ⟨0, by omega⟩ ⟨1, by omega⟩ ⟨2, by omega⟩ ⟨11, by omega⟩
-          ⟨17, by omega⟩ nextMatched
-        have testEq := stateGreaterEqualZeroTermMatches_sound matchedTest
-          ⟨18, by omega⟩ testMatched
-        have missEq := stateCommandIsSkip_sound miss missMatched
-        have trailingEq := stateCommandIsSkip_sound trailing trailingMatched
-        simp_all [stateTerminalSuccessBranch]
+  apply stateCommandMatches_sound
+  decide +kernel
 
 private theorem stateTerminalCommand_shape :
     stateTerminalCommand =
@@ -1935,46 +1434,10 @@ private theorem stateTerminalCommand_shape :
         (.sequence
           (.ifThenElse (stateGreaterEqualZeroTerm ⟨18, by omega⟩)
             stateTerminalSuccessCommand .skip)
-          .skip) :=
-  stateTerminalCommandMatches_shape stateTerminalCommand stateTerminalCommand_matches
+          .skip) := by
+  apply stateCommandMatches_sound
+  decide +kernel
 
-private def stateAdvanceCommandMatches :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 17 → Bool
-  | .sequence (.setLocal target value) .skip =>
-      target == ⟨12, by omega⟩ &&
-      stateValueTermMatches value ⟨3, by omega⟩ ⟨4, by omega⟩
-        ⟨12, by omega⟩ 32
-  | _ => false
-
-private theorem stateAdvanceCommand_matches :
-    stateAdvanceCommandMatches stateAdvanceCommand = true := by
-  native_decide
-
-private theorem stateAdvanceCommandMatches_sound
-    (command : Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 17)
-    (matched : stateAdvanceCommandMatches command = true) :
-    command =
-      .sequence
-        (.setLocal ⟨12, by omega⟩
-          (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩
-            ⟨12, by omega⟩ 32))
-        .skip := by
-  cases command <;> try { simp [stateAdvanceCommandMatches] at matched }
-  case sequence first second =>
-    cases first <;> try { simp [stateAdvanceCommandMatches] at matched }
-    case setLocal target value =>
-      cases second <;> simp [stateAdvanceCommandMatches] at matched
-      case skip =>
-        rcases matched with ⟨targetEq, valueMatched⟩
-        have valueEq := stateValueTermMatches_sound value
-          ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 32 valueMatched
-        simp_all
-
-/-- Exact cursor-advance command projected from the reified state body. -/
 private theorem stateAdvanceCommand_shape :
     stateAdvanceCommand =
       .sequence
@@ -1982,82 +1445,8 @@ private theorem stateAdvanceCommand_shape :
           (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩
             ⟨12, by omega⟩ 32))
         .skip := by
-  exact stateAdvanceCommandMatches_sound stateAdvanceCommand
-    stateAdvanceCommand_matches
-
-/-- Checked constructor-level decomposition of the one reified state body.
-    The final branch is intentionally not compared with a second syntax tree:
-    `stateAfterBindingsCommand` projects it from this same command. -/
-private def stateBodyCommandMatches :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 13 → Bool
-  | .letValue productionType productionTerm afterProduction =>
-      match afterProduction with
-      | .letValue dotType dotTerm afterDot =>
-          match afterDot with
-          | .letValue originType originTerm afterOrigin =>
-              match afterOrigin with
-              | .letValue rhsLengthType rhsLengthTerm _ =>
-                  productionType == parserI32Type &&
-                  stateValueTermMatches productionTerm ⟨3, by omega⟩
-                    ⟨4, by omega⟩ ⟨12, by omega⟩ 28 &&
-                  dotType == parserI32Type &&
-                  stateValueTermMatches dotTerm ⟨3, by omega⟩
-                    ⟨4, by omega⟩ ⟨12, by omega⟩ 29 &&
-                  originType == parserI32Type &&
-                  stateValueTermMatches originTerm ⟨3, by omega⟩
-                    ⟨4, by omega⟩ ⟨12, by omega⟩ 30 &&
-                  rhsLengthType == parserI32Type &&
-                  stateRhsLengthTermMatches rhsLengthTerm ⟨0, by omega⟩
-                    ⟨13, by omega⟩
-              | _ => false
-          | _ => false
-      | _ => false
-  | _ => false
-
-private theorem stateBodyCommand_matches :
-    stateBodyCommandMatches stateBodyCommand = true := by
-  native_decide
-
-/-- Exact lexical decomposition recovered from the executable constructor
-    check.  No second body is reified or maintained. -/
-private theorem stateBodyCommandMatches_shape
-    (command : Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 13)
-    (matched : stateBodyCommandMatches command = true) :
-    command =
-      .letValue parserI32Type
-        (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 28)
-        (.letValue parserI32Type
-          (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 29)
-          (.letValue parserI32Type
-            (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 30)
-            (.letValue parserI32Type
-              (stateRhsLengthTerm ⟨0, by omega⟩ ⟨13, by omega⟩)
-              (stateAfterBindingsBranch command)))) := by
-  cases command <;> simp [stateBodyCommandMatches] at matched
-  case letValue productionType productionTerm afterProduction =>
-    cases afterProduction <;> simp [stateBodyCommandMatches] at matched
-    case letValue dotType dotTerm afterDot =>
-      cases afterDot <;> simp [stateBodyCommandMatches] at matched
-      case letValue originType originTerm afterOrigin =>
-        cases afterOrigin <;> simp [stateBodyCommandMatches] at matched
-        case letValue rhsLengthType rhsLengthTerm afterBindings =>
-          rcases matched with
-            ⟨⟨⟨⟨⟨⟨⟨_, productionMatched⟩, _⟩, dotMatched⟩, _⟩,
-              originMatched⟩, _⟩, rhsLengthMatched⟩
-          have productionEq := stateValueTermMatches_sound productionTerm
-            ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 28
-            productionMatched
-          have dotEq := stateValueTermMatches_sound dotTerm
-            ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 29 dotMatched
-          have originEq := stateValueTermMatches_sound originTerm
-            ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 30 originMatched
-          have rhsLengthEq := stateRhsLengthTermMatches_sound rhsLengthTerm
-            ⟨0, by omega⟩ ⟨13, by omega⟩ rhsLengthMatched
-          simp_all [stateAfterBindingsBranch]
+  apply stateCommandMatches_sound
+  decide +kernel
 
 private theorem stateBodyCommand_shape :
     stateBodyCommand =
@@ -2069,8 +1458,9 @@ private theorem stateBodyCommand_shape :
             (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 30)
             (.letValue parserI32Type
               (stateRhsLengthTerm ⟨0, by omega⟩ ⟨13, by omega⟩)
-              stateAfterBindingsCommand))) :=
-  stateBodyCommandMatches_shape stateBodyCommand stateBodyCommand_matches
+              stateAfterBindingsCommand))) := by
+  apply stateCommandMatches_sound
+  decide +kernel
 
 private def coreAfterFourBindings : Stmt → Stmt
   | .letLocal _ _ _
@@ -2089,7 +1479,7 @@ theorem stateLoopCommand_toCore :
     Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
       stateLoopLayout 25 stateLoopCommand = parserRecognizeStateLoop := by
   rw [stateLoopCommand, Lanius.FunctionalView.Core.Stateful.toCoreStmt,
-    stateBodyCommand, parserRecognizeStateBodyView_toCore_exactly]
+    stateBodyCommand_derived, parserRecognizeStateBodyView_toCore_exactly]
   exact extractedParserRecognize_state_loop_shape.symm
 
 /-! ### Reusing the verified state loop inside the position body -/
@@ -2110,7 +1500,7 @@ theorem stateIntoPositionLayout_extends :
     Layout.Extends stateIntoPositionEmbedding stateLoopLayout
       positionStateLayout := by
   apply Layout.Extends.ofFn
-  native_decide
+  decide +kernel
 
 abbrev positionStateLoopCommand :=
   Lanius.FunctionalView.Stateful.Command.rename
@@ -2168,7 +1558,7 @@ def positionExpectedBodyCommand :
 theorem positionBodyCommand_shape :
     positionBodyCommand = positionExpectedBodyCommand := by
   apply stateCommandMatches_sound
-  native_decide
+  decide +kernel
 
 /-! ### Reusing compact loop proofs inside the state body
 
@@ -2201,7 +1591,7 @@ private def statePredictionLoopReification? :=
 
 private theorem statePredictionLoopReification_exists :
     statePredictionLoopReification?.isSome := by
-  native_decide
+  decide +kernel
 
 private def parserRecognizeStatePredictionLoopView :=
   statePredictionLoopReification?.get
@@ -2225,7 +1615,7 @@ private theorem predictionIntoStateLayout_extends :
     Layout.Extends predictionIntoStateEmbedding predictionLoopLayout
       statePredictionLayout := by
   apply Layout.Extends.ofFn
-  native_decide
+  decide +kernel
 
 /-- The compact prediction proof command placed in its concrete enclosing
     environment.  Its correspondence with the separately reified larger view
@@ -2313,7 +1703,7 @@ private theorem nullableIntoStateLayout_extends :
     Layout.Extends nullableIntoStateEmbedding nullableLoopLayout
       stateNullableLayout := by
   apply Layout.Extends.ofFn
-  native_decide
+  decide +kernel
 
 abbrev stateNullableLoopCommand :=
   Lanius.FunctionalView.Stateful.Command.rename
@@ -2393,7 +1783,7 @@ private theorem parentIntoStateLayout_extends :
     Layout.Extends parentIntoStateEmbedding parentLoopLayout
       stateParentLayout := by
   apply Layout.Extends.ofFn
-  native_decide
+  decide +kernel
 
 abbrev stateParentLoopCommand :=
   Lanius.FunctionalView.Stateful.Command.rename
@@ -2433,7 +1823,7 @@ private theorem stateNonterminalCommand_shape :
                   (stateChartHeadTerm ⟨3, by omega⟩ ⟨11, by omega⟩)
                   (.sequence stateNullableLoopCommand .skip)))))) := by
   apply stateCommandMatches_sound
-  native_decide
+  decide +kernel
 
 /-- The completed-state shell projected from the extracted recognizer: obtain
     the completed production's LHS, enter its origin chart, then execute the
@@ -2446,7 +1836,7 @@ private theorem stateCompleteCommand_shape :
           (stateChartHeadTerm ⟨3, by omega⟩ ⟨15, by omega⟩)
           (.sequence stateParentLoopCommand .skip)) := by
   apply stateCommandMatches_sound
-  native_decide
+  decide +kernel
 
 noncomputable abbrev stateTermMachine
     (workspaceLayout : WorkspaceLayout) (grammar : IndexedGrammar)
@@ -2953,7 +2343,7 @@ private theorem stateIntoPositionEmbedding_outside_iff :
       (∀ source, stateIntoPositionEmbedding.slot source ≠ index) ↔
         index = ⟨4, by omega⟩ ∨ index = ⟨8, by omega⟩ ∨
           index = ⟨13, by omega⟩ := by
-  native_decide
+  decide +kernel
 
 /-- Changing state-loop-owned values preserves the three enclosing position
     values framed outside the state embedding. -/
@@ -3036,41 +2426,8 @@ theorem StateAfterBindingsEnvironment.after_workspace_update
       workspaceCell position current production dot origin rhsLength
       (Lanius.FunctionalView.Stateful.Env.set environment ⟨10, by omega⟩
         (.signed .i32 (Int.ofNat afterWorkspace.states.length))) := by
-  let countSlot : Fin 17 := 10
-  let afterEnvironment := Lanius.FunctionalView.Stateful.Env.set environment
-    countSlot (.signed .i32 (Int.ofNat afterWorkspace.states.length))
-  have unchanged (index : Fin 17) (differentValue : index.val ≠ 10) :
-      afterEnvironment index = environment index := by
-    apply Lanius.FunctionalView.Stateful.Env.set_other
-    intro same
-    have countSlotValue : countSlot.val = 10 := by rfl
-    exact differentValue ((congrArg Fin.val same).trans countSlotValue)
-  exact {
-    grammarEq := (unchanged 0 (by decide)).trans meaning.grammarEq
-    tokensEq := (unchanged 1 (by decide)).trans meaning.tokensEq
-    tokenCountEq := (unchanged 2 (by decide)).trans meaning.tokenCountEq
-    workspaceEq := by
-      calc
-        afterEnvironment 3 = environment 3 := unchanged 3 (by decide)
-        _ = workspaceValue beforeValues workspaceCell := meaning.workspaceEq
-        _ = workspaceValue afterValues workspaceCell := by
-          simp [workspaceValue, sameLength]
-    stateBaseEq := (unchanged 4 (by decide)).trans meaning.stateBaseEq
-    capacityEq := (unchanged 5 (by decide)).trans meaning.capacityEq
-    kindCountEq := (unchanged 6 (by decide)).trans meaning.kindCountEq
-    lhsOffsetsEq := (unchanged 7 (by decide)).trans meaning.lhsOffsetsEq
-    lhsCountsEq := (unchanged 8 (by decide)).trans meaning.lhsCountsEq
-    lhsProductionsEq := (unchanged 9 (by decide)).trans
-      meaning.lhsProductionsEq
-    stateCountEq := by
-      exact Lanius.FunctionalView.Stateful.Env.set_same environment countSlot _
-    positionEq := (unchanged 11 (by decide)).trans meaning.positionEq
-    currentEq := (unchanged 12 (by decide)).trans meaning.currentEq
-    productionEq := (unchanged 13 (by decide)).trans meaning.productionEq
-    dotEq := (unchanged 14 (by decide)).trans meaning.dotEq
-    originEq := (unchanged 15 (by decide)).trans meaning.originEq
-    rhsLengthEq := (unchanged 16 (by decide)).trans meaning.rhsLengthEq
-  }
+  cases meaning
+  constructor <;> simp_all [Lanius.FunctionalView.Stateful.Env.set, workspaceValue]
 
 /-- Evaluate the source nonterminal-number subtraction under the enclosing
     state call model.  The term is call-free, so the generic read-only
@@ -3090,28 +2447,9 @@ theorem stateSubtractTerm_evaluates
         tokensCell)
       world environment (stateSubtractTerm leftSlot rightSlot) =
       .ok (.signed .i32 (Int.ofNat (left - right)), world) := by
-  let calls := RecognizerStateCallRegistry.calls workspaceLayout grammar words
-    tokens grammarCell tokensCell
-  have leftResult : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world environment (stateSlot leftSlot) =
-      .ok (.signed .i32 (Int.ofNat left), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot leftEq
-  have rightResult : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world environment (stateSlot rightSlot) =
-      .ok (.signed .i32 (Int.ofNat right), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot rightEq
-  have readOnly :=
-    Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_i32_subtract
-      (leftType := parserI32Type) (rightType := parserI32Type)
-      (outputType := parserI32Type) leftResult rightResult lower bounded
-  have agreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore) (calls := calls) (world := world)
-      (environment := environment) (stateSubtractTerm leftSlot rightSlot)
-      (by rfl)
-  exact agreement.trans readOnly
+  rw [Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
+    (stateSubtractTerm leftSlot rightSlot) (by rfl)]
+  functional_eval
 
 /-- Evaluate one `slice[base + row]` source term.  This is shared by the LHS
     offset and LHS count bindings and keeps packed-table bounds explicit. -/
@@ -3135,35 +2473,9 @@ theorem stateIndexAddTerm_evaluates
         tokensCell)
       world environment (stateIndexAddTerm sliceSlot baseSlot rowSlot) =
       .ok (.signed .i32 (values.get ⟨base + row, indexBound⟩), world) := by
-  let calls := RecognizerStateCallRegistry.calls workspaceLayout grammar words
-    tokens grammarCell tokensCell
-  let machine := Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore
-  have sliceResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot sliceSlot) =
-      .ok (.slice parserI32Type cell [] 0 values.length, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot sliceEq
-  have baseResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot baseSlot) =
-      .ok (.signed .i32 (Int.ofNat base), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot baseEq
-  have rowResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot rowSlot) =
-      .ok (.signed .i32 (Int.ofNat row), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot rowEq
-  have addressResult :=
-    Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_i32_add
-      (leftType := parserI32Type) (rightType := parserI32Type)
-      (outputType := parserI32Type) baseResult rowResult sumBound
-  have readOnly :=
-    Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_i32_index
-      (baseType := .slice parserI32Type) (indexType := parserI32Type)
-      (elementType := parserI32Type) sliceResult addressResult found indexBound
-  have agreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore) (calls := calls) (world := world)
-      (environment := environment)
-      (stateIndexAddTerm sliceSlot baseSlot rowSlot) (by rfl)
-  exact agreement.trans readOnly
+  rw [Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
+    (stateIndexAddTerm sliceSlot baseSlot rowSlot) (by rfl)]
+  functional_eval
 
 /-- Evaluate the completed production's LHS through the actual state-loop
     registry rather than a separately maintained call interpretation. -/
@@ -3186,23 +2498,6 @@ theorem stateLhsTerm_evaluates
       world environment (stateLhsTerm grammarSlot productionSlot) =
       .ok (.signed .i32 (Int.ofNat
         (grammar.productionAt ⟨production, productionBound⟩).lhs), world) := by
-  let machine := stateTermMachine workspaceLayout grammar words tokens
-    grammarCell tokensCell
-  have grammarResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot grammarSlot) =
-      .ok (parserGrammarValue words grammarCell, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot grammarEq
-  have productionResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot productionSlot) =
-      .ok (.signed .i32 (Int.ofNat production), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot productionEq
-  have argumentsResult : Lanius.FunctionalView.evaluateTerms machine world
-      environment [stateSlot grammarSlot, stateSlot productionSlot] =
-      .ok ([parserGrammarValue words grammarCell,
-        .signed .i32 (Int.ofNat production)], world) :=
-    Lanius.FunctionalView.evaluateTerms_cons grammarResult
-      (Lanius.FunctionalView.evaluateTerms_cons productionResult
-        (Lanius.FunctionalView.evaluateTerms_nil machine world environment))
   have rowBound : production < grammar.productionLhs.length := by simpa
   have traversal := RecognizerTraversalCallRegistry.calls_at_lhs
     (workspaceLayout := workspaceLayout) (grammar := grammar)
@@ -3213,19 +2508,14 @@ theorem stateLhsTerm_evaluates
     (words := words) (tokens := tokens) (grammarCell := grammarCell)
     (tokensCell := tokensCell) world extractedParserLhsFunction.id
     [parserGrammarValue words grammarCell,
-      .signed .i32 (Int.ofNat production)] (by native_decide)
-    (by native_decide)
+      .signed .i32 (Int.ofNat production)] (by decide +kernel)
+    (by decide +kernel)
   have rowValue : grammar.productionLhs.get ⟨production, rowBound⟩ =
       (grammar.productionAt ⟨production, productionBound⟩).lhs := by
     simpa using grammar.productionLhs_get ⟨production, productionBound⟩
-  apply Lanius.FunctionalView.Term.evaluate_apply argumentsResult
-  change (RecognizerStateCallRegistry.calls workspaceLayout grammar words
-    tokens grammarCell tokensCell).evaluate world
-      extractedParserLhsFunction.id [parserGrammarValue words grammarCell,
-        .signed .i32 (Int.ofNat production)] = _
-  rw [routed]
   rw [rowValue] at traversal
-  exact traversal
+  refine Lanius.FunctionalView.Core.Effectful.Term.evaluate_call ?_ (routed.trans traversal)
+  functional_eval
 
 /-- Evaluate the shared `workspace[chart_word(position, 0)]` expression in
     FunctionalView.  The chart address call and packed workspace read stay in
@@ -3358,116 +2648,20 @@ private theorem stateTerminalSeedTerm_evaluates
   dsimp only
   let seed := recognizerTerminalSeed production dot origin current position
     symbol
-  let machine := stateTermMachine workspaceLayout grammar words tokens
-    grammarCell tokensCell
-  let calls := RecognizerStateCallRegistry.calls workspaceLayout grammar words
-    tokens grammarCell tokensCell
-  have productionResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot ⟨13, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat production), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot productionEq
-  let dotSuccTerm : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 19 :=
-    .apply (.binary .add parserI32Type parserI32Type parserI32Type)
-      [stateSlot ⟨14, by omega⟩, stateLiteral 1]
-  have dotReadOnly : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world environment (stateSlot ⟨14, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat dot), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot dotEq
-  have oneReadOnly : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world environment (stateLiteral 1) =
-      .ok (.signed .i32 1, world) := by rfl
-  have dotSuccReadOnly :=
-    Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_i32_add
-      (leftType := parserI32Type) (rightType := parserI32Type)
-      (outputType := parserI32Type) dotReadOnly oneReadOnly dotSuccBound
-  have dotSuccAgreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore) (calls := calls) (world := world)
-      (environment := environment) dotSuccTerm (by rfl)
-  have dotSuccResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment dotSuccTerm =
-      .ok (.signed .i32 (Int.ofNat (dot + 1)), world) := by
-    exact dotSuccAgreement.trans dotSuccReadOnly
-  have originResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot ⟨15, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat origin), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot originEq
-  have currentResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot ⟨12, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat current), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot currentEq
-  let childTagTerm : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 19 :=
-    .apply (.constant 38 parserI32Type) []
-  have childTagReadOnly :=
-    Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_constant
-      (program := verifiedParserCore) (world := world)
-      (environment := environment) (type := parserI32Type)
-      verifiedParser_child_token_constant
-  have childTagAgreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore) (calls := calls) (world := world)
-      (environment := environment) childTagTerm (by native_decide)
-  have childTagResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment childTagTerm = .ok (.signed .i32 1, world) :=
-    childTagAgreement.trans childTagReadOnly
-  let tokenIndexTerm : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature 19 :=
-    .apply (.binary .divide parserI32Type parserI32Type parserI32Type)
-      [stateSlot ⟨11, by omega⟩, stateLiteral 2]
-  have positionReadOnly : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world environment (stateSlot ⟨11, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat position), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot positionEq
-  have tokenIndexReadOnly :=
-    Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_i32_divide_two
-      (leftType := parserI32Type) (rightType := parserI32Type)
-      (outputType := parserI32Type) positionReadOnly (by omega)
-  have tokenIndexAgreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore) (calls := calls) (world := world)
-      (environment := environment) tokenIndexTerm (by rfl)
-  have tokenIndexResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment tokenIndexTerm =
-      .ok (.signed .i32 (Int.ofNat (position / 2)), world) :=
-    tokenIndexAgreement.trans tokenIndexReadOnly
-  have symbolResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot ⟨17, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat symbol), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot symbolEq
-  have argumentsResult : Lanius.FunctionalView.evaluateTerms machine world
-      environment [stateSlot ⟨13, by omega⟩, dotSuccTerm,
-        stateSlot ⟨15, by omega⟩, stateSlot ⟨12, by omega⟩,
-        childTagTerm, tokenIndexTerm, stateSlot ⟨17, by omega⟩] =
-      .ok (parserStateSeedArgumentsValues seed, world) := by
-    simpa [seed, recognizerTerminalSeed, parserStateSeedArgumentsValues,
-      previousValue, encodeStateId, childTag, childPayload, childKind] using
-      Lanius.FunctionalView.evaluateTerms_cons productionResult
-        (Lanius.FunctionalView.evaluateTerms_cons dotSuccResult
-          (Lanius.FunctionalView.evaluateTerms_cons originResult
-            (Lanius.FunctionalView.evaluateTerms_cons currentResult
-              (Lanius.FunctionalView.evaluateTerms_cons childTagResult
-                (Lanius.FunctionalView.evaluateTerms_cons tokenIndexResult
-                  (Lanius.FunctionalView.evaluateTerms_cons symbolResult
-                    (Lanius.FunctionalView.evaluateTerms_nil machine world
-                      environment)))))))
   have routed := RecognizerStateCallRegistry.calls_at_traversal
     (workspaceLayout := workspaceLayout) (grammar := grammar)
     (words := words) (tokens := tokens) (grammarCell := grammarCell)
     (tokensCell := tokensCell) world extractedParserStateSeedFunction.id
-    (parserStateSeedArgumentsValues seed) (by native_decide)
-    (by native_decide)
-  apply Lanius.FunctionalView.Term.evaluate_apply argumentsResult
-  change (RecognizerStateCallRegistry.calls workspaceLayout grammar words
-    tokens grammarCell tokensCell).evaluate world
-      extractedParserStateSeedFunction.id
-      (parserStateSeedArgumentsValues seed) = _
-  rw [routed]
-  exact RecognizerTraversalCallRegistry.calls_at_seed world seed
+    (parserStateSeedArgumentsValues seed) (by decide +kernel)
+    (by decide +kernel)
+  refine Lanius.FunctionalView.Core.Effectful.Term.evaluate_call ?_
+    (routed.trans (RecognizerTraversalCallRegistry.calls_at_seed world seed))
+  rw [Lanius.FunctionalView.Core.Effectful.Terms.evaluate_eq_readOnly_of_callFree
+    _ (by rfl)]
+  have childToken := verifiedParser_child_token_constant
+  simp only [seed, recognizerTerminalSeed, parserStateSeedArgumentsValues,
+    previousValue, encodeStateId, childTag, childPayload, childKind]
+  functional_eval
 
 /-- Left-to-right evaluation of the exact terminal `append_state` argument
     list projected from `parser.lani::recognize`. -/
@@ -3516,48 +2710,13 @@ private theorem stateTerminalAppendArguments_evaluates
         .signed .i32 (Int.ofNat nextPosition), stateSeedValue seed,
         .signed .i32 (Int.ofNat workspace.states.length)], world) := by
   dsimp only
-  let seed := recognizerTerminalSeed production dot origin current position
-    symbol
-  let world := stateWorld words tokens (unused := unused) workspaceValues grammarCell tokensCell
-    workspaceCell
-  let machine := stateTermMachine workspaceLayout grammar words tokens
-    grammarCell tokensCell
-  have workspaceResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot ⟨3, by omega⟩) =
-      .ok (workspaceValue workspaceValues workspaceCell, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot workspaceEq
-  have baseResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot ⟨4, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat
-        (stateBase workspaceLayout.tokenCount)), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot baseEq
-  have capacityResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot ⟨5, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat workspaceLayout.capacity), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot capacityEq
-  have nextPositionResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot ⟨18, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat nextPosition), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot nextPositionEq
-  have seedResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment stateTerminalSeedTerm = .ok (stateSeedValue seed, world) := by
-    exact stateTerminalSeedTerm_evaluates workspaceLayout grammar words tokens
-      grammarCell tokensCell world environment production dot origin current
-      position symbol productionEq dotEq originEq currentEq positionEq symbolEq
-      dotSuccBound positionBound
-  have stateCountResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (stateSlot ⟨10, by omega⟩) =
-      .ok (.signed .i32 (Int.ofNat workspace.states.length), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot stateCountEq
-  simpa only [stateTerminalAppendArguments] using
-    Lanius.FunctionalView.evaluateTerms_cons workspaceResult
-      (Lanius.FunctionalView.evaluateTerms_cons baseResult
-        (Lanius.FunctionalView.evaluateTerms_cons capacityResult
-          (Lanius.FunctionalView.evaluateTerms_cons nextPositionResult
-            (Lanius.FunctionalView.evaluateTerms_cons seedResult
-              (Lanius.FunctionalView.evaluateTerms_cons stateCountResult
-                (Lanius.FunctionalView.evaluateTerms_nil machine world
-                  environment))))))
+  have seedResult := stateTerminalSeedTerm_evaluates workspaceLayout grammar
+    words tokens grammarCell tokensCell
+    (stateWorld words tokens (unused := unused) workspaceValues grammarCell
+      tokensCell workspaceCell) environment production dot origin current
+    position symbol productionEq dotEq originEq currentEq positionEq symbolEq
+    dotSuccBound positionBound
+  functional_eval
 
 /-- Functional execution of the terminal workspace append, sharing the exact
     intermediate Core argument execution with the existing recognizer proof. -/
@@ -3685,7 +2844,7 @@ private theorem RecognizerTerminalAppendInvariant.functional_append
     (workspaceLayout := workspaceLayout) (grammar := grammar)
     (words := words) (tokens := tokens) (grammarCell := grammarCell)
     (tokensCell := tokensCell) world extractedParserAppendStateFunction.id
-    callValues (by native_decide) (by native_decide)
+    callValues (by decide +kernel) (by decide +kernel)
   have outcomeEq : input.outcome = outcome := by rfl
   have afterWorldEq : input.afterWorld = afterWorld := by
     change Lanius.FunctionalView.Core.ReadOnly.World.setI32Slice world
@@ -3712,27 +2871,8 @@ private theorem stateTerminalFullCondition_evaluates
       world (environment.push (appendOutcomeValue outcome))
       stateTerminalFullCondition =
       .ok (.boolean (decide (outcome.status = .full)), world) := by
-  have agreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore)
-      (calls := RecognizerStateCallRegistry.calls workspaceLayout grammar words
-        tokens grammarCell tokensCell) (world := world)
-      (environment := environment.push (appendOutcomeValue outcome))
-      stateTerminalFullCondition (by native_decide)
-  have readOnlyResult : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world (environment.push (appendOutcomeValue outcome))
-      stateTerminalFullCondition =
-      .ok (.boolean (decide (outcome.status = .full)), world) := by
-    rcases outcome with ⟨status, stateId, stateCount, inserted⟩
-    cases status <;> rfl
-  change Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.Effectful.machine verifiedParserCore
-        (RecognizerStateCallRegistry.calls workspaceLayout grammar words tokens
-          grammarCell tokensCell)) world
-      (environment.push (appendOutcomeValue outcome))
-      stateTerminalFullCondition = _
-  exact agreement.trans readOnlyResult
+  rcases outcome with ⟨status, stateId, stateCount, inserted⟩
+  cases status <;> rfl
 
 private theorem stateTerminalStateCountTerm_evaluates
     (world : Lanius.FunctionalView.Core.ReadOnly.World)
@@ -3744,26 +2884,7 @@ private theorem stateTerminalStateCountTerm_evaluates
       world (environment.push (appendOutcomeValue outcome))
       stateTerminalStateCountTerm =
       .ok (.signed .i32 (Int.ofNat outcome.stateCount), world) := by
-  have agreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore)
-      (calls := RecognizerStateCallRegistry.calls workspaceLayout grammar words
-        tokens grammarCell tokensCell) (world := world)
-      (environment := environment.push (appendOutcomeValue outcome))
-      stateTerminalStateCountTerm (by native_decide)
-  have readOnlyResult : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world (environment.push (appendOutcomeValue outcome))
-      stateTerminalStateCountTerm =
-      .ok (.signed .i32 (Int.ofNat outcome.stateCount), world) := by
-    rfl
-  change Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.Effectful.machine verifiedParserCore
-        (RecognizerStateCallRegistry.calls workspaceLayout grammar words tokens
-          grammarCell tokensCell)) world
-      (environment.push (appendOutcomeValue outcome))
-      stateTerminalStateCountTerm = _
-  exact agreement.trans readOnlyResult
+  rfl
 
 private theorem stateTerminalFullResult_evaluates
     (world : Lanius.FunctionalView.Core.ReadOnly.World)
@@ -3803,7 +2924,7 @@ private theorem stateTerminalFullResult_evaluates
     (words := words) (tokens := tokens) (grammarCell := grammarCell)
     (tokensCell := tokensCell) world extractedParserAppendOrFullFunction.id
     [appendOutcomeValue outcome, .signed .i32 (Int.ofNat position)]
-    (by native_decide) (by native_decide)
+    (by decide +kernel) (by decide +kernel)
   apply Lanius.FunctionalView.Term.evaluate_apply argumentsResult
   change (RecognizerStateCallRegistry.calls workspaceLayout grammar words
     tokens grammarCell tokensCell).evaluate world
@@ -4158,53 +3279,6 @@ private theorem stateValueTerm_evaluates
         (stateValueTerm workspaceSlot baseSlot stateSlot fieldConstant) =
       .ok (.signed .i32 (stateFieldValue workspace stateId state field),
         world) := by
-  let machine := stateTermMachine workspaceLayout grammar words tokens
-    grammarCell tokensCell
-  have workspaceResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot workspaceSlot)) =
-      .ok (workspaceValue workspaceValues workspaceCell, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot workspaceValueEq
-  have baseResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot baseSlot)) =
-      .ok (.signed .i32
-        (Int.ofNat (stateBase workspaceLayout.tokenCount)), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot stateBaseEq
-  have stateResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot stateSlot)) =
-      .ok (.signed .i32 (Int.ofNat stateId), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot stateIdEq
-  let constantTerm : Lanius.FunctionalView.Term
-      Lanius.FunctionalView.Core.signature arity :=
-    .apply (.constant fieldConstant parserI32Type) []
-  have constantAgreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore)
-      (calls := RecognizerStateCallRegistry.calls workspaceLayout grammar words
-        tokens grammarCell tokensCell)
-      (world := world) (environment := environment) constantTerm (by rfl)
-  have constantReadOnly : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world environment constantTerm =
-      .ok (.signed .i32 (Int.ofNat field), world) :=
-    Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_constant constantFound
-  have constantResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment constantTerm =
-      .ok (.signed .i32 (Int.ofNat field), world) :=
-    constantAgreement.trans constantReadOnly
-  have argumentsResult : Lanius.FunctionalView.evaluateTerms machine world
-      environment [.reference (.slot workspaceSlot),
-        .reference (.slot baseSlot), .reference (.slot stateSlot),
-        constantTerm] =
-      .ok ([workspaceValue workspaceValues workspaceCell,
-        .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)),
-        .signed .i32 (Int.ofNat stateId), .signed .i32 (Int.ofNat field)],
-        world) :=
-    Lanius.FunctionalView.evaluateTerms_cons workspaceResult
-      (Lanius.FunctionalView.evaluateTerms_cons baseResult
-        (Lanius.FunctionalView.evaluateTerms_cons stateResult
-          (Lanius.FunctionalView.evaluateTerms_cons constantResult
-            (Lanius.FunctionalView.evaluateTerms_nil machine world
-              environment))))
   have addressBound : stateWord (stateBase workspaceLayout.tokenCount)
       stateId field < workspaceValues.length := by
     rw [valuesLength]
@@ -4235,24 +3309,18 @@ private theorem stateValueTerm_evaluates
     [workspaceValue workspaceValues workspaceCell,
       .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)),
       .signed .i32 (Int.ofNat stateId), .signed .i32 (Int.ofNat field)]
-    (by native_decide) (by native_decide)
+    (by decide +kernel) (by decide +kernel)
   have fieldValue : workspaceValues.get ⟨stateWord
       (stateBase workspaceLayout.tokenCount) stateId field, addressBound⟩ =
       stateFieldValue workspace stateId state field := by
     have concrete := encoded.stateField stateId state foundState field fieldBound
     rw [listWords_get workspaceValues _ addressBound] at concrete
     exact concrete
-  apply Lanius.FunctionalView.Term.evaluate_apply argumentsResult
-  change (RecognizerStateCallRegistry.calls workspaceLayout grammar words tokens
-    grammarCell tokensCell).evaluate world
-      extractedParserStateValueFunction.id [
-        workspaceValue workspaceValues workspaceCell,
-        .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)),
-        .signed .i32 (Int.ofNat stateId),
-        .signed .i32 (Int.ofNat field)] = _
-  rw [routed]
   rw [fieldValue] at traversalResult
-  exact traversalResult
+  refine Lanius.FunctionalView.Core.Effectful.Term.evaluate_call ?_ (routed.trans traversalResult)
+  rw [Lanius.FunctionalView.Core.Effectful.Terms.evaluate_eq_readOnly_of_callFree
+    _ (by rfl)]
+  functional_eval
 
 /-- Evaluate an extracted production-RHS length call through the enclosing
     recognizer registry. -/
@@ -4276,24 +3344,6 @@ private theorem stateRhsLengthTerm_evaluates
       .ok (.signed .i32 (Int.ofNat
         (grammar.productionAt ⟨production, productionBound⟩).rhs.length),
         world) := by
-  let machine := stateTermMachine workspaceLayout grammar words tokens
-    grammarCell tokensCell
-  have grammarResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot grammarSlot)) =
-      .ok (parserGrammarValue words grammarCell, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot grammarValueEq
-  have productionResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot productionSlot)) =
-      .ok (.signed .i32 (Int.ofNat production), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot productionValueEq
-  have argumentsResult : Lanius.FunctionalView.evaluateTerms machine world
-      environment [.reference (.slot grammarSlot),
-        .reference (.slot productionSlot)] =
-      .ok ([parserGrammarValue words grammarCell,
-        .signed .i32 (Int.ofNat production)], world) :=
-    Lanius.FunctionalView.evaluateTerms_cons grammarResult
-      (Lanius.FunctionalView.evaluateTerms_cons productionResult
-        (Lanius.FunctionalView.evaluateTerms_nil machine world environment))
   have rowBound : production < grammar.rhsLengths.length := by simpa
   have traversalResult := RecognizerTraversalCallRegistry.calls_at_rhs_length
     (workspaceLayout := workspaceLayout) (grammar := grammar)
@@ -4305,19 +3355,13 @@ private theorem stateRhsLengthTerm_evaluates
     (tokensCell := tokensCell) world extractedParserRhsLengthFunction.id
     [parserGrammarValue words grammarCell,
       .signed .i32 (Int.ofNat production)]
-    (by native_decide) (by native_decide)
+    (by decide +kernel) (by decide +kernel)
   have rowValue : grammar.rhsLengths.get ⟨production, rowBound⟩ =
       (grammar.productionAt ⟨production, productionBound⟩).rhs.length := by
     simpa using grammar.rhsLengths_get ⟨production, productionBound⟩
-  apply Lanius.FunctionalView.Term.evaluate_apply argumentsResult
-  change (RecognizerStateCallRegistry.calls workspaceLayout grammar words tokens
-    grammarCell tokensCell).evaluate world
-      extractedParserRhsLengthFunction.id [
-        parserGrammarValue words grammarCell,
-        .signed .i32 (Int.ofNat production)] = _
-  rw [routed]
   rw [rowValue] at traversalResult
-  exact traversalResult
+  refine Lanius.FunctionalView.Core.Effectful.Term.evaluate_call ?_ (routed.trans traversalResult)
+  functional_eval
 
 /-- Evaluate the exact RHS-symbol call that introduces the incomplete-state
     branch's local symbol. -/
@@ -4346,30 +3390,6 @@ private theorem stateRhsSymbolTerm_evaluates
       .ok (.signed .i32 (Int.ofNat
         ((grammar.productionAt ⟨production, productionBound⟩).rhs.get
           ⟨dot, dotBound⟩)), world) := by
-  let machine := stateTermMachine workspaceLayout grammar words tokens
-    grammarCell tokensCell
-  have grammarResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot grammarSlot)) =
-      .ok (parserGrammarValue words grammarCell, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot grammarValueEq
-  have productionResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot productionSlot)) =
-      .ok (.signed .i32 (Int.ofNat production), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot productionValueEq
-  have dotResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot dotSlot)) =
-      .ok (.signed .i32 (Int.ofNat dot), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot dotValueEq
-  have argumentsResult : Lanius.FunctionalView.evaluateTerms machine world
-      environment [.reference (.slot grammarSlot),
-        .reference (.slot productionSlot), .reference (.slot dotSlot)] =
-      .ok ([parserGrammarValue words grammarCell,
-        .signed .i32 (Int.ofNat production),
-        .signed .i32 (Int.ofNat dot)], world) :=
-    Lanius.FunctionalView.evaluateTerms_cons grammarResult
-      (Lanius.FunctionalView.evaluateTerms_cons productionResult
-        (Lanius.FunctionalView.evaluateTerms_cons dotResult
-          (Lanius.FunctionalView.evaluateTerms_nil machine world environment)))
   have traversalResult := RecognizerTraversalCallRegistry.calls_at_rhs_symbol
     (workspaceLayout := workspaceLayout) (grammar := grammar)
     (words := words) (grammarCell := grammarCell) world production dot
@@ -4380,16 +3400,9 @@ private theorem stateRhsSymbolTerm_evaluates
     (tokensCell := tokensCell) world extractedParserRhsSymbolFunction.id
     [parserGrammarValue words grammarCell,
       .signed .i32 (Int.ofNat production), .signed .i32 (Int.ofNat dot)]
-    (by native_decide) (by native_decide)
-  apply Lanius.FunctionalView.Term.evaluate_apply argumentsResult
-  change (RecognizerStateCallRegistry.calls workspaceLayout grammar words tokens
-    grammarCell tokensCell).evaluate world
-      extractedParserRhsSymbolFunction.id [
-        parserGrammarValue words grammarCell,
-        .signed .i32 (Int.ofNat production),
-        .signed .i32 (Int.ofNat dot)] = _
-  rw [routed]
-  exact traversalResult
+    (by decide +kernel) (by decide +kernel)
+  refine Lanius.FunctionalView.Core.Effectful.Term.evaluate_call ?_ (routed.trans traversalResult)
+  functional_eval
 
 /-- Evaluate the terminal scanner call embedded in the projected terminal
     branch under the state-loop call registry. -/
@@ -4423,50 +3436,12 @@ private theorem stateScanTerminalTerm_evaluates
           positionSlot symbolSlot) =
       .ok (scanTerminalValue (scanTerminal grammar tokens position symbol),
         world) := by
-  let machine := stateTermMachine workspaceLayout grammar words tokens
-    grammarCell tokensCell
-  have grammarResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot grammarSlot)) =
-      .ok (parserGrammarValue words grammarCell, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot grammarValueEq
-  have tokensResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot tokensSlot)) =
-      .ok (parserTokenBufferValue (tokens.length + unused.length) tokensCell, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot tokensValueEq
-  have tokenCountResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot tokenCountSlot)) =
-      .ok (.signed .i32 (Int.ofNat tokens.length), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot tokenCountValueEq
-  have positionResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot positionSlot)) =
-      .ok (.signed .i32 (Int.ofNat position), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot positionValueEq
-  have symbolResult : Lanius.FunctionalView.Term.evaluate machine world
-      environment (.reference (.slot symbolSlot)) =
-      .ok (.signed .i32 (Int.ofNat symbol), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot symbolValueEq
-  have argumentsResult : Lanius.FunctionalView.evaluateTerms machine world
-      environment [.reference (.slot grammarSlot),
-        .reference (.slot tokensSlot), .reference (.slot tokenCountSlot),
-        .reference (.slot positionSlot), .reference (.slot symbolSlot)] =
-      .ok ([parserGrammarValue words grammarCell,
-        parserTokenBufferValue (tokens.length + unused.length) tokensCell,
-        .signed .i32 (Int.ofNat tokens.length),
-        .signed .i32 (Int.ofNat position),
-        .signed .i32 (Int.ofNat symbol)], world) :=
-    Lanius.FunctionalView.evaluateTerms_cons grammarResult
-      (Lanius.FunctionalView.evaluateTerms_cons tokensResult
-        (Lanius.FunctionalView.evaluateTerms_cons tokenCountResult
-          (Lanius.FunctionalView.evaluateTerms_cons positionResult
-            (Lanius.FunctionalView.evaluateTerms_cons symbolResult
-              (Lanius.FunctionalView.evaluateTerms_nil machine world
-                environment)))))
   have registryResult := RecognizerStateCallRegistry.calls_at_scan_terminal
     (workspaceLayout := workspaceLayout) (grammar := grammar)
     (words := words) (tokens := tokens) (grammarCell := grammarCell)
     (tokensCell := tokensCell) world position symbol grammarFound tokensFound
-  apply Lanius.FunctionalView.Term.evaluate_apply argumentsResult
-  exact registryResult
+  refine Lanius.FunctionalView.Core.Effectful.Term.evaluate_call ?_ registryResult
+  functional_eval
 
 /-- The four candidate-field bindings at the front of the exact reified state
     body are a reusable functional scope.  Branch proofs start in the
@@ -4519,163 +3494,40 @@ theorem stateBodyCommand_evaluates_of_afterBindings
         (Lanius.FunctionalView.Stateful.Env.pop
           (Lanius.FunctionalView.Stateful.Env.pop
             (Lanius.FunctionalView.Stateful.Env.pop afterEnvironment)))) := by
-  let productionValue : Value :=
-    .signed .i32 (Int.ofNat candidate.production)
-  let dotValue : Value := .signed .i32 (Int.ofNat candidate.dot)
-  let originValue : Value := .signed .i32 (Int.ofNat candidate.origin)
-  let rhsLengthValue : Value := .signed .i32 (Int.ofNat
-    (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs.length)
-  let afterProduction := environment.push productionValue
-  let afterDot := afterProduction.push dotValue
-  let afterOrigin := afterDot.push originValue
-  have productionResult := stateValueTerm_evaluates workspaceLayout grammar
-    words tokens grammarCell tokensCell workspaceCell world environment
-    ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ workspace candidate
-    workspaceValues current 0 28 workspaceValueEq stateBaseEq
-    currentEq workspaceFound valuesLength encoded foundState
-    (by decide) verifiedParser_find_constants.2.1
-  have productionResult' : Lanius.FunctionalView.Term.evaluate
-      (stateTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell) world environment
-      (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 28) =
-      .ok (productionValue, world) := by
-    simpa [productionValue, stateFieldValue] using productionResult
-  have workspaceAfterProduction : afterProduction ⟨3, by omega⟩ =
-      workspaceValue workspaceValues workspaceCell := by
-    calc
-      afterProduction ⟨3, by omega⟩ = environment ⟨3, by omega⟩ := by
-        simpa [afterProduction] using
-          Lanius.FunctionalView.Env.push_before environment productionValue
-            (⟨3, by omega⟩ : Fin 13)
-      _ = workspaceValue workspaceValues workspaceCell := workspaceValueEq
-  have baseAfterProduction : afterProduction ⟨4, by omega⟩ =
-      .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)) := by
-    calc
-      afterProduction ⟨4, by omega⟩ = environment ⟨4, by omega⟩ := by
-        simpa [afterProduction] using
-          Lanius.FunctionalView.Env.push_before environment productionValue
-            (⟨4, by omega⟩ : Fin 13)
-      _ = .signed .i32
-          (Int.ofNat (stateBase workspaceLayout.tokenCount)) := stateBaseEq
-  have currentAfterProduction : afterProduction ⟨12, by omega⟩ =
-      .signed .i32 (Int.ofNat current) := by
-    calc
-      afterProduction ⟨12, by omega⟩ = environment ⟨12, by omega⟩ := by
-        simpa [afterProduction] using
-          Lanius.FunctionalView.Env.push_before environment productionValue
-            (⟨12, by omega⟩ : Fin 13)
-      _ = .signed .i32 (Int.ofNat current) := currentEq
-  have dotResult := stateValueTerm_evaluates workspaceLayout grammar words tokens
-    grammarCell tokensCell workspaceCell world afterProduction
-    ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ workspace candidate
-    workspaceValues current 1 29 workspaceAfterProduction baseAfterProduction
-    currentAfterProduction workspaceFound
-    valuesLength encoded foundState (by decide)
-    verifiedParser_find_constants.2.2.1
-  have dotResult' : Lanius.FunctionalView.Term.evaluate
-      (stateTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell) world afterProduction
-      (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 29) =
-      .ok (dotValue, world) := by
-    simpa [dotValue, stateFieldValue] using dotResult
-  have workspaceAfterDot : afterDot ⟨3, by omega⟩ =
-      workspaceValue workspaceValues workspaceCell := by
-    calc
-      afterDot ⟨3, by omega⟩ = afterProduction ⟨3, by omega⟩ := by
-        simpa [afterDot] using
-          Lanius.FunctionalView.Env.push_before afterProduction dotValue
-            (⟨3, by omega⟩ : Fin 14)
-      _ = workspaceValue workspaceValues workspaceCell :=
-        workspaceAfterProduction
-  have baseAfterDot : afterDot ⟨4, by omega⟩ =
-      .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)) := by
-    calc
-      afterDot ⟨4, by omega⟩ = afterProduction ⟨4, by omega⟩ := by
-        simpa [afterDot] using
-          Lanius.FunctionalView.Env.push_before afterProduction dotValue
-            (⟨4, by omega⟩ : Fin 14)
-      _ = .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)) :=
-        baseAfterProduction
-  have currentAfterDot : afterDot ⟨12, by omega⟩ =
-      .signed .i32 (Int.ofNat current) := by
-    calc
-      afterDot ⟨12, by omega⟩ = afterProduction ⟨12, by omega⟩ := by
-        simpa [afterDot] using
-          Lanius.FunctionalView.Env.push_before afterProduction dotValue
-            (⟨12, by omega⟩ : Fin 14)
-      _ = .signed .i32 (Int.ofNat current) := currentAfterProduction
-  have originResult := stateValueTerm_evaluates workspaceLayout grammar words
-    tokens grammarCell tokensCell workspaceCell world afterDot
-    ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ workspace candidate
-    workspaceValues current 2 30 workspaceAfterDot baseAfterDot currentAfterDot
-    workspaceFound valuesLength encoded foundState
-    (by decide) verifiedParser_find_constants.2.2.2.1
-  have originResult' : Lanius.FunctionalView.Term.evaluate
-      (stateTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell) world afterDot
-      (stateValueTerm ⟨3, by omega⟩ ⟨4, by omega⟩ ⟨12, by omega⟩ 30) =
-      .ok (originValue, world) := by
-    simpa [originValue, stateFieldValue] using originResult
-  have grammarAfterProduction : afterProduction ⟨0, by omega⟩ =
-      parserGrammarValue words grammarCell := by
-    calc
-      afterProduction ⟨0, by omega⟩ = environment ⟨0, by omega⟩ := by
-        simpa [afterProduction] using
-          Lanius.FunctionalView.Env.push_before environment productionValue
-            (⟨0, by omega⟩ : Fin 13)
-      _ = parserGrammarValue words grammarCell := grammarValueEq
-  have grammarAfterDot : afterDot ⟨0, by omega⟩ =
-      parserGrammarValue words grammarCell := by
-    calc
-      afterDot ⟨0, by omega⟩ = afterProduction ⟨0, by omega⟩ := by
-        simpa [afterDot] using
-          Lanius.FunctionalView.Env.push_before afterProduction dotValue
-            (⟨0, by omega⟩ : Fin 14)
-      _ = parserGrammarValue words grammarCell := grammarAfterProduction
-  have grammarAfterOrigin : afterOrigin ⟨0, by omega⟩ =
-      parserGrammarValue words grammarCell := by
-    calc
-      afterOrigin ⟨0, by omega⟩ = afterDot ⟨0, by omega⟩ := by
-        simpa [afterOrigin] using
-          Lanius.FunctionalView.Env.push_before afterDot originValue
-            (⟨0, by omega⟩ : Fin 15)
-      _ = parserGrammarValue words grammarCell := grammarAfterDot
-  have productionAfterProduction : afterProduction ⟨13, by omega⟩ =
-      productionValue := by
-    simpa [afterProduction] using
-      Lanius.FunctionalView.Env.push_last environment productionValue
-  have productionAfterDot : afterDot ⟨13, by omega⟩ = productionValue := by
-    calc
-      afterDot ⟨13, by omega⟩ = afterProduction ⟨13, by omega⟩ := by
-        simpa [afterDot] using
-          Lanius.FunctionalView.Env.push_before afterProduction dotValue
-            (⟨13, by omega⟩ : Fin 14)
-      _ = productionValue := productionAfterProduction
-  have productionAfterOrigin : afterOrigin ⟨13, by omega⟩ =
-      .signed .i32 (Int.ofNat candidate.production) := by
-    calc
-      afterOrigin ⟨13, by omega⟩ = afterDot ⟨13, by omega⟩ := by
-        simpa [afterOrigin] using
-          Lanius.FunctionalView.Env.push_before afterDot originValue
-            (⟨13, by omega⟩ : Fin 15)
-      _ = productionValue := productionAfterDot
-      _ = .signed .i32 (Int.ofNat candidate.production) := by
-        rfl
-  have rhsResult := stateRhsLengthTerm_evaluates workspaceLayout grammar words
-    tokens grammarCell tokensCell world afterOrigin ⟨0, by omega⟩
-    ⟨13, by omega⟩ candidate.production productionBound grammarAfterOrigin
-    productionAfterOrigin grammarFound
   rw [stateBodyCommand_shape]
-  exact .letValue productionResult'
-    (.letValue (by simpa [afterProduction, productionValue] using dotResult')
-      (.letValue (by
-        simpa [afterDot, afterProduction, productionValue, dotValue] using
-          originResult')
-        (.letValue (by
-          simpa [afterOrigin, afterDot, afterProduction, productionValue,
-            dotValue, originValue] using rhsResult) (by
-              simpa [afterOrigin, afterDot, afterProduction, productionValue,
-                dotValue, originValue, rhsLengthValue] using branchResult))))
+  refine .letValue (initializedWorld := world) ?_
+    (.letValue (initializedWorld := world) ?_
+      (.letValue (initializedWorld := world) ?_
+        (.letValue (initializedWorld := world) ?_ branchResult)))
+  · simpa only [stateFieldValue] using
+      stateValueTerm_evaluates workspaceLayout grammar words tokens grammarCell
+        tokensCell workspaceCell world environment ⟨3, by omega⟩ ⟨4, by omega⟩
+        ⟨12, by omega⟩ workspace candidate workspaceValues current 0 28
+        workspaceValueEq stateBaseEq currentEq workspaceFound valuesLength
+        encoded foundState (by decide) verifiedParser_find_constants.2.1
+  · simpa only [stateFieldValue] using
+      stateValueTerm_evaluates workspaceLayout grammar words tokens grammarCell
+        tokensCell workspaceCell world _ ⟨3, by omega⟩ ⟨4, by omega⟩
+        ⟨12, by omega⟩ workspace candidate workspaceValues current 1 29
+        (by simpa [Lanius.FunctionalView.Env.push] using workspaceValueEq)
+        (by simpa [Lanius.FunctionalView.Env.push] using stateBaseEq)
+        (by simpa [Lanius.FunctionalView.Env.push] using currentEq)
+        workspaceFound valuesLength encoded foundState (by decide)
+        verifiedParser_find_constants.2.2.1
+  · simpa only [stateFieldValue] using
+      stateValueTerm_evaluates workspaceLayout grammar words tokens grammarCell
+        tokensCell workspaceCell world _ ⟨3, by omega⟩ ⟨4, by omega⟩
+        ⟨12, by omega⟩ workspace candidate workspaceValues current 2 30
+        (by simpa [Lanius.FunctionalView.Env.push] using workspaceValueEq)
+        (by simpa [Lanius.FunctionalView.Env.push] using stateBaseEq)
+        (by simpa [Lanius.FunctionalView.Env.push] using currentEq)
+        workspaceFound valuesLength encoded foundState (by decide)
+        verifiedParser_find_constants.2.2.2.1
+  · exact stateRhsLengthTerm_evaluates workspaceLayout grammar words tokens
+      grammarCell tokensCell world _ ⟨0, by omega⟩ ⟨13, by omega⟩
+      candidate.production productionBound
+      (by simpa [Lanius.FunctionalView.Env.push] using grammarValueEq)
+      (by simp [Lanius.FunctionalView.Env.push]) grammarFound
 
 theorem stateLessTerm_evaluates
     {arity : Nat} (workspaceLayout : WorkspaceLayout)
@@ -4691,26 +3543,9 @@ theorem stateLessTerm_evaluates
         tokensCell)
       world environment (stateLessTerm left right) =
       .ok (.boolean (decide (leftValue < rightValue)), world) := by
-  have leftResult : Lanius.FunctionalView.Term.evaluate
-      (stateTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell)
-      world environment (.reference (.slot left)) =
-      .ok (.signed .i32 (Int.ofNat leftValue), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot leftEq
-  have rightResult : Lanius.FunctionalView.Term.evaluate
-      (stateTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell)
-      world environment (.reference (.slot right)) =
-      .ok (.signed .i32 (Int.ofNat rightValue), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot rightEq
-  apply Lanius.FunctionalView.Term.evaluate_apply2 leftResult rightResult
-  change Lanius.FunctionalView.Core.ReadOnly.evaluateOperation
-    verifiedParserCore world
-      (.binary .less parserI32Type parserI32Type (.scalar .bool))
-      [.signed .i32 (Int.ofNat leftValue),
-        .signed .i32 (Int.ofNat rightValue)] = _
-  exact Lanius.FunctionalView.Core.ReadOnly.evaluateOperation_i32_less
-    leftValue rightValue
+  rw [Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
+    (stateLessTerm left right) (by rfl)]
+  functional_eval
 
 private theorem stateGreaterEqualZeroTerm_evaluates
     {arity : Nat} (workspaceLayout : WorkspaceLayout)
@@ -4725,26 +3560,9 @@ private theorem stateGreaterEqualZeroTerm_evaluates
         tokensCell)
       world environment (stateGreaterEqualZeroTerm slot) =
       .ok (.boolean (decide (value ≥ 0)), world) := by
-  have valueResult : Lanius.FunctionalView.Term.evaluate
-      (stateTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell)
-      world environment (.reference (.slot slot)) =
-      .ok (.signed .i32 value, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot valueEq
-  have zeroResult : Lanius.FunctionalView.Term.evaluate
-      (stateTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell)
-      world environment (.reference (.literal (.signed .i32 0))) =
-      .ok (.signed .i32 0, world) := by
-    rfl
-  apply Lanius.FunctionalView.Term.evaluate_apply2 valueResult zeroResult
-  change Lanius.FunctionalView.Core.ReadOnly.evaluateOperation
-    verifiedParserCore world
-      (.binary .greaterEqual parserI32Type parserI32Type (.scalar .bool))
-      [.signed .i32 value, .signed .i32 0] = _
-  exact
-    Lanius.FunctionalView.Core.ReadOnly.evaluateOperation_i32_greaterEqual_int
-      value 0
+  rw [Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
+    (stateGreaterEqualZeroTerm slot) (by rfl)]
+  functional_eval
 
 /-- A failed scan executes the exact terminal branch without entering the
     append path. -/
@@ -5306,26 +4124,9 @@ theorem stateLoopCondition_evaluates
         tokensCell)
       world environment stateLoopCondition =
       .ok (.boolean (decide (current ≥ 0)), world) := by
-  have currentResult : Lanius.FunctionalView.Term.evaluate
-      (stateTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell)
-      world environment (stateSlot ⟨12, by omega⟩) =
-      .ok (.signed .i32 current, world) :=
-    Lanius.FunctionalView.Term.evaluate_slot currentEq
-  have zeroResult : Lanius.FunctionalView.Term.evaluate
-      (stateTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell)
-      world environment (stateLiteral 0) =
-      .ok (.signed .i32 0, world) := by
-    rfl
-  apply Lanius.FunctionalView.Term.evaluate_apply2 currentResult zeroResult
-  change Lanius.FunctionalView.Core.ReadOnly.evaluateOperation
-    verifiedParserCore world
-      (.binary .greaterEqual parserI32Type parserI32Type (.scalar .bool))
-      [.signed .i32 current, .signed .i32 0] = _
-  exact
-    Lanius.FunctionalView.Core.ReadOnly.evaluateOperation_i32_greaterEqual_int
-      current 0
+  rw [Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
+    stateLoopCondition (by rfl)]
+  functional_eval
 
 theorem positionLoopCondition_evaluates
     (workspaceLayout : WorkspaceLayout) (grammar : IndexedGrammar)
@@ -5341,27 +4142,9 @@ theorem positionLoopCondition_evaluates
         tokensCell)
       world environment positionLoopCondition =
       .ok (.boolean (decide (position ≤ finalPosition)), world) := by
-  have positionResult : Lanius.FunctionalView.Term.evaluate
-      (positionTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell)
-      world environment (.reference (.slot ⟨14, by omega⟩)) =
-      .ok (.signed .i32 (Int.ofNat position), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot positionEq
-  have finalResult : Lanius.FunctionalView.Term.evaluate
-      (positionTermMachine workspaceLayout grammar words tokens grammarCell
-        tokensCell)
-      world environment (.reference (.slot ⟨4, by omega⟩)) =
-      .ok (.signed .i32 (Int.ofNat finalPosition), world) :=
-    Lanius.FunctionalView.Term.evaluate_slot finalPositionEq
-  apply Lanius.FunctionalView.Term.evaluate_apply2 positionResult finalResult
-  change Lanius.FunctionalView.Core.ReadOnly.evaluateOperation
-    verifiedParserCore world
-      (.binary .lessEqual parserI32Type parserI32Type (.scalar .bool))
-      [.signed .i32 (Int.ofNat position),
-        .signed .i32 (Int.ofNat finalPosition)] = _
-  simp [Lanius.FunctionalView.Core.ReadOnly.evaluateOperation,
-    evalBinaryValue, evalSignedBinary, bind, Except.bind]
-  rfl
+  rw [Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
+    positionLoopCondition (by rfl)]
+  functional_eval
 
 theorem positionActivityCondition_evaluates
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -5431,8 +4214,7 @@ private theorem stateAfterBindingsCommand_toCore :
       stateAfterBindingsLayout 29 stateAfterBindingsCommand =
       parserRecognizeStateAfterBindings := by
   have whole := parserRecognizeStateBodyView_toCore_exactly
-  change Lanius.FunctionalView.Core.Stateful.toCoreStmt actionAdapter
-    stateLoopLayout 25 stateBodyCommand = parserRecognizeStateLoopBody at whole
+  rw [← stateBodyCommand_derived] at whole
   rw [stateBodyCommand_shape, extractedParserRecognize_state_body_shape] at whole
   have projected := congrArg coreAfterFourBindings whole
   simp only [Lanius.FunctionalView.Core.Stateful.toCoreStmt,
@@ -6167,7 +4949,11 @@ inductive RecognizerStateBranchSynchronizedOutcome
       (environmentMeaning : StateAfterBindingsEnvironment (tokenCapacity := tokens.length + frame.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar
         words tokens workspaceLayout workspace workspaceValues grammarCell
         tokensCell workspaceCell position current production dot origin
-        rhsLength afterEnvironment) :
+        rhsLength afterEnvironment)
+      (predicted : PredictionsComplete grammar workspace position production dot)
+      (stable : ChartsUnchangedBefore position beforeWorkspace workspace)
+      (scanned : ScansComplete grammar tokens workspace position production dot origin)
+      (completedPairs : CompletionStep grammar workspace position production dot origin) :
       RecognizerStateBranchSynchronizedOutcome grammarLayout grammar words
         tokens workspaceLayout beforeWorkspace grammarCell tokensCell
         workspaceCell stateCountCell cursorCell position current beforeRemaining
@@ -6180,7 +4966,8 @@ inductive RecognizerStateBranchSynchronizedOutcome
       (terminal : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell physicalAfter)
-      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter) :
+      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerStateBranchSynchronizedOutcome grammarLayout grammar words
         tokens workspaceLayout beforeWorkspace grammarCell tokensCell
         workspaceCell stateCountCell cursorCell position current beforeRemaining
@@ -6201,9 +4988,9 @@ def RecognizerStateBranchSynchronizedOutcome.physical
   | completed workspace workspaceValues physicalAfter growth frame _ _ =>
       exact .completed workspace workspaceValues physicalAfter growth frame
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter growth terminal
-        stateCount wellFormed
+        stateCount wellFormed full
 
 /-- Eliminate a branch outcome without asking Lean to invert the nontrivial
     `toCoreCompletion` index used by synchronized source executions. -/
@@ -6220,6 +5007,7 @@ theorem RecognizerStateBranchSynchronizedOutcome.view
           workspaceLayout workspace workspaceValues grammarCell tokensCell
           workspaceCell physicalAfter,
       ∃ wellFormed : StateWellFormed physicalAfter,
+      WorkspaceFull workspaceLayout.capacity workspace stateCount ∧
       completion = parserCapacityCompletion position stateCount) ∨
     (∃ workspace workspaceValues,
       ∃ growth : WorkspaceAppendClosure workspaceLayout.capacity
@@ -6234,16 +5022,20 @@ theorem RecognizerStateBranchSynchronizedOutcome.view
       StateAfterBindingsEnvironment (tokenCapacity := tokens.length + frame.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell position current production dot origin rhsLength
-        afterEnvironment) := by
+        afterEnvironment ∧
+      PredictionsComplete grammar workspace position production dot ∧
+      ChartsUnchangedBefore position beforeWorkspace workspace ∧
+      ScansComplete grammar tokens workspace position production dot origin ∧
+      CompletionStep grammar workspace position production dot origin) := by
   cases outcome with
   | completed workspace workspaceValues physicalAfter growth frame worldEq
-      environmentMeaning =>
+      environmentMeaning predicted stable scanned completedPairs =>
       exact .inr ⟨workspace, workspaceValues, growth, frame, rfl, worldEq,
-        environmentMeaning⟩
+        environmentMeaning, predicted, stable, scanned, completedPairs⟩
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .inl ⟨workspace, workspaceValues, stateCount, growth, terminal,
-        wellFormed, rfl⟩
+        wellFormed, full, rfl⟩
 
 /-- Restore the enclosing state-loop frame after any nested workspace-growing
     parser operation. The caller supplies only the nested operation's semantic
@@ -6763,296 +5555,120 @@ noncomputable def RecognizerStateLoopInvariant.bind_candidate_fields
       workspaceCell stateCountCell cursorCell runtime position current remaining
       invariant candidate found productionBound := by
   let productionRead := invariant.chartCursor.read_production candidate found
-  have productionEvaluation : Evaluates verifiedParserCore runtime
-      (parserRecognizeStateValueCall 24 28)
-      (.signed .i32 (Int.ofNat candidate.production)) productionRead.after := by
-    simpa [stateFieldValue] using productionRead.evaluation
-  let afterProduction := invariant.after_empty_effect productionRead.effect
-    productionRead.invariant.recognizer.wellFormed
-  let productionScope := productionRead.after.bindLocal 25
-    (.signed .i32 (Int.ofNat candidate.production))
+  have wfProduction := productionRead.invariant.recognizer.wellFormed
+  let afterProduction := invariant.after_empty_effect productionRead.effect wfProduction
   let productionInvariant := afterProduction.after_bind_local 25
     (.signed .i32 (Int.ofNat candidate.production)) (by decide)
   let dotRead := productionInvariant.chartCursor.read_dot candidate found
-  have dotEvaluation : Evaluates verifiedParserCore productionScope
-      (parserRecognizeStateValueCall 24 29)
-      (.signed .i32 (Int.ofNat candidate.dot)) dotRead.after := by
-    simpa [productionScope, productionInvariant, stateFieldValue] using
-      dotRead.evaluation
-  let afterDot := productionInvariant.after_empty_effect dotRead.effect
-    dotRead.invariant.recognizer.wellFormed
-  let dotScope := dotRead.after.bindLocal 26
-    (.signed .i32 (Int.ofNat candidate.dot))
+  have wfDot := dotRead.invariant.recognizer.wellFormed
+  let afterDot := productionInvariant.after_empty_effect dotRead.effect wfDot
   let dotInvariant := afterDot.after_bind_local 26
     (.signed .i32 (Int.ofNat candidate.dot)) (by decide)
   let originRead := dotInvariant.chartCursor.read_origin candidate found
-  have originEvaluation : Evaluates verifiedParserCore dotScope
-      (parserRecognizeStateValueCall 24 30)
-      (.signed .i32 (Int.ofNat candidate.origin)) originRead.after := by
-    simpa [dotScope, dotInvariant, stateFieldValue] using originRead.evaluation
-  let afterOrigin := dotInvariant.after_empty_effect originRead.effect
-    originRead.invariant.recognizer.wellFormed
-  let originScope := originRead.after.bindLocal 27
-    (.signed .i32 (Int.ofNat candidate.origin))
+  have wfOrigin := originRead.invariant.recognizer.wellFormed
+  let afterOrigin := dotInvariant.after_empty_effect originRead.effect wfOrigin
   let originInvariant := afterOrigin.after_bind_local 27
     (.signed .i32 (Int.ofNat candidate.origin)) (by decide)
-  have productionAtProductionScope : productionScope.local? 25 = some
-      (.signed .i32 (Int.ofNat candidate.production)) := by
-    simpa [productionScope] using bindLocal_finds_local productionRead.after 25
-      (.signed .i32 (Int.ofNat candidate.production))
-      productionRead.invariant.recognizer.wellFormed
-  have productionAtDotRead : dotRead.after.local? 25 = some
-      (.signed .i32 (Int.ofNat candidate.production)) :=
-    dotRead.effect.empty_preserves_local
-      productionInvariant.chartCursor.recognizer.wellFormed
-      productionAtProductionScope
-  have productionAtDotScope : dotScope.local? 25 = some
-      (.signed .i32 (Int.ofNat candidate.production)) :=
-    (bindLocal_preserves_other_local dotRead.invariant.recognizer.wellFormed
-      (by decide : 26 ≠ 25)).trans productionAtDotRead
-  have dotAtDotScope : dotScope.local? 26 = some
-      (.signed .i32 (Int.ofNat candidate.dot)) := by
-    simpa [dotScope] using bindLocal_finds_local dotRead.after 26
-      (.signed .i32 (Int.ofNat candidate.dot))
-      dotRead.invariant.recognizer.wellFormed
-  have productionAtOriginRead : originRead.after.local? 25 = some
-      (.signed .i32 (Int.ofNat candidate.production)) :=
-    originRead.effect.empty_preserves_local
-      dotInvariant.chartCursor.recognizer.wellFormed productionAtDotScope
-  have dotAtOriginRead : originRead.after.local? 26 = some
-      (.signed .i32 (Int.ofNat candidate.dot)) :=
-    originRead.effect.empty_preserves_local
-      dotInvariant.chartCursor.recognizer.wellFormed dotAtDotScope
-  have productionAtOriginScope : originScope.local? 25 = some
-      (.signed .i32 (Int.ofNat candidate.production)) :=
-    (bindLocal_preserves_other_local originRead.invariant.recognizer.wellFormed
-      (by decide : 27 ≠ 25)).trans productionAtOriginRead
-  have dotAtOriginScope : originScope.local? 26 = some
-      (.signed .i32 (Int.ofNat candidate.dot)) :=
-    (bindLocal_preserves_other_local originRead.invariant.recognizer.wellFormed
-      (by decide : 27 ≠ 26)).trans dotAtOriginRead
-  have originAtOriginScope : originScope.local? 27 = some
-      (.signed .i32 (Int.ofNat candidate.origin)) := by
-    simpa [originScope] using bindLocal_finds_local originRead.after 27
-      (.signed .i32 (Int.ofNat candidate.origin))
-      originRead.invariant.recognizer.wellFormed
-  have productionResult : Evaluates verifiedParserCore originScope (.local 25)
-      (.signed .i32 (Int.ofNat candidate.production)) originScope :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore originScope 25 _
-      productionAtOriginScope⟩
+
+  -- Keep the physical ownership witness through each read and binding. The
+  -- local read needed by rhs_length follows from that same witness.
+  have productionOwned := bindLocal_owns_fresh productionRead.after 25
+    (.signed .i32 (Int.ofNat candidate.production)) wfProduction
+  have productionOwned := dotRead.effect.empty_preserves_assertion
+    productionInvariant.chartCursor.recognizer.wellFormed _ productionOwned
+  have productionOwned := bindLocal_preserves_localPointsTo_of_ne _ 26 25
+    (.signed .i32 (Int.ofNat candidate.dot)) _ _ wfDot (by decide) productionOwned
+  have productionOwned := originRead.effect.empty_preserves_assertion
+    dotInvariant.chartCursor.recognizer.wellFormed _ productionOwned
+  have productionOwned := bindLocal_preserves_localPointsTo_of_ne _ 27 25
+    (.signed .i32 (Int.ofNat candidate.origin)) _ _ wfOrigin (by decide) productionOwned
+  have productionResult : Evaluates verifiedParserCore _ (.local 25)
+      (.signed .i32 (Int.ofNat candidate.production)) _ :=
+    ⟨1, evalLocal_of_local 1 verifiedParserCore _ 25 _
+      (Assertion.localPointsTo_local _ _ _ _ productionOwned)⟩
   let rhsRead := originInvariant.chartCursor.read_rhs_length
     candidate.production productionBound (.local 25) productionResult
   have rhsLengthValue : grammar.rhsLengths.get
       ⟨candidate.production, by simpa using productionBound⟩ =
       (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs.length :=
-    by simpa using (grammar.rhsLengths_get
-      ⟨candidate.production, productionBound⟩)
-  have rhsLengthEvaluation : Evaluates verifiedParserCore originScope
-      (.call extractedParserRhsLengthFunction.id [.local 0, .local 25])
-      (.signed .i32 (Int.ofNat
-        (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs.length))
-      rhsRead.after := by
-    simpa only [rhsLengthValue] using rhsRead.evaluation
-  let afterRhs := originInvariant.after_empty_effect rhsRead.effect
-    rhsRead.invariant.recognizer.wellFormed
+    by simpa using (grammar.rhsLengths_get ⟨candidate.production, productionBound⟩)
+  have wfRhs := rhsRead.invariant.recognizer.wellFormed
+  let afterRhs := originInvariant.after_empty_effect rhsRead.effect wfRhs
   let rhsLength :=
     (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs.length
-  let rhsScope := rhsRead.after.bindLocal 28
-    (.signed .i32 (Int.ofNat rhsLength))
   let rhsInvariant := afterRhs.after_bind_local 28
     (.signed .i32 (Int.ofNat rhsLength)) (by decide)
-  have productionAtRhsRead : rhsRead.after.local? 25 = some
-      (.signed .i32 (Int.ofNat candidate.production)) :=
-    rhsRead.effect.empty_preserves_local
-      originInvariant.chartCursor.recognizer.wellFormed productionAtOriginScope
-  have dotAtRhsRead : rhsRead.after.local? 26 = some
-      (.signed .i32 (Int.ofNat candidate.dot)) :=
-    rhsRead.effect.empty_preserves_local
-      originInvariant.chartCursor.recognizer.wellFormed dotAtOriginScope
-  have originAtRhsRead : rhsRead.after.local? 27 = some
-      (.signed .i32 (Int.ofNat candidate.origin)) :=
-    rhsRead.effect.empty_preserves_local
-      originInvariant.chartCursor.recognizer.wellFormed originAtOriginScope
-  let productionCell := productionRead.after.nextCell
-  have productionOwnedAtProductionScope :
-      (Assertion.localPointsTo 25 productionCell
-        (some (.signed .i32 (Int.ofNat candidate.production)))).holds
-        productionScope := by
-    simpa [productionCell, productionScope] using
-      bindLocal_owns_fresh productionRead.after 25
-        (.signed .i32 (Int.ofNat candidate.production))
-        productionRead.invariant.recognizer.wellFormed
-  have productionOwnedAtDotRead :
-      (Assertion.localPointsTo 25 productionCell
-        (some (.signed .i32 (Int.ofNat candidate.production)))).holds
-        dotRead.after :=
-    dotRead.effect.empty_preserves_assertion
-      productionInvariant.chartCursor.recognizer.wellFormed _
-      productionOwnedAtProductionScope
-  have productionOwnedAtDotScope :
-      (Assertion.localPointsTo 25 productionCell
-        (some (.signed .i32 (Int.ofNat candidate.production)))).holds
-        dotScope := by
-    simpa [dotScope] using bindLocal_preserves_localPointsTo_of_ne
-      dotRead.after 26 25 (.signed .i32 (Int.ofNat candidate.dot))
-      productionCell (some (.signed .i32 (Int.ofNat candidate.production)))
-      dotRead.invariant.recognizer.wellFormed (by decide)
-      productionOwnedAtDotRead
-  have productionOwnedAtOriginRead :
-      (Assertion.localPointsTo 25 productionCell
-        (some (.signed .i32 (Int.ofNat candidate.production)))).holds
-        originRead.after :=
-    originRead.effect.empty_preserves_assertion
-      dotInvariant.chartCursor.recognizer.wellFormed _
-      productionOwnedAtDotScope
-  have productionOwnedAtOriginScope :
-      (Assertion.localPointsTo 25 productionCell
-        (some (.signed .i32 (Int.ofNat candidate.production)))).holds
-        originScope := by
-    simpa [originScope] using bindLocal_preserves_localPointsTo_of_ne
-      originRead.after 27 25 (.signed .i32 (Int.ofNat candidate.origin))
-      productionCell (some (.signed .i32 (Int.ofNat candidate.production)))
-      originRead.invariant.recognizer.wellFormed (by decide)
-      productionOwnedAtOriginRead
-  have productionOwnedAtRhsRead :
-      (Assertion.localPointsTo 25 productionCell
-        (some (.signed .i32 (Int.ofNat candidate.production)))).holds
-        rhsRead.after :=
-    rhsRead.effect.empty_preserves_assertion
-      originInvariant.chartCursor.recognizer.wellFormed _
-      productionOwnedAtOriginScope
-  have productionOwned :
-      (Assertion.localPointsTo 25 productionCell
-        (some (.signed .i32 (Int.ofNat candidate.production)))).holds
-        rhsScope := by
-    simpa [rhsScope] using bindLocal_preserves_localPointsTo_of_ne
-      rhsRead.after 28 25 (.signed .i32 (Int.ofNat rhsLength))
-      productionCell (some (.signed .i32 (Int.ofNat candidate.production)))
-      rhsRead.invariant.recognizer.wellFormed (by decide)
-      productionOwnedAtRhsRead
-  let dotCell := dotRead.after.nextCell
-  have dotOwnedAtDotScope : (Assertion.localPointsTo 26 dotCell
-      (some (.signed .i32 (Int.ofNat candidate.dot)))).holds dotScope := by
-    simpa [dotCell, dotScope] using bindLocal_owns_fresh dotRead.after 26
-      (.signed .i32 (Int.ofNat candidate.dot))
-      dotRead.invariant.recognizer.wellFormed
-  have dotOwnedAtOriginRead : (Assertion.localPointsTo 26 dotCell
-      (some (.signed .i32 (Int.ofNat candidate.dot)))).holds
-      originRead.after :=
-    originRead.effect.empty_preserves_assertion
-      dotInvariant.chartCursor.recognizer.wellFormed _ dotOwnedAtDotScope
-  have dotOwnedAtOriginScope : (Assertion.localPointsTo 26 dotCell
-      (some (.signed .i32 (Int.ofNat candidate.dot)))).holds originScope := by
-    simpa [originScope] using bindLocal_preserves_localPointsTo_of_ne
-      originRead.after 27 26 (.signed .i32 (Int.ofNat candidate.origin))
-      dotCell (some (.signed .i32 (Int.ofNat candidate.dot)))
-      originRead.invariant.recognizer.wellFormed (by decide)
-      dotOwnedAtOriginRead
-  have dotOwnedAtRhsRead : (Assertion.localPointsTo 26 dotCell
-      (some (.signed .i32 (Int.ofNat candidate.dot)))).holds rhsRead.after :=
-    rhsRead.effect.empty_preserves_assertion
-      originInvariant.chartCursor.recognizer.wellFormed _ dotOwnedAtOriginScope
-  have dotOwned : (Assertion.localPointsTo 26 dotCell
-      (some (.signed .i32 (Int.ofNat candidate.dot)))).holds rhsScope := by
-    simpa [rhsScope] using bindLocal_preserves_localPointsTo_of_ne
-      rhsRead.after 28 26 (.signed .i32 (Int.ofNat rhsLength)) dotCell
-      (some (.signed .i32 (Int.ofNat candidate.dot)))
-      rhsRead.invariant.recognizer.wellFormed (by decide) dotOwnedAtRhsRead
-  let originCell := originRead.after.nextCell
-  have originOwnedAtOriginScope : (Assertion.localPointsTo 27 originCell
-      (some (.signed .i32 (Int.ofNat candidate.origin)))).holds
-      originScope := by
-    simpa [originCell, originScope] using bindLocal_owns_fresh
-      originRead.after 27 (.signed .i32 (Int.ofNat candidate.origin))
-      originRead.invariant.recognizer.wellFormed
-  have originOwnedAtRhsRead : (Assertion.localPointsTo 27 originCell
-      (some (.signed .i32 (Int.ofNat candidate.origin)))).holds
-      rhsRead.after :=
-    rhsRead.effect.empty_preserves_assertion
-      originInvariant.chartCursor.recognizer.wellFormed _
-      originOwnedAtOriginScope
-  have originOwned : (Assertion.localPointsTo 27 originCell
-      (some (.signed .i32 (Int.ofNat candidate.origin)))).holds rhsScope := by
-    simpa [rhsScope] using bindLocal_preserves_localPointsTo_of_ne
-      rhsRead.after 28 27 (.signed .i32 (Int.ofNat rhsLength)) originCell
-      (some (.signed .i32 (Int.ofNat candidate.origin)))
-      rhsRead.invariant.recognizer.wellFormed (by decide) originOwnedAtRhsRead
-  have productionCellDistinct : productionCell ≠ workspaceCell ∧
-      productionCell ≠ stateCountCell ∧ productionCell ≠ cursorCell := by
-    exact ⟨Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-        productionRead.invariant.recognizer.wellFormed
-        productionRead.invariant.recognizer.workspaceBacking,
-      Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-        productionRead.invariant.recognizer.wellFormed
-        afterProduction.appendFrame.stateCountOwned.2,
-      Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-        productionRead.invariant.recognizer.wellFormed
-        productionRead.invariant.cursorOwned.2⟩
-  have dotCellDistinct : dotCell ≠ workspaceCell ∧
-      dotCell ≠ stateCountCell ∧ dotCell ≠ cursorCell := by
-    exact ⟨Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-        dotRead.invariant.recognizer.wellFormed
-        dotRead.invariant.recognizer.workspaceBacking,
-      Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-        dotRead.invariant.recognizer.wellFormed
-        afterDot.appendFrame.stateCountOwned.2,
-      Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-        dotRead.invariant.recognizer.wellFormed
-        dotRead.invariant.cursorOwned.2⟩
-  have originCellDistinct : originCell ≠ workspaceCell ∧
-      originCell ≠ stateCountCell ∧ originCell ≠ cursorCell := by
-    exact ⟨Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-        originRead.invariant.recognizer.wellFormed
-        originRead.invariant.recognizer.workspaceBacking,
-      Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-        originRead.invariant.recognizer.wellFormed
-        afterOrigin.appendFrame.stateCountOwned.2,
-      Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
-        originRead.invariant.recognizer.wellFormed
-        originRead.invariant.cursorOwned.2⟩
+
+  have productionOwned := rhsRead.effect.empty_preserves_assertion
+    originInvariant.chartCursor.recognizer.wellFormed _ productionOwned
+  have productionOwned := bindLocal_preserves_localPointsTo_of_ne _ 28 25
+    (.signed .i32 (Int.ofNat rhsLength)) _ _ wfRhs (by decide) productionOwned
+  have dotOwned := bindLocal_owns_fresh dotRead.after 26
+    (.signed .i32 (Int.ofNat candidate.dot)) wfDot
+  have dotOwned := originRead.effect.empty_preserves_assertion
+    dotInvariant.chartCursor.recognizer.wellFormed _ dotOwned
+  have dotOwned := bindLocal_preserves_localPointsTo_of_ne _ 27 26
+    (.signed .i32 (Int.ofNat candidate.origin)) _ _ wfOrigin (by decide) dotOwned
+  have dotOwned := rhsRead.effect.empty_preserves_assertion
+    originInvariant.chartCursor.recognizer.wellFormed _ dotOwned
+  have dotOwned := bindLocal_preserves_localPointsTo_of_ne _ 28 26
+    (.signed .i32 (Int.ofNat rhsLength)) _ _ wfRhs (by decide) dotOwned
+  have originOwned := bindLocal_owns_fresh originRead.after 27
+    (.signed .i32 (Int.ofNat candidate.origin)) wfOrigin
+  have originOwned := rhsRead.effect.empty_preserves_assertion
+    originInvariant.chartCursor.recognizer.wellFormed _ originOwned
+  have originOwned := bindLocal_preserves_localPointsTo_of_ne _ 28 27
+    (.signed .i32 (Int.ofNat rhsLength)) _ _ wfRhs (by decide) originOwned
+
   exact {
     afterProductionRead := productionRead.after
-    productionEvaluation := productionEvaluation
+    productionEvaluation := by simpa only [stateFieldValue] using productionRead.evaluation
     productionEffect := productionRead.effect
-    afterProductionWellFormed := productionRead.invariant.recognizer.wellFormed
+    afterProductionWellFormed := wfProduction
     afterDotRead := dotRead.after
-    dotEvaluation := by simpa [productionScope, productionInvariant] using
-      dotEvaluation
-    dotEffect := by simpa [productionScope, productionInvariant] using
-      dotRead.effect
-    afterDotWellFormed := dotRead.invariant.recognizer.wellFormed
+    dotEvaluation := by simpa only [stateFieldValue] using dotRead.evaluation
+    dotEffect := dotRead.effect
+    afterDotWellFormed := wfDot
     afterOriginRead := originRead.after
-    originEvaluation := by simpa [dotScope, dotInvariant] using originEvaluation
-    originEffect := by simpa [dotScope, dotInvariant] using originRead.effect
-    afterOriginWellFormed := originRead.invariant.recognizer.wellFormed
+    originEvaluation := by simpa only [stateFieldValue] using originRead.evaluation
+    originEffect := originRead.effect
+    afterOriginWellFormed := wfOrigin
     afterRhsLengthRead := rhsRead.after
-    rhsLengthEvaluation := by
-      simpa [originScope, originInvariant, rhsLength] using rhsLengthEvaluation
-    rhsLengthEffect := by simpa [originScope, originInvariant] using rhsRead.effect
-    afterRhsLengthWellFormed := rhsRead.invariant.recognizer.wellFormed
-    invariant := by simpa [rhsScope, rhsLength] using rhsInvariant
-    productionLocal :=
-      (bindLocal_preserves_other_local rhsRead.invariant.recognizer.wellFormed
-        (by decide : 28 ≠ 25)).trans productionAtRhsRead
-    productionCell := productionCell
-    productionOwned := by simpa [rhsScope, rhsLength] using productionOwned
-    productionCellDistinct := productionCellDistinct
-    dotLocal :=
-      (bindLocal_preserves_other_local rhsRead.invariant.recognizer.wellFormed
-        (by decide : 28 ≠ 26)).trans dotAtRhsRead
-    dotCell := dotCell
-    dotOwned := by simpa [rhsScope, rhsLength] using dotOwned
-    dotCellDistinct := dotCellDistinct
-    originLocal :=
-      (bindLocal_preserves_other_local rhsRead.invariant.recognizer.wellFormed
-        (by decide : 28 ≠ 27)).trans originAtRhsRead
-    originCell := originCell
-    originOwned := by simpa [rhsScope, rhsLength] using originOwned
-    originCellDistinct := originCellDistinct
-    rhsLengthLocal := by
-      simpa [rhsLength] using bindLocal_finds_local rhsRead.after 28
-        (.signed .i32 (Int.ofNat rhsLength))
-        rhsRead.invariant.recognizer.wellFormed
+    rhsLengthEvaluation := by simpa only [rhsLengthValue] using rhsRead.evaluation
+    rhsLengthEffect := rhsRead.effect
+    afterRhsLengthWellFormed := wfRhs
+    invariant := rhsInvariant
+    productionLocal := Assertion.localPointsTo_local _ _ _ _ productionOwned
+    productionCell := productionRead.after.nextCell
+    productionOwned := productionOwned
+    productionCellDistinct :=
+      ⟨Lanius.Separation.StateWellFormed.nextCell_ne_of_entry wfProduction
+          productionRead.invariant.recognizer.workspaceBacking,
+        Lanius.Separation.StateWellFormed.nextCell_ne_of_entry wfProduction
+          afterProduction.appendFrame.stateCountOwned.2,
+        Lanius.Separation.StateWellFormed.nextCell_ne_of_entry wfProduction
+          productionRead.invariant.cursorOwned.2⟩
+    dotLocal := Assertion.localPointsTo_local _ _ _ _ dotOwned
+    dotCell := dotRead.after.nextCell
+    dotOwned := dotOwned
+    dotCellDistinct :=
+      ⟨Lanius.Separation.StateWellFormed.nextCell_ne_of_entry wfDot
+          dotRead.invariant.recognizer.workspaceBacking,
+        Lanius.Separation.StateWellFormed.nextCell_ne_of_entry wfDot
+          afterDot.appendFrame.stateCountOwned.2,
+        Lanius.Separation.StateWellFormed.nextCell_ne_of_entry wfDot
+          dotRead.invariant.cursorOwned.2⟩
+    originLocal := Assertion.localPointsTo_local _ _ _ _ originOwned
+    originCell := originRead.after.nextCell
+    originOwned := originOwned
+    originCellDistinct :=
+      ⟨Lanius.Separation.StateWellFormed.nextCell_ne_of_entry wfOrigin
+          originRead.invariant.recognizer.workspaceBacking,
+        Lanius.Separation.StateWellFormed.nextCell_ne_of_entry wfOrigin
+          afterOrigin.appendFrame.stateCountOwned.2,
+        Lanius.Separation.StateWellFormed.nextCell_ne_of_entry wfOrigin
+          originRead.invariant.cursorOwned.2⟩
+    rhsLengthLocal := bindLocal_finds_local _ _ _ wfRhs
   }
 
 /-- Exact lexical and ownership boundary between a completed state and its
@@ -7200,60 +5816,30 @@ noncomputable def RecognizerStateCandidateBindings.enter_parent
   have externalAtLhs (id : VarId) (preserved : ParentPreservedLocal id) :
       boundLhs.cellId? id ≠ some workspaceCell ∧
       boundLhs.cellId? id ≠ some stateCountCell := by
-    rcases preserved with parameter | shared
-    · have separated := bindings.invariant.persistentLocalsSeparate id
-          (Or.inl parameter)
-      have different : id ≠ 29 := by
-        have bound := (mem_verifiedParserRecognizerParameterIds_iff id).mp parameter
-        exact Nat.ne_of_lt (Nat.lt_of_le_of_lt bound (by decide))
-      rw [sourceCellId id different]
-      exact ⟨separated.1, separated.2.1 (by
-        have bound := (mem_verifiedParserRecognizerParameterIds_iff id).mp parameter
-        exact Nat.ne_of_lt (Nat.lt_of_le_of_lt bound (by decide)))⟩
-    · rw [mem_verifiedParserParentLoopPreservedFrameIds_iff] at shared
-      rcases shared with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-      · rw [sourceCellId 4 (by decide)]
-        exact ⟨bindings.invariant.persistentLocalsSeparate 4 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          bindings.invariant.persistentLocalsSeparate 4 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
-      · rw [sourceCellId 8 (by decide)]
-        exact ⟨bindings.invariant.persistentLocalsSeparate 8 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          bindings.invariant.persistentLocalsSeparate 8 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
-      · rw [sourceCellId 0 (by decide)]
-        exact ⟨bindings.invariant.persistentLocalsSeparate 0 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          bindings.invariant.persistentLocalsSeparate 0 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
-      · rw [sourceCellId 11 (by decide)]
-        exact ⟨bindings.invariant.persistentLocalsSeparate 11 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          bindings.invariant.persistentLocalsSeparate 11 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
-      · exact ⟨fun same => lhsCellDistinct.1
-            (Option.some.inj (lhsOwned.1.symm.trans same)),
-          fun same => lhsCellDistinct.2
-            (Option.some.inj (lhsOwned.1.symm.trans same))⟩
-      · rw [sourceCellId 9 (by decide)]
-        exact ⟨bindings.invariant.persistentLocalsSeparate 9 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          bindings.invariant.persistentLocalsSeparate 9 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
-      · rw [sourceCellId 23 (by decide)]
-        exact ⟨bindings.invariant.persistentLocalsSeparate 23 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          bindings.invariant.persistentLocalsSeparate 23 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
-      · rw [sourceCellId 24 (by decide)]
-        exact ⟨fun same =>
-            bindings.invariant.chartCursor.cursorBackingDistinct.2.2
-              (Option.some.inj
-                (bindings.invariant.chartCursor.cursorOwned.1.symm.trans same)),
-          fun same => bindings.invariant.cursorStateCountDistinct
-            (Option.some.inj
-              (bindings.invariant.chartCursor.cursorOwned.1.symm.trans same))⟩
+    by_cases isLhs : id = 29
+    · subst id
+      exact ⟨fun same => lhsCellDistinct.1
+          (Option.some.inj (lhsOwned.1.symm.trans same)),
+        fun same => lhsCellDistinct.2
+          (Option.some.inj (lhsOwned.1.symm.trans same))⟩
+    by_cases isCursor : id = 24
+    · subst id
+      rw [sourceCellId 24 (by decide)]
+      exact ⟨fun same => bindings.invariant.chartCursor.cursorBackingDistinct.2.2
+          (Option.some.inj (bindings.invariant.chartCursor.cursorOwned.1.symm.trans same)),
+        fun same => bindings.invariant.cursorStateCountDistinct
+          (Option.some.inj (bindings.invariant.chartCursor.cursorOwned.1.symm.trans same))⟩
+    have persistent : StateLoopPersistentLocal id := by
+      rcases preserved with parameter | shared
+      · exact Or.inl parameter
+      · apply Or.inr
+        rw [mem_verifiedParserStateLoopSharedFrameIds_iff]
+        rw [mem_verifiedParserParentLoopPreservedFrameIds_iff] at shared
+        rcases shared with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+          first | exact False.elim (isLhs rfl) | exact False.elim (isCursor rfl) | simp
+    rw [sourceCellId id isLhs]
+    have separated := bindings.invariant.persistentLocalsSeparate id persistent
+    exact ⟨separated.1, separated.2.1 ((ParentPreservedLocal_iff id).mp preserved).2⟩
   have parentCursorFresh : CellSet.Disjoint
       (localBindingFrameFootprint chartEntry.bound
         verifiedParserParentPreservedBindings)
@@ -7265,7 +5851,7 @@ noncomputable def RecognizerStateCandidateBindings.enter_parent
       (by
         rw [LocalBindingFrame.ContainsCoreId,
           verifiedParserParentPreservedBindings_core_ids]
-        native_decide)
+        decide +kernel)
   have parentSeparated : ParentFrameSeparated chartEntry.bound workspaceCell
       stateCountCell chartEntry.cursorCell := by
     intro cell framed written
@@ -7397,30 +5983,6 @@ noncomputable def RecognizerStateCandidateBindings.enter_parent
         cursorStateCountDistinct := cursorCountDistinct
       }
 
-/-- Physical compatibility view used while outer Core-local restoration is
-    migrated.  It deliberately carries no FunctionalView fields, so legacy
-    callers cannot accidentally eliminate a dependently indexed synchronized
-    result. -/
-private structure CoreExecutionOutcome
-    (program : Program) (before : State) (statement : Stmt) (writes : CellSet)
-    (result : State → Completion → Prop) where
-  after : State
-  completion : Completion
-  execution : Executes program before statement completion after
-  effect : ModifiesOnly writes before after
-  outcome : result after completion
-
-/-- A physical execution whose completion is fixed by an enclosing semantic
-    run.  Unlike `CoreExecutionOutcome`, this form does not existentially hide
-    the completion and therefore preserves dependent synchronization. -/
-private structure FixedCoreExecutionOutcome
-    (program : Program) (before : State) (statement : Stmt) (writes : CellSet)
-    (completion : Completion) (result : State → Prop) where
-  after : State
-  execution : Executes program before statement completion after
-  effect : ModifiesOnly writes before after
-  outcome : result after
-
 /-- The source-derived completed-state entry is already one of the compact
     FunctionalView parent configurations.  Keeping this definition beside the
     physical scope executor makes that executor a projection of the same run,
@@ -7451,7 +6013,37 @@ noncomputable def RecognizerStateParentEntry.functionalConfig
       invariant := invariant
     }
 
-/-- Parent replay while both completion-specific lexical bindings are live. -/
+theorem RecognizerStateParentEntry.functionalConfig_candidate
+    (entry : RecognizerStateParentEntry grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell workspaceCell stateCountCell
+      stateCursorCell before position current remaining beforeInvariant candidate found productionBound bindings completedLhs) :
+    entry.functionalConfig.candidate = chartHeadValue workspace candidate.origin := by
+  have chartLocal : entry.chartEntry.bound.local? 30 =
+      some (.signed .i32 (chartHeadValue workspace candidate.origin)) := by
+    rw [entry.chartEntry.boundEq]
+    exact bindLocal_finds_local entry.chartEntry.headRead.after 30
+      (.signed .i32 (chartHeadValue workspace candidate.origin)) entry.chartEntry.headRead.invariant.wellFormed
+  cases cursorEq : entry.cursor with
+  | inl active =>
+      obtain ⟨parent, remaining, invariant⟩ := active
+      have currentLocal : entry.chartEntry.bound.local? 30 = some (.signed .i32 (Int.ofNat parent)) :=
+        Assertion.localPointsTo_local 30 entry.chartEntry.cursorCell _ entry.chartEntry.bound
+          invariant.chartCursor.cursorOwned
+      have valueEq : Int.ofNat parent = chartHeadValue workspace candidate.origin := by
+        have equal := Option.some.inj (currentLocal.symm.trans chartLocal)
+        injection equal
+      simpa [RecognizerStateParentEntry.functionalConfig, RecognizerParentConfig.candidate, cursorEq] using valueEq
+  | inr finished =>
+      have currentLocal : entry.chartEntry.bound.local? 30 = some (.signed .i32 (-1)) :=
+        Assertion.localPointsTo_local 30 entry.chartEntry.cursorCell _ entry.chartEntry.bound
+          finished.chartCursor.cursorOwned
+      have valueEq : (-1 : Int) = chartHeadValue workspace candidate.origin := by
+        have equal := Option.some.inj (currentLocal.symm.trans chartLocal)
+        injection equal
+      simpa [RecognizerStateParentEntry.functionalConfig, RecognizerParentConfig.candidate, cursorEq] using valueEq
+
+/-- Parent replay while both completion-specific lexical bindings are live.
+Its checked outcome retains the completed origin-chart coverage. -/
 structure RecognizerStateParentInnerExecution
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
     (words : List Int) (tokens : List Nat)
@@ -7486,66 +6078,12 @@ structure RecognizerStateParentInnerExecution
   completionEq : completion =
     Lanius.FunctionalView.Core.Stateful.toCoreCompletion
       entry.functionalConfig.functional_run.completion
-  outcome : RecognizerParentSynchronizedOutcome grammarLayout grammar words
+  outcome : { outcome : RecognizerParentSynchronizedOutcome grammarLayout grammar words
     tokens workspaceLayout workspace grammarCell tokensCell workspaceCell
     stateCountCell entry.chartEntry.cursorCell position current completedLhs
     candidate.origin entry.functionalConfig.functional_run.after after
     (Lanius.FunctionalView.Core.Stateful.toCoreCompletion
-      entry.functionalConfig.functional_run.completion)
-
-private noncomputable def RecognizerStateParentInnerExecution.physical
-    (execution : RecognizerStateParentInnerExecution grammarLayout grammar words
-      tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell stateCountCell stateCursorCell before position current
-      remaining beforeInvariant candidate found productionBound bindings
-      completedLhs entry) :
-    CoreExecutionOutcome verifiedParserCore entry.chartEntry.bound
-      (.sequence parserRecognizeParentLoop .skip)
-      (parentFrameMutableCells workspaceCell stateCountCell
-        entry.chartEntry.cursorCell)
-      (RecognizerParentLoopOutcome grammarLayout grammar words tokens
-        workspaceLayout workspace grammarCell tokensCell workspaceCell
-        stateCountCell entry.chartEntry.cursorCell position current completedLhs
-        candidate.origin) := {
-  after := execution.after
-  completion := Lanius.FunctionalView.Core.Stateful.toCoreCompletion
-    entry.functionalConfig.functional_run.completion
-  execution := by
-    rw [← execution.completionEq]
-    exact execution.execution
-  effect := execution.effect
-  outcome := execution.outcome.physical
-}
-
-/-- Compatibility view that preserves the synchronized parent result while
-    presenting the physical execution at the FunctionalView completion.  The
-    enclosing source scope uses this view so restoration cannot discard the
-    compact world and environment reached by normal parent replay. -/
-private noncomputable def RecognizerStateParentInnerExecution.synchronizedPhysical
-    (execution : RecognizerStateParentInnerExecution grammarLayout grammar words
-      tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell stateCountCell stateCursorCell before position current
-      remaining beforeInvariant candidate found productionBound bindings
-      completedLhs entry) :
-    FixedCoreExecutionOutcome verifiedParserCore entry.chartEntry.bound
-      (.sequence parserRecognizeParentLoop .skip)
-      (parentFrameMutableCells workspaceCell stateCountCell
-        entry.chartEntry.cursorCell)
-      (Lanius.FunctionalView.Core.Stateful.toCoreCompletion
-        entry.functionalConfig.functional_run.completion)
-      (fun after => RecognizerParentSynchronizedOutcome grammarLayout grammar
-        words tokens workspaceLayout workspace grammarCell tokensCell
-        workspaceCell stateCountCell entry.chartEntry.cursorCell position current
-        completedLhs candidate.origin entry.functionalConfig.functional_run.after
-        after (Lanius.FunctionalView.Core.Stateful.toCoreCompletion
-          entry.functionalConfig.functional_run.completion)) := {
-  after := execution.after
-  execution := by
-    rw [← execution.completionEq]
-    exact execution.execution
-  effect := execution.effect
-  outcome := execution.outcome
-}
+      entry.functionalConfig.functional_run.completion) // outcome.parentsComplete }
 
 noncomputable def RecognizerStateParentEntry.execute_inner
     (entry : RecognizerStateParentEntry grammarLayout grammar words tokens
@@ -7558,24 +6096,21 @@ noncomputable def RecognizerStateParentEntry.execute_inner
       workspaceCell stateCountCell stateCursorCell before position current
       remaining beforeInvariant candidate found productionBound bindings
       completedLhs entry := by
-  generalize runEq : entry.functionalConfig.functional_run = loop
-  obtain ⟨completion, functionalAfter, trace, result⟩ := loop
-  have sourceCompletionEq :
-      entry.functionalConfig.functional_run.completion = completion := by
-    simpa using congrArg
-      (fun run => run.completion) runEq
-  have sourceAfterEq : entry.functionalConfig.functional_run.after =
-      functionalAfter := by
-    simpa using congrArg (fun run => run.after) runEq
+  let run := entry.functionalConfig.functional_run
+  let result := run.result
   have runtimeEq : entry.functionalConfig.runtime = entry.chartEntry.bound := by
     cases cursorEq : entry.cursor <;>
       simp [RecognizerStateParentEntry.functionalConfig, cursorEq]
   have workspaceEq : entry.functionalConfig.workspace = workspace := by
     cases cursorEq : entry.cursor <;>
       simp [RecognizerStateParentEntry.functionalConfig, cursorEq]
+  have ready : entry.functionalConfig.parentsReady :=
+    entry.functionalConfig.parentsReady_of_head (by
+      rw [workspaceEq]
+      exact entry.functionalConfig_candidate)
   have loopExecution : Executes verifiedParserCore entry.chartEntry.bound
       parserRecognizeParentLoop
-      (Lanius.FunctionalView.Core.Stateful.toCoreCompletion completion)
+      (Lanius.FunctionalView.Core.Stateful.toCoreCompletion run.completion)
       result.physicalAfter := by
     rw [← runtimeEq]
     exact result.execution
@@ -7585,65 +6120,22 @@ noncomputable def RecognizerStateParentEntry.execute_inner
       result.physicalAfter := by
     rw [← runtimeEq]
     simpa [parentFrameMutableCells] using result.effect
-  have existsResult : ∃ result :
-      RecognizerStateParentInnerExecution grammarLayout grammar words tokens
-        workspaceLayout workspace workspaceValues grammarCell tokensCell
-        workspaceCell stateCountCell stateCursorCell before position current
-        remaining beforeInvariant candidate found productionBound bindings
-        completedLhs entry, True := by
-    cases completion with
-    | next =>
-        cases result.outcome with
-        | completed nextWorkspace nextValues physicalAfter growth finished
-            worldEq environmentEq =>
-            have growth' := growth
-            rw [workspaceEq] at growth'
-            exact ⟨{
-              after := result.physicalAfter
-              completion := .next
-              execution := executesSequence
-                (by simpa [Lanius.FunctionalView.Core.Stateful.toCoreCompletion]
-                  using loopExecution)
-                (executesSkip verifiedParserCore result.physicalAfter)
-              effect := loopEffect
-              completionEq := by
-                simpa [sourceCompletionEq,
-                  Lanius.FunctionalView.Core.Stateful.toCoreCompletion]
-              outcome := by
-                simpa [sourceCompletionEq, sourceAfterEq,
-                  Lanius.FunctionalView.Core.Stateful.toCoreCompletion] using
-                  (RecognizerParentSynchronizedOutcome.completed nextWorkspace
-                    nextValues result.physicalAfter growth' finished worldEq
-                    environmentEq)
-            }, trivial⟩
-    | returned value =>
-        cases result.outcome with
-        | full finalWorkspace finalValues physicalAfter growth terminal
-            stateCount wellFormed =>
-            have growth' := growth
-            rw [workspaceEq] at growth'
-            exact ⟨{
-              after := result.physicalAfter
-              completion := parserCapacityCompletion position stateCount
-              execution := executesSequenceReturned
-                (by simpa [Lanius.FunctionalView.Core.Stateful.toCoreCompletion]
-                  using loopExecution)
-              effect := loopEffect
-              completionEq := by
-                simpa [sourceCompletionEq,
-                  Lanius.FunctionalView.Core.Stateful.toCoreCompletion,
-                  parserCapacityCompletion]
-              outcome := by
-                simpa [sourceCompletionEq, sourceAfterEq,
-                  Lanius.FunctionalView.Core.Stateful.toCoreCompletion,
-                  parserCapacityCompletion] using
-                  (RecognizerParentSynchronizedOutcome.full finalWorkspace
-                    finalValues result.physicalAfter growth' terminal stateCount
-                    wellFormed)
-            }, trivial⟩
-    | breakLoop => cases result.outcome
-    | continueLoop => cases result.outcome
-  exact Classical.choose existsResult
+  exact {
+    after := result.physicalAfter
+    completion := Lanius.FunctionalView.Core.Stateful.toCoreCompletion run.completion
+    execution := executesSequenceSkip loopExecution
+    effect := loopEffect
+    completionEq := rfl
+    outcome := by
+      have covered := (⟨result.outcome, result.parents ready⟩ :
+        { outcome // RecognizerParentSynchronizedOutcome.parentsComplete outcome })
+      exact Eq.mp (congrArg (fun initialWorkspace =>
+        { outcome : RecognizerParentSynchronizedOutcome grammarLayout grammar words tokens
+            workspaceLayout initialWorkspace grammarCell tokensCell workspaceCell stateCountCell
+            entry.chartEntry.cursorCell position current completedLhs candidate.origin run.after
+            result.physicalAfter (Lanius.FunctionalView.Core.Stateful.toCoreCompletion run.completion) //
+          outcome.parentsComplete }) workspaceEq) covered
+  }
 
 /-- Parent replay after its two source-local bindings have closed.  Normal
     completion retains the exact compact FunctionalView world/environment and
@@ -7674,7 +6166,10 @@ inductive RecognizerStateParentSynchronizedOutcome
       (environmentEq : after.environment = parentEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
         workspace.states.length grammar.grammar.n_kinds position current
-        completedLhs (-1)) :
+        completedLhs (-1))
+      (stable : ChartsUnchangedBefore position beforeWorkspace workspace)
+      (parents : ∀ child, beforeWorkspace.state? current = some child →
+        ParentsComplete grammar workspace child.origin position completedLhs) :
       RecognizerStateParentSynchronizedOutcome grammarLayout grammar words
         tokens workspaceLayout beforeWorkspace grammarCell tokensCell
         workspaceCell stateCountCell cursorCell position current beforeRemaining
@@ -7686,7 +6181,8 @@ inductive RecognizerStateParentSynchronizedOutcome
       (terminal : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell physicalAfter)
-      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter) :
+      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerStateParentSynchronizedOutcome grammarLayout grammar words
         tokens workspaceLayout beforeWorkspace grammarCell tokensCell
         workspaceCell stateCountCell cursorCell position current beforeRemaining
@@ -7706,9 +6202,9 @@ def RecognizerStateParentSynchronizedOutcome.physical
   | completed workspace workspaceValues physicalAfter growth frame _ _ =>
       exact .completed workspace workspaceValues physicalAfter growth frame
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter growth terminal
-        stateCount wellFormed
+        stateCount wellFormed full
 
 theorem RecognizerStateParentSynchronizedOutcome.view
     (outcome : RecognizerStateParentSynchronizedOutcome grammarLayout grammar
@@ -7729,7 +6225,10 @@ theorem RecognizerStateParentSynchronizedOutcome.view
           tokensCell workspaceCell ∧
         after.environment = parentEnvironment words workspaceValues grammarCell
           workspaceCell workspaceLayout workspace.states.length
-          grammar.grammar.n_kinds position current completedLhs (-1)) ∨
+          grammar.grammar.n_kinds position current completedLhs (-1) ∧
+        ChartsUnchangedBefore position beforeWorkspace workspace ∧
+        (∀ child, beforeWorkspace.state? current = some child →
+          ParentsComplete grammar workspace child.origin position completedLhs)) ∨
     (∃ workspace : LogicalWorkspace,
       ∃ workspaceValues : List Int,
       ∃ growth : WorkspaceAppendClosure workspaceLayout.capacity
@@ -7739,16 +6238,17 @@ theorem RecognizerStateParentSynchronizedOutcome.view
           workspaceCell physicalAfter,
       ∃ stateCount : Nat,
       ∃ wellFormed : StateWellFormed physicalAfter,
+        WorkspaceFull workspaceLayout.capacity workspace stateCount ∧
         completion = parserCapacityCompletion position stateCount) := by
   cases outcome with
   | completed workspace workspaceValues physicalAfter growth frame worldEq
-      environmentEq =>
+      environmentEq stable parents =>
       exact .inl ⟨rfl, workspace, workspaceValues, growth, frame, worldEq,
-        environmentEq⟩
+        environmentEq, stable, parents⟩
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .inr ⟨workspace, workspaceValues, growth, terminal, stateCount,
-        wellFormed, rfl⟩
+        wellFormed, full, rfl⟩
 
 /-- Complete-state operation after both parent-replay temporaries have been
     hidden and the enclosing state cursor has been restored. -/
@@ -7808,8 +6308,16 @@ noncomputable def RecognizerStateParentEntry.execute
       remaining beforeInvariant candidate found productionBound bindings
       completedLhs entry := by
   let inner := entry.execute_inner
-  let physical := inner.synchronizedPhysical
-  obtain ⟨innerAfter, innerExecution, innerEffect, innerOutcome⟩ := physical
+  let innerAfter := inner.after
+  have innerExecution : Executes verifiedParserCore entry.chartEntry.bound
+      (.sequence parserRecognizeParentLoop .skip)
+      (Lanius.FunctionalView.Core.Stateful.toCoreCompletion entry.functionalConfig.functional_run.completion)
+      innerAfter := by
+    rw [← inner.completionEq]
+    exact inner.execution
+  have innerEffect := inner.effect
+  let innerOutcome := inner.outcome.val
+  have innerParents := inner.outcome.property
   let writes := parentFrameMutableCells workspaceCell stateCountCell
     entry.chartEntry.cursorCell
   let retainedWrites := CellSet.union (CellSet.singleton workspaceCell)
@@ -7897,7 +6405,7 @@ noncomputable def RecognizerStateParentEntry.execute
       scopedExecution
   have afterWellFormed : StateWellFormed after := by
     have innerWellFormed : StateWellFormed innerAfter := by
-      rcases innerOutcome.view with completedResult | fullResult
+      rcases innerOutcome.view innerParents with completedResult | fullResult
       · rcases completedResult with ⟨_, _, _, _, finished, _, _⟩
         exact finished.chartCursor.recognizer.wellFormed
       · rcases fullResult with ⟨_, _, _, _, _, wellFormed, _⟩
@@ -7913,9 +6421,9 @@ noncomputable def RecognizerStateParentEntry.execute
         workspaceCell stateCountCell stateCursorCell before position current
         remaining beforeInvariant candidate found productionBound bindings
         completedLhs entry, True := by
-    rcases innerOutcome.view with completedResult | fullResult
+    rcases innerOutcome.view innerParents with completedResult | fullResult
     · rcases completedResult with ⟨completionEq, nextWorkspace, nextValues,
-        growth, finished, worldEq, environmentEq⟩
+        growth, finished, worldEq, environmentEq, stable, parents⟩
       have cursorParameterCellId : ∀ id,
           id ∈ verifiedParserRecognizerParameterIds →
           entry.chartEntry.bound.cellId? id =
@@ -8010,10 +6518,15 @@ noncomputable def RecognizerStateParentEntry.execute
           simpa [completionEq] using
             (RecognizerStateParentSynchronizedOutcome.completed nextWorkspace
               nextValues after growth frame
-              (by simpa only [suffixEq] using worldEq) environmentEq)
+              (by simpa only [suffixEq] using worldEq) environmentEq stable
+              (by
+                intro child selected
+                have same := Option.some.inj (found.symm.trans selected)
+                subst child
+                exact parents))
       }, trivial⟩
     · rcases fullResult with ⟨finalWorkspace, finalValues, growth, terminal,
-        stateCount, _, completionEq⟩
+        stateCount, _, full, completionEq⟩
       have sourceCoreCompletionEq :
           Lanius.FunctionalView.Core.Stateful.toCoreCompletion
               entry.functionalConfig.functional_run.completion =
@@ -8066,7 +6579,7 @@ noncomputable def RecognizerStateParentEntry.execute
           simpa [completionEq] using
             (RecognizerStateParentSynchronizedOutcome.full finalWorkspace
               finalValues after growth restoredRecognizer stateCount
-              afterWellFormed)
+              afterWellFormed full)
       }, trivial⟩
   exact Classical.choose existsResult
 

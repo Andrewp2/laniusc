@@ -30,7 +30,7 @@ theorem verifiedFrontendCore_extends_verifiedFrontendLexerCore :
 theorem verifiedFrontendCore_extends_verifiedFrontendDigitsCore :
     verifiedFrontendDigitsCore.RuntimeExtends verifiedFrontendCore := by
   constructor
-  · native_decide
+  · decide +kernel
   · intro id declaration found
     change List.find? (fun row => row.id == id)
       verifiedFrontendDigitsCore.constants = some declaration at found

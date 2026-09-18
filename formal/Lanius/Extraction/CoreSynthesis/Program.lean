@@ -346,10 +346,7 @@ structure Prepared where
   context : Context
   structures : List Core.StructDecl
 
-def prepare? {artifacts : List Artifact}
-    (surfaceData : ArtifactPackChecker.CheckedUnitSurfaces artifacts) :
-    Option Prepared := do
-  let units ← decodeUnitsFrom 0 surfaceData
+def prepareUnits? (units : List Unit) : Option Prepared := do
   let allocations := allocate units
   let base ← baseContext? units allocations
   let structs ← buildStructPhase base allocations
@@ -369,6 +366,11 @@ def prepare? {artifacts : List Artifact}
     functionInstances := functions.instances
   }
   pure ⟨units, allocations, context, structs.declarations⟩
+
+def prepare? {artifacts : List Artifact}
+    (surfaceData : ArtifactPackChecker.CheckedUnitSurfaces artifacts) :
+    Option Prepared := do
+  prepareUnits? (← decodeUnitsFrom 0 surfaceData)
 
 private def synthesizeConstants (context : Context) :
     ConstantId → List SourceConstant → Option (List Core.Constant)
@@ -452,16 +454,6 @@ structure SynthesizedFunctions (context : Context) (next : FunctionId)
     (surfaces : List Surface.Function) where
   core : List Core.Function
   lowered : FunctionBodiesLower context next surfaces core
-
-private def synthesizeFunctions (context : Context) :
-    (next : FunctionId) → (surfaces : List Surface.Function) →
-      Option (SynthesizedFunctions context next surfaces)
-  | _, [] => some ⟨[], .nil⟩
-  | next, head :: tail => do
-      let synthesized ← CoreSynthesis.function context head next
-      let rest ← synthesizeFunctions context (next + 1) tail
-      pure ⟨synthesized.core :: rest.core,
-        .cons synthesized.sameId synthesized.evidence rest.lowered⟩
 
 private def selectExternalBehavior? (abi : Option String) (name : Surface.Name)
     (parameters : List Core.Ty) (returnType : Core.Ty) :
@@ -553,23 +545,6 @@ structure SynthesizedPackFunctions (context : Context)
   core : List Core.Function
   lowered : PackFunctionsLower context allocations core
 
-private def synthesizePackFunctions (context : Context) :
-    (allocations : List Allocation) →
-      Option (SynthesizedPackFunctions context allocations)
-  | [] => some ⟨[], .nil⟩
-  | allocation :: tail => do
-      let current ← synthesizeFunctions
-        (context.forModule allocation.unit.moduleId)
-        allocation.functionIdStart
-        (collectFunctions allocation.unit.surface.items)
-      let externs ← synthesizeExternFunctions
-        (context.forModule allocation.unit.moduleId)
-        allocation.externIdStart
-        (collectExternFunctions allocation.unit.surface.items)
-      let rest ← synthesizePackFunctions context tail
-      pure ⟨current.core ++ externs.core ++ rest.core,
-        .cons current.lowered externs.lowered rest.lowered⟩
-
 private def synthesizeFunctionsReport (context : Context) :
     (next : FunctionId) → (surfaces : List Surface.Function) →
       Except String (SynthesizedFunctions context next surfaces)
@@ -584,7 +559,7 @@ private def synthesizeFunctionsReport (context : Context) :
           | .ok rest => .ok ⟨synthesized.core :: rest.core,
               .cons synthesized.sameId synthesized.evidence rest.lowered⟩
 
-private def synthesizePackFunctionsReport (context : Context) :
+def lowerFunctions (context : Context) :
     (allocations : List Allocation) →
       Except String (SynthesizedPackFunctions context allocations)
   | [] => .ok ⟨[], .nil⟩
@@ -602,14 +577,57 @@ private def synthesizePackFunctionsReport (context : Context) :
               (collectExternFunctions allocation.unit.surface.items) with
           | none => .error (moduleName ++ "::<extern>")
           | some externs =>
-              match synthesizePackFunctionsReport context tail with
+              match lowerFunctions context tail with
               | .error reason => .error reason
               | .ok rest => .ok
                   ⟨current.core ++ externs.core ++ rest.core,
                     .cons current.lowered externs.lowered rest.lowered⟩
 
-structure CheckedProgram (artifacts : List Artifact) where
-  surfaceData : ArtifactPackChecker.CheckedUnitSurfaces artifacts
+/-- Compose checked modules without reducing their function bodies again. The
+context is shared, so cross-module references use the same declaration table. -/
+theorem lowerFunctions_cons
+    (head : (lowerFunctions context [allocation]).toOption.map (·.core) = some first)
+    (tail : (lowerFunctions context allocations).toOption.map (·.core) = some rest) :
+    (lowerFunctions context (allocation :: allocations)).toOption.map (·.core) =
+      some (first ++ rest) := by
+  cases current : synthesizeFunctionsReport (context.forModule allocation.unit.moduleId)
+      allocation.functionIdStart (collectFunctions allocation.unit.surface.items) with
+  | error reason => simp [lowerFunctions, current, Except.toOption] at head
+  | ok functions =>
+    cases external : synthesizeExternFunctions (context.forModule allocation.unit.moduleId)
+        allocation.externIdStart (collectExternFunctions allocation.unit.surface.items) with
+    | none => simp [lowerFunctions, current, external, Except.toOption] at head
+    | some externs =>
+      cases remaining : lowerFunctions context allocations with
+      | error reason => simp [remaining, Except.toOption] at tail
+      | ok lowered =>
+        simp [lowerFunctions, current, external, Except.toOption] at head
+        simp [remaining, Except.toOption] at tail
+        simp [lowerFunctions, current, external, remaining, Except.toOption, ← head, ← tail]
+
+/-- Recover the retained derivation from a checked data projection. -/
+theorem lowerFunctions_derivation
+    (found : (lowerFunctions context allocations).toOption.map (·.core) = some functions) :
+    PackFunctionsLower context allocations functions := by
+  cases equation : lowerFunctions context allocations with
+  | error reason => simp [equation, Except.toOption] at found
+  | ok result =>
+    simp [equation, Except.toOption] at found
+    exact found ▸ result.lowered
+
+/-- Restore the exact proof-bearing stage result using proof irrelevance. -/
+theorem lowerFunctions_eq
+    (found : (lowerFunctions context allocations).toOption.map (·.core) = some functions) :
+    lowerFunctions context allocations = .ok ⟨functions, lowerFunctions_derivation found⟩ := by
+  cases equation : lowerFunctions context allocations with
+  | error reason => simp [equation, Except.toOption] at found
+  | ok result =>
+    simp [equation, Except.toOption] at found
+    cases result
+    cases found
+    rfl
+
+structure LoweredProgram where
   prepared : Prepared
   core : Core.Program
   target : core.target = .x86_64
@@ -618,6 +636,9 @@ structure CheckedProgram (artifacts : List Artifact) where
   constantsLiteral : ∀ constant, constant ∈ core.constants →
     Typing.Value.isLiteral constant.value = true
   noOpaqueExternals : NoOpaqueExternals core.functions
+
+structure CheckedProgram (artifacts : List Artifact) extends LoweredProgram where
+  surfaceData : ArtifactPackChecker.CheckedUnitSurfaces artifacts
   typed : Typing.ProgramWellTyped core
 
 inductive FunctionNamedAt (name : Surface.Name) :
@@ -756,23 +777,63 @@ def checkEntrypoint? {artifacts : List Artifact}
               returnAllowed.proof, executable, rfl, wellFormed⟩
       else none
 
+/-- Complete the program using a retained function-stage result. Constants,
+layouts, target selection, and external policy still follow the original path. -/
+def finishLowering (prepared : Prepared)
+    (functions : Except String (SynthesizedPackFunctions prepared.context prepared.allocations)) :
+    Except String LoweredProgram :=
+  match synthesizePackConstants prepared.context prepared.allocations with
+  | none => .error "constants"
+  | some constants =>
+    match constantsLiteral? constants with
+    | none => .error "constant-closure"
+    | some constantsLiteral =>
+      match functions with
+      | .error reason => .error ("function-lowering:" ++ reason)
+      | .ok functions =>
+        let core : Core.Program := {
+          target := .x86_64, structures := prepared.structures
+          constants, functions := functions.core }
+        match noOpaqueExternals? core.functions with
+        | none => .error "opaque-external"
+        | some noOpaque => .ok
+            ⟨prepared, core, rfl, functions.lowered, constantsLiteral.proof, noOpaque.proof⟩
+
+/-- The authoritative lowering path, also used by source checking. -/
+def lowerPrepared (prepared : Prepared) : Except String LoweredProgram :=
+  finishLowering prepared (lowerFunctions prepared.context prepared.allocations)
+
+/-- Substitute a certified stage before evaluating the rest of the program.
+Congruence does not unfold or recheck the already-certified function bodies. -/
+theorem lowerPrepared_of_functions
+    (found : (lowerFunctions prepared.context prepared.allocations).toOption.map (·.core) = some functions) :
+    lowerPrepared prepared = finishLowering prepared
+      (.ok ⟨functions, lowerFunctions_derivation found⟩) :=
+  congrArg (finishLowering prepared) (lowerFunctions_eq found)
+
+/-- The same lowering stage can be certified before source reconstruction is
+complete. Its input units are data, not proof of their Lanius-source origin. -/
+def lowerUnits? (units : List Unit) : Option LoweredProgram := do
+  (lowerPrepared (← prepareUnits? units)).toOption
+
+/-- Retain both stages through the public entry point. Establish this equation
+abstractly, before instantiating it with a large program. -/
+theorem lowerUnits_of_functions
+    (preparation : prepareUnits? units = some prepared)
+    (lowering : (lowerFunctions prepared.context prepared.allocations).toOption.map (·.core) = some functions) :
+    (lowerUnits? units).map (·.core) =
+      (finishLowering prepared (.ok ⟨functions, lowerFunctions_derivation lowering⟩)).toOption.map (·.core) := by
+  unfold lowerUnits?
+  rw [preparation]
+  exact congrArg (fun result : Except String LoweredProgram => result.toOption.map (·.core))
+    (lowerPrepared_of_functions (prepared := prepared) lowering)
+
 def synthesize? {artifacts : List Artifact}
     (surfaceData : ArtifactPackChecker.CheckedUnitSurfaces artifacts) :
     Option (CheckedProgram artifacts) := do
-  let prepared ← prepare? surfaceData
-  let constants ← synthesizePackConstants prepared.context prepared.allocations
-  let constantsLiteral ← constantsLiteral? constants
-  let functions ← synthesizePackFunctions prepared.context prepared.allocations
-  let core : Core.Program := {
-    target := .x86_64
-    structures := prepared.structures
-    constants
-    functions := functions.core
-  }
-  let noOpaque ← noOpaqueExternals? core.functions
-  let typed ← CoreTyping.checkProgram core
-  pure ⟨surfaceData, prepared, core, rfl, functions.lowered,
-    constantsLiteral.proof, noOpaque.proof, typed.proof⟩
+  let lowered ← lowerUnits? (← decodeUnitsFrom 0 surfaceData)
+  let typed ← CoreTyping.checkProgram lowered.core
+  pure { lowered with surfaceData, typed := typed.proof }
 
 structure CheckedCompactCoreSourcePack
     (encoded : String) (expectedSources : List SourceFile) where
@@ -793,33 +854,15 @@ def checkCompactCoreSourcePack
       match prepare? surface.surfaceData with
       | none => .failure "declaration-context"
       | some prepared =>
-          match synthesizePackConstants prepared.context prepared.allocations with
-          | none => .failure "constants"
-          | some constants =>
-              match constantsLiteral? constants with
-              | none => .failure "constant-closure"
-              | some constantsLiteral =>
-                match synthesizePackFunctionsReport prepared.context
-                    prepared.allocations with
-                | .error reason => .failure ("function-lowering:" ++ reason)
-                | .ok functions =>
-                    let core : Core.Program := {
-                      target := .x86_64
-                      structures := prepared.structures
-                      constants
-                      functions := functions.core
-                    }
-                    match noOpaqueExternals? core.functions with
-                    | none => .failure "opaque-external"
-                    | some noOpaque =>
-                      match CoreTyping.checkProgram core with
-                      | none => .failure "core-typing"
-                      | some typed =>
-                        let program : CheckedProgram surface.pack.units :=
-                          ⟨surface.surfaceData, prepared, core, rfl,
-                            functions.lowered, constantsLiteral.proof,
-                            noOpaque.proof, typed.proof⟩
-                        .success ⟨surface, program⟩
+          match lowerPrepared prepared with
+          | .error reason => .failure reason
+          | .ok lowered =>
+              match CoreTyping.checkProgram lowered.core with
+              | none => .failure "core-typing"
+              | some typed => .success ⟨surface, {
+                  lowered with
+                  surfaceData := surface.surfaceData
+                  typed := typed.proof }⟩
 
 def checkCompactCoreSourcePack?
     (encoded : String) (expectedSources : List SourceFile) :

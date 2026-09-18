@@ -34,6 +34,26 @@ theorem lookup_permutation (query : List Int) (fallback : Int)
   | trans first second ihFirst ihSecond =>
       exact (ihFirst consistent).trans (ihSecond (consistent.perm first))
 
+/-- Filtering rows by query length does not change exact-spelling lookup. -/
+theorem lookup_filter_query_length (query : List Int) (table : List Row)
+    (fallback : Int) :
+    lookup query (table.filter (fun row => row.1.length == query.length)) fallback =
+      lookup query table fallback := by
+  induction table with
+  | nil => rfl
+  | cons row rest induction =>
+      by_cases sameLength : row.1.length = query.length
+      · simp only [List.filter_cons, beq_iff_eq, sameLength, ↓reduceIte]
+        by_cases same : query = row.1
+        · simp [lookup, same]
+        · simp [lookup, same, induction]
+      · have different : query ≠ row.1 := by
+          intro same
+          apply sameLength
+          exact congrArg List.length same.symm
+        simp only [List.filter_cons, beq_iff_eq, sameLength, ↓reduceIte]
+        simp [lookup, different, induction]
+
 theorem reference_consistent : Consistent referenceRows := by
   unfold Consistent
   decide

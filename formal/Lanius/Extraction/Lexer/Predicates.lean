@@ -1,4 +1,5 @@
 import Lanius.Extraction.Lexer.Functions
+import Lanius.Extraction.Reduction
 import Lanius.CallContracts
 import Lanius.FunctionalViewCoreEffectful
 
@@ -34,35 +35,82 @@ theorem isIdentifierStartView_evaluates :
       returnedBool? (Block.evaluate (machine verifiedFrontendLexerCore) world
           (byteEnvironment byte) isIdentifierStartView.block) =
         some (isIdentifierStart byte) := by
-  native_decide
+  intro byte
+  apply congrArg returnedBool?
+    (a₂ := .done (.returned (some (.boolean (isIdentifierStart byte)))) world)
+  rw [← (reduce_data% retaining [Signature] isIdentifierStartView.block).property]
+  apply Block.evaluate_sequence_returned
+  apply Block.evaluate_returnValue
+  simp only [isIdentifierStart]
+  functional_eval
 
 theorem isDecimalDigitView_evaluates :
     ∀ byte : Byte,
       returnedBool? (Block.evaluate (machine verifiedFrontendLexerCore) world
           (byteEnvironment byte) isDecimalDigitView.block) =
         some (isDecimalDigit byte) := by
-  native_decide
+  intro byte
+  apply congrArg returnedBool?
+    (a₂ := .done (.returned (some (.boolean (isDecimalDigit byte)))) world)
+  rw [← (reduce_data% retaining [Signature] isDecimalDigitView.block).property]
+  apply Block.evaluate_sequence_returned
+  apply Block.evaluate_returnValue
+  simp only [isDecimalDigit]
+  functional_eval
 
 theorem isWhitespaceView_evaluates :
     ∀ byte : Byte,
       returnedBool? (Block.evaluate (machine verifiedFrontendLexerCore) world
           (byteEnvironment byte) isWhitespaceView.block) =
         some (isWhitespace byte) := by
-  native_decide
+  intro byte
+  apply congrArg returnedBool?
+    (a₂ := .done (.returned (some (.boolean (isWhitespace byte)))) world)
+  rw [← (reduce_data% retaining [Signature] isWhitespaceView.block).property]
+  apply Block.evaluate_sequence_returned
+  apply Block.evaluate_returnValue
+  simp only [isWhitespace]
+  functional_eval
 
 theorem isSymbolStartView_evaluates :
     ∀ byte : Byte,
       returnedBool? (Block.evaluate (machine verifiedFrontendLexerCore) world
           (byteEnvironment byte) isSymbolStartView.block) =
         some (isSymbolStart byte) := by
-  native_decide
+  intro byte
+  apply congrArg returnedBool?
+    (a₂ := .done (.returned (some (.boolean (isSymbolStart byte)))) world)
+  rw [← (reduce_data% retaining [Signature] isSymbolStartView.block).property]
+  apply Block.evaluate_sequence_returned
+  apply Block.evaluate_returnValue
+  simp only [isSymbolStart, symbolBytes, List.contains_cons, List.contains_nil,
+    Bool.or_false, ← Bool.or_assoc]
+  functional_eval
 
 theorem classifyStartView_evaluates :
     ∀ byte : Byte,
       returnedI32? (Block.evaluate (machine verifiedFrontendLexerCore) world
           (byteEnvironment byte) classifyStartView.block) =
         some (Int.ofNat (classifyStartCode byte)) := by
-  native_decide
+  intro byte
+  apply congrArg returnedI32?
+    (a₂ := .done (.returned (some (.signed .i32 (Int.ofNat (classifyStartCode byte))))) world)
+  rw [← (reduce_data% retaining [Signature] classifyStartView.block).property]
+  rw [← Block.evaluate_normalize]
+  simp only [Block.normalize, Block.sequenceNormalized]
+  simp only [classifyStartCode, classifyStart]
+  simp only [apply_ite StartClass.code]
+  simp only [StartClass.code, apply_ite Int.ofNat,
+    apply_ite (Value.signed .i32), apply_ite (@some Value),
+    apply_ite FunctionalView.Completion.returned,
+    apply_ite (fun completion => Result.done completion world)]
+  repeat' first
+    | apply Block.evaluate_if_bool (afterCondition := world)
+    | apply Block.evaluate_returnValue
+  all_goals simp only [isIdentifierStart, isDecimalDigit, isWhitespace,
+    isSymbolStart, symbolBytes, List.contains_cons, List.contains_nil,
+    Bool.or_false, ← Bool.or_assoc]
+  all_goals functional_eval
 
 private theorem returnedBool?_some
     {result : Result worldType} {value : Bool}
@@ -136,7 +184,7 @@ theorem isSymbolStartBody_executes
     (.boolean (isSymbolStart byte))
   obtain ⟨afterWorld, evaluated⟩ := returnedBool?_some
     (isSymbolStartView_evaluates byte)
-  have execution := execution afterWorld evaluated (by native_decide)
+  have execution := execution afterWorld evaluated (by decide +kernel)
   rw [isSymbolStartView_toCore_exactly] at execution
   simpa [byteCalleeState] using execution
 
@@ -153,7 +201,7 @@ theorem classifyStartBody_executes
     (.signed .i32 (Int.ofNat (classifyStartCode byte)))
   obtain ⟨afterWorld, evaluated⟩ := returnedI32?_some
     (classifyStartView_evaluates byte)
-  have execution := execution afterWorld evaluated (by native_decide)
+  have execution := execution afterWorld evaluated (by decide +kernel)
   rw [classifyStartView_toCore_exactly] at execution
   simpa [byteCalleeState] using execution
 
@@ -257,7 +305,7 @@ theorem calls_decimalDigit (currentWorld : World) (byte : Byte) :
         (48 ≤ (Int.ofNat byte.val) && (Int.ofNat byte.val) ≤ 57),
         currentWorld) := by
   have different : isDecimalDigitFunction.id ≠
-      isIdentifierStartFunction.id := by native_decide
+      isIdentifierStartFunction.id := by decide +kernel
   simp [calls, different]
 
 theorem view_evaluates :
@@ -267,7 +315,7 @@ theorem view_evaluates :
             verifiedFrontendLexerCore calls)
           world (byteEnvironment byte) isIdentifierContinueView.block) =
         some (isIdentifierContinue byte) := by
-  native_decide
+  decide +kernel
 
 end IdentifierContinue
 

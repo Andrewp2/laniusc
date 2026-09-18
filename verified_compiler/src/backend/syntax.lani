@@ -1,0 +1,71 @@
+module backend::syntax;
+
+// Preorder serialization of structural Core constructors, not a second IR.
+// The function header is shared with the proved parameter-return lowering.
+pub const I32: i32 = 1;
+pub const BOOL: i32 = 2;
+pub const USIZE: i32 = 3;
+pub const POINTER: i32 = 4;
+pub const STRING: i32 = 5;
+pub const SLICE: i32 = 6;
+pub const STRUCT_BASE: i32 = 16;
+pub const VALUE: i32 = 0;
+pub const LOCAL: i32 = 1;
+pub const CAST: i32 = 2;
+pub const UNARY: i32 = 3;
+pub const BINARY: i32 = 4;
+pub const INDEX: i32 = 7;
+pub const ASSIGN: i32 = 12;
+pub const STRUCT_VALUE: i32 = 8;
+pub const FIELD: i32 = 9;
+pub const CONSTANT: i32 = 13;
+pub const CALL: i32 = 14;
+pub const SLICE_FROM_RAW_PARTS: i32 = 15;
+pub const SLICE_DATA_PTR: i32 = 16;
+pub const STRING_DATA_PTR: i32 = 17;
+pub const PLACE_LOCAL: i32 = 0;
+pub const PLACE_FIELD: i32 = 1;
+pub const PLACE_INDEX: i32 = 2;
+pub const SKIP: i32 = 0;
+pub const EXPRESSION: i32 = 1;
+pub const SEQUENCE: i32 = 2;
+pub const LET: i32 = 3;
+pub const LET_UNINITIALIZED: i32 = 4;
+pub const IF: i32 = 5;
+pub const WHILE: i32 = 6;
+pub const RETURN: i32 = 10;
+pub const BREAK: i32 = 11;
+pub const CONTINUE: i32 = 12;
+pub const POSITIVE: i32 = 0;
+pub const NOT: i32 = 1;
+pub const NEGATE: i32 = 2;
+pub const AND_THEN: i32 = 0;
+pub const OR_ELSE: i32 = 1;
+pub const EQUAL: i32 = 2;
+pub const NOT_EQUAL: i32 = 3;
+pub const LESS: i32 = 4;
+pub const LESS_EQUAL: i32 = 5;
+pub const GREATER: i32 = 6;
+pub const GREATER_EQUAL: i32 = 7;
+pub const ADD: i32 = 8;
+pub const SUBTRACT: i32 = 9;
+pub const MULTIPLY: i32 = 10;
+pub const DIVIDE: i32 = 11;
+pub const REMAINDER: i32 = 12;
+pub const BIT_AND: i32 = 13;
+pub const BIT_OR: i32 = 14;
+pub const BIT_XOR: i32 = 15;
+pub const SHIFT_LEFT: i32 = 16;
+pub const SHIFT_RIGHT: i32 = 17;
+
+pub fn scalar(kind: i32) -> bool { return kind == I32 || kind == BOOL; }
+
+pub fn assignment_binary(operation: i32) -> i32 {
+    if (operation >= 1 && operation <= 5) { return operation + 7; }
+    if (operation == 6) { return BIT_XOR; }
+    if (operation == 7) { return SHIFT_LEFT; }
+    if (operation == 8) { return SHIFT_RIGHT; }
+    if (operation == 9) { return BIT_AND; }
+    if (operation == 10) { return BIT_OR; }
+    return -1;
+}

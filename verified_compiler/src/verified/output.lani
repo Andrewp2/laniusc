@@ -45,6 +45,8 @@ pub fn bytes(output:[i32], capacity: i32, position: i32,
 // store four bytes in each little-endian i32 word. Callers use literal byte
 // lengths, making emitted Lean syntax readable without expanding it into a
 // separate Lanius integer expression for every byte.
+// Input storage must include padding through the last four-byte word; strings
+// do not promise readable bytes beyond their contents. Padding is not emitted.
 pub fn text(output:[i32], capacity: i32, position: i32,
     input: str, length: i32,) -> i32 {
     if (length <= -1) { return -1; }

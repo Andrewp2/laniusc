@@ -1348,6 +1348,12 @@ noncomputable def makeRecognizerSetupEntry
       indexOwned := by simpa [indexCell] using indexOwned
       indexLe := by simp
       rowRange := rowRange
+      rowExact := by
+        have exactRow := recognizer.grammarWellFormed.lhsIndexExact start recognizer.grammarWellFormed.startInBounds
+        have selected := grammar.lhsProductions_row rowId
+        have rowEq := Option.some.inj (rowFound.symm.trans exactRow)
+        exact selected.trans rowEq
+      seeded := by simp [Seeded]
       rowProductionBound := rowProductionBound
       persistentSeparate := persistentSeparate
       indexBackingDistinct := by
@@ -2126,19 +2132,19 @@ def RecognizerInitialContinuationOutcome.resultValue
     (outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words
       tokens workspaceLayout completion) : Value :=
   match outcome with
-  | .full stateCount =>
+  | .full stateCount _ _ _ =>
       parseResultValue 2 (Int.ofNat stateCount) (-1) 0
   | .seeded _ _ _ continuation =>
       match continuation with
-      | .full position stateCount =>
+      | .full position stateCount _ _ _ =>
           parseResultValue 2 (Int.ofNat stateCount) (-1)
             (Int.ofNat position)
-      | .completed workspace _ _ _ root =>
+      | .completed workspace _ _ _ root _ _ _ _ _ =>
           match root with
           | .accepted rootState _ _ _ _ _ =>
               parseResultValue 0 (Int.ofNat workspace.states.length)
                 (Int.ofNat rootState) 0
-          | .rejected furthest =>
+          | .rejected furthest _ =>
               parseResultValue 1 (Int.ofNat workspace.states.length) (-1)
                 (Int.ofNat furthest)
 
@@ -2173,15 +2179,15 @@ def RecognizerInitialContinuationOutcome.languageOutcome
       tokens workspaceLayout completion) :
     RecognizerLanguageOutcome grammar tokens :=
   match outcome with
-  | .full _ => .capacityFull
+  | .full .. => .capacityFull
   | .seeded _ _ _ continuation =>
       match continuation with
-      | .full _ _ => .capacityFull
-      | .completed _ _ _ _ root =>
+      | .full .. => .capacityFull
+      | .completed _ _ _ _ root _ _ _ _ _ =>
           match root with
           | .accepted _ _ _ _ _ materializedParse =>
               .accepted materializedParse.toMaterializedParse
-          | .rejected _ => .rejected
+          | .rejected _ _ => .rejected
 
 theorem RecognizerExecution.returns_result
     (execution : RecognizerExecution grammarLayout grammar words tokens

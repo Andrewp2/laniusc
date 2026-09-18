@@ -42,15 +42,15 @@ def reifyCommand? (program : Program) (returnType : Ty) :
         toCoreExactly := by rfl
       }
   | context, inLoop, layout, nextLocal, .sequence first second => do
+      -- Reification already checks each child. Compose those typing witnesses
+      -- instead of traversing the same subtree again at every enclosing node.
       let firstView ← reifyCommand? program returnType context inLoop layout
         nextLocal first
       let secondView ← reifyCommand? program returnType context inLoop layout
         (nextLocal + localCapacity actionAdapter firstView.command) second
-      let typed ← checkStmt program returnType context inLoop
-        (.sequence first second)
       pure {
         command := .sequence firstView.command secondView.command
-        coreTyped := typed.proof
+        coreTyped := .sequence firstView.coreTyped secondView.coreTyped
         toCoreExactly := by
           simp only [Stateful.toCoreStmt]
           rw [firstView.toCoreExactly, secondView.toCoreExactly]
@@ -63,11 +63,10 @@ def reifyCommand? (program : Program) (returnType : Ty) :
           let bodyView ← reifyCommand? program returnType
             (context.bind id type) inLoop (Layout.push layout id)
             (nextLocal + 1) body
-          let typed ← checkStmt program returnType context inLoop
-            (.letLocal id type initializer body)
           pure {
             command := .letValue type initializerView.term bodyView.command
-            coreTyped := typed.proof
+            coreTyped := .letLocal (typeMatches ▸ initializerView.coreTyped)
+              bodyView.coreTyped
             toCoreExactly := by
               subst id
               simp only [Stateful.toCoreStmt]
@@ -125,12 +124,11 @@ def reifyCommand? (program : Program) (returnType : Ty) :
           nextLocal thenBranch
         let elseView ← reifyCommand? program returnType context inLoop layout
           nextLocal elseBranch
-        let typed ← checkStmt program returnType context inLoop
-          (.ifThenElse condition thenBranch elseBranch)
         pure {
           command := .ifThenElse conditionView.term thenView.command
             elseView.command
-          coreTyped := typed.proof
+          coreTyped := .ifThenElse (conditionType ▸ conditionView.coreTyped)
+            thenView.coreTyped elseView.coreTyped
           toCoreExactly := by
             simp only [Stateful.toCoreStmt]
             rw [conditionView.toCoreExactly, thenView.toCoreExactly,
@@ -142,11 +140,10 @@ def reifyCommand? (program : Program) (returnType : Ty) :
       if conditionType : conditionView.type = .scalar .bool then
         let bodyView ← reifyCommand? program returnType context true layout
           nextLocal body
-        let typed ← checkStmt program returnType context inLoop
-          (.whileLoop condition body)
         pure {
           command := .whileLoop conditionView.term bodyView.command
-          coreTyped := typed.proof
+          coreTyped := .whileLoop (conditionType ▸ conditionView.coreTyped)
+            bodyView.coreTyped
           toCoreExactly := by
             simp only [Stateful.toCoreStmt]
             rw [conditionView.toCoreExactly, bodyView.toCoreExactly]
@@ -163,11 +160,9 @@ def reifyCommand? (program : Program) (returnType : Ty) :
   | context, inLoop, layout, _nextLocal, .returnValue (some value) => do
       let valueView ← reifyTerm? program context layout value
       if returnTypeMatches : valueView.type = returnType then
-        let typed ← checkStmt program returnType context inLoop
-          (.returnValue (some value))
         pure {
           command := .returnValue (some valueView.term)
-          coreTyped := typed.proof
+          coreTyped := .returnValue (returnTypeMatches ▸ valueView.coreTyped)
           toCoreExactly := by
             simp only [Stateful.toCoreStmt]
             rw [valueView.toCoreExactly]

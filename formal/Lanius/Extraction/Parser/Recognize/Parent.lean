@@ -1,5 +1,9 @@
 import Lanius.Extraction.Parser.Recognize.Common
+import Lanius.Extraction.VerifiedFrontend.Parser.Workspace
 import Lanius.Extraction.Parser.Recognize.ChartCursor
+
+import Lanius.Compiler.Parser.Growth
+import Lanius.Compiler.Parser.Completion.Parents
 
 namespace Lanius.Extraction.ParserRecognize
 
@@ -51,12 +55,12 @@ def parserRecognizeParentMatchedBody : Stmt :=
 def verifiedParserParentLoopAccessFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
-    parserRecognizeParentLoop (by native_decide)
+    parserRecognizeParentLoop (by decide +kernel)
 
 def verifiedParserParentLoopLiveFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
-    parserRecognizeParentLoop (by native_decide)
+    parserRecognizeParentLoop (by decide +kernel)
 
 theorem verifiedParser_parent_loop_access_frame :
     verifiedParserParentLoopAccessFrame.map (fun access =>
@@ -71,11 +75,11 @@ theorem verifiedParser_parent_loop_access_frame :
       ("position", 23, .read),
       ("state_id", 24, .read),
       ("state_count", 18, .readWrite)] := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParser_parent_loop_live_frame :
     verifiedParserParentLoopLiveFrame = verifiedParserParentLoopAccessFrame := by
-  native_decide
+  decide +kernel
 
 /-- Parent-loop accesses shared with the enclosing recognizer state.  The
     `parent` cursor is omitted because `chartCursor` owns its cell. -/
@@ -89,7 +93,7 @@ def verifiedParserParentLoopSharedFrameIds : List VarId :=
 theorem verifiedParser_parent_loop_shared_frame_ids :
     verifiedParserParentLoopSharedFrameIds =
       [4, 8, 0, 11, 29, 9, 23, 24, 18] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem mem_verifiedParserParentLoopSharedFrameIds_iff
     (id : Nat) :
@@ -111,7 +115,7 @@ def verifiedParserParentLoopPreservedFrameIds : List VarId :=
 theorem verifiedParser_parent_loop_preserved_frame_ids :
     verifiedParserParentLoopPreservedFrameIds =
       [4, 8, 0, 11, 29, 9, 23, 24] := by
-  native_decide
+  decide +kernel
 
 @[simp] theorem mem_verifiedParserParentLoopPreservedFrameIds_iff
     (id : Nat) :
@@ -141,13 +145,13 @@ theorem verifiedParserParentPersistentBindings_core_ids :
     verifiedParserParentPersistentBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserParentLoopSharedFrameIds := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParserParentPreservedBindings_core_ids :
     verifiedParserParentPreservedBindings.coreIds =
       verifiedParserRecognizerParameterIds ++
         verifiedParserParentLoopPreservedFrameIds := by
-  native_decide
+  decide +kernel
 
 /-- The compatibility predicate used by the evaluator proofs is exactly the
     projection of the checked declaration frame, not an independent range. -/
@@ -290,7 +294,7 @@ private def parentLoopReification? :=
 
 private theorem parentLoopReification_exists :
     parentLoopReification?.isSome := by
-  native_decide
+  decide +kernel
 
 /-- Complete mutable FunctionalView command recovered from the checked parent
     completion loop. -/
@@ -309,7 +313,7 @@ private def parentBodyReification? :=
 
 private theorem parentBodyReification_exists :
     parentBodyReification?.isSome := by
-  native_decide
+  decide +kernel
 
 private def parserRecognizeParentBodyView :=
   parentBodyReification?.get parentBodyReification_exists
@@ -1800,7 +1804,7 @@ private theorem RecognizerParentLoopInvariant.functional_seed
       (calls := RecognizerTraversalCallRegistry.calls workspaceLayout grammar
         words grammarCell) (world := world) (environment := originEnvironment)
       (parentConstant 39 : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 14) (by native_decide)
+        Lanius.FunctionalView.Core.signature 14) (by decide +kernel)
   have childStateResult : Lanius.FunctionalView.Term.evaluate machine world
       originEnvironment (parentConstant 39 : Lanius.FunctionalView.Term
         Lanius.FunctionalView.Core.signature 14) =
@@ -1824,7 +1828,7 @@ private theorem RecognizerParentLoopInvariant.functional_seed
       (calls := RecognizerTraversalCallRegistry.calls workspaceLayout grammar
         words grammarCell) (world := world) (environment := originEnvironment)
       (parentNegativeOne : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 14) (by native_decide)
+        Lanius.FunctionalView.Core.signature 14) (by decide +kernel)
   have negativeOneResult : Lanius.FunctionalView.Term.evaluate machine world
       originEnvironment (parentNegativeOne : Lanius.FunctionalView.Term
         Lanius.FunctionalView.Core.signature 14) =
@@ -3264,7 +3268,7 @@ private theorem parentFullCondition_evaluates
       (calls := RecognizerTraversalCallRegistry.calls workspaceLayout grammar
         words grammarCell) (world := world)
       (environment := environment.push (appendOutcomeValue outcome))
-      parentFullCondition (by native_decide)
+      parentFullCondition (by decide +kernel)
   have readOnlyResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
       world (environment.push (appendOutcomeValue outcome))
@@ -3294,7 +3298,7 @@ private theorem parentStateCountTerm_evaluates
       (calls := RecognizerTraversalCallRegistry.calls workspaceLayout grammar
         words grammarCell) (world := world)
       (environment := environment.push (appendOutcomeValue outcome))
-      parentStateCountTerm (by native_decide)
+      parentStateCountTerm (by decide +kernel)
   have readOnlyResult : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
       world (environment.push (appendOutcomeValue outcome))
@@ -3785,21 +3789,21 @@ private theorem RecognizerParentLoopInvariant.functional_ok_body
       resultEnvironment, originEnvironment, rhsEnvironment, dotEnvironment,
       productionEnvironment]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 12) (before := by native_decide)]
+      (arity := 12) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 11) (before := by native_decide)]
+      (arity := 11) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 10) (before := by native_decide)]
+      (arity := 10) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 14) (before := by native_decide)]
+      (arity := 14) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 13) (before := by native_decide)]
+      (arity := 13) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 12) (before := by native_decide)]
+      (arity := 12) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 11) (before := by native_decide)]
+      (arity := 11) (before := by decide +kernel)]
     rw [Lanius.FunctionalView.Stateful.Env.pop_set_of_lt
-      (arity := 10) (before := by native_decide)]
+      (arity := 10) (before := by decide +kernel)]
     congr
     simp
   have environmentEq :
@@ -5271,6 +5275,49 @@ theorem RecognizerParentConfig.tokenStorage
   | active config => exact config.invariant.chartCursor.recognizer.tokenStorage
   | sentinel config => exact config.invariant.chartCursor.recognizer.tokenStorage
 
+def RecognizerParentConfig.parentsReady
+    (config : RecognizerParentConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position completed completedLhs origin) : Prop :=
+  match config with
+  | .active current => ParentsFor grammar current.workspace position completedLhs
+      current.invariant.chartCursor.cursor.visited
+  | .sentinel done => ParentsComplete grammar done.workspace origin position completedLhs
+
+/-- Actual origin-chart entry starts with an empty visited prefix. A negative
+head means an empty origin chart, not an unproved completeness premise. -/
+theorem RecognizerParentConfig.parentsReady_of_head
+    (config : RecognizerParentConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position completed completedLhs origin)
+    (head : config.candidate = chartHeadValue config.workspace origin) : config.parentsReady := by
+  cases config with
+  | active current =>
+      have headFound : (current.workspace.chart origin).head? = some current.current := by
+        cases headEq : (current.workspace.chart origin).head? with
+        | none =>
+            simp only [RecognizerParentConfig.candidate, RecognizerParentConfig.workspace,
+              chartHeadValue, headEq, encodeStateId, Int.ofNat_eq_natCast] at head
+            omega
+        | some first =>
+            simp only [RecognizerParentConfig.candidate, RecognizerParentConfig.workspace,
+              chartHeadValue, headEq, encodeStateId, Int.ofNat_eq_natCast] at head
+            exact congrArg some (by omega)
+      change ParentsFor grammar current.workspace position completedLhs _
+      rw [current.invariant.chartCursor.cursor.visited_nil_of_head headFound]
+      exact ParentsFor.nil
+  | sentinel done =>
+      have empty : done.workspace.chart origin = [] := by
+        cases chartEq : done.workspace.chart origin with
+        | nil => rfl
+        | cons first rest =>
+            simp only [RecognizerParentConfig.candidate, RecognizerParentConfig.workspace,
+              chartHeadValue, chartEq, List.head?_cons, encodeStateId, Int.ofNat_eq_natCast] at head
+            omega
+      change ParentsFor grammar done.workspace position completedLhs _
+      rw [empty]
+      exact ParentsFor.nil
+
 noncomputable def RecognizerParentConfig.functionalRuntime
     (config : RecognizerParentConfig grammarLayout grammar words tokens
       workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
@@ -5359,7 +5406,7 @@ inductive RecognizerParentSynchronizedOutcome
     (position completed completedLhs origin : Nat)
     (after : Lanius.FunctionalView.Stateful.Loop.Runtime
       (parentTermMachine workspaceLayout grammar words grammarCell) 10) :
-    State → Completion → Prop where
+    State → Completion → Type where
   | completed (workspace : LogicalWorkspace) (workspaceValues : List Int)
       (physicalAfter : State)
       (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace
@@ -5373,7 +5420,8 @@ inductive RecognizerParentSynchronizedOutcome
       (environmentEq : after.environment = parentEnvironment words
         workspaceValues grammarCell workspaceCell workspaceLayout
         workspace.states.length grammar.grammar.n_kinds position completed
-        completedLhs (-1)) :
+        completedLhs (-1))
+      (stable : ChartsUnchangedBefore position beforeWorkspace workspace) :
       RecognizerParentSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position completed completedLhs origin after
@@ -5385,11 +5433,21 @@ inductive RecognizerParentSynchronizedOutcome
       (terminal : RecognizerInvariant grammarLayout grammar words tokens
         workspaceLayout workspace workspaceValues grammarCell tokensCell
         workspaceCell physicalAfter)
-      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter) :
+      (stateCount : Nat) (wellFormed : StateWellFormed physicalAfter)
+      (full : WorkspaceFull workspaceLayout.capacity workspace stateCount) :
       RecognizerParentSynchronizedOutcome grammarLayout grammar words tokens
         workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
         stateCountCell cursorCell position completed completedLhs origin after
         physicalAfter (parserCapacityCompletion position stateCount)
+
+def RecognizerParentSynchronizedOutcome.parentsComplete
+    {completed : Nat}
+    (outcome : RecognizerParentSynchronizedOutcome grammarLayout grammar words tokens
+      workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position completed completedLhs origin after physicalAfter completion) : Prop :=
+  match outcome with
+  | .completed workspace .. => ParentsComplete grammar workspace origin position completedLhs
+  | .full .. => True
 
 theorem RecognizerParentSynchronizedOutcome.physical
     {completed : Nat}
@@ -5405,16 +5463,17 @@ theorem RecognizerParentSynchronizedOutcome.physical
   | completed workspace workspaceValues physicalAfter growth invariant _ _ =>
       exact .completed workspace workspaceValues physicalAfter growth invariant
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter growth terminal
-        stateCount wellFormed
+        stateCount wellFormed full
 
 theorem RecognizerParentSynchronizedOutcome.view
     {completed : Nat}
     (outcome : RecognizerParentSynchronizedOutcome grammarLayout grammar words
       tokens workspaceLayout beforeWorkspace grammarCell tokensCell
       workspaceCell stateCountCell cursorCell position completed completedLhs
-      origin after physicalAfter completion) :
+      origin after physicalAfter completion)
+    (parents : outcome.parentsComplete) :
     (completion = .next ∧
       ∃ workspace : LogicalWorkspace,
       ∃ workspaceValues : List Int,
@@ -5428,7 +5487,9 @@ theorem RecognizerParentSynchronizedOutcome.view
           tokensCell workspaceCell ∧
         after.environment = parentEnvironment words workspaceValues grammarCell
           workspaceCell workspaceLayout workspace.states.length
-          grammar.grammar.n_kinds position completed completedLhs (-1)) ∨
+          grammar.grammar.n_kinds position completed completedLhs (-1) ∧
+        ChartsUnchangedBefore position beforeWorkspace workspace ∧
+        ParentsComplete grammar workspace origin position completedLhs) ∨
     (∃ workspace : LogicalWorkspace,
       ∃ workspaceValues : List Int,
       ∃ growth : WorkspaceAppendClosure workspaceLayout.capacity
@@ -5438,18 +5499,19 @@ theorem RecognizerParentSynchronizedOutcome.view
           workspaceCell physicalAfter,
       ∃ stateCount : Nat,
       ∃ wellFormed : StateWellFormed physicalAfter,
+        WorkspaceFull workspaceLayout.capacity workspace stateCount ∧
         completion = parserCapacityCompletion position stateCount) := by
   cases outcome with
   | completed workspace workspaceValues physicalAfter growth invariant worldEq
-      environmentEq =>
+      environmentEq stable =>
       exact .inl ⟨rfl, workspace, workspaceValues, growth, invariant, worldEq,
-        environmentEq⟩
+        environmentEq, stable, parents⟩
   | full workspace workspaceValues physicalAfter growth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .inr ⟨workspace, workspaceValues, growth, terminal, stateCount,
-        wellFormed, rfl⟩
+        wellFormed, full, rfl⟩
 
-theorem RecognizerParentSynchronizedOutcome.prepend_growth
+def RecognizerParentSynchronizedOutcome.prepend_growth
     {grammarLayout : PackedGrammarLayout} {grammar : IndexedGrammar}
     {words : List Int} {tokens : List Nat}
     {workspaceLayout : WorkspaceLayout}
@@ -5464,20 +5526,31 @@ theorem RecognizerParentSynchronizedOutcome.prepend_growth
       workspaceCell stateCountCell cursorCell position completed completedLhs
       origin after physicalAfter completion)
     (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace
-      middleWorkspace) :
+      middleWorkspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace middleWorkspace) :
     RecognizerParentSynchronizedOutcome grammarLayout grammar words tokens
       workspaceLayout beforeWorkspace grammarCell tokensCell workspaceCell
       stateCountCell cursorCell position completed completedLhs origin after
       physicalAfter completion := by
   cases outcome with
   | completed workspace workspaceValues physicalAfter nextGrowth invariant
-      worldEq environmentEq =>
+      worldEq environmentEq nextStable =>
       exact .completed workspace workspaceValues physicalAfter
-        (growth.trans nextGrowth) invariant worldEq environmentEq
+        (growth.trans nextGrowth) invariant worldEq environmentEq (stable.trans nextStable)
   | full workspace workspaceValues physicalAfter nextGrowth terminal stateCount
-      wellFormed =>
+      wellFormed full =>
       exact .full workspace workspaceValues physicalAfter
-        (growth.trans nextGrowth) terminal stateCount wellFormed
+        (growth.trans nextGrowth) terminal stateCount wellFormed full
+
+@[simp] theorem RecognizerParentSynchronizedOutcome.parentsComplete_prepend_growth
+    {completed : Nat}
+    (outcome : RecognizerParentSynchronizedOutcome grammarLayout grammar words tokens
+      workspaceLayout middleWorkspace grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position completed completedLhs origin after physicalAfter completion)
+    (growth : WorkspaceAppendClosure workspaceLayout.capacity beforeWorkspace middleWorkspace)
+    (stable : ChartsUnchangedBefore position beforeWorkspace middleWorkspace) :
+    (outcome.prepend_growth growth stable).parentsComplete = outcome.parentsComplete := by
+  cases outcome <;> rfl
 
 structure RecognizerParentLoopExecution
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -5530,6 +5603,7 @@ structure RecognizerParentFunctionalResult
     tokens workspaceLayout config.workspace grammarCell tokensCell workspaceCell
     stateCountCell cursorCell position completed completedLhs origin _after physicalAfter
     (Lanius.FunctionalView.Core.Stateful.toCoreCompletion completion)
+  parents : config.parentsReady → outcome.parentsComplete
 
 /-- One exact FunctionalView transition of the parent-completion traversal. -/
 noncomputable def RecognizerParentConfig.functional_decide
@@ -5579,7 +5653,8 @@ noncomputable def RecognizerParentConfig.functional_decide
           effect := ModifiesOnly.reflAny writes sentinelConfig.runtime
           outcome := .completed sentinelConfig.workspace
             sentinelConfig.workspaceValues sentinelConfig.runtime
-            (.refl sentinelConfig.workspace) sentinelConfig.invariant rfl rfl
+            (.refl sentinelConfig.workspace) sentinelConfig.invariant rfl rfl ChartsUnchangedBefore.refl
+          parents := fun prior => prior
         }
       }
   | active activeConfig =>
@@ -5727,12 +5802,20 @@ noncomputable def RecognizerParentConfig.functional_decide
                   activeConfig.workspaceValues closed.after
                   (.refl activeConfig.workspace) closedInvariant
                   logical.1.stateCount closed.wellFormed
+                  (appendLogical.full_workspace statusFull)
+                parents := fun _ => trivial
               }
             }
         | ok =>
             have statusOk : (appendLogical workspaceLayout.capacity position
                 seed activeConfig.workspace).1.status = .ok := by
               simpa [logical]
+            have advanced : ∀ parent, activeConfig.workspace.state? activeConfig.current = some parent →
+                ParentAdvanced grammar logical.2 position completedLhs parent := by
+              intro parent selected
+              have same := Option.some.inj (found.symm.trans selected)
+              subst parent
+              exact ParentAdvanced.of_inserted (appendLogical_refines logical rfl) statusOk rfl
             let appended := originBinding.appendInvariant.execute_ok (by
               simpa [seed] using statusOk)
             let cursorResult := originBinding.classify_ok_append appended
@@ -5825,6 +5908,22 @@ noncomputable def RecognizerParentConfig.functional_decide
                           (WorkspaceAppendClosure.single
                             workspaceLayout.capacity position seed
                             activeConfig.workspace)
+                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
+                        parents := by
+                          intro prior
+                          have processed := ParentsFor.step invariant.chartCursor.cursor
+                            caseInnerInvariant.chartCursor.cursor
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior advanced
+                          have ready : nextConfig.parentsReady := by
+                            change ParentsFor grammar logical.2 position completedLhs (logical.2.chart origin)
+                            rw [caseInnerInvariant.chartCursor.cursor.split]
+                            exact processed
+                          exact (RecognizerParentSynchronizedOutcome.parentsComplete_prepend_growth
+                            result.outcome
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
+                              (result.parents ready)
                       }
                 | cons next tail =>
                     have caseInnerInvariant : RecognizerParentLoopInvariant
@@ -5919,6 +6018,25 @@ noncomputable def RecognizerParentConfig.functional_decide
                           (WorkspaceAppendClosure.single
                             workspaceLayout.capacity position seed
                             activeConfig.workspace)
+                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
+                        parents := by
+                          intro prior
+                          have processed := ParentsFor.step invariant.chartCursor.cursor
+                            caseInnerInvariant.chartCursor.cursor
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior advanced
+                          have ready : nextConfig.parentsReady := by
+                            change ParentsFor grammar logical.2 position completedLhs step.invariant.chartCursor.cursor.visited
+                            have visited := step.invariant.chartCursor.cursor.visited_eq
+                              (caseInnerInvariant.chartCursor.cursor.next
+                                (caseInnerInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartIdsUnique origin))
+                            rw [visited]
+                            exact processed
+                          exact (RecognizerParentSynchronizedOutcome.parentsComplete_prepend_growth
+                            result.outcome
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
+                              (result.parents ready)
                       }
             | inserted nextRemaining innerInvariant countIncreased =>
                 cases nextEq : nextRemaining with
@@ -6015,6 +6133,22 @@ noncomputable def RecognizerParentConfig.functional_decide
                           (WorkspaceAppendClosure.single
                             workspaceLayout.capacity position seed
                             activeConfig.workspace)
+                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
+                        parents := by
+                          intro prior
+                          have processed := ParentsFor.step invariant.chartCursor.cursor
+                            caseInnerInvariant.chartCursor.cursor
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior advanced
+                          have ready : nextConfig.parentsReady := by
+                            change ParentsFor grammar logical.2 position completedLhs (logical.2.chart origin)
+                            rw [caseInnerInvariant.chartCursor.cursor.split]
+                            exact processed
+                          exact (RecognizerParentSynchronizedOutcome.parentsComplete_prepend_growth
+                            result.outcome
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
+                              (result.parents ready)
                       }
                 | cons next tail =>
                     have caseInnerInvariant : RecognizerParentLoopInvariant
@@ -6112,8 +6246,35 @@ noncomputable def RecognizerParentConfig.functional_decide
                           (WorkspaceAppendClosure.single
                             workspaceLayout.capacity position seed
                             activeConfig.workspace)
+                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
+                        parents := by
+                          intro prior
+                          have processed := ParentsFor.step invariant.chartCursor.cursor
+                            caseInnerInvariant.chartCursor.cursor
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior advanced
+                          have ready : nextConfig.parentsReady := by
+                            change ParentsFor grammar logical.2 position completedLhs step.invariant.chartCursor.cursor.visited
+                            have visited := step.invariant.chartCursor.cursor.visited_eq
+                              (caseInnerInvariant.chartCursor.cursor.next
+                                (caseInnerInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartIdsUnique origin))
+                            rw [visited]
+                            exact processed
+                          exact (RecognizerParentSynchronizedOutcome.parentsComplete_prepend_growth
+                            result.outcome
+                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
+                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
+                              (result.parents ready)
                       }
-      · cases remainingEq : activeConfig.remaining with
+      · have advanced : ∀ parent, activeConfig.workspace.state? activeConfig.current = some parent →
+            ParentAdvanced grammar activeConfig.workspace position completedLhs parent := by
+          intro parent selected
+          have same := Option.some.inj (found.symm.trans selected)
+          subst parent
+          intro bound expected
+          apply False.elim (doesMatch ?_)
+          exact ⟨List.getElem?_eq_some_iff.mp expected |>.1, expected⟩
+        cases remainingEq : activeConfig.remaining with
         | nil =>
             have caseInvariant : RecognizerParentLoopInvariant grammarLayout
                 grammar words tokens workspaceLayout activeConfig.workspace
@@ -6189,6 +6350,16 @@ noncomputable def RecognizerParentConfig.functional_decide
                     exact Or.inr (Or.inr written))
                   simpa [writes] using first.trans_same result.effect
                 outcome := result.outcome
+                parents := by
+                  intro prior
+                  have processed := ParentsFor.step (capacity := workspaceLayout.capacity)
+                    invariant.chartCursor.cursor caseInvariant.chartCursor.cursor (.refl activeConfig.workspace)
+                    invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior advanced
+                  have ready : nextConfig.parentsReady := by
+                    change ParentsFor grammar activeConfig.workspace position completedLhs (activeConfig.workspace.chart origin)
+                    rw [caseInvariant.chartCursor.cursor.split]
+                    exact processed
+                  exact result.parents ready
               }
         | cons next tail =>
             have caseInvariant : RecognizerParentLoopInvariant grammarLayout
@@ -6271,6 +6442,19 @@ noncomputable def RecognizerParentConfig.functional_decide
                     exact Or.inr (Or.inr written))
                   simpa [writes] using first.trans_same result.effect
                 outcome := result.outcome
+                parents := by
+                  intro prior
+                  have processed := ParentsFor.step (capacity := workspaceLayout.capacity)
+                    invariant.chartCursor.cursor caseInvariant.chartCursor.cursor (.refl activeConfig.workspace)
+                    invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior advanced
+                  have ready : nextConfig.parentsReady := by
+                    change ParentsFor grammar activeConfig.workspace position completedLhs nextInvariant.chartCursor.cursor.visited
+                    have visited := nextInvariant.chartCursor.cursor.visited_eq
+                      (caseInvariant.chartCursor.cursor.next
+                        (caseInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartIdsUnique origin))
+                    rw [visited]
+                    exact processed
+                  exact result.parents ready
               }
 
 /-- The total compact FunctionalView execution retained independently of its

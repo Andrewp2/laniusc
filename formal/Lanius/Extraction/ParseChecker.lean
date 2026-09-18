@@ -724,17 +724,17 @@ theorem checkParseArtifact_of_checks (artifact : Artifact) (rootId : Nat)
 def checkParseArtifactView (artifact : Artifact) (view : ArtifactView artifact) : Bool :=
   checkTokenArtifact artifact &&
   semanticKindsValid laniusGrammar artifact.tokens artifact.semantic_token_kinds &&
-  checkNodesFromView laniusGrammar artifact view 0 artifact.parse_nodes &&
+  checkNodesFromFast laniusGrammar artifact.semantic_token_kinds artifact.parse_nodes 0 artifact.parse_nodes &&
   match artifact.parse_root with
   | none => false
   | some rootId =>
-      rootShapeValid laniusGrammar artifact.tokens.length artifact.parse_nodes rootId
+      rootShapeValidView laniusGrammar view rootId
 
 theorem checkParseArtifactView_eq (artifact : Artifact)
     (view : ArtifactView artifact) :
     checkParseArtifactView artifact view = checkParseArtifact artifact := by
   simp [checkParseArtifactView, checkParseArtifact,
-    checkNodesFromView_eq laniusGrammar artifact view]
+    checkNodesFromFast_eq, rootShapeValidView_eq]
 
 /-- Declarative acceptance statement exposed to later extraction proofs. It
     separates the already-proved token meaning from grammar/tree validity. -/

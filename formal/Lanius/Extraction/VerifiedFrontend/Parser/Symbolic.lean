@@ -1,32 +1,14 @@
-import Lanius.Extraction.SymbolicLocalChecker
 import Lanius.Extraction.VerifiedFrontend.Parser.Program
+import Lanius.Extraction.VerifiedFrontend.Parser.Symbolic.Data
 
 namespace Lanius.Extraction
+
+set_option maxRecDepth 100000
+set_option maxHeartbeats 1000000
 
 open Lanius.SymbolicCore
 open Lanius.Extraction.SymbolicLocalChecker
 open Lanius.ScopeGraph
-
-/-- The symbolic-local stage succeeds for the exact scoped parser value. -/
-theorem verifiedParser_symbolic_derivation_accepted :
-    (deriveArtifact? verifiedParserArtifact verifiedParserScopedArtifact).isSome =
-      true := by
-  native_decide
-
-def verifiedParserSymbolicFunctions : List DerivedFunction :=
-  (deriveArtifact? verifiedParserArtifact verifiedParserScopedArtifact).get
-    verifiedParser_symbolic_derivation_accepted
-
-theorem verifiedParser_symbolic_functions_derived :
-    deriveArtifact? verifiedParserArtifact verifiedParserScopedArtifact =
-      some verifiedParserSymbolicFunctions := by
-  have accepted := verifiedParser_symbolic_derivation_accepted
-  cases found : deriveArtifact? verifiedParserArtifact
-      verifiedParserScopedArtifact with
-  | none =>
-      simp [found] at accepted
-  | some functions =>
-      simp [verifiedParserSymbolicFunctions, found]
 
 /-- The composed certificate retains both the earlier complete checker result
     and the exact symbolic functions above, without executing either checker a
@@ -65,10 +47,10 @@ theorem verifiedParser_symbolic_function_names :
       "state_word", "state_value", "find_state", "append_state",
       "production_rhs_length", "production_rhs_symbol", "production_lhs",
       "scan_terminal", "append_or_full", "recognize"] := by
-  native_decide
+  decide
 
 def verifiedParserRecognizerSymbolic : DerivedFunction :=
-  verifiedParserRecognizerSymbolic?.get (by native_decide)
+  verifiedParserRecognizerSymbolic?.get (by decide)
 
 /-- The recognizer's source-parameter frame, obtained from checked declaration
     identities rather than reconstructed from a numeric Core-ID interval. -/
@@ -82,11 +64,11 @@ def verifiedParserRecognizerParameterIds : List VarId :=
 def verifiedParserRecognizerStateBase :
     LocalRef verifiedParserRecognizerSymbolic.view.locals :=
   (verifiedParserRecognizerSymbolic.view.locals.uniqueReferenceNamed?
-    "state_base").get (by native_decide)
+    "state_base").get (by decide)
 
 @[simp] theorem verifiedParserRecognizerStateBase_coreId :
     verifiedParserRecognizerStateBase.coreId = 8 := by
-  native_decide
+  decide
 
 theorem verifiedParserRecognizer_parameter_frame :
     verifiedParserRecognizerParameterFrame.map (fun binding =>
@@ -97,11 +79,11 @@ theorem verifiedParserRecognizer_parameter_frame :
       ("token_count", 3),
       ("workspace", 4),
       ("workspace_length", 5)] := by
-  native_decide
+  decide
 
 theorem verifiedParserRecognizer_parameter_core_ids :
     verifiedParserRecognizerParameterIds = [0, 1, 2, 3, 4, 5] := by
-  native_decide
+  decide
 
 @[simp] theorem mem_verifiedParserRecognizerParameterIds_iff
     (id : Nat) :
@@ -115,28 +97,28 @@ theorem verifiedParserRecognizer_parameter_core_ids :
     omega
 
 def verifiedParserRangeValidSymbolic : DerivedFunction :=
-  (verifiedParserSymbolicFunction? "range_valid").get (by native_decide)
+  (verifiedParserSymbolicFunction? "range_valid").get (by decide)
 
 def verifiedParserRangeValidOffset :
     LocalRef verifiedParserRangeValidSymbolic.view.locals :=
   (verifiedParserRangeValidSymbolic.parameterReferenceNamed? "offset").get
-    (by native_decide)
+    (by decide)
 
 def verifiedParserRangeValidCount :
     LocalRef verifiedParserRangeValidSymbolic.view.locals :=
   (verifiedParserRangeValidSymbolic.parameterReferenceNamed? "count").get
-    (by native_decide)
+    (by decide)
 
 def verifiedParserRangeValidLength :
     LocalRef verifiedParserRangeValidSymbolic.view.locals :=
   (verifiedParserRangeValidSymbolic.parameterReferenceNamed? "length").get
-    (by native_decide)
+    (by decide)
 
 theorem verifiedParserRangeValid_parameter_core_ids :
     verifiedParserRangeValidOffset.coreId = 0 ∧
       verifiedParserRangeValidCount.coreId = 1 ∧
       verifiedParserRangeValidLength.coreId = 2 := by
-  native_decide
+  decide
 
 @[simp] theorem verifiedParserRangeValidOffset_coreId :
     verifiedParserRangeValidOffset.coreId = 0 :=
@@ -155,9 +137,9 @@ theorem verifiedParserRangeValid_parameter_core_ids :
 def verifiedParserRangeValidRootFrame :
     LocalAccessFrame :=
   let body := verifiedParserRangeValidSymbolic.view.core.body.get
-    (by native_decide)
+    (by decide)
   verifiedParserRangeValidSymbolic.checkedRootLiveFrame body
-    (by native_decide)
+    (by decide)
 
 theorem verifiedParserRangeValid_root_frame :
     verifiedParserRangeValidRootFrame.map (fun access =>
@@ -169,10 +151,10 @@ theorem verifiedParserRangeValid_root_frame :
         .read),
       ("length", verifiedParserRangeValidLength.identity.declaration, 2,
         .read)] := by
-  native_decide
+  decide +kernel
 
 def verifiedParserFindStateSymbolic : DerivedFunction :=
-  (verifiedParserSymbolicFunction? "find_state").get (by native_decide)
+  (verifiedParserSymbolicFunction? "find_state").get (by decide)
 
 /-- The live caller locals at the outer `find_state` binder.  The temporary
     `current` is absent because `Stmt.freeAccesses` removes locals introduced
@@ -180,9 +162,9 @@ def verifiedParserFindStateSymbolic : DerivedFunction :=
 def verifiedParserFindStateCallerFrame :
     LocalAccessFrame :=
   let body := verifiedParserFindStateSymbolic.view.core.body.get
-    (by native_decide)
+    (by decide)
   verifiedParserFindStateSymbolic.checkedRootLiveFrame body
-    (by native_decide)
+    (by decide)
 
 /-- Declaration-preserving projection of the checked access frame.  Proofs
     consume this frame directly, retaining source identity instead of reducing
@@ -200,21 +182,21 @@ theorem verifiedParserFindState_caller_frame :
       ("position", 2, .read),
       ("state_base", 1, .read),
       ("seed", 3, .read)] := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParserFindState_caller_frame_ids :
     verifiedParserFindStateCallerFrameIds = [0, 2, 1, 3] := by
-  native_decide
+  decide +kernel
 
 def verifiedParserScanTerminalSymbolic : DerivedFunction :=
-  (verifiedParserSymbolicFunction? "scan_terminal").get (by native_decide)
+  (verifiedParserSymbolicFunction? "scan_terminal").get (by decide)
 
 def verifiedParserScanTerminalCallerFrame :
     LocalAccessFrame :=
   let body := verifiedParserScanTerminalSymbolic.view.core.body.get
-    (by native_decide)
+    (by decide)
   verifiedParserScanTerminalSymbolic.checkedRootLiveFrame body
-    (by native_decide)
+    (by decide)
 
 def verifiedParserScanTerminalCallerFrameIds : List VarId :=
   verifiedParserScanTerminalCallerFrame.ids
@@ -227,16 +209,16 @@ theorem verifiedParserScanTerminal_caller_frame :
       ("tokens", 1, .read),
       ("grammar", 0, .read),
       ("semantic_kind", 4, .read)] := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParserScanTerminal_caller_frame_ids :
     verifiedParserScanTerminalCallerFrameIds = [3, 2, 1, 0, 4] := by
-  native_decide
+  decide +kernel
 
 theorem verifiedParserRecognizerSymbolic_matches_extracted :
     (verifiedParserRecognizerSymbolic.view.erase ==
       extractedParserRecognizeFunction) = true := by
-  native_decide
+  decide +kernel
 
 
 end Lanius.Extraction

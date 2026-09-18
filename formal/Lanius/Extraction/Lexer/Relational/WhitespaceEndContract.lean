@@ -1,5 +1,6 @@
 import Lanius.Relational.CallContract
 import Lanius.Extraction.Lexer.Relational.Functions
+import Lanius.Extraction.Lexer.Relational.SourceMemory
 import Lanius.Compiler.LexerProgramScanners
 
 namespace Lanius.Extraction.Lexer.Relational.WhitespaceEnd
@@ -43,35 +44,17 @@ def contract (source : List Byte) :
     intro start before pre
     obtain ⟨_beforeEq, sourceBound, startInBounds⟩ := pre
     have startBound : start ≤ 2147483647 := by omega
-    have targetEq : checkedFrontend.core.target = .x86_64 := by rfl
     simp only [scannerArguments, sourceSlice, Functions.scannerSignature]
     exact .cons (.slice _ _ _ _ _) (.cons
-      (.signed .i32 _ (by
-        rw [targetEq]
-        simp [signedMin, SignedIntTy.bits]) (by
-        rw [targetEq]
-        simp only [signedMax, SignedIntTy.bits]
-        rw [Int.ofNat_eq_natCast]
-        omega))
-      (.cons (.signed .i32 _ (by
-        rw [targetEq]
-        simp [signedMin, SignedIntTy.bits]) (by
-        rw [targetEq]
-        simp only [signedMax, SignedIntTy.bits]
-        rw [Int.ofNat_eq_natCast]
-        omega)) .nil))
+      (SourceMemory.i32OfNat_typed checkedFrontend.core source.length sourceBound)
+      (.cons (SourceMemory.i32OfNat_typed checkedFrontend.core start startBound)
+        .nil))
   encodeResult_typed := by
-    intro start finish before after pre post
-    obtain ⟨_beforeEq, sourceBound, _startInBounds⟩ := pre
+    intro _start finish _before _after pre post
+    obtain ⟨_, sourceBound, _⟩ := pre
     obtain ⟨_, _, _, finishBound⟩ := post
-    have targetEq : checkedFrontend.core.target = .x86_64 := by rfl
-    exact .signed .i32 _ (by
-      rw [targetEq]
-      simp [signedMin, SignedIntTy.bits]) (by
-      rw [targetEq]
-      simp only [signedMax, SignedIntTy.bits]
-      rw [Int.ofNat_eq_natCast]
-      omega)
+    have finishI32Bound : finish ≤ 2147483647 := by omega
+    exact SourceMemory.i32OfNat_typed checkedFrontend.core finish finishI32Bound
   AbstractStateRep := fun abstract world =>
     world.i32Slice? 0 = some (sourceIntegers abstract)
 

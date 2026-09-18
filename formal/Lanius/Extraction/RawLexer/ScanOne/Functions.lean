@@ -28,7 +28,7 @@ private def scanOneWire : CoreFunction :=
 def scanOneFunction : Function := CoreDecode.function scanOneWire
 
 theorem scanOne_body_present : scanOneFunction.body.isSome := by
-  native_decide
+  rfl
 
 def scanOneBody : Stmt :=
   scanOneFunction.body.get scanOne_body_present
@@ -48,7 +48,7 @@ private def reification? :=
     (identityLayout (arity := 3)) 3 scanOneBody
 
 theorem scanOne_reification_exists : reification?.isSome := by
-  native_decide
+  decide +kernel
 
 def scanOneView :=
   reification?.get scanOne_reification_exists

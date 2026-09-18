@@ -1,0 +1,35 @@
+module backend::index;
+import backend::frame;
+import backend::value;
+import backend::syntax;
+import x86::encode;
+import x86::control;
+import x86::register;
+
+// Continue only when the preceding flag-producing instruction satisfied the
+// condition. Bounds failures use UD2, like the other explicit Core traps.
+fn require(output: [i32], capacity: i32, cursor: i32, condition: i32) -> i32 {
+    let next: i32 = x86::control::branch(output, capacity, cursor, condition, cursor + 8);
+    return x86::control::trap(output, capacity, next);
+}
+
+// RAX holds the evaluated index; slot holds the saved address of the captured
+// descriptor. Compare all 64 length bits before loading any array element.
+// A live nonwrapping packed i32 allocation has at most 2^62 elements. Thus a
+// negative sign-extended i32 always fails the same unsigned length check.
+pub fn address(output: [i32], capacity: i32, work: [i32], slot: i32, kind: i32) -> i32 {
+    if (kind != backend::syntax::I32 && kind != backend::syntax::USIZE) { return -1; }
+    let next: i32 = work[backend::frame::CODE];
+    if (kind == backend::syntax::I32) {
+        next = x86::encode::sign_extend_i32(output, capacity, next, x86::register::RAX, x86::register::RAX);
+    }
+    work[backend::frame::CODE] = next;
+    backend::value::load_word(output, capacity, work, slot, x86::register::R11);
+    next = x86::encode::load(output, capacity, work[backend::frame::CODE], 64, x86::register::R10, x86::register::R11, 8);
+    next = x86::encode::load(output, capacity, next, 64, x86::register::R11, x86::register::R11, 0);
+    next = x86::encode::binary(output, capacity, next, 64, x86::encode::CMP, x86::register::RAX, x86::register::R10);
+    next = require(output, capacity, next, x86::control::BELOW);
+    work[backend::frame::CODE] = x86::encode::indexed_address(output, capacity, next,
+        x86::register::RAX, x86::register::R11, x86::register::RAX, 2, 0);
+    return work[backend::frame::CODE];
+}

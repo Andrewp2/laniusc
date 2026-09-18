@@ -87,7 +87,7 @@ theorem child_step {memory : ChildMemory} {record : RecordVisit} {child : ChildV
     | node id start finish =>
       obtain ⟨middle, run, cursor, effect⟩ := node_child_execute memory.data.collection program symbols stateTag
         found childFound secondHeld.wellFormed secondHeld.records secondHeld.offsets secondHeld.wordLength
-        secondHeld.count secondHeld.node payloadSecond slotSecond secondHeld.cursor wordsFit memory.data.tokensFit
+        secondHeld.count secondHeld.node payloadSecond slotSecond secondHeld.cursor memory.data.wordsWithin memory.data.limitFits memory.data.tokensFit
       have dispatch : Evaluates program second
           (binary .equal (atIndex 4 (read 18)) (.constant symbols.childToken)) (.boolean false) second :=
         evaluatesEagerBinary (by decide) (by decide) tagRead (evaluatesConstant tokenTag) rfl

@@ -1,5 +1,5 @@
 import Lanius.Extraction.CompactOutput.Unit.Inputs
-import Lanius.Extraction.Frontend.Call
+import Lanius.Extraction.Frontend.Capacity.Post
 import Lanius.Extraction.RawLexer.LexInto.Spans
 
 namespace Lanius.Extraction.CompactOutput.Unit
@@ -85,10 +85,10 @@ open Lanius.FunctionalView.Core
 
 /-- Recover the existing source, raw, and canonical arrays on frontend
 success. Their unused suffixes stay storage, not additional logical tokens. -/
-theorem lexical_storage (data : SyntaxData) (valid : data.Valid)
+theorem lexical_storage {tail : List Int} (data : SyntaxData) (valid : data.Valid)
     (post : data.Post stage detail count nodes words position before after)
-    (raw : data.RawOutput after) (success : stage = 0) :
-    I32Prefix after data.sourceCell data.request.source.length (sourceIntegers data.request.source) ∧
+    (raw : data.PaddedRawOutput tail after) (success : stage = 0) :
+    I32Prefix after data.sourceCell (data.request.source.length + tail.length) (sourceIntegers data.request.source) ∧
     I32Prefix after data.rawCell data.records.length (encodeTokens data.raw) ∧
     I32Prefix after data.canonicalCell data.canonical.length (encodeTokens data.tokens) := by
   have sourceBacking := raw _ _ ReadOnly.World.pair_finds_first
@@ -98,9 +98,8 @@ theorem lexical_storage (data : SyntaxData) (valid : data.Valid)
     change data.raw.length ≤ data.request.capacity at bound
     rw [valid.wordCapacity] at bound
     omega
-  refine ⟨⟨[], ?_, ?_⟩, ⟨data.records.drop (3 * data.raw.length), ?_, rawBacking⟩, ?_⟩
-  · simp only [sourceIntegers, List.length_map, List.length_nil, Nat.add_zero]
-  · simpa only [List.append_nil] using sourceBacking
+  refine ⟨⟨tail, ?_, sourceBacking⟩, ⟨data.records.drop (3 * data.raw.length), ?_, rawBacking⟩, ?_⟩
+  · simp only [sourceIntegers, List.length_map]
   · rw [encoded_length, List.length_drop]
     omega
   rcases post with early | ⟨completed, capacity, countEq, canonical, rest⟩
@@ -155,15 +154,15 @@ def canonicalInput (data : SyntaxData) (valid : data.Valid)
 
 /-- The collector's output-only effect retains all three lexical inputs for
 emission. This uses the separate collector effect kept by the pipeline. -/
-theorem lexical_storage_after_collection (data : SyntaxData) (valid : data.Valid)
+theorem lexical_storage_after_collection {tail : List Int} (data : SyntaxData) (valid : data.Valid)
     (post : data.Post stage detail count nodes words position before extracted)
-    (raw : data.RawOutput extracted) (success : stage = 0)
+    (raw : data.PaddedRawOutput tail extracted) (success : stage = 0)
     (wellFormed : StateWellFormed extracted)
     (effect : CellEffect (CellSet.singleton semanticCell) extracted collected)
     (sourceSeparate : data.sourceCell ≠ semanticCell)
     (rawSeparate : data.rawCell ≠ semanticCell)
     (canonicalSeparate : data.canonicalCell ≠ semanticCell) :
-    I32Prefix collected data.sourceCell data.request.source.length (sourceIntegers data.request.source) ∧
+    I32Prefix collected data.sourceCell (data.request.source.length + tail.length) (sourceIntegers data.request.source) ∧
     I32Prefix collected data.rawCell data.records.length (encodeTokens data.raw) ∧
     I32Prefix collected data.canonicalCell data.canonical.length (encodeTokens data.tokens) := by
   obtain ⟨source, raw, canonical⟩ := lexical_storage data valid post raw success

@@ -29,28 +29,29 @@ theorem executes_choices (program : Program) (matcher : FunctionId)
     (startLocal : before.local? 1 = some (.signed .i32 start))
     (capacity : start + width ≤ source.length) (bounded : source.length ≤ 2147483647) :
     ∃ after, Executes program before (choices matcher width rules)
-      (selectedCompletion (selected program source start width rules)) after ∧ CellEffect CellSet.empty before after := by
+      (selectedCompletion (selected program source start width rules)) after ∧ CellEffect CellSet.empty before after ∧
+      Host.MemoryFrame before after := by
   induction rules generalizing before with
-  | nil => exact ⟨before, executesSkip program before, CellEffect.refl wellFormed⟩
+  | nil => exact ⟨before, executesSkip program before, CellEffect.refl wellFormed, Host.MemoryFrame.refl before⟩
   | cons rule rest ih =>
       have headValid := valid rule (by simp)
       have tailValid : ∀ rule ∈ rest, ValidRule program width rule :=
         fun rule member => valid rule (List.mem_cons_of_mem _ member)
-      obtain ⟨middle, tested, frame⟩ := evaluates_condition program matcher before sourceCell source
+      obtain ⟨middle, tested, frame, memory⟩ := evaluates_condition program matcher before sourceCell source
         start width rule found headValid wellFormed sourceLocal sourceContents startLocal capacity bounded
       cases matchesHead : Ascii.matchesBytes source start (rule.spelling width) with
       | false =>
           rw [matchesHead] at tested
-          obtain ⟨after, run, tailFrame⟩ := ih middle tailValid frame.wellFormed
+          obtain ⟨after, run, tailFrame, tailMemory⟩ := ih middle tailValid frame.wellFormed
             (frame.empty_preserves_local wellFormed sourceLocal)
             (frame.empty_preserves_entry wellFormed sourceContents)
             (frame.empty_preserves_local wellFormed startLocal)
-          refine ⟨after, ?_, frame.trans tailFrame⟩
+          refine ⟨after, ?_, frame.trans tailFrame, memory.trans tailMemory⟩
           simpa only [choices, selected, matchesHead, Bool.false_eq_true, ↓reduceIte] using
             executesSequence (executesIfFalse tested (executesSkip program middle)) run
       | true =>
           rw [matchesHead] at tested
-          refine ⟨middle, ?_, frame⟩
+          refine ⟨middle, ?_, frame, memory⟩
           simpa only [choices, selected, matchesHead, ↓reduceIte, selectedCompletion] using
             (executesSequenceReturned (second := choices matcher width rest)
               (executesIfTrue tested (executes_returned program middle rule headValid)))

@@ -11,18 +11,19 @@ open Lanius.Semantics
 Core's authoritative semantics is fuelled.  Reflection proofs need to invert a
 successful run by statement structure, not reason about the particular fuel
 witness.  `StmtExecutes` is an inductive view of exactly the statement subset
-emitted by action-free FunctionalView commands.  `ofExecStmt` derives that view
+used by action-free FunctionalView commands and scoped local declarations.
+`ofExecStmt` derives that view
 from an actual successful evaluator result without assuming termination.
 -/
 
 def Supported : Stmt → Bool
   | .skip | .expression _ | .returnValue _ | .breakLoop | .continueLoop => true
   | .sequence first second => Supported first && Supported second
-  | .letLocal _ _ _ body => Supported body
+  | .letLocal _ _ _ body | .letUninitialized _ _ body => Supported body
   | .ifThenElse _ thenBranch elseBranch =>
       Supported thenBranch && Supported elseBranch
   | .whileLoop _ body => Supported body
-  | .letUninitialized _ _ _ | .forValues _ _ _ | .forRange _ _ _ _ _ => false
+  | .forValues _ _ _ | .forRange _ _ _ _ _ => false
 
 inductive StmtExecutes (program : Program) :
     State → Stmt → Completion → State → Prop where
@@ -44,6 +45,11 @@ inductive StmtExecutes (program : Program) :
         completion completed) :
       StmtExecutes program before (.letLocal localId type initializer body)
         completion (restoreLocals initialized completed)
+  | letUninitialized
+      (bodyResult : StmtExecutes program (before.bindUninitialized localId) body
+        completion completed) :
+      StmtExecutes program before (.letUninitialized localId type body)
+        completion (restoreLocals before completed)
   | ifTrue
       (conditionResult : Evaluates program before condition (.boolean true)
         conditionState)
@@ -158,7 +164,7 @@ theorem StmtExecutes.whileInversion
   | whileReturn conditionResult bodyResult _bodyIH =>
       obtain ⟨rfl, rfl⟩ := Stmt.whileLoop.inj statementEq
       exact .returned conditionResult bodyResult
-  | skip | expression | sequenceNext | sequenceStop | letLocal | ifTrue |
+  | skip | expression | sequenceNext | sequenceStop | letLocal | letUninitialized | ifTrue |
       ifFalse | returnNone | returnSome | breakLoop | continueLoop =>
       simp at statementEq
 
@@ -257,6 +263,7 @@ theorem StmtExecutes.toExecutes
       exact executesSequenceNonNext firstIH stops
   | letLocal initializerResult _ bodyIH =>
       exact executesLetLocal initializerResult bodyIH
+  | letUninitialized _ bodyIH => exact executesLetUninitialized bodyIH
   | ifTrue conditionResult _ branchIH =>
       exact executesIfTrue conditionResult branchIH
   | ifFalse conditionResult _ branchIH =>
@@ -356,7 +363,19 @@ private theorem ofExecStmtFuel : ∀ fuel program before statement completion af
                     (ofExecStmtFuel fuel program
                       (initialized.bindLocal id value) body bodyCompletion completed
                       supported bodyResult)
-      | letUninitialized id type body => simp [Supported] at supported
+      | letUninitialized id type body =>
+          simp only at executed
+          generalize bodyResult : execStmt fuel program
+            (before.bindUninitialized id) body = bodyOutcome at executed
+          cases bodyOutcome with
+          | outOfFuel => simp [restoreOutcomeLocals] at executed
+          | trapped reason state => simp [restoreOutcomeLocals] at executed
+          | exited code state => simp [restoreOutcomeLocals] at executed
+          | done bodyCompletion completed =>
+              simp only [restoreOutcomeLocals] at executed
+              obtain ⟨rfl, rfl⟩ := Outcome.done.inj executed
+              exact .letUninitialized (ofExecStmtFuel fuel program
+                (before.bindUninitialized id) body bodyCompletion completed supported bodyResult)
       | ifThenElse condition thenBranch elseBranch =>
           simp only at executed
           simp only [Supported, Bool.and_eq_true] at supported

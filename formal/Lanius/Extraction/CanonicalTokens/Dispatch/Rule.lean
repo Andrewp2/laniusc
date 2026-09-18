@@ -37,7 +37,8 @@ theorem evaluates_condition (program : Program) (matcher : FunctionId)
     (startLocal : before.local? 1 = some (.signed .i32 start))
     (capacity : start + width ≤ source.length) (bounded : source.length ≤ 2147483647) :
     ∃ after, Evaluates program before (condition matcher width rule)
-      (.boolean (Ascii.matchesBytes source start (rule.spelling width))) after ∧ CellEffect CellSet.empty before after := by
+      (.boolean (Ascii.matchesBytes source start (rule.spelling width))) after ∧ CellEffect CellSet.empty before after ∧
+      Host.MemoryFrame before after := by
   have sourceResult : Evaluates program before (.local 0)
       (.slice (.scalar (.signed .i32)) sourceCell [] 0 source.length) before :=
     ⟨1, evalLocal_of_local 0 program before _ _ sourceLocal⟩
@@ -54,14 +55,14 @@ theorem evaluates_condition (program : Program) (matcher : FunctionId)
         (ArgumentsEvaluateTo.cons
           (show Evaluates program before (.value (.signed .i32 width)) (.signed .i32 width) before from ⟨1, rfl⟩)
           (ArgumentsEvaluateTo.nil program before))))
-  obtain ⟨after, evaluated, afterWF, locals, world, cells, domain, frontier⟩ :=
+  obtain ⟨after, evaluated, afterWF, locals, world, cells, domain, frontier, memory⟩ :=
     Ascii.evaluates_call program matcher before sourceCell source start rule.text (rule.spelling width)
       _ found wellFormed sourceContents arguments
       (by simpa only [valid.spelling_length] using capacity) bounded
       (by simpa only [valid.spelling_length] using valid.countBound)
       (by simpa only [valid.spelling_length] using valid.padded)
       (by rw [valid.spelling_length]; rfl)
-  exact ⟨after, evaluated, ⟨afterWF, locals, world, fun cell old _ => cells cell old, frontier, domain⟩⟩
+  exact ⟨after, evaluated, ⟨afterWF, locals, world, fun cell old _ => cells cell old, frontier, domain⟩, memory⟩
 
 theorem executes_returned (program : Program) (before : State) (rule : Rule)
     (valid : ValidRule program width rule) :

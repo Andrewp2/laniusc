@@ -618,27 +618,26 @@ theorem tokenTextWithView_eq (artifact : Artifact) (view : ArtifactView artifact
             rw [Lanius.Data.SeqTree.rangeToList_eq_flatten
               view.cache.primarySourceBytes view.sourceBytesWellFormed]
 
-def parseNodeContainsTokenViewWithFuel
-    (artifact : Artifact) (view : ArtifactView artifact)
+def containsToken (lookup : ParseNodeId → Option ParseNode)
     (tokenId : TokenId) : Nat → ParseNodeId → Bool
   | 0, _ => false
   | fuel + 1, nodeId =>
-      match view.node? nodeId with
+      match lookup nodeId with
       | none => false
       | some node => node.children.any fun
           | .token childToken => childToken = tokenId
           | .node childNode =>
-              parseNodeContainsTokenViewWithFuel artifact view tokenId fuel childNode
+              containsToken lookup tokenId fuel childNode
 
-theorem parseNodeContainsTokenViewWithFuel_eq
+theorem containsToken_eq
     (artifact : Artifact) (view : ArtifactView artifact)
     (tokenId fuel nodeId : Nat) :
-    parseNodeContainsTokenViewWithFuel artifact view tokenId fuel nodeId =
+    containsToken view.node? tokenId fuel nodeId =
       parseNodeContainsTokenWithFuel artifact.parse_nodes tokenId fuel nodeId := by
   induction fuel generalizing nodeId with
   | zero => rfl
   | succ fuel inductionHypothesis =>
-      simp only [parseNodeContainsTokenViewWithFuel,
+      simp only [containsToken,
         parseNodeContainsTokenWithFuel, view.node?_eq]
       cases lookup : artifact.parse_nodes[nodeId]? with
       | none => rfl
@@ -651,7 +650,7 @@ theorem parseNodeContainsTokenViewWithFuel_eq
 def parseNodeContainsTokenView
     (artifact : Artifact) (view : ArtifactView artifact)
     (nodeId : ParseNodeId) (tokenId : TokenId) : Bool :=
-  parseNodeContainsTokenViewWithFuel artifact view tokenId
+  containsToken view.node? tokenId
     (artifact.parse_nodes.length + 1) nodeId
 
 def parseNodeContainsNodeViewWithFuel
@@ -700,12 +699,12 @@ extractor are in postorder, so a child whose root precedes the requested
 descendant cannot contain it. The checker only uses this fact to prune
 branches; its soundness does not assume that an untrusted artifact actually is
 postordered. -/
-def parseNodeContainsNodePrunedWithFuel
-    (artifact : Artifact) (view : ArtifactView artifact)
+def containsNodePruned
+    (lookup : ParseNodeId → Option ParseNode)
     (descendant : ParseNodeId) : Nat → ParseNodeId → Bool
   | 0, _ => false
   | fuel + 1, ancestor =>
-      match view.node? ancestor with
+      match lookup ancestor with
       | none => false
       | some node =>
           if ancestor = descendant then true else
@@ -713,21 +712,21 @@ def parseNodeContainsNodePrunedWithFuel
             | .token _ => false
             | .node child =>
                 descendant ≤ child &&
-                  parseNodeContainsNodePrunedWithFuel artifact view descendant
+                  containsNodePruned lookup descendant
                     fuel child
 
-theorem parseNodeContainsNodePrunedWithFuel_sound
+theorem containsNodePruned_sound
     (artifact : Artifact) (view : ArtifactView artifact)
     (descendant fuel ancestor : Nat)
     (accepted :
-      parseNodeContainsNodePrunedWithFuel artifact view descendant fuel
+      containsNodePruned view.node? descendant fuel
         ancestor = true) :
     parseNodeContainsNodeViewWithFuel artifact view descendant fuel ancestor =
       true := by
   induction fuel generalizing ancestor with
-  | zero => simp [parseNodeContainsNodePrunedWithFuel] at accepted
+  | zero => simp [containsNodePruned] at accepted
   | succ fuel ih =>
-      simp only [parseNodeContainsNodePrunedWithFuel] at accepted
+      simp only [containsNodePruned] at accepted
       simp only [parseNodeContainsNodeViewWithFuel]
       cases found : view.node? ancestor with
       | none => simp [found] at accepted
@@ -748,7 +747,7 @@ theorem parseNodeContainsNodePrunedWithFuel_sound
 def parseNodeContainsNodePruned
     (artifact : Artifact) (view : ArtifactView artifact)
     (ancestor descendant : ParseNodeId) : Bool :=
-  parseNodeContainsNodePrunedWithFuel artifact view descendant
+  containsNodePruned view.node? descendant
     (artifact.parse_nodes.length + 1) ancestor
 
 structure SpellingClaimMatches
@@ -814,16 +813,33 @@ def spellingClaimValidView (artifact : Artifact) (view : ArtifactView artifact)
   tokenTextWithView? artifact view claim.token = some claim.text &&
     parseNodeContainsTokenView artifact view claim.owner claim.token
 
-def nodeClaimValidView (artifact : Artifact) (view : ArtifactView artifact)
+def nodeClaimValidWith (lookup : ParseNodeId → Option ParseNode) (fuel : Nat)
     (claim : SurfaceNodeClaim) : Bool :=
-  match view.node? claim.parseNode with
+  match lookup claim.parseNode with
   | none => false
   | some node =>
       claim.allowedProductions.contains node.production &&
         match claim.containingParseNode with
         | none => true
         | some parent =>
-            parseNodeContainsNodePruned artifact view parent claim.parseNode
+            containsNodePruned lookup claim.parseNode fuel parent
+
+def nodeClaimValidView (artifact : Artifact) (view : ArtifactView artifact) :
+    SurfaceNodeClaim → Bool :=
+  nodeClaimValidWith view.node? (artifact.parse_nodes.length + 1)
+
+/-- Index once for all node claims; neither a fresh list scan nor a fresh
+whole-tree fuel count is needed at each claim. -/
+def nodeClaimsValidIndexed (artifact : Artifact) (claims : List SurfaceNodeClaim) : Bool :=
+  let nodes := artifact.parse_nodes.toArray
+  claims.all (nodeClaimValidWith (fun id => nodes[id]?) (nodes.size + 1))
+
+theorem nodeClaimsValidIndexed_eq (view : ArtifactView artifact) (claims : List SurfaceNodeClaim) :
+    nodeClaimsValidIndexed artifact claims = claims.all (nodeClaimValidView artifact view) := by
+  have lookup : (fun id => artifact.parse_nodes.toArray[id]?) = view.node? := by
+    funext id
+    simp [view.node?_eq]
+  simp only [nodeClaimsValidIndexed, List.size_toArray, lookup, nodeClaimValidView]
 
 theorem spellingClaimValidView_eq (artifact : Artifact)
     (view : ArtifactView artifact) (claim : SpellingClaim) :
@@ -831,13 +847,36 @@ theorem spellingClaimValidView_eq (artifact : Artifact)
       spellingClaimValid artifact claim := by
   simp [spellingClaimValidView, spellingClaimValid, tokenTextWithView_eq,
     parseNodeContainsTokenView, parseNodeContainsToken,
-    parseNodeContainsTokenViewWithFuel_eq]
+    containsToken_eq]
+
+/-- Reconstruction and claim checking share the same bounded byte reader. -/
+theorem artifactTokenText?_ofView (view : ArtifactView artifact) (id : TokenId) :
+    @artifactTokenText? (ArtifactAccess.ofView view) artifact id = tokenTextWithView? artifact view id := by
+  simp only [artifactTokenText?, ArtifactAccess.token?, ArtifactAccess.primarySourceRange?,
+    tokenTextWithView?, ArtifactView.primarySourceRange]
+  cases found : artifact.sources[0]? <;> simp [found]
+
+private def spellingClaimsWith [ArtifactAccess] (artifact : Artifact) (fuel : Nat)
+    (claims : List SpellingClaim) : Bool :=
+  claims.all fun claim => artifactTokenText? artifact claim.token = some claim.text &&
+    containsToken (ArtifactAccess.node? artifact) claim.token fuel claim.owner
+
+/-- Retain source, token and node indexes across every spelling claim. -/
+def spellingClaimsValidIndexed (artifact : Artifact) (claims : List SpellingClaim) : Bool :=
+  @spellingClaimsWith (ArtifactAccess.indexedFor artifact) artifact (artifact.parse_nodes.length + 1) claims
+
+theorem spellingClaimsValidIndexed_eq (view : ArtifactView artifact) (claims : List SpellingClaim) :
+    spellingClaimsValidIndexed artifact claims = claims.all (spellingClaimValidView artifact view) := by
+  unfold spellingClaimsValidIndexed
+  rw [ArtifactAccess.indexedFor_eq, ← ArtifactAccess.ofView_eq_canonicalFor view]
+  simp only [spellingClaimsWith, artifactTokenText?_ofView, ArtifactAccess.node?]
+  rfl
 
 theorem nodeClaimValidView_sound {artifact : Artifact}
     (view : ArtifactView artifact) {claim : SurfaceNodeClaim}
     (accepted : nodeClaimValidView artifact view claim = true) :
     SurfaceNodeClaimMatches artifact claim := by
-  unfold nodeClaimValidView at accepted
+  unfold nodeClaimValidView nodeClaimValidWith at accepted
   cases found : view.node? claim.parseNode with
   | none => simp [found] at accepted
   | some node =>
@@ -851,7 +890,7 @@ theorem nodeClaimValidView_sound {artifact : Artifact}
         | some parent =>
             simp only [container] at accepted
             have recursive :=
-              parseNodeContainsNodePrunedWithFuel_sound artifact view
+              containsNodePruned_sound artifact view
                 claim.parseNode (artifact.parse_nodes.length + 1) parent
                 accepted.2
             rw [parseNodeContainsNodeViewWithFuel_eq] at recursive
@@ -876,11 +915,10 @@ def surfaceClaimsValid (artifact : Artifact) (claims : SurfaceClaims) : Bool :=
   claims.spellings.all (spellingClaimValid artifact) &&
   spellingCoverageValid artifact claims
 
-def surfaceClaimsValidView (artifact : Artifact) (view : ArtifactView artifact)
-    (claims : SurfaceClaims) : Bool :=
+def surfaceClaimsValidIndexed (artifact : Artifact) (claims : SurfaceClaims) : Bool :=
   claims.nodes.map (·.id) == List.range claims.nodes.length &&
-  claims.nodes.all (nodeClaimValidView artifact view) &&
-  claims.spellings.all (spellingClaimValidView artifact view) &&
+  nodeClaimsValidIndexed artifact claims.nodes &&
+  spellingClaimsValidIndexed artifact claims.spellings &&
   spellingCoverageValid artifact claims
 
 structure SurfaceClaimsMatch
@@ -905,11 +943,12 @@ theorem surfaceClaimsValid_sound
     spellingCoverage
   }
 
-theorem surfaceClaimsValidView_sound {artifact : Artifact}
+theorem surfaceClaimsValidIndexed_sound {artifact : Artifact}
     (view : ArtifactView artifact) {claims : SurfaceClaims}
-    (accepted : surfaceClaimsValidView artifact view claims = true) :
+    (accepted : surfaceClaimsValidIndexed artifact claims = true) :
     SurfaceClaimsMatch artifact claims := by
-  simp only [surfaceClaimsValidView, Bool.and_eq_true, List.all_eq_true] at accepted
+  simp only [surfaceClaimsValidIndexed, nodeClaimsValidIndexed_eq view, spellingClaimsValidIndexed_eq view,
+    Bool.and_eq_true, List.all_eq_true] at accepted
   rcases accepted with ⟨⟨⟨denseIds, nodesAccepted⟩, spellingsAccepted⟩,
     spellingCoverage⟩
   exact {
@@ -928,7 +967,7 @@ def checkSurfaceArtifactView (artifact : Artifact) (view : ArtifactView artifact
   checkParseArtifactView artifact view &&
   match collectSurfaceClaimsView artifact view,
       decodeReconstructedSurfaceView artifact view with
-  | some claims, some _ => surfaceClaimsValidView artifact view claims
+  | some claims, some _ => surfaceClaimsValidIndexed artifact claims
   | _, _ => false
 
 /-- Canonical semantic statement certified by the Surface checker.  Optimized
@@ -966,7 +1005,7 @@ theorem checkSurfaceArtifactView_sound {artifact : Artifact}
       | none => simp [claimsResult, surfaceResult] at surfaceAccepted
       | some surface =>
           exact SurfaceArtifactValid.ofView view parseValid claimsResult
-            surfaceResult (surfaceClaimsValidView_sound view
+            surfaceResult (surfaceClaimsValidIndexed_sound view
               (by simpa [claimsResult, surfaceResult] using surfaceAccepted))
 
 /-- Reference entry point.  Even the list-backed cache crosses the same checked
@@ -1012,7 +1051,7 @@ def checkSurfaceArtifactView? (artifact : Artifact) (view : ArtifactView artifac
             | none => none
             | some surface =>
                 if claimsAccepted :
-                    surfaceClaimsValidView artifact view claims = true then
+                    surfaceClaimsValidIndexed artifact claims = true then
                   have collected :
                       collectSurfaceClaimsView artifact view = some claims := by
                     simp [collectSurfaceClaimsView, reconstructedFound, claimsFound]
@@ -1031,7 +1070,7 @@ def checkSurfaceArtifactView? (artifact : Artifact) (view : ArtifactView artifac
                     valid := SurfaceArtifactValid.ofView view
                       (checkParseArtifactView_sound view parseAccepted)
                       collected decoded
-                      (surfaceClaimsValidView_sound view claimsAccepted)
+                      (surfaceClaimsValidIndexed_sound view claimsAccepted)
                   }
                 else none
   else none

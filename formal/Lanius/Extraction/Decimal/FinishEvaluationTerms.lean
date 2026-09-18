@@ -64,25 +64,12 @@ theorem notEqual_evaluates
   change ReadOnly.evaluateOperation verifiedFrontendCore world
     (.binary .notEqual i32Type i32Type Commands.boolType)
     [.signed .i32 leftValue, .signed .i32 rightValue] = _
-  calc
-    _ = .ok (.boolean (decide
-        ((Int.ofNat leftValue) ≠ Int.ofNat rightValue)), world) :=
-      ReadOnly.evaluateOperation_i32_notEqual_int
-        (program := verifiedFrontendCore) (world := world)
-        (leftType := i32Type) (rightType := i32Type)
-        (outputType := Commands.boolType)
-        (Int.ofNat leftValue) (Int.ofNat rightValue)
-    _ = _ := by
-      apply congrArg (fun flag : Bool =>
-        (Except.ok (.boolean flag, (world : ReadOnly.World)) :
-          Except Trap (Value × ReadOnly.World)))
-      by_cases same : leftValue = rightValue
-      · subst rightValue
-        simp
-      · have castDifferent : (Int.ofNat leftValue) ≠ Int.ofNat rightValue :=
-          fun equal => same (Int.ofNat_inj.mp equal)
-        simp [same]
-        exact castDifferent
+  simpa [Int.ofNat_inj] using
+    (ReadOnly.evaluateOperation_i32_notEqual_int
+      (program := verifiedFrontendCore) (world := world)
+      (leftType := i32Type) (rightType := i32Type)
+      (outputType := Commands.boolType)
+      (Int.ofNat leftValue) (Int.ofNat rightValue))
 
 theorem less_evaluates
     (environment : Env arity) (left right : Term signature arity)
